@@ -1,0 +1,31 @@
+[project]
+name = "dealradar"
+version = "0.1.0"
+description = "Online-deal aggregator: polite multi-source fetch, LLM extraction with verbatim evidence, savings math, static site + Telegram + email digest."
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27",
+    "feedparser>=6.0.11",
+    "PyYAML>=6.0",
+    "anthropic>=0.40",
+    "rapidfuzz>=3.9",
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+telegram = ["telethon>=1.36"]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dealradar*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: integration tests that hit real network sources (deselect with '-m \"not slow\"')",
+]
+addopts = "-m 'not slow'"

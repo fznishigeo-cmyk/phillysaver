@@ -1,0 +1,216 @@
+"""Offline end-to-end: the real pipeline over recorded feed fixtures with a canned
+LLM client. Exercises RSS fetch -> posts_seen idempotency -> evidence verification
+-> savings math -> dedupe/merge -> corroboration -> ranking -> site render ->
+Telegram dry-run -> re-run idempotency. No network, no real sleeping.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import httpx
+import pytest
+
+from dealradar import pipeline
+from dealradar.models import SourceConfig
+
+FIX = Path(__file__).parent / "fixtures"
+ROBOTS = "User-agent: *\nAllow: /\n"
+
+
+def _handler(request: httpx.Request) -> httpx.Response:
+    host, path = request.url.host, request.url.path
+    if path == "/robots.txt":
+        return httpx.Response(200, text=ROBOTS)
+    if host == "blogone.example" and path == "/feed/":
+        return httpx.Response(200, content=(FIX / "e2e_feed_one.xml").read_bytes(),
+                              headers={"ETag": '"feed-one-v1"'})
+    if host == "feedtwo.example" and path == "/rss":
+        return httpx.Response(200, content=(FIX / "e2e_feed_two.xml").read_bytes())
+    if host == "go.redirector.example":
+        return httpx.Response(
+            301, headers={"Location": "https://www.acmekitchen.example/product/airfryer-8qt?utm_source=feed"})
+    if host == "www.acmekitchen.example":
+        return httpx.Response(200, text="ok")
+    return httpx.Response(404)
+
+
+SOURCES = [
+    SourceConfig(name="blogone", method="rss", url="https://blogone.example/feed/",
+                 region="US", allowed_html=False, fast_lane=False),
+    SourceConfig(name="feedtwo", method="rss", url="https://feedtwo.example/rss",
+                 region="US", allowed_html=False, fast_lane=False),
+]
+
+
+def _canned_deals(prompt_text: str) -> list[dict]:
+    """Keyed on marker substrings of the post text; quotes are verbatim."""
+    if "FRYDAY at checkout" in prompt_text:  # feed one, post 1
+        return [dict(
+            item="Ninja Foodi 8-qt Air Fryer", store="Acme Kitchen",
+            product_url="https://go.redirector.example/r/airfryer",
+            online_only="true", regular_price=129.99, final_price=29.99,
+            shipping_cost_or_threshold="free over $25", codes=["FRYDAY"],
+            expires_at_raw="ends today", confidence=0.95,
+            evidence=dict(regular_price_quote="regularly $129.99",
+                          final_price_quote="just $29.99", pct_quote=""),
+        )]
+    if "Chef Pro Knife Set" in prompt_text:  # feed one, roundup post -> 2 deals
+        return [
+            dict(item="Chef Pro Knife Set", store="Acme Kitchen",
+                 online_only="true", regular_price=150.0, final_price=27.50,
+                 codes=["CHOP"], confidence=0.9,
+                 evidence=dict(regular_price_quote="$150 value",
+                               final_price_quote="for $27.50", pct_quote="")),
+            dict(item="Copper Pan Duo", store="Acme Kitchen",
+                 online_only="true", regular_price=59.99, final_price=44.99,
+                 confidence=0.9,
+                 evidence=dict(regular_price_quote="was $59.99",
+                               final_price_quote="now $44.99", pct_quote="")),
+        ]
+    if "Garden Oasis patio set" in prompt_text:  # in-store YMMV -> excluded
+        return [dict(
+            item="Garden Oasis patio set", store="Garden Oasis",
+            online_only="false", regular_price=499.99, final_price=49.97,
+            conditions=["in_store_only", "ymmv", "clearance_aisle"], confidence=0.9,
+            evidence=dict(regular_price_quote="from $499.99",
+                          final_price_quote="at $49.97", pct_quote=""),
+        )]
+    if "regular price $129.99" in prompt_text:  # feed two, corroborating sighting
+        return [dict(
+            item="Ninja Foodi Air Fryer 8 qt", store="Acme Kitchen",
+            online_only="true", regular_price=129.99, final_price=29.99,
+            codes=["FRYDAY"], confidence=0.9,
+            evidence=dict(regular_price_quote="regular price $129.99",
+                          final_price_quote="for $29.99", pct_quote=""),
+        )]
+    if "Mega Headphones X200" in prompt_text:  # as-low-as range
+        return [dict(
+            item="Mega Headphones X200", store="SoundHut",
+            online_only="true", regular_price=199.99, final_price=39.99,
+            price_is_range=True, price_upper_bound=59.99, confidence=0.85,
+            evidence=dict(regular_price_quote="list price $199.99",
+                          final_price_quote="as low as $39.99", pct_quote=""),
+        )]
+    return []
+
+
+class _FakeModel:
+    def __init__(self, id: str, created_at: str) -> None:
+        self.id = id
+        self.created_at = created_at
+
+
+class _FakeModels:
+    def list(self):
+        return [
+            _FakeModel("claude-opus-5-5", "2026-03-01"),
+            _FakeModel("claude-haiku-5-5", "2026-02-01"),
+            _FakeModel("claude-haiku-4-5", "2025-10-01"),
+            _FakeModel("claude-sonnet-5-5", "2026-01-15"),
+        ]
+
+
+class _Usage:
+    input_tokens = 1200
+    output_tokens = 300
+
+
+class _FakeResponse:
+    def __init__(self, parsed_output) -> None:
+        self.parsed_output = parsed_output
+        self.usage = _Usage()
+        self.stop_reason = "end_turn"
+        self.content = []
+
+
+class _FakeMessages:
+    def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
+        text = messages[0]["content"]
+        deals = _canned_deals(text)
+        return _FakeResponse(output_format.model_validate({"deals": deals}))
+
+
+class _FakeClaudeClient:
+    models = _FakeModels()
+    messages = _FakeMessages()
+
+
+@pytest.fixture()
+def env(tmp_path, monkeypatch):
+    for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
+                "DEALS_CLAUDE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    site_dir = tmp_path / "site"
+    db_path = tmp_path / "state.db"
+    cfg_path = tmp_path / "config.yaml"
+    root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
+    text = root_cfg.read_text().replace('site_dir: "site"', f'site_dir: "{site_dir}"')
+    cfg_path.write_text(text)
+    return {"db": str(db_path), "cfg": str(cfg_path), "site": site_dir}
+
+
+def _run(env):
+    return pipeline.run(
+        db_path=env["db"], config_path=env["cfg"], dry_run_telegram=True,
+        transport=httpx.MockTransport(_handler), sources_override=SOURCES,
+        skip_validation=True, claude_client=_FakeClaudeClient(),
+    )
+
+
+def test_offline_end_to_end(env, capsys):
+    summary = _run(env)
+
+    assert summary["items_fetched"] == 5
+    assert summary["posts_new"] == 5
+    assert summary["parse"]["parser"] == "claude-haiku-5-5"  # newest haiku chosen
+    assert summary["parse"]["spend_usd"] > 0
+
+    # 3 qualifying online deals: air fryer (77%), knife set (81.7%), headphones (70.0% range)
+    assert summary["published"] == 3
+    assert summary["telegram"]["dry_run"] is True
+    assert summary["telegram"]["sent"] == 3
+
+    out = capsys.readouterr().out
+    assert "TELEGRAM DRY-RUN:" in out
+
+    deals_json = json.loads((env["site"] / "deals.json").read_text())
+    assert deals_json["meta"]["disclosure"]
+    assert len(deals_json["deals"]) == 3
+    by_item = {d["item"]: d for d in deals_json["deals"]}
+    fryer = next(d for i, d in by_item.items() if "Ninja Foodi" in i)
+    assert fryer["verify_tier"] == "corroborated"  # two independent sources in 24 h
+    assert len(fryer["sightings"]) == 2
+    # canonical retailer URL resolved through the redirector, tracking params stripped
+    assert "acmekitchen.example" in fryer["canonical_url"]
+    assert "utm" not in fryer["canonical_url"]
+
+    headphones = next(d for i, d in by_item.items() if "X200" in i)
+    assert "range" in headphones["flags"]
+    assert headphones["pct_at_checkout"] == pytest.approx(70.0, abs=0.1)
+
+    assert (env["site"] / "index.html").exists()
+    assert (env["site"] / "health.html").exists()
+    health = json.loads((env["site"] / "health.json").read_text())
+    assert {s["source_name"] for s in health["sources"]} == {"blogone", "feedtwo"}
+
+
+def test_rerun_is_idempotent(env, capsys):
+    first = _run(env)
+    assert first["telegram"]["sent"] == 3
+    second = _run(env)
+    assert second["posts_new"] == 0          # content hashes already known
+    assert second["telegram"]["sent"] == 0   # alerts_sent dedup
+    assert second["published"] == 3          # same deals, no duplicates
+
+    import sqlite3
+    conn = sqlite3.connect(env["db"])
+    n_deals = conn.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
+    n_sight = conn.execute("SELECT COUNT(*) FROM sightings").fetchone()[0]
+    n_hist = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
+    conn.close()
+    # 4 distinct deals total (patio excluded), 5 sightings (fryer has 2), stable across reruns
+    assert n_deals == 4
+    assert n_sight == 5
+    assert n_hist == 5

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>Deal Feed Two</title>
+  <link>https://feedtwo.example/</link>
+  <description>Test fixture feed (corroborating source)</description>
+  <item>
+    <title>Ninja Foodi Air Fryer 8 qt $29.99 at Acme Kitchen (reg $129.99)</title>
+    <link>https://feedtwo.example/threads/ninja-foodi-2999</link>
+    <guid>feedtwo-5001</guid>
+    <pubDate>Thu, 09 Oct 2026 12:30:00 +0000</pubDate>
+    <description>Acme Kitchen has the Ninja Foodi Air Fryer 8 qt for $29.99, regular price $129.99. Free shipping over $25, code FRYDAY. Online purchase.</description>
+  </item>
+  <item>
+    <title>Mega Headphones X200 "as low as $39.99" (list $199.99)</title>
+    <link>https://feedtwo.example/threads/x200-headphones</link>
+    <guid>feedtwo-5002</guid>
+    <pubDate>Thu, 09 Oct 2026 09:10:00 +0000</pubDate>
+    <description>SoundHut online: Mega Headphones X200 as low as $39.99, most colors $59.99, list price $199.99. Ships free. Online only.</description>
+  </item>
+</channel>
+</rss>

@@ -1,0 +1,79 @@
+# dealradar runtime configuration (non-secret). Secrets come from environment variables only.
+
+# Contact email advertised in the User-Agent, per our politeness policy.
+# SET THIS before the first live run (robots-respecting crawlers must be contactable).
+contact_email: "set-me@example.com"
+user_agent: "dealradar/0.1 (+https://github.com/fznishigeo-cmyk/phillysaver; contact: {contact_email})"
+
+timezone: "America/New_York"   # default tz for feeds with naive dates and for "ends today"
+
+fetch:
+  request_timeout_s: 20        # hard per-request timeout
+  per_source_budget_s: 90      # hard per-source budget
+  run_budget_s: 480            # hard 8 min per run
+  min_host_interval_s: 1.0     # <=1 request/sec per host
+  max_retries: 3               # exponential backoff 1s, 2s, 4s (+jitter)
+  circuit_breaker_failures: 3  # consecutive failures -> trip
+  circuit_breaker_cooldown_h: 6
+  redirect_max_hops: 5
+
+parse:
+  max_posts_per_run: 400
+  max_chars_per_post: 6000
+  spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
+  retries_on_invalid_json: 2
+  # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
+  # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
+  # the spend cap uses this table (USD per million tokens); unknown models use `default`.
+  model_pricing_per_mtok:
+    default: { input: 1.00, output: 5.00 }
+    claude-haiku-5-5: { input: 0.10, output: 0.50 }
+    claude-haiku-4-5: { input: 1.00, output: 5.00 }
+    claude-sonnet-5-5: { input: 2.00, output: 10.00 }
+
+publish:
+  min_pct: 70                  # floor: pct_at_checkout
+  min_abs_savings: 5.0         # floor: absolute $ savings
+  site_dir: "site"
+  ftc_disclosure: >-
+    Disclosure: some outbound links credit the deal source and may be affiliate links
+    that earn the source (or, in the future, this site) a commission. Prices change
+    fast and are not guaranteed.
+
+ranking:
+  tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
+  abs_savings_weight: 0.1      # score += min(abs_savings, 100) * weight
+  condition_penalty: 2.0       # per restrictive condition
+  age_penalty_per_hour: 0.2
+
+verify:
+  corroborate_window_h: 24
+  history_min_observations: 5  # need this many price points before history-checked can fire
+  keepa_enabled: false         # optional paid adapter, off by default
+
+dedupe:
+  fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
+
+telegram:
+  channels: []                 # public channels to READ via MTProto, e.g. ["somepublicdealchannel"]
+  messages_per_minute: 15
+  resend_price_drop_pct: 10    # re-alert only if price drops >=10% more
+  dry_run: false               # true forces log-only even if credentials exist
+
+digest:
+  hour_local: 8                # 08:00 America/New_York
+  timezone: "America/New_York"
+  recipient: ""                # single recipient email; SMTP_* secrets configure transport
+
+alerting:
+  min_items_ratio: 0.5         # warn if run items < 50% of 7-day hourly average
+  tripped_sources_warn: 5      # warn if >=5 sources tripped
+
+retention:
+  posts_seen_days: 30
+  deals_days: 14
+
+feature_flags:
+  threads: false               # off until app review passes
+  instagram: false             # stubbed
+  keepa: false

@@ -1,0 +1,304 @@
+# dealradar source registry.
+# Required fields per entry: name, method (rss|api|html), url, region, allowed_html, fast_lane.
+# Optional: adapter (for method=api), enabled, tz (IANA, for feeds with naive dates), notes.
+#
+# Policy (enforced in code, flags here are *permission to try*, never permission to bypass):
+# - rss/api first. HTML article fetch only when allowed_html is true AND robots.txt allows it at runtime.
+# - Slickdeals: official RSS only, never HTML (allowed_html must stay false).
+# - Reddit: official OAuth API only.
+# - Telegram: MTProto client API (Telethon user session); channel list lives in config.yaml.
+
+sources:
+  # ---- blogs / deal sites (RSS first, autodiscovery fallback on first-run validation) ----
+  - name: hip2save
+    method: rss
+    url: https://hip2save.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: krazy_coupon_lady
+    method: rss
+    url: https://thekrazycouponlady.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: slickdeals_frontpage
+    method: rss
+    url: "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1"
+    region: US
+    allowed_html: false   # never scrape Slickdeals HTML — official RSS only
+    fast_lane: true
+  - name: slickdeals_popular
+    method: rss
+    url: "https://slickdeals.net/newsearch.php?mode=popdeals&searcharea=deals&searchin=first&rss=1"
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: dealnews
+    method: rss
+    url: https://www.dealnews.com/rss/todays-edition.xml
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: bradsdeals
+    method: rss
+    url: https://www.bradsdeals.com/blog/feed
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: bensbargains
+    method: rss
+    url: https://bensbargains.com/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: woot
+    method: api
+    adapter: woot
+    url: https://developer.woot.com/#getting-started
+    region: US
+    allowed_html: false
+    fast_lane: true
+    notes: "Official Woot developer API; requires WOOT_API_KEY secret. Reported as needs_key until set."
+  - name: meh
+    method: api
+    adapter: meh
+    url: https://meh.com/api/1/current.json
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "Official Meh API; requires MEH_API_KEY secret. Reported as needs_key until set."
+  - name: techbargains
+    method: rss
+    url: https://www.techbargains.com/rss.xml
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: dealmoon_us
+    method: rss
+    url: https://www.dealmoon.com/en/rss
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "US (English) edition only."
+  - name: moneysavingmom
+    method: rss
+    url: https://moneysavingmom.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: passionate_penny_pincher
+    method: rss
+    url: https://passionatepennypincher.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: freebies2deals
+    method: rss
+    url: https://www.freebies2deals.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: southernsavers
+    method: rss
+    url: https://www.southernsavers.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: coupon_pro
+    method: rss
+    url: https://couponproblog.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: the_freebie_guy
+    method: rss
+    url: https://thefreebieguy.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: yes_we_coupon
+    method: rss
+    url: https://yeswecoupon.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: jungle_deals
+    method: rss
+    url: https://jungledealsblog.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: clark_deals
+    method: rss
+    url: https://clark.com/deals/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: hunt4freebies
+    method: rss
+    url: https://hunt4freebies.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: living_rich_with_coupons
+    method: rss
+    url: https://www.livingrichwithcoupons.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: 9to5toys
+    method: rss
+    url: https://9to5toys.com/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: cnet_deals
+    method: rss
+    url: https://www.cnet.com/rss/deals/
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: tomsguide_deals
+    method: rss
+    url: https://www.tomsguide.com/feeds/all
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "US edition; deal items filtered by category/keywords in the adapter."
+
+  # ---- Reddit (official OAuth API, registered app, required UA format, <=100 req/min) ----
+  - name: reddit_deals
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/deals/new
+    region: US
+    allowed_html: false
+    fast_lane: true
+  - name: reddit_coupons
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/coupons/new
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: reddit_frugal
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/frugal/new
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: reddit_buildapcsales
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/buildapcsales/new
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: reddit_gamedeals
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/GameDeals/new
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: reddit_frugalfemalefashion
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/FrugalFemaleFashion/new
+    region: US
+    allowed_html: false
+    fast_lane: false
+
+  # ---- Telegram public channels (MTProto client API via Telethon; NOT the Bot API) ----
+  - name: telegram_channels
+    method: api
+    adapter: telegram
+    url: mtproto://channels   # channel usernames live in config.yaml -> telegram.channels
+    region: US
+    allowed_html: false
+    fast_lane: true           # fast lane reads only the first configured channel
+    notes: "Requires TELEGRAM_API_ID/TELEGRAM_API_HASH/TELEGRAM_SESSION secrets and config.telegram.channels."
+
+  # ---- gated / stubbed connectors ----
+  - name: threads_search
+    method: api
+    adapter: threads
+    url: https://graph.threads.net/v1.0/keyword_search
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false            # behind feature_flags.threads — off until app review passes
+  - name: instagram_hashtags
+    method: api
+    adapter: instagram
+    url: https://graph.facebook.com/v21.0/ig_hashtag_search
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false            # stubbed, off by default
+
+# Replacement pool used by first-run validation to keep >=30 active sources.
+backup_sources:
+  - name: dealspotr
+    method: rss
+    url: https://dealspotr.com/feed
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: daily_steals
+    method: rss
+    url: https://www.dailysteals.com/blogs/news.atom
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: tanga
+    method: rss
+    url: https://www.tanga.com/deals.rss
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: 1sale
+    method: rss
+    url: https://www.1sale.com/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: mojo_savings
+    method: rss
+    url: https://www.mojosavings.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: common_sense_with_money
+    method: rss
+    url: https://www.commonsensewithmoney.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: frugal_living_nw
+    method: rss
+    url: https://www.frugallivingnw.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: saving_dollars_and_sense
+    method: rss
+    url: https://savingdollarsandsense.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: consumer_queen
+    method: rss
+    url: https://consumerqueen.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: reddit_flipping
+    method: api
+    adapter: reddit
+    url: https://oauth.reddit.com/r/Flipping/new
+    region: US
+    allowed_html: false
+    fast_lane: false

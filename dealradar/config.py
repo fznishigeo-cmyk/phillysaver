@@ -1,0 +1,180 @@
+"""Configuration loading: config.yaml + sources.yaml + env-only secrets."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from .models import SourceConfig
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# Secret names (environment variables only; never read from files, never committed).
+SECRET_NAMES = [
+    "DEALS_CLAUDE_API_KEY",
+    "REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT",
+    "TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION",
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_ADMIN_CHAT_ID",
+    "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
+    "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
+]
+
+
+def get_secret(name: str) -> str:
+    """Read a secret from the environment. Empty string when unset."""
+    return os.environ.get(name, "").strip()
+
+
+@dataclass
+class AppConfig:
+    """Typed view over config.yaml. `raw` keeps the full parsed document."""
+
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    # -- identity / politeness --
+    contact_email: str = "set-me@example.com"
+    user_agent: str = "dealradar/0.1"
+    timezone: str = "America/New_York"
+
+    # -- fetch --
+    request_timeout_s: float = 20.0
+    per_source_budget_s: float = 90.0
+    run_budget_s: float = 480.0
+    min_host_interval_s: float = 1.0
+    max_retries: int = 3
+    circuit_breaker_failures: int = 3
+    circuit_breaker_cooldown_h: float = 6.0
+    redirect_max_hops: int = 5
+
+    # -- parse --
+    max_posts_per_run: int = 400
+    max_chars_per_post: int = 6000
+    spend_cap_usd_per_run: float = 0.50
+    retries_on_invalid_json: int = 2
+    model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    # -- publish / ranking --
+    min_pct: float = 70.0
+    min_abs_savings: float = 5.0
+    site_dir: str = "site"
+    ftc_disclosure: str = ""
+    tier_boost: dict[str, float] = field(default_factory=dict)
+    abs_savings_weight: float = 0.1
+    condition_penalty: float = 2.0
+    age_penalty_per_hour: float = 0.2
+
+    # -- verify / dedupe --
+    corroborate_window_h: float = 24.0
+    history_min_observations: int = 5
+    fuzzy_threshold: float = 0.90
+
+    # -- telegram / digest / alerting --
+    telegram_channels: list[str] = field(default_factory=list)
+    telegram_messages_per_minute: int = 15
+    resend_price_drop_pct: float = 10.0
+    telegram_dry_run: bool = False
+    digest_hour_local: int = 8
+    digest_timezone: str = "America/New_York"
+    digest_recipient: str = ""
+    min_items_ratio: float = 0.5
+    tripped_sources_warn: int = 5
+
+    # -- retention / flags --
+    posts_seen_days: int = 30
+    deals_days: int = 14
+    feature_flags: dict[str, bool] = field(default_factory=dict)
+
+    def resolved_user_agent(self) -> str:
+        return self.user_agent.replace("{contact_email}", self.contact_email)
+
+
+def load_config(path: str | Path | None = None) -> AppConfig:
+    path = Path(path) if path else ROOT / "config.yaml"
+    raw = yaml.safe_load(path.read_text()) or {}
+
+    def g(*keys: str, default: Any = None) -> Any:
+        cur: Any = raw
+        for k in keys:
+            if not isinstance(cur, dict) or k not in cur:
+                return default
+            cur = cur[k]
+        return cur
+
+    cfg = AppConfig(raw=raw)
+    cfg.contact_email = g("contact_email", default=cfg.contact_email)
+    cfg.user_agent = g("user_agent", default=cfg.user_agent)
+    cfg.timezone = g("timezone", default=cfg.timezone)
+
+    cfg.request_timeout_s = float(g("fetch", "request_timeout_s", default=cfg.request_timeout_s))
+    cfg.per_source_budget_s = float(g("fetch", "per_source_budget_s", default=cfg.per_source_budget_s))
+    cfg.run_budget_s = float(g("fetch", "run_budget_s", default=cfg.run_budget_s))
+    cfg.min_host_interval_s = float(g("fetch", "min_host_interval_s", default=cfg.min_host_interval_s))
+    cfg.max_retries = int(g("fetch", "max_retries", default=cfg.max_retries))
+    cfg.circuit_breaker_failures = int(g("fetch", "circuit_breaker_failures", default=cfg.circuit_breaker_failures))
+    cfg.circuit_breaker_cooldown_h = float(g("fetch", "circuit_breaker_cooldown_h", default=cfg.circuit_breaker_cooldown_h))
+    cfg.redirect_max_hops = int(g("fetch", "redirect_max_hops", default=cfg.redirect_max_hops))
+
+    cfg.max_posts_per_run = int(g("parse", "max_posts_per_run", default=cfg.max_posts_per_run))
+    cfg.max_chars_per_post = int(g("parse", "max_chars_per_post", default=cfg.max_chars_per_post))
+    cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))
+    cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
+    cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
+
+    cfg.min_pct = float(g("publish", "min_pct", default=cfg.min_pct))
+    cfg.min_abs_savings = float(g("publish", "min_abs_savings", default=cfg.min_abs_savings))
+    cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
+
+    cfg.tier_boost = g("ranking", "tier_boost", default={}) or {}
+    cfg.abs_savings_weight = float(g("ranking", "abs_savings_weight", default=cfg.abs_savings_weight))
+    cfg.condition_penalty = float(g("ranking", "condition_penalty", default=cfg.condition_penalty))
+    cfg.age_penalty_per_hour = float(g("ranking", "age_penalty_per_hour", default=cfg.age_penalty_per_hour))
+
+    cfg.corroborate_window_h = float(g("verify", "corroborate_window_h", default=cfg.corroborate_window_h))
+    cfg.history_min_observations = int(g("verify", "history_min_observations", default=cfg.history_min_observations))
+    cfg.fuzzy_threshold = float(g("dedupe", "fuzzy_threshold", default=cfg.fuzzy_threshold))
+
+    cfg.telegram_channels = g("telegram", "channels", default=[]) or []
+    cfg.telegram_messages_per_minute = int(g("telegram", "messages_per_minute", default=cfg.telegram_messages_per_minute))
+    cfg.resend_price_drop_pct = float(g("telegram", "resend_price_drop_pct", default=cfg.resend_price_drop_pct))
+    cfg.telegram_dry_run = bool(g("telegram", "dry_run", default=cfg.telegram_dry_run))
+
+    cfg.digest_hour_local = int(g("digest", "hour_local", default=cfg.digest_hour_local))
+    cfg.digest_timezone = g("digest", "timezone", default=cfg.digest_timezone)
+    cfg.digest_recipient = g("digest", "recipient", default="") or ""
+
+    cfg.min_items_ratio = float(g("alerting", "min_items_ratio", default=cfg.min_items_ratio))
+    cfg.tripped_sources_warn = int(g("alerting", "tripped_sources_warn", default=cfg.tripped_sources_warn))
+
+    cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
+    cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))
+    cfg.feature_flags = g("feature_flags", default={}) or {}
+    return cfg
+
+
+def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
+    return SourceConfig(
+        name=str(d["name"]),
+        method=str(d["method"]),
+        url=str(d["url"]),
+        region=str(d.get("region", "US")),
+        allowed_html=bool(d.get("allowed_html", False)),
+        fast_lane=bool(d.get("fast_lane", False)),
+        adapter=str(d.get("adapter", "")),
+        enabled=bool(d.get("enabled", True)),
+        tz=str(d.get("tz", "America/New_York")),
+        notes=str(d.get("notes", "")),
+    )
+
+
+def load_sources(path: str | Path | None = None) -> tuple[list[SourceConfig], list[SourceConfig]]:
+    """Return (primary_sources, backup_sources) from sources.yaml."""
+    path = Path(path) if path else ROOT / "sources.yaml"
+    raw = yaml.safe_load(path.read_text()) or {}
+    primary = [_source_from_dict(d) for d in raw.get("sources", [])]
+    backup = [_source_from_dict(d) for d in raw.get("backup_sources", [])]
+    return primary, backup

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+  <title>Deal Blog One</title>
+  <link>https://blogone.example/</link>
+  <description>Test fixture feed</description>
+  <item>
+    <title>Ninja Foodi 8-qt Air Fryer only $29.99 (reg. $129.99) shipped!</title>
+    <link>https://blogone.example/ninja-foodi-air-fryer-deal/</link>
+    <guid>https://blogone.example/?p=1001</guid>
+    <pubDate>Thu, 09 Oct 2026 12:05:00 +0000</pubDate>
+    <content:encoded><![CDATA[<p>Today only at Acme Kitchen online you can grab the <strong>Ninja Foodi 8-qt Air Fryer</strong> for just $29.99 (regularly $129.99) with free shipping on orders over $25. Use promo code <b>FRYDAY</b> at checkout. Online only &mdash; ships free. <a href="https://go.redirector.example/r/airfryer">See the deal here</a>. Ends today!</p>]]></content:encoded>
+  </item>
+  <item>
+    <title>HUGE roundup: kitchen steals up to 80% off</title>
+    <link>https://blogone.example/kitchen-roundup/</link>
+    <guid>https://blogone.example/?p=1002</guid>
+    <pubDate>Thu, 09 Oct 2026 11:40:00 +0000</pubDate>
+    <content:encoded><![CDATA[<p>Two favorites this morning, both online:</p><ul><li>Acme Kitchen: Chef Pro Knife Set, $150 value for $27.50 with code CHOP. Online only, ships free.</li><li>Acme Kitchen: Copper Pan Duo now $44.99, was $59.99, free shipping. Online only.</li></ul>]]></content:encoded>
+  </item>
+  <item>
+    <title>Clearance aisle find: patio set 90% off YMMV</title>
+    <link>https://blogone.example/patio-clearance/</link>
+    <guid>https://blogone.example/?p=1003</guid>
+    <pubDate>Thu, 09 Oct 2026 10:20:00 +0000</pubDate>
+    <content:encoded><![CDATA[<p>My store had the Garden Oasis patio set ringing up at $49.97 from $499.99 in the clearance aisle &mdash; YMMV, in-store only, check your local shelf tags!</p>]]></content:encoded>
+  </item>
+</channel>
+</rss>
