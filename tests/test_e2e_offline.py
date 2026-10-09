@@ -180,11 +180,11 @@ def test_offline_end_to_end(env, capsys):
     assert len(deals_json["deals"]) == 3
     by_item = {d["item"]: d for d in deals_json["deals"]}
     fryer = next(d for i, d in by_item.items() if "Ninja Foodi" in i)
-    assert fryer["verify_tier"] == "corroborated"  # two independent sources in 24 h
-    assert len(fryer["sightings"]) == 2
+    assert fryer["badge"] == "corroborated"  # two independent sources in 24 h
+    assert len(fryer["credits"]) == 2
     # canonical retailer URL resolved through the redirector, tracking params stripped
-    assert "acmekitchen.example" in fryer["canonical_url"]
-    assert "utm" not in fryer["canonical_url"]
+    assert "acmekitchen.example" in fryer["url"]
+    assert "utm" not in fryer["url"]
 
     headphones = next(d for i, d in by_item.items() if "X200" in i)
     assert "range" in headphones["flags"]

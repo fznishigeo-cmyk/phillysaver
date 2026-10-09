@@ -341,7 +341,7 @@ class DB:
     def last_alert(self, deal_key: str, channel: str) -> dict[str, Any] | None:
         row = self.conn.execute(
             "SELECT * FROM alerts_sent WHERE deal_key=? AND channel=?"
-            " ORDER BY sent_at DESC LIMIT 1", (deal_key, channel),
+            " ORDER BY sent_at DESC, id DESC LIMIT 1", (deal_key, channel),
         ).fetchone()
         return dict(row) if row else None
 
@@ -372,7 +372,7 @@ class DB:
                 " ON CONFLICT(source_name) DO UPDATE SET last_success_at=excluded.last_success_at,"
                 " last_error='', consecutive_failures=0, tripped_until=NULL,"
                 " items_last_run=excluded.items_last_run, updated_at=excluded.updated_at",
-                (source_name, iso(now), items, iso(now)),
+                (source_name, iso(now), "", items, iso(now)),
             )
         else:
             failures += 1

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dealradar</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#ffffff; --fg:#191c1f; --muted:#5f6670; --line:#e3e6ea; --chip:#eef1f4;
+  --head:#f6f8fa; --link:#0b63c4; --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280; --dead:#b42318;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#101418; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a; --chip:#1e242c;
+         --head:#171d24; --link:#6cb1ff; --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b; }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:14px;background:var(--bg);color:var(--fg);
+     font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
+a{color:var(--link)}
+h1{font-size:20px;margin:0 0 4px}
+.meta{color:var(--muted);font-size:13px;margin:2px 0}
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+#controls input[type=search]{flex:1 1 180px;min-width:140px}
+#controls input,#controls select{background:var(--bg);color:var(--fg);
+  border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+#controls input[type=number]{width:70px}
+#controls label{font-size:13px;color:var(--muted);display:flex;gap:4px;align-items:center}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--head);user-select:none;white-space:nowrap;position:sticky;top:0}
+th.sortable{cursor:pointer}
+th .arrow{color:var(--muted);font-size:11px}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:12px;font-weight:600;
+       border:1px solid currentColor;white-space:nowrap}
+.tier-corroborated{color:var(--good)}
+.tier-history-checked{color:var(--hist)}
+.tier-unverified{color:var(--unv)}
+.pct{font-weight:700}
+.chip{display:inline-block;background:var(--chip);border-radius:6px;padding:1px 6px;
+      font-size:12px;margin:1px 2px 1px 0;color:var(--muted)}
+.dead{color:var(--dead);font-weight:600}
+.alive{color:var(--good)}
+s{color:var(--muted)}
+.credit{font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+@media (max-width:640px){ body{padding:10px} th,td{padding:6px 5px;font-size:13px} }
+</style>
+</head>
+<body>
+<h1>dealradar</h1>
+<p id="metaline" class="meta">Loading&hellip;</p>
+<p class="meta"><a href="health.html">source health</a></p>
+<div id="controls">
+  <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
+  <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
+  <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
+  <label><input id="hideunv" type="checkbox"> hide unverified</label>
+</div>
+<div id="content"><p class="empty">Loading&hellip;</p></div>
+<script>
+"use strict";
+(function () {
+  var state = { deals: [], meta: {}, sortKey: "pct", sortDir: -1 };
+  var COLS = [
+    { key: "item",   label: "Item",       sortable: false },
+    { key: "price",  label: "Price",      sortable: true  },
+    { key: "pct",    label: "% off",      sortable: true  },
+    { key: "abs",    label: "$ saved",    sortable: true  },
+    { key: "tier",   label: "Verified",   sortable: false },
+    { key: "cond",   label: "Conditions", sortable: false },
+    { key: "store",  label: "Store",      sortable: true  },
+    { key: "age",    label: "Age",        sortable: true  },
+    { key: "status", label: "Status",     sortable: false },
+    { key: "credit", label: "Source",     sortable: false }
+  ];
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function num(v) { var n = Number(v); return (v == null || isNaN(n)) ? null : n; }
+  function sortVal(d, key) {
+    switch (key) {
+      case "pct":   return num(d.pct_at_checkout);
+      case "abs":   return num(d.abs_savings);
+      case "price": return num(d.final_price);
+      case "store": return (d.store || "").toLowerCase();
+      case "age":   return num(d.age_hours);
+    }
+    return null;
+  }
+
+  function renderMeta() {
+    // Meta line is driven entirely by deals.json: the FTC disclosure text
+    // comes from meta.disclosure verbatim, never hardcoded in this template.
+    var m = state.meta || {};
+    var lr = m.last_run || {};
+    var t = lr.finished_at || lr.started_at || m.generated_at || "";
+    document.getElementById("metaline").textContent =
+      "Last run: " + t + " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
+  }
+
+  function populateStores() {
+    var sel = document.getElementById("storesel");
+    var seen = {};
+    state.deals.forEach(function (d) {
+      var s = d.store || "";
+      if (s && !seen[s]) {
+        seen[s] = true;
+        var opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = s;
+        sel.appendChild(opt);
+      }
+    });
+  }
+
+  function filtered() {
+    var q = document.getElementById("q").value.trim().toLowerCase();
+    var store = document.getElementById("storesel").value;
+    var minpct = Number(document.getElementById("minpct").value) || 0;
+    var hideunv = document.getElementById("hideunv").checked;
+    return state.deals.filter(function (d) {
+      if (q) {
+        var hay = ((d.item || "") + " " + (d.brand || "") + " " + (d.store || "")).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      if (store && d.store !== store) return false;
+      if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
+      if (hideunv && (d.badge || "unverified") === "unverified") return false;
+      return true;
+    });
+  }
+
+  function cmp(a, b) {
+    var ka = sortVal(a, state.sortKey), kb = sortVal(b, state.sortKey);
+    if (ka == null && kb == null) return 0;
+    if (ka == null) return 1;           // nulls last either direction
+    if (kb == null) return -1;
+    if (ka < kb) return -1 * state.sortDir;
+    if (ka > kb) return 1 * state.sortDir;
+    return 0;
+  }
+
+  function rowHtml(d) {
+    var url = d.url || "";
+    var item = url
+      ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
+      : esc(d.item);
+    var price = d.final_price != null ? "$" + Number(d.final_price).toFixed(2) : "—";
+    if (d.regular_price != null) {
+      price += ' <s>$' + Number(d.regular_price).toFixed(2) + "</s>";
+    }
+    var pct = d.pct_at_checkout != null
+      ? '<span class="pct">' + Math.round(d.pct_at_checkout) + "%</span>" : "—";
+    var abs = d.abs_savings != null ? "$" + Number(d.abs_savings).toFixed(2) : "—";
+    var tier = esc(d.badge || "unverified");
+    var tierHtml = '<span class="badge tier-' + tier + '">' + tier + "</span>";
+    var conds = (d.conditions || []).map(function (c) {
+      return '<span class="chip">' + esc(c) + "</span>";
+    }).join("") || "—";
+    var age = d.age_hours != null ? Number(d.age_hours).toFixed(1) + " h" : "—";
+    var alive = d.status !== "dead";
+    var statusHtml = alive
+      ? '<span class="alive">&#9679; alive</span>'
+      : '<span class="dead">&#10007; dead</span>';
+    // Source credit is required on every row.
+    var credits = (d.credits || []).map(function (c) {
+      return 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
+    }).join(", ");
+    return "<tr>" +
+      "<td>" + item + "</td>" +
+      "<td>" + price + "</td>" +
+      "<td>" + pct + "</td>" +
+      "<td>" + abs + "</td>" +
+      "<td>" + tierHtml + "</td>" +
+      "<td>" + conds + "</td>" +
+      "<td>" + esc(d.store) + "</td>" +
+      "<td>" + age + "</td>" +
+      "<td>" + statusHtml + "</td>" +
+      '<td class="credit">' + credits + "</td>" +
+      "</tr>";
+  }
+
+  function render() {
+    var content = document.getElementById("content");
+    if (!state.deals.length) {
+      content.innerHTML = '<p class="empty">No qualifying deals this hour</p>';
+      return;
+    }
+    var rows = filtered().sort(cmp);
+    if (!rows.length) {
+      content.innerHTML = '<p class="empty">No deals match the current filters</p>';
+      return;
+    }
+    var head = COLS.map(function (c) {
+      var arrow = "";
+      if (c.key === state.sortKey) {
+        arrow = ' <span class="arrow">' + (state.sortDir < 0 ? "▼" : "▲") + "</span>";
+      }
+      return '<th data-key="' + c.key + '"' + (c.sortable ? ' class="sortable"' : "") + ">" +
+        esc(c.label) + arrow + "</th>";
+    }).join("");
+    content.innerHTML = '<div class="tablewrap"><table><thead><tr>' + head +
+      "</tr></thead><tbody>" + rows.map(rowHtml).join("") + "</tbody></table></div>";
+    content.querySelectorAll("th.sortable").forEach(function (th) {
+      th.addEventListener("click", function () {
+        var key = th.getAttribute("data-key");
+        if (state.sortKey === key) {
+          state.sortDir = -state.sortDir;
+        } else {
+          state.sortKey = key;
+          state.sortDir = key === "store" ? 1 : -1;
+        }
+        render();
+      });
+    });
+  }
+
+  ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener("input", render);
+    el.addEventListener("change", render);
+  });
+
+  fetch("deals.json")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      state.meta = (data && data.meta) || {};
+      state.deals = (data && data.deals) || [];
+      populateStores();
+      renderMeta();
+      render();
+    })
+    .catch(function () {
+      document.getElementById("content").innerHTML =
+        '<p class="empty">Could not load deals.json</p>';
+    });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+# Fast lane: every 15 minutes, fetch only the fast_lane sources.
+# Shares the `dealradar` concurrency group with hourly.yml (cancel-in-progress
+# false) so the two never overlap — they queue behind each other instead.
+# No Pages deploy here: the hourly workflow refreshes the published site.
+name: dealradar fast lane
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: dealradar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    name: fast-lane run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        run: pip install -e .
+
+      - name: Restore state from data branch
+        run: |
+          git fetch origin data || true
+          git checkout origin/data -- state.db 2>/dev/null || echo 'no prior state'
+
+      - name: Run pipeline (fast lane)
+        env:
+          DEALS_CLAUDE_API_KEY: ${{ secrets.DEALS_CLAUDE_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_USER_AGENT: ${{ secrets.REDDIT_USER_AGENT }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          WOOT_API_KEY: ${{ secrets.WOOT_API_KEY }}
+          MEH_API_KEY: ${{ secrets.MEH_API_KEY }}
+          KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
+          THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
+        run: python -m dealradar run --fast-lane
+
+      - name: Commit state to data branch
+        run: bash scripts/commit_state.sh

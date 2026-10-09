@@ -1,0 +1,252 @@
+"""First-run source validation.
+
+Checks every configured source for liveness (feeds are fetched + parsed; API
+sources are checked for required secrets only — no network), repairs moved
+feeds via autodiscovery, promotes backup sources until the active set reaches
+TARGET_ACTIVE, writes a human-readable sources_report.md, and persists the
+resulting effective source list in the DB meta table.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import logging
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import feedparser
+
+from ..config import AppConfig, get_secret
+from ..models import SourceConfig
+from .autodiscovery import discover_feed, site_root
+
+log = logging.getLogger("dealradar.validate")
+
+#: Validation promotes backups until this many sources are active.
+TARGET_ACTIVE = 30
+
+META_KEY = "effective_sources"
+
+#: Required secrets per API adapter (telegram additionally needs configured channels).
+ADAPTER_SECRETS: dict[str, list[str]] = {
+    "reddit": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
+    "woot": ["WOOT_API_KEY"],
+    "meh": ["MEH_API_KEY"],
+    "telegram": ["TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION"],
+    "threads": ["THREADS_TOKEN"],
+}
+
+ACTIVE_STATUSES = ("live", "live_updated_url", "promoted_backup")
+
+
+def _feed_ok(body: bytes) -> bool:
+    """True when `body` parses as a feed we can use."""
+    feed = feedparser.parse(body)
+    if len(feed.entries) >= 1:
+        return True
+    return bool(not feed.bozo and feed.get("version"))
+
+
+def _validate_feed_source(
+    source: SourceConfig, fetcher: Any
+) -> tuple[str, str, SourceConfig | None]:
+    """(status, detail, active_config|None) for an rss/html source."""
+    res = fetcher.get(source.url, conditional=False)
+    if res.blocked_by_robots:
+        reason = "blocked_by_robots"
+    elif res.status != 200 or not res.body:
+        reason = f"http_{res.status}" + (f" {res.error}" if res.error else "")
+    elif not _feed_ok(res.body):
+        reason = "not_a_feed"
+    else:
+        return "live", source.url, source
+
+    new_url = discover_feed(fetcher, site_root(source.url))
+    if new_url:
+        updated = dataclasses.replace(source, url=new_url)
+        return (
+            "live_updated_url",
+            f"{reason}; feed moved: {source.url} -> {new_url}",
+            updated,
+        )
+    return "dead", f"{reason}; autodiscovery found no feed", None
+
+
+def _validate_api_source(source: SourceConfig, cfg: AppConfig) -> tuple[str, str]:
+    """(status, detail) for an API source. Never touches the network."""
+    adapter = source.adapter
+    if adapter == "instagram":
+        return "disabled", "instagram adapter is stubbed"
+    if adapter == "threads" and not cfg.feature_flags.get("threads", False):
+        return "disabled", "feature_flags.threads is off"
+    required = ADAPTER_SECRETS.get(adapter)
+    if required is None:
+        return "needs_key", f"unknown adapter '{adapter}'"
+    missing = [name for name in required if not get_secret(name)]
+    if missing:
+        return "needs_key", "missing " + ", ".join(missing)
+    if adapter == "telegram" and not cfg.telegram_channels:
+        return "needs_key", "no telegram.channels configured"
+    return "live", "configured"
+
+
+def _validate_one(
+    source: SourceConfig, fetcher: Any, cfg: AppConfig
+) -> tuple[str, str, SourceConfig | None]:
+    """(status, detail, active_config|None) for any source."""
+    if not source.enabled:
+        return "disabled", "disabled in sources.yaml", None
+    if source.method in ("rss", "html"):
+        return _validate_feed_source(source, fetcher)
+    if source.method == "api":
+        status, detail = _validate_api_source(source, cfg)
+        return status, detail, source if status == "live" else None
+    return "dead", f"unknown method '{source.method}'", None
+
+
+def validate_sources(
+    primary: list[SourceConfig],
+    backups: list[SourceConfig],
+    fetcher: Any,
+    db: Any,
+    cfg: AppConfig,
+    now: datetime,
+) -> dict[str, Any]:
+    """Validate all primary sources, then promote backups until TARGET_ACTIVE."""
+    rows: list[dict[str, str]] = []
+    active: list[SourceConfig] = []
+
+    for source in primary:
+        status, detail, active_cfg = _validate_one(source, fetcher, cfg)
+        rows.append(
+            {
+                "name": source.name,
+                "method": source.method,
+                "url": source.url,
+                "status": status,
+                "detail": detail,
+                "replaced_by": "",
+            }
+        )
+        if active_cfg is not None:
+            active.append(active_cfg)
+        log.info("validate %s: %s (%s)", source.name, status, detail)
+
+    # Primary rows that a promoted backup can stand in for, worst first.
+    replaceable = [r for r in rows if r["status"] == "dead"] + [
+        r for r in rows if r["status"] == "needs_key"
+    ]
+
+    for backup in backups:
+        if len(active) >= TARGET_ACTIVE:
+            break
+        status, detail, active_cfg = _validate_one(backup, fetcher, cfg)
+        if active_cfg is not None:
+            status = "promoted_backup"
+            active.append(active_cfg)
+            if replaceable:
+                replaceable.pop(0)["replaced_by"] = backup.name
+        rows.append(
+            {
+                "name": backup.name,
+                "method": backup.method,
+                "url": backup.url,
+                "status": status,
+                "detail": detail,
+                "replaced_by": "",
+            }
+        )
+        log.info("validate backup %s: %s (%s)", backup.name, status, detail)
+
+    counts = dict(Counter(row["status"] for row in rows))
+    return {
+        "active": active,
+        "rows": rows,
+        "counts": counts,
+        "active_count": len(active),
+    }
+
+
+def _cell(value: str) -> str:
+    """Escape a value for a one-line markdown table cell."""
+    return value.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def write_report(
+    result: dict[str, Any],
+    cfg: AppConfig,
+    now: datetime,
+    path: str = "sources_report.md",
+) -> None:
+    """Render the validation result as sources_report.md (facts only, no post text)."""
+    rows = result["rows"]
+    counts = result["counts"]
+    active_count = result["active_count"]
+    ts = now.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+    lines: list[str] = []
+    lines.append("# dealradar sources report")
+    lines.append("")
+    lines.append(f"Generated: {ts} (UTC)")
+    lines.append("")
+    lines.append("## Summary")
+    lines.append("")
+    lines.append(f"- Active sources: {active_count}")
+    for status in sorted(counts):
+        lines.append(f"- {status}: {counts[status]}")
+    if active_count < TARGET_ACTIVE:
+        lines.append("")
+        lines.append(
+            f"**Note:** only {active_count} active sources; target is "
+            f"{TARGET_ACTIVE} and the backup pool is exhausted."
+        )
+    lines.append("")
+    lines.append("## Sources")
+    lines.append("")
+    lines.append("| name | method | status | detail/url |")
+    lines.append("| --- | --- | --- | --- |")
+    for row in rows:
+        detail = row["detail"] or row["url"]
+        if row.get("replaced_by"):
+            detail = f"{detail} (replaced by {row['replaced_by']})"
+        lines.append(
+            f"| {_cell(row['name'])} | {_cell(row['method'])} "
+            f"| {_cell(row['status'])} | {_cell(detail)} |"
+        )
+
+    promoted = [r for r in rows if r["status"] == "promoted_backup"]
+    dropped = [r for r in rows if r["status"] == "dead"]
+    lines.append("")
+    lines.append("## Promoted backups")
+    lines.append("")
+    if promoted:
+        lines.extend(f"- {r['name']} ({_cell(r['url'])})" for r in promoted)
+    else:
+        lines.append("None.")
+    lines.append("")
+    lines.append("## Dropped sources")
+    lines.append("")
+    if dropped:
+        lines.extend(f"- {r['name']}: {_cell(r['detail'])}" for r in dropped)
+    else:
+        lines.append("None.")
+    lines.append("")
+
+    Path(path).write_text("\n".join(lines), encoding="utf-8")
+    log.info("wrote %s (%d rows, %d active)", path, len(rows), active_count)
+
+
+def save_effective_sources(db: Any, sources: list[SourceConfig]) -> None:
+    """Persist the post-validation source list for later runs."""
+    db.meta_set(META_KEY, json.dumps([dataclasses.asdict(s) for s in sources]))
+
+
+def effective_sources(db: Any) -> list[SourceConfig] | None:
+    """The persisted post-validation source list; None when never validated."""
+    raw = db.meta_get(META_KEY)
+    if raw is None:
+        return None
+    return [SourceConfig(**d) for d in json.loads(raw)]

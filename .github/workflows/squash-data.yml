@@ -1,0 +1,41 @@
+# Monthly maintenance: the data branch gains ~720+ commits a month (one per
+# run). This squashes it to a single orphan commit holding the current tree so
+# the repository stays small. Touches ONLY the data branch — never main.
+name: squash data branch
+
+on:
+  schedule:
+    - cron: '17 3 1 * *'  # 03:17 UTC on the 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  squash:
+    name: squash data branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Squash data branch to a single commit
+        run: |
+          set -euo pipefail
+          git fetch origin data || true
+          if ! git rev-parse --verify --quiet origin/data >/dev/null; then
+            echo 'no data branch yet - nothing to squash'
+            exit 0
+          fi
+          git config user.name 'dealradar-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          # Detach at the data tip, then re-root the exact same tree as a
+          # single orphan commit and force-push it back to data.
+          git checkout --detach origin/data
+          git checkout --orphan data-squashed
+          git add -A
+          git commit -m 'squash data branch (monthly)'
+          git push --force origin HEAD:data

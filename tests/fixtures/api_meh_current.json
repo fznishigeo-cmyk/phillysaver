@@ -1,0 +1,15 @@
+{
+  "deal": {
+    "id": "deal-789",
+    "title": "Fancy Gadget 2-Pack",
+    "url": "https://meh.com/deals/fancy-gadget-2-pack",
+    "items": [
+      { "id": "item-1", "condition": "New", "price": 19.0 },
+      { "id": "item-2", "condition": "New", "price": 19.0 }
+    ],
+    "story": {
+      "title": "Why though",
+      "body": "Look, a **great** [gadget](https://example.com/g) for cheap.\n# Buy it."
+    }
+  }
+}

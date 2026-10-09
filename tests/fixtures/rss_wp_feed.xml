@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Example Deals Blog</title>
+    <link>https://blog.example</link>
+    <description>Deals, coupons and freebies</description>
+    <item>
+      <title>Instant Pot Duo 7-in-1 just $49.99 (Reg. $99.99)</title>
+      <link>https://blog.example/p1</link>
+      <guid isPermaLink="false">https://blog.example/?p=101</guid>
+      <pubDate>Thu, 08 Oct 2026 12:30:00 GMT</pubDate>
+      <dc:creator>editor</dc:creator>
+      <description>Instant Pot deal summary.</description>
+      <content:encoded><![CDATA[<p>Hurry over to Example Store where the <b>Instant Pot Duo 7-in-1</b> is just <strong>$49.99</strong> (regularly $99.99) &#8212; that is 50% off! Shipping is free on orders over $35. This popular 6-quart pressure cooker works as a slow cooker, rice cooker, steamer, saut&#233; pan, yogurt maker and warmer. Stack it with code <code>KITCHEN10</code> for an extra 10% off at checkout. Price and availability can change at any time, so grab it while you can. This full post body is intentionally long enough that the adapter treats it as complete content and never tries to enrich it from the article page, which keeps the politeness budget for feeds that actually need it.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Future-dated flash deal</title>
+      <link>https://blog.example/p2</link>
+      <guid isPermaLink="false">https://blog.example/?p=102</guid>
+      <pubDate>Fri, 01 Jan 2100 00:00:00 GMT</pubDate>
+      <description>Future deal summary.</description>
+      <content:encoded><![CDATA[<p>This entry carries a bogus future publication date and the defensive date parser must clamp it to the current run time instead of trusting the feed. The body also pads itself out past the summary-only threshold so that no enrichment is ever attempted for it: lorem deals ipsum savings dolor coupon sit amet rebate consectetur clearance adipiscing stack elit codes sed do eiusmod tempor promo incididunt ut labore et dolore magna discount aliqua ut enim ad minim veniam quis nostrud exercitation markdown ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure deal in reprehenderit in voluptate velit esse cillum bargain eu fugiat nulla pariatur.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>No guid and no date deal</title>
+      <link>https://blog.example/p3</link>
+      <description>An entry with neither guid nor pubDate; uid falls back to the link and published_at stays unset. The description is otherwise unremarkable but long enough not to matter for any enrichment heuristics in tests that disable allowed_html anyway.</description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,105 @@
+"""Verification tiers and liveness.
+
+Tiers (best to worst):
+- 'corroborated'   — seen from >= 2 distinct sources within the corroboration
+                     window (cfg.corroborate_window_h).
+- 'history-checked'— our OWN price_history for this dedupe_key (grown from
+                     every parsed deal since day one) has at least
+                     cfg.history_min_observations points and the current final
+                     price is at least 70% below our observed median
+                     (final <= 0.30 * median).
+- 'unverified'     — single source / list-price claim. Still published, but
+                     visibly flagged and ranked lower.
+
+Verification NEVER fetches retailer pages: it relies only on corroboration
+across sources and our own accumulated price history. The optional Keepa
+adapter (paid API, feature-flagged, off by default) is the only sanctioned
+external check and is a deliberate stub below.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime, timedelta
+from typing import Any
+
+from .config import get_secret
+from .util import parse_iso
+
+log = logging.getLogger("dealradar.verify")
+
+_DEAD_RE = re.compile(
+    r"\b(expired|dead|sold\s+out|out\s+of\s+stock|oos)\b", re.IGNORECASE)
+
+
+def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
+    """Compute the verification tier for one deal row dict."""
+    since = now - timedelta(hours=cfg.corroborate_window_h)
+    if db.distinct_sources_within(deal["id"], since) >= 2:
+        return "corroborated"
+
+    final = deal.get("final_price")
+    count, median = db.price_stats(deal["dedupe_key"])
+    if (final is not None and median is not None
+            and count >= cfg.history_min_observations
+            and final <= 0.30 * median):
+        return "history-checked"
+
+    return "unverified"
+
+
+def refresh_tiers(db, cfg, now: datetime) -> None:
+    """Recompute and persist verify_tier for every alive deal."""
+    for deal in db.all_deals(status="alive"):
+        tier = assign_tier(db, deal, cfg, now)
+        if tier != deal.get("verify_tier"):
+            log.info("deal %s tier %s -> %s", deal["dedupe_key"],
+                     deal.get("verify_tier"), tier)
+        db.update_deal(deal["dedupe_key"], verify_tier=tier)
+
+
+def mark_expired_dead(db, cfg, now: datetime) -> int:
+    """Flip alive deals whose expires_at has passed to status 'dead'."""
+    n = 0
+    for deal in db.all_deals(status="alive"):
+        expires = deal.get("expires_at") or ""
+        if not expires:
+            continue
+        dt = parse_iso(expires)
+        if dt is not None and dt < now:
+            db.update_deal(deal["dedupe_key"], status="dead")
+            n += 1
+    if n:
+        log.info("marked %d expired deal(s) dead", n)
+    return n
+
+
+def text_marks_dead(text: str) -> bool:
+    """True when the text declares the deal over (expired / dead / sold out /
+    out of stock / OOS), matched case-insensitively on word boundaries."""
+    return bool(_DEAD_RE.search(text or ""))
+
+
+def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
+    """Optional Keepa price-history cross-check (feature-flagged stub).
+
+    Returns None (no opinion) unless cfg.feature_flags['keepa'] is on AND the
+    KEEPA_KEY secret is set. Even then this is a deliberate clean stub: the
+    real implementation would call the official paid Keepa API with the deal's
+    ASIN and compare against Keepa's price history, returning True (plausible)
+    or False (implausible).
+
+    Policy, non-negotiable:
+    - Keepa is a PAID, official API; we only ever use it with a key.
+    - NO CamelCamelCamel scraping (their ToS forbids it).
+    - Retailer product pages are never fetched to verify a price.
+    """
+    if not cfg.feature_flags.get("keepa"):
+        return None
+    if not get_secret("KEEPA_KEY"):
+        log.debug("keepa flag on but KEEPA_KEY unset; skipping")
+        return None
+    log.info("keepa adapter stubbed; no verdict for %s",
+             deal.get("dedupe_key", "?"))
+    return None

@@ -1,0 +1,44 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": "t3_link1",
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_sticky1",
+          "stickied": true,
+          "permalink": "/r/deals/comments/sticky1/weekly_sticky/",
+          "title": "Weekly sticky: read the rules",
+          "selftext": "Rules and FAQ live here.",
+          "url": "https://www.reddit.com/r/deals/comments/sticky1/weekly_sticky/",
+          "created_utc": 1759900000
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_self1",
+          "stickied": false,
+          "permalink": "/r/deals/comments/self1/anker_charger_50_off/",
+          "title": "Anker charger 50% off",
+          "selftext": "Was $39.99, now $19.99 with code SAVE50",
+          "url": "https://www.reddit.com/r/deals/comments/self1/anker_charger_50_off/",
+          "created_utc": 1759990000
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "name": "t3_link1",
+          "stickied": false,
+          "permalink": "/r/deals/comments/link1/sony_headphones_199/",
+          "title": "Sony WH-1000XM5 $199",
+          "selftext": "",
+          "url": "https://example.com/sony-deal",
+          "created_utc": 1759995000
+        }
+      }
+    ]
+  }
+}
