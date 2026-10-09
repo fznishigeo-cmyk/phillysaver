@@ -31,6 +31,50 @@ def rewrite_affiliate(url: str) -> str:
     return url
 
 
+def _headline(deal: dict[str, Any]) -> str:
+    """One plain-English sentence or two per deal, for humans skimming the page."""
+    item = deal.get("item") or "This item"
+    store = deal.get("store") or "an online store"
+    final = deal.get("final_price")
+    reg = deal.get("regular_price")
+    pct = deal.get("pct_at_checkout")
+    flags = deal.get("flags") or []
+    codes = deal.get("codes") or []
+
+    if final is None:
+        lead = f"{item} at {store}"
+    elif final <= 0.01:
+        lead = f"{item} is free (or a penny) at {store}"
+    else:
+        lead = f"{item} is ${final:,.2f} at {store}"
+    if pct is not None:
+        lead += f" — {pct:.0f}% off"
+        if reg:
+            lead += f" the usual ${reg:,.2f}"
+        elif deal.get("basis") == "list_price_claim":
+            lead += " the claimed list price"
+    parts = [lead + "."]
+    if codes:
+        parts.append(("Code " if len(codes) == 1 else "Codes ") + ", ".join(codes) + ".")
+    if "range" in flags:
+        parts.append("Price varies by option; the discount holds even at the highest price.")
+    if "rebate_dependent" in flags:
+        parts.append("Needs a rebate to reach this price.")
+    if "unknown_shipping" in flags:
+        parts.append("Shipping cost unclear — check at checkout.")
+    tier = deal.get("verify_tier", "unverified")
+    if tier == "corroborated":
+        parts.append("Confirmed by multiple independent sources.")
+    elif tier == "history-checked":
+        parts.append("Well below the usual price in our own price history.")
+    else:
+        parts.append("Reported by one source — not yet confirmed.")
+    expires = parse_iso(deal.get("expires_at") or "")
+    if expires is not None:
+        parts.append(f"Expires {expires.strftime('%b %d')}.")
+    return " ".join(parts)
+
+
 def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
@@ -67,6 +111,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "currency": deal.get("currency", "USD"),
         "expires_at": deal.get("expires_at", ""),
         "badge": deal.get("verify_tier", "unverified"),
+        "headline": _headline(deal),
         "status": status,
         "alive": status == "alive",
         "first_seen_at": deal.get("first_seen_at", ""),

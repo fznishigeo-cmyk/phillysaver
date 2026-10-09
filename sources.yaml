@@ -34,6 +34,27 @@ sources:
     region: US
     allowed_html: false
     fast_lane: false
+  - name: slickdeals_amazon
+    method: rss
+    url: "https://slickdeals.net/newsearch.php?q=amazon&searcharea=deals&searchin=first&rss=1"
+    region: US
+    allowed_html: false   # official search RSS endpoint only, never HTML
+    fast_lane: false
+    notes: "Amazon-filtered official search RSS — catches heavy Amazon promos and Lightning deals."
+  - name: hip2save_amazon
+    method: rss
+    url: https://hip2save.com/deals/amazon/feed/
+    region: US
+    allowed_html: true
+    fast_lane: true
+    notes: "Amazon category feed; Amazon promos are time-critical, so fast-laned."
+  - name: kcl_amazon
+    method: rss
+    url: https://thekrazycouponlady.com/deals/amazon/feed
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "KCL Amazon category feed; validation autodiscovers/culls if the path differs."
   - name: dealnews
     method: rss
     url: https://www.dealnews.com/rss/todays-edition.xml

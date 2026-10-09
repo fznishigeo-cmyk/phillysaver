@@ -29,6 +29,7 @@ h1{font-size:20px;margin:0 0 4px}
 .tablewrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.headline{font-size:12.5px;color:var(--muted);margin-top:3px;max-width:52ch;line-height:1.35}
 th{background:var(--head);user-select:none;white-space:nowrap;position:sticky;top:0}
 th.sortable{cursor:pointer}
 th .arrow{color:var(--muted);font-size:11px}
@@ -150,6 +151,9 @@ s{color:var(--muted)}
     var item = url
       ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
+    if (d.headline) {
+      item += '<div class="headline">' + esc(d.headline) + "</div>";
+    }
     var price = d.final_price != null ? "$" + Number(d.final_price).toFixed(2) : "—";
     if (d.regular_price != null) {
       price += ' <s>$' + Number(d.regular_price).toFixed(2) + "</s>";
