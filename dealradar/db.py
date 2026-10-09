@@ -358,7 +358,11 @@ class DB:
 
     def record_source_result(self, source_name: str, *, ok: bool, error: str,
                              items: int, now: datetime, trip_threshold: int = 3,
-                             cooldown_h: float = 6.0) -> None:
+                             cooldown_h: float = 6.0,
+                             count_failure: bool = True) -> None:
+        """Record a run result. ``count_failure=False`` records the error for
+        the health page without advancing the circuit breaker — used for
+        deterministic config states (``needs_key``) that aren't site failures."""
         row = self.conn.execute(
             "SELECT consecutive_failures FROM source_health WHERE source_name=?",
             (source_name,),
@@ -375,9 +379,13 @@ class DB:
                 (source_name, iso(now), "", items, iso(now)),
             )
         else:
-            failures += 1
+            if count_failure:
+                failures += 1
+            else:
+                failures = 0
             tripped_until = (
-                iso(now + timedelta(hours=cooldown_h)) if failures >= trip_threshold else None
+                iso(now + timedelta(hours=cooldown_h))
+                if count_failure and failures >= trip_threshold else None
             )
             self.conn.execute(
                 "INSERT INTO source_health(source_name, last_error, consecutive_failures,"

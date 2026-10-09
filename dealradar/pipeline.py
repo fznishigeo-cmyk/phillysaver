@@ -37,7 +37,7 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
                                  validate_sources, write_report)
 
     primary, backup = load_sources()
-    stored = effective_sources(db)
+    stored = effective_sources(db, now=now)  # None when missing or >24 h old
     if stored:
         return stored
     if not validate_if_missing:
@@ -46,6 +46,7 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
     result = validate_sources(primary, backup, fetcher, db, cfg, now)
     write_report(result, cfg, now)
     active = result["active"]
+    effective = result.get("effective", active)
     if len(active) < 5:
         # Validation can come up near-empty when the network is unreachable;
         # fall back to the configured list so the pipeline still functions,
@@ -53,9 +54,10 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
         log.warning("validation found only %d live sources; using configured list "
                     "without persisting (will revalidate next run)", len(active))
         return [s for s in primary if s.enabled]
-    save_effective_sources(db, active)
-    log.info("validated: %d active sources (report: sources_report.md)", len(active))
-    return active
+    save_effective_sources(db, effective, now)
+    log.info("validated: %d active + %d key-awaiting sources "
+             "(report: sources_report.md)", len(active), len(effective) - len(active))
+    return effective
 
 
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
@@ -258,7 +260,7 @@ def validate_only(*, db_path: str = "state.db", config_path: str | None = None,
         result = validate_sources(primary, backup, fetcher, db, cfg, now)
         write_report(result, cfg, now)
         if result["active"]:
-            save_effective_sources(db, result["active"])
+            save_effective_sources(db, result.get("effective", result["active"]), now)
         log.info("validated %d sources: %d active (sources_report.md written)",
                  len(result["rows"]), result["active_count"])
         return {"active_count": result["active_count"],

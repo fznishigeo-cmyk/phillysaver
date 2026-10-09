@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -269,14 +269,19 @@ def test_effective_sources_roundtrip(db):
         make_source("r", method="api", adapter="reddit",
                     url="https://oauth.reddit.com/r/deals/new", fast_lane=True),
     ]
-    v.save_effective_sources(db, sources)
+    now = datetime.now(timezone.utc)
+    v.save_effective_sources(db, sources, now)
     assert v.effective_sources(db) == sources
+    # fresh within 24 h; stale after -> None so the caller revalidates
+    assert v.effective_sources(db, now=now + timedelta(hours=23)) == sources
+    assert v.effective_sources(db, now=now + timedelta(hours=25)) is None
 
-    # stored as plain JSON under the documented meta key
+    # stored as plain JSON under the documented meta key, with a timestamp
     raw = db.meta_get("effective_sources")
     data = json.loads(raw)
-    assert [d["name"] for d in data] == ["a", "r"]
-    assert data[1]["adapter"] == "reddit"
+    assert data["saved_at"]
+    assert [d["name"] for d in data["sources"]] == ["a", "r"]
+    assert data["sources"][1]["adapter"] == "reddit"
 
     # idempotent re-save: same key, replaced value
     v.save_effective_sources(db, sources[:1])

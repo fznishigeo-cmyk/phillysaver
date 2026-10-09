@@ -119,8 +119,12 @@ def validate_sources(
     rows: list[dict[str, str]] = []
     active: list[SourceConfig] = []
 
+    standby: list[SourceConfig] = []  # configured API sources awaiting secrets
+
     for source in primary:
         status, detail, active_cfg = _validate_one(source, fetcher, cfg)
+        if status == "needs_key":
+            standby.append(source)
         rows.append(
             {
                 "name": source.name,
@@ -164,6 +168,10 @@ def validate_sources(
     counts = dict(Counter(row["status"] for row in rows))
     return {
         "active": active,
+        # The run set: live sources plus key-awaiting API sources, so that a
+        # secret added later activates on the next run (needs_key attempts are
+        # local-only and never trip the circuit breaker).
+        "effective": active + standby,
         "rows": rows,
         "counts": counts,
         "active_count": len(active),
@@ -239,14 +247,37 @@ def write_report(
     log.info("wrote %s (%d rows, %d active)", path, len(rows), active_count)
 
 
-def save_effective_sources(db: Any, sources: list[SourceConfig]) -> None:
+def save_effective_sources(db: Any, sources: list[SourceConfig],
+                           now: datetime | None = None) -> None:
     """Persist the post-validation source list for later runs."""
-    db.meta_set(META_KEY, json.dumps([dataclasses.asdict(s) for s in sources]))
+    saved_at = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+    db.meta_set(META_KEY, json.dumps({
+        "saved_at": saved_at,
+        "sources": [dataclasses.asdict(s) for s in sources],
+    }))
 
 
-def effective_sources(db: Any) -> list[SourceConfig] | None:
-    """The persisted post-validation source list; None when never validated."""
+def effective_sources(db: Any, now: datetime | None = None,
+                      max_age_h: float = 24.0) -> list[SourceConfig] | None:
+    """The persisted post-validation source list.
+
+    Returns None when never validated OR when the stored set is older than
+    ``max_age_h`` (the caller then revalidates), so feed moves are repaired
+    and dead sources culled at most a day late.
+    """
     raw = db.meta_get(META_KEY)
     if raw is None:
         return None
-    return [SourceConfig(**d) for d in json.loads(raw)]
+    data = json.loads(raw)
+    if not isinstance(data, dict):  # legacy shape: force one revalidation
+        return None
+    if now is not None:
+        try:
+            saved_at = datetime.fromisoformat(data.get("saved_at", ""))
+        except ValueError:
+            return None
+        if (now - saved_at).total_seconds() > max_age_h * 3600:
+            log.info("effective source set is older than %.0f h; revalidating",
+                     max_age_h)
+            return None
+    return [SourceConfig(**d) for d in data.get("sources", [])]

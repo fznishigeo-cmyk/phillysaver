@@ -17,41 +17,6 @@ from dealradar.models import RawPost, SourceConfig
 from dealradar.util import iso, now_utc
 
 
-class WorkaroundDB(DB):
-    """DB with a workaround for a known bug in the frozen contract file.
-
-    dealradar/db.py `record_source_result` (ok=True branch, line ~368) binds 4
-    parameters to 5 placeholders (the `last_error` binding is missing), so
-    every success recording raises sqlite3.ProgrammingError. Contract files
-    must not be modified by this layer, so until db.py is fixed upstream this
-    subclass retries the success upsert with the missing '' binding inlined.
-    Once db.py is fixed, the base implementation succeeds and this override
-    becomes a no-op passthrough (all tests pass unchanged either way).
-    """
-
-    def record_source_result(self, source_name: str, *, ok: bool, error: str,
-                             items: int, now: datetime, trip_threshold: int = 3,
-                             cooldown_h: float = 6.0) -> None:
-        try:
-            super().record_source_result(
-                source_name, ok=ok, error=error, items=items, now=now,
-                trip_threshold=trip_threshold, cooldown_h=cooldown_h,
-            )
-        except sqlite3.ProgrammingError:
-            if not ok:
-                raise
-            self.conn.execute(
-                "INSERT INTO source_health(source_name, last_success_at, last_error,"
-                " consecutive_failures, tripped_until, items_last_run, updated_at)"
-                " VALUES (?,?,'',0,NULL,?,?)"
-                " ON CONFLICT(source_name) DO UPDATE SET last_success_at=excluded.last_success_at,"
-                " last_error='', consecutive_failures=0, tripped_until=NULL,"
-                " items_last_run=excluded.items_last_run, updated_at=excluded.updated_at",
-                (source_name, iso(now), items, iso(now)),
-            )
-            self.conn.commit()
-
-
 class FakeClock:
     def __init__(self, start: float = 1000.0) -> None:
         self.t = start
@@ -81,7 +46,7 @@ class ScriptedAdapter(SourceAdapter):
 
 def make_env(tmp_path):
     cfg = AppConfig()
-    db = WorkaroundDB(tmp_path / "state.db")
+    db = DB(tmp_path / "state.db")
     clock = FakeClock()
     fetcher = PoliteFetcher(
         db, cfg,
@@ -159,7 +124,12 @@ def test_adapter_not_configured_records_needs_key(tmp_path):
     assert (posts, ok, error) == ([], False, "needs_key")
     row = health_row(db, "src1")
     assert row["last_error"] == "needs_key"
-    assert row["consecutive_failures"] == 1
+    # A config state, not a site failure: never advances the circuit breaker,
+    # so the source activates immediately once its secrets are set.
+    assert row["consecutive_failures"] == 0
+    for _ in range(4):
+        run_source(source, adapter, fetcher, db, cfg, now, clock=clock)
+    assert not db.is_tripped("src1", now)
 
 
 def test_deadline_exceeded_records_deadline(tmp_path):

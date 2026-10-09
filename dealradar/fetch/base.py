@@ -81,11 +81,13 @@ def run_source(
                  if d is not None]
     deadline = min(deadlines)
 
-    def _record_failure(error: str) -> tuple[list[RawPost], bool, str]:
+    def _record_failure(error: str,
+                        count_failure: bool = True) -> tuple[list[RawPost], bool, str]:
         db.record_source_result(
             source.name, ok=False, error=error, items=0, now=now,
             trip_threshold=cfg.circuit_breaker_failures,
             cooldown_h=cfg.circuit_breaker_cooldown_h,
+            count_failure=count_failure,
         )
         return ([], False, error)
 
@@ -97,7 +99,9 @@ def run_source(
     except AdapterNotConfigured:
         logger.warning("source %s: missing required secrets (needs_key)",
                        source.name)
-        return _record_failure("needs_key")
+        # A config state, not a site failure: never trips the breaker, so the
+        # source activates on the very next run once its secrets are set.
+        return _record_failure("needs_key", count_failure=False)
     except DeadlineExceeded:
         logger.warning("source %s: deadline exceeded", source.name)
         return _record_failure("deadline")
