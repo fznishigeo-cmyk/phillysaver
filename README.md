@@ -113,7 +113,9 @@ www.techbargains.com, www.dealmoon.com, moneysavingmom.com,
 passionatepennypincher.com, www.freebies2deals.com, www.southernsavers.com,
 couponproblog.com, thefreebieguy.com, yeswecoupon.com, jungledealsblog.com,
 clark.com, hunt4freebies.com, www.livingrichwithcoupons.com, 9to5toys.com,
-www.cnet.com, www.tomsguide.com.
+www.cnet.com, www.tomsguide.com, www.dansdeals.com, www.doctorofcredit.com,
+kinjadeals.theinventory.com, www.couponcabin.com, www.retailmenot.com,
+www.gottadeal.com, www.offers.com, www.nytimes.com.
 
 APIs: www.reddit.com, oauth.reddit.com, api.telegram.org, graph.threads.net
 (flag-gated). Telegram MTProto additionally needs raw TCP to Telegram data

@@ -167,6 +167,70 @@ sources:
     fast_lane: false
     notes: "US edition; deal items filtered by category/keywords in the adapter."
 
+  - name: dansdeals
+    method: rss
+    url: https://www.dansdeals.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Web-only promo codes, e-commerce price drops, gift card sales, online price mistakes."
+  - name: doctor_of_credit
+    method: rss
+    url: https://www.doctorofcredit.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Bank bonuses, points, web gift card discounts, shopping portal stacks."
+  - name: kinja_deals
+    method: rss
+    url: https://kinjadeals.theinventory.com/rss
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "Daily editorial Amazon/web deals; validation autodiscovers if the feed moved."
+  - name: couponcabin_blog
+    method: rss
+    url: https://www.couponcabin.com/blog/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "Cash-back stacking, e-commerce promo codes."
+  - name: retailmenot_blog
+    method: rss
+    url: https://www.retailmenot.com/blog/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "The Real Deal: promo code guides, sale-event breakdowns, cash-back offers."
+  - name: gottadeal
+    method: rss
+    url: https://www.gottadeal.com/rss.php
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "E-commerce promo codes, doorbusters, digital freebies."
+  - name: offers_blog
+    method: rss
+    url: https://www.offers.com/blog/feed/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "Promo code stacking, digital coupon codes, store web sales."
+  - name: wirecutter_deals
+    method: rss
+    url: https://www.nytimes.com/wirecutter/rss/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "NYT Wirecutter: verified price drops on tested products; deal items filtered downstream."
+  - name: slickdeals_blog
+    method: rss
+    url: https://slickdeals.net/deal-news/feed/
+    region: US
+    allowed_html: false   # Slickdeals policy: official RSS only, never HTML
+    fast_lane: false
+    notes: "Editorial wing: promo codes, pricing errors, e-commerce sales."
+
   # ---- Reddit (official OAuth API, registered app, required UA format, <=100 req/min) ----
   - name: reddit_deals
     method: api
