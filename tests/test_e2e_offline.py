@@ -91,7 +91,8 @@ def _canned_deals(prompt_text: str) -> list[dict]:
             online_only="true", regular_price=199.99, final_price=39.99,
             price_is_range=True, price_upper_bound=59.99, confidence=0.85,
             evidence=dict(regular_price_quote="list price $199.99",
-                          final_price_quote="as low as $39.99", pct_quote=""),
+                          final_price_quote="as low as $39.99", pct_quote="",
+                          price_upper_bound_quote="most colors $59.99"),
         )]
     return []
 

@@ -7,7 +7,21 @@ import html as html_lib
 import re
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
+
+#: Hosts whose ToS pin us to their OFFICIAL feeds: code-level policy, not
+#: configuration. No HTML page of these hosts is ever fetched — no article
+#: enrichment, no feed autodiscovery, no probing — regardless of what
+#: sources.yaml says.
+OFFICIAL_FEED_ONLY_HOSTS: tuple[str, ...] = ("slickdeals.net",)
+
+
+def official_feed_only(url: str) -> bool:
+    """True when `url` is on a host where only official feeds may be fetched."""
+    host = (urlsplit(url).hostname or "").lower()
+    return any(host == h or host.endswith("." + h)
+               for h in OFFICIAL_FEED_ONLY_HOSTS)
 
 
 def now_utc() -> datetime:

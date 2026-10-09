@@ -15,6 +15,8 @@ from urllib.parse import urljoin, urlsplit
 
 import feedparser
 
+from ..util import official_feed_only
+
 log = logging.getLogger("dealradar.autodiscovery")
 
 FEED_TYPES = {"application/rss+xml", "application/atom+xml"}
@@ -58,9 +60,14 @@ def discover_feed(fetcher: Any, site_url: str, deadline: Any = None) -> str:
     """Return the first working feed URL for `site_url`, or '' when none is found.
 
     A candidate "works" when its body parses via feedparser with >= 1 entry.
+    Hosts pinned to their official feeds (util.OFFICIAL_FEED_ONLY_HOSTS, e.g.
+    slickdeals.net) are never probed: their HTML must not be fetched.
     """
     root = site_root(site_url)
     if not root:
+        return ""
+    if official_feed_only(root):
+        log.info("autodiscovery forbidden for official-feed-only host %s", root)
         return ""
 
     candidates: list[str] = []

@@ -28,6 +28,7 @@ class LLMEvidence(BaseModel):
     regular_price_quote: str = ""
     final_price_quote: str = ""
     pct_quote: str = ""
+    price_upper_bound_quote: str = ""
 
 
 class LLMDeal(BaseModel):
@@ -53,6 +54,7 @@ class LLMDeal(BaseModel):
     regular_price_unit: Literal["per_unit", "pack", ""] = ""
     final_price_unit: Literal["per_unit", "pack", ""] = ""
     currency: str = "USD"
+    region: Literal["US", "other"] = "US"
     evidence: LLMEvidence = Field(default_factory=LLMEvidence)
     confidence: float = 0.0
     deal_type: Literal[
@@ -95,7 +97,11 @@ Rules:
 - deal_type: one of '', 'bogo', 'b2g1', 'b2g3', 'b1g1_50', 'free_after_rebate',
   'moneymaker', 'penny' — tag from the wording only.
 - 'as low as $X' and price ranges: set price_is_range=true and
-  price_upper_bound to the highest price mentioned.
+  price_upper_bound to the highest price mentioned, backed by its own exact
+  verbatim quote in evidence.price_upper_bound_quote (no quote -> leave
+  price_upper_bound null).
+- region: 'US' only when the deal is orderable in the United States; any
+  other market -> 'other'.
 - Units: regular_price_unit / final_price_unit are 'per_unit' when a price is
   per item/each, 'pack' when it covers a multi-pack bundle, '' when unstated.
 - currency: as stated in the post; default 'USD'.
@@ -148,12 +154,13 @@ def to_extracted(d: LLMDeal, post: RawPost, tz_name: str, now: datetime) -> Extr
         quantity_or_unit=d.quantity_or_unit,
         regular_price_unit=d.regular_price_unit,
         final_price_unit=d.final_price_unit,
-        region="US",
+        region=d.region,
         currency=d.currency,
         evidence=Evidence(
             regular_price_quote=d.evidence.regular_price_quote,
             final_price_quote=d.evidence.final_price_quote,
             pct_quote=d.evidence.pct_quote,
+            price_upper_bound_quote=d.evidence.price_upper_bound_quote,
         ),
         confidence=d.confidence,
         deal_type=d.deal_type,

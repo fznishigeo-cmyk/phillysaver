@@ -37,6 +37,11 @@ _NUMBER_RE = re.compile(r"\$?\s*(\d+(?:\.\d+)?)")
 _THRESH_WORD_RE = re.compile(r"\b(?:over|above|on)\b\s*\$?\s*(\d+(?:\.\d+)?)")
 _THRESH_PLUS_RE = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*\+")
 _REBATE_RE = re.compile(r"\brebates?\b|\bmir\b|mail[\s-]?in")
+# Rule 9: portal cashback / gift-card-back / store credit wording is DEFERRED
+# value — it never reduces either percentage (a '10% cash back' step must not
+# be mistaken for a 10%-off code).
+_DEFERRED_RE = re.compile(
+    r"cash\s?back|gift\s?card|store\s+credit|statement\s+credit|portal")
 _SALE_RE = re.compile(r"\b(?:sale|now|price)\b")
 _ABS_OFF_RE = re.compile(r"\boff\b|coupon|clip|discount|save")
 
@@ -89,6 +94,8 @@ def parse_stack_step(s: str) -> dict:
     pct_m = _PCT_RE.search(t)
     money_m = _MONEY_RE.search(t)
 
+    if _DEFERRED_RE.search(t):
+        return {"kind": "deferred", "value": None}
     if _REBATE_RE.search(t):
         if pct_m:
             return {"kind": "rebate_pct", "value": float(pct_m.group(1))}
@@ -119,6 +126,13 @@ def compute_savings(d: models.ExtractedDeal) -> models.SavingsResult:
     if _has_in_store_condition(d.conditions):
         logger.debug("excluded in_store: %s %r", d.item, d.conditions)
         return models.SavingsResult(computable=False, exclude_reason="in_store")
+    if ((d.regular_price is not None and d.regular_price <= 0)
+            or (d.final_price is not None and d.final_price < 0)
+            or (d.price_upper_bound is not None and d.price_upper_bound < 0)):
+        logger.debug("excluded invalid_price: %s (reg=%s final=%s)",
+                     d.item, d.regular_price, d.final_price)
+        return models.SavingsResult(computable=False,
+                                    exclude_reason="invalid_price")
 
     # ---- Rule 10: units ----
     ru = (d.regular_price_unit or "").strip().lower()
@@ -141,6 +155,8 @@ def compute_savings(d: models.ExtractedDeal) -> models.SavingsResult:
             checkout_steps.append(step)
         elif step["kind"] in _REBATE_KINDS:
             rebate_steps.append(step)
+        elif step["kind"] == "deferred" and "deferred_value" not in flags:
+            flags.append("deferred_value")  # Rule 9: never enters any pct
     for raw in d.rebates:
         step = _parse_rebate(raw)
         if step["kind"] in _REBATE_KINDS:
@@ -231,12 +247,14 @@ def _round_pct(x: float | None) -> float | None:
 
 def _abs_savings(d: models.ExtractedDeal, reg: float | None,
                  b_adj: float | None) -> float | None:
-    """Rule 12: regular - shipping-adjusted final when both known, else the
-    source's stated abs_savings (evidence-backed upstream), else None."""
+    """Rule 12: regular - shipping-adjusted final when both known, else None.
+
+    The LLM's own abs_savings is deliberately NOT trusted: unlike the price
+    fields it carries no verbatim-quote evidence, and it feeds a publish gate
+    (min_abs_savings) and the ranking score. Derived-or-nothing.
+    """
     if reg and b_adj is not None:
         return round(reg - b_adj, 2)
-    if d.abs_savings is not None:
-        return float(d.abs_savings)
     return None
 
 
@@ -247,6 +265,9 @@ def _finish(d: models.ExtractedDeal, flags: list[str], *, final_adj: float | Non
     # never enters any percentage; it is only flagged.
     if (d.deferred_value or "").strip():
         flags.append("deferred_value")
+    # Rule 8 scope: only free-after-rebate/moneymaker may report >100%.
+    if (pct_wr is not None and pct_wr > 100.0 and basis != "free_after_rebate"):
+        pct_wr = 100.0
     # Rule 6: rebates change the effective pct -> flag when the two pcts differ.
     if (pct_co is not None and pct_wr is not None
             and abs(pct_wr - pct_co) > 1e-9 and "rebate_dependent" not in flags):
@@ -273,7 +294,7 @@ def _structural(d: models.ExtractedDeal, flags: list[str],
                           checkout_steps, "pct_off")
     pct_co = (1.0 - keep) * 100.0
     # Percent rebates compound into the with-rebates figure (scale-free);
-    # dollar rebates need a price basis these deals usually lack.
+    # dollar rebates join below when the deal also states real prices.
     keep_wr = _compound_keep(keep, rebate_steps, "rebate_pct")
     pct_wr = (1.0 - keep_wr) * 100.0
 
@@ -281,6 +302,12 @@ def _structural(d: models.ExtractedDeal, flags: list[str],
     if d.final_price is not None:
         b_adj = d.final_price + _shipping_add(d.final_price, ship_cost,
                                               ship_threshold, flags)
+    if d.regular_price and b_adj is not None:
+        total = _rebate_total(rebate_steps, d.final_price)
+        if total > 0:
+            pct_wr = max(pct_wr,
+                         (d.regular_price - (b_adj - total))
+                         / d.regular_price * 100.0)
     return _finish(d, flags, final_adj=b_adj, regular=d.regular_price,
                    pct_co=pct_co, pct_wr=pct_wr,
                    abs_s=_abs_savings(d, d.regular_price, b_adj),
@@ -338,13 +365,17 @@ def _price_basis(d: models.ExtractedDeal, flags: list[str],
     """Rules 2/3/4/5/6/11/12: the main price-basis flow."""
     reg = d.regular_price
 
-    # Rule 3: ranges — the conservative upper bound is the final price.
+    # Rule 3: ranges — the conservative upper bound is the final price. A
+    # range with NO verified upper bound cannot follow the rule: computing
+    # from the low "as low as" price would overstate the discount, so exclude.
     final_for_pct = d.final_price
     if d.price_is_range:
-        if d.price_upper_bound is not None:
-            final_for_pct = d.price_upper_bound
-        if final_for_pct is not None:
-            flags.append("range")
+        if d.price_upper_bound is None:
+            logger.debug("excluded range_no_upper: %s", d.item)
+            return models.SavingsResult(computable=False,
+                                        exclude_reason="range_no_upper")
+        final_for_pct = d.price_upper_bound
+        flags.append("range")
 
     pct_co: float | None = None
     pct_wr: float | None = None
@@ -372,8 +403,11 @@ def _price_basis(d: models.ExtractedDeal, flags: list[str],
             logger.debug("excluded no_basis (final only): %s", d.item)
             return models.SavingsResult(computable=False, exclude_reason="no_basis")
     elif reg:
-        if checkout_steps or rebate_steps:
+        if checkout_steps:
             # Rule 5: stack math from the quoted regular, in stated order.
+            # Rebate-only "stacks" don't belong here: a rebate never changes
+            # the CHECKOUT price, so 'reg $A, X% off, plus a rebate' must take
+            # the stated-pct path below and keep its X% at checkout.
             running = reg
             for step in checkout_steps:
                 v = step["value"]

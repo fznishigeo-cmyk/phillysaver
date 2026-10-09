@@ -63,7 +63,7 @@ def _should_send(deal: dict[str, Any], last: dict[str, Any] | None,
     last_price = last.get("price_at_send")
     if last_price is not None:
         threshold = float(last_price) * (1.0 - resend_price_drop_pct / 100.0)
-        if final <= threshold:
+        if final <= threshold + 1e-9:  # an EXACTLY-10% drop must resend
             return True
     tier = deal.get("verify_tier") or "unverified"
     return tier_rank(tier) > tier_rank(last.get("tier_at_send") or "")
@@ -71,8 +71,18 @@ def _should_send(deal: dict[str, Any], last: dict[str, Any] | None,
 
 def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = None,
                 dry_run: bool | None = None, http_client: Any = None,
-                sleep_fn: Any = None) -> dict[str, Any]:
-    """Alert the channel about new/improved deals. Returns {sent, skipped, dry_run}."""
+                sleep_fn: Any = None, deadline: float | None = None) -> dict[str, Any]:
+    """Alert the channel about new/improved deals. Returns {sent, skipped, dry_run}.
+
+    Dry-run semantics: an EXPLICIT dry run (the ``dry_run`` argument or
+    ``cfg.telegram_dry_run``) records alerts like a real send, so repeated test
+    runs stay quiet. A FALLBACK dry run (bot credentials simply missing)
+    records nothing — otherwise every deal first sighted before the operator
+    configures the bot would have its one first-sighting alert silently
+    consumed, and configuring the bot later would alert nothing.
+    ``deadline`` (time.monotonic) stops the send loop; unsent alerts are not
+    recorded and therefore retry next run.
+    """
     if deals is None:
         from dealradar import rank  # lazy: sibling module, avoid import at load
 
@@ -80,10 +90,10 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
 
     token = get_secret("TELEGRAM_BOT_TOKEN")
     channel = get_secret("TELEGRAM_CHANNEL_ID")
-    if dry_run is not None:
-        dry = bool(dry_run)
-    else:
-        dry = bool(cfg.telegram_dry_run) or not (token and channel)
+    explicit_dry = bool(dry_run) if dry_run is not None else bool(cfg.telegram_dry_run)
+    creds_missing = not (token and channel)
+    dry = explicit_dry or creds_missing
+    record_in_dry = explicit_dry  # fallback dry runs must not consume alerts
 
     if sleep_fn is None:
         sleep_fn = time.sleep
@@ -97,6 +107,10 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
     created_client = False
     try:
         for deal in deals:
+            if deadline is not None and time.monotonic() >= deadline:
+                logger.warning("run deadline reached; %d alerts deferred to next run",
+                               len(deals) - sent - skipped)
+                break
             key = deal.get("dedupe_key", "")
             final = float(deal.get("final_price") or 0.0)
             tier = deal.get("verify_tier") or "unverified"
@@ -112,9 +126,10 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
             if dry:
                 logger.info("TELEGRAM DRY-RUN: %s", msg)
                 print(f"TELEGRAM DRY-RUN: {msg}")
-                db.record_alert(deal_key=key, channel="telegram",
-                                dedup_token=dedup_token, now=now,
-                                price_at_send=final, tier_at_send=tier)
+                if record_in_dry:
+                    db.record_alert(deal_key=key, channel="telegram",
+                                    dedup_token=dedup_token, now=now,
+                                    price_at_send=final, tier_at_send=tier)
                 sent += 1
                 continue
             if client is None:

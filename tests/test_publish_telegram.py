@@ -177,8 +177,11 @@ def test_tier_improvement_resends(db, cfg, monkeypatch):
     assert db.last_alert("walmart|lego set", "telegram")["tier_at_send"] == "corroborated"
 
 
-def test_dry_run_prints_and_records(db, cfg, capsys, caplog):
-    # No credentials set (autouse fixture cleared env) -> inferred dry run.
+def test_fallback_dry_run_prints_but_never_consumes_alerts(db, cfg, capsys, caplog):
+    # No credentials set (autouse fixture cleared env) -> FALLBACK dry run.
+    # It must print the message but record NOTHING: otherwise every deal first
+    # sighted before the bot is configured would permanently lose its one
+    # first-sighting alert.
     with caplog.at_level(logging.INFO, logger="dealradar.publish.telegram"):
         result = send_alerts(db, cfg, NOW, deals=[make_deal()])
     assert result["dry_run"] is True
@@ -187,10 +190,17 @@ def test_dry_run_prints_and_records(db, cfg, capsys, caplog):
     assert "TELEGRAM DRY-RUN: " in out
     assert "LEGO Set" in out
     assert any("TELEGRAM DRY-RUN:" in r.getMessage() for r in caplog.records)
-    # Alert is recorded even in dry run, so reruns stay idempotent.
+    assert not db.alert_exists("telegram", "walmart|lego set|10.00|unverified")
+    # Once credentials appear, the first-sighting alert still fires for real.
+
+
+def test_explicit_dry_run_records_for_idempotent_reruns(db, cfg, capsys):
+    result = send_alerts(db, cfg, NOW, deals=[make_deal()], dry_run=True)
+    assert result["sent"] == 1
     assert db.alert_exists("telegram", "walmart|lego set|10.00|unverified")
-    rerun = send_alerts(db, cfg, NOW, deals=[make_deal()])
+    rerun = send_alerts(db, cfg, NOW, deals=[make_deal()], dry_run=True)
     assert rerun["sent"] == 0
+    assert capsys.readouterr().out.count("TELEGRAM DRY-RUN:") == 1
 
 
 def test_explicit_dry_run_arg_wins_over_creds(db, cfg, monkeypatch, capsys):

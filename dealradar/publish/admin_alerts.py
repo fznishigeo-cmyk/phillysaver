@@ -19,12 +19,18 @@ logger = logging.getLogger("dealradar.publish.admin")
 
 
 def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
-                    http_client: Any = None) -> list[str]:
-    """Compute health warnings and alert the admin chat (at most once/hour)."""
+                    http_client: Any = None, kind: str = "hourly") -> list[str]:
+    """Compute health warnings and alert the admin chat (at most once/hour).
+
+    The low-volume check runs only for hourly runs: a 15-minute fast-lane run
+    fetches a handful of fast_lane sources by design and would false-alarm
+    against the 7-day hourly average every time.
+    """
     warnings: list[str] = []
-    avg = db.avg_items_7d(now)
-    if avg is not None and avg > 0 and items_fetched < cfg.min_items_ratio * avg:
-        warnings.append(f"low volume: {items_fetched} vs 7-day avg {avg:.1f}")
+    if kind == "hourly":
+        avg = db.avg_items_7d(now, kind=kind)
+        if avg is not None and avg > 0 and items_fetched < cfg.min_items_ratio * avg:
+            warnings.append(f"low volume: {items_fetched} vs 7-day avg {avg:.1f}")
     tripped = db.tripped_count(now)
     if tripped >= cfg.tripped_sources_warn:
         warnings.append(f"{tripped} sources tripped")

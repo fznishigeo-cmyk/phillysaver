@@ -193,7 +193,9 @@ class TestWoot:
             assert request.url.host == "api.woot.com"
             assert request.url.path == "/2/events.json"
             assert request.url.params["eventType"] == "Daily"
-            assert request.url.params["key"] == "wkey"
+            # The key must travel ONLY in the header — query-string keys leak
+            # into recorded error messages (see redact_secrets).
+            assert "key" not in request.url.params
             assert request.headers["x-api-key"] == "wkey"
             return httpx.Response(200, json=_fixture_json("api_woot_events.json"))
 

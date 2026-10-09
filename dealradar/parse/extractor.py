@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -70,20 +71,38 @@ def _number_candidates(v: float) -> set[str]:
     return cands
 
 
+def _number_in_quote(value: float, nquote: str) -> bool:
+    """True when `value` appears in the quote on DIGIT BOUNDARIES.
+
+    A bare substring test would let 9.99 be "backed" by '19.99' (and 29 by
+    '$29.99'), so each candidate form must not be preceded by a digit, '.' or
+    ',' and must not be followed by a digit or a '.digit' continuation.
+    """
+    for cand in _number_candidates(value):
+        if re.search(r"(?<![\d.,])" + re.escape(cand) + r"(?!\.?\d)", nquote):
+            return True
+    return False
+
+
 def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
     """Verify every non-null price/pct is backed by a verbatim quote.
 
     Both text and quote are normalized ONLY by collapsing whitespace runs to
     single spaces. For each filled value, its quote must be non-empty, must
     appear as a substring of the normalized text, and must contain the number
-    itself in a standard written form (pct with or without the % sign).
+    itself on digit boundaries. A pct quote must additionally carry a '%' (or
+    the word 'percent'), so a dollar amount can never back a percentage. A
+    range deal's upper bound is a published price and is checked like one.
     """
     ntext = _norm_ws(text)
-    checks = (
+    checks = [
         ("regular_price", deal.regular_price, deal.evidence.regular_price_quote),
         ("final_price", deal.final_price, deal.evidence.final_price_quote),
         ("pct_off", deal.pct_off, deal.evidence.pct_quote),
-    )
+    ]
+    if deal.price_is_range and deal.price_upper_bound is not None:
+        checks.append(("price_upper_bound", deal.price_upper_bound,
+                       deal.evidence.price_upper_bound_quote))
     for label, value, quote in checks:
         if value is None:
             continue
@@ -92,8 +111,11 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
             return False, f"{label}={value:g}: evidence quote is empty"
         if nquote not in ntext:
             return False, f"{label}: quote {nquote!r} not found verbatim in text"
-        if not any(c in nquote for c in _number_candidates(value)):
-            return False, f"{label}: quote {nquote!r} does not contain the number {value:g}"
+        if not _number_in_quote(value, nquote):
+            return False, (f"{label}: quote {nquote!r} does not contain the "
+                           f"number {value:g} on digit boundaries")
+        if label == "pct_off" and "%" not in nquote and "percent" not in nquote.lower():
+            return False, f"pct_off: quote {nquote!r} carries no %% sign"
     return True, ""
 
 
@@ -113,6 +135,11 @@ def resolve_expires(raw: str, tz_name: str, now: datetime) -> str:
     if "today" in low or "tonight" in low:
         return util.iso(util.end_of_day(tz_name, now))
 
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        # A date-only expiry means "through that day": resolve to END of day
+        # in the source tz, consistent with the US-format date paths below.
+        y, mo, d = (int(x) for x in s.split("-"))
+        return _end_of_date(y, mo, d, ZoneInfo(tz_name))
     try:
         dt = datetime.fromisoformat(s)
     except ValueError:
@@ -154,13 +181,19 @@ def parse_posts(
     cfg: AppConfig,
     now: datetime,
     tz_by_source: dict[str, str],
+    deadline: float | None = None,
 ) -> tuple[list[tuple[RawPost, ExtractedDeal]], dict]:
     """Run the LLM parse over posts, verifying evidence against the SAME
     cleaned text sent to the model.
 
     Stats: posts_sent (posts the parser was called on), deals_extracted (deals
     the LLM returned, pre-verification), deals_dropped_evidence (rejected by
-    verify_evidence — dropped, never guessed), spend_usd, aborted_spend_cap.
+    verify_evidence — dropped, never guessed), spend_usd, aborted_spend_cap,
+    and processed_hashes — the content hashes of posts the parser actually
+    handled. The PIPELINE records only those into posts_seen, so posts skipped
+    by the max-posts cap, a spend-cap abort, or the run deadline stay
+    unrecorded and are retried on the next run instead of being lost.
+    ``deadline`` is a time.monotonic() value; crossing it stops the loop.
     """
     stats = {
         "posts_sent": 0,
@@ -168,6 +201,7 @@ def parse_posts(
         "deals_dropped_evidence": 0,
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
+        "processed_hashes": [],
     }
     if len(posts) > cfg.max_posts_per_run:
         dropped = len(posts) - cfg.max_posts_per_run
@@ -179,6 +213,11 @@ def parse_posts(
 
     pairs: list[tuple[RawPost, ExtractedDeal]] = []
     for post in posts:
+        if deadline is not None and time.monotonic() >= deadline:
+            log.warning("run deadline reached: stopping parse with %d posts left"
+                        " (they stay unrecorded and retry next run)",
+                        len(posts) - stats["posts_sent"])
+            break
         cleaned = clean_for_llm(post, cfg.max_chars_per_post)
         meta = {
             "source_name": post.source_name,
@@ -192,6 +231,7 @@ def parse_posts(
             stats["aborted_spend_cap"] = True
             break
         stats["posts_sent"] += 1
+        stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
         for d in llm_deals:
             stats["deals_extracted"] += 1

@@ -496,9 +496,11 @@ def test_no_rebates_means_equal_pcts_and_no_flag():
     assert r.flags == []
 
 
-def test_stated_abs_savings_passthrough_on_claim():
-    # "70% off — save $35!" (no prices; source states the $ savings)
+def test_stated_abs_savings_is_never_trusted():
+    # "70% off — save $35!" (no prices). The LLM's abs_savings carries no
+    # verbatim-quote evidence, so the engine must NOT pass it through: it
+    # feeds the min_abs_savings publish gate and the ranking score.
     r = compute_savings(deal(pct_off=70.0, abs_savings=35.0))
     assert r.pct_at_checkout == approx(70.0)
-    assert r.abs_savings == approx(35.0)          # stated, not derived
+    assert r.abs_savings is None                  # derived-or-nothing
     assert r.basis == "list_price_claim"

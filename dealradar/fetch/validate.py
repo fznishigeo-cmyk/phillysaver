@@ -19,8 +19,12 @@ from typing import Any
 
 import feedparser
 
+import time
+
 from ..config import AppConfig, get_secret
+from ..errors import DeadlineExceeded
 from ..models import SourceConfig
+from ..util import official_feed_only
 from .autodiscovery import discover_feed, site_root
 
 log = logging.getLogger("dealradar.validate")
@@ -29,6 +33,9 @@ log = logging.getLogger("dealradar.validate")
 TARGET_ACTIVE = 30
 
 META_KEY = "effective_sources"
+
+#: Per-source budget during first-run/daily validation (seconds).
+PER_SOURCE_VALIDATE_BUDGET_S = 20.0
 
 #: Required secrets per API adapter (telegram additionally needs configured channels).
 ADAPTER_SECRETS: dict[str, list[str]] = {
@@ -51,10 +58,10 @@ def _feed_ok(body: bytes) -> bool:
 
 
 def _validate_feed_source(
-    source: SourceConfig, fetcher: Any
+    source: SourceConfig, fetcher: Any, deadline: float | None = None
 ) -> tuple[str, str, SourceConfig | None]:
     """(status, detail, active_config|None) for an rss/html source."""
-    res = fetcher.get(source.url, conditional=False)
+    res = fetcher.get(source.url, conditional=False, deadline=deadline)
     if res.blocked_by_robots:
         reason = "blocked_by_robots"
     elif res.status != 200 or not res.body:
@@ -64,7 +71,13 @@ def _validate_feed_source(
     else:
         return "live", source.url, source
 
-    new_url = discover_feed(fetcher, site_root(source.url))
+    if official_feed_only(source.url):
+        # Code-level policy (e.g. Slickdeals): the OFFICIAL feed or nothing.
+        # Never fetch these hosts' HTML pages, never rewrite the feed URL.
+        return ("dead",
+                f"{reason}; official-feed-only host, autodiscovery forbidden",
+                None)
+    new_url = discover_feed(fetcher, site_root(source.url), deadline=deadline)
     if new_url:
         updated = dataclasses.replace(source, url=new_url)
         return (
@@ -94,13 +107,14 @@ def _validate_api_source(source: SourceConfig, cfg: AppConfig) -> tuple[str, str
 
 
 def _validate_one(
-    source: SourceConfig, fetcher: Any, cfg: AppConfig
+    source: SourceConfig, fetcher: Any, cfg: AppConfig,
+    deadline: float | None = None,
 ) -> tuple[str, str, SourceConfig | None]:
     """(status, detail, active_config|None) for any source."""
     if not source.enabled:
         return "disabled", "disabled in sources.yaml", None
     if source.method in ("rss", "html"):
-        return _validate_feed_source(source, fetcher)
+        return _validate_feed_source(source, fetcher, deadline)
     if source.method == "api":
         status, detail = _validate_api_source(source, cfg)
         return status, detail, source if status == "live" else None
@@ -114,15 +128,40 @@ def validate_sources(
     db: Any,
     cfg: AppConfig,
     now: datetime,
+    run_deadline: float | None = None,
 ) -> dict[str, Any]:
-    """Validate all primary sources, then promote backups until TARGET_ACTIVE."""
+    """Validate all primary sources, then promote backups until TARGET_ACTIVE.
+
+    ``run_deadline`` (time.monotonic) bounds the whole pass; each source also
+    gets a short per-source budget. Sources the deadline skips are marked
+    'skipped_deadline' and stay in the effective run set — our own time budget
+    must never cull a source.
+    """
     rows: list[dict[str, str]] = []
     active: list[SourceConfig] = []
+
+    def _source_deadline() -> float | None:
+        per = time.monotonic() + PER_SOURCE_VALIDATE_BUDGET_S
+        return min(run_deadline, per) if run_deadline is not None else per
+
+    def _out_of_time() -> bool:
+        return run_deadline is not None and time.monotonic() >= run_deadline
 
     standby: list[SourceConfig] = []  # configured API sources awaiting secrets
 
     for source in primary:
-        status, detail, active_cfg = _validate_one(source, fetcher, cfg)
+        if _out_of_time():
+            status, detail, active_cfg = (
+                "skipped_deadline", "run budget exhausted before validation", None)
+            standby.append(source)  # keep it runnable; never cull on our budget
+        else:
+            try:
+                status, detail, active_cfg = _validate_one(
+                    source, fetcher, cfg, _source_deadline())
+            except DeadlineExceeded:
+                status, detail, active_cfg = (
+                    "skipped_deadline", "per-source validation budget hit", None)
+                standby.append(source)
         if status == "needs_key":
             standby.append(source)
         rows.append(
@@ -147,7 +186,13 @@ def validate_sources(
     for backup in backups:
         if len(active) >= TARGET_ACTIVE:
             break
-        status, detail, active_cfg = _validate_one(backup, fetcher, cfg)
+        if _out_of_time():
+            break
+        try:
+            status, detail, active_cfg = _validate_one(
+                backup, fetcher, cfg, _source_deadline())
+        except DeadlineExceeded:
+            continue
         if active_cfg is not None:
             status = "promoted_backup"
             active.append(active_cfg)

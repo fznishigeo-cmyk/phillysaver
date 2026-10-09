@@ -74,13 +74,34 @@ def is_publishable(deal: dict[str, Any], cfg) -> tuple[bool, str]:
 
 
 def published_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
-    """Alive deals that pass every publish gate, scored, best first."""
+    """Alive deals that pass every publish gate, scored, best first.
+
+    This is the ALERT set (Telegram, digest): dead deals never alert.
+    """
     out: list[dict[str, Any]] = []
     for deal in db.all_deals(status="alive"):
         ok, reason = is_publishable(deal, cfg)
         if not ok:
             log.debug("deal %s not publishable: %s",
                       deal.get("dedupe_key", "?"), reason)
+            continue
+        deal["verify_tier"] = deal.get("verify_tier", "unverified")
+        deal["score"] = score(deal, cfg, now)
+        out.append(deal)
+    out.sort(key=lambda d: d["score"], reverse=True)
+    return out
+
+
+def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
+    """The SITE set: the alert set PLUS recently-dead deals that qualified
+    while alive, shown marked dead (the spec wants dead deals visible on the
+    page, never alerted). Retention prunes them after cfg.deals_days."""
+    out = published_deals(db, cfg, now)
+    for deal in db.all_deals(status="dead"):
+        probe = dict(deal)
+        probe["status"] = "alive"  # test the other gates only
+        ok, _reason = is_publishable(probe, cfg)
+        if not ok:
             continue
         deal["verify_tier"] = deal.get("verify_tier", "unverified")
         deal["score"] = score(deal, cfg, now)

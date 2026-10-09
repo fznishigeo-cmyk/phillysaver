@@ -194,7 +194,7 @@ def test_http_error_raises(db, cfg):
 def test_not_a_feed_raises(db, cfg):
     src = make_source()
     fetcher = FakeFetcher({src.url: fr(src.url, body=fixture_bytes("rss_bozo.html"))})
-    with pytest.raises(RuntimeError, match="not_a_feed"):
+    with pytest.raises(RuntimeError, match="empty_or_not_feed"):
         RssAdapter().fetch_posts(src, fetcher, db, cfg, NOW, None)
 
 

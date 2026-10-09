@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
-from ..config import AppConfig
+from ..config import AppConfig, redact_secrets
 from ..db import DB
 from ..errors import AdapterDisabled, AdapterNotConfigured, DeadlineExceeded
 from ..http_client import PoliteFetcher
@@ -83,6 +83,7 @@ def run_source(
 
     def _record_failure(error: str,
                         count_failure: bool = True) -> tuple[list[RawPost], bool, str]:
+        error = redact_secrets(error)
         db.record_source_result(
             source.name, ok=False, error=error, items=0, now=now,
             trip_threshold=cfg.circuit_breaker_failures,

@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..config import redact_secrets
 from ..util import iso, parse_iso
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -130,7 +131,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
 
-        deals = rank.published_deals(db, cfg, now)
+        # The site shows qualifying deals that recently died too (marked dead);
+        # alerts and the digest use rank.published_deals (alive only).
+        deals = rank.site_deals(db, cfg, now)
 
     out = Path(out_dir) if out_dir is not None else Path(cfg.site_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -155,8 +158,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     sources = []
     for row in db.all_source_health():
-        until = parse_iso(row.get("tripped_until") or "")
         entry = dict(row)
+        # Defense in depth: last_error was already scrubbed when recorded, but
+        # health.json is PUBLIC, so scrub again at the publishing boundary.
+        entry["last_error"] = redact_secrets(entry.get("last_error") or "")
+        until = parse_iso(row.get("tripped_until") or "")
         entry["tripped"] = until is not None and now < until
         sources.append(entry)
     health_doc = {

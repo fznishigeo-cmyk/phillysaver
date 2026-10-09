@@ -146,6 +146,7 @@ class TestParsePosts:
         assert stats == {
             "posts_sent": 1, "deals_extracted": 1, "deals_dropped_evidence": 0,
             "spend_usd": 0.05, "aborted_spend_cap": False,
+            "processed_hashes": [posts[0].content_hash],
         }
 
     def test_parser_gets_the_cleaned_text_and_meta(self):

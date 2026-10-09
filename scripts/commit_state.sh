@@ -70,8 +70,21 @@ git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
   commit --quiet -m "state: $STAMP [skip ci]"
 
 # Push to the data branch only — never main. Retry up to 4 times on failure
-# (a concurrent fast-lane/hourly run may have pushed first) with exponential
-# backoff; after each failure, rebase onto the moved branch tip.
+# (a concurrent run may have pushed first) with exponential backoff. A rebase
+# can never resolve two state.db commits (binary conflict every time), so each
+# retry RE-SNAPSHOTS instead: recreate the worktree at the moved tip, re-copy
+# this run's files on top, commit, push. Snapshot semantics: latest writer
+# wins, and every commit keeps full history on the branch until the monthly
+# squash.
+snapshot() {
+  cp "$REPO_DIR/state.db" "$WORKTREE/state.db"
+  git -C "$WORKTREE" add state.db
+  if [[ -f "$REPO_DIR/sources_report.md" ]]; then
+    cp "$REPO_DIR/sources_report.md" "$WORKTREE/sources_report.md"
+    git -C "$WORKTREE" add sources_report.md
+  fi
+}
+
 pushed=0
 for delay in 2 4 8 16 0; do
   if git -C "$WORKTREE" push origin "HEAD:$BRANCH"; then
@@ -81,12 +94,22 @@ for delay in 2 4 8 16 0; do
   if [[ "$delay" -eq 0 ]]; then
     break
   fi
-  log "push failed — retrying in ${delay}s"
+  log "push failed — re-snapshotting from the moved tip and retrying in ${delay}s"
   sleep "$delay"
   git -C "$REPO_DIR" fetch origin "$BRANCH" || true
   if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
+    git -C "$REPO_DIR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
+    rm -rf "$WORKTREE"
+    git -C "$REPO_DIR" worktree add "$WORKTREE" "origin/$BRANCH" >/dev/null
+    snapshot
+    if git -C "$WORKTREE" diff --quiet --cached HEAD -- 2>/dev/null; then
+      log "state already on the moved tip — nothing to push"
+      pushed=1
+      break
+    fi
+    STAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
-      rebase "origin/$BRANCH" || git -C "$WORKTREE" rebase --abort || true
+      commit --quiet -m "state: $STAMP [skip ci]"
   fi
 done
 

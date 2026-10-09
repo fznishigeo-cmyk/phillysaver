@@ -82,9 +82,14 @@ def maybe_send_digest(db, cfg, now: datetime, *,
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
-    factory = smtp_factory or smtplib.SMTP
     try:
-        server = factory(host, port)
+        if smtp_factory is not None:
+            server = smtp_factory(host, port)
+        elif port == 465:
+            # Implicit-TLS providers (e.g. gmail:465); 587 uses STARTTLS below.
+            server = smtplib.SMTP_SSL(host, port, timeout=30)
+        else:
+            server = smtplib.SMTP(host, port, timeout=30)
         try:
             if port == 587:
                 server.starttls()

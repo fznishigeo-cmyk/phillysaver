@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# Same group as the hourly/fast runs: a squash must never race a state commit.
+concurrency:
+  group: dealradar
+  cancel-in-progress: false
+
 jobs:
   squash:
     name: squash data branch
@@ -34,8 +39,12 @@ jobs:
           git config user.email 'actions@users.noreply.github.com'
           # Detach at the data tip, then re-root the exact same tree as a
           # single orphan commit and force-push it back to data.
+          FETCHED_SHA="$(git rev-parse origin/data)"
           git checkout --detach origin/data
           git checkout --orphan data-squashed
           git add -A
           git commit -m 'squash data branch (monthly)'
-          git push --force origin HEAD:data
+          # force-with-lease pinned to the tip we squashed: if any run pushed
+          # state between our fetch and this push, abort instead of discarding
+          # that state commit (next month's squash will get it).
+          git push --force-with-lease=refs/heads/data:"$FETCHED_SHA" origin HEAD:data

@@ -26,12 +26,17 @@ _RESERVE_FOR_TAIL_S = 90.0
 
 
 def _run_key(now: datetime, fast_lane: bool) -> str:
-    key = now.strftime("%Y-%m-%dT%H")
-    return f"{key}:fast" if fast_lane else key
+    if fast_lane:
+        # One key per quarter-hour so the four fast runs in an hour each keep
+        # their own run_stats row (idempotent re-runs still collide on it).
+        q = (now.minute // 15) * 15
+        return now.strftime("%Y-%m-%dT%H") + f":{q:02d}:fast"
+    return now.strftime("%Y-%m-%dT%H")
 
 
 def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
-                            validate_if_missing: bool = True) -> list[SourceConfig]:
+                            validate_if_missing: bool = True,
+                            deadline: float | None = None) -> list[SourceConfig]:
     """Validated source set from state, else first-run live validation."""
     from .fetch.validate import (effective_sources, save_effective_sources,
                                  validate_sources, write_report)
@@ -43,7 +48,8 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
     if not validate_if_missing:
         return [s for s in primary if s.enabled]
     log.info("first run: validating %d sources live (+%d backups)", len(primary), len(backup))
-    result = validate_sources(primary, backup, fetcher, db, cfg, now)
+    result = validate_sources(primary, backup, fetcher, db, cfg, now,
+                              run_deadline=deadline)
     write_report(result, cfg, now)
     active = result["active"]
     effective = result.get("effective", active)
@@ -93,13 +99,14 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
 
 
 def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
-                     tz_by_source: dict[str, str],
+                     tz_by_source: dict[str, str], deadline: float | None,
                      claude_client=None) -> tuple[list[tuple[RawPost, Any]], dict]:
     from .parse.claude_client import ClaudeParser
     from .parse.extractor import parse_posts
 
     stats = {"posts_sent": 0, "deals_extracted": 0, "deals_dropped_evidence": 0,
-             "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled"}
+             "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled",
+             "processed_hashes": []}
     if not new_posts:
         return [], stats
     try:
@@ -112,7 +119,8 @@ def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
         return [], stats
     stats["parser"] = parser.model
     try:
-        pairs, pstats = parse_posts(new_posts, parser, cfg, now, tz_by_source)
+        pairs, pstats = parse_posts(new_posts, parser, cfg, now, tz_by_source,
+                                    deadline=deadline)
     except SpendCapReached:
         log.warning("spend cap reached before parsing could start")
         return [], stats
@@ -136,7 +144,8 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
             continue
         try:
             extracted.product_url = resolve_redirects(
-                fetcher, extracted.product_url, cfg.redirect_max_hops)
+                fetcher, extracted.product_url, cfg.redirect_max_hops,
+                deadline=deadline - 15)  # one chain can never eat the budget
         except Exception as e:
             log.debug("redirect resolution failed for %s: %s", extracted.product_url, e)
             extracted.product_url = canonicalize_url(extracted.product_url)
@@ -174,8 +183,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         if sources_override is not None:
             sources = sources_override
         else:
-            sources = _load_effective_sources(db, cfg, fetcher, now,
-                                              validate_if_missing=not skip_validation)
+            sources = _load_effective_sources(
+                db, cfg, fetcher, now,
+                validate_if_missing=not skip_validation,
+                deadline=deadline - _RESERVE_FOR_TAIL_S)
         tz_by_source = {s.name: s.tz for s in sources}
 
         # ---- fetch ----
@@ -183,18 +194,35 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors
 
-        # ---- freshness / idempotency: parse only posts first seen now, within 24 h ----
+        # ---- freshness / idempotency: parse only posts not yet content-hashed.
+        # Posts are RECORDED only after the parser actually handled them, so a
+        # spend-cap abort, the max-posts cap, or the run deadline leaves the
+        # rest unrecorded — they retry next run instead of being lost. ----
         new_posts: list[RawPost] = []
+        seen_this_batch: set[str] = set()
         for post in posts:
-            if db.record_post(post, now):
-                new_posts.append(post)
-        summary["posts_new"] = len(new_posts)
+            h = post.content_hash
+            if h in seen_this_batch or db.post_is_known(h):
+                continue
+            seen_this_batch.add(h)
+            new_posts.append(post)
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
 
         # ---- parse (Claude; evidence-verified) ----
         pairs, pstats = _parse_new_posts(new_posts, cfg, now, tz_by_source,
-                                         claude_client=claude_client)
+                                         deadline, claude_client=claude_client)
         summary["parse"] = pstats
+        processed = set(pstats.get("processed_hashes") or [])
+        recorded = 0
+        if pstats.get("parser") == "disabled":
+            # No parser this run: record nothing, so these posts parse once a
+            # key is configured (fetch-only runs stay idempotent via dedupe).
+            pass
+        else:
+            for post in new_posts:
+                if post.content_hash in processed and db.record_post(post, now):
+                    recorded += 1
+        summary["posts_new"] = recorded
 
         # ---- canonical retailer URLs ----
         _resolve_product_urls(pairs, fetcher, cfg, deadline)
@@ -223,11 +251,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "parser_model": pstats.get("parser", ""),
         })
         summary["published"] = site_res.get("published", 0)
-        tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram)
+        tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram,
+                         deadline=deadline)
         summary["telegram"] = tg
         summary["digest_sent"] = maybe_send_digest(db, cfg, now)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,
-                                                    items_fetched=len(posts))
+                                                    items_fetched=len(posts),
+                                                    kind=kind)
 
         # ---- retention + bookkeeping ----
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days)

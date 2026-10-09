@@ -401,7 +401,8 @@ def test_get_follows_redirects_and_reports_final_url(tmp_path):
     ("https://www.amazon.com/Some-Item/dp/B0ABCDE123/ref=sr_1_1", "B0ABCDE123"),
     ("https://www.amazon.com/gp/product/b0abcde123/", "B0ABCDE123"),
     ("https://www.amazon.com/gp/aw/d/B012345678?psc=1", "B012345678"),
-    ("https://shop.example/product/B099999999", "B099999999"),
+    # Non-amazon hosts never yield ASINs: /product/<10 alnum> is a slug there.
+    ("https://shop.example/product/B099999999", ""),
     ("https://www.amazon.com/dp/B0ABCDE1234", ""),   # 11 chars: not an ASIN
     ("https://www.amazon.com/dp/B0ABCDE12", ""),     # 9 chars: not an ASIN
     ("https://example.com/no-asin-here", ""),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,21 @@ SECRET_NAMES = [
 def get_secret(name: str) -> str:
     """Read a secret from the environment. Empty string when unset."""
     return os.environ.get(name, "").strip()
+
+
+def redact_secrets(text: str) -> str:
+    """Scrub secrets from text that may be persisted or published.
+
+    Strips URL query strings (API keys travel there in some error messages)
+    and masks any live secret value. Applied to every recorded source error
+    and again when health data is published — defense in depth.
+    """
+    out = re.sub(r"\?[^\s'\"<>]+", "?<redacted-query>", text)
+    for name in SECRET_NAMES:
+        val = os.environ.get(name, "").strip()
+        if len(val) >= 6 and val in out:
+            out = out.replace(val, f"<{name}>")
+    return out
 
 
 @dataclass

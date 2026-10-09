@@ -32,9 +32,13 @@ conditions → excluded `in_store`.
 - Regular **and** final both stated ("reg $A now $B", "$A value for $B",
   "$A worth for $B") → `pct = (A - B_adj) / A * 100`, `basis='quoted_regular'`.
 - Explicit `pct_off` stated with **no** regular price → `pct = pct_off`,
-  `basis='list_price_claim'`; `abs_savings` only if computable from stated
-  numbers (i.e. the source's own stated absolute savings — never derived from
-  an assumed list price).
+  `basis='list_price_claim'`; `abs_savings` stays `None` (see rule 12 — a
+  stated dollar figure with no verified prices is never trusted).
+- A rebate alongside stated prices or a stated pct never changes the
+  CHECKOUT math: rebate-only "stacks" keep their stated pct at checkout and
+  move the rebate into `pct_with_rebates`.
+- A non-positive regular price, or a negative final/upper price, is data
+  corruption → excluded (`invalid_price`).
 - `pct_off` stated **and** regular quoted (with a final) → compute from the
   prices, `basis='quoted_regular'` — **prices win**; the stated pct is kept
   only as sanity info (a >5-point disagreement is logged).
@@ -50,9 +54,12 @@ conditions → excluded `in_store`.
 ## 3. Ranges
 
 `price_is_range=True` ("as low as $X", "from $X", "under $X") → use
-`price_upper_bound` (fallback: `final_price`) as the final price for the pct,
-and append the flag `'range'`. The conservative upper bound keeps us from
-advertising a best case most shoppers will not get.
+`price_upper_bound` as the final price for the pct and append the flag
+`'range'`. The conservative upper bound keeps us from advertising a best case
+most shoppers will not get. The upper bound is a published price, so it needs
+its own verbatim evidence quote (`evidence.price_upper_bound_quote`); a range
+with **no verified upper bound is excluded** (`range_no_upper`) — computing
+from the teaser "as low as" price would overstate the discount.
 
 **Worked example:** "as low as $29.99 (up to $59.99), reg $100" →
 `pct = (100 - 59.99) / 100 * 100 = 40.0%`, flags `['range']`.
@@ -147,7 +154,9 @@ effective `5 - 8 = -$3` → `pct_with_rebates = (5 - (-3)) / 5 * 100 = 160.0%`,
 
 `deferred_value` **never enters any pct**; when present, append the flag
 `'deferred_value'`. You cannot spend a gift card on rent — it is store-locked
-future value, not savings on this purchase.
+future value, not savings on this purchase. Stack steps worded as cashback /
+gift-card-back / store or statement credit / portal offers are classified as
+deferred too ("10% cash back" is NOT a 10%-off code) and only set the flag.
 
 **Worked example:** "$50 item + $40 gift card back" → pct is **0.0%**
 (not 80%), flags `['deferred_value']`.
@@ -172,9 +181,12 @@ Missing regular price **and** no stated pct **and** no `deal_type` →
 
 ## 12. Absolute savings, result fields, rounding
 
-- `abs_savings = regular - final_adjusted` when both are known; else the
-  source's stated `abs_savings` (evidence-backed upstream) if present, else
-  `None`.
+- `abs_savings = regular - final_adjusted` when both are known, else `None` —
+  **derived or nothing**. The LLM's own `abs_savings` field is deliberately
+  ignored: unlike the price fields it carries no verbatim-quote evidence, and
+  it feeds a publish gate (`min_abs_savings`) and the ranking score.
+- `pct_with_rebates` is capped at 100% except on the free-after-rebate /
+  moneymaker basis (rule 8), the only deals allowed to report >100%.
 - `final_price` in the result is the **shipping-adjusted** checkout price;
   `regular_price` passes through unchanged.
 - All pcts are rounded to **1 decimal** at the very end.

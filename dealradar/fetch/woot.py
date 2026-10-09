@@ -90,9 +90,12 @@ class WootAdapter(SourceAdapter):
 
         with self._client(cfg) as client:
             _check_deadline(deadline)
+            # The key travels ONLY in the x-api-key header: query-string keys
+            # end up inside httpx error messages and from there could leak
+            # into recorded (published) source errors.
             resp = client.get(
                 EVENTS_URL,
-                params={"eventType": "Daily", "key": key},
+                params={"eventType": "Daily"},
                 headers={"x-api-key": key},
             )
             resp.raise_for_status()

@@ -84,8 +84,11 @@ class RssAdapter(SourceAdapter):
             raise RuntimeError(reason[:200])
 
         feed = feedparser.parse(res.body)
-        if feed.bozo and not feed.entries:
-            raise RuntimeError("not_a_feed")
+        if not feed.entries:
+            # Covers bozo feeds AND HTTP-200 HTML error pages that feedparser
+            # "parses" to zero entries — a success here would mask a dead feed
+            # from the circuit breaker forever.
+            raise RuntimeError("empty_or_not_feed")
 
         tz = source.tz or getattr(cfg, "timezone", "") or "UTC"
         posts: list[RawPost] = []
@@ -116,7 +119,7 @@ class RssAdapter(SourceAdapter):
                 published_at=published_at,
                 fetched_at=now,
             )
-            if source.allowed_html and url:
+            if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
                 if _needs_enrichment(body_html, body_text) and not db.post_is_known(
                     post.content_hash
@@ -153,4 +156,8 @@ class RssAdapter(SourceAdapter):
             text=post.title + "\n" + article_text,
             published_at=post.published_at,
             fetched_at=post.fetched_at,
+            # Idempotency anchor stays the summary-level text: whether (or how)
+            # enrichment succeeded must never change the content hash, or the
+            # same unchanged entry would re-parse on the next run.
+            hash_text=post.hash_text or post.text,
         )

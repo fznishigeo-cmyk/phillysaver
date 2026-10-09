@@ -138,7 +138,7 @@ def test_squash_shape() -> None:
     body = "\n".join(run_commands(doc))
     assert "git checkout --orphan" in body
     assert "squash data branch (monthly)" in body
-    assert "git push --force origin HEAD:data" in body
+    assert "git push --force-with-lease=refs/heads/data:" in body
 
 
 # ------------------------------------------------------------------- safety

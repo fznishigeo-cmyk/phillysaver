@@ -187,12 +187,24 @@ class ClaudeParser:
         except anthropic.BadRequestError as e:
             log.info("messages.parse rejected (%s); using JSON fallback path", e)
             return self._extract_via_create(user_prompt)
+        except (ValidationError, ValueError) as e:
+            # Invalid JSON on the structured path must get its configured
+            # retries (via the bounded fallback), never crash the whole run.
+            log.warning("messages.parse output failed validation (%s); "
+                        "retrying via JSON fallback path", e)
+            return self._extract_via_create(user_prompt)
 
         if resp is None:
             return []
         self._account(resp)
-        if getattr(resp, "stop_reason", None) == "refusal":
+        stop = getattr(resp, "stop_reason", None)
+        if stop == "refusal":
             log.warning("model refused extraction for %s; zero deals",
+                        meta.get("source_url", ""))
+            return []
+        if stop == "max_tokens":
+            log.warning("extraction truncated at max_tokens for %s; "
+                        "skipping post (a re-ask would truncate again)",
                         meta.get("source_url", ""))
             return []
         parsed = getattr(resp, "parsed_output", None)
@@ -224,8 +236,13 @@ class ClaudeParser:
             if resp is None:
                 return []
             self._account(resp)
-            if getattr(resp, "stop_reason", None) == "refusal":
+            stop = getattr(resp, "stop_reason", None)
+            if stop == "refusal":
                 log.warning("model refused extraction (fallback path); zero deals")
+                return []
+            if stop == "max_tokens":
+                log.warning("fallback output truncated at max_tokens; skipping "
+                            "post instead of re-asking an identical truncation")
                 return []
             raw = "".join(
                 getattr(block, "text", "")

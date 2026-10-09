@@ -24,6 +24,7 @@ import re
 import time
 import urllib.robotparser
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -39,6 +40,8 @@ logger = logging.getLogger("dealradar.http_client")
 MAX_BODY_BYTES = 5 * 1024 * 1024  # hard cap on any response body we keep
 ROBOTS_TIMEOUT_S = 10.0
 RETRY_AFTER_CAP_S = 30.0
+
+REDIRECT_HOP_CAP = 10  # safety cap on manually-followed hops for feed/page GETs
 
 # HEAD not supported / not allowed -> retry the redirect hop with a GET.
 _HEAD_FALLBACK_STATUSES = (403, 405, 501)
@@ -65,8 +68,14 @@ def extract_asin(url: str) -> str:
     """Return the uppercase ASIN embedded in `url`, or '' when absent.
 
     Matches /dp/ASIN, /gp/product/ASIN, /gp/aw/d/ASIN and /product/ASIN where
-    ASIN is exactly 10 characters of [A-Z0-9] (matched case-insensitively).
+    ASIN is exactly 10 characters of [A-Z0-9] (matched case-insensitively) —
+    but only on amazon.* hosts: other retailers use 10-char alphanumeric slugs
+    under /product/ that are not ASINs, and a bogus ASIN would corrupt dedupe
+    keys and halt redirect resolution.
     """
+    host = (urlsplit(url).hostname or "").lower()
+    if not _AMAZON_HOST_RE.search(host):
+        return ""
     m = _ASIN_RE.search(url)
     return m.group(1).upper() if m else ""
 
@@ -120,9 +129,12 @@ class PoliteFetcher:
         self.cfg = cfg
         self._sleep = sleep_fn if sleep_fn is not None else time.sleep
         self._clock = clock if clock is not None else time.monotonic
+        # Redirects are ALWAYS followed manually (see _request_with_retries)
+        # so every hop target gets its own robots.txt check and per-host rate
+        # limit — httpx's internal following would bypass both.
         self._client = httpx.Client(
             transport=transport,
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=httpx.Timeout(cfg.request_timeout_s),
             headers={"User-Agent": cfg.resolved_user_agent()},
         )
@@ -291,7 +303,59 @@ class PoliteFetcher:
         follow_redirects: bool,
         read_body: bool,
     ) -> tuple[FetchResult, httpx.Headers | None]:
-        """Run the attempt loop. Returns (FetchResult, response headers|None)."""
+        """Polite manual hop loop around the per-URL attempt loop.
+
+        With ``follow_redirects`` true, 3xx responses are followed MANUALLY up
+        to REDIRECT_HOP_CAP hops: each GET hop target is checked against its
+        own host's robots.txt and every hop passes through the per-host rate
+        limit (httpx's internal following would bypass both). Conditional
+        validators are keyed on — and stored for — the ORIGINAL url; If-*
+        headers are not resent past the first hop.
+        """
+        current = url
+        hdrs = dict(headers)
+        hop_cap = REDIRECT_HOP_CAP if follow_redirects else 0
+        for hop in range(hop_cap + 1):
+            result, resp_headers = self._attempt_url(
+                method, current, hdrs, deadline=deadline, read_body=read_body)
+            status = result.status
+            location = (resp_headers.get("Location", "")
+                        if resp_headers is not None else "")
+            if (follow_redirects and 300 <= status < 400 and location
+                    and hop < hop_cap):
+                nxt = urljoin(current, location)
+                if method == "GET" and not self._robots_allowed(nxt):
+                    logger.info("robots.txt disallows redirect target %s", nxt)
+                    return (FetchResult(url=url, final_url=nxt, status=0,
+                                        body=None, error="robots_disallowed",
+                                        blocked_by_robots=True), resp_headers)
+                current = nxt
+                hdrs = {k: v for k, v in hdrs.items() if k.lower() not in
+                        ("if-none-match", "if-modified-since")}
+                continue
+            if (method == "GET" and conditional and 200 <= status < 300
+                    and resp_headers is not None):
+                etag = resp_headers.get("ETag", "")
+                last_modified = resp_headers.get("Last-Modified", "")
+                if etag or last_modified:
+                    self.db.store_validators(url, etag, last_modified,
+                                             now_utc())
+            if current != url:
+                result = replace(result, url=url)
+            return (result, resp_headers)
+        return (FetchResult(url=url, final_url=current, status=0, body=None,
+                            error="too_many_redirects"), None)
+
+    def _attempt_url(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        *,
+        deadline: float | None,
+        read_body: bool,
+    ) -> tuple[FetchResult, httpx.Headers | None]:
+        """Run the retry loop for ONE url (no redirect following)."""
         host = urlsplit(url).netloc.lower()
         attempts = max(1, int(self.cfg.max_retries))
         for attempt in range(attempts):
@@ -299,7 +363,6 @@ class PoliteFetcher:
             self._rate_wait(host)
             try:
                 resp, body = self._send(method, url, headers,
-                                        follow_redirects=follow_redirects,
                                         read_body=read_body)
             except httpx.HTTPError as exc:
                 error = f"{type(exc).__name__}: {exc}".strip().rstrip(":")
@@ -325,13 +388,7 @@ class PoliteFetcher:
                 return (FetchResult(url=url, final_url=str(resp.url),
                                     status=status, body=None,
                                     error=f"http_{status}"), resp.headers)
-            # Final response: 2xx, unfollowed 3xx, or a non-429 4xx (no retry).
-            if method == "GET" and conditional and 200 <= status < 300:
-                etag = resp.headers.get("ETag", "")
-                last_modified = resp.headers.get("Last-Modified", "")
-                if etag or last_modified:
-                    self.db.store_validators(url, etag, last_modified,
-                                             now_utc())
+            # Final response: 2xx, 3xx (caller decides), or a non-429 4xx.
             error = f"http_{status}" if status >= 400 else ""
             return (FetchResult(url=url, final_url=str(resp.url),
                                 status=status, body=body, error=error),
@@ -344,13 +401,12 @@ class PoliteFetcher:
         url: str,
         headers: dict[str, str],
         *,
-        follow_redirects: bool,
         read_body: bool,
     ) -> tuple[httpx.Response, bytes | None]:
         req_headers = dict(headers)
         req_headers["User-Agent"] = self.cfg.resolved_user_agent()
         with self._client.stream(method, url, headers=req_headers,
-                                 follow_redirects=follow_redirects) as resp:
+                                 follow_redirects=False) as resp:
             body: bytes | None = None
             if (read_body and method != "HEAD"
                     and resp.status_code not in (204, 304)):

@@ -39,10 +39,15 @@ class RawPost:
     text: str                     # cleaned plain text (title + summary/body)
     published_at: datetime | None # tz-aware UTC, defensively parsed
     fetched_at: datetime          # tz-aware UTC
+    hash_text: str = ""           # stable text for content_hash; adapters set it
+                                  # to the PRE-enrichment text so a flaky article
+                                  # fetch can't make the same post hash differently
+                                  # between runs. Empty -> `text` is used.
 
     @property
     def content_hash(self) -> str:
-        norm = " ".join(self.text.split()).lower()
+        basis = self.hash_text or self.text
+        norm = " ".join(basis.split()).lower()
         raw = f"{self.source_name}\n{self.uid}\n{norm}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -58,6 +63,7 @@ class Evidence:
     regular_price_quote: str = ""
     final_price_quote: str = ""
     pct_quote: str = ""
+    price_upper_bound_quote: str = ""  # required when price_is_range
 
 
 @dataclass
