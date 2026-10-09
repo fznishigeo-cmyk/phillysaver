@@ -7,8 +7,7 @@ state.db
 state.db-journal
 state.db-wal
 state.db-shm
-site/deals.json
-site/health.json
+site/
 *.session
 *.session-journal
 .coverage
