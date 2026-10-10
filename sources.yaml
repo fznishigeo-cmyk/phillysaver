@@ -154,6 +154,20 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Coupons, price matching, everyday deals."
+  - name: how_to_shop_for_free
+    method: rss
+    url: https://www.howtoshopforfree.net/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Mixed online/in-store; the in-store filter keeps only online posts."
+  - name: totally_target
+    method: rss
+    url: https://www.totallytarget.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Target-focused; online-orderable deals pass, store-run posts are discarded."
   - name: coupon_pro
     method: rss
     url: https://couponproblog.com/feed/
