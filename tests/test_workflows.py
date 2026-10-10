@@ -112,16 +112,20 @@ def test_fast_shape() -> None:
     # Same concurrency group as hourly so the two never overlap.
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 10
+    assert job["timeout-minutes"] == 12
 
     runs = run_commands(doc)
     assert any(r.strip() == "python -m dealradar run --fast-lane" for r in runs)
     assert any("git fetch origin data || true" in r for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
 
-    # Fast lane skips the Pages deploy: the hourly deploy refreshes the site.
+    # The fast lane deploys the site too: a 15-minute-lane find (Keepa price
+    # drop) must reach the page in minutes, not wait for the hourly deploy.
     uses = " ".join(s.get("uses", "") for s in job["steps"])
-    assert "pages" not in uses.lower()
+    assert "actions/upload-pages-artifact" in uses
+    assert "actions/deploy-pages" in uses
+    assert doc["permissions"]["pages"] == "write"
+    assert doc["permissions"]["id-token"] == "write"
 
     run_step = next(s for s in job["steps"]
                     if s.get("run", "").strip() == "python -m dealradar run --fast-lane")
