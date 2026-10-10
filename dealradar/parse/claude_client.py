@@ -91,6 +91,11 @@ class ClaudeParser:
     # ------------------------------------------------------------- model pick
 
     def _choose_model(self) -> str:
+        configured = getattr(self.cfg, "parse_model", "") or ""
+        if configured:
+            log.info("model selected: %s (explicit parse.model override; "
+                     "quality bought deliberately, caps still apply)", configured)
+            return configured
         try:
             listed = list(self.client.models.list())
         except Exception as e:  # endpoint failure only -> last-resort constant

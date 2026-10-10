@@ -67,6 +67,7 @@ class AppConfig:
     redirect_max_hops: int = 5
 
     # -- parse --
+    parse_model: str = ""               # "" = cheapest-model heuristic
     max_posts_per_run: int = 400
     max_chars_per_post: int = 6000
     spend_cap_usd_per_run: float = 0.50
@@ -141,6 +142,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.circuit_breaker_cooldown_h = float(g("fetch", "circuit_breaker_cooldown_h", default=cfg.circuit_breaker_cooldown_h))
     cfg.redirect_max_hops = int(g("fetch", "redirect_max_hops", default=cfg.redirect_max_hops))
 
+    cfg.parse_model = g("parse", "model", default="") or ""
     cfg.max_posts_per_run = int(g("parse", "max_posts_per_run", default=cfg.max_posts_per_run))
     cfg.max_chars_per_post = int(g("parse", "max_chars_per_post", default=cfg.max_chars_per_post))
     cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))

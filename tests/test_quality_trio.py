@@ -462,8 +462,22 @@ class TestSiteStrongTier:
 # --------------------------------------------------------------- config
 
 class TestConfigFields:
+    def test_parse_model_override_skips_heuristic(self):
+        class _NoListModels:
+            def list(self):  # pragma: no cover - must never be called
+                raise AssertionError("models.list() called despite override")
+
+        class _Client:
+            models = _NoListModels()
+            messages = _CriticMessages()
+
+        cfg = _cfg(parse_model="claude-sonnet-5-5")
+        parser = ClaudeParser(cfg, client=_Client())
+        assert parser.model == "claude-sonnet-5-5"
+
     def test_quality_trio_config_loads(self):
         cfg = load_config()
+        assert cfg.parse_model == "claude-sonnet-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"
         assert cfg.max_second_opinions_per_run == 8
         assert cfg.critic_model == "claude-sonnet-5-5"

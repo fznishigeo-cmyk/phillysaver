@@ -18,6 +18,12 @@ fetch:
   redirect_max_hops: 5
 
 parse:
+  # Primary extraction model. Empty = cheapest current model from the models
+  # endpoint (the original default). Set explicitly to buy extraction quality
+  # with the monthly API credit: Sonnet reads promo stacks, clip coupons and
+  # roundups far better than the cheapest model, and the spend caps below
+  # still bound the worst case.
+  model: "claude-sonnet-5-5"
   max_posts_per_run: 400
   max_chars_per_post: 6000
   spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
