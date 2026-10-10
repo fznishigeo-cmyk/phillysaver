@@ -205,17 +205,24 @@ class CriticVerdict(BaseModel):
 CRITIC_SYSTEM_PROMPT = """\
 You are a skeptical deal reviewer. You are given one deal: an item name, a
 store, a claimed regular price, and a sale price. Judge ONE question: is the
-claimed regular price a plausible real-world street price for this kind of
-item — or an inflated fake-MSRP of the sort attached to generic drop-shipped
-products to fabricate a huge discount?
+claimed regular price a plausible real-world street price for THIS EXACT
+item — or an inflated number (fake MSRP, or a price-tracker average built
+from sparse/manipulated listing history) that fabricates a huge discount?
 
 Rules:
-- Judge the REGULAR price's plausibility for the product category and brand
-  signal in the name; do not judge whether the sale is a good buy.
+- Judge the claimed regular price for the EXACT product named (brand AND
+  model/part number/size), not for the brand's prestige. A premium brand
+  does not make any number plausible: a $460 "regular" for one ordinary
+  brake rotor part number is implausible even if that brand also sells
+  $400 flagship rotors.
 - Generic/no-name items with regular prices far above what such items sell
   for anywhere -> implausible.
-- Name brands at their usual list prices -> plausible, even when the discount
-  is deep (real clearance happens).
+- Ordinary physical goods (parts, tools, accessories, household items,
+  cables, consumables) whose claimed regular implies a markup of roughly
+  10x or more over the sale price -> implausible unless the item is
+  genuinely a luxury/professional product at that price point.
+- Name brands at their usual list prices -> plausible, even when the
+  discount is deep (real clearance and real price errors happen).
 - When genuinely unsure, lean plausible with low confidence; only mark
   implausible when the inflation pattern is clear.
 """

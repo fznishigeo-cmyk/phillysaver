@@ -70,6 +70,21 @@ def _price_at(arr: Any, price_type: int) -> float | None:
     return _cents(arr)
 
 
+def _dense_history(avg: Any, price_type: int) -> bool:
+    """True when every window beyond the first (week/month/90-day) carries a
+    price for this price type. A sparse Amazon-price history fabricates
+    absurd averages — an OEM part Amazon listed once at $460 makes today's
+    normal $13 price look like a 97% drop. A product Amazon genuinely sells
+    has data in every window. A flat array (degraded shape) passes when it
+    has a price at all."""
+    if not isinstance(avg, (list, tuple)) or not avg:
+        return False
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in avg):
+        return _price_at(avg, price_type) is not None
+    tail = avg[1:] if len(avg) > 1 else avg
+    return all(_price_at(w, price_type) is not None for w in tail)
+
+
 def _avg_price(avg: Any, price_type: int) -> float | None:
     """Average price for one price type from Keepa's ``avg``, which in the
     deals response is an array of arrays: [dateRange][priceType] for the
@@ -142,6 +157,12 @@ class KeepaDealsAdapter(SourceAdapter):
             # demand reports "dropping" 60%) dominates the drop list and is
             # noise, never a deal a person wants.
             "excludeCategories": [283155, 133140011],
+            # Only products people actually buy: obscure OEM parts and
+            # zero-review SKUs produce sparse price histories whose
+            # "averages" fabricate 95%+ drops. Rank is Amazon sales rank;
+            # rating is in tenths of stars (20 = 2.0 stars).
+            "salesRankRange": [1, 30000],
+            "minRating": 20,
         }
         with self._client(cfg) as client:
             _check_deadline(deadline)
@@ -186,11 +207,13 @@ class KeepaDealsAdapter(SourceAdapter):
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
+        avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
         current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
-        avg = _avg_price(row.get("avg") or row.get("avg90") or row.get("avg30"),
-                         PRICE_TYPE_AMAZON)
+        avg = _avg_price(avg_raw, PRICE_TYPE_AMAZON)
         if current is None or avg is None or avg <= 0 or current >= avg:
             return None
+        if not _dense_history(avg_raw, PRICE_TYPE_AMAZON):
+            return None  # sparse history: the "average" is an artifact
 
         # Synthesized source text: the quotes the evidence check will verify.
         # The 90-day average is the honest "regular" basis — never a claimed

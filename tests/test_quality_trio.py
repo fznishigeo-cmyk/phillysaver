@@ -195,6 +195,39 @@ class TestRunCritic:
                                                                   "suspect": 0}
         db.close()
 
+    def test_low_confidence_pass_is_rejudged_exactly_once(self, tmp_path):
+        """Live incident: junk 95%+ 'deals' slid past the critic on weak
+        plausible verdicts (0.35-0.6). A <0.7 'plausible' gets exactly one
+        second look; a flip to implausible flags it off the page."""
+        db = self._db_with_deal(
+            tmp_path, critic={"plausible": True, "confidence": 0.6,
+                              "reason": "brand logic"})
+        cfg = _cfg()
+        msgs = _CriticMessages(plausible=False)  # the recheck flips it
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1,
+                                                              "suspect": 1}
+        row = db.get_deal("si|acme|widget")
+        assert row["critic"]["rechecked"] is True
+        assert "suspect_msrp" in row["flags"]
+        # Settled now: no third opinion ever.
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
+                                                              "suspect": 0}
+        assert len(msgs.calls) == 1
+        db.close()
+
+    def test_confident_pass_is_never_rejudged(self, tmp_path):
+        db = self._db_with_deal(
+            tmp_path, critic={"plausible": True, "confidence": 0.9,
+                              "reason": "solid"})
+        cfg = _cfg()
+        msgs = _CriticMessages(plausible=False)
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
+                                                              "suspect": 0}
+        assert msgs.calls == []
+        db.close()
+
     def test_spend_cap_stops_the_critic_cleanly(self, tmp_path):
         db = self._db_with_deal(tmp_path)
         cfg = _cfg()

@@ -158,8 +158,17 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
     if parser is None or not cfg.critic_enabled or not cfg.critic_model:
         return stats
     for deal in db.all_deals(status="alive"):
-        if deal.get("critic"):
-            continue  # already judged at these prices
+        prior = deal.get("critic")
+        if prior:
+            # One second look per deal: a LOW-CONFIDENCE pass (< 0.7) gets
+            # re-judged exactly once — weak "plausible" verdicts are where
+            # inflated prices slip through. Everything else is settled
+            # until a price change clears the verdict (dedupe).
+            recheck = (prior.get("plausible")
+                       and float(prior.get("confidence") or 0.0) < 0.7
+                       and not prior.get("rechecked"))
+            if not recheck:
+                continue
         ok, _reason = rank.is_publishable(deal, cfg)
         if not ok:
             continue  # the critic only spends on deals that would publish
@@ -171,6 +180,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
             break
         if verdict is None:
             continue  # critic disabled/failed: no opinion, deal unaffected
+        if prior:
+            verdict["rechecked"] = True
         stats["judged"] += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         payload["critic"] = verdict

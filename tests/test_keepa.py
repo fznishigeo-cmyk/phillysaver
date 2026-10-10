@@ -101,6 +101,9 @@ class TestKeepaAdapter:
             sel = json.loads(request.url.params["selection"])
             assert sel["priceTypes"] == [0]
             assert sel["dateRange"] == 3  # drop vs the 90-day average
+            # Popularity filters: only products people actually buy.
+            assert sel["salesRankRange"] == [1, 30000]
+            assert sel["minRating"] == 20
             return httpx.Response(
                 200, json={"deals": {"dr": [row]}, "tokensLeft": 280})
 
@@ -109,6 +112,25 @@ class TestKeepaAdapter:
         assert len(posts) == 1
         assert "On sale for $49.99" in posts[0].text
         assert "Regular price (90-day average on Amazon): $199.99" in posts[0].text
+
+    def test_sparse_history_rows_are_dropped(self, cfg, monkeypatch):
+        """Live incident: OEM parts with one stale $460 listing in 90 days
+        showed as '97% off $13'. No week/month data for the Amazon price
+        type -> the 'average' is an artifact -> the row never becomes a
+        post."""
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        sparse = {
+            "asin": "B0SPARSEOEM", "title": "Brake Rotor OEM 09.X999.11",
+            "current": [1305, -1],
+            "avg": [[-1, -1], [-1, -1], [-1, -1], [46000, -1]],
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, json={"deals": {"dr": [sparse]}, "tokensLeft": 250})
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        assert adapter.fetch_posts(SRC, None, None, cfg, NOW, None) == []
 
     def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
         monkeypatch.setenv("KEEPA_KEY", "kkey")
