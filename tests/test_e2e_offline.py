@@ -155,6 +155,10 @@ def env(tmp_path, monkeypatch):
     cfg_path = tmp_path / "config.yaml"
     root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
     text = root_cfg.read_text().replace('site_dir: "site"', f'site_dir: "{site_dir}"')
+    # The offline fake Claude implements messages.parse (not create), so this
+    # end-to-end run exercises the structured path; production keeps it off.
+    text = text.replace("retries_on_invalid_json: 2",
+                        "retries_on_invalid_json: 2\n  structured_output: true")
     cfg_path.write_text(text)
     return {"db": str(db_path), "cfg": str(cfg_path), "site": site_dir}
 

@@ -131,6 +131,9 @@ def make_cfg(**over) -> AppConfig:
     cfg = AppConfig()
     cfg.spend_cap_usd_per_run = 0.50
     cfg.retries_on_invalid_json = 2
+    # These tests exercise the structured messages.parse path specifically;
+    # production defaults it off (see test_structured_output_default_*).
+    cfg.parse_structured_output = True
     cfg.model_pricing_per_mtok = {
         "default": {"input": 1.00, "output": 5.00},
         HAIKU_NEW: {"input": 0.10, "output": 0.50},

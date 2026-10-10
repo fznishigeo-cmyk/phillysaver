@@ -73,6 +73,10 @@ class AppConfig:
     spend_cap_usd_per_run: float = 0.50
     spend_cap_usd_per_day: float = 5.00
     retries_on_invalid_json: int = 2
+    # Probe the structured messages.parse endpoint for extraction. Off by
+    # default: our schema is rejected as "too complex" after a MINUTES-long
+    # stall, so we go straight to the JSON create() path that handles it.
+    parse_structured_output: bool = False
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
     second_opinion_model: str = ""      # "" disables the second-opinion pass
     max_second_opinions_per_run: int = 8
@@ -150,6 +154,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))
     cfg.spend_cap_usd_per_day = float(g("parse", "spend_cap_usd_per_day", default=cfg.spend_cap_usd_per_day))
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
+    cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
     cfg.second_opinion_model = g("parse", "second_opinion_model", default="") or ""
     cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
     cfg.critic_model = g("parse", "critic_model", default="") or ""

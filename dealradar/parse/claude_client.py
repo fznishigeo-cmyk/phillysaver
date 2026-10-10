@@ -82,10 +82,16 @@ class ClaudeParser:
             client = anthropic.Anthropic(api_key=api_key)
         self.client = client
         self.spend_usd: float = 0.0
-        # Set when the API rejects our schema ("Schema is too complex"):
-        # that rejection is SLOW (minutes) and identical per request, so it
-        # is paid at most once per run; later posts go straight to fallback.
-        self._parse_unsupported: bool = False
+        # The extraction schema (LLMDeals) is rejected by the structured
+        # messages.parse endpoint as "Schema is too complex" — and that
+        # rejection takes MINUTES to return, so paying it even once per run
+        # (a fresh parser each run) burned the whole parse window on the first
+        # post (live incident: 848 fetched, 7 parsed, a 3-min silent stall).
+        # The JSON-mode create() path handles this schema correctly, so
+        # extraction skips messages.parse by default. The critic uses a simple
+        # schema that messages.parse accepts, so it is unaffected. Set
+        # parse.structured_output: true in config to re-enable the probe.
+        self._parse_unsupported: bool = not cfg.parse_structured_output
         self.model: str = self._choose_model()
 
     # ------------------------------------------------------------- model pick

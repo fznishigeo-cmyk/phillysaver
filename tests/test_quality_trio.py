@@ -547,11 +547,49 @@ class TestParseUnsupportedFlag:
                 return R()
 
         msgs = _Msgs()
-        parser = ClaudeParser(_cfg(), client=_FakeClient(msgs))
+        # Opt into the structured probe to exercise the one-time rejection.
+        parser = ClaudeParser(_cfg(parse_structured_output=True),
+                              client=_FakeClient(msgs))
         assert parser.extract("post one", {}) == []
         assert parser.extract("post two", {}) == []
         assert msgs.parse_calls == 1          # the rejection is paid once
         assert msgs.create_calls == 2         # both posts used the fallback
+
+    def test_default_skips_structured_probe_entirely(self):
+        """Production default: the minutes-long schema probe is never made —
+        extraction goes straight to the JSON create() path on every post."""
+        import anthropic
+        import httpx
+
+        class _Msgs:
+            def __init__(self):
+                self.parse_calls = 0
+                self.create_calls = 0
+
+            def parse(self, **kw):  # pragma: no cover - must never run
+                self.parse_calls += 1
+                raise anthropic.BadRequestError(
+                    "Schema is too complex.",
+                    response=httpx.Response(
+                        400, request=httpx.Request("POST", "https://x")),
+                    body=None)
+
+            def create(self, **kw):
+                self.create_calls += 1
+
+                class R:
+                    stop_reason = "end_turn"
+                    usage = _Usage()
+                    content = [type("B", (), {"type": "text",
+                                              "text": '{"deals": []}'})()]
+                return R()
+
+        msgs = _Msgs()
+        parser = ClaudeParser(_cfg(), client=_FakeClient(msgs))  # default: off
+        assert parser.extract("post one", {}) == []
+        assert parser.extract("post two", {}) == []
+        assert msgs.parse_calls == 0          # never pays the slow probe
+        assert msgs.create_calls == 2
 
 
 # ------------------------------------------------------- live price recheck
