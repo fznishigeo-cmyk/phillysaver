@@ -23,12 +23,14 @@ from .models import RawPost, SourceConfig
 
 log = logging.getLogger("dealradar.pipeline")
 
-# Seconds reserved at the end of the run budget for parse/publish when fetching.
+# Seconds reserved at the end of the run budget for publish (critic + price
+# rechecks + site render) after parse stops.
 _RESERVE_FOR_TAIL_S = 90.0
-# Fetching stops this early so the parse phase gets real time. Live incident:
-# a 60-source sweep ran to the wire, parse got seconds, and the back half of
-# the source list never published a single deal (903 fetched, ~1 parsed).
-_RESERVE_FOR_PARSE_S = 240.0
+# Fetching (and its enrichment) stops this early so parse gets real time. The
+# parse window is _RESERVE_FOR_PARSE_S - _RESERVE_FOR_TAIL_S; keep the gap wide.
+# Live incident: a 60-source sweep ran to the wire, parse got seconds, and the
+# back half of the source list never published a single deal.
+_RESERVE_FOR_PARSE_S = 300.0
 
 
 def _run_key(now: datetime, fast_lane: bool) -> str:
@@ -155,6 +157,11 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
     from .fetch.base import run_source
     from .fetch.registry import get_adapter
 
+    # Fetch (including each source's article enrichment) must stop with the
+    # parse reserve intact. Passing this as the per-source run_deadline bounds
+    # enrichment too — otherwise an enrichment-heavy blog runs to the full run
+    # deadline and parse gets no time (live incident: 505 new posts, 1 parsed).
+    fetch_deadline = deadline - _RESERVE_FOR_PARSE_S
     posts: list[RawPost] = []
     errors: dict[str, str] = {}
     for source in sources:
@@ -162,7 +169,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             continue
         if fast_lane and not source.fast_lane:
             continue
-        if time.monotonic() > deadline - _RESERVE_FOR_PARSE_S:
+        if time.monotonic() > fetch_deadline:
             log.warning("fetch window exhausted; skipping remaining sources from %s "
                         "(rotation puts them first on a later run)", source.name)
             break
@@ -172,7 +179,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             errors[source.name] = f"no adapter: {e}"
             continue
         got, ok, err = run_source(source, adapter, fetcher, db, cfg, now,
-                                  run_deadline=deadline)
+                                  run_deadline=fetch_deadline)
         if ok:
             posts.extend(got)
             log.info("source %s: %d items", source.name, len(got))
