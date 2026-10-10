@@ -39,6 +39,9 @@ class RawPost:
     text: str                     # cleaned plain text (title + summary/body)
     published_at: datetime | None # tz-aware UTC, defensively parsed
     fetched_at: datetime          # tz-aware UTC
+    image_url: str = ""           # retailer's own public product-image URL
+                                  # (e.g. Amazon's media CDN via Keepa). Never
+                                  # a copied/stored image, never a blog image.
     hash_text: str = ""           # stable text for content_hash; adapters set it
                                   # to the PRE-enrichment text so a flaky article
                                   # fetch can't make the same post hash differently
@@ -130,6 +133,7 @@ class Deal:
     brand: str = ""
     canonical_url: str = ""
     asin: str = ""
+    image_url: str = ""                   # retailer's public product image URL
     final_price: float | None = None
     regular_price: float | None = None
     pct_at_checkout: float | None = None

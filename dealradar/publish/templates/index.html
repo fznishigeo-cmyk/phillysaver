@@ -48,6 +48,10 @@ s{color:var(--muted)}
 .empty{color:var(--muted);padding:24px 0;text-align:center}
 .strongh{font-size:16px;margin:22px 0 8px;border-top:1px solid var(--line);padding-top:16px}
 .strongh .meta{font-weight:400}
+.itemflex{display:flex;gap:10px;align-items:flex-start}
+.thumb{width:56px;height:56px;object-fit:contain;border-radius:6px;background:#fff;
+       border:1px solid var(--line);flex:0 0 auto}
+.itemtext{min-width:0}
 @media (max-width:640px){ body{padding:10px} th,td{padding:6px 5px;font-size:13px} }
 </style>
 </head>
@@ -165,6 +169,13 @@ s{color:var(--muted)}
     }
     if (d.headline) {
       item += '<div class="headline">' + esc(d.headline) + "</div>";
+    }
+    // Thumbnail: the retailer's own public product image (broken -> hidden).
+    if (d.image_url) {
+      item = '<div class="itemflex"><img class="thumb" loading="lazy" src="' +
+        esc(d.image_url) + '" alt="' + esc(d.item) +
+        '" onerror="this.parentNode.removeChild(this)">' +
+        '<div class="itemtext">' + item + "</div></div>";
     }
     var price = d.final_price != null ? "$" + Number(d.final_price).toFixed(2) : "—";
     if (d.regular_price != null) {

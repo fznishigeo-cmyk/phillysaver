@@ -93,6 +93,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
         "url": rewrite_affiliate(deal.get("canonical_url") or ""),
+        "image_url": deal.get("image_url") or "",
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
         "pct_at_checkout": deal.get("pct_at_checkout"),

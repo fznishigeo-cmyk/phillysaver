@@ -95,6 +95,8 @@ class TestKeepaAdapter:
             "current": [4999, 5999, -1, 120000],
             # [day, week, month, 90d] x [priceType] — 90-day window preferred.
             "avg": [[5200, -1], [9900, -1], [15000, -1], [19999, 6000]],
+            # Keepa serializes the image filename as an int array of chars.
+            "image": [ord(c) for c in "61vacuumIMG._AC_.jpg"],
         }
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -112,6 +114,9 @@ class TestKeepaAdapter:
         assert len(posts) == 1
         assert "On sale for $49.99" in posts[0].text
         assert "Regular price (90-day average on Amazon): $199.99" in posts[0].text
+        # Thumbnail: Amazon's own public CDN URL, decoded from the int array.
+        assert posts[0].image_url == \
+            "https://m.media-amazon.com/images/I/61vacuumIMG._AC_.jpg"
 
     def test_sparse_history_rows_are_dropped(self, cfg, monkeypatch):
         """Live incident: OEM parts with one stale $460 listing in 90 days
@@ -160,12 +165,19 @@ class TestKeepaVerify:
             assert "api.keepa.com/product" in url
             assert params["asin"] == "B0TESTASIN1"
             return httpx.Response(
-                200, json={"products": [{"stats": {"avg90": [14999, -1]}}]},
+                200, json={"products": [{
+                    "stats": {"avg90": [14999, -1]},
+                    "imagesCSV": "71productIMG.jpg,41otherIMG.jpg",
+                }]},
                 request=httpx.Request("GET", url))
 
         monkeypatch.setattr(verify.httpx if hasattr(verify, "httpx") else httpx,
                             "get", fake_get)
-        assert verify.keepa_check(self._deal(), cfg) is True
+        deal = self._deal()
+        assert verify.keepa_check(deal, cfg) is True
+        # Free ride on the same response: the product's first image.
+        assert deal["image_url"] == \
+            "https://m.media-amazon.com/images/I/71productIMG.jpg"
 
     def test_check_false_when_near_avg(self, cfg, monkeypatch):
         monkeypatch.setenv("KEEPA_KEY", "kkey")

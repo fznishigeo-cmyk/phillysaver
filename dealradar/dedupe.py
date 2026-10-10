@@ -113,6 +113,7 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
         "brand": extracted.brand,
         "canonical_url": extracted.product_url,
         "asin": asin,
+        "image_url": "",
         "final_price": savings.final_price,
         "regular_price": savings.regular_price,
         "pct_at_checkout": savings.pct_at_checkout,
@@ -161,6 +162,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
         payload = _new_payload(key, extracted, savings, asin, now)
+        if post.image_url:
+            payload["image_url"] = post.image_url
         deal_id = db.insert_deal(
             dedupe_key=key,
             store=extracted.store,
@@ -228,6 +231,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["canonical_url"] = extracted.product_url
         if not payload.get("asin") and asin:
             payload["asin"] = asin
+        if not payload.get("image_url") and post.image_url:
+            payload["image_url"] = post.image_url
         payload["last_seen_at"] = util.iso(now)
 
         db.add_sighting(deal_id, source_name=post.source_name,

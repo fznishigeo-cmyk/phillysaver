@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -68,6 +69,31 @@ def _price_at(arr: Any, price_type: int) -> float | None:
             return _cents(arr[price_type])
         return None
     return _cents(arr)
+
+
+#: Amazon's public product-image CDN; Keepa reports the image filename.
+AMAZON_IMAGE_CDN = "https://m.media-amazon.com/images/I/"
+
+
+def _image_url(row: dict[str, Any]) -> str:
+    """Product-image URL from a Keepa deal row's ``image`` field, which
+    arrives as a filename string or an int/byte array of its characters.
+    This points at Amazon's own public CDN for the product being linked —
+    no image is ever copied or stored."""
+    img = row.get("image")
+    if isinstance(img, (list, tuple)):
+        try:
+            img = "".join(chr(int(c)) for c in img)
+        except (TypeError, ValueError):
+            return ""
+    elif isinstance(img, bytes):
+        img = img.decode("ascii", "ignore")
+    if not isinstance(img, str):
+        return ""
+    img = img.strip()
+    if not img or "/" in img or not re.fullmatch(r"[\w.,+%-]+", img):
+        return ""  # defensive: a filename, never a path or junk
+    return AMAZON_IMAGE_CDN + img
 
 
 def _dense_history(avg: Any, price_type: int) -> bool:
@@ -237,4 +263,5 @@ class KeepaDealsAdapter(SourceAdapter):
             text="\n".join(lines),
             published_at=None,  # first_seen governs freshness
             fetched_at=now,
+            image_url=_image_url(row),
         )

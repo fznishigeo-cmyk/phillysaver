@@ -306,6 +306,27 @@ class TestCategory:
         assert res["payload"]["category"] == "kitchen"
         db.close()
 
+    def test_image_url_flows_from_post_to_payload_and_sticks(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        sav = SavingsResult(computable=True, final_price=10.0,
+                            regular_price=40.0, pct_at_checkout=75.0,
+                            abs_savings=30.0, basis="quoted_regular")
+        img = "https://m.media-amazon.com/images/I/61thing.jpg"
+        first = to_extracted(_llm_deal(), _post(), "America/New_York", NOW)
+        res = upsert_extracted(db, first, sav, _post(image_url=img), cfg, NOW)
+        assert res["payload"]["image_url"] == img
+        # A later sighting without an image never blanks the stored one.
+        again = to_extracted(_llm_deal(), _post(uid="u9"), "America/New_York",
+                             NOW)
+        res2 = upsert_extracted(
+            db, again, sav,
+            _post(uid="u9", url="https://blog.example/p9",
+                  text="Widget deal now $10.00 once more"),
+            cfg, NOW)
+        assert res2["payload"]["image_url"] == img
+        db.close()
+
     def test_price_improvement_clears_stale_critic_verdict(self, tmp_path):
         db = DB(tmp_path / "state.db")
         cfg = _cfg()

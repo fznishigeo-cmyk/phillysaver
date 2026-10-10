@@ -134,7 +134,17 @@ def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
         )
         resp.raise_for_status()
         products = resp.json().get("products") or []
-        stats = (products[0] or {}).get("stats") if products else None
+        product = (products[0] or {}) if products else {}
+        # Free ride on the same response: the product's image filename on
+        # Amazon's public CDN (no extra tokens, no image ever stored).
+        if not deal.get("image_url"):
+            csv = product.get("imagesCSV")
+            if isinstance(csv, str) and csv.strip():
+                first = csv.split(",")[0].strip()
+                if first and "/" not in first:
+                    deal["image_url"] = \
+                        f"https://m.media-amazon.com/images/I/{first}"
+        stats = product.get("stats")
         avg = None
         if isinstance(stats, dict):
             for field in ("avg90", "avg30", "avg"):
