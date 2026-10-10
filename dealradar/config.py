@@ -70,6 +70,7 @@ class AppConfig:
     max_posts_per_run: int = 400
     max_chars_per_post: int = 6000
     spend_cap_usd_per_run: float = 0.50
+    spend_cap_usd_per_day: float = 5.00
     retries_on_invalid_json: int = 2
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
 
@@ -137,6 +138,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.max_posts_per_run = int(g("parse", "max_posts_per_run", default=cfg.max_posts_per_run))
     cfg.max_chars_per_post = int(g("parse", "max_chars_per_post", default=cfg.max_chars_per_post))
     cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))
+    cfg.spend_cap_usd_per_day = float(g("parse", "spend_cap_usd_per_day", default=cfg.spend_cap_usd_per_day))
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
 

@@ -46,6 +46,19 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
             and final <= 0.30 * median):
         return "history-checked"
 
+    # Keepa cross-check (paid, flag + key gated): only for deals that would
+    # otherwise publish unverified, at most once per deal (keepa_checked flag
+    # in the payload keeps hourly re-tiering from burning tokens).
+    if (deal.get("asin") and not deal.get("keepa_checked")
+            and (deal.get("pct_at_checkout") or 0) >= cfg.min_pct):
+        verdict = keepa_check(deal, cfg)
+        if verdict is not None:
+            deal["keepa_checked"] = True
+            payload = {k: v for k, v in deal.items() if k != "id"}
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            if verdict:
+                return "history-checked"
+
     return "unverified"
 
 
@@ -97,9 +110,40 @@ def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
     """
     if not cfg.feature_flags.get("keepa"):
         return None
-    if not get_secret("KEEPA_KEY"):
+    key = get_secret("KEEPA_KEY")
+    if not key:
         log.debug("keepa flag on but KEEPA_KEY unset; skipping")
         return None
-    log.info("keepa adapter stubbed; no verdict for %s",
-             deal.get("dedupe_key", "?"))
-    return None
+    asin = str(deal.get("asin") or "").strip().upper()
+    final = deal.get("final_price")
+    if not asin or final is None:
+        return None
+    try:
+        import httpx
+
+        resp = httpx.get(
+            "https://api.keepa.com/product",
+            params={"key": key, "domain": 1, "asin": asin, "stats": 90},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        products = resp.json().get("products") or []
+        stats = (products[0] or {}).get("stats") if products else None
+        avg = None
+        if isinstance(stats, dict):
+            for field in ("avg90", "avg30", "avg"):
+                vals = stats.get(field)
+                if isinstance(vals, list) and vals:
+                    v = vals[0]  # index 0 = Amazon price, integer cents
+                    if isinstance(v, (int, float)) and v > 0:
+                        avg = float(v) / 100.0
+                        break
+        if avg is None:
+            return None
+        verdict = float(final) <= 0.30 * avg
+        log.info("keepa check %s: final=$%.2f avg90=$%.2f -> %s",
+                 asin, float(final), avg, verdict)
+        return verdict
+    except Exception as e:  # tokens exhausted, transport, schema drift
+        log.warning("keepa check failed for %s: %s", asin, e)
+        return None

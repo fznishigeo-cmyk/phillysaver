@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import statistics
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -452,6 +452,16 @@ class DB:
              spend_usd, run_key),
         )
         self.conn.commit()
+
+    def spend_usd_for_day(self, now: datetime) -> float:
+        """Total recorded LLM spend for the current UTC day, across all runs."""
+        day = now.astimezone(timezone.utc).strftime("%Y-%m-%d")
+        row = self.conn.execute(
+            "SELECT COALESCE(SUM(spend_usd), 0) AS s FROM run_stats"
+            " WHERE started_at >= ? AND started_at < ?",
+            (f"{day}T00:00:00+00:00", f"{day}T23:59:59+00:00"),
+        ).fetchone()
+        return float(row["s"])
 
     def avg_items_7d(self, now: datetime, kind: str = "hourly") -> float | None:
         since = iso(now - timedelta(days=7))

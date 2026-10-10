@@ -108,7 +108,9 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
 
 def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
                      tz_by_source: dict[str, str], deadline: float | None,
-                     claude_client=None) -> tuple[list[tuple[RawPost, Any]], dict]:
+                     claude_client=None,
+                     run_cap_usd: float | None = None
+                     ) -> tuple[list[tuple[RawPost, Any]], dict]:
     from .parse.claude_client import ClaudeParser
     from .parse.extractor import parse_posts
 
@@ -118,7 +120,8 @@ def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
     if not new_posts:
         return [], stats
     try:
-        parser = ClaudeParser(cfg, client=claude_client)
+        parser = ClaudeParser(cfg, client=claude_client,
+                              run_cap_usd=run_cap_usd)
     except ParserNotConfigured:
         log.warning("DEALS_CLAUDE_API_KEY not set: parse layer skipped")
         return [], stats
@@ -217,8 +220,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
 
         # ---- parse (Claude; evidence-verified) ----
-        pairs, pstats = _parse_new_posts(new_posts, cfg, now, tz_by_source,
-                                         deadline, claude_client=claude_client)
+        # Daily ceiling: this run may spend at most what remains of
+        # cfg.spend_cap_usd_per_day for the current UTC day.
+        remaining_today = max(0.0, cfg.spend_cap_usd_per_day
+                              - db.spend_usd_for_day(now))
+        if remaining_today <= 0:
+            log.warning("daily LLM spend cap ($%.2f) exhausted; parse skipped "
+                        "this run (posts stay unrecorded and retry tomorrow)",
+                        cfg.spend_cap_usd_per_day)
+        pairs, pstats = _parse_new_posts(
+            new_posts if remaining_today > 0 else [],
+            cfg, now, tz_by_source, deadline,
+            claude_client=claude_client, run_cap_usd=remaining_today)
         summary["parse"] = pstats
         processed = set(pstats.get("processed_hashes") or [])
         recorded = 0

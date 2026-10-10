@@ -21,6 +21,7 @@ parse:
   max_posts_per_run: 400
   max_chars_per_post: 6000
   spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
+  spend_cap_usd_per_day: 5.00          # hard daily ceiling across ALL runs (UTC day)
   retries_on_invalid_json: 2
   # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
   # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
@@ -49,7 +50,7 @@ ranking:
 verify:
   corroborate_window_h: 24
   history_min_observations: 5  # need this many price points before history-checked can fire
-  keepa_enabled: false         # optional paid adapter, off by default
+  keepa_enabled: false         # legacy key, superseded by feature_flags.keepa
 
 dedupe:
   fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
@@ -76,4 +77,4 @@ retention:
 feature_flags:
   threads: false               # off until app review passes
   instagram: false             # stubbed
-  keepa: false
+  keepa: true                  # inert until the KEEPA_KEY secret is set

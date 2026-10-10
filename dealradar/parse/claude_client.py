@@ -63,9 +63,14 @@ class ClaudeParser:
     """
 
     def __init__(self, cfg: AppConfig, *, client: Any = None,
-                 sleep: Callable[[float], None] = time.sleep) -> None:
+                 sleep: Callable[[float], None] = time.sleep,
+                 run_cap_usd: float | None = None) -> None:
         self.cfg = cfg
         self._sleep = sleep
+        # The effective cap for THIS run: the per-run cap, optionally tightened
+        # by the pipeline to whatever remains of the daily ceiling.
+        self.run_cap_usd = (cfg.spend_cap_usd_per_run if run_cap_usd is None
+                            else min(cfg.spend_cap_usd_per_run, run_cap_usd))
         if client is None:
             api_key = get_secret("DEALS_CLAUDE_API_KEY")
             if not api_key:
@@ -114,7 +119,7 @@ class ClaudeParser:
     # ---------------------------------------------------------- spend / cost
 
     def _check_spend_cap(self) -> None:
-        cap = self.cfg.spend_cap_usd_per_run
+        cap = self.run_cap_usd
         if self.spend_usd >= cap:
             raise SpendCapReached(
                 f"LLM spend ${self.spend_usd:.4f} >= cap ${cap:.4f} for this run"

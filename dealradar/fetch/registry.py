@@ -43,6 +43,9 @@ def get_adapter(source: SourceConfig, cfg: AppConfig, *, fast_lane: bool = False
         if adapter_name == "meh":
             from .meh import MehAdapter
             return MehAdapter()
+        if adapter_name == "keepa":
+            from .keepa import KeepaDealsAdapter
+            return KeepaDealsAdapter()
         if adapter_name == "telegram":
             from .telegram_source import TelegramAdapter
             return TelegramAdapter(fast_lane=fast_lane)

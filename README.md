@@ -71,7 +71,7 @@ source is reported as `needs_key`, it never crashes the run.
 | `TELEGRAM_ADMIN_CHAT_ID` | Separate chat for low-volume admin warnings. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Provider-agnostic SMTP for the daily digest; the single recipient lives in config (`digest.recipient`). |
 | `WOOT_API_KEY`, `MEH_API_KEY` | Optional official store APIs. |
-| `KEEPA_KEY` | Optional, behind `feature_flags.keepa`. |
+| `KEEPA_KEY` | Optional. Unlocks BOTH the `keepa_amazon_drops` discovery source (Amazon products freshly >=60% below their average — the official, legal alternative to scraping Amazon) and the Keepa price-history cross-check that can award the history-checked badge. Get it at keepa.com -> Data -> API (flat-fee subscription, token-throttled: it can never overbill). |
 | `THREADS_TOKEN` | Optional, behind `feature_flags.threads` — off until app review passes. |
 
 On GitHub Actions, set these as repository secrets; the workflows map each one
@@ -163,7 +163,11 @@ The parse model is chosen dynamically: the cheapest current model
 ($0.10/M input, $0.50/M output), a worst-case 400-post hour at ~1.6k input +
 400 output tokens per post is roughly **$0.06–0.15**. Typical hours (30–80 new
 posts — only *new* content is parsed, re-runs cost nothing) are **$0.01–0.03**.
-Hard ceiling: `parse.spend_cap_usd_per_run` in config.yaml (default $0.50);
+Hard ceilings: `parse.spend_cap_usd_per_run` (default $0.50) and
+`parse.spend_cap_usd_per_day` (default $5.00 across ALL runs in a UTC day —
+when the day's budget is spent, parsing pauses and unparsed posts simply
+retry the next day); both in config.yaml.
+Per-run detail: `parse.spend_cap_usd_per_run`;
 parsing aborts gracefully at the cap and the remaining posts wait for the next
 run.
 

@@ -409,6 +409,15 @@ sources:
     fast_lane: true           # fast lane reads only the first configured channel
     notes: "Requires TELEGRAM_API_ID/TELEGRAM_API_HASH/TELEGRAM_SESSION secrets and config.telegram.channels."
 
+  - name: keepa_amazon_drops
+    method: api
+    adapter: keepa
+    url: https://api.keepa.com/deal
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: "Official paid Keepa API: Amazon products that just dropped >=60% below their average. Requires KEEPA_KEY; flat-fee token model, never overbills."
+
   # ---- gated / stubbed connectors ----
   - name: threads_search
     method: api

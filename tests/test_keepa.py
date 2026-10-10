@@ -1,0 +1,157 @@
+"""Offline tests: Keepa deals adapter, Keepa verify cross-check, daily spend cap."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import httpx
+import pytest
+
+from dealradar import verify
+from dealradar.config import AppConfig, load_config
+from dealradar.db import DB
+from dealradar.errors import AdapterNotConfigured
+from dealradar.fetch.keepa import MAX_DEALS_PER_RUN, KeepaDealsAdapter
+from dealradar.models import SourceConfig
+from dealradar.parse.claude_client import ClaudeParser
+
+NOW = datetime(2026, 10, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+SRC = SourceConfig(name="keepa_amazon_drops", method="api",
+                   url="https://api.keepa.com/deal", adapter="keepa")
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    monkeypatch.delenv("KEEPA_KEY", raising=False)
+
+
+@pytest.fixture()
+def cfg() -> AppConfig:
+    return load_config()
+
+
+def _mock_client(handler, cfg: AppConfig) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler),
+                        headers={"User-Agent": cfg.resolved_user_agent()})
+
+
+def _deals_payload():
+    def row(asin, title, current, avg):
+        return {"asin": asin, "title": title,
+                "current": [current], "avg": [avg]}  # integer cents
+
+    rows = [
+        row("B0TESTASIN1", "Mega Blender 9000", 2999, 14999),   # 80% below avg
+        row("B0TESTASIN2", "No-drop Gadget", 9999, 9999),       # current == avg -> skip
+        {"asin": "", "title": "broken row"},                     # skipped
+    ]
+    rows += [row(f"B0FILLER{i:03d}", f"Filler {i}", 1000, 5000)
+             for i in range(30)]  # exercises the per-run cap
+    return {"deals": {"dr": rows}}
+
+
+class TestKeepaAdapter:
+    def test_missing_key_raises(self, cfg):
+        with pytest.raises(AdapterNotConfigured):
+            KeepaDealsAdapter().fetch_posts(SRC, None, None, cfg, NOW, None)
+
+    def test_maps_drops_with_verbatim_prices(self, cfg, monkeypatch):
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "api.keepa.com"
+            assert request.url.path == "/deal"
+            assert request.url.params["key"] == "kkey"
+            assert "domainId" in request.url.params["selection"]
+            return httpx.Response(200, json=_deals_payload())
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
+
+        assert 1 <= len(posts) <= MAX_DEALS_PER_RUN
+        first = posts[0]
+        assert first.title == "Mega Blender 9000"
+        # Verbatim price lines the evidence check will match against.
+        assert "now $29.99" in first.text
+        assert "average price $149.99" in first.text
+        # Amazon product link present so dedupe gets a canonical ASIN URL.
+        assert "https://www.amazon.com/dp/B0TESTASIN1" in first.text
+        # Credit link goes to Keepa's own product page.
+        assert first.url.startswith("https://keepa.com/")
+        # The flat-average row and the broken row were skipped.
+        assert all("No-drop Gadget" != p.title for p in posts)
+
+
+class TestKeepaVerify:
+    def _deal(self, **kw):
+        base = {"dedupe_key": "url|https://www.amazon.com/dp/B0TESTASIN1",
+                "asin": "B0TESTASIN1", "final_price": 29.99,
+                "pct_at_checkout": 80.0}
+        base.update(kw)
+        return base
+
+    def test_check_true_when_far_below_avg(self, cfg, monkeypatch):
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        cfg.feature_flags["keepa"] = True
+
+        def fake_get(url, params=None, timeout=None):
+            assert "api.keepa.com/product" in url
+            assert params["asin"] == "B0TESTASIN1"
+            return httpx.Response(
+                200, json={"products": [{"stats": {"avg90": [14999, -1]}}]},
+                request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(verify.httpx if hasattr(verify, "httpx") else httpx,
+                            "get", fake_get)
+        assert verify.keepa_check(self._deal(), cfg) is True
+
+    def test_check_false_when_near_avg(self, cfg, monkeypatch):
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        cfg.feature_flags["keepa"] = True
+
+        def fake_get(url, params=None, timeout=None):
+            return httpx.Response(
+                200, json={"products": [{"stats": {"avg90": [3999]}}]},
+                request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(httpx, "get", fake_get)
+        assert verify.keepa_check(self._deal(), cfg) is False
+
+    def test_no_key_or_flag_means_no_opinion(self, cfg):
+        cfg.feature_flags["keepa"] = False
+        assert verify.keepa_check(self._deal(), cfg) is None
+        cfg.feature_flags["keepa"] = True  # flag on, key still unset
+        assert verify.keepa_check(self._deal(), cfg) is None
+
+
+class TestDailySpendCap:
+    def test_spend_sums_for_utc_day(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        for i, spend in enumerate((1.25, 2.00)):
+            key = f"2026-10-10T{10 + i:02d}"
+            db.start_run(key, "hourly", NOW)
+            db.finish_run(key, now=NOW, items_fetched=1, posts_new=1,
+                          deals_parsed=1, published=0, spend_usd=spend)
+        other = datetime(2026, 10, 9, 23, 0, tzinfo=timezone.utc)
+        db.start_run("2026-10-09T23", "hourly", other)
+        db.finish_run("2026-10-09T23", now=other, items_fetched=1, posts_new=1,
+                      deals_parsed=1, published=0, spend_usd=9.0)
+        assert db.spend_usd_for_day(NOW) == pytest.approx(3.25)
+        db.close()
+
+    def test_run_cap_is_tightened_by_daily_remainder(self, cfg):
+        class FakeModels:
+            def list(self):
+                class M:  # noqa: N801 - tiny stub
+                    id = "claude-haiku-5-5"
+                    created_at = "2026-01-01"
+                return [M()]
+
+        class FakeClient:
+            models = FakeModels()
+
+        parser = ClaudeParser(cfg, client=FakeClient(), run_cap_usd=0.10)
+        assert parser.run_cap_usd == pytest.approx(0.10)
+        parser_full = ClaudeParser(cfg, client=FakeClient())
+        assert parser_full.run_cap_usd == pytest.approx(cfg.spend_cap_usd_per_run)
