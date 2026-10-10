@@ -12,7 +12,7 @@ import dataclasses
 import hashlib
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import chain, zip_longest
 from typing import Any
 
@@ -247,7 +247,7 @@ _BLOG_IMAGE_BACKFILL_PER_RUN = 60
 
 
 def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
-                          deadline: float | None) -> int:
+                          deadline: float | None, cfg: AppConfig | None = None) -> int:
     """Give existing photo-less deals from image-granted sources their picture.
 
     Deals created before a source's image grant (or from an excerpt-only
@@ -263,10 +263,18 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     if not granted:
         return 0
     done = 0
-    for deal in db.all_deals(status="alive"):
+    show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
+    now = util.now_utc()
+    for deal in db.all_deals():
         if deal.get("image_url") or \
                 "image_backfill_tried" in (deal.get("flags") or []):
             continue
+        if deal.get("status") == "dead":
+            # The "Just missed" strip shows recent deaths; older dead rows
+            # are off the page and not worth a fetch.
+            died = util.parse_iso(deal.get("died_at") or "")
+            if died is None or now - died > show_dead:
+                continue
         sighting = next((s for s in db.sightings_for(deal["id"])
                          if s["source_name"] in granted
                          and str(s.get("source_url", "")).startswith("http")),
@@ -555,7 +563,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # tail reserve untouched. The hourly's budget stays on the blogs.
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
-                                  deadline - _RESERVE_FOR_TAIL_S)
+                                  deadline - _RESERVE_FOR_TAIL_S, cfg)
             if fast_lane else 0)
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
