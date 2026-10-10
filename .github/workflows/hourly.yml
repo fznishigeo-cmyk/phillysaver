@@ -74,18 +74,30 @@ jobs:
         run: bash scripts/commit_state.sh
 
       - name: Configure GitHub Pages
+        id: cfgpages
+        # Soft-fail: creating the Pages site needs admin rights the workflow
+        # token may not have ("Resource not accessible by integration"). Until
+        # Pages is enabled once at Settings -> Pages -> Source: GitHub Actions,
+        # the deploy steps below are skipped and the run stays green — the
+        # pipeline and state commit still did their job. Once Pages exists,
+        # these steps run and a REAL deploy failure fails the run normally.
+        continue-on-error: true
         uses: actions/configure-pages@v5
         with:
-          # Create the Pages site on first use so no manual settings click is
-          # needed. If the token is not allowed to create it, enable once at
-          # Settings -> Pages -> Source: GitHub Actions.
           enablement: true
 
       - name: Upload site artifact
+        if: steps.cfgpages.outcome == 'success'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
       - name: Deploy to GitHub Pages
+        if: steps.cfgpages.outcome == 'success'
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Note skipped deploy
+        if: steps.cfgpages.outcome != 'success'
+        run: |
+          echo "::warning::Site deploy skipped - enable GitHub Pages once at Settings -> Pages -> Source = GitHub Actions"
