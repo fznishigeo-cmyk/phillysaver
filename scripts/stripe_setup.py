@@ -92,6 +92,9 @@ def main() -> None:
         link = call("POST", "/payment_links", {
             "line_items[0][price]": price["id"],
             "line_items[0][quantity]": "1",
+            # Explicit: a fresh account has no "dynamic" methods configured
+            # yet and rejects the link outright without this.
+            "payment_method_types[0]": "card",
             "after_completion[type]": "redirect",
             "after_completion[redirect][url]": SITE + "/welcome.html",
             "allow_promotion_codes": "true",
