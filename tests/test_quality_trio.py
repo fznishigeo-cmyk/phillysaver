@@ -340,6 +340,67 @@ class TestCategory:
         assert res2["payload"]["image_url"] == img
         db.close()
 
+    def test_shared_code_merges_title_variants(self, tmp_path):
+        """Live wart: one Amazon deal, two Slickdeals feeds, two title
+        spellings — '(S-XL, Black)' vs '(Black, various sizes)' — showing as
+        two rows. A shared distinctive code lowers the merge bar."""
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        sav = SavingsResult(computable=True, final_price=12.99,
+                            regular_price=25.99, pct_at_checkout=50.0,
+                            abs_savings=13.0, basis="quoted_regular")
+        a = to_extracted(
+            _llm_deal(item="Duoorra Lower Back Brace w/ Ergonomic Curve "
+                           "Support Stays (S-XL, Black)",
+                      codes=["8XZM0N80"], final_price=12.99,
+                      evidence=LLMEvidence(final_price_quote="is $12.99")),
+            _post(text="brace deal is $12.99"), "America/New_York", NOW)
+        upsert_extracted(db, a, sav, _post(text="brace deal is $12.99"),
+                         cfg, NOW)
+        b = to_extracted(
+            _llm_deal(item="Duoorra Lower Back Brace w/ Ergonomic Curve "
+                           "Support (Black, various sizes)",
+                      codes=["8XZM0N80"], final_price=12.99,
+                      evidence=LLMEvidence(final_price_quote="is $12.99")),
+            _post(uid="u2", url="https://blog.example/p2"),
+            "America/New_York", NOW)
+        res = upsert_extracted(
+            db, b, sav, _post(uid="u2", url="https://blog.example/p2",
+                              text="brace deal again is $12.99"), cfg, NOW)
+        assert res["is_new_deal"] is False  # merged, not a second row
+        assert len(db.all_deals()) == 1
+        db.close()
+
+    def test_storewide_code_never_merges_different_items(self, tmp_path):
+        """EXTRA20-style store-wide codes must not glue distinct products."""
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        sav = SavingsResult(computable=True, final_price=71.99,
+                            regular_price=199.99, pct_at_checkout=64.0,
+                            abs_savings=128.0, basis="quoted_regular")
+        mixer = to_extracted(
+            _llm_deal(item="Martha Stewart 5.3-Quart Stand Mixer",
+                      store="Kohl's", codes=["EXTRA20", "HOME10"],
+                      final_price=71.99,
+                      evidence=LLMEvidence(final_price_quote="is $71.99")),
+            _post(text="mixer is $71.99"), "America/New_York", NOW)
+        upsert_extracted(db, mixer, sav, _post(text="mixer is $71.99"),
+                         cfg, NOW)
+        pans = to_extracted(
+            _llm_deal(item="Martha Stewart Lockton 10-Piece Ceramic "
+                           "Nonstick Cookware Set",
+                      store="Kohl's", codes=["EXTRA20", "HOME10"],
+                      final_price=71.99,
+                      evidence=LLMEvidence(final_price_quote="is $71.99")),
+            _post(uid="u2", url="https://blog.example/p2"),
+            "America/New_York", NOW)
+        res = upsert_extracted(
+            db, pans, sav, _post(uid="u2", url="https://blog.example/p2",
+                                 text="cookware is $71.99"), cfg, NOW)
+        assert res["is_new_deal"] is True   # different products stay apart
+        assert len(db.all_deals()) == 2
+        db.close()
+
     def test_price_improvement_clears_stale_critic_verdict(self, tmp_path):
         db = DB(tmp_path / "state.db")
         cfg = _cfg()

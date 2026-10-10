@@ -37,13 +37,31 @@ def canonical_key(store: str, canonical_url: str, item: str) -> str:
     return "si|" + store.lower().strip() + "|" + util.normalize_item(item)
 
 
+#: With a shared distinctive promo code, two title variants of one deal are
+#: merged at this lower similarity (live wart: the same Amazon deal posted
+#: by two Slickdeals feeds as "(S-XL, Black)" vs "(Black, various sizes)").
+CODE_ASSISTED_RATIO = 0.75
+
+
+def _distinctive_codes(codes: list[str] | None) -> set[str]:
+    """Codes specific enough to identify ONE deal: 6+ chars with a digit.
+    Store-wide codes (EXTRA20, HOME10) also match this shape, which is why
+    a code match alone never merges — a name-similarity bar still applies."""
+    return {c.strip().upper() for c in (codes or [])
+            if len(c.strip()) >= 6 and any(ch.isdigit() for ch in c)}
+
+
 def find_existing(db, store: str, canonical_url: str, item: str,
-                  fuzzy_threshold: float) -> dict[str, Any] | None:
+                  fuzzy_threshold: float,
+                  codes: list[str] | None = None) -> dict[str, Any] | None:
     """Locate an existing deal row for (store, canonical_url, item).
 
     Lookup order: exact dedupe_key, then canonical URL, then fuzzy item-name
     match within the same store (token-sort ratio on normalized names; the
-    best match at or above the threshold wins).
+    best match at or above the threshold wins). A shared distinctive promo
+    code lowers the required similarity to CODE_ASSISTED_RATIO — title
+    variants of one deal share the code; different products merely sharing
+    a store-wide code stay apart on the name bar.
     """
     hit = db.get_deal(canonical_key(store, canonical_url, item))
     if hit is not None:
@@ -57,11 +75,16 @@ def find_existing(db, store: str, canonical_url: str, item: str,
     if not norm:
         return None
     cutoff = fuzzy_threshold * 100.0
+    code_cutoff = CODE_ASSISTED_RATIO * 100.0
+    my_codes = _distinctive_codes(codes)
     best: dict[str, Any] | None = None
     best_score = 0.0
     for row in db.deals_by_store(store):
         score = fuzz.token_sort_ratio(norm, row["normalized_item"])
-        if score >= cutoff and score > best_score:
+        bar = (code_cutoff
+               if my_codes and (_distinctive_codes(row.get("codes")) & my_codes)
+               else cutoff)
+        if score >= bar and score > best_score:
             best, best_score = row, score
     if best is not None:
         log.debug("fuzzy match %.1f: %r -> deal %s", best_score, item,
@@ -155,7 +178,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
 
     asin = extract_asin(extracted.product_url) if extracted.product_url else ""
     existing = find_existing(db, extracted.store, extracted.product_url,
-                             extracted.item, cfg.fuzzy_threshold)
+                             extracted.item, cfg.fuzzy_threshold,
+                             codes=extracted.codes)
 
     price_improved = False
     if existing is None:
