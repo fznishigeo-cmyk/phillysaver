@@ -70,6 +70,14 @@ sources:
     region: US
     allowed_html: false
     fast_lane: false
+  - name: dealradar_cc
+    method: html
+    url: https://dealradar.cc/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Operator-sourced deal site (no public record of its shape); first-run validation autodiscovers its feed."
+    crawl_permission: "operator reports written permission from this site's owner (2026-10-10) to pull from the site. Correspondence on the operator's file. Bypass applies to this host only."
   - name: bradsdeals
     method: rss
     url: https://www.bradsdeals.com/blog
