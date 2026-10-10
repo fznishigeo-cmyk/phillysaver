@@ -44,15 +44,38 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
     primary, backup = load_sources()
     stored = effective_sources(db, now=now)  # None when missing or >24 h old
     if stored:
+        # Config edits take effect without waiting for the daily
+        # revalidation, carefully: a stored source that is HEALTHY keeps its
+        # stored entry (it may carry an autodiscovered feed URL better than
+        # the config's guess); one that is FAILING swaps to the current
+        # config entry, so a corrected URL or a new crawl_permission heals
+        # it on the very next run. Names disabled in config drop out.
+        by_name = {s.name: s for s in primary if s.enabled}
+        failing = {
+            row["source_name"] for row in db.all_source_health()
+            if int(row.get("consecutive_failures") or 0) > 0
+            or row.get("tripped_until")
+        }
+        refreshed: list[SourceConfig] = []
+        for s in stored:
+            cur = by_name.get(s.name)
+            if cur is None:
+                if any(p.name == s.name for p in primary):
+                    continue  # disabled in config now: drop from the run set
+                refreshed.append(s)  # backup-sourced entry: keep as stored
+            elif s.name in failing:
+                refreshed.append(cur)
+            else:
+                refreshed.append(s)
         # Sources added to sources.yaml since the last validation join the run
         # set immediately (a dead guess just fails politely and is culled at
         # the next daily revalidation) — "add a source" works on the next run.
-        known = {s.name for s in stored}
-        fresh = [s for s in primary if s.enabled and s.name not in known]
+        known = {s.name for s in refreshed}
+        fresh = [s for s in by_name.values() if s.name not in known]
         if fresh:
             log.info("merging %d newly configured sources into the run set: %s",
                      len(fresh), ", ".join(s.name for s in fresh))
-        return stored + fresh
+        return refreshed + fresh
     if not validate_if_missing:
         return [s for s in primary if s.enabled]
     log.info("first run: validating %d sources live (+%d backups)", len(primary), len(backup))

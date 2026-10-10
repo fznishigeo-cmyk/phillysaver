@@ -63,7 +63,7 @@ sources:
     fast_lane: false
   - name: bradsdeals
     method: rss
-    url: https://www.bradsdeals.com/blog/feed
+    url: https://www.bradsdeals.com/blog
     region: US
     allowed_html: true
     fast_lane: false
@@ -97,7 +97,7 @@ sources:
     fast_lane: false
   - name: dealmoon_us
     method: rss
-    url: https://www.dealmoon.com/en/rss
+    url: https://www.dealmoon.com/en
     region: US
     allowed_html: false
     fast_lane: false
@@ -135,7 +135,7 @@ sources:
     notes: "Online Deals category feed — skips their grocery/in-store content at the source."
   - name: southernsavers_amazon
     method: rss
-    url: https://www.southernsavers.com/category/amazon-deals/feed/
+    url: https://www.southernsavers.com/category/amazon-deals/
     region: US
     allowed_html: true
     fast_lane: false
@@ -156,7 +156,7 @@ sources:
     notes: "Coupons, price matching, everyday deals."
   - name: how_to_shop_for_free
     method: rss
-    url: https://www.howtoshopforfree.net/feed/
+    url: https://www.howtoshopforfree.net/
     region: US
     allowed_html: true
     fast_lane: false
@@ -196,7 +196,7 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: jungle_deals
     method: rss
-    url: https://jungledealsblog.com/feed/
+    url: https://jungledealsblog.com/
     region: US
     allowed_html: true
     fast_lane: false
@@ -308,7 +308,7 @@ sources:
   # ---- freebie / price-glitch / clearance-error focused (the >=60% sweet spot) ----
   - name: hip2save_freebies
     method: rss
-    url: https://hip2save.com/deals/freebies/feed/
+    url: https://hip2save.com/deals/freebies/
     region: US
     allowed_html: true
     fast_lane: false
