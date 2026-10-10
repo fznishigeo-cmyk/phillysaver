@@ -295,7 +295,9 @@ def test_truncation_marker_triggers_enrichment_even_when_long(db, cfg):
 
 
 def test_long_body_not_enriched(db, cfg):
-    long_body = ("deal word " * 80).strip() + " final price ten dollars"
+    # Long AND carrying a price: a genuinely complete deal summary — the
+    # no-price-in-body rule must not fire here.
+    long_body = ("deal word " * 80).strip() + " final price $10.00 today"
     body = (
         "<?xml version='1.0'?><rss version='2.0'><channel><title>t</title>"
         "<item><guid>long-1</guid><title>Long post</title>"
@@ -306,7 +308,7 @@ def test_long_body_not_enriched(db, cfg):
     fetcher = FakeFetcher({src.url: fr(src.url, body=body)})
     posts = RssAdapter().fetch_posts(src, fetcher, db, cfg, NOW, None)
     assert fetcher.calls == [src.url]              # body is long, no marker -> no fetch
-    assert "final price ten dollars" in posts[0].text
+    assert "final price $10.00 today" in posts[0].text
 
 
 # ------------------------------------------------------------ autodiscovery
