@@ -253,6 +253,19 @@ class TestSuspectGate:
         ok, _ = rank.is_publishable(_deal_dict(flags=["suspect_msrp"]), cfg)
         assert ok
 
+    def test_used_deals_need_the_higher_floor_everywhere(self):
+        cfg = _cfg(min_pct=65.0, used_min_pct=80.0, site_show_from_pct=50.0)
+        used72 = _deal_dict(pct_at_checkout=72.0, conditions=["used"])
+        used85 = _deal_dict(pct_at_checkout=85.0, conditions=["open_box"])
+        new72 = _deal_dict(pct_at_checkout=72.0)
+        ok, reason = rank.is_publishable(used72, cfg)
+        assert not ok and "used_min_pct" in reason
+        assert rank.is_publishable(used85, cfg)[0]
+        assert rank.is_publishable(new72, cfg)[0]  # new deals keep 65
+        # The site's lower "strong deals" tier never softens the used floor.
+        ok, reason = rank.is_publishable(used72, cfg, min_pct=50.0)
+        assert not ok and "used_min_pct" in reason
+
 
 # --------------------------------------------------------------- categories
 
@@ -611,6 +624,7 @@ class TestConfigFields:
 
     def test_quality_trio_config_loads(self):
         cfg = load_config()
+        assert cfg.used_min_pct == pytest.approx(80.0)
         assert cfg.parse_model == "claude-sonnet-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"
         assert cfg.max_second_opinions_per_run == 8

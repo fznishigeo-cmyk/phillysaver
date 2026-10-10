@@ -76,6 +76,14 @@ def is_publishable(deal: dict[str, Any], cfg,
     if pct is None or pct < floor:
         return False, f"pct_at_checkout: {pct!r} < min_pct {floor}"
 
+    # Used/open-box supply is plentiful: such deals clear a HIGHER absolute
+    # floor, and the site's lower "strong deals" tier never softens it.
+    if {"used", "open_box"} & set(deal.get("conditions") or []):
+        used_floor = getattr(cfg, "used_min_pct", 80.0)
+        if pct < used_floor:
+            return False, (f"pct_at_checkout: {pct!r} < used_min_pct "
+                           f"{used_floor} (used/open-box)")
+
     abs_savings = deal.get("abs_savings")
     if abs_savings is None or abs_savings < cfg.min_abs_savings:
         return False, (f"abs_savings: {abs_savings!r} < min_abs_savings "

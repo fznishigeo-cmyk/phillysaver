@@ -56,8 +56,10 @@ is the final and the STATED new-condition price is the regular
 (`basis='quoted_regular'` — the same math as any quoted pair). The deal must
 carry the `used` (and, when stated, `open_box`) condition so the page and
 alerts label it honestly; the condition is extracted from wording, never
-assumed. The live price re-check for used deals validates against the
-Warehouse offer, not the new price.
+assumed. Used supply is plentiful, so used/open-box deals publish only at
+`publish.used_min_pct` (80%) or better — an absolute floor that the site's
+lower tier never softens. The live price re-check for used deals validates
+against the Warehouse offer, not the new price.
 
 ## 3. Ranges
 

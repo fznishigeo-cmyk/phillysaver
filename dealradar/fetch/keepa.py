@@ -46,6 +46,11 @@ MAX_DEALS_PER_RUN = 20
 #: publish floor so near-misses still enter the DB and price history.
 MIN_DROP_PCT = 60
 
+#: Warehouse/used offers are plentiful, so they carry a HIGHER bar: ingest
+#: only used prices this far below the LIVE new price (publish floor for
+#: used deals is higher still — config publish.used_min_pct).
+WAREHOUSE_MIN_DROP_PCT = 75
+
 #: Keepa price-type indexes: 0 = Amazon's own NEW price, 1 = lowest NEW
 #: offer, 9 = Amazon Warehouse / Amazon Resale (open-box & used, sold by
 #: Amazon). Third-party used sellers are deliberately NOT tracked.
@@ -311,8 +316,8 @@ class KeepaDealsAdapter(SourceAdapter):
             new_p = _price_at(row.get("current"), PRICE_TYPE_NEW)
         if used is None or new_p is None or new_p <= 0:
             return None
-        if used >= new_p * (1.0 - MIN_DROP_PCT / 100.0):
-            return None  # not deep enough vs new: not our niche
+        if used >= new_p * (1.0 - WAREHOUSE_MIN_DROP_PCT / 100.0):
+            return None  # used supply is plentiful: only the deep cuts
 
         lines = [
             title,
