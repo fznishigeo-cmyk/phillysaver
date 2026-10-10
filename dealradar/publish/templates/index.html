@@ -333,20 +333,45 @@ s{color:var(--muted)}
     render();
   });
 
-  fetch("deals.json")
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      state.meta = (data && data.meta) || {};
-      state.deals = (data && data.deals) || [];
-      populateStores();
-      renderTabs();
-      renderMeta();
-      render();
-    })
-    .catch(function () {
-      document.getElementById("content").innerHTML =
-        '<p class="empty">Could not load deals.json</p>';
-    });
+  function refreshStores() {
+    // Rebuild the store list, keeping the user's current selection.
+    var sel = document.getElementById("storesel");
+    var current = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
+    populateStores();
+    sel.value = current;
+    if (sel.selectedIndex === -1) sel.selectedIndex = 0;
+  }
+
+  var loadedOnce = false;
+  function loadData() {
+    // cache-bust: the runner redeploys every few minutes; an open tab
+    // should show new deals without anyone pressing refresh.
+    fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        state.meta = (data && data.meta) || {};
+        state.deals = (data && data.deals) || [];
+        if (loadedOnce) {
+          refreshStores();
+        } else {
+          populateStores();
+          renderTabs();
+          loadedOnce = true;
+        }
+        renderMeta();
+        render();
+      })
+      .catch(function () {
+        if (!loadedOnce) {
+          document.getElementById("content").innerHTML =
+            '<p class="empty">Could not load deals.json</p>';
+        } // a failed background refresh keeps showing the last good data
+      });
+  }
+
+  loadData();
+  setInterval(loadData, 5 * 60 * 1000);  // self-refresh every 5 minutes
 })();
 </script>
 </body>
