@@ -262,7 +262,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- retention + bookkeeping ----
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days)
         db.finish_run(run_key, now=util.now_utc(),
-                      items_fetched=len(posts), posts_new=len(new_posts),
+                      items_fetched=len(posts), posts_new=recorded,
                       deals_parsed=pstats.get("deals_extracted", 0),
                       published=summary["published"],
                       spend_usd=pstats.get("spend_usd", 0.0))

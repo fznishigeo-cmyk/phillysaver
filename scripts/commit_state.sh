@@ -53,9 +53,21 @@ else
   find "$WORKTREE" -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
 fi
 
+report_is_fresh() {
+  # Push sources_report.md only when THIS run regenerated it (it differs from
+  # the committed copy in the checkout). Otherwise the checkout's committed
+  # snapshot would overwrite the real, newer report already on the data branch.
+  [[ -f "$REPO_DIR/sources_report.md" ]] || return 1
+  if git -C "$REPO_DIR" ls-files --error-unmatch sources_report.md >/dev/null 2>&1; then
+    ! git -C "$REPO_DIR" diff --quiet -- sources_report.md
+  else
+    return 0  # untracked -> definitely produced by this run
+  fi
+}
+
 cp "$REPO_DIR/state.db" "$WORKTREE/state.db"
 git -C "$WORKTREE" add state.db
-if [[ -f "$REPO_DIR/sources_report.md" ]]; then
+if report_is_fresh; then
   cp "$REPO_DIR/sources_report.md" "$WORKTREE/sources_report.md"
   git -C "$WORKTREE" add sources_report.md
 fi
@@ -79,7 +91,7 @@ git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
 snapshot() {
   cp "$REPO_DIR/state.db" "$WORKTREE/state.db"
   git -C "$WORKTREE" add state.db
-  if [[ -f "$REPO_DIR/sources_report.md" ]]; then
+  if report_is_fresh; then
     cp "$REPO_DIR/sources_report.md" "$WORKTREE/sources_report.md"
     git -C "$WORKTREE" add sources_report.md
   fi
