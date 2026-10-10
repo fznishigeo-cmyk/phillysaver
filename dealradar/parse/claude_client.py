@@ -41,9 +41,12 @@ _JSON_ONLY_SUFFIX = (
     "fields item, store, brand, product_url, online_only, regular_price, "
     "final_price, pct_off, abs_savings, shipping_cost_or_threshold, stack_steps, "
     "codes, rebates, deferred_value, conditions, expires_at_raw, quantity_or_unit, "
-    "regular_price_unit, final_price_unit, currency, evidence "
-    "(regular_price_quote, final_price_quote, pct_quote), confidence, deal_type, "
-    "price_is_range, price_upper_bound."
+    "regular_price_unit, final_price_unit, currency, region, category, evidence "
+    "(regular_price_quote, final_price_quote, pct_quote, "
+    "price_upper_bound_quote), confidence, deal_type, price_is_range, "
+    "price_upper_bound. Prices and percents must be bare JSON numbers "
+    "(29.99, not \"$29.99\" or \"70%\"). Use null only for unknown numbers; "
+    'use "" for unknown text fields and [] for empty lists.'
 )
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
@@ -79,6 +82,10 @@ class ClaudeParser:
             client = anthropic.Anthropic(api_key=api_key)
         self.client = client
         self.spend_usd: float = 0.0
+        # Set when the API rejects our schema ("Schema is too complex"):
+        # that rejection is SLOW (minutes) and identical per request, so it
+        # is paid at most once per run; later posts go straight to fallback.
+        self._parse_unsupported: bool = False
         self.model: str = self._choose_model()
 
     # ------------------------------------------------------------- model pick
@@ -184,6 +191,8 @@ class ClaudeParser:
         """
         used_model = model or self.model
         user_prompt = build_user_prompt(text, meta)
+        if self._parse_unsupported:
+            return self._extract_via_create(user_prompt, used_model)
         try:
             resp = self._request(lambda: self.client.messages.parse(
                 model=used_model,
@@ -196,6 +205,10 @@ class ClaudeParser:
             log.info("messages.parse unavailable; using JSON fallback path")
             return self._extract_via_create(user_prompt, used_model)
         except anthropic.BadRequestError as e:
+            if "schema" in str(e).lower():
+                # Schema rejection is per-schema, not per-post, and the API
+                # takes minutes to return it: never pay for it twice a run.
+                self._parse_unsupported = True
             log.info("messages.parse rejected (%s); using JSON fallback path", e)
             return self._extract_via_create(user_prompt, used_model)
         except (ValidationError, ValueError) as e:

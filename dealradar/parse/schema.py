@@ -13,13 +13,30 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..models import Evidence, ExtractedDeal, RawPost
 
 log = logging.getLogger("dealradar.parse.schema")
+
+CATEGORIES = (
+    "electronics", "computers", "home", "kitchen", "kids_baby", "toys_games",
+    "fashion", "beauty", "health", "grocery", "pets", "outdoors", "sports",
+    "office", "auto", "books_media", "gaming", "other",
+)
+
+DEAL_TYPES = ("", "bogo", "b2g1", "b2g3", "b1g1_50", "free_after_rebate",
+              "moneymaker", "penny")
+
+
+def _drop_null_keys(data):
+    """Drop null-valued keys so field defaults apply. Real models answer the
+    JSON fallback with null for unknown optional fields; a null must mean
+    'use the default', never a validation failure that wastes the post."""
+    if isinstance(data, dict):
+        return {k: v for k, v in data.items() if v is not None}
+    return data
 
 
 class LLMEvidence(BaseModel):
@@ -30,15 +47,28 @@ class LLMEvidence(BaseModel):
     pct_quote: str = ""
     price_upper_bound_quote: str = ""
 
+    _drop_nulls = model_validator(mode="before")(_drop_null_keys)
+
 
 class LLMDeal(BaseModel):
-    """One deal as extracted by the LLM. Mirrors models.ExtractedDeal 1:1."""
+    """One deal as extracted by the LLM. Mirrors models.ExtractedDeal 1:1.
+
+    Deliberately SIMPLE in structure: plain strings with normalizing
+    validators instead of Literal enums. Two hard-won reasons:
+    - the structured-output API rejects big enum-heavy schemas outright
+      ("Schema is too complex"), knocking every post onto the fallback path;
+    - on the JSON fallback, real models send null for unknown fields and
+      "$6.25" for prices; strictness there throws away good deals.
+    Validators normalize, they never invent: out-of-vocabulary values
+    collapse to safe defaults, price strings are PARSED (no arithmetic),
+    and evidence quotes are still verified verbatim downstream.
+    """
 
     item: str = Field(min_length=1)
     store: str = Field(min_length=1)
     brand: str = ""
     product_url: str = ""
-    online_only: Literal["true", "false", "unknown"] = "unknown"
+    online_only: str = "unknown"          # true | false | unknown
     regular_price: float | None = None
     final_price: float | None = None
     pct_off: float | None = None
@@ -51,24 +81,64 @@ class LLMDeal(BaseModel):
     conditions: list[str] = Field(default_factory=list)
     expires_at_raw: str = ""
     quantity_or_unit: str = ""
-    regular_price_unit: Literal["per_unit", "pack", ""] = ""
-    final_price_unit: Literal["per_unit", "pack", ""] = ""
+    regular_price_unit: str = ""          # per_unit | pack | ""
+    final_price_unit: str = ""            # per_unit | pack | ""
     currency: str = "USD"
-    region: Literal["US", "other"] = "US"
-    category: Literal[
-        "electronics", "computers", "home", "kitchen", "kids_baby",
-        "toys_games", "fashion", "beauty", "health", "grocery", "pets",
-        "outdoors", "sports", "office", "auto", "books_media", "gaming",
-        "other",
-    ] = "other"
+    region: str = "US"                    # US | other
+    category: str = "other"               # one of CATEGORIES
     evidence: LLMEvidence = Field(default_factory=LLMEvidence)
     confidence: float = 0.0
-    deal_type: Literal[
-        "", "bogo", "b2g1", "b2g3", "b1g1_50",
-        "free_after_rebate", "moneymaker", "penny",
-    ] = ""
+    deal_type: str = ""                   # one of DEAL_TYPES
     price_is_range: bool = False
     price_upper_bound: float | None = None
+
+    _drop_nulls = model_validator(mode="before")(_drop_null_keys)
+
+    @field_validator("regular_price", "final_price", "pct_off", "abs_savings",
+                     "price_upper_bound", mode="before")
+    @classmethod
+    def _tolerant_number(cls, v):
+        """'$6.25' / '70%' / '1,299.00' -> float. Parsing, never arithmetic;
+        anything that is not one plain number means 'no value'."""
+        if isinstance(v, str):
+            s = v.strip().lstrip("$").replace(",", "").rstrip("%").strip()
+            if not s:
+                return None
+            try:
+                return float(s)
+            except ValueError:
+                return None
+        return v
+
+    @field_validator("online_only")
+    @classmethod
+    def _norm_online_only(cls, v: str) -> str:
+        v = v.strip().lower()
+        return v if v in ("true", "false") else "unknown"
+
+    @field_validator("category")
+    @classmethod
+    def _norm_category(cls, v: str) -> str:
+        v = v.strip().lower().replace(" ", "_").replace("&", "and")
+        return v if v in CATEGORIES else "other"
+
+    @field_validator("deal_type")
+    @classmethod
+    def _norm_deal_type(cls, v: str) -> str:
+        v = v.strip().lower()
+        return v if v in DEAL_TYPES else ""
+
+    @field_validator("regular_price_unit", "final_price_unit")
+    @classmethod
+    def _norm_price_unit(cls, v: str) -> str:
+        v = v.strip().lower()
+        return v if v in ("per_unit", "pack") else ""
+
+    @field_validator("region")
+    @classmethod
+    def _norm_region(cls, v: str) -> str:
+        return "US" if v.strip().lower() in ("us", "usa", "united states") \
+            else "other"
 
 
 class LLMDeals(BaseModel):
@@ -123,13 +193,6 @@ Rules:
   sports, office, auto, books_media, gaming, other.
 - confidence: your 0-1 confidence that this is a real, correctly copied deal.
 """
-
-CATEGORIES = (
-    "electronics", "computers", "home", "kitchen", "kids_baby", "toys_games",
-    "fashion", "beauty", "health", "grocery", "pets", "outdoors", "sports",
-    "office", "auto", "books_media", "gaming", "other",
-)
-
 
 class CriticVerdict(BaseModel):
     """Deal-critic structured output: is the claimed regular price honest?"""

@@ -67,13 +67,43 @@ class TestLLMModels:
         with pytest.raises(ValidationError):
             LLMDeal(store="Amazon")  # item missing entirely
 
-    def test_literal_fields_rejected_outside_vocabulary(self):
-        with pytest.raises(ValidationError):
-            LLMDeal(item="x", store="y", online_only="maybe")
-        with pytest.raises(ValidationError):
-            LLMDeal(item="x", store="y", deal_type="flash_sale")
-        with pytest.raises(ValidationError):
-            LLMDeal(item="x", store="y", final_price_unit="each")
+    def test_vocabulary_fields_normalize_instead_of_rejecting(self):
+        # Out-of-vocabulary values collapse to safe defaults (a strict Literal
+        # schema was rejected by the structured-output API as too complex, and
+        # strictness on the JSON fallback path threw away real deals).
+        d = LLMDeal(item="x", store="y", online_only="maybe",
+                    deal_type="flash_sale", final_price_unit="each",
+                    category="Sporting Goods")
+        assert d.online_only == "unknown"
+        assert d.deal_type == ""
+        assert d.final_price_unit == ""
+        assert d.category == "other"
+        assert LLMDeal(item="x", store="y", online_only="True",
+                       category="Kids Baby").category == "kids_baby"
+
+    def test_null_and_price_string_tolerance(self):
+        # Regression for live run 14: the model answered the JSON fallback
+        # with null for unknown fields and "$6.25" prices; every Keepa deal
+        # was dropped by strict validation. Nulls mean defaults; price
+        # strings are parsed (never computed).
+        d = LLMDeal.model_validate({
+            "item": "Widget", "store": "Amazon",
+            "product_url": None, "deferred_value": None, "conditions": None,
+            "regular_price": "$6.25", "final_price": "5.31",
+            "pct_off": "15%", "abs_savings": None,
+            "evidence": {"regular_price_quote": None,
+                         "final_price_quote": "now $5.31",
+                         "pct_quote": None},
+        })
+        assert d.product_url == "" and d.deferred_value == ""
+        assert d.conditions == []
+        assert d.regular_price == 6.25 and d.final_price == 5.31
+        assert d.pct_off == 15.0 and d.abs_savings is None
+        assert d.evidence.regular_price_quote == ""
+        assert d.evidence.final_price_quote == "now $5.31"
+        assert LLMDeal.model_validate(
+            {"item": "W", "store": "A", "regular_price": "see site"}
+        ).regular_price is None
 
     def test_llmdeals_wrapper(self):
         assert LLMDeals().deals == []

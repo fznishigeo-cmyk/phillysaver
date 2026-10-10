@@ -385,6 +385,47 @@ class TestSecondOpinion:
         assert parser.calls == [None]
 
 
+# ------------------------------------------------------- schema-rejection flag
+
+class TestParseUnsupportedFlag:
+    def test_slow_schema_rejection_paid_once_per_run(self):
+        """Live run 14: messages.parse returned 'Schema is too complex' after
+        ~3 minutes, for EVERY post. After one rejection the parser must go
+        straight to the JSON fallback for the rest of the run."""
+        import anthropic
+        import httpx
+
+        class _Msgs:
+            def __init__(self):
+                self.parse_calls = 0
+                self.create_calls = 0
+
+            def parse(self, **kw):
+                self.parse_calls += 1
+                raise anthropic.BadRequestError(
+                    "Schema is too complex.",
+                    response=httpx.Response(
+                        400, request=httpx.Request("POST", "https://x")),
+                    body=None)
+
+            def create(self, **kw):
+                self.create_calls += 1
+
+                class R:
+                    stop_reason = "end_turn"
+                    usage = _Usage()
+                    content = [type("B", (), {"type": "text",
+                                              "text": '{"deals": []}'})()]
+                return R()
+
+        msgs = _Msgs()
+        parser = ClaudeParser(_cfg(), client=_FakeClient(msgs))
+        assert parser.extract("post one", {}) == []
+        assert parser.extract("post two", {}) == []
+        assert msgs.parse_calls == 1          # the rejection is paid once
+        assert msgs.create_calls == 2         # both posts used the fallback
+
+
 # --------------------------------------------------------------- site tiers
 
 class TestSiteStrongTier:
