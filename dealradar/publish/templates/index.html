@@ -120,6 +120,8 @@ footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid 
   <div class="hrow">
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span class="tag">verified deals, 50–90% off · refreshed every 10 minutes</span>
+    <a id="subscribe" class="getdeal" rel="noopener" style="display:none;margin-left:auto">
+      Get every deal by email — $9.99/mo</a>
     <p id="metaline" class="meta">Loading&hellip;</p>
   </div>
   <nav id="cattabs" aria-label="category tabs"></nav>
@@ -188,6 +190,13 @@ footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid 
     var t = lr.finished_at || lr.started_at || m.generated_at || "";
     document.getElementById("metaline").textContent =
       "Last run: " + t + " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
+    // Membership: the Subscribe button exists only once the operator has a
+    // Stripe Payment Link in config (it arrives here via deals.json meta).
+    var sub = document.getElementById("subscribe");
+    if (m.subscribe_url) {
+      sub.href = m.subscribe_url;
+      sub.style.display = "";
+    }
   }
 
   function populateSelect(id, values) {

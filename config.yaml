@@ -89,6 +89,15 @@ telegram:
   resend_price_drop_pct: 10    # re-alert only if price drops >=10% more
   dry_run: false               # true forces log-only even if credentials exist
 
+members:
+  # The paid product with no server of our own: Stripe hosts checkout (a
+  # Payment Link), the pipeline reads the active subscriber list from Stripe
+  # each run (STRIPE_SECRET_KEY secret, read-only key) and emails members one
+  # bundle of every new verified deal per window via the SMTP_* secrets.
+  subscribe_url: ""          # paste the Stripe Payment Link -> Subscribe button appears on the site
+  portal_url: ""             # Stripe customer-portal link (manage / cancel), shown on the welcome page
+  email_every_minutes: 60    # at most one member email per hour; new deals queue for the next one
+
 digest:
   hour_local: 8                # 08:00 America/New_York
   timezone: "America/New_York"

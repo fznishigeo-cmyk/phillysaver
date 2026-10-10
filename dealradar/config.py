@@ -22,6 +22,7 @@ SECRET_NAMES = [
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_ADMIN_CHAT_ID",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
+    "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
 ]
 
 
@@ -119,6 +120,11 @@ class AppConfig:
     min_items_ratio: float = 0.5
     tripped_sources_warn: int = 5
 
+    # -- members: Stripe subscribers get every new verified deal by email --
+    subscribe_url: str = ""            # Stripe Payment Link (site Subscribe button)
+    portal_url: str = ""               # Stripe customer portal (manage / cancel)
+    members_email_every_minutes: int = 60  # one bundled email per window, max
+
     # -- retention / flags --
     posts_seen_days: int = 30
     deals_days: int = 14
@@ -200,6 +206,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg.min_items_ratio = float(g("alerting", "min_items_ratio", default=cfg.min_items_ratio))
     cfg.tripped_sources_warn = int(g("alerting", "tripped_sources_warn", default=cfg.tripped_sources_warn))
+
+    cfg.subscribe_url = str(g("members", "subscribe_url", default="") or "").strip()
+    cfg.portal_url = str(g("members", "portal_url", default="") or "").strip()
+    cfg.members_email_every_minutes = max(10, int(g("members", "email_every_minutes",
+                                                     default=cfg.members_email_every_minutes)))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))

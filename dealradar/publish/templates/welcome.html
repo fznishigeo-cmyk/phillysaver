@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wowpriced — you're in</title>
+<style>
+:root{ color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4; }
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff; } }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--link)}
+.wrap{max-width:640px;margin:0 auto;padding:48px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px}
+.brand{font-size:22px;font-weight:800;margin:0 0 18px}
+.brand .dot{color:var(--accent)}
+h1{font-size:28px;margin:0 0 10px}
+p{margin:0 0 14px}
+.btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:700;
+     padding:10px 16px;border-radius:10px;text-decoration:none;margin-top:6px}
+.muted{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <p class="brand">wowpriced<span class="dot">●</span></p>
+  <h1>You're in 🎉</h1>
+  <p>Every new verified deal — 50 to 90% off, fake "list prices" removed, prices
+     re-checked live — lands in your inbox as one bundled email, at most once an
+     hour, only when there is something new.</p>
+  <p>Your first email arrives within the hour. Add the sender to your contacts
+     so it never hits spam, and bookmark the live wall:</p>
+  <p><a class="btn" href="./">Open the deal wall</a></p>
+  <p class="muted" id="portal" style="display:none">Manage or cancel your
+     membership any time: <a id="portallink" rel="noopener">billing portal</a>.</p>
+  <p class="muted">Questions? Reply to any alert email.</p>
+</div></div>
+<script>
+"use strict";
+fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+  .then(function (r) { return r.json(); })
+  .then(function (d) {
+    var url = d && d.meta && d.meta.portal_url;
+    if (url) {
+      document.getElementById("portallink").href = url;
+      document.getElementById("portal").style.display = "";
+    }
+  }).catch(function () {});
+</script>
+</body>
+</html>

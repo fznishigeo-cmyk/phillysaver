@@ -153,6 +153,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "last_run": last_run or {},
             "disclosure": cfg.ftc_disclosure,
             "count": len(serialized),
+            # Membership links (empty until the operator pastes them in
+            # config.yaml); the page hides the Subscribe button when empty.
+            "subscribe_url": getattr(cfg, "subscribe_url", "") or "",
+            "portal_url": getattr(cfg, "portal_url", "") or "",
             "floors": {
                 "min_pct": cfg.min_pct,
                 "min_abs_savings": cfg.min_abs_savings,
@@ -185,7 +189,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         json.dumps(health_doc, indent=2), encoding="utf-8"
     )
 
-    for name in ("index.html", "health.html"):
+    for name in ("index.html", "health.html", "welcome.html"):
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
 
     # GitHub Pages keeps a custom domain only while the deployed site

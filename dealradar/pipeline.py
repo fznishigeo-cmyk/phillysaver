@@ -442,6 +442,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .http_client import PoliteFetcher
     from .publish.admin_alerts import check_and_alert
     from .publish.email_digest import maybe_send_digest
+    from .publish.members import send_member_alerts
     from .publish.site import render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
@@ -582,6 +583,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram,
                          deadline=deadline)
         summary["telegram"] = tg
+        # Paying members (Stripe) get the same new deals by email, bundled.
+        summary["member_alerts"] = send_member_alerts(db, cfg, now)
         summary["digest_sent"] = maybe_send_digest(db, cfg, now)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,
                                                     items_fetched=len(posts),

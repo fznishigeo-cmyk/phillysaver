@@ -198,6 +198,21 @@ def test_custom_domain_writes_cname_every_render(db, cfg, tmp_path):
     assert not (out2 / "CNAME").exists()
 
 
+def test_membership_links_reach_page_meta_and_welcome_page(db, cfg, tmp_path):
+    out = tmp_path / "site"
+    cfg.subscribe_url = "https://buy.stripe.com/test_123"
+    cfg.portal_url = "https://billing.stripe.com/p/login/x"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+    assert doc["meta"]["subscribe_url"] == "https://buy.stripe.com/test_123"
+    assert doc["meta"]["portal_url"] == "https://billing.stripe.com/p/login/x"
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'id="subscribe"' in html and "m.subscribe_url" in html
+    welcome = (out / "welcome.html").read_text(encoding="utf-8")
+    assert welcome.startswith("<!doctype html>")
+    assert "<script src=" not in welcome and "<link" not in welcome
+
+
 def test_health_template_is_self_contained(db, cfg, tmp_path):
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=[])
