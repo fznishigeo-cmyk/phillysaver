@@ -237,11 +237,13 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
 
 #: Hours between live price re-checks of the same Amazon deal.
 _RECHECK_EVERY_H = 6.0
-#: Early (in-window) Keepa calls per run made only to fetch a missing photo.
-_IMAGE_BACKFILL_PER_RUN = 12
+#: Early (in-window) Keepa calls per run made only to fetch a missing photo
+#: (1 token each; a 429 just defers the deal to the next run).
+_IMAGE_BACKFILL_PER_RUN = 40
 #: Article fetches per run that backfill photos for existing deals whose
-#: source granted image display (one polite fetch per deal, never repeated).
-_BLOG_IMAGE_BACKFILL_PER_RUN = 15
+#: source granted image display: one polite fetch per deal (the fetcher
+#: still holds 1 req/s per host), never repeated, time-boxed by the run.
+_BLOG_IMAGE_BACKFILL_PER_RUN = 60
 
 
 def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
