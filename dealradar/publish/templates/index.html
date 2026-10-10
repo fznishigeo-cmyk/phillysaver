@@ -46,6 +46,8 @@ th .arrow{color:var(--muted);font-size:11px}
 s{color:var(--muted)}
 .credit{font-size:12px;color:var(--muted)}
 .empty{color:var(--muted);padding:24px 0;text-align:center}
+.strongh{font-size:16px;margin:22px 0 8px;border-top:1px solid var(--line);padding-top:16px}
+.strongh .meta{font-weight:400}
 @media (max-width:640px){ body{padding:10px} th,td{padding:6px 5px;font-size:13px} }
 </style>
 </head>
@@ -199,6 +201,19 @@ s{color:var(--muted)}
       "</tr>";
   }
 
+  function tableHtml(rows) {
+    var head = COLS.map(function (c) {
+      var arrow = "";
+      if (c.key === state.sortKey) {
+        arrow = ' <span class="arrow">' + (state.sortDir < 0 ? "▼" : "▲") + "</span>";
+      }
+      return '<th data-key="' + c.key + '"' + (c.sortable ? ' class="sortable"' : "") + ">" +
+        esc(c.label) + arrow + "</th>";
+    }).join("");
+    return '<div class="tablewrap"><table><thead><tr>' + head +
+      "</tr></thead><tbody>" + rows.map(rowHtml).join("") + "</tbody></table></div>";
+  }
+
   function render() {
     var content = document.getElementById("content");
     if (!state.deals.length) {
@@ -210,16 +225,30 @@ s{color:var(--muted)}
       content.innerHTML = '<p class="empty">No deals match the current filters</p>';
       return;
     }
-    var head = COLS.map(function (c) {
-      var arrow = "";
-      if (c.key === state.sortKey) {
-        arrow = ' <span class="arrow">' + (state.sortDir < 0 ? "▼" : "▲") + "</span>";
-      }
-      return '<th data-key="' + c.key + '"' + (c.sortable ? ' class="sortable"' : "") + ">" +
-        esc(c.label) + arrow + "</th>";
-    }).join("");
-    content.innerHTML = '<div class="tablewrap"><table><thead><tr>' + head +
-      "</tr></thead><tbody>" + rows.map(rowHtml).join("") + "</tbody></table></div>";
+    // Two tiers: headliners clear the alert floor (meta.floors.min_pct);
+    // "strong deals" sit between the site floor and the alert floor — shown
+    // on the page, never alerted.
+    var floors = (state.meta && state.meta.floors) || {};
+    var alertFloor = Number(floors.min_pct);
+    var headliners = rows, strong = [];
+    if (!isNaN(alertFloor)) {
+      headliners = rows.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
+      strong = rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
+    }
+    var html = "";
+    if (headliners.length) {
+      html += tableHtml(headliners);
+    } else {
+      html += '<p class="empty">No deals above the ' +
+        (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
+        "alert bar right now</p>";
+    }
+    if (strong.length) {
+      html += '<h2 class="strongh">Strong deals <span class="meta">— below the ' +
+        (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
+        "alert bar, still big savings</span></h2>" + tableHtml(strong);
+    }
+    content.innerHTML = html;
     content.querySelectorAll("th.sortable").forEach(function (th) {
       th.addEventListener("click", function () {
         var key = th.getAttribute("data-key");

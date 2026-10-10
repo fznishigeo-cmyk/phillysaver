@@ -109,7 +109,8 @@ def test_deals_json_has_disclosure_credit_badge_age(db, cfg, tmp_path):
     assert meta["disclosure"] == DISCLOSURE
     assert meta["generated_at"] == iso(NOW)
     assert meta["count"] == 1
-    assert meta["floors"] == {"min_pct": 70.0, "min_abs_savings": 5.0}
+    assert meta["floors"] == {"min_pct": 70.0, "min_abs_savings": 5.0,
+                              "site_show_from_pct": 70.0}
     assert meta["last_run"]["finished_at"] == iso(NOW)
 
     (deal,) = doc["deals"]

@@ -149,6 +149,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "floors": {
                 "min_pct": cfg.min_pct,
                 "min_abs_savings": cfg.min_abs_savings,
+                "site_show_from_pct": min(
+                    cfg.min_pct,
+                    getattr(cfg, "site_show_from_pct", cfg.min_pct)),
             },
         },
         "deals": serialized,

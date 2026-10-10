@@ -41,8 +41,10 @@ parse:
     claude-sonnet-5-5: { input: 2.00, output: 10.00 }
 
 publish:
-  min_pct: 65                  # floor: pct_at_checkout
+  min_pct: 65                  # floor: pct_at_checkout (alerts + headline tier)
   min_abs_savings: 5.0         # floor: absolute $ savings
+  site_show_from_pct: 50       # site-only second tier: "strong deals" below the
+                               # alert bar still render on the page (never alerted)
   site_dir: "site"
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-

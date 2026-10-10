@@ -82,6 +82,7 @@ class AppConfig:
     # -- publish / ranking --
     min_pct: float = 70.0
     min_abs_savings: float = 5.0
+    site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     site_dir: str = "site"
     ftc_disclosure: str = ""
     tier_boost: dict[str, float] = field(default_factory=dict)
@@ -154,6 +155,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg.min_pct = float(g("publish", "min_pct", default=cfg.min_pct))
     cfg.min_abs_savings = float(g("publish", "min_abs_savings", default=cfg.min_abs_savings))
+    cfg.site_show_from_pct = float(g("publish", "site_show_from_pct",
+                                     default=cfg.min_pct))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
 

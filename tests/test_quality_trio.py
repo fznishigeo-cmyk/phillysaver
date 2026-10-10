@@ -385,6 +385,39 @@ class TestSecondOpinion:
         assert parser.calls == [None]
 
 
+# --------------------------------------------------------------- site tiers
+
+class TestSiteStrongTier:
+    def _db(self, tmp_path) -> DB:
+        db = DB(tmp_path / "state.db")
+        for key, item, pct in (("si|a|hot", "Hot Item", 72.0),
+                               ("si|a|strong", "Strong Item", 58.0),
+                               ("si|a|weak", "Weak Item", 30.0)):
+            d = _deal_dict(dedupe_key=key, item=item, pct_at_checkout=pct)
+            db.insert_deal(dedupe_key=key, store=d["store"], item=item,
+                           normalized_item=item.lower(), canonical_url="",
+                           payload=d, final_price=d["final_price"],
+                           pct_at_checkout=pct, abs_savings=d["abs_savings"],
+                           online_only="true", expires_at="", now=NOW)
+        return db
+
+    def test_site_shows_strong_tier_alerts_do_not(self, tmp_path):
+        db = self._db(tmp_path)
+        cfg = _cfg(min_pct=65.0, site_show_from_pct=50.0)
+        site = [d["item"] for d in rank.site_deals(db, cfg, NOW)]
+        alerts = [d["item"] for d in rank.published_deals(db, cfg, NOW)]
+        assert set(site) == {"Hot Item", "Strong Item"}  # weak 30% stays out
+        assert alerts == ["Hot Item"]                    # strict floor for alerts
+        db.close()
+
+    def test_site_floor_never_rises_above_alert_floor(self, tmp_path):
+        db = self._db(tmp_path)
+        cfg = _cfg(min_pct=65.0, site_show_from_pct=90.0)  # misconfigured high
+        site = [d["item"] for d in rank.site_deals(db, cfg, NOW)]
+        assert site == ["Hot Item"]  # clamped to min_pct, nothing hidden
+        db.close()
+
+
 # --------------------------------------------------------------- config
 
 class TestConfigFields:

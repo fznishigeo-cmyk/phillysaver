@@ -42,8 +42,13 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     return pct + boost + abs_bonus - cond_penalty - age_penalty
 
 
-def is_publishable(deal: dict[str, Any], cfg) -> tuple[bool, str]:
-    """All publish gates; returns (False, reason) naming the first failure."""
+def is_publishable(deal: dict[str, Any], cfg,
+                   min_pct: float | None = None) -> tuple[bool, str]:
+    """All publish gates; returns (False, reason) naming the first failure.
+
+    ``min_pct`` overrides cfg.min_pct (the site's lower "strong deals" tier
+    reuses every other gate unchanged); alerts always use cfg.min_pct.
+    """
     status = deal.get("status", "alive")
     if status != "alive":
         return False, f"status: {status!r} is not 'alive'"
@@ -66,9 +71,10 @@ def is_publishable(deal: dict[str, Any], cfg) -> tuple[bool, str]:
     if region != "US":
         return False, f"region: {region!r} is not 'US'"
 
+    floor = cfg.min_pct if min_pct is None else min_pct
     pct = deal.get("pct_at_checkout")
-    if pct is None or pct < cfg.min_pct:
-        return False, f"pct_at_checkout: {pct!r} < min_pct {cfg.min_pct}"
+    if pct is None or pct < floor:
+        return False, f"pct_at_checkout: {pct!r} < min_pct {floor}"
 
     abs_savings = deal.get("abs_savings")
     if abs_savings is None or abs_savings < cfg.min_abs_savings:
@@ -98,18 +104,24 @@ def published_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
 
 
 def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
-    """The SITE set: the alert set PLUS recently-dead deals that qualified
-    while alive, shown marked dead (the spec wants dead deals visible on the
-    page, never alerted). Retention prunes them after cfg.deals_days."""
-    out = published_deals(db, cfg, now)
-    for deal in db.all_deals(status="dead"):
-        probe = dict(deal)
-        probe["status"] = "alive"  # test the other gates only
-        ok, _reason = is_publishable(probe, cfg)
-        if not ok:
-            continue
-        deal["verify_tier"] = deal.get("verify_tier", "unverified")
-        deal["score"] = score(deal, cfg, now)
-        out.append(deal)
+    """The SITE set: every deal clearing the gates at the SITE floor
+    (cfg.site_show_from_pct, never above cfg.min_pct), alive or recently
+    dead (dead ones shown marked dead; the spec wants them visible on the
+    page, never alerted). Deals between the site floor and cfg.min_pct are
+    the page's "strong deals" tier — on the page, never alerted. Retention
+    prunes dead rows after cfg.deals_days."""
+    site_floor = min(cfg.min_pct,
+                     getattr(cfg, "site_show_from_pct", cfg.min_pct))
+    out: list[dict[str, Any]] = []
+    for status in ("alive", "dead"):
+        for deal in db.all_deals(status=status):
+            probe = dict(deal)
+            probe["status"] = "alive"  # dead rows: test the other gates only
+            ok, _reason = is_publishable(probe, cfg, min_pct=site_floor)
+            if not ok:
+                continue
+            deal["verify_tier"] = deal.get("verify_tier", "unverified")
+            deal["score"] = score(deal, cfg, now)
+            out.append(deal)
     out.sort(key=lambda d: d["score"], reverse=True)
     return out
