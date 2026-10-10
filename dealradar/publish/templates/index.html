@@ -281,15 +281,22 @@ s{color:var(--muted)}
       content.innerHTML = '<p class="empty">No deals match the current filters</p>';
       return;
     }
-    // Two tiers: headliners clear the alert floor (meta.floors.min_pct);
-    // "strong deals" sit between the site floor and the alert floor — shown
-    // on the page, never alerted.
+    // Live deals ranked on top; dead ones collect in a "Just missed"
+    // section at the very bottom (FOMO: gone before you got here),
+    // newest death first. Tiers within the live set: headliners clear
+    // the alert floor (meta.floors.min_pct); "strong deals" sit between
+    // the site floor and the alert floor — shown, never alerted.
+    var live = rows.filter(function (d) { return d.status !== "dead"; });
+    var missed = rows.filter(function (d) { return d.status === "dead"; });
+    missed.sort(function (a, b) {
+      return String(b.died_at || "").localeCompare(String(a.died_at || ""));
+    });
     var floors = (state.meta && state.meta.floors) || {};
     var alertFloor = Number(floors.min_pct);
-    var headliners = rows, strong = [];
+    var headliners = live, strong = [];
     if (!isNaN(alertFloor)) {
-      headliners = rows.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
-      strong = rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
+      headliners = live.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
+      strong = live.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
     }
     var html = "";
     if (headliners.length) {
@@ -303,6 +310,11 @@ s{color:var(--muted)}
       html += '<h2 class="strongh">Strong deals <span class="meta">— below the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
         "alert bar, still big savings</span></h2>" + tableHtml(strong);
+    }
+    if (missed.length) {
+      html += '<h2 class="strongh">Just missed &#128557; <span class="meta">— ' +
+        "gone before you got here. Check back more often (or get alerts)." +
+        "</span></h2>" + tableHtml(missed);
     }
     content.innerHTML = html;
     content.querySelectorAll("th.sortable").forEach(function (th) {

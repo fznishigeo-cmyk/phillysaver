@@ -122,6 +122,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "headline": _headline(deal),
         "status": status,
         "alive": status == "alive",
+        "died_at": deal.get("died_at", ""),
         "first_seen_at": deal.get("first_seen_at", ""),
         "last_seen_at": deal.get("last_seen_at", ""),
         "confidence": deal.get("confidence"),
