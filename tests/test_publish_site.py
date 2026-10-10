@@ -184,6 +184,20 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     assert "<link" not in html
 
 
+def test_custom_domain_writes_cname_every_render(db, cfg, tmp_path):
+    """GitHub Pages drops a custom domain unless the deployed artifact
+    carries CNAME; the pipeline redeploys every run, so render writes it."""
+    out = tmp_path / "site"
+    cfg.custom_domain = "wowpriced.com"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    assert (out / "CNAME").read_text(encoding="utf-8") == "wowpriced.com\n"
+    # No domain configured -> no file (plain github.io hosting).
+    cfg.custom_domain = ""
+    out2 = tmp_path / "site2"
+    render_site(db, cfg, NOW, out_dir=out2, deals=[])
+    assert not (out2 / "CNAME").exists()
+
+
 def test_health_template_is_self_contained(db, cfg, tmp_path):
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=[])

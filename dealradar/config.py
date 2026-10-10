@@ -94,6 +94,9 @@ class AppConfig:
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 6.0      # dead deals linger on the site this long
     site_dir: str = "site"
+    # Custom domain for GitHub Pages: written as the CNAME file into the
+    # site output so every deploy keeps the domain attached.
+    custom_domain: str = ""
     ftc_disclosure: str = ""
     tier_boost: dict[str, float] = field(default_factory=dict)
     abs_savings_weight: float = 0.1
@@ -174,6 +177,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.show_dead_hours = float(g("publish", "show_dead_hours",
                                   default=cfg.show_dead_hours))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
 
     cfg.tier_boost = g("ranking", "tier_boost", default={}) or {}

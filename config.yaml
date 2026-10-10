@@ -62,6 +62,7 @@ publish:
                                # missed" section at the page bottom (FOMO:
                                # gone before you got here)
   site_dir: "site"
+  custom_domain: "wowpriced.com"   # GitHub Pages custom domain (CNAME file in every deploy)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-
     Disclosure: some outbound links credit the deal source and may be affiliate links

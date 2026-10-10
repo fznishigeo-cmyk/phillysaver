@@ -188,5 +188,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in ("index.html", "health.html"):
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
 
+    # GitHub Pages keeps a custom domain only while the deployed site
+    # carries this file; every run redeploys, so every run writes it.
+    if getattr(cfg, "custom_domain", ""):
+        (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
+
     logger.info("site rendered: %d deals -> %s", len(serialized), out)
     return {"published": len(serialized), "out_dir": str(out)}
