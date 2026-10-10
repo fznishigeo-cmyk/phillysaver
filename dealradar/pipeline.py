@@ -44,7 +44,15 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
     primary, backup = load_sources()
     stored = effective_sources(db, now=now)  # None when missing or >24 h old
     if stored:
-        return stored
+        # Sources added to sources.yaml since the last validation join the run
+        # set immediately (a dead guess just fails politely and is culled at
+        # the next daily revalidation) — "add a source" works on the next run.
+        known = {s.name for s in stored}
+        fresh = [s for s in primary if s.enabled and s.name not in known]
+        if fresh:
+            log.info("merging %d newly configured sources into the run set: %s",
+                     len(fresh), ", ".join(s.name for s in fresh))
+        return stored + fresh
     if not validate_if_missing:
         return [s for s in primary if s.enabled]
     log.info("first run: validating %d sources live (+%d backups)", len(primary), len(backup))

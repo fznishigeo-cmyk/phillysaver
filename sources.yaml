@@ -252,6 +252,60 @@ sources:
     fast_lane: false
     notes: "Editorial wing: promo codes, pricing errors, e-commerce sales."
 
+  # ---- freebie / price-glitch / clearance-error focused (the >=70% sweet spot) ----
+  - name: hip2save_freebies
+    method: rss
+    url: https://hip2save.com/deals/freebies/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Freebies category feed — concentrated 70-100% territory."
+  - name: free_stuff_finder
+    method: rss
+    url: https://www.freestufffinder.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Very active freebie/deal blog."
+  - name: stl_mommy
+    method: rss
+    url: https://stlmommy.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog known for glitch/clearance finds."
+  - name: swaggrabber
+    method: rss
+    url: https://www.swaggrabber.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: coupon_mom
+    method: rss
+    url: https://www.couponmom.com/blog/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+  - name: dealsplus
+    method: rss
+    url: https://www.dealsplus.com/rss
+    region: US
+    allowed_html: false
+    fast_lane: false
+  - name: glitchndealz
+    method: rss
+    url: https://glitchndealz.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Price-error focused — exactly the heavy-hitter niche."
+  - name: dealcatcher
+    method: rss
+    url: https://www.dealcatcher.com/rss
+    region: US
+    allowed_html: false
+    fast_lane: false
+
   # ---- Reddit (official OAuth API, registered app, required UA format, <=100 req/min) ----
   - name: reddit_deals
     method: api
