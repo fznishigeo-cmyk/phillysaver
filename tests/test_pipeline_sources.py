@@ -59,6 +59,24 @@ class TestFairScheduling:
         assert len(heads) > 1
         assert pipeline._rotate_for_run([], "k") == []
 
+    def test_hourly_puts_slow_sources_before_fast_lane_feeds(self):
+        """The hourly must fetch the slow blogs before the big fast-lane
+        feeds, or the feeds eat the budget and the blogs never parse."""
+        srcs = [make_source("slick", fast_lane=True),
+                make_source("blog_a"), make_source("keepa", fast_lane=True),
+                make_source("blog_b"), make_source("blog_c")]
+        order = pipeline._order_for_run(srcs, "2026-10-10T20", fast_lane=False)
+        names = [s.name for s in order]
+        last_slow = max(i for i, s in enumerate(order) if not s.fast_lane)
+        first_fast = min(i for i, s in enumerate(order) if s.fast_lane)
+        assert last_slow < first_fast          # every slow source precedes fast
+        assert sorted(names) == sorted(s.name for s in srcs)  # nothing dropped
+
+    def test_fast_run_order_is_a_plain_rotation(self):
+        srcs = [make_source(f"s{i}", fast_lane=(i % 2 == 0)) for i in range(5)]
+        order = pipeline._order_for_run(srcs, "k", fast_lane=True)
+        assert sorted(s.name for s in order) == sorted(s.name for s in srcs)
+
     def test_fetch_stops_inside_the_parse_reserve(self):
         """_fetch_all must leave _RESERVE_FOR_PARSE_S on the clock: with the
         deadline already inside the reserve, no source is attempted."""

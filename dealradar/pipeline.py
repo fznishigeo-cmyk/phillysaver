@@ -116,6 +116,26 @@ def _rotate_for_run(sources: list[SourceConfig], run_key: str) -> list[SourceCon
     return sources[rot:] + sources[:rot]
 
 
+def _order_for_run(sources: list[SourceConfig], run_key: str,
+                   fast_lane: bool) -> list[SourceConfig]:
+    """Fetch order for a run.
+
+    On the hourly sweep the fast-lane feeds (Slickdeals, Hip2Save, Keepa,
+    Reddit) were just covered by the 10-minute lane, yet they are big and
+    slow to fetch at 1 req/s/host — left first in line they ate the whole
+    fetch budget and the hourly-only blog sources never got fetched or
+    parsed (live incident: 748 fetched, new=1). So the slow blogs go FIRST
+    (rotated, so a budget cut lands on a different one each hour) and the
+    fast-lane feeds trail. Fast runs only fetch fast-lane sources anyway,
+    so a plain rotation serves them.
+    """
+    if fast_lane:
+        return _rotate_for_run(sources, run_key)
+    slow = [s for s in sources if not s.fast_lane]
+    fast = [s for s in sources if s.fast_lane]
+    return _rotate_for_run(slow, run_key) + fast
+
+
 def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
     """Round-robin posts across sources, keeping each source's own order.
 
@@ -362,9 +382,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 db, cfg, fetcher, now,
                 validate_if_missing=not skip_validation,
                 deadline=deadline - _RESERVE_FOR_TAIL_S)
-            # Production fairness only: rotate so a budget cut lands on a
-            # different tail each run (see _rotate_for_run).
-            sources = _rotate_for_run(sources, run_key)
+            # Production fairness only: on the hourly, slow blogs lead so the
+            # big fast-lane feeds don't eat the budget (see _order_for_run).
+            sources = _order_for_run(sources, run_key, fast_lane)
         tz_by_source = {s.name: s.tz for s in sources}
 
         # ---- fetch ----
