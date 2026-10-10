@@ -151,19 +151,27 @@ class PoliteFetcher:
         conditional: bool = True,
         headers: Mapping[str, str] | None = None,
         deadline: float | None = None,
+        robots_override_host: str | None = None,
     ) -> FetchResult:
         """Polite GET.
 
         Honors robots.txt (a disallowed URL returns a FetchResult with
-        ``blocked_by_robots=True`` and no request is made). When
-        ``conditional`` is true, sends If-None-Match / If-Modified-Since from
-        ``db.get_validators(url)``; a 304 comes back as
+        ``blocked_by_robots=True`` and no request is made). The ONE exception:
+        ``robots_override_host`` names a host whose owner gave the operator
+        WRITTEN permission to crawl (sources.yaml ``crawl_permission``, with
+        the correspondence kept on file) — robots.txt is skipped for requests
+        to exactly that host, and never for any other host a redirect may
+        reach. Rate limits, backoff, UA and every other politeness rule still
+        apply. When ``conditional`` is true, sends If-None-Match /
+        If-Modified-Since from ``db.get_validators(url)``; a 304 comes back as
         ``FetchResult(status=304, not_modified=True, body=None)`` and a 200
         stores fresh validators. ``deadline`` is a ``time.monotonic()`` value;
         crossing it raises :class:`DeadlineExceeded`.
         """
         self._check_deadline(deadline)
-        if not self._robots_allowed(url):
+        override = (robots_override_host or "").strip().lower() or None
+        if not self._host_overridden(url, override) \
+                and not self._robots_allowed(url):
             logger.info("robots.txt disallows GET %s", url)
             return FetchResult(
                 url=url, final_url=url, status=0, body=None,
@@ -179,8 +187,15 @@ class PoliteFetcher:
         result, _ = self._request_with_retries(
             "GET", url, hdrs, deadline=deadline, conditional=conditional,
             follow_redirects=True, read_body=True,
+            robots_override_host=override,
         )
         return result
+
+    @staticmethod
+    def _host_overridden(url: str, override_host: str | None) -> bool:
+        if not override_host:
+            return False
+        return urlsplit(url).netloc.lower() == override_host
 
     def head(
         self,
@@ -302,6 +317,7 @@ class PoliteFetcher:
         conditional: bool,
         follow_redirects: bool,
         read_body: bool,
+        robots_override_host: str | None = None,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Polite manual hop loop around the per-URL attempt loop.
 
@@ -324,7 +340,9 @@ class PoliteFetcher:
             if (follow_redirects and 300 <= status < 400 and location
                     and hop < hop_cap):
                 nxt = urljoin(current, location)
-                if method == "GET" and not self._robots_allowed(nxt):
+                if (method == "GET"
+                        and not self._host_overridden(nxt, robots_override_host)
+                        and not self._robots_allowed(nxt)):
                     logger.info("robots.txt disallows redirect target %s", nxt)
                     return (FetchResult(url=url, final_url=nxt, status=0,
                                         body=None, error="robots_disallowed",

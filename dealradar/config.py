@@ -203,6 +203,7 @@ def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
         enabled=bool(d.get("enabled", True)),
         tz=str(d.get("tz", "America/New_York")),
         notes=str(d.get("notes", "")),
+        crawl_permission=str(d.get("crawl_permission", "")),
     )
 
 

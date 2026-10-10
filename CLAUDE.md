@@ -18,10 +18,14 @@ Working rules for any AI agent (or human) touching this repository.
 ## Non-negotiables of this project
 
 - **Politeness is law.** robots.txt is always honored (conservative on
-  errors). Never bypass Cloudflare/Akamai/login walls, no headless
-  browsers, at most 1 request/second/host, descriptive User-Agent with the
-  contact email, exponential backoff, conditional GETs. This protects the
-  business built on top of this pipeline.
+  errors), with ONE narrow exception: a source whose owner gave the
+  operator written permission to crawl, documented in sources.yaml
+  `crawl_permission` (correspondence kept on the operator's file), and the
+  bypass applies to that source's own host only. Never bypass
+  Cloudflare/Akamai/login walls, no headless browsers, at most
+  1 request/second/host, descriptive User-Agent with the contact email,
+  exponential backoff, conditional GETs. This protects the business built
+  on top of this pipeline.
 - **Evidence or it doesn't exist.** Every published price must be backed by
   a verbatim quote verified in code (`parse/extractor.verify_evidence`).
   Never weaken that check; a deal without evidence is dropped, not guessed.

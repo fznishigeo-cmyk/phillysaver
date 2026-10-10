@@ -62,7 +62,12 @@ def _validate_feed_source(
     source: SourceConfig, fetcher: Any, deadline: float | None = None
 ) -> tuple[str, str, SourceConfig | None]:
     """(status, detail, active_config|None) for an rss/html source."""
-    res = fetcher.get(source.url, conditional=False, deadline=deadline)
+    from .rss import _permission_host
+    kw = {}
+    override = _permission_host(source)
+    if override:  # only sources with documented written permission
+        kw["robots_override_host"] = override
+    res = fetcher.get(source.url, conditional=False, deadline=deadline, **kw)
     if res.blocked_by_robots:
         reason = "blocked_by_robots"
     elif res.status != 200 or not res.body:

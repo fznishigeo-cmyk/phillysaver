@@ -193,7 +193,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: jungle_deals
     method: rss
     url: https://jungledealsblog.com/feed/
@@ -212,7 +212,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: living_rich_with_coupons
     method: rss
     url: https://www.livingrichwithcoupons.com/feed/
@@ -260,7 +260,7 @@ sources:
     allowed_html: false
     fast_lane: false
     notes: "Daily editorial Amazon/web deals; validation autodiscovers if the feed moved."
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: couponcabin_blog
     method: rss
     url: https://www.couponcabin.com/blog/feed/
@@ -282,7 +282,7 @@ sources:
     allowed_html: false
     fast_lane: false
     notes: "E-commerce promo codes, doorbusters, digital freebies."
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: offers_blog
     method: rss
     url: https://www.offers.com/blog/feed/
@@ -327,14 +327,14 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog known for glitch/clearance finds."
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: swaggrabber
     method: rss
     url: https://www.swaggrabber.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: coupon_mom
     method: rss
     url: https://www.couponmom.com/blog/feed/
@@ -347,7 +347,7 @@ sources:
     region: US
     allowed_html: false
     fast_lane: false
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: glitchndealz
     method: rss
     url: https://glitchndealz.com/feed/
@@ -525,7 +525,7 @@ backup_sources:
     region: US
     allowed_html: true
     fast_lane: false
-    enabled: false  # robots.txt disallows bots — respected, permanently off
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: consumer_queen
     method: rss
     url: https://consumerqueen.com/feed/

@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime
+from urllib.parse import urlsplit
 from typing import Any
 
 import feedparser
@@ -59,6 +60,18 @@ def _needs_enrichment(body_html: str, body_text: str) -> bool:
     )
 
 
+def _permission_host(source) -> str | None:
+    """Host whose robots.txt the operator's WRITTEN permission overrides.
+
+    Only set for sources carrying crawl_permission in sources.yaml (the
+    correspondence stays on the operator's file); only ever the source's
+    own host.
+    """
+    if not getattr(source, "crawl_permission", ""):
+        return None
+    return urlsplit(source.url).netloc.lower() or None
+
+
 class RssAdapter(SourceAdapter):
     """Adapter for method='rss' sources (and 'html' sources via autodiscovered feeds)."""
 
@@ -71,7 +84,11 @@ class RssAdapter(SourceAdapter):
         now: datetime,
         deadline: Any = None,
     ) -> list[RawPost]:
-        res = fetcher.get(source.url, conditional=True, deadline=deadline)
+        kw = {}
+        override = _permission_host(source)
+        if override:  # only sources with documented written permission
+            kw["robots_override_host"] = override
+        res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)
         if res.not_modified or res.status == 304:
             log.debug("%s: feed not modified", source.name)
             return []

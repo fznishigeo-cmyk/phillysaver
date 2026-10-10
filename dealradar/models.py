@@ -26,6 +26,11 @@ class SourceConfig:
     enabled: bool = True
     tz: str = "America/New_York"  # tz assumed for naive feed dates
     notes: str = ""
+    # Non-empty = the operator holds WRITTEN permission from this site to
+    # crawl it (keep the correspondence on file; this string documents it).
+    # Bypasses robots.txt for THIS SOURCE'S OWN HOST ONLY — never other
+    # hosts, never bot walls, and every other politeness rule still applies.
+    crawl_permission: str = ""
 
 
 @dataclass

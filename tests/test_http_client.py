@@ -126,6 +126,39 @@ def test_robots_4xx_means_everything_allowed(tmp_path):
     fetcher.close()
 
 
+def test_robots_override_applies_to_the_permitted_host_only(tmp_path):
+    """Written-permission override (sources.yaml crawl_permission): robots is
+    skipped for exactly the permitted host; a redirect to ANY OTHER host is
+    still robots-checked, so a grant can never leak past its grantor."""
+    clock, router = FakeClock(), Router()
+    router.add("GET", "https://granted.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /\n"))
+    router.add("GET", "https://granted.example/feed",
+               lambda r: httpx.Response(200, content=b"<rss/>"))
+    router.add("GET", "https://granted.example/hop",
+               lambda r: httpx.Response(
+                   301, headers={"Location": "https://other.example/feed"}))
+    router.add("GET", "https://other.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /\n"))
+    fetcher, _, _ = make_fetcher(tmp_path, router, clock)
+
+    # Without the override the disallow holds.
+    assert fetcher.get("https://granted.example/feed").blocked_by_robots is True
+    # With it, the permitted host's own page fetches.
+    res = fetcher.get("https://granted.example/feed",
+                      robots_override_host="granted.example")
+    assert res.status == 200 and res.body == b"<rss/>"
+    # A redirect leaving the permitted host is still robots-checked.
+    hop = fetcher.get("https://granted.example/hop",
+                      robots_override_host="granted.example")
+    assert hop.blocked_by_robots is True
+    # The override never covers a different host directly either.
+    assert fetcher.get("https://other.example/feed",
+                       robots_override_host="granted.example"
+                       ).blocked_by_robots is True
+    fetcher.close()
+
+
 def test_robots_5xx_disallows_host_for_run(tmp_path):
     clock, router = FakeClock(), Router()
     router.add("GET", "https://flaky.example/robots.txt",
