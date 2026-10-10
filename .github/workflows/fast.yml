@@ -1,7 +1,8 @@
 # Fast lane: every 15 minutes, fetch only the fast_lane sources.
 # Shares the `dealradar` concurrency group with hourly.yml (cancel-in-progress
 # false) so the two never overlap — they queue behind each other instead.
-# No Pages deploy here: the hourly workflow refreshes the published site.
+# Deploys the site like hourly.yml does: a fast-lane find (Keepa price drops)
+# must reach the page within minutes, not wait for the top of the hour.
 name: dealradar fast lane
 
 on:
@@ -15,12 +16,17 @@ concurrency:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   run:
     name: fast-lane run
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -66,3 +72,27 @@ jobs:
 
       - name: Commit state to data branch
         run: bash scripts/commit_state.sh
+
+      - name: Configure GitHub Pages
+        id: cfgpages
+        # Soft-fail guard mirrors hourly.yml (see the comment there).
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload site artifact
+        if: steps.cfgpages.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        if: steps.cfgpages.outcome == 'success'
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Note skipped deploy
+        if: steps.cfgpages.outcome != 'success'
+        run: |
+          echo "::warning::Site deploy skipped - enable GitHub Pages once at Settings -> Pages -> Source = GitHub Actions"
