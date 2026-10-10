@@ -55,6 +55,15 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "KCL Amazon category feed; validation autodiscovers/culls if the path differs."
+  - name: kcl_wall_amazon
+    method: api
+    adapter: kcl_wall
+    url: https://thekrazycouponlady.com/coupons-for/amazon
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "KCL live deal wall (cards never enter their RSS). Dedicated adapter chunks the wall text for the evidence-verified parse."
+    crawl_permission: "operator reports written email permission from KCL (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealnews
     method: rss
     url: https://www.dealnews.com/rss/todays-edition.xml

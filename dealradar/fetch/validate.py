@@ -43,6 +43,7 @@ ADAPTER_SECRETS: dict[str, list[str]] = {
     "woot": ["WOOT_API_KEY"],
     "meh": [],  # keyless via Meh's public feed.json; MEH_API_KEY upgrades it
     "keepa": ["KEEPA_KEY"],
+    "kcl_wall": [],  # keyless; permission-based wall crawl (crawl_permission)
     "telegram": ["TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION"],
     "threads": ["THREADS_TOKEN"],
 }

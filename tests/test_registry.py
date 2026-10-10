@@ -34,6 +34,7 @@ _ensure_base_stub()
 
 from dealradar.config import AppConfig  # noqa: E402
 from dealradar.fetch.instagram_source import InstagramAdapter  # noqa: E402
+from dealradar.fetch.kcl_wall import KclWallAdapter  # noqa: E402
 from dealradar.fetch.meh import MehAdapter  # noqa: E402
 from dealradar.fetch.reddit import RedditAdapter  # noqa: E402
 from dealradar.fetch.registry import get_adapter  # noqa: E402
@@ -59,6 +60,7 @@ def cfg() -> AppConfig:
         ("reddit", RedditAdapter),
         ("woot", WootAdapter),
         ("meh", MehAdapter),
+        ("kcl_wall", KclWallAdapter),
         ("telegram", TelegramAdapter),
         ("threads", ThreadsAdapter),
         ("instagram", InstagramAdapter),
