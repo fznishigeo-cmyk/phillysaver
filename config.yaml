@@ -26,8 +26,8 @@ parse:
   model: "claude-haiku-5-5"
   max_posts_per_run: 400
   max_chars_per_post: 6000
-  spend_cap_usd_per_run: 1.00          # temporarily doubled to drain today's backlog faster; revert with the daily cap          # abort parsing gracefully when hit
-  spend_cap_usd_per_day: 30.00         # operator-authorized for 2026-10-10 only; revert to 6.00 at UTC midnight          # hard daily ceiling across ALL runs (UTC day)
+  spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
+  spend_cap_usd_per_day: 6.00          # hard daily ceiling across ALL runs (UTC day)
   retries_on_invalid_json: 2
   # Extraction calls in flight at once. Each call is ~5-8 s of API round trip
   # regardless of model, so one-at-a-time capped a run at ~27 posts; a pool
