@@ -188,38 +188,56 @@ class TestWoot:
         self, cfg: AppConfig, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("WOOT_API_KEY", "wkey")
+        payload = {"Items": [
+            {"OfferId": "off-1", "Title": "RoboVac 11S", "Site": "Electronics",
+             "Url": "https://electronics.woot.com/offers/robot-vacuum",
+             "SalePrice": {"Minimum": 49.99, "Maximum": 49.99},
+             "ListPrice": 199.99, "Condition": "New",
+             "StartDate": "2026-10-09T05:00:00Z",
+             "EndDate": "2026-10-11T04:59:59Z",
+             "Photo": "https://d3gqasl9vmjfy8.cloudfront.net/robovac.jpg",
+             "IsSoldOut": False},
+            {"OfferId": "off-2", "Title": "MacBook Air M2 (Refurbished)",
+             "Site": "Computers",
+             "Url": "https://computers.woot.com/offers/macbook-air",
+             "SalePrice": {"Minimum": 499.99, "Maximum": 649.99},
+             "ListPrice": 1199.0, "Condition": "Refurbished",
+             "IsSoldOut": False},
+            {"OfferId": "off-3", "Title": "Gone Already",
+             "SalePrice": 1.0, "IsSoldOut": True},
+        ]}
 
         def handler(request: httpx.Request) -> httpx.Response:
-            assert request.url.host == "api.woot.com"
-            assert request.url.path == "/2/events.json"
-            assert request.url.params["eventType"] == "Daily"
+            assert request.url.host == "developer.woot.com"
+            assert request.url.path == "/feed/All"
             # The key must travel ONLY in the header — query-string keys leak
             # into recorded error messages (see redact_secrets).
             assert "key" not in request.url.params
             assert request.headers["x-api-key"] == "wkey"
-            return httpx.Response(200, json=_fixture_json("api_woot_events.json"))
+            return httpx.Response(200, json=payload)
 
         adapter = WootAdapter(http_client=_mock_client(handler, cfg))
         posts = adapter.fetch_posts(self.SRC, None, None, cfg, NOW, None)
 
-        assert [p.uid for p in posts] == ["off-1", "off-2", "evt-456"]
+        # Sold-out offers never become posts.
+        assert [p.uid for p in posts] == ["off-1", "off-2"]
 
         first = posts[0]
         assert first.title == "RoboVac 11S"
         assert first.url == "https://electronics.woot.com/offers/robot-vacuum"
         # Prices appear verbatim so evidence quotes can match them exactly.
-        assert "Sale price: $49.99" in first.text
+        assert "Sale price: $49.99" in first.text        # min==max collapses
         assert "List price: $199.99" in first.text
-        assert "Suck it up" in first.text  # subtitle included
-        assert first.published_at == datetime(2026, 10, 9, 5, 0, tzinfo=timezone.utc)
+        assert "Ends: 2026-10-11T04:59:59Z" in first.text
+        assert first.image_url == \
+            "https://d3gqasl9vmjfy8.cloudfront.net/robovac.jpg"
+        assert first.published_at == datetime(2026, 10, 9, 5, 0,
+                                              tzinfo=timezone.utc)
         assert first.fetched_at == NOW
 
-        # Event without an Offers list: the event itself is the offer.
-        bag = posts[2]
-        assert bag.title == "Mystery Bag of Crap"
-        assert bag.url == "https://www.woot.com/offers/bag-of-crap"
-        assert "Sale price: $9.99" in bag.text
-        assert "List price: $29.99" in bag.text
+        refurb = posts[1]
+        assert "Sale price: $499.99 - $649.99" in refurb.text  # price range
+        assert "Condition: Refurbished." in refurb.text  # used-floor signal
 
 
 # ---------------------------------------------------------------- meh

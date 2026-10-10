@@ -76,7 +76,7 @@ sources:
   - name: woot
     method: api
     adapter: woot
-    url: https://developer.woot.com/#getting-started
+    url: https://developer.woot.com/feed/All
     region: US
     allowed_html: false
     fast_lane: true
@@ -201,7 +201,7 @@ sources:
     fast_lane: false
   - name: clark_deals
     method: rss
-    url: https://clark.com/deals/feed/
+    url: https://clarkdeals.com/feed/
     region: US
     allowed_html: false
     fast_lane: false
@@ -437,6 +437,38 @@ sources:
     enabled: false            # stubbed, off by default
 
 # Replacement pool used by first-run validation to keep >=30 active sources.
+
+  # ---- added on request: more active online-deal sites (validation culls
+  # dead guesses and autodiscovers moved feeds politely) ----
+  - name: dealgenius
+    method: rss
+    url: https://www.dealgenius.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: closeout/overstock retailer; validator autodiscovers a feed if one exists
+  - name: dealsofamerica
+    method: rss
+    url: https://www.dealsofamerica.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: community deals site; validator autodiscovers the feed
+  - name: morningsave
+    method: rss
+    url: https://morningsave.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
+  - name: sidedeal
+    method: rss
+    url: https://sidedeal.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
+
 backup_sources:
   - name: dealspotr
     method: rss
