@@ -27,7 +27,7 @@ parse:
   max_posts_per_run: 400
   max_chars_per_post: 6000
   spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
-  spend_cap_usd_per_day: 5.00          # hard daily ceiling across ALL runs (UTC day)
+  spend_cap_usd_per_day: 6.00          # hard daily ceiling across ALL runs (UTC day)
   retries_on_invalid_json: 2
   # Second opinion: when the cheap model finds no deals in a post that smells
   # like one (has $ amounts / percents), re-read it once with a stronger model.

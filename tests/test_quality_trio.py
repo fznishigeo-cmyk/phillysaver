@@ -692,4 +692,4 @@ class TestConfigFields:
         assert cfg.critic_model == "claude-sonnet-5-5"
         assert cfg.critic_enabled is True
         assert cfg.exclude_suspect_msrp is True
-        assert cfg.spend_cap_usd_per_day == pytest.approx(5.00)
+        assert cfg.spend_cap_usd_per_day == pytest.approx(6.00)
