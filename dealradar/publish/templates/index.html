@@ -7,63 +7,124 @@
 <style>
 :root{
   color-scheme: light dark;
-  --bg:#ffffff; --fg:#191c1f; --muted:#5f6670; --line:#e3e6ea; --chip:#eef1f4;
-  --head:#f6f8fa; --link:#0b63c4; --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280; --dead:#b42318;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --flag:#d9480f; --flag-fg:#ffffff; --cond:#b7791f; --cond-fg:#ffffff;
+  --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280; --dead:#b42318;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#101418; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a; --chip:#1e242c;
-         --head:#171d24; --link:#6cb1ff; --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b; }
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --flag:#ff6b3d; --flag-fg:#2b0e02; --cond:#f2b544; --cond-fg:#3a2503;
+         --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b;
+         --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
 }
 *{box-sizing:border-box}
-body{margin:0;padding:14px;background:var(--bg);color:var(--fg);
+body{margin:0;background:var(--bg);color:var(--fg);
      font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
-a{color:var(--link)}
-h1{font-size:20px;margin:0 0 4px}
-.meta{color:var(--muted);font-size:13px;margin:2px 0}
-#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
-#controls input[type=search]{flex:1 1 180px;min-width:140px}
-#controls input,#controls select{background:var(--bg);color:var(--fg);
-  border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1200px;margin:0 auto;padding:0 16px 48px}
+
+/* ---- header ---- */
+header{background:var(--card);border-bottom:1px solid var(--line);
+       position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
+.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
+      gap:4px 14px;align-items:baseline}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
+.brand .dot{color:var(--accent)}
+.tag{color:var(--muted);font-size:13px}
+.meta{color:var(--muted);font-size:12.5px;margin:0;flex-basis:100%}
+#cattabs{max-width:1200px;margin:0 auto;padding:4px 16px 10px;display:flex;gap:7px;
+         overflow-x:auto;scrollbar-width:none}
+#cattabs::-webkit-scrollbar{display:none}
+.cattab{flex:0 0 auto;background:var(--chip);color:var(--fg);border:1px solid var(--line);
+        border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer;
+        white-space:nowrap}
+.cattab:hover{border-color:var(--accent)}
+.cattab.active{background:var(--accent);border-color:var(--accent);
+               color:var(--accent-fg);font-weight:700}
+
+/* ---- controls ---- */
+#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 6px}
+#controls input,#controls select{background:var(--card);color:var(--fg);
+  border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+#controls input[type=search]{flex:1 1 200px;min-width:150px}
 #controls input[type=number]{width:70px}
-#controls label{font-size:13px;color:var(--muted);display:flex;gap:4px;align-items:center}
-#cattabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
-.cattab{background:var(--chip);color:var(--fg);border:1px solid var(--line);
-        border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
-.cattab.active{background:var(--link);border-color:var(--link);color:#fff;font-weight:600}
-.tablewrap{overflow-x:auto}
-table{border-collapse:collapse;width:100%;font-size:14px}
-th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-.headline{font-size:12.5px;color:var(--muted);margin-top:3px;max-width:52ch;line-height:1.35}
-th{background:var(--head);user-select:none;white-space:nowrap;position:sticky;top:0}
-th.sortable{cursor:pointer}
-th .arrow{color:var(--muted);font-size:11px}
-.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:12px;font-weight:600;
-       border:1px solid currentColor;white-space:nowrap}
+#controls label{font-size:13px;color:var(--muted);display:flex;gap:5px;align-items:center;
+  background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+#controls label input[type=number]{border:none;padding:0;background:transparent}
+
+/* ---- card grid ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));
+      gap:14px;margin:14px 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+      box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;
+      transition:transform .12s ease,box-shadow .12s ease}
+.card:hover{transform:translateY(-2px);
+            box-shadow:0 2px 4px rgba(15,23,32,.08),0 10px 24px rgba(15,23,32,.12)}
+.media{position:relative;height:150px;background:#fff;border-bottom:1px solid var(--line);
+       display:flex;align-items:center;justify-content:center}
+.media img{max-width:88%;max-height:88%;object-fit:contain}
+.ph{font-size:44px;font-weight:800;color:var(--line)}
+.flag{position:absolute;top:8px;left:8px;background:var(--flag);color:var(--flag-fg);
+      font-size:13px;font-weight:800;padding:3px 9px;border-radius:7px}
+.condtag{position:absolute;top:8px;right:8px;background:var(--cond);color:var(--cond-fg);
+         font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
+.gonetag{position:absolute;inset:auto 8px 8px auto;background:var(--dead);color:#fff;
+         font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
+.card.gone .media img{filter:grayscale(1);opacity:.55}
+.body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:7px;flex:1}
+.pricerow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.now{font-size:21px;font-weight:800}
+.pricerow s{color:var(--muted);font-size:14px}
+.save{color:var(--good);font-size:12.5px;font-weight:700}
+.title{font-size:14px;line-height:1.35;margin:0;font-weight:600;
+       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.title a{color:inherit}
+.headline{font-size:12.5px;color:var(--muted);line-height:1.4;
+          display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.metarow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:auto}
+.chip{display:inline-block;background:var(--chip);border-radius:6px;padding:2px 7px;
+      font-size:11.5px;color:var(--muted);white-space:nowrap}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;
+       font-weight:700;border:1px solid currentColor;white-space:nowrap}
 .tier-corroborated{color:var(--good)}
 .tier-history-checked{color:var(--hist)}
 .tier-unverified{color:var(--unv)}
-.pct{font-weight:700}
-.chip{display:inline-block;background:var(--chip);border-radius:6px;padding:1px 6px;
-      font-size:12px;margin:1px 2px 1px 0;color:var(--muted)}
-.dead{color:var(--dead);font-weight:600}
-.alive{color:var(--good)}
-s{color:var(--muted)}
-.credit{font-size:12px;color:var(--muted)}
-.empty{color:var(--muted);padding:24px 0;text-align:center}
-.strongh{font-size:16px;margin:22px 0 8px;border-top:1px solid var(--line);padding-top:16px}
-.strongh .meta{font-weight:400}
-.itemflex{display:flex;gap:10px;align-items:flex-start}
-.thumb{width:56px;height:56px;object-fit:contain;border-radius:6px;background:#fff;
-       border:1px solid var(--line);flex:0 0 auto}
-.itemtext{min-width:0}
-@media (max-width:640px){ body{padding:10px} th,td{padding:6px 5px;font-size:13px} }
+.actions{display:flex;align-items:center;gap:8px;margin-top:2px}
+.getdeal{background:var(--accent);color:var(--accent-fg)!important;font-weight:700;
+         font-size:13px;padding:8px 14px;border-radius:9px;flex:0 0 auto}
+.getdeal:hover{text-decoration:none;filter:brightness(1.08)}
+.credit{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap}
+.credit a{color:var(--muted);text-decoration:underline}
+
+/* ---- sections ---- */
+.secth{font-size:17px;margin:28px 0 2px;padding-top:18px;border-top:1px solid var(--line)}
+.secth .meta{font-weight:400;display:inline}
+.empty{color:var(--muted);padding:34px 0;text-align:center}
+footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
+       padding-top:14px}
+@media (max-width:520px){
+  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .media{height:118px}
+  .now{font-size:18px}
+  .getdeal{padding:7px 11px;font-size:12.5px}
+}
 </style>
 </head>
 <body>
-<h1>dealradar</h1>
-<p id="metaline" class="meta">Loading&hellip;</p>
-<p class="meta"><a href="health.html">source health</a></p>
-<nav id="cattabs" aria-label="category tabs"></nav>
+<header>
+  <div class="hrow">
+    <h1 class="brand">dealradar<span class="dot">●</span></h1>
+    <span class="tag">verified deals · refreshed every 10 minutes</span>
+    <p id="metaline" class="meta">Loading&hellip;</p>
+  </div>
+  <nav id="cattabs" aria-label="category tabs"></nav>
+</header>
+<div class="wrap">
 <div id="controls">
   <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
   <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
@@ -77,6 +138,9 @@ s{color:var(--muted)}
   <label><input id="hideunv" type="checkbox"> hide unverified</label>
 </div>
 <div id="content"><p class="empty">Loading&hellip;</p></div>
+<footer>Every deal links to the seller and credits the source that found it.
+  <a href="health.html">source health</a></footer>
+</div>
 <script>
 "use strict";
 (function () {
@@ -96,18 +160,6 @@ s{color:var(--muted)}
     ["Toys & Games", ["toys_games", "kids_baby"]],
     ["Other", ["pets", "office", "auto", "books_media", "other"]]
   ];
-  var COLS = [
-    { key: "item",   label: "Item",       sortable: false },
-    { key: "price",  label: "Price",      sortable: true  },
-    { key: "pct",    label: "% off",      sortable: true  },
-    { key: "abs",    label: "$ saved",    sortable: true  },
-    { key: "tier",   label: "Verified",   sortable: false },
-    { key: "cond",   label: "Conditions", sortable: false },
-    { key: "store",  label: "Store",      sortable: true  },
-    { key: "age",    label: "Age",        sortable: true  },
-    { key: "status", label: "Status",     sortable: false },
-    { key: "credit", label: "Source",     sortable: false }
-  ];
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -120,7 +172,6 @@ s{color:var(--muted)}
       case "pct":   return num(d.pct_at_checkout);
       case "abs":   return num(d.abs_savings);
       case "price": return num(d.final_price);
-      case "store": return (d.store || "").toLowerCase();
       case "age":   return num(d.age_hours);
     }
     return null;
@@ -204,70 +255,82 @@ s{color:var(--muted)}
     return 0;
   }
 
-  function rowHtml(d) {
+  function ageText(h) {
+    if (h == null) return "";
+    if (h < 1) return "just in";
+    if (h < 24) return Math.round(h) + "h ago";
+    return Math.round(h / 24) + "d ago";
+  }
+
+  function cardHtml(d) {
     var url = d.url || "";
-    var item = url
+    var dead = d.status === "dead";
+    var conds = d.conditions || [];
+    var usedTag = conds.indexOf("open_box") !== -1 ? "OPEN BOX"
+      : (conds.indexOf("used") !== -1 ? "USED" : "");
+
+    // Media: retailer's own public product image (broken -> placeholder stays).
+    var media = d.image_url
+      ? '<img loading="lazy" src="' + esc(d.image_url) + '" alt="' + esc(d.item) +
+        '" onerror="this.parentNode.removeChild(this)">'
+      : "";
+    media += '<div class="ph" aria-hidden="true">' +
+      esc((d.store || "?").charAt(0).toUpperCase()) + "</div>";
+    if (d.image_url) {
+      // Placeholder sits behind the image; hide it when the image renders.
+      media = media.replace('<div class="ph"', '<div class="ph" style="display:none"');
+    }
+    var pct = num(d.pct_at_checkout);
+    if (pct != null) {
+      media += '<span class="flag">-' + Math.round(pct) + "%</span>";
+    }
+    if (usedTag) media += '<span class="condtag">' + usedTag + "</span>";
+    if (dead) media += '<span class="gonetag">GONE</span>';
+
+    var price = d.final_price != null
+      ? '<span class="now">$' + Number(d.final_price).toFixed(2) + "</span>" : "";
+    if (d.regular_price != null) {
+      price += " <s>$" + Number(d.regular_price).toFixed(2) + "</s>";
+    }
+    if (!dead && d.abs_savings != null) {
+      price += ' <span class="save">save $' + Number(d.abs_savings).toFixed(2) + "</span>";
+    }
+
+    var title = url
       ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
-    if (d.category && d.category !== "other") {
-      item += ' <span class="chip">' + esc(d.category).replace(/_/g, " ") + "</span>";
-    }
-    if (d.headline) {
-      item += '<div class="headline">' + esc(d.headline) + "</div>";
-    }
-    // Thumbnail: the retailer's own public product image (broken -> hidden).
-    if (d.image_url) {
-      item = '<div class="itemflex"><img class="thumb" loading="lazy" src="' +
-        esc(d.image_url) + '" alt="' + esc(d.item) +
-        '" onerror="this.parentNode.removeChild(this)">' +
-        '<div class="itemtext">' + item + "</div></div>";
-    }
-    var price = d.final_price != null ? "$" + Number(d.final_price).toFixed(2) : "—";
-    if (d.regular_price != null) {
-      price += ' <s>$' + Number(d.regular_price).toFixed(2) + "</s>";
-    }
-    var pct = d.pct_at_checkout != null
-      ? '<span class="pct">' + Math.round(d.pct_at_checkout) + "%</span>" : "—";
-    var abs = d.abs_savings != null ? "$" + Number(d.abs_savings).toFixed(2) : "—";
+
     var tier = esc(d.badge || "unverified");
-    var tierHtml = '<span class="badge tier-' + tier + '">' + tier + "</span>";
-    var conds = (d.conditions || []).map(function (c) {
-      return '<span class="chip">' + esc(c) + "</span>";
-    }).join("") || "—";
-    var age = d.age_hours != null ? Number(d.age_hours).toFixed(1) + " h" : "—";
-    var alive = d.status !== "dead";
-    var statusHtml = alive
-      ? '<span class="alive">&#9679; alive</span>'
-      : '<span class="dead">&#10007; dead</span>';
-    // Source credit is required on every row.
+    var metarow = '<span class="chip">' + esc(d.store || "") + "</span>" +
+      '<span class="badge tier-' + tier + '">' + tier + "</span>";
+    var extra = conds.filter(function (c) { return c !== "used" && c !== "open_box"; });
+    extra.slice(0, 2).forEach(function (c) {
+      metarow += '<span class="chip">' + esc(c).replace(/_/g, " ") + "</span>";
+    });
+    var age = ageText(num(d.age_hours));
+    if (age) metarow += '<span class="chip">' + esc(age) + "</span>";
+
+    // Source credit is required on every card.
     var credits = (d.credits || []).map(function (c) {
       return 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
     }).join(", ");
-    return "<tr>" +
-      "<td>" + item + "</td>" +
-      "<td>" + price + "</td>" +
-      "<td>" + pct + "</td>" +
-      "<td>" + abs + "</td>" +
-      "<td>" + tierHtml + "</td>" +
-      "<td>" + conds + "</td>" +
-      "<td>" + esc(d.store) + "</td>" +
-      "<td>" + age + "</td>" +
-      "<td>" + statusHtml + "</td>" +
-      '<td class="credit">' + credits + "</td>" +
-      "</tr>";
+    var actions = (url && !dead
+      ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener">Get deal</a>'
+      : "") + '<span class="credit">' + credits + "</span>";
+
+    return '<article class="card' + (dead ? " gone" : "") + '">' +
+      '<div class="media">' + media + "</div>" +
+      '<div class="body">' +
+      '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
+      '<h3 class="title">' + title + "</h3>" +
+      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
+      '<div class="metarow">' + metarow + "</div>" +
+      '<div class="actions">' + actions + "</div>" +
+      "</div></article>";
   }
 
-  function tableHtml(rows) {
-    var head = COLS.map(function (c) {
-      var arrow = "";
-      if (c.key === state.sortKey) {
-        arrow = ' <span class="arrow">' + (state.sortDir < 0 ? "▼" : "▲") + "</span>";
-      }
-      return '<th data-key="' + c.key + '"' + (c.sortable ? ' class="sortable"' : "") + ">" +
-        esc(c.label) + arrow + "</th>";
-    }).join("");
-    return '<div class="tablewrap"><table><thead><tr>' + head +
-      "</tr></thead><tbody>" + rows.map(rowHtml).join("") + "</tbody></table></div>";
+  function gridHtml(deals) {
+    return '<div class="grid">' + deals.map(cardHtml).join("") + "</div>";
   }
 
   function render() {
@@ -300,35 +363,23 @@ s{color:var(--muted)}
     }
     var html = "";
     if (headliners.length) {
-      html += tableHtml(headliners);
+      html += gridHtml(headliners);
     } else {
       html += '<p class="empty">No deals above the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
         "alert bar right now</p>";
     }
     if (strong.length) {
-      html += '<h2 class="strongh">Strong deals <span class="meta">— below the ' +
+      html += '<h2 class="secth">Strong deals <span class="meta">— below the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
-        "alert bar, still big savings</span></h2>" + tableHtml(strong);
+        "alert bar, still big savings</span></h2>" + gridHtml(strong);
     }
     if (missed.length) {
-      html += '<h2 class="strongh">Just missed &#128557; <span class="meta">— ' +
+      html += '<h2 class="secth">Just missed &#128557; <span class="meta">— ' +
         "gone before you got here. Check back more often (or get alerts)." +
-        "</span></h2>" + tableHtml(missed);
+        "</span></h2>" + gridHtml(missed);
     }
     content.innerHTML = html;
-    content.querySelectorAll("th.sortable").forEach(function (th) {
-      th.addEventListener("click", function () {
-        var key = th.getAttribute("data-key");
-        if (state.sortKey === key) {
-          state.sortDir = -state.sortDir;
-        } else {
-          state.sortKey = key;
-          state.sortDir = key === "store" ? 1 : -1;
-        }
-        render();
-      });
-    });
   }
 
   ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
@@ -337,7 +388,7 @@ s{color:var(--muted)}
     el.addEventListener("change", render);
   });
 
-  // Easy sorting: the dropdown drives the same state the column headers do.
+  // Easy sorting: the dropdown drives the card order.
   document.getElementById("sortsel").addEventListener("change", function () {
     var parts = this.value.split(":");
     state.sortKey = parts[0];
