@@ -578,6 +578,33 @@ class TestPriceRecheck:
                             self._stats_response([9999, 10500, -1]))
         assert verify.recheck_amazon_price(deal, cfg) is False
 
+    def test_recheck_backfills_missing_image_for_free(self, monkeypatch):
+        """Live gap: cards without thumbnails. Every product response we
+        already pay for carries imagesCSV — the recheck must harvest it."""
+        import httpx
+
+        from dealradar import verify
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+
+        def resp(*a, **k):
+            return httpx.Response(
+                200, json={"products": [{
+                    "imagesCSV": "71prodIMG.jpg,41other.jpg",
+                    "stats": {"current": [2999, 3105, -1]}}]},
+                request=httpx.Request("GET", "https://api.keepa.com/product"))
+
+        monkeypatch.setattr(httpx, "get", resp)
+        deal = {"asin": "B0TESTASIN1", "final_price": 29.99, "conditions": []}
+        assert verify.recheck_amazon_price(deal, cfg) is True
+        assert deal["image_url"] == \
+            "https://m.media-amazon.com/images/I/71prodIMG.jpg"
+        # An existing image is never overwritten.
+        deal["image_url"] = "https://m.media-amazon.com/images/I/KEEP.jpg"
+        verify.recheck_amazon_price(deal, cfg)
+        assert deal["image_url"].endswith("KEEP.jpg")
+
     def test_used_deal_checks_warehouse_price_and_gone_offer(self, monkeypatch):
         import httpx
 

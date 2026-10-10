@@ -103,6 +103,18 @@ def text_marks_dead(text: str) -> bool:
     return bool(_DEAD_RE.search(text or ""))
 
 
+def _harvest_image(deal: dict[str, Any], product: dict[str, Any]) -> None:
+    """Free ride on any Keepa product response: the product's image filename
+    on Amazon's public CDN (no extra tokens, no image ever stored by us)."""
+    if deal.get("image_url"):
+        return
+    csv = product.get("imagesCSV")
+    if isinstance(csv, str) and csv.strip():
+        first = csv.split(",")[0].strip()
+        if first and "/" not in first:
+            deal["image_url"] = f"https://m.media-amazon.com/images/I/{first}"
+
+
 def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
     """Is this Amazon deal's price still live? (The legal equivalent of
     clicking the product page before publishing: Keepa's licensed API
@@ -133,7 +145,10 @@ def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
         )
         resp.raise_for_status()
         products = resp.json().get("products") or []
-        stats = (products[0] or {}).get("stats") if products else None
+        product = (products[0] or {}) if products else {}
+        # Each 6-hourly recheck also backfills a missing thumbnail for free.
+        _harvest_image(deal, product)
+        stats = product.get("stats")
         current = stats.get("current") if isinstance(stats, dict) else None
         if not isinstance(current, list) or not current:
             return None
@@ -191,15 +206,7 @@ def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
         resp.raise_for_status()
         products = resp.json().get("products") or []
         product = (products[0] or {}) if products else {}
-        # Free ride on the same response: the product's image filename on
-        # Amazon's public CDN (no extra tokens, no image ever stored).
-        if not deal.get("image_url"):
-            csv = product.get("imagesCSV")
-            if isinstance(csv, str) and csv.strip():
-                first = csv.split(",")[0].strip()
-                if first and "/" not in first:
-                    deal["image_url"] = \
-                        f"https://m.media-amazon.com/images/I/{first}"
+        _harvest_image(deal, product)
         stats = product.get("stats")
         avg = None
         if isinstance(stats, dict):

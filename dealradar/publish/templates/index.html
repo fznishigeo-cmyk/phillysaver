@@ -67,7 +67,8 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .media{position:relative;height:150px;background:#fff;border-bottom:1px solid var(--line);
        display:flex;align-items:center;justify-content:center}
 .media img{max-width:88%;max-height:88%;object-fit:contain}
-.ph{font-size:44px;font-weight:800;color:var(--line)}
+.ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:52px;font-weight:800;color:rgba(255,255,255,.92)}
 .flag{position:absolute;top:8px;left:8px;background:var(--flag);color:var(--flag-fg);
       font-size:13px;font-weight:800;padding:3px 9px;border-radius:7px}
 .condtag{position:absolute;top:8px;right:8px;background:var(--cond);color:var(--cond-fg);
@@ -258,6 +259,12 @@ footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid 
     return 0;
   }
 
+  function storeHue(s) {
+    var h = 0;
+    for (var i = 0; i < (s || "").length; i++) { h = (h * 31 + s.charCodeAt(i)) % 360; }
+    return h;
+  }
+
   function ageText(h) {
     if (h == null) return "";
     if (h < 1) return "just in";
@@ -272,17 +279,18 @@ footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid 
     var usedTag = conds.indexOf("open_box") !== -1 ? "OPEN BOX"
       : (conds.indexOf("used") !== -1 ? "USED" : "");
 
-    // Media: retailer's own public product image (broken -> placeholder stays).
-    var media = d.image_url
-      ? '<img loading="lazy" src="' + esc(d.image_url) + '" alt="' + esc(d.item) +
-        '" onerror="this.parentNode.removeChild(this)">'
-      : "";
-    media += '<div class="ph" aria-hidden="true">' +
-      esc((d.store || "?").charAt(0).toUpperCase()) + "</div>";
+    // Media: retailer's own public product image; without one (or on a
+    // broken link) a store-colored tile keeps the card looking intentional.
+    var phStyle = "background:hsl(" + storeHue(d.store) + ",42%,62%)" +
+      (d.image_url ? ";display:none" : "");
+    var media = "";
     if (d.image_url) {
-      // Placeholder sits behind the image; hide it when the image renders.
-      media = media.replace('<div class="ph"', '<div class="ph" style="display:none"');
+      media += '<img loading="lazy" src="' + esc(d.image_url) + '" alt="' +
+        esc(d.item) + '" onerror="this.style.display=\'none\';' +
+        "this.nextElementSibling.style.display='flex'\">";
     }
+    media += '<div class="ph" style="' + phStyle + '" aria-hidden="true">' +
+      esc((d.store || "?").charAt(0).toUpperCase()) + "</div>";
     var pct = num(d.pct_at_checkout);
     if (pct != null) {
       media += '<span class="flag">-' + Math.round(pct) + "%</span>";
