@@ -87,12 +87,17 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         for s in (deal.get("sightings") or [])
     ]
     status = deal.get("status", "alive")
+    # No resolved product URL -> link the deal to the source post that
+    # reported it (which also carries the credit) rather than nothing.
+    canon = deal.get("canonical_url") or ""
+    url = rewrite_affiliate(canon) if canon else \
+        (credits[0]["url"] if credits else "")
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         "store": deal.get("store", ""),
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
-        "url": rewrite_affiliate(deal.get("canonical_url") or ""),
+        "url": url,
         "image_url": deal.get("image_url") or "",
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),

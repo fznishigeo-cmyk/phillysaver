@@ -99,18 +99,30 @@ class _TextExtractor(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self._skip_depth = 0
+        self._hrefs: list[str] = []
 
     def handle_starttag(self, tag, attrs):
         if tag in self._SKIP:
             self._skip_depth += 1
         elif tag in self._BLOCK:
             self.parts.append("\n")
+        elif tag == "a" and not self._skip_depth:
+            # Keep link targets: deal posts carry the PRODUCT URL in their
+            # anchors, and dropping it leaves deals with nothing to link to.
+            href = next((v for k, v in attrs if k == "href"), "") or ""
+            href = href.strip()
+            self._hrefs.append(
+                href if href.startswith(("http://", "https://")) else "")
 
     def handle_endtag(self, tag):
         if tag in self._SKIP and self._skip_depth:
             self._skip_depth -= 1
         elif tag in self._BLOCK:
             self.parts.append("\n")
+        elif tag == "a" and self._hrefs:
+            href = self._hrefs.pop()
+            if href:
+                self.parts.append(f" ({href})")
 
     def handle_data(self, data):
         if not self._skip_depth:

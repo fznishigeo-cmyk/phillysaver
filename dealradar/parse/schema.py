@@ -173,6 +173,9 @@ Rules:
 - online_only: 'false' when the wording is in-store (clearance aisle, YMMV,
   'my store', shelf or tag photos); 'true' only when the deal is clearly
   orderable online; otherwise 'unknown'.
+- product_url: the direct link to buy the item. Links in the post appear as
+  'anchor text (https://...)'; copy the URL of the link that points at the
+  product or store page. Empty when the post has none.
 - expires_at_raw: copy the expiry wording exactly as written ('ends today',
   'through 10/12', an ISO date) WITHOUT interpreting it. Empty if none.
 - deal_type: one of '', 'bogo', 'b2g1', 'b2g3', 'b1g1_50', 'free_after_rebate',
