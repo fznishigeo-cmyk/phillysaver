@@ -133,6 +133,27 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Online Deals category feed — skips their grocery/in-store content at the source."
+  - name: southernsavers_amazon
+    method: rss
+    url: https://www.southernsavers.com/category/amazon-deals/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Amazon section feed (slug guessed; validation culls if wrong)."
+  - name: queen_bee_today
+    method: rss
+    url: https://queenbeetoday.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Coupons, sales, rebates."
+  - name: coupon_cravings
+    method: rss
+    url: https://couponcravings.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Coupons, price matching, everyday deals."
   - name: coupon_pro
     method: rss
     url: https://couponproblog.com/feed/
