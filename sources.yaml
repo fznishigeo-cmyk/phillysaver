@@ -126,6 +126,13 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
+  - name: southernsavers_online
+    method: rss
+    url: https://www.southernsavers.com/category/online-deals/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Online Deals category feed — skips their grocery/in-store content at the source."
   - name: coupon_pro
     method: rss
     url: https://couponproblog.com/feed/
