@@ -415,8 +415,8 @@ sources:
     url: https://api.keepa.com/deal
     region: US
     allowed_html: false
-    fast_lane: false
-    notes: "Official paid Keepa API: Amazon products that just dropped >=60% below their average. Requires KEEPA_KEY; flat-fee token model, never overbills."
+    fast_lane: true   # price errors die fast — ask Keepa every 15 minutes
+    notes: "Official paid Keepa API: Amazon products that just dropped >=60% below their average. Requires KEEPA_KEY; flat-fee token model, never overbills. ~6 tokens per query; 15-min cadence fits even the 1 token/min allowance."
 
   # ---- gated / stubbed connectors ----
   - name: threads_search
