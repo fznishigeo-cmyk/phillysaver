@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 from urllib.parse import urlsplit
 from typing import Any
@@ -34,6 +35,9 @@ ARTICLE_TEXT_CAP = 20000
 #: Trailing markers that mark a summary as truncated.
 TRUNCATION_MARKERS = ("[…]", "...", "[&#8230;]", "Read more")
 
+#: A deal post's body is only useful with a price in it.
+_PRICE_PATTERN = re.compile(r"\$\s?\d")
+
 
 def _entry_body(entry: Any) -> str:
     """Prefer full content (content:encoded / atom content) over the summary."""
@@ -49,8 +53,15 @@ def _entry_body(entry: Any) -> str:
 
 
 def _needs_enrichment(body_html: str, body_text: str) -> bool:
-    """Summary-only heuristic: short body, or a trailing truncation marker."""
+    """Summary-only heuristic: short body, a trailing truncation marker, or —
+    the one that matters on deal blogs — NO PRICE in the body. Hip2Save-class
+    excerpts run long but cut off before the prices; without a single '$'
+    the extractor can prove nothing, so the full article is worth one
+    polite, robots-checked fetch (live case: a 63%-off lounge set whose
+    teaser carried no price and therefore never became a deal)."""
     if len(body_text) < ENRICH_BELOW_CHARS:
+        return True
+    if not _PRICE_PATTERN.search(body_text):
         return True
     tail_text = body_text.rstrip()
     tail_html = body_html.rstrip()

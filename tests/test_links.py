@@ -58,3 +58,23 @@ class TestSiteAlwaysLinks:
     def test_no_canonical_and_no_sightings_means_no_link(self):
         d = self._deal(canonical_url="", sightings=[])
         assert _serialize_deal(d, NOW)["url"] == ""
+
+
+class TestEnrichmentTrigger:
+    def test_priceless_long_summary_triggers_enrichment(self):
+        """Live case: Hip2Save's 800-char teaser for a 63%-off lounge set
+        carried no price, looked "complete" to the length heuristic, and
+        the deal was lost. No '$' in a deal post's body => fetch the
+        article."""
+        from dealradar.fetch.rss import _needs_enrichment
+        teaser = ("This cozy Ekouaer lounge set is such a steal right now at "
+                  "Amazon and makes the perfect gift idea for the holidays. "
+                  "It comes in tons of colors and sizes and shoppers rave "
+                  "about how soft it is. ") * 5  # long, but zero prices
+        assert _needs_enrichment(teaser, teaser) is True
+
+    def test_priced_long_summary_is_left_alone(self):
+        from dealradar.fetch.rss import _needs_enrichment
+        body = ("Grab this Ekouaer lounge set for just $14.99 (regularly "
+                "$39.99) with promo code 5HXNMK18 at checkout. ") * 12
+        assert _needs_enrichment(body, body) is False
