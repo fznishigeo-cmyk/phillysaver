@@ -110,6 +110,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "quantity_or_unit": deal.get("quantity_or_unit", ""),
         "region": deal.get("region", "US"),
         "currency": deal.get("currency", "USD"),
+        "category": deal.get("category") or "other",
         "expires_at": deal.get("expires_at", ""),
         "badge": deal.get("verify_tier", "unverified"),
         "headline": _headline(deal),

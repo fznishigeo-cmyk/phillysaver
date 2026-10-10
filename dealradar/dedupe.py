@@ -130,8 +130,10 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
         "quantity_or_unit": extracted.quantity_or_unit,
         "region": extracted.region,
         "currency": extracted.currency,
+        "category": extracted.category or "other",
         "expires_at": extracted.expires_at,
         "verify_tier": "unverified",
+        "critic": None,
         "status": "alive",
         "first_seen_at": util.iso(now),
         "last_seen_at": util.iso(now),
@@ -198,6 +200,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["abs_savings"] = savings.abs_savings
             payload["basis"] = savings.basis
             payload["flags"] = list(savings.flags)
+            # The prices the critic judged changed: its verdict is stale.
+            payload["critic"] = None
 
         payload["codes"] = _union(existing.get("codes"), extracted.codes)
         payload["conditions"] = _union(existing.get("conditions"),
@@ -215,6 +219,11 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         payload["confidence"] = max(
             float(existing.get("confidence") or 0.0),
             float(extracted.confidence or 0.0))
+        # First concrete category sticks ('other' never overwrites a real one).
+        if payload.get("category", "other") in ("", "other") \
+                and extracted.category and extracted.category != "other":
+            payload["category"] = extracted.category
+        payload.setdefault("category", "other")
         if not payload.get("canonical_url") and extracted.product_url:
             payload["canonical_url"] = extracted.product_url
         if not payload.get("asin") and asin:

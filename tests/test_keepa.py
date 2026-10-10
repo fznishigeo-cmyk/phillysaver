@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import httpx
@@ -81,6 +82,44 @@ class TestKeepaAdapter:
         assert first.url.startswith("https://keepa.com/")
         # The flat-average row and the broken row were skipped.
         assert all("No-drop Gadget" != p.title for p in posts)
+
+    def test_maps_real_api_shape(self, cfg, monkeypatch):
+        """Live /deal rows: ``current`` is indexed by price type (with -1
+        gaps) and ``avg`` is [dateRange][priceType]. Regression for the
+        launch bug where avg (a list of lists) parsed as no-data and every
+        row was silently dropped ("mapped 0 price-drop posts")."""
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        row = {
+            "asin": "B0REALSHAPE", "title": "Robot Vacuum X",
+            # index 0 = Amazon's price; later entries are other price types.
+            "current": [4999, 5999, -1, 120000],
+            # [day, week, month, 90d] x [priceType] — 90-day window preferred.
+            "avg": [[5200, -1], [9900, -1], [15000, -1], [19999, 6000]],
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sel = json.loads(request.url.params["selection"])
+            assert sel["priceTypes"] == [0]
+            assert sel["dateRange"] == 3  # drop vs the 90-day average
+            return httpx.Response(
+                200, json={"deals": {"dr": [row]}, "tokensLeft": 280})
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
+        assert len(posts) == 1
+        assert "now $49.99" in posts[0].text
+        assert "average price $199.99" in posts[0].text
+
+    def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={
+                "error": {"type": "parameter", "message": "bad selection"}})
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        with pytest.raises(RuntimeError, match="keepa api error"):
+            adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
 
 
 class TestKeepaVerify:

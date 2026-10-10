@@ -175,6 +175,18 @@ def _end_of_date(year: int, month: int, day: int, tz: ZoneInfo) -> str:
     return util.iso(eod)
 
 
+_DEAL_SMELL = re.compile(
+    r"(\$\s?\d|\d+\s?%)", re.IGNORECASE)
+_DEAL_WORDS = re.compile(
+    r"\b(deal|sale|off|coupon|promo|clearance|discount|save|free)\b",
+    re.IGNORECASE)
+
+
+def _smells_like_deal(text: str) -> bool:
+    """A post with money/percent figures AND deal vocabulary."""
+    return bool(_DEAL_SMELL.search(text)) and bool(_DEAL_WORDS.search(text))
+
+
 def parse_posts(
     posts: list[RawPost],
     parser,
@@ -199,6 +211,7 @@ def parse_posts(
         "posts_sent": 0,
         "deals_extracted": 0,
         "deals_dropped_evidence": 0,
+        "second_opinions": 0,
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
         "processed_hashes": [],
@@ -226,6 +239,16 @@ def parse_posts(
         }
         try:
             llm_deals = parser.extract(cleaned, meta)
+            # Second opinion: the cheap model found nothing, but the post
+            # plainly smells like a deal (prices/percents + deal words) —
+            # one re-read with a stronger model, budget- and count-capped.
+            pcfg = getattr(parser, "cfg", None)
+            so_model = getattr(pcfg, "second_opinion_model", "")
+            so_cap = int(getattr(pcfg, "max_second_opinions_per_run", 0))
+            if (not llm_deals and so_model and _smells_like_deal(cleaned)
+                    and stats["second_opinions"] < so_cap):
+                stats["second_opinions"] += 1
+                llm_deals = parser.extract(cleaned, meta, model=so_model)
         except SpendCapReached as e:
             log.warning("spend cap reached, aborting parse: %s", e)
             stats["aborted_spend_cap"] = True

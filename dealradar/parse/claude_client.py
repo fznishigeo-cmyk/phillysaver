@@ -25,7 +25,8 @@ from pydantic import ValidationError
 
 from ..config import AppConfig, get_secret
 from ..errors import ParserNotConfigured, SpendCapReached
-from .schema import SYSTEM_PROMPT, LLMDeal, LLMDeals, build_user_prompt
+from .schema import (CRITIC_SYSTEM_PROMPT, SYSTEM_PROMPT, CriticVerdict,
+                     LLMDeal, LLMDeals, build_user_prompt)
 
 log = logging.getLogger("dealradar.parse.claude_client")
 
@@ -125,12 +126,13 @@ class ClaudeParser:
                 f"LLM spend ${self.spend_usd:.4f} >= cap ${cap:.4f} for this run"
             )
 
-    def _account(self, resp: Any) -> None:
+    def _account(self, resp: Any, model: str | None = None) -> None:
         usage = getattr(resp, "usage", None)
         if usage is None:
             return
         pricing_table = self.cfg.model_pricing_per_mtok or {}
-        pricing = pricing_table.get(self.model) or pricing_table.get("default") or {}
+        pricing = (pricing_table.get(model or self.model)
+                   or pricing_table.get("default") or {})
         in_rate = float(pricing.get("input", 0.0))
         out_rate = float(pricing.get("output", 0.0))
         cost = (usage.input_tokens * in_rate + usage.output_tokens * out_rate) / 1e6
@@ -173,14 +175,18 @@ class ClaudeParser:
 
     # -------------------------------------------------------------- extract
 
-    def extract(self, text: str, meta: dict) -> list[LLMDeal]:
+    def extract(self, text: str, meta: dict,
+                model: str | None = None) -> list[LLMDeal]:
         """Extract deals from one cleaned post text. Never crashes the run:
         API failures are logged and yield []; only SpendCapReached propagates.
+        ``model`` overrides the default (the second-opinion pass re-reads
+        deal-smelling posts with a stronger model).
         """
+        used_model = model or self.model
         user_prompt = build_user_prompt(text, meta)
         try:
             resp = self._request(lambda: self.client.messages.parse(
-                model=self.model,
+                model=used_model,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
@@ -188,20 +194,20 @@ class ClaudeParser:
             ))
         except AttributeError:
             log.info("messages.parse unavailable; using JSON fallback path")
-            return self._extract_via_create(user_prompt)
+            return self._extract_via_create(user_prompt, used_model)
         except anthropic.BadRequestError as e:
             log.info("messages.parse rejected (%s); using JSON fallback path", e)
-            return self._extract_via_create(user_prompt)
+            return self._extract_via_create(user_prompt, used_model)
         except (ValidationError, ValueError) as e:
             # Invalid JSON on the structured path must get its configured
             # retries (via the bounded fallback), never crash the whole run.
             log.warning("messages.parse output failed validation (%s); "
                         "retrying via JSON fallback path", e)
-            return self._extract_via_create(user_prompt)
+            return self._extract_via_create(user_prompt, used_model)
 
         if resp is None:
             return []
-        self._account(resp)
+        self._account(resp, used_model)
         stop = getattr(resp, "stop_reason", None)
         if stop == "refusal":
             log.warning("model refused extraction for %s; zero deals",
@@ -218,7 +224,8 @@ class ClaudeParser:
             return []
         return list(parsed.deals)
 
-    def _extract_via_create(self, user_prompt: str) -> list[LLMDeal]:
+    def _extract_via_create(self, user_prompt: str,
+                            model: str | None = None) -> list[LLMDeal]:
         """JSON-only fallback via messages.create with bounded re-asks.
 
         Invalid JSON / schema validation failures are retried up to
@@ -230,7 +237,7 @@ class ClaudeParser:
         for attempt in range(attempts):
             try:
                 resp = self._request(lambda: self.client.messages.create(
-                    model=self.model,
+                    model=model or self.model,
                     max_tokens=MAX_TOKENS,
                     system=system,
                     messages=[{"role": "user", "content": user_prompt}],
@@ -240,7 +247,7 @@ class ClaudeParser:
                 return []
             if resp is None:
                 return []
-            self._account(resp)
+            self._account(resp, model or self.model)
             stop = getattr(resp, "stop_reason", None)
             if stop == "refusal":
                 log.warning("model refused extraction (fallback path); zero deals")
@@ -262,3 +269,55 @@ class ClaudeParser:
                             attempt + 1, attempts, e)
         log.warning("fallback JSON invalid after %d attempts; skipping post", attempts)
         return []
+
+
+def critique_deal(parser: "ClaudeParser", deal: dict) -> dict | None:
+    """Ask the critic model whether a deal's claimed regular price is honest.
+
+    Returns {'plausible': bool, 'confidence': float, 'reason': str} or None
+    when the critic is disabled, unneeded, or failed (no opinion). Spend is
+    accounted on the shared parser (same run/daily caps). Raises
+    SpendCapReached via the parser's own gate like any other call.
+    """
+    cfg = parser.cfg
+    if not cfg.critic_enabled or not cfg.critic_model:
+        return None
+    reg = deal.get("regular_price")
+    final = deal.get("final_price")
+    if reg is None or final is None:
+        return None  # nothing to judge without a claimed regular price
+    prompt = (
+        f"Item: {deal.get('item', '')}\n"
+        f"Store: {deal.get('store', '')}\n"
+        f"Claimed regular price: ${float(reg):,.2f}\n"
+        f"Sale price: ${float(final):,.2f}\n"
+        f"Category: {deal.get('category', 'other')}\n"
+        "Is the claimed regular price plausible for this item?"
+    )
+    try:
+        resp = parser._request(lambda: parser.client.messages.parse(
+            model=cfg.critic_model,
+            max_tokens=1024,
+            system=CRITIC_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+            output_format=CriticVerdict,
+        ))
+    except (AttributeError, anthropic.BadRequestError, ValidationError,
+            ValueError) as e:
+        log.warning("deal critic unavailable (%s); no opinion", e)
+        return None
+    if resp is None:
+        return None
+    parser._account(resp, cfg.critic_model)
+    if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
+        return None
+    verdict = getattr(resp, "parsed_output", None)
+    if verdict is None:
+        return None
+    try:
+        return {"plausible": bool(verdict.plausible),
+                "confidence": float(verdict.confidence),
+                "reason": str(verdict.reason)[:300]}
+    except (AttributeError, TypeError, ValueError):
+        log.warning("deal critic returned malformed verdict; no opinion")
+        return None

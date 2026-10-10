@@ -1,0 +1,398 @@
+"""Tests for the quality trio: deal critic, category tags, second opinions.
+
+Offline only — fake clients/parsers, no network, no real model calls.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+from dealradar import pipeline, rank
+from dealradar.config import AppConfig, load_config
+from dealradar.db import DB
+from dealradar.dedupe import _new_payload, upsert_extracted
+from dealradar.errors import SpendCapReached
+from dealradar.models import ExtractedDeal, RawPost, SavingsResult
+from dealradar.parse.claude_client import ClaudeParser, critique_deal
+from dealradar.parse.extractor import _smells_like_deal, parse_posts
+from dealradar.parse.schema import CriticVerdict, LLMDeal, LLMEvidence, to_extracted
+
+NOW = datetime(2026, 10, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+
+# --------------------------------------------------------------- fakes
+
+class _FakeModel:
+    def __init__(self, id: str, created_at: str) -> None:
+        self.id = id
+        self.created_at = created_at
+
+
+class _FakeModels:
+    def list(self):
+        return [_FakeModel("claude-haiku-5-5", "2026-02-01")]
+
+
+class _Usage:
+    input_tokens = 1000
+    output_tokens = 100
+
+
+class _FakeResponse:
+    def __init__(self, parsed_output) -> None:
+        self.parsed_output = parsed_output
+        self.usage = _Usage()
+        self.stop_reason = "end_turn"
+        self.content = []
+
+
+class _CriticMessages:
+    """messages.parse stub answering CriticVerdict calls; records models used."""
+
+    def __init__(self, plausible: bool = True) -> None:
+        self.plausible = plausible
+        self.calls: list[dict] = []
+
+    def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
+        self.calls.append({"model": model, "output_format": output_format,
+                           "text": messages[0]["content"]})
+        if output_format is CriticVerdict:
+            return _FakeResponse(CriticVerdict(
+                plausible=self.plausible, confidence=0.8, reason="stub"))
+        return _FakeResponse(output_format.model_validate({"deals": []}))
+
+
+class _FakeClient:
+    def __init__(self, messages) -> None:
+        self.models = _FakeModels()
+        self.messages = messages
+
+
+def _cfg(**over) -> AppConfig:
+    cfg = load_config()
+    cfg.critic_enabled = True
+    cfg.critic_model = "claude-sonnet-5-5"
+    for k, v in over.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+def _deal_dict(**over) -> dict:
+    base = {
+        "dedupe_key": "si|acme|widget", "store": "Acme", "item": "Widget Pro",
+        "regular_price": 100.0, "final_price": 25.0, "pct_at_checkout": 75.0,
+        "abs_savings": 75.0, "online_only": "true", "currency": "USD",
+        "region": "US", "status": "alive", "flags": [], "conditions": [],
+        "category": "home", "verify_tier": "unverified",
+        "first_seen_at": "2026-10-10T11:00:00+00:00",
+    }
+    base.update(over)
+    return base
+
+
+# --------------------------------------------------------------- critique_deal
+
+class TestCritiqueDeal:
+    def test_returns_verdict_dict_and_uses_critic_model(self):
+        msgs = _CriticMessages(plausible=False)
+        cfg = _cfg()
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        v = critique_deal(parser, _deal_dict())
+        assert v == {"plausible": False, "confidence": 0.8, "reason": "stub"}
+        assert msgs.calls[0]["model"] == "claude-sonnet-5-5"
+        assert "Widget Pro" in msgs.calls[0]["text"]
+
+    def test_disabled_or_missing_prices_mean_no_opinion(self):
+        msgs = _CriticMessages()
+        parser = ClaudeParser(_cfg(critic_enabled=False), client=_FakeClient(msgs))
+        assert critique_deal(parser, _deal_dict()) is None
+        parser2 = ClaudeParser(_cfg(), client=_FakeClient(msgs))
+        assert critique_deal(parser2, _deal_dict(regular_price=None)) is None
+        assert critique_deal(parser2, _deal_dict(final_price=None)) is None
+        assert msgs.calls == []  # never called the API
+
+    def test_spend_accounted_at_critic_model_pricing(self):
+        msgs = _CriticMessages()
+        cfg = _cfg()
+        cfg.model_pricing_per_mtok = {
+            "claude-haiku-5-5": {"input": 0.10, "output": 0.50},
+            "claude-sonnet-5-5": {"input": 2.00, "output": 10.00},
+        }
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        critique_deal(parser, _deal_dict())
+        # 1000 in / 100 out at SONNET rates, not the default haiku model's.
+        assert parser.spend_usd == pytest.approx((1000 * 2 + 100 * 10) / 1e6)
+
+    def test_malformed_parsed_output_means_no_opinion(self):
+        class _OddMessages:
+            def parse(self, **kw):
+                return _FakeResponse(object())  # no .plausible
+
+        parser = ClaudeParser(_cfg(), client=_FakeClient(_OddMessages()))
+        assert critique_deal(parser, _deal_dict()) is None
+
+
+# --------------------------------------------------------------- _run_critic
+
+class TestRunCritic:
+    def _db_with_deal(self, tmp_path, **over) -> DB:
+        db = DB(tmp_path / "state.db")
+        d = _deal_dict(**over)
+        db.insert_deal(
+            dedupe_key=d["dedupe_key"], store=d["store"], item=d["item"],
+            normalized_item="widget pro", canonical_url="", payload=d,
+            final_price=d["final_price"], pct_at_checkout=d["pct_at_checkout"],
+            abs_savings=d["abs_savings"], online_only=d["online_only"],
+            expires_at="", now=NOW)
+        return db
+
+    def test_implausible_verdict_flags_suspect_msrp(self, tmp_path):
+        db = self._db_with_deal(tmp_path)
+        cfg = _cfg()
+        parser = ClaudeParser(cfg, client=_FakeClient(_CriticMessages(False)))
+        stats = pipeline._run_critic(db, cfg, parser, NOW)
+        assert stats == {"judged": 1, "suspect": 1}
+        row = db.get_deal("si|acme|widget")
+        assert "suspect_msrp" in row["flags"]
+        assert row["critic"]["plausible"] is False
+        db.close()
+
+    def test_plausible_verdict_persists_and_is_not_rejudged(self, tmp_path):
+        db = self._db_with_deal(tmp_path)
+        cfg = _cfg()
+        msgs = _CriticMessages(True)
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1,
+                                                              "suspect": 0}
+        row = db.get_deal("si|acme|widget")
+        assert row["critic"]["plausible"] is True
+        assert "suspect_msrp" not in row["flags"]
+        # Second pass: verdict stored -> zero further API calls.
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
+                                                              "suspect": 0}
+        assert len(msgs.calls) == 1
+        db.close()
+
+    def test_unpublishable_deals_never_cost_a_critic_call(self, tmp_path):
+        db = self._db_with_deal(tmp_path, pct_at_checkout=50.0)  # below floor
+        cfg = _cfg()
+        msgs = _CriticMessages()
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
+                                                              "suspect": 0}
+        assert msgs.calls == []
+        db.close()
+
+    def test_no_parser_or_disabled_means_noop(self, tmp_path):
+        db = self._db_with_deal(tmp_path)
+        assert pipeline._run_critic(db, _cfg(), None, NOW) == {"judged": 0,
+                                                               "suspect": 0}
+        cfg_off = _cfg(critic_enabled=False)
+        parser = ClaudeParser(cfg_off, client=_FakeClient(_CriticMessages()))
+        assert pipeline._run_critic(db, cfg_off, parser, NOW) == {"judged": 0,
+                                                                  "suspect": 0}
+        db.close()
+
+    def test_spend_cap_stops_the_critic_cleanly(self, tmp_path):
+        db = self._db_with_deal(tmp_path)
+        cfg = _cfg()
+        parser = ClaudeParser(cfg, client=_FakeClient(_CriticMessages()))
+        parser.spend_usd = parser.run_cap_usd  # cap already reached
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
+                                                              "suspect": 0}
+        assert db.get_deal("si|acme|widget").get("critic") is None
+        db.close()
+
+
+# --------------------------------------------------------------- publish gate
+
+class TestSuspectGate:
+    def test_suspect_flag_blocks_publication(self):
+        cfg = _cfg(exclude_suspect_msrp=True)
+        ok, reason = rank.is_publishable(_deal_dict(flags=["suspect_msrp"]), cfg)
+        assert not ok
+        assert "suspect_msrp" in reason
+
+    def test_gate_can_be_disabled(self):
+        cfg = _cfg(exclude_suspect_msrp=False)
+        ok, _ = rank.is_publishable(_deal_dict(flags=["suspect_msrp"]), cfg)
+        assert ok
+
+
+# --------------------------------------------------------------- categories
+
+def _llm_deal(**over) -> LLMDeal:
+    kw = dict(item="Widget", store="Acme", online_only="true",
+              final_price=10.0, category="kitchen",
+              evidence=LLMEvidence(final_price_quote="now $10.00"))
+    kw.update(over)
+    return LLMDeal(**kw)
+
+
+def _post(**over) -> RawPost:
+    kw = dict(source_name="blog", uid="u1", url="https://blog.example/p1",
+              title="t", text="Widget deal now $10.00", published_at=NOW,
+              fetched_at=NOW)
+    kw.update(over)
+    return RawPost(**kw)
+
+
+class TestCategory:
+    def test_to_extracted_carries_category(self):
+        d = to_extracted(_llm_deal(), _post(), "America/New_York", NOW)
+        assert d.category == "kitchen"
+
+    def test_new_payload_carries_category(self):
+        extracted = to_extracted(_llm_deal(), _post(), "America/New_York", NOW)
+        sav = SavingsResult(computable=True, final_price=10.0,
+                            regular_price=40.0, pct_at_checkout=75.0,
+                            abs_savings=30.0, basis="quoted_regular")
+        payload = _new_payload("k", extracted, sav, "", NOW)
+        assert payload["category"] == "kitchen"
+        assert payload["critic"] is None
+
+    def test_merge_keeps_first_concrete_category(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        sav = SavingsResult(computable=True, final_price=10.0,
+                            regular_price=40.0, pct_at_checkout=75.0,
+                            abs_savings=30.0, basis="quoted_regular")
+        first = to_extracted(_llm_deal(), _post(), "America/New_York", NOW)
+        upsert_extracted(db, first, sav, _post(), cfg, NOW)
+        # Same deal sighted again, categorized 'other': kitchen must stick.
+        again = to_extracted(_llm_deal(category="other"),
+                             _post(uid="u2", url="https://blog.example/p2"),
+                             "America/New_York", NOW)
+        res = upsert_extracted(db, again, sav,
+                               _post(uid="u2", url="https://blog.example/p2",
+                                     text="Widget deal now $10.00 again"),
+                               cfg, NOW)
+        assert res["is_new_deal"] is False
+        assert res["payload"]["category"] == "kitchen"
+        db.close()
+
+    def test_price_improvement_clears_stale_critic_verdict(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        sav = SavingsResult(computable=True, final_price=10.0,
+                            regular_price=40.0, pct_at_checkout=75.0,
+                            abs_savings=30.0, basis="quoted_regular")
+        first = to_extracted(_llm_deal(), _post(), "America/New_York", NOW)
+        res = upsert_extracted(db, first, sav, _post(), cfg, NOW)
+        payload = res["payload"]
+        payload["critic"] = {"plausible": True, "confidence": 0.9, "reason": "r"}
+        db.update_deal(res["dedupe_key"], payload=payload)
+        # A better price arrives: the stored verdict judged stale prices.
+        sav2 = SavingsResult(computable=True, final_price=8.0,
+                             regular_price=40.0, pct_at_checkout=80.0,
+                             abs_savings=32.0, basis="quoted_regular")
+        better = to_extracted(
+            _llm_deal(final_price=8.0,
+                      evidence=LLMEvidence(final_price_quote="now $8.00")),
+            _post(uid="u3", url="https://blog.example/p3"),
+            "America/New_York", NOW)
+        res2 = upsert_extracted(db, better, sav2,
+                                _post(uid="u3", url="https://blog.example/p3",
+                                      text="Widget deal now $8.00"),
+                                cfg, NOW)
+        assert res2["price_improved"] is True
+        assert res2["payload"]["critic"] is None
+        db.close()
+
+
+# --------------------------------------------------------------- second opinion
+
+class SecondOpinionParser:
+    """FakeParser that supports the model= override of the real one."""
+
+    def __init__(self, cfg, first_pass=None, second_pass=None):
+        self.cfg = cfg
+        self.spend_usd = 0.0
+        self.calls: list[str | None] = []  # the model each call used
+        self._first = list(first_pass or [])
+        self._second = list(second_pass or [])
+
+    def extract(self, text, meta, model=None):
+        self.calls.append(model)
+        pool = self._second if model else self._first
+        return pool.pop(0) if pool else []
+
+
+def _socfg(**over) -> AppConfig:
+    cfg = AppConfig()
+    cfg.second_opinion_model = "claude-sonnet-5-5"
+    cfg.max_second_opinions_per_run = 2
+    for k, v in over.items():
+        setattr(cfg, k, v)
+    return cfg
+
+
+class TestSecondOpinion:
+    def test_smell_detector(self):
+        assert _smells_like_deal("Huge sale: widget now $10")
+        assert _smells_like_deal("save 80% today")
+        assert not _smells_like_deal("new recipe for banana bread")
+        assert not _smells_like_deal("the stock rose 3% today")  # no deal words
+        assert not _smells_like_deal("great deal on widgets")    # no figures
+
+    def test_second_opinion_rescues_a_missed_deal(self):
+        cfg = _socfg()
+        rescued = _llm_deal(item="Missed Widget",
+                            evidence=LLMEvidence(final_price_quote="now $10.00"))
+        parser = SecondOpinionParser(cfg, first_pass=[[]],
+                                     second_pass=[[rescued]])
+        posts = [_post(text="Huge deal! Widget sale now $10.00")]
+        pairs, stats = parse_posts(posts, parser, cfg, NOW, {})
+        assert stats["second_opinions"] == 1
+        assert parser.calls == [None, "claude-sonnet-5-5"]
+        assert len(pairs) == 1
+        assert pairs[0][1].item == "Missed Widget"
+
+    def test_no_second_call_when_first_pass_found_deals(self):
+        cfg = _socfg()
+        parser = SecondOpinionParser(cfg, first_pass=[[_llm_deal()]])
+        posts = [_post(text="Huge deal! Widget sale now $10.00")]
+        _, stats = parse_posts(posts, parser, cfg, NOW, {})
+        assert stats["second_opinions"] == 0
+        assert parser.calls == [None]
+
+    def test_no_second_call_for_non_deal_posts(self):
+        cfg = _socfg()
+        parser = SecondOpinionParser(cfg, first_pass=[[]])
+        posts = [_post(text="our weekly newsletter and musings")]
+        _, stats = parse_posts(posts, parser, cfg, NOW, {})
+        assert stats["second_opinions"] == 0
+        assert parser.calls == [None]
+
+    def test_per_run_cap_respected(self):
+        cfg = _socfg(max_second_opinions_per_run=2)
+        posts = [_post(uid=f"u{i}", url=f"https://blog.example/p{i}",
+                       text=f"Flash sale #{i}: widget now $1{i}.00")
+                 for i in range(4)]
+        parser = SecondOpinionParser(cfg, first_pass=[[], [], [], []])
+        _, stats = parse_posts(posts, parser, cfg, NOW, {})
+        assert stats["second_opinions"] == 2
+        assert parser.calls.count("claude-sonnet-5-5") == 2
+
+    def test_disabled_when_model_unset(self):
+        cfg = _socfg(second_opinion_model="")
+        parser = SecondOpinionParser(cfg, first_pass=[[]])
+        posts = [_post(text="Huge deal! Widget sale now $10.00")]
+        _, stats = parse_posts(posts, parser, cfg, NOW, {})
+        assert stats["second_opinions"] == 0
+        assert parser.calls == [None]
+
+
+# --------------------------------------------------------------- config
+
+class TestConfigFields:
+    def test_quality_trio_config_loads(self):
+        cfg = load_config()
+        assert cfg.second_opinion_model == "claude-sonnet-5-5"
+        assert cfg.max_second_opinions_per_run == 8
+        assert cfg.critic_model == "claude-sonnet-5-5"
+        assert cfg.critic_enabled is True
+        assert cfg.exclude_suspect_msrp is True
+        assert cfg.spend_cap_usd_per_day == pytest.approx(5.00)

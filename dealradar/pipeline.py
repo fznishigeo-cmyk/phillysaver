@@ -106,27 +106,32 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
     return posts, errors
 
 
-def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
-                     tz_by_source: dict[str, str], deadline: float | None,
-                     claude_client=None,
-                     run_cap_usd: float | None = None
-                     ) -> tuple[list[tuple[RawPost, Any]], dict]:
+def _build_parser(cfg: AppConfig, claude_client=None,
+                  run_cap_usd: float | None = None):
+    """One shared ClaudeParser per run (extraction, second opinions, critic all
+    draw on the same spend accounting). None when unconfigured/unavailable."""
     from .parse.claude_client import ClaudeParser
+
+    try:
+        return ClaudeParser(cfg, client=claude_client, run_cap_usd=run_cap_usd)
+    except ParserNotConfigured:
+        log.warning("DEALS_CLAUDE_API_KEY not set: parse layer skipped")
+        return None
+    except Exception as e:  # model lookup / client construction failed
+        log.error("parse layer unavailable: %s", e)
+        return None
+
+
+def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
+                     now: datetime, tz_by_source: dict[str, str],
+                     deadline: float | None
+                     ) -> tuple[list[tuple[RawPost, Any]], dict]:
     from .parse.extractor import parse_posts
 
     stats = {"posts_sent": 0, "deals_extracted": 0, "deals_dropped_evidence": 0,
              "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled",
              "processed_hashes": []}
-    if not new_posts:
-        return [], stats
-    try:
-        parser = ClaudeParser(cfg, client=claude_client,
-                              run_cap_usd=run_cap_usd)
-    except ParserNotConfigured:
-        log.warning("DEALS_CLAUDE_API_KEY not set: parse layer skipped")
-        return [], stats
-    except Exception as e:  # model lookup / client construction failed
-        log.error("parse layer unavailable: %s", e)
+    if not new_posts or parser is None:
         return [], stats
     stats["parser"] = parser.model
     try:
@@ -137,6 +142,49 @@ def _parse_new_posts(new_posts: list[RawPost], cfg: AppConfig, now: datetime,
         return [], stats
     stats.update(pstats)
     return pairs, stats
+
+
+def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]:
+    """Deal critic: a stronger model judges whether each about-to-publish
+    deal's claimed regular price is honest. An implausible verdict adds the
+    'suspect_msrp' flag, which the publish gate excludes (configurable).
+    One verdict per deal; a price change clears it for re-judging (dedupe).
+    """
+    from . import rank
+    from .dedupe import _DEAL_FIELDS
+    from .parse.claude_client import critique_deal
+
+    stats = {"judged": 0, "suspect": 0}
+    if parser is None or not cfg.critic_enabled or not cfg.critic_model:
+        return stats
+    for deal in db.all_deals(status="alive"):
+        if deal.get("critic"):
+            continue  # already judged at these prices
+        ok, _reason = rank.is_publishable(deal, cfg)
+        if not ok:
+            continue  # the critic only spends on deals that would publish
+        try:
+            verdict = critique_deal(parser, deal)
+        except SpendCapReached:
+            log.warning("spend cap reached in deal critic; remaining deals "
+                        "stay unjudged and retry next run")
+            break
+        if verdict is None:
+            continue  # critic disabled/failed: no opinion, deal unaffected
+        stats["judged"] += 1
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        payload["critic"] = verdict
+        if not verdict.get("plausible", True):
+            stats["suspect"] += 1
+            flags = list(payload.get("flags") or [])
+            if "suspect_msrp" not in flags:
+                flags.append("suspect_msrp")
+            payload["flags"] = flags
+            log.warning("deal critic flagged %s as suspect MSRP: %s",
+                        deal.get("dedupe_key", "?"),
+                        verdict.get("reason", ""))
+        db.update_deal(deal["dedupe_key"], payload=payload)
+    return stats
 
 
 def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> None:
@@ -224,14 +272,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # cfg.spend_cap_usd_per_day for the current UTC day.
         remaining_today = max(0.0, cfg.spend_cap_usd_per_day
                               - db.spend_usd_for_day(now))
+        parser = None
         if remaining_today <= 0:
             log.warning("daily LLM spend cap ($%.2f) exhausted; parse skipped "
                         "this run (posts stay unrecorded and retry tomorrow)",
                         cfg.spend_cap_usd_per_day)
+        else:
+            # Built once per run and shared: extraction, second opinions, and
+            # the deal critic all draw on the same spend caps.
+            parser = _build_parser(cfg, claude_client=claude_client,
+                                   run_cap_usd=remaining_today)
         pairs, pstats = _parse_new_posts(
-            new_posts if remaining_today > 0 else [],
-            cfg, now, tz_by_source, deadline,
-            claude_client=claude_client, run_cap_usd=remaining_today)
+            new_posts, parser, cfg, now, tz_by_source, deadline)
         summary["parse"] = pstats
         processed = set(pstats.get("processed_hashes") or [])
         recorded = 0
@@ -264,11 +316,19 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         refresh_tiers(db, cfg, now)
         summary["marked_dead"] = mark_expired_dead(db, cfg, now)
 
+        # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
+        summary["critic"] = _run_critic(db, cfg, parser, now)
+
+        # Total LLM spend this run: extraction + second opinions + critic.
+        spend_total = (float(getattr(parser, "spend_usd", 0.0))
+                       if parser is not None
+                       else pstats.get("spend_usd", 0.0))
+
         # ---- publish ----
         site_res = render_site(db, cfg, now, last_run={
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
-            "spend_usd": round(pstats.get("spend_usd", 0.0), 4),
+            "spend_usd": round(spend_total, 4),
             "parser_model": pstats.get("parser", ""),
         })
         summary["published"] = site_res.get("published", 0)
@@ -286,7 +346,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                       items_fetched=len(posts), posts_new=recorded,
                       deals_parsed=pstats.get("deals_extracted", 0),
                       published=summary["published"],
-                      spend_usd=pstats.get("spend_usd", 0.0))
+                      spend_usd=spend_total)
         summary["elapsed_s"] = round(time.monotonic() - started, 1)
         log.info("run %s done in %.1fs: %s", run_key, summary["elapsed_s"],
                  {k: v for k, v in summary.items() if k != "source_errors"})

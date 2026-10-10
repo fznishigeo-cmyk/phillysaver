@@ -93,6 +93,7 @@ class ExtractedDeal:
     final_price_unit: str = ""            # "per_unit" | "pack" | "" (as stated)
     region: str = "US"
     currency: str = "USD"
+    category: str = "other"               # electronics|home|kitchen|kids_baby|...
     evidence: Evidence = field(default_factory=Evidence)
     confidence: float = 0.0
     # Deal-type markers the LLM tags from wording; savings math interprets them.
@@ -146,9 +147,13 @@ class Deal:
     quantity_or_unit: str = ""
     region: str = "US"
     currency: str = "USD"
+    category: str = "other"               # electronics|home|kitchen|kids_baby|...
     expires_at: str = ""
     verify_tier: str = "unverified"       # corroborated | history-checked | unverified
     status: str = "alive"                 # alive | dead
+    # Deal-critic verdict {plausible, confidence, reason} or None (not judged).
+    # Implausible => 'suspect_msrp' in flags => never published (configurable).
+    critic: dict[str, Any] | None = None
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0

@@ -57,6 +57,11 @@ def is_publishable(deal: dict[str, Any], cfg) -> tuple[bool, str]:
     if currency != "USD":
         return False, f"currency: {currency!r} is not 'USD'"
 
+    if getattr(cfg, "exclude_suspect_msrp", True) \
+            and "suspect_msrp" in (deal.get("flags") or []):
+        return False, ("flags: suspect_msrp (deal critic judged the claimed "
+                       "regular price implausible)")
+
     region = deal.get("region") or "US"
     if region != "US":
         return False, f"region: {region!r} is not 'US'"

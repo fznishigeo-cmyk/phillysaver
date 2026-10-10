@@ -73,6 +73,11 @@ class AppConfig:
     spend_cap_usd_per_day: float = 5.00
     retries_on_invalid_json: int = 2
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
+    second_opinion_model: str = ""      # "" disables the second-opinion pass
+    max_second_opinions_per_run: int = 8
+    critic_model: str = ""              # "" disables the deal critic
+    critic_enabled: bool = True
+    exclude_suspect_msrp: bool = True
 
     # -- publish / ranking --
     min_pct: float = 70.0
@@ -140,6 +145,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))
     cfg.spend_cap_usd_per_day = float(g("parse", "spend_cap_usd_per_day", default=cfg.spend_cap_usd_per_day))
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
+    cfg.second_opinion_model = g("parse", "second_opinion_model", default="") or ""
+    cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
+    cfg.critic_model = g("parse", "critic_model", default="") or ""
+    cfg.critic_enabled = bool(g("parse", "critic_enabled", default=cfg.critic_enabled))
+    cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
 
     cfg.min_pct = float(g("publish", "min_pct", default=cfg.min_pct))

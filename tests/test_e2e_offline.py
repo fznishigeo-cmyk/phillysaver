@@ -52,7 +52,7 @@ def _canned_deals(prompt_text: str) -> list[dict]:
             product_url="https://go.redirector.example/r/airfryer",
             online_only="true", regular_price=129.99, final_price=29.99,
             shipping_cost_or_threshold="free over $25", codes=["FRYDAY"],
-            expires_at_raw="ends today", confidence=0.95,
+            expires_at_raw="ends today", confidence=0.95, category="kitchen",
             evidence=dict(regular_price_quote="regularly $129.99",
                           final_price_quote="just $29.99", pct_quote=""),
         )]
@@ -128,7 +128,14 @@ class _FakeResponse:
 
 class _FakeMessages:
     def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
+        from dealradar.parse.schema import CriticVerdict
+
         text = messages[0]["content"]
+        if output_format is CriticVerdict:  # deal-critic call
+            plausible = "Chef Pro Knife Set" not in text  # knife set = fake MSRP
+            return _FakeResponse(CriticVerdict(
+                plausible=plausible, confidence=0.9,
+                reason="judged by the offline fake critic"))
         deals = _canned_deals(text)
         return _FakeResponse(output_format.model_validate({"deals": deals}))
 
@@ -168,21 +175,26 @@ def test_offline_end_to_end(env, capsys):
     assert summary["parse"]["parser"] == "claude-haiku-5-5"  # newest haiku chosen
     assert summary["parse"]["spend_usd"] > 0
 
-    # 3 qualifying online deals: air fryer (77%), knife set (81.7%), headphones (70.0% range)
-    assert summary["published"] == 3
+    # 3 deals clear the savings floors: air fryer (77%), knife set (81.7%),
+    # headphones (70.0% range). The critic judges all 3 and flags the knife
+    # set ("$150 value" fake MSRP) -> suspect_msrp -> only 2 publish.
+    assert summary["critic"] == {"judged": 3, "suspect": 1}
+    assert summary["published"] == 2
     assert summary["telegram"]["dry_run"] is True
-    assert summary["telegram"]["sent"] == 3
+    assert summary["telegram"]["sent"] == 2
 
     out = capsys.readouterr().out
     assert "TELEGRAM DRY-RUN:" in out
 
     deals_json = json.loads((env["site"] / "deals.json").read_text())
     assert deals_json["meta"]["disclosure"]
-    assert len(deals_json["deals"]) == 3
+    assert len(deals_json["deals"]) == 2
     by_item = {d["item"]: d for d in deals_json["deals"]}
+    assert not any("Knife" in i for i in by_item)  # critic-flagged, never shipped
     fryer = next(d for i, d in by_item.items() if "Ninja Foodi" in i)
     assert fryer["badge"] == "corroborated"  # two independent sources in 24 h
     assert len(fryer["credits"]) == 2
+    assert fryer["category"] == "kitchen"    # LLM category tag reaches the site
     # canonical retailer URL resolved through the redirector, tracking params stripped
     assert "acmekitchen.example" in fryer["url"]
     assert "utm" not in fryer["url"]
@@ -199,11 +211,12 @@ def test_offline_end_to_end(env, capsys):
 
 def test_rerun_is_idempotent(env, capsys):
     first = _run(env)
-    assert first["telegram"]["sent"] == 3
+    assert first["telegram"]["sent"] == 2
     second = _run(env)
     assert second["posts_new"] == 0          # content hashes already known
     assert second["telegram"]["sent"] == 0   # alerts_sent dedup
-    assert second["published"] == 3          # same deals, no duplicates
+    assert second["published"] == 2          # same deals, no duplicates
+    assert second["critic"]["judged"] == 0   # verdicts persisted; no re-spend
 
     import sqlite3
     conn = sqlite3.connect(env["db"])

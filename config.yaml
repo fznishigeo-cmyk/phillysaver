@@ -23,6 +23,14 @@ parse:
   spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
   spend_cap_usd_per_day: 5.00          # hard daily ceiling across ALL runs (UTC day)
   retries_on_invalid_json: 2
+  # Second opinion: when the cheap model finds no deals in a post that smells
+  # like one (has $ amounts / percents), re-read it once with a stronger model.
+  second_opinion_model: "claude-sonnet-5-5"
+  max_second_opinions_per_run: 8
+  # Deal critic: before a deal publishes, a stronger model judges whether its
+  # claimed regular price is a plausible real-world price (kills fake-MSRP junk).
+  critic_model: "claude-sonnet-5-5"
+  critic_enabled: true
   # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
   # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
   # the spend cap uses this table (USD per million tokens); unknown models use `default`.
@@ -36,6 +44,7 @@ publish:
   min_pct: 70                  # floor: pct_at_checkout
   min_abs_savings: 5.0         # floor: absolute $ savings
   site_dir: "site"
+  exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-
     Disclosure: some outbound links credit the deal source and may be affiliate links
     that earn the source (or, in the future, this site) a commission. Prices change

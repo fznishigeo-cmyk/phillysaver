@@ -45,6 +45,13 @@ MAX_DEALS_PER_RUN = 20
 #: publish floor so near-misses still enter the DB and price history.
 MIN_DROP_PCT = 60
 
+#: Keepa price-type index 0 = Amazon's own price (not third-party sellers).
+PRICE_TYPE_AMAZON = 0
+
+#: Keepa dateRange 3 = drop measured against the 90-day average — the honest
+#: "typical price" basis (day/week windows miss slow-boiled clearance).
+DATE_RANGE_90D = 3
+
 
 def _cents(v: Any) -> float | None:
     """Keepa prices are integer cents; -1 (or junk) means no data."""
@@ -53,15 +60,30 @@ def _cents(v: Any) -> float | None:
     return None
 
 
-def _first_price(obj: Any) -> float | None:
-    """Pull a price out of Keepa's value-or-array shapes defensively."""
-    if isinstance(obj, (list, tuple)):
-        for v in obj:
-            p = _cents(v)
-            if p is not None:
-                return p
+def _price_at(arr: Any, price_type: int) -> float | None:
+    """Price for one price type. Keepa's ``current`` is an int array indexed
+    by price type; tolerate a bare scalar too."""
+    if isinstance(arr, (list, tuple)):
+        if len(arr) > price_type:
+            return _cents(arr[price_type])
         return None
-    return _cents(obj)
+    return _cents(arr)
+
+
+def _avg_price(avg: Any, price_type: int) -> float | None:
+    """Average price for one price type from Keepa's ``avg``, which in the
+    deals response is an array of arrays: [dateRange][priceType] for the
+    day/week/month/90-day windows. Prefer the longest window that has data.
+    A flat int array (indexed by price type) is tolerated as well."""
+    if not isinstance(avg, (list, tuple)) or not avg:
+        return None
+    if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in avg):
+        return _price_at(avg, price_type)
+    for window in reversed(avg):  # longest interval first
+        p = _price_at(window, price_type)
+        if p is not None:
+            return p
+    return None
 
 
 def _check_deadline(deadline: float | None) -> None:
@@ -111,8 +133,9 @@ class KeepaDealsAdapter(SourceAdapter):
         selection = {
             "page": 0,
             "domainId": DOMAIN_US,
-            "priceTypes": [0],  # 0 = Amazon's own price
+            "priceTypes": [PRICE_TYPE_AMAZON],
             "deltaPercentRange": [MIN_DROP_PCT, 100],
+            "dateRange": DATE_RANGE_90D,
             "isRangeEnabled": True,
             "sortType": 4,      # biggest percent drop first (per Keepa docs)
         }
@@ -124,6 +147,11 @@ class KeepaDealsAdapter(SourceAdapter):
             resp.raise_for_status()
             payload = resp.json()
 
+        if isinstance(payload, dict) and payload.get("error"):
+            # Keepa reports some failures in-body on a 200: surface them as a
+            # source failure instead of silently "mapping 0 posts".
+            raise RuntimeError(f"keepa api error: {payload['error']}")
+
         deals_obj = payload.get("deals") if isinstance(payload, dict) else None
         rows = (deals_obj or {}).get("dr") if isinstance(deals_obj, dict) else None
         posts: list[RawPost] = []
@@ -133,7 +161,18 @@ class KeepaDealsAdapter(SourceAdapter):
             post = self._map_row(row, source, now)
             if post is not None:
                 posts.append(post)
-        log.info("keepa %s: mapped %d price-drop posts", source.name, len(posts))
+        tokens_left = (payload.get("tokensLeft")
+                       if isinstance(payload, dict) else None)
+        log.info("keepa %s: %d raw deals -> mapped %d price-drop posts "
+                 "(tokensLeft=%s)", source.name, len(rows or []), len(posts),
+                 tokens_left)
+        if rows and not posts:
+            sample = rows[0] if isinstance(rows[0], dict) else {}
+            log.warning(
+                "keepa %s: raw deals present but none mapped — schema drift? "
+                "sample keys=%s current=%r avg=%r",
+                source.name, sorted(sample)[:20],
+                sample.get("current"), sample.get("avg"))
         return posts
 
     @staticmethod
@@ -143,8 +182,9 @@ class KeepaDealsAdapter(SourceAdapter):
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
-        current = _first_price(row.get("current"))
-        avg = _first_price(row.get("avg") or row.get("avg90") or row.get("avg30"))
+        current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
+        avg = _avg_price(row.get("avg") or row.get("avg90") or row.get("avg30"),
+                         PRICE_TYPE_AMAZON)
         if current is None or avg is None or avg <= 0 or current >= avg:
             return None
 

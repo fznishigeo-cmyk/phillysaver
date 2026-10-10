@@ -55,6 +55,12 @@ class LLMDeal(BaseModel):
     final_price_unit: Literal["per_unit", "pack", ""] = ""
     currency: str = "USD"
     region: Literal["US", "other"] = "US"
+    category: Literal[
+        "electronics", "computers", "home", "kitchen", "kids_baby",
+        "toys_games", "fashion", "beauty", "health", "grocery", "pets",
+        "outdoors", "sports", "office", "auto", "books_media", "gaming",
+        "other",
+    ] = "other"
     evidence: LLMEvidence = Field(default_factory=LLMEvidence)
     confidence: float = 0.0
     deal_type: Literal[
@@ -105,9 +111,50 @@ Rules:
 - Units: regular_price_unit / final_price_unit are 'per_unit' when a price is
   per item/each, 'pack' when it covers a multi-pack bundle, '' when unstated.
 - currency: as stated in the post; default 'USD'.
-- stack_steps: the stacking steps in the order the post states them.
+- stack_steps: the stacking steps in the order the post states them. Amazon
+  promo wording counts as steps too: 'clip the $X coupon' / 'clip X% coupon'
+  (a coupon step), 'Subscribe & Save X%' (a percent step; also add condition
+  subscribe_save), and sale prices. Multi-buy promos like 'save $X on 2
+  select items' or 'X% off when you buy 2' apply only when buying multiples:
+  record them as stack steps AND add the condition multi_buy.
 - codes / rebates: promo codes and rebates exactly as written.
+- category: the single best fit from electronics, computers, home, kitchen,
+  kids_baby, toys_games, fashion, beauty, health, grocery, pets, outdoors,
+  sports, office, auto, books_media, gaming, other.
 - confidence: your 0-1 confidence that this is a real, correctly copied deal.
+"""
+
+CATEGORIES = (
+    "electronics", "computers", "home", "kitchen", "kids_baby", "toys_games",
+    "fashion", "beauty", "health", "grocery", "pets", "outdoors", "sports",
+    "office", "auto", "books_media", "gaming", "other",
+)
+
+
+class CriticVerdict(BaseModel):
+    """Deal-critic structured output: is the claimed regular price honest?"""
+
+    plausible: bool
+    confidence: float = 0.0
+    reason: str = ""
+
+
+CRITIC_SYSTEM_PROMPT = """\
+You are a skeptical deal reviewer. You are given one deal: an item name, a
+store, a claimed regular price, and a sale price. Judge ONE question: is the
+claimed regular price a plausible real-world street price for this kind of
+item — or an inflated fake-MSRP of the sort attached to generic drop-shipped
+products to fabricate a huge discount?
+
+Rules:
+- Judge the REGULAR price's plausibility for the product category and brand
+  signal in the name; do not judge whether the sale is a good buy.
+- Generic/no-name items with regular prices far above what such items sell
+  for anywhere -> implausible.
+- Name brands at their usual list prices -> plausible, even when the discount
+  is deep (real clearance happens).
+- When genuinely unsure, lean plausible with low confidence; only mark
+  implausible when the inflation pattern is clear.
 """
 
 
@@ -152,6 +199,7 @@ def to_extracted(d: LLMDeal, post: RawPost, tz_name: str, now: datetime) -> Extr
         conditions=list(d.conditions),
         expires_at=resolve_expires(d.expires_at_raw, tz_name, now),
         quantity_or_unit=d.quantity_or_unit,
+        category=d.category,
         regular_price_unit=d.regular_price_unit,
         final_price_unit=d.final_price_unit,
         region=d.region,

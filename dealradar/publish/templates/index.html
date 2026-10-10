@@ -56,6 +56,7 @@ s{color:var(--muted)}
 <div id="controls">
   <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
   <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
+  <select id="catsel" aria-label="category filter"><option value="">all categories</option></select>
   <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
   <label><input id="hideunv" type="checkbox"> hide unverified</label>
 </div>
@@ -104,24 +105,29 @@ s{color:var(--muted)}
       "Last run: " + t + " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
   }
 
-  function populateStores() {
-    var sel = document.getElementById("storesel");
+  function populateSelect(id, values) {
+    var sel = document.getElementById(id);
     var seen = {};
-    state.deals.forEach(function (d) {
-      var s = d.store || "";
+    values.forEach(function (s) {
       if (s && !seen[s]) {
         seen[s] = true;
         var opt = document.createElement("option");
         opt.value = s;
-        opt.textContent = s;
+        opt.textContent = s.replace(/_/g, " ");
         sel.appendChild(opt);
       }
     });
   }
 
+  function populateStores() {
+    populateSelect("storesel", state.deals.map(function (d) { return d.store || ""; }));
+    populateSelect("catsel", state.deals.map(function (d) { return d.category || ""; }).sort());
+  }
+
   function filtered() {
     var q = document.getElementById("q").value.trim().toLowerCase();
     var store = document.getElementById("storesel").value;
+    var cat = document.getElementById("catsel").value;
     var minpct = Number(document.getElementById("minpct").value) || 0;
     var hideunv = document.getElementById("hideunv").checked;
     return state.deals.filter(function (d) {
@@ -130,6 +136,7 @@ s{color:var(--muted)}
         if (hay.indexOf(q) === -1) return false;
       }
       if (store && d.store !== store) return false;
+      if (cat && (d.category || "other") !== cat) return false;
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
       if (hideunv && (d.badge || "unverified") === "unverified") return false;
       return true;
@@ -151,6 +158,9 @@ s{color:var(--muted)}
     var item = url
       ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
+    if (d.category && d.category !== "other") {
+      item += ' <span class="chip">' + esc(d.category).replace(/_/g, " ") + "</span>";
+    }
     if (d.headline) {
       item += '<div class="headline">' + esc(d.headline) + "</div>";
     }
@@ -224,7 +234,7 @@ s{color:var(--muted)}
     });
   }
 
-  ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
+  ["q", "storesel", "catsel", "minpct", "hideunv"].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener("input", render);
     el.addEventListener("change", render);
