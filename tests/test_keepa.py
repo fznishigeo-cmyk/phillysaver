@@ -74,8 +74,8 @@ class TestKeepaAdapter:
         first = posts[0]
         assert first.title == "Mega Blender 9000"
         # Verbatim price lines the evidence check will match against.
-        assert "now $29.99" in first.text
-        assert "average price $149.99" in first.text
+        assert "On sale for $29.99" in first.text
+        assert "Regular price (90-day average on Amazon): $149.99" in first.text
         # Amazon product link present so dedupe gets a canonical ASIN URL.
         assert "https://www.amazon.com/dp/B0TESTASIN1" in first.text
         # Credit link goes to Keepa's own product page.
@@ -107,8 +107,8 @@ class TestKeepaAdapter:
         adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
         assert len(posts) == 1
-        assert "now $49.99" in posts[0].text
-        assert "average price $199.99" in posts[0].text
+        assert "On sale for $49.99" in posts[0].text
+        assert "Regular price (90-day average on Amazon): $199.99" in posts[0].text
 
     def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
         monkeypatch.setenv("KEEPA_KEY", "kkey")

@@ -138,6 +138,10 @@ class KeepaDealsAdapter(SourceAdapter):
             "dateRange": DATE_RANGE_90D,
             "isRangeEnabled": True,
             "sortType": 4,      # biggest percent drop first (per Keepa docs)
+            # Books & Kindle: algorithmic publisher pricing ($995 print-on-
+            # demand reports "dropping" 60%) dominates the drop list and is
+            # noise, never a deal a person wants.
+            "excludeCategories": [283155, 133140011],
         }
         with self._client(cfg) as client:
             _check_deadline(deadline)
@@ -189,11 +193,16 @@ class KeepaDealsAdapter(SourceAdapter):
             return None
 
         # Synthesized source text: the quotes the evidence check will verify.
-        # The 90-day average is the honest "regular" basis — never a claimed MSRP.
+        # The 90-day average is the honest "regular" basis — never a claimed
+        # MSRP — and it is LABELED as such. The wording deliberately matches
+        # the extraction vocabulary ("On sale for" -> final, "Regular price"
+        # -> regular): the first live runs showed the model correctly
+        # refusing to treat an unlabeled "recent average" as a regular
+        # price, which stored every Keepa deal priceless.
         lines = [
             title,
-            f"Amazon price drop: now ${current:,.2f}",
-            f"recent average price ${avg:,.2f}",
+            f"On sale for ${current:,.2f} at Amazon.",
+            f"Regular price (90-day average on Amazon): ${avg:,.2f}.",
             "Sold online at Amazon.com (price tracked by Keepa).",
             f"Product link: https://www.amazon.com/dp/{asin}",
         ]
