@@ -86,8 +86,17 @@ class KclWallAdapter(SourceAdapter):
         if res.status != 200 or res.body is None:
             raise RuntimeError(f"http_{res.status or 'error'}")
 
-        text = util.html_to_text(res.body.decode("utf-8", errors="replace"))
+        html = res.body.decode("utf-8", errors="replace")
+        text = util.html_to_text(html)
         n_prices = len(_PRICE_TOKEN.findall(text))
+        # Built blind (sandbox cannot reach the host): this line is the one
+        # window into what KCL actually serves. Many '$' in the raw HTML but
+        # few in the text means the cards live in script-tag JSON (client
+        # render) and the adapter needs a different entry point.
+        log.info("kcl wall %s: %d price tokens in text (%d chars); %d '$' in "
+                 "raw html (%d chars); text head: %r",
+                 source.name, n_prices, len(text),
+                 len(_PRICE_TOKEN.findall(html)), len(html), text[:300])
         if n_prices < MIN_PRICE_TOKENS:
             # Loud diagnostic: the next run's logs must say exactly why.
             log.warning(

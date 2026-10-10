@@ -61,7 +61,7 @@ sources:
     url: https://thekrazycouponlady.com/coupons-for/amazon
     region: US
     allowed_html: true
-    fast_lane: false
+    fast_lane: true   # flagship permission source; unchanged wall chunks hash out, so 10-min checks cost ~nothing
     notes: "KCL live deal wall (cards never enter their RSS). Dedicated adapter chunks the wall text for the evidence-verified parse."
     crawl_permission: "operator reports written email permission from KCL (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealnews
