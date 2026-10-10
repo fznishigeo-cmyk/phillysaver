@@ -42,6 +42,39 @@ def make_cfg(**over) -> AppConfig:
     return cfg
 
 
+class TestConcurrentParse:
+    """parse.concurrency runs several LLM reads at once; semantics (order of
+    results, cap/deadline handling, idempotent hash recording) must hold."""
+
+    def _posts(self, n):
+        return [make_post(uid=f"p{i}", url=f"https://hip2save.com/deal/{i}",
+                          text=f"Widget {i} was $20.00 now $10.00")
+                for i in range(n)]
+
+    def test_pool_parses_every_post_in_submission_order(self):
+        posts = self._posts(7)
+        parser = FakeParser(results=[[] for _ in range(7)])
+        pairs, stats = parse_posts(posts, parser, make_cfg(parse_concurrency=3),
+                                   NOW, {})
+        assert stats["posts_sent"] == 7
+        assert len(parser.calls) == 7
+        assert stats["processed_hashes"] == [p.content_hash for p in posts]
+        assert pairs == []
+
+    def test_pool_spend_cap_keeps_paid_batchmates_and_stops_submitting(self):
+        posts = self._posts(9)
+        parser = FakeParser(results=[], raise_cap_at=4)  # 5th read raises
+        _, stats = parse_posts(posts, parser, make_cfg(parse_concurrency=3),
+                               NOW, {})
+        assert stats["aborted_spend_cap"] is True
+        # Batch 1 (3) fully paid; batch 2 partly; batch 3 never submitted.
+        assert 3 <= stats["posts_sent"] <= 5
+        first_six = {p.content_hash for p in posts[:6]}
+        assert set(stats["processed_hashes"]) <= first_six
+        assert all(p.content_hash not in stats["processed_hashes"]
+                   for p in posts[6:])
+
+
 class FakeParser:
     """Stands in for ClaudeParser: canned per-post results, optional cap raise."""
 

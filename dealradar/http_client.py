@@ -73,7 +73,11 @@ def extract_asin(url: str) -> str:
     under /product/ that are not ASINs, and a bogus ASIN would corrupt dedupe
     keys and halt redirect resolution.
     """
-    host = (urlsplit(url).hostname or "").lower()
+    # Deal posts often write the link without a scheme ("amazon.com/dp/...");
+    # urlsplit then sees no host at all, and the ASIN (hence Keepa checks and
+    # the product photo) was lost.
+    probe = url if "://" in url else "https://" + url.lstrip("/")
+    host = (urlsplit(probe).hostname or "").lower()
     if not _AMAZON_HOST_RE.search(host):
         return ""
     m = _ASIN_RE.search(url)

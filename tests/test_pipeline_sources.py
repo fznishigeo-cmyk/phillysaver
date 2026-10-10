@@ -12,13 +12,76 @@ from dealradar import pipeline
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.validate import save_effective_sources
-from dealradar.models import RawPost, SourceConfig
+from dealradar.models import FetchResult, RawPost, SourceConfig
 from dealradar.util import now_utc
+
+NOW = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
 
 
 def make_source(name: str, **kw) -> SourceConfig:
     return SourceConfig(name=name, method="rss",
                         url=f"https://{name}.example/feed/", **kw)
+
+
+class TestBlogImageBackfill:
+    """Existing photo-less deals from an image-granted source get one polite
+    article fetch for their og:image; a page with no image is flagged so it
+    is never fetched again."""
+
+    class _Fetcher:
+        def __init__(self, pages):
+            self.pages = pages
+            self.calls = []
+
+        def get(self, url, *, conditional=True, headers=None, deadline=None,
+                **kw):
+            self.calls.append(url)
+            body = self.pages.get(url)
+            return FetchResult(url=url, final_url=url,
+                               status=200 if body is not None else 404,
+                               body=body)
+
+    @staticmethod
+    def _seed(db, key, article_url, image=""):
+        payload = {"dedupe_key": key, "store": "HSN", "item": key,
+                   "flags": [], "image_url": image, "conditions": []}
+        deal_id = db.insert_deal(
+            dedupe_key=key, store="HSN", item=key, normalized_item=key,
+            canonical_url="", payload=payload, final_price=9.99,
+            pct_at_checkout=60.0, abs_savings=15.0, online_only="true",
+            expires_at="", now=NOW)
+        db.add_sighting(deal_id, source_name="hip2save",
+                        source_url=article_url, content_hash="h" + key,
+                        seen_at=NOW, final_price=9.99)
+
+    def test_fills_flags_and_never_refetches(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "with_pic", "https://hip2save.com/deals/a/")
+        self._seed(db, "no_pic", "https://hip2save.com/deals/b/")
+        self._seed(db, "already", "https://hip2save.com/deals/c/",
+                   image="https://x.example/img.jpg")
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({
+            "https://hip2save.com/deals/a/":
+                b"<meta property='og:image' content='https://hip2save.com/i/a.jpg'>",
+            "https://hip2save.com/deals/b/":
+                b"<html><body>no pictures here</body></html>",
+        })
+        n = pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert n == 2
+        assert db.get_deal("with_pic")["image_url"] == "https://hip2save.com/i/a.jpg"
+        assert "image_backfill_tried" in db.get_deal("no_pic")["flags"]
+        assert sorted(fetcher.calls) == ["https://hip2save.com/deals/a/",
+                                         "https://hip2save.com/deals/b/"]
+        # Nothing left to try: a second pass makes no fetch at all.
+        fetcher.calls.clear()
+        assert pipeline._backfill_blog_images(db, fetcher, [src], None) == 0
+        assert fetcher.calls == []
+        # No granted source in the run set -> no fetches, ever.
+        plain = make_source("hip2save", allowed_html=True)
+        assert pipeline._backfill_blog_images(db, fetcher, [plain], None) == 0
+        db.close()
 
 
 def make_post(source: str, i: int) -> RawPost:
@@ -146,6 +209,22 @@ def test_failing_sources_take_config_edits_immediately(tmp_path, monkeypatch):
     assert sorted(by_name) == ["broken", "healthy"]  # disabled one dropped
     # Healthy keeps the stored entry (autodiscovered URLs survive).
     assert by_name["healthy"].url == "https://healthy.example/feed/"
+    # ...but takes the config's current operator grants and lane at once
+    # (live incident: Hip2Save's image grant was stuck behind the daily
+    # revalidation because the healthy stored entry won wholesale).
+    assert by_name["healthy"].image_permission is False
+    granted_cfg = SourceConfig(name="healthy", method="rss",
+                               url="https://healthy.example/other-url/",
+                               image_permission=True, fast_lane=True,
+                               crawl_permission="written grant on file")
+    monkeypatch.setattr(pipeline, "load_sources",
+                        lambda: ([granted_cfg, fixed], []))
+    again = {s.name: s for s in
+             pipeline._load_effective_sources(db, cfg, fetcher=None, now=now)}
+    assert again["healthy"].url == "https://healthy.example/feed/"  # stored URL
+    assert again["healthy"].image_permission is True                # new grant
+    assert again["healthy"].fast_lane is True
+    assert again["healthy"].crawl_permission == "written grant on file"
     # Failing takes the config fix, permission note included.
     assert by_name["broken"].url == "https://broken.example/real-feed/"
     assert by_name["broken"].crawl_permission

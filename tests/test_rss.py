@@ -294,6 +294,38 @@ def test_truncation_marker_triggers_enrichment_even_when_long(db, cfg):
     assert "SAVE20" in posts[0].text
 
 
+def test_image_granted_source_fetches_article_for_og_image(db, cfg):
+    """Hip2Save-class feeds carry text excerpts; the product photo lives on
+    the article page. An image-granted source earns that one fetch even when
+    the excerpt is complete (long + priced), and takes the page's og:image.
+    Without the grant the same excerpt is never fetched."""
+    long_body = ("deal word " * 80).strip() + " final price $10.00 today"
+    feed = (
+        "<?xml version='1.0'?><rss version='2.0'><channel><title>t</title>"
+        "<item><guid>img-1</guid><title>Long post</title>"
+        "<link>https://blog.example/article1</link>"
+        f"<description>{long_body}</description></item></channel></rss>"
+    ).encode()
+    article = (b"<html><head><meta property='og:image' "
+               b"content='https://blog.example/img/product.jpg'></head>"
+               b"<body><img src='https://blog.example/img/other.jpg'>"
+               b"</body></html>")
+    granted = make_source(url="https://feeds.example/img", allowed_html=True,
+                          image_permission=True)
+    f1 = FakeFetcher({granted.url: fr(granted.url, body=feed),
+                      ARTICLE_URL: fr(ARTICLE_URL, body=article)})
+    posts = RssAdapter().fetch_posts(granted, f1, db, cfg, NOW, None)
+    assert ARTICLE_URL in f1.calls
+    assert posts[0].image_url == "https://blog.example/img/product.jpg"
+
+    plain = make_source(url="https://feeds.example/img", allowed_html=True)
+    f2 = FakeFetcher({plain.url: fr(plain.url, body=feed),
+                      ARTICLE_URL: fr(ARTICLE_URL, body=article)})
+    p2 = RssAdapter().fetch_posts(plain, f2, db, cfg, NOW, None)
+    assert f2.calls == [plain.url]
+    assert p2[0].image_url == ""
+
+
 def test_long_body_not_enriched(db, cfg):
     # Long AND carrying a price: a genuinely complete deal summary — the
     # no-price-in-body rule must not fire here.

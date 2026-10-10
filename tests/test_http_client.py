@@ -445,6 +445,14 @@ def test_extract_asin(url, expected):
     assert extract_asin(url) == expected
 
 
+def test_extract_asin_without_scheme():
+    # Deal posts often write the link bare ("amazon.com/dp/..."); losing the
+    # ASIN there cost the deal its Keepa checks and product photo.
+    assert extract_asin("amazon.com/dp/B0DJWMD7R2") == "B0DJWMD7R2"
+    assert extract_asin("www.amazon.com/gp/product/B0C8WTP6W8?th=1") == "B0C8WTP6W8"
+    assert extract_asin("example.com/dp/B0DJWMD7R2") == ""
+
+
 @pytest.mark.parametrize("raw,expected", [
     # Amazon URLs with an ASIN collapse to the canonical /dp/ form.
     ("https://www.amazon.com/Cool-Gadget/dp/B0ABCDE123/ref=sr_1_1?tag=deals-20&th=1&psc=1",

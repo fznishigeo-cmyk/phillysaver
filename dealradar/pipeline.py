@@ -8,6 +8,7 @@ nothing and re-sends nothing.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import logging
 import time
@@ -74,7 +75,14 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
             elif s.name in failing:
                 refreshed.append(cur)
             else:
-                refreshed.append(s)
+                # Operator flags are facts about the site, not discovery
+                # state: a healthy source keeps its stored (autodiscovered)
+                # URL but takes the config's CURRENT grants and lane, so a
+                # new crawl/image permission applies on the next run.
+                refreshed.append(dataclasses.replace(
+                    s, crawl_permission=cur.crawl_permission,
+                    image_permission=cur.image_permission,
+                    allowed_html=cur.allowed_html, fast_lane=cur.fast_lane))
         # Sources added to sources.yaml since the last validation join the run
         # set immediately (a dead guess just fails politely and is culled at
         # the next daily revalidation) — "add a source" works on the next run.
@@ -229,6 +237,67 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
 
 #: Hours between live price re-checks of the same Amazon deal.
 _RECHECK_EVERY_H = 6.0
+#: Early (in-window) Keepa calls per run made only to fetch a missing photo.
+_IMAGE_BACKFILL_PER_RUN = 12
+#: Article fetches per run that backfill photos for existing deals whose
+#: source granted image display (one polite fetch per deal, never repeated).
+_BLOG_IMAGE_BACKFILL_PER_RUN = 15
+
+
+def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
+                          deadline: float | None) -> int:
+    """Give existing photo-less deals from image-granted sources their picture.
+
+    Deals created before a source's image grant (or from an excerpt-only
+    feed entry) keep the credited article URL in their sightings; fetching
+    that page once — politely, robots/permission-checked by the fetcher —
+    and taking its og:image fills the card. A deal whose article yields no
+    image is flagged so it is never fetched again.
+    """
+    from .dedupe import _DEAL_FIELDS
+    from .fetch.rss import _first_image, _og_image, _permission_host
+
+    granted = {s.name: s for s in sources if s.image_permission}
+    if not granted:
+        return 0
+    done = 0
+    for deal in db.all_deals(status="alive"):
+        if deal.get("image_url") or \
+                "image_backfill_tried" in (deal.get("flags") or []):
+            continue
+        sighting = next((s for s in db.sightings_for(deal["id"])
+                         if s["source_name"] in granted
+                         and str(s.get("source_url", "")).startswith("http")),
+                        None)
+        if sighting is None:
+            continue
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        src = granted[sighting["source_name"]]
+        kw = {}
+        host = _permission_host(src)
+        if host:
+            kw["robots_override_host"] = host
+        res = fetcher.get(sighting["source_url"], conditional=False,
+                          deadline=deadline, **kw)
+        image = ""
+        if res.status == 200 and res.body and not res.blocked_by_robots:
+            html = res.body.decode("utf-8", errors="replace")
+            image = _og_image(html) or _first_image(html)
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        if image:
+            payload["image_url"] = image
+        else:
+            flags = list(payload.get("flags") or [])
+            flags.append("image_backfill_tried")
+            payload["flags"] = flags
+        db.update_deal(deal["dedupe_key"], payload=payload)
+        done += 1
+        if done >= _BLOG_IMAGE_BACKFILL_PER_RUN:
+            break
+    if done:
+        log.info("blog image backfill: %d deals fetched", done)
+    return done
 
 
 def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
@@ -243,7 +312,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
     from .dedupe import _DEAL_FIELDS
     from .verify import recheck_amazon_price
 
-    stats = {"checked": 0, "dead": 0}
+    stats = {"checked": 0, "dead": 0, "image_backfill": 0}
     if not cfg.feature_flags.get("keepa"):
         return stats
     for deal in db.all_deals(status="alive"):
@@ -251,7 +320,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
             continue
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
         if last is not None and now - last < timedelta(hours=_RECHECK_EVERY_H):
-            continue
+            # Inside the window only a photo-less deal earns an early call:
+            # the same product response carries its image (the harvest
+            # landed after many deals' first recheck). Capped per run so the
+            # Keepa token bucket keeps serving the deal lane.
+            if deal.get("image_url") or \
+                    stats["image_backfill"] >= _IMAGE_BACKFILL_PER_RUN:
+                continue
+            stats["image_backfill"] += 1
         ok, _reason = rank.is_publishable(deal, cfg)
         if not ok:
             continue  # only spend tokens on deals that would publish
@@ -474,6 +550,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
         # ---- live price re-check (Amazon deals; moved price => dead) ----
         summary["price_recheck"] = _recheck_prices(db, cfg, now)
+
+        # ---- photos for existing deals from image-granted sources ----
+        summary["image_backfill"] = _backfill_blog_images(
+            db, fetcher, sources, deadline - 30.0)
 
         # Total LLM spend this run: extraction + second opinions + critic.
         spend_total = (float(getattr(parser, "spend_usd", 0.0))

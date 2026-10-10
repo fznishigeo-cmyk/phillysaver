@@ -686,16 +686,54 @@ class TestPriceRecheck:
 
         monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
-        assert stats == {"checked": 1, "dead": 1}
+        assert stats == {"checked": 1, "dead": 1, "image_backfill": 0}
         row = db.get_deal(d["dedupe_key"])
         assert row["status"] == "dead"
         assert "price_moved" in row["flags"]
         assert row["price_rechecked_at"]
         # Within the 6-hour window nothing is re-checked (and dead deals
         # are out of the alive set anyway).
-        assert pipeline._recheck_prices(db, cfg, NOW) == {"checked": 0,
-                                                          "dead": 0}
+        assert pipeline._recheck_prices(db, cfg, NOW) == {
+            "checked": 0, "dead": 0, "image_backfill": 0}
         assert len(calls) == 1
+        db.close()
+
+    def test_in_window_recheck_only_for_photoless_deals(self, tmp_path,
+                                                         monkeypatch):
+        """Inside the 6-hour window a deal is left alone — unless it has no
+        photo: then one early Keepa call fetches it (the product response
+        carries the image), capped per run to protect the token bucket."""
+        from datetime import timedelta
+
+        from dealradar import verify
+        db = DB(tmp_path / "state.db")
+        recent = (NOW - timedelta(hours=1)).isoformat()
+        for key, img in (("url|a", ""),
+                         ("url|b", "https://m.media-amazon.com/images/I/x.jpg")):
+            d = _deal_dict(dedupe_key=key, item=key)
+            d["asin"] = "B0" + key[-1].upper() * 8
+            d["image_url"] = img
+            d["price_rechecked_at"] = recent
+            db.insert_deal(dedupe_key=key, store=d["store"], item=d["item"],
+                           normalized_item=key, canonical_url="", payload=d,
+                           final_price=d["final_price"],
+                           pct_at_checkout=d["pct_at_checkout"],
+                           abs_savings=d["abs_savings"], online_only="true",
+                           expires_at="", now=NOW)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        calls = []
+
+        def fake_recheck(deal, _cfg):
+            calls.append(deal["dedupe_key"])
+            deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
+            return True
+
+        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert calls == ["url|a"]                      # photo'd deal untouched
+        assert stats == {"checked": 1, "dead": 0, "image_backfill": 1}
+        assert db.get_deal("url|a")["image_url"].endswith("new.jpg")
         db.close()
 
 

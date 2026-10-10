@@ -29,6 +29,10 @@ parse:
   spend_cap_usd_per_run: 1.00          # temporarily doubled to drain today's backlog faster; revert with the daily cap          # abort parsing gracefully when hit
   spend_cap_usd_per_day: 30.00         # operator-authorized for 2026-10-10 only; revert to 6.00 at UTC midnight          # hard daily ceiling across ALL runs (UTC day)
   retries_on_invalid_json: 2
+  # Extraction calls in flight at once. Each call is ~5-8 s of API round trip
+  # regardless of model, so one-at-a-time capped a run at ~27 posts; a pool
+  # of 6 lifts that toward ~150 per run. Spend caps still bound the total.
+  concurrency: 6
   # Second opinion: when the cheap model finds no deals in a post that smells
   # like one (has $ amounts / percents), re-read it once with a stronger model.
   second_opinion_model: "claude-sonnet-5-5"

@@ -10,7 +10,9 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -235,34 +237,35 @@ def parse_posts(
         posts = posts[: cfg.max_posts_per_run]
 
     pairs: list[tuple[RawPost, ExtractedDeal]] = []
-    for post in posts:
-        if deadline is not None and time.monotonic() >= deadline:
-            log.warning("run deadline reached: stopping parse with %d posts left"
-                        " (they stay unrecorded and retry next run)",
-                        len(posts) - stats["posts_sent"])
-            break
+    pcfg = getattr(parser, "cfg", None)
+    so_model = getattr(pcfg, "second_opinion_model", "")
+    so_cap = int(getattr(pcfg, "max_second_opinions_per_run", 0))
+    workers = max(1, int(getattr(cfg, "parse_concurrency", 1)))
+    lock = threading.Lock()
+
+    def _extract(post: RawPost) -> tuple[RawPost, str, list]:
+        """Worker: one post's LLM read(s); runs on a pool thread."""
         cleaned = clean_for_llm(post, cfg.max_chars_per_post)
         meta = {
             "source_name": post.source_name,
             "source_url": post.url,
             "title": post.title,
         }
-        try:
-            llm_deals = parser.extract(cleaned, meta)
-            # Second opinion: the cheap model found nothing, but the post
-            # plainly smells like a deal (prices/percents + deal words) —
-            # one re-read with a stronger model, budget- and count-capped.
-            pcfg = getattr(parser, "cfg", None)
-            so_model = getattr(pcfg, "second_opinion_model", "")
-            so_cap = int(getattr(pcfg, "max_second_opinions_per_run", 0))
-            if (not llm_deals and so_model and _smells_like_deal(cleaned)
-                    and stats["second_opinions"] < so_cap):
-                stats["second_opinions"] += 1
+        llm_deals = parser.extract(cleaned, meta)
+        # Second opinion: the cheap model found nothing, but the post
+        # plainly smells like a deal (prices/percents + deal words) —
+        # one re-read with a stronger model, budget- and count-capped.
+        if not llm_deals and so_model and _smells_like_deal(cleaned):
+            with lock:
+                take = stats["second_opinions"] < so_cap
+                if take:
+                    stats["second_opinions"] += 1
+            if take:
                 llm_deals = parser.extract(cleaned, meta, model=so_model)
-        except SpendCapReached as e:
-            log.warning("spend cap reached, aborting parse: %s", e)
-            stats["aborted_spend_cap"] = True
-            break
+        return post, cleaned, llm_deals
+
+    def _record(post: RawPost, cleaned: str, llm_deals: list) -> None:
+        """Main thread: evidence-verify and collect one parsed post."""
         stats["posts_sent"] += 1
         stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
@@ -279,6 +282,30 @@ def parse_posts(
                 )
                 continue
             pairs.append((post, deal))
+
+    # Posts go out in batches of `workers` concurrent reads (throughput is
+    # bound by API round-trip time, not tokens); results are collected in
+    # submission order so pairs stay deterministic. A spend-cap hit inside
+    # a batch keeps the batch-mates that completed (they were paid for) and
+    # stops submitting more; the rest stay unrecorded and retry next run.
+    idx = 0
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        while idx < len(posts) and not stats["aborted_spend_cap"]:
+            if deadline is not None and time.monotonic() >= deadline:
+                log.warning("run deadline reached: stopping parse with %d posts left"
+                            " (they stay unrecorded and retry next run)",
+                            len(posts) - stats["posts_sent"])
+                break
+            batch = posts[idx: idx + workers]
+            idx += len(batch)
+            futures = [pool.submit(_extract, p) for p in batch]
+            for fut in futures:
+                try:
+                    _record(*fut.result())
+                except SpendCapReached as e:
+                    if not stats["aborted_spend_cap"]:
+                        log.warning("spend cap reached, aborting parse: %s", e)
+                    stats["aborted_spend_cap"] = True
 
     stats["spend_usd"] = float(getattr(parser, "spend_usd", 0.0))
     return pairs, stats

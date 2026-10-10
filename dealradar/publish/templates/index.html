@@ -36,9 +36,8 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
 .meta{color:var(--muted);font-size:12.5px;margin:0;flex-basis:100%}
-#cattabs{max-width:1200px;margin:0 auto;padding:4px 16px 10px;display:flex;gap:7px;
-         overflow-x:auto;scrollbar-width:none}
-#cattabs::-webkit-scrollbar{display:none}
+#cattabs{max-width:1200px;margin:0 auto;padding:4px 16px 10px;display:flex;
+         flex-wrap:wrap;gap:7px}
 .cattab{flex:0 0 auto;background:var(--chip);color:var(--fg);border:1px solid var(--line);
         border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer;
         white-space:nowrap}

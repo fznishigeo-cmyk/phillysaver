@@ -77,6 +77,9 @@ class AppConfig:
     # default: our schema is rejected as "too complex" after a MINUTES-long
     # stall, so we go straight to the JSON create() path that handles it.
     parse_structured_output: bool = False
+    # Extraction calls in flight at once. Parse throughput is bound by API
+    # round-trip time, not tokens; a small pool multiplies posts-per-run.
+    parse_concurrency: int = 1
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
     second_opinion_model: str = ""      # "" disables the second-opinion pass
     max_second_opinions_per_run: int = 8
@@ -155,6 +158,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.spend_cap_usd_per_day = float(g("parse", "spend_cap_usd_per_day", default=cfg.spend_cap_usd_per_day))
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
+    cfg.parse_concurrency = max(1, int(g("parse", "concurrency", default=cfg.parse_concurrency)))
     cfg.second_opinion_model = g("parse", "second_opinion_model", default="") or ""
     cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
     cfg.critic_model = g("parse", "critic_model", default="") or ""

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from typing import Any, Callable
 
@@ -82,6 +83,7 @@ class ClaudeParser:
             client = anthropic.Anthropic(api_key=api_key)
         self.client = client
         self.spend_usd: float = 0.0
+        self._spend_lock = threading.Lock()
         # The extraction schema (LLMDeals) is rejected by the structured
         # messages.parse endpoint as "Schema is too complex" — and that
         # rejection takes MINUTES to return, so paying it even once per run
@@ -154,7 +156,8 @@ class ClaudeParser:
         in_rate = float(pricing.get("input", 0.0))
         out_rate = float(pricing.get("output", 0.0))
         cost = (usage.input_tokens * in_rate + usage.output_tokens * out_rate) / 1e6
-        self.spend_usd += cost
+        with self._spend_lock:  # extraction may run on several threads
+            self.spend_usd += cost
 
     # -------------------------------------------------------------- requests
 

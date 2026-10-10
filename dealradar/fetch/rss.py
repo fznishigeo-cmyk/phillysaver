@@ -11,6 +11,7 @@ an autodiscovered feed URL.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import logging
 import re
@@ -41,6 +42,22 @@ _PRICE_PATTERN = re.compile(r"\$\s?\d")
 _IMG_SRC = re.compile(r"<img[^>]+src=[\"'](https?://[^\"']+)[\"']", re.I)
 #: Substrings that mark an <img> as a tracker/decoration, not a product shot.
 _IMG_JUNK = ("feedburner", "pixel", "emoji", "gravatar", "avatar", "smilies")
+
+
+_OG_IMAGE = (
+    re.compile(r"<meta[^>]+property=[\"']og:image[\"'][^>]+content=[\"'](https?://[^\"']+)[\"']", re.I),
+    re.compile(r"<meta[^>]+content=[\"'](https?://[^\"']+)[\"'][^>]+property=[\"']og:image[\"']", re.I),
+)
+
+
+def _og_image(html: str) -> str:
+    """The page's declared share image (og:image) — on deal blogs that is the
+    product photo. Empty when the page declares none."""
+    for pat in _OG_IMAGE:
+        m = pat.search(html or "")
+        if m:
+            return m.group(1)
+    return ""
 
 
 def _first_image(body_html: str) -> str:
@@ -170,10 +187,13 @@ class RssAdapter(SourceAdapter):
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
-                if _needs_enrichment(body_html, body_text) and not db.post_is_known(
-                    post.content_hash
-                ):
-                    enriched = self._enrich(post, fetcher, deadline)
+                # An image-granted source whose excerpt carried no picture
+                # is worth the one article fetch for its og:image alone.
+                want_image = source.image_permission and not post.image_url
+                if ((_needs_enrichment(body_html, body_text) or want_image)
+                        and not db.post_is_known(post.content_hash)):
+                    enriched = self._enrich(post, fetcher, deadline,
+                                            want_image=want_image)
                     if enriched is not None:
                         post = enriched
             posts.append(post)
@@ -181,21 +201,29 @@ class RssAdapter(SourceAdapter):
         return posts
 
     @staticmethod
-    def _enrich(post: RawPost, fetcher: Any, deadline: Any) -> RawPost | None:
+    def _enrich(post: RawPost, fetcher: Any, deadline: Any,
+                want_image: bool = False) -> RawPost | None:
         """Fetch the article behind a summary-only entry; None means keep the summary.
 
         The fetcher enforces robots.txt and rate limits; any blocked or failed
-        fetch silently falls back to the summary text.
+        fetch silently falls back to the summary text. With ``want_image``
+        (image-granted source, no picture yet) the article's og:image is
+        taken as the post image.
         """
         res = fetcher.get(post.url, conditional=False, deadline=deadline)
         if res.blocked_by_robots or res.status != 200 or not res.body:
             log.debug("enrichment fallback for %s (status=%s blocked=%s)",
                       post.url, res.status, res.blocked_by_robots)
             return None
-        article_text = util.html_to_text(
-            res.body.decode("utf-8", errors="replace")
-        )[:ARTICLE_TEXT_CAP]
+        html = res.body.decode("utf-8", errors="replace")
+        image = post.image_url
+        if want_image and not image:
+            image = _og_image(html) or _first_image(html)
+        article_text = util.html_to_text(html)[:ARTICLE_TEXT_CAP]
         if not article_text:
+            # Nothing readable to add — but a picture found is still kept.
+            if image and image != post.image_url:
+                return dataclasses.replace(post, image_url=image)
             return None
         return RawPost(
             source_name=post.source_name,
@@ -205,7 +233,7 @@ class RssAdapter(SourceAdapter):
             text=post.title + "\n" + article_text,
             published_at=post.published_at,
             fetched_at=post.fetched_at,
-            image_url=post.image_url,  # enrichment must not drop the image
+            image_url=image,  # enrichment must not drop (or may add) the image
             # Idempotency anchor stays the summary-level text: whether (or how)
             # enrichment succeeded must never change the content hash, or the
             # same unchanged entry would re-parse on the next run.
