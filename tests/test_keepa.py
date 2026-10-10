@@ -102,13 +102,15 @@ class TestKeepaAdapter:
         def handler(request: httpx.Request) -> httpx.Response:
             sel = json.loads(request.url.params["selection"])
             assert sel["dateRange"] == 3  # drop vs the 90-day average
-            # Popularity filters: only products people actually buy.
-            assert sel["salesRankRange"] == [1, 30000]
             assert sel["minRating"] == 20
             if sel["priceTypes"] == [0]:  # amazon-price pass
+                # Strict popularity net for the new-price lane.
+                assert sel["salesRankRange"] == [1, 30000]
                 return httpx.Response(
                     200, json={"deals": {"dr": [row]}, "tokensLeft": 280})
             assert sel["priceTypes"] == [9]  # warehouse pass
+            # Much wider net: mispriced open-box hides on mid-rank items.
+            assert sel["salesRankRange"] == [1, 200000]
             return httpx.Response(
                 200, json={"deals": {"dr": []}, "tokensLeft": 275})
 

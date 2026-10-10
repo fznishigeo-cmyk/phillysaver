@@ -228,9 +228,12 @@ class KeepaDealsAdapter(SourceAdapter):
             _check_deadline(deadline)
             # Sorted by ABSOLUTE drop: percent-sorting surfaces $5 junk;
             # dollar-sorting surfaces the big-ticket open-box finds.
+            # Warehouse gets a much wider popularity net: mispriced
+            # open-box hides on mid-rank items, and the $25 new-value
+            # floor plus the 55%-off-new gate already screen the junk.
             wh_rows = self._query_rows(client, key, PRICE_TYPE_WAREHOUSE,
                                        [30, 100], source.name + "/warehouse",
-                                       sort_type=2)
+                                       sort_type=2, max_rank=200000)
             for row in wh_rows[:MAX_DEALS_PER_RUN]:
                 if not isinstance(row, dict):
                     continue
@@ -254,7 +257,7 @@ class KeepaDealsAdapter(SourceAdapter):
 
     def _query_rows(self, client: httpx.Client, key: str, price_type: int,
                     delta_pct_range: list[int], label: str,
-                    sort_type: int = 4) -> list:
+                    sort_type: int = 4, max_rank: int = 30000) -> list:
         selection = {
             "page": 0,
             "domainId": DOMAIN_US,
@@ -271,7 +274,7 @@ class KeepaDealsAdapter(SourceAdapter):
             # zero-review SKUs produce sparse price histories whose
             # "averages" fabricate 95%+ drops. Rank is Amazon sales rank;
             # rating is in tenths of stars (20 = 2.0 stars).
-            "salesRankRange": [1, 30000],
+            "salesRankRange": [1, max_rank],
             "minRating": 20,
         }
         resp = client.get(DEALS_URL, params={
