@@ -302,7 +302,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     return done
 
 
-def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
+def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
+                    image_backfill: bool = True) -> dict[str, Any]:
     """The 'click the page before publishing' gate, via Keepa's licensed API
     (we never scrape retailer pages): every about-to-publish Amazon deal
     gets its LIVE price checked at most once per 6 hours. A moved price
@@ -326,7 +327,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
             # the same product response carries its image (the harvest
             # landed after many deals' first recheck). Capped per run so the
             # Keepa token bucket keeps serving the deal lane.
-            if deal.get("image_url") or \
+            if not image_backfill or deal.get("image_url") or \
                     stats["image_backfill"] >= _IMAGE_BACKFILL_PER_RUN:
                 continue
             stats["image_backfill"] += 1
@@ -547,15 +548,23 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         refresh_tiers(db, cfg, now)
         summary["marked_dead"] = mark_expired_dead(db, cfg, now)
 
+        # ---- photos for existing deals from image-granted sources ----
+        # Fast lane only: after its small fetch and parse it has minutes to
+        # spare, so the backfill runs every 10 minutes with the critic's
+        # tail reserve untouched. The hourly's budget stays on the blogs.
+        summary["image_backfill"] = (
+            _backfill_blog_images(db, fetcher, sources,
+                                  deadline - _RESERVE_FOR_TAIL_S)
+            if fast_lane else 0)
+
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         summary["critic"] = _run_critic(db, cfg, parser, now)
 
         # ---- live price re-check (Amazon deals; moved price => dead) ----
-        summary["price_recheck"] = _recheck_prices(db, cfg, now)
-
-        # ---- photos for existing deals from image-granted sources ----
-        summary["image_backfill"] = _backfill_blog_images(
-            db, fetcher, sources, deadline - 30.0)
+        # The in-window photo-only Keepa calls ride the fast lane, which has
+        # the slack; the hourly's tail is for the critic and publishing.
+        summary["price_recheck"] = _recheck_prices(db, cfg, now,
+                                                   image_backfill=fast_lane)
 
         # Total LLM spend this run: extraction + second opinions + critic.
         spend_total = (float(getattr(parser, "spend_usd", 0.0))
