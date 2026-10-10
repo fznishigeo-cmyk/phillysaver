@@ -624,7 +624,7 @@ class TestConfigFields:
 
     def test_quality_trio_config_loads(self):
         cfg = load_config()
-        assert cfg.used_min_pct == pytest.approx(80.0)
+        assert cfg.used_min_pct == pytest.approx(70.0)
         assert cfg.parse_model == "claude-sonnet-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"
         assert cfg.max_second_opinions_per_run == 8

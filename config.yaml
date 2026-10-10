@@ -47,8 +47,8 @@ parse:
     claude-sonnet-5-5: { input: 2.00, output: 10.00 }
 
 publish:
-  min_pct: 65                  # floor: pct_at_checkout (alerts + headline tier)
-  used_min_pct: 80             # HIGHER absolute floor for used/open-box deals
+  min_pct: 60                  # floor: pct_at_checkout (alerts + headline tier)
+  used_min_pct: 70             # HIGHER absolute floor for used/open-box deals
                                # (warehouse supply is plentiful; below this the
                                # page floods with mediocre used offers)
   min_abs_savings: 5.0         # floor: absolute $ savings

@@ -11,7 +11,7 @@ dedupe/verify/rank → site/Telegram/email.
 
 - The savings math is deterministic code, not the LLM — rules in
   [SAVINGS_RULES.md](SAVINGS_RULES.md). Publish floors (config.yaml):
-  `min_pct: 65` percent off at checkout **and** `min_abs_savings: 5` dollars.
+  `min_pct: 60` percent off at checkout **and** `min_abs_savings: 5` dollars.
 - Source quality is measured, not assumed: `python -m dealradar
   validate-sources` live-checks every source and writes
   [sources_report.md](sources_report.md) (committed to the `data` branch after
