@@ -168,6 +168,13 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Target-focused; online-orderable deals pass, store-run posts are discarded."
+  - name: fabulessly_frugal
+    method: rss
+    url: https://fabulesslyfrugal.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Active deal/freebie blog with Amazon coverage."
   - name: coupon_pro
     method: rss
     url: https://couponproblog.com/feed/
