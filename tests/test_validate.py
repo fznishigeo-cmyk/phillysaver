@@ -158,7 +158,7 @@ def test_api_validation_makes_no_network_calls(db, cfg):
     result = v.validate_sources(primary, [], fetcher, db, cfg, NOW)
     assert fetcher.calls == []
     statuses = {r["name"]: r["status"] for r in result["rows"]}
-    assert statuses == {"reddit_a": "needs_key", "meh": "needs_key", "insta": "disabled"}
+    assert statuses == {"reddit_a": "needs_key", "meh": "live", "insta": "disabled"}  # meh is keyless via public feed.json
 
 
 def test_telegram_requirements(db, monkeypatch):

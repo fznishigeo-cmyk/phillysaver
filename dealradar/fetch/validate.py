@@ -41,7 +41,7 @@ PER_SOURCE_VALIDATE_BUDGET_S = 20.0
 ADAPTER_SECRETS: dict[str, list[str]] = {
     "reddit": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT"],
     "woot": ["WOOT_API_KEY"],
-    "meh": ["MEH_API_KEY"],
+    "meh": [],  # keyless via Meh's public feed.json; MEH_API_KEY upgrades it
     "telegram": ["TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION"],
     "threads": ["THREADS_TOKEN"],
 }

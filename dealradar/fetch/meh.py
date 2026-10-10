@@ -1,9 +1,15 @@
 """Meh source adapter: the official Meh API (one deal per day).
 
-Requires the ``MEH_API_KEY`` secret (reported upstream as ``needs_key`` until
-set). Produces at most one RawPost per run; prices from ``deal.items`` are
-written verbatim (``Price: $19.00``) so evidence quotes can match them.
-``published_at`` is left None — ``posts_seen.first_seen_at`` governs freshness.
+Two official access paths:
+- With the ``MEH_API_KEY`` secret: the keyed API (richer — per-item prices
+  from ``deal.items`` are written verbatim, ``Price: $19.00``, so evidence
+  quotes can match them).
+- Without a key: Meh's PUBLIC JSON Feed at https://meh.com/feed.json,
+  published by Meh exactly for machine consumption — the source works out of
+  the box.
+
+``published_at`` from the keyed API is left None — ``posts_seen.first_seen_at``
+governs freshness.
 """
 
 from __future__ import annotations
@@ -20,13 +26,14 @@ import httpx
 
 from ..config import AppConfig, get_secret
 from ..db import DB
-from ..errors import AdapterNotConfigured, DeadlineExceeded
+from ..errors import DeadlineExceeded
 from ..models import RawPost, SourceConfig
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.fetch.meh")
 
 CURRENT_URL = "https://meh.com/api/1/current.json"
+PUBLIC_FEED_URL = "https://meh.com/feed.json"  # official keyless JSON Feed
 
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")  # [text](url) / ![alt](url) -> text
 _MD_NOISE = re.compile(r"[*_`#>]+")
@@ -93,7 +100,7 @@ class MehAdapter(SourceAdapter):
         # fetcher/db unused: this adapter manages its own authenticated client.
         key = get_secret("MEH_API_KEY")
         if not key:
-            raise AdapterNotConfigured("meh api key missing")
+            return self._fetch_public_feed(source, cfg, now, deadline)
 
         with self._client(cfg) as client:
             _check_deadline(deadline)
@@ -134,3 +141,44 @@ class MehAdapter(SourceAdapter):
         )
         log.info("meh %s: mapped 1 post (%s)", source.name, uid)
         return [post]
+
+    def _fetch_public_feed(
+        self,
+        source: SourceConfig,
+        cfg: AppConfig,
+        now: datetime,
+        deadline: float | None,
+    ) -> list[RawPost]:
+        """Keyless path: Meh's official public JSON Feed (feed.json)."""
+        from .. import util  # html_to_text / parse_feed_date
+
+        with self._client(cfg) as client:
+            _check_deadline(deadline)
+            resp = client.get(PUBLIC_FEED_URL)
+            resp.raise_for_status()
+            payload = resp.json()
+
+        items = payload.get("items") if isinstance(payload, dict) else None
+        posts: list[RawPost] = []
+        for item in (items or [])[:5]:
+            if not isinstance(item, dict):
+                continue
+            uid = str(item.get("id") or item.get("url") or "")
+            title = str(item.get("title") or "")
+            if not uid or not title:
+                continue
+            body_html = str(item.get("content_html") or item.get("content_text") or "")
+            text = title + "\n" + util.html_to_text(body_html)
+            posts.append(RawPost(
+                source_name=source.name,
+                uid=uid,
+                url=str(item.get("url") or ""),
+                title=title,
+                text=text.strip(),
+                published_at=util.parse_feed_date(
+                    item.get("date_published"), source.tz, now),
+                fetched_at=now,
+            ))
+        log.info("meh %s: mapped %d posts from public feed.json",
+                 source.name, len(posts))
+        return posts

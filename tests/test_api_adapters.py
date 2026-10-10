@@ -229,9 +229,34 @@ class TestMeh:
     SRC = SourceConfig(name="meh", method="api",
                        url="https://meh.com/api/1/current.json", adapter="meh")
 
-    def test_missing_key_raises(self, cfg: AppConfig) -> None:
-        with pytest.raises(AdapterNotConfigured):
-            MehAdapter().fetch_posts(self.SRC, None, None, cfg, NOW, None)
+    def test_missing_key_falls_back_to_public_json_feed(
+        self, cfg: AppConfig
+    ) -> None:
+        # No MEH_API_KEY -> Meh's official keyless feed.json keeps the source live.
+        def handler(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "meh.com"
+            assert request.url.path == "/feed.json"
+            assert "apikey" not in request.url.params
+            return httpx.Response(200, json={
+                "version": "https://jsonfeed.org/version/1",
+                "items": [{
+                    "id": "feed-123",
+                    "url": "https://meh.com/deals/widget-3-pack",
+                    "title": "Widget 3-Pack",
+                    "content_html": "<p>Today only: <b>$12.00</b> for three widgets.</p>",
+                    "date_published": "2026-10-09T12:00:00Z",
+                }],
+            })
+
+        adapter = MehAdapter(http_client=_mock_client(handler, cfg))
+        posts = adapter.fetch_posts(self.SRC, None, None, cfg, NOW, None)
+        assert len(posts) == 1
+        post = posts[0]
+        assert post.uid == "feed-123"
+        assert post.title == "Widget 3-Pack"
+        assert "$12.00" in post.text          # price survives verbatim for evidence
+        assert "<p>" not in post.text         # html stripped
+        assert post.published_at is not None
 
     def test_single_post_with_verbatim_price(
         self, cfg: AppConfig, monkeypatch: pytest.MonkeyPatch
