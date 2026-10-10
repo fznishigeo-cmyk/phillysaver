@@ -129,22 +129,33 @@ def test_g_clearance_aisle_ymmv_excluded():
     assert r.exclude_reason == "in_store"
 
 
-def test_h_free_after_rebate_is_100_but_flagged():
-    # "Software $9.99, FREE after rebate"
+def test_h_free_after_rebate_is_100_with_rebates_only():
+    # "Software $9.99, FREE after rebate": you still PAY $9.99 at checkout,
+    # so the checkout pct is unknown without a regular price — 100% lives in
+    # pct_with_rebates alone. (Live bug: a $254.98 phone published "100% off".)
     r = compute_savings(deal(deal_type="free_after_rebate", final_price=9.99,
                              rebates=["$9.99 mail-in rebate"]))
     assert r.computable
-    assert r.pct_at_checkout == approx(100.0)
+    assert r.pct_at_checkout is None
     assert r.pct_with_rebates == approx(100.0)
     assert "rebate_dependent" in r.flags
     assert r.basis == "free_after_rebate"
+
+
+def test_h2_free_after_rebate_checkout_pct_from_stated_prices():
+    # Regular stated -> checkout pct is the honest paid-at-register math.
+    r = compute_savings(deal(deal_type="free_after_rebate", final_price=9.99,
+                             regular_price=19.99,
+                             rebates=["$9.99 mail-in rebate"]))
+    assert r.pct_at_checkout == approx((19.99 - 9.99) / 19.99 * 100.0)
+    assert r.pct_with_rebates == approx(100.0)
 
 
 def test_i_moneymaker_exceeds_100_when_numbers_allow():
     # "Razor $5 (reg $5), $8 mail-in rebate — moneymaker!"
     r = compute_savings(deal(deal_type="moneymaker", regular_price=5.0,
                              final_price=5.0, rebates=["$8 mail-in rebate"]))
-    assert r.pct_at_checkout == approx(100.0)
+    assert r.pct_at_checkout == approx(0.0)       # you pay full price today
     assert r.pct_with_rebates == approx(160.0)    # (5 - (5-8)) / 5
     assert "rebate_dependent" in r.flags
     assert r.basis == "free_after_rebate"
@@ -153,7 +164,7 @@ def test_i_moneymaker_exceeds_100_when_numbers_allow():
 def test_i2_moneymaker_without_numbers_is_100():
     # "Moneymaker at CVS this week!" (no usable numbers)
     r = compute_savings(deal(deal_type="moneymaker"))
-    assert r.pct_at_checkout == approx(100.0)
+    assert r.pct_at_checkout is None              # nothing checkout-computable
     assert r.pct_with_rebates == approx(100.0)
     assert "rebate_dependent" in r.flags
 

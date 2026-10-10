@@ -26,6 +26,10 @@ h1{font-size:20px;margin:0 0 4px}
   border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
 #controls input[type=number]{width:70px}
 #controls label{font-size:13px;color:var(--muted);display:flex;gap:4px;align-items:center}
+#cattabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
+.cattab{background:var(--chip);color:var(--fg);border:1px solid var(--line);
+        border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer}
+.cattab.active{background:var(--link);border-color:var(--link);color:#fff;font-weight:600}
 .tablewrap{overflow-x:auto}
 table{border-collapse:collapse;width:100%;font-size:14px}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
@@ -59,10 +63,10 @@ s{color:var(--muted)}
 <h1>dealradar</h1>
 <p id="metaline" class="meta">Loading&hellip;</p>
 <p class="meta"><a href="health.html">source health</a></p>
+<nav id="cattabs" aria-label="category tabs"></nav>
 <div id="controls">
   <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
   <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
-  <select id="catsel" aria-label="category filter"><option value="">all categories</option></select>
   <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
   <label><input id="hideunv" type="checkbox"> hide unverified</label>
 </div>
@@ -70,7 +74,19 @@ s{color:var(--muted)}
 <script>
 "use strict";
 (function () {
-  var state = { deals: [], meta: {}, sortKey: "pct", sortDir: -1 };
+  var state = { deals: [], meta: {}, sortKey: "pct", sortDir: -1, catTab: 0 };
+  // Amazon-style department tabs over the internal category vocabulary.
+  var CATGROUPS = [
+    ["All", null],
+    ["Home & Kitchen", ["home", "kitchen"]],
+    ["Beauty & Personal Care", ["beauty"]],
+    ["Clothing, Shoes & Jewelry", ["fashion"]],
+    ["Electronics", ["electronics", "computers", "gaming"]],
+    ["Sports & Outdoors", ["sports", "outdoors"]],
+    ["Health & Household", ["health", "grocery"]],
+    ["Toys & Games", ["toys_games", "kids_baby"]],
+    ["Other", ["pets", "office", "auto", "books_media", "other"]]
+  ];
   var COLS = [
     { key: "item",   label: "Item",       sortable: false },
     { key: "price",  label: "Price",      sortable: true  },
@@ -127,13 +143,28 @@ s{color:var(--muted)}
 
   function populateStores() {
     populateSelect("storesel", state.deals.map(function (d) { return d.store || ""; }));
-    populateSelect("catsel", state.deals.map(function (d) { return d.category || ""; }).sort());
+  }
+
+  function renderTabs() {
+    var nav = document.getElementById("cattabs");
+    nav.innerHTML = CATGROUPS.map(function (g, i) {
+      return '<button type="button" class="cattab' +
+        (i === state.catTab ? " active" : "") + '" data-i="' + i + '">' +
+        esc(g[0]) + "</button>";
+    }).join("");
+    nav.querySelectorAll(".cattab").forEach(function (b) {
+      b.addEventListener("click", function () {
+        state.catTab = Number(b.getAttribute("data-i")) || 0;
+        renderTabs();
+        render();
+      });
+    });
   }
 
   function filtered() {
     var q = document.getElementById("q").value.trim().toLowerCase();
     var store = document.getElementById("storesel").value;
-    var cat = document.getElementById("catsel").value;
+    var group = (CATGROUPS[state.catTab] || CATGROUPS[0])[1];
     var minpct = Number(document.getElementById("minpct").value) || 0;
     var hideunv = document.getElementById("hideunv").checked;
     return state.deals.filter(function (d) {
@@ -142,7 +173,7 @@ s{color:var(--muted)}
         if (hay.indexOf(q) === -1) return false;
       }
       if (store && d.store !== store) return false;
-      if (cat && (d.category || "other") !== cat) return false;
+      if (group && group.indexOf(d.category || "other") === -1) return false;
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
       if (hideunv && (d.badge || "unverified") === "unverified") return false;
       return true;
@@ -274,7 +305,7 @@ s{color:var(--muted)}
     });
   }
 
-  ["q", "storesel", "catsel", "minpct", "hideunv"].forEach(function (id) {
+  ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener("input", render);
     el.addEventListener("change", render);
@@ -286,6 +317,7 @@ s{color:var(--muted)}
       state.meta = (data && data.meta) || {};
       state.deals = (data && data.deals) || [];
       populateStores();
+      renderTabs();
       renderMeta();
       render();
     })

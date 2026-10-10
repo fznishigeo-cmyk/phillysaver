@@ -146,9 +146,13 @@ true pct; floors are applied at publish time.
 
 ## 8. Free after rebate / moneymaker / penny
 
-- `free_after_rebate` → `pct_with_rebates = 100.0`,
-  `pct_at_checkout = 100.0` **per product spec**,
-  flags include `'rebate_dependent'`, `basis='free_after_rebate'`.
+- `free_after_rebate` → `pct_with_rebates = 100.0`, flags include
+  `'rebate_dependent'`, `basis='free_after_rebate'`. `pct_at_checkout` is
+  NEVER 100 while money changes hands: it is computed from the stated
+  regular/final prices when both exist, is 100 only when the register
+  price is actually $0, and is `None` otherwise (so a rebate-only deal
+  cannot clear the publish floor on its rebate). The publish gate also
+  rejects any row claiming ~100% beside a positive final price.
 - `moneymaker` → same, except `pct_with_rebates` goes **above 100** when the
   stated numbers allow it (regular, final, and rebate amounts all known),
   else 100.0.
@@ -157,7 +161,7 @@ true pct; floors are applied at publish time.
 
 **Worked example (moneymaker):** "$5 item, $8 mail-in rebate, reg $5" →
 effective `5 - 8 = -$3` → `pct_with_rebates = (5 - (-3)) / 5 * 100 = 160.0%`,
-`pct_at_checkout = 100.0`, flag `rebate_dependent`.
+`pct_at_checkout = 0.0` (you pay full price today), flag `rebate_dependent`.
 **Worked example (penny):** "$0.01, reg $4.99" → `(4.99 - 0.01)/4.99 = 99.8%`.
 
 ## 9. Gift-card-back / portal cashback / store credit

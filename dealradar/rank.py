@@ -76,6 +76,13 @@ def is_publishable(deal: dict[str, Any], cfg,
     if pct is None or pct < floor:
         return False, f"pct_at_checkout: {pct!r} < min_pct {floor}"
 
+    # Sanity: "100% off" while money changes hands is a contradiction
+    # (seen live: a $254.98 phone published as 100% off via a rebate rule).
+    final = deal.get("final_price")
+    if pct >= 99.95 and final is not None and final > 0.01:
+        return False, (f"inconsistent: pct_at_checkout {pct:g} claims free "
+                       f"but final_price is ${final:g}")
+
     # Used/open-box supply is plentiful: such deals clear a HIGHER absolute
     # floor, and the site's lower "strong deals" tier never softens it.
     if {"used", "open_box"} & set(deal.get("conditions") or []):

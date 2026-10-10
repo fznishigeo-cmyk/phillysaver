@@ -318,15 +318,22 @@ def _free_after_rebate(d: models.ExtractedDeal, flags: list[str],
                        rebate_steps: list[dict[str, Any]],
                        ship_cost: float | None, ship_threshold: float | None,
                        ) -> models.SavingsResult:
-    """Rule 8: free_after_rebate and moneymaker -> 100% per product spec,
-    always flagged rebate_dependent; moneymaker may exceed 100 with rebates
-    when the stated numbers allow it."""
-    pct_co = 100.0
+    """Rule 8: free_after_rebate and moneymaker -> pct_WITH_REBATES is 100
+    (or above, for a moneymaker with stated numbers), always flagged
+    rebate_dependent. pct_AT_CHECKOUT is never 100 while money changes
+    hands: it comes from the stated prices when both exist, else stays
+    None (a rebate-only deal has no checkout discount to publish on).
+    A "$254.98 phone, 100% off" is a contradiction, not a deal."""
     pct_wr = 100.0
     b_adj = None
     if d.final_price is not None:
         b_adj = d.final_price + _shipping_add(d.final_price, ship_cost,
                                               ship_threshold, flags)
+    pct_co = None
+    if d.regular_price and b_adj is not None:
+        pct_co = (d.regular_price - b_adj) / d.regular_price * 100.0
+    elif b_adj is not None and b_adj <= 0.01:
+        pct_co = 100.0  # genuinely free at the register
     if d.deal_type == "moneymaker" and d.regular_price and b_adj is not None:
         total = _rebate_total(rebate_steps, d.final_price)
         if total > 0:
