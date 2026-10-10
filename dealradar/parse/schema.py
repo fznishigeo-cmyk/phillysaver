@@ -222,10 +222,16 @@ Rules:
   $400 flagship rotors.
 - Generic/no-name items with regular prices far above what such items sell
   for anywhere -> implausible.
-- Ordinary physical goods (parts, tools, accessories, household items,
-  cables, consumables) whose claimed regular implies a markup of roughly
-  10x or more over the sale price -> implausible unless the item is
-  genuinely a luxury/professional product at that price point.
+- THE SIZE OF THE DISCOUNT IS NEVER EVIDENCE BY ITSELF, in either
+  direction. Real price errors, deep clearance and open-box deals run to
+  90%+ off, and those are exactly the deals this radar exists to catch.
+  Judge only whether the claimed REGULAR price matches what the exact
+  product genuinely sells for new: implausible means the regular price
+  itself is inflated (a $460 "regular" for a part number that sells around
+  $40-80 new) — never that the gap between regular and sale is huge.
+- A used/open-box deal's regular price is the product's NEW-condition
+  price; judge that new price's realism, not the depth of the used
+  discount.
 - Name brands at their usual list prices -> plausible, even when the
   discount is deep (real clearance and real price errors happen).
 - When genuinely unsure, lean plausible with low confidence; only mark

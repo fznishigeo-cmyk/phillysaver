@@ -304,12 +304,19 @@ def critique_deal(parser: "ClaudeParser", deal: dict) -> dict | None:
     final = deal.get("final_price")
     if reg is None or final is None:
         return None  # nothing to judge without a claimed regular price
+    conds = list(deal.get("conditions") or [])
+    used_note = (
+        "Note: the sale price is for a USED/OPEN-BOX unit; the regular "
+        "price is the product's new-condition price.\n"
+        if {"used", "open_box"} & set(conds) else "")
     prompt = (
         f"Item: {deal.get('item', '')}\n"
         f"Store: {deal.get('store', '')}\n"
         f"Claimed regular price: ${float(reg):,.2f}\n"
         f"Sale price: ${float(final):,.2f}\n"
         f"Category: {deal.get('category', 'other')}\n"
+        f"Conditions: {', '.join(conds) or 'none'}\n"
+        f"{used_note}"
         "Is the claimed regular price plausible for this item?"
     )
     try:
