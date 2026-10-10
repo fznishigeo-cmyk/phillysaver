@@ -21,11 +21,12 @@ import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 
+from .. import util
 from ..config import AppConfig, get_secret
 from ..db import DB
 from ..errors import AdapterNotConfigured, DeadlineExceeded
@@ -62,6 +63,12 @@ PRICE_TYPE_WAREHOUSE = 9
 #: Keepa dateRange 3 = drop measured against the 90-day average — the honest
 #: "typical price" basis (day/week windows miss slow-boiled clearance).
 DATE_RANGE_90D = 3
+
+#: Self-throttle: the fast lane fires every 5 minutes, but Keepa queries
+#: stay on a ~15-minute cadence so the token allowance (1/min regen) covers
+#: the two deals queries plus verification calls. 14, not 15, so normal
+#: scheduler jitter never makes a legitimate pull miss its slot.
+MIN_INTERVAL_MINUTES = 14.0
 
 
 def _cents(v: Any) -> float | None:
@@ -176,10 +183,22 @@ class KeepaDealsAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher/db unused: this adapter manages its own authenticated client.
+        # fetcher unused: this adapter manages its own authenticated client.
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
+
+        # Self-throttle to ~15-minute pulls whatever the lane's cadence:
+        # a pull inside the window is a clean no-op, not a failure.
+        if db is not None:
+            last = util.parse_iso(db.meta_get("keepa_last_fetch_at") or "")
+            if last is not None and (now - last) < timedelta(
+                    minutes=MIN_INTERVAL_MINUTES):
+                log.info("keepa %s: last pull %.1f min ago (< %.0f); "
+                         "skipping this lane tick", source.name,
+                         (now - last).total_seconds() / 60.0,
+                         MIN_INTERVAL_MINUTES)
+                return []
 
         with self._client(cfg) as client:
             # Pass 1: Amazon's own NEW price dropped >= MIN_DROP_PCT below
@@ -210,6 +229,8 @@ class KeepaDealsAdapter(SourceAdapter):
                 if post is not None:
                     posts.append(post)
 
+        if db is not None:
+            db.meta_set("keepa_last_fetch_at", util.iso(now))
         log.info("keepa %s: mapped %d amazon-price + %d warehouse posts",
                  source.name, n_amazon, len(posts) - n_amazon)
         if (rows or wh_rows) and not posts:

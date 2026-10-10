@@ -170,6 +170,34 @@ class TestKeepaAdapter:
         assert "used/open-box" in p.text
         assert "https://www.amazon.com/dp/B0WAREHOUSE" in p.text
 
+    def test_self_throttle_to_15_minutes_inside_the_5_minute_lane(
+            self, cfg, monkeypatch, tmp_path):
+        """The lane fires every 5 minutes; Keepa pulls at most every ~14 so
+        the token allowance holds. A pull inside the window is a clean
+        no-op (no HTTP), and a pull after it goes through again."""
+        from datetime import timedelta
+
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        db = DB(tmp_path / "state.db")
+        calls = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls.append(request.url.params["selection"])
+            return httpx.Response(200, json={"deals": {"dr": []}})
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter.fetch_posts(SRC, None, db, cfg, NOW, None)
+        assert len(calls) == 2  # amazon + warehouse queries ran
+        # 5 minutes later: inside the window -> no HTTP at all.
+        assert adapter.fetch_posts(SRC, None, db, cfg,
+                                   NOW + timedelta(minutes=5), None) == []
+        assert len(calls) == 2
+        # 15 minutes later: due again.
+        adapter.fetch_posts(SRC, None, db, cfg,
+                            NOW + timedelta(minutes=15), None)
+        assert len(calls) == 4
+        db.close()
+
     def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
         monkeypatch.setenv("KEEPA_KEY", "kkey")
 

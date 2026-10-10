@@ -108,7 +108,7 @@ def test_fast_shape() -> None:
     doc = load_workflow(FAST)
     assert doc["name"] == "dealradar fast lane"
     on = workflow_on(doc)
-    assert on["schedule"] == [{"cron": "*/15 * * * *"}]
+    assert on["schedule"] == [{"cron": "*/5 * * * *"}]
     # Same concurrency group as hourly so the two never overlap.
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     job = single_job(doc)

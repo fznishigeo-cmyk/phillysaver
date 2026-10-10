@@ -1,4 +1,7 @@
-# Fast lane: every 15 minutes, fetch only the fast_lane sources.
+# Fast lane: every 5 minutes (GitHub's scheduler floor; real cadence is
+# bounded by run duration and cron drift), fetching only the fast_lane
+# sources. The Keepa adapter throttles ITSELF to ~15-minute pulls so the
+# 5-minute lane never outruns the Keepa token allowance.
 # Shares the `dealradar` concurrency group with hourly.yml (cancel-in-progress
 # false) so the two never overlap — they queue behind each other instead.
 # Deploys the site like hourly.yml does: a fast-lane find (Keepa price drops)
@@ -7,7 +10,7 @@ name: dealradar fast lane
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 concurrency:
