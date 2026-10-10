@@ -85,6 +85,7 @@ class AppConfig:
     used_min_pct: float = 80.0        # absolute floor for used/open-box deals
     min_abs_savings: float = 5.0
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
+    show_dead_hours: float = 6.0      # dead deals linger on the site this long
     site_dir: str = "site"
     ftc_disclosure: str = ""
     tier_boost: dict[str, float] = field(default_factory=dict)
@@ -161,6 +162,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.min_abs_savings = float(g("publish", "min_abs_savings", default=cfg.min_abs_savings))
     cfg.site_show_from_pct = float(g("publish", "site_show_from_pct",
                                      default=cfg.min_pct))
+    cfg.show_dead_hours = float(g("publish", "show_dead_hours",
+                                  default=cfg.show_dead_hours))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
 

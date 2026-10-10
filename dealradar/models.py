@@ -165,6 +165,9 @@ class Deal:
     critic: dict[str, Any] | None = None
     # ISO UTC of the last live price re-check (Amazon deals, via Keepa).
     price_rechecked_at: str = ""
+    # ISO UTC of the moment status flipped to 'dead' (site shows a dead deal
+    # only briefly, as "just missed it" proof, then drops it).
+    died_at: str = ""
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0

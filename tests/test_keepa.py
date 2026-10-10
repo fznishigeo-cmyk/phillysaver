@@ -151,17 +151,20 @@ class TestKeepaAdapter:
                    "current": [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 6000]}
         no_new = {"asin": "B0NONEWPRIC", "title": "No New Offer Item",
                   "current": [-1, -1, -1, -1, -1, -1, -1, -1, -1, 1207]}
+        junk = {"asin": "B0JUNKCASEX", "title": "$12 Phone Case",
+                "current": [1200, 1200, -1, -1, -1, -1, -1, -1, -1, 199]}
 
         def handler(request: httpx.Request) -> httpx.Response:
             sel = json.loads(request.url.params["selection"])
             if sel["priceTypes"] == [0]:
                 return httpx.Response(200, json={"deals": {"dr": []}})
             return httpx.Response(
-                200, json={"deals": {"dr": [deep, shallow, no_new]}})
+                200, json={"deals": {"dr": [deep, shallow, no_new, junk]}})
 
         adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
-        # Only the deep drop maps: 26% off and no-live-new-price are skipped.
+        # Only the deep drop maps: 26%-off, no-live-new-price, and
+        # low-value junk (new price under $25) are all skipped.
         assert len(posts) == 1
         p = posts[0]
         assert p.uid == "B0WAREHOUSE:wh:12.07"

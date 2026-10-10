@@ -125,11 +125,20 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
     page, never alerted). Deals between the site floor and cfg.min_pct are
     the page's "strong deals" tier — on the page, never alerted. Retention
     prunes dead rows after cfg.deals_days."""
+    from datetime import timedelta
+
     site_floor = min(cfg.min_pct,
                      getattr(cfg, "site_show_from_pct", cfg.min_pct))
+    max_dead_age = timedelta(hours=getattr(cfg, "show_dead_hours", 6.0))
     out: list[dict[str, Any]] = []
     for status in ("alive", "dead"):
         for deal in db.all_deals(status=status):
+            if status == "dead":
+                died = parse_iso(deal.get("died_at") or "")
+                # No stamp, or dead too long: off the page. A fresh death
+                # stays briefly as honest "just missed it" proof.
+                if died is None or now - died > max_dead_age:
+                    continue
             probe = dict(deal)
             probe["status"] = "alive"  # dead rows: test the other gates only
             ok, _reason = is_publishable(probe, cfg, min_pct=site_floor)

@@ -53,6 +53,11 @@ MIN_DROP_PCT = 45
 #: used deals is higher still — config publish.used_min_pct, 60).
 WAREHOUSE_MIN_DROP_PCT = 55
 
+#: Warehouse junk filter: open-box $5 phone cases and ball joints are not
+#: deals anyone subscribes for. The item's NEW-condition value must be at
+#: least this much before a used offer is worth a post.
+WAREHOUSE_MIN_NEW_PRICE = 25.0
+
 #: Keepa price-type indexes: 0 = Amazon's own NEW price, 1 = lowest NEW
 #: offer, 9 = Amazon Warehouse / Amazon Resale (open-box & used, sold by
 #: Amazon). Third-party used sellers are deliberately NOT tracked.
@@ -205,7 +210,8 @@ class KeepaDealsAdapter(SourceAdapter):
             # its 90-day average.
             _check_deadline(deadline)
             rows = self._query_rows(client, key, PRICE_TYPE_AMAZON,
-                                    [MIN_DROP_PCT, 100], source.name)
+                                    [MIN_DROP_PCT, 100], source.name,
+                                    sort_type=4)  # biggest %-drop first
             posts: list[RawPost] = []
             for row in rows[:MAX_DEALS_PER_RUN]:
                 if not isinstance(row, dict):
@@ -220,8 +226,11 @@ class KeepaDealsAdapter(SourceAdapter):
             # ask loosely and apply the honest gate client-side: the used
             # price must clear MIN_DROP_PCT against the LIVE new price.
             _check_deadline(deadline)
+            # Sorted by ABSOLUTE drop: percent-sorting surfaces $5 junk;
+            # dollar-sorting surfaces the big-ticket open-box finds.
             wh_rows = self._query_rows(client, key, PRICE_TYPE_WAREHOUSE,
-                                       [30, 100], source.name + "/warehouse")
+                                       [30, 100], source.name + "/warehouse",
+                                       sort_type=2)
             for row in wh_rows[:MAX_DEALS_PER_RUN]:
                 if not isinstance(row, dict):
                     continue
@@ -244,7 +253,8 @@ class KeepaDealsAdapter(SourceAdapter):
         return posts
 
     def _query_rows(self, client: httpx.Client, key: str, price_type: int,
-                    delta_pct_range: list[int], label: str) -> list:
+                    delta_pct_range: list[int], label: str,
+                    sort_type: int = 4) -> list:
         selection = {
             "page": 0,
             "domainId": DOMAIN_US,
@@ -252,7 +262,7 @@ class KeepaDealsAdapter(SourceAdapter):
             "deltaPercentRange": delta_pct_range,
             "dateRange": DATE_RANGE_90D,
             "isRangeEnabled": True,
-            "sortType": 4,      # biggest percent drop first (per Keepa docs)
+            "sortType": sort_type,  # 4 = percent drop, 2 = absolute drop
             # Books & Kindle: algorithmic publisher pricing ($995 print-on-
             # demand reports "dropping" 60%) dominates the drop list and is
             # noise, never a deal a person wants.
@@ -338,6 +348,8 @@ class KeepaDealsAdapter(SourceAdapter):
             new_p = _price_at(row.get("current"), PRICE_TYPE_NEW)
         if used is None or new_p is None or new_p <= 0:
             return None
+        if new_p < WAREHOUSE_MIN_NEW_PRICE:
+            return None  # low-value item: not a deal anyone subscribes for
         if used >= new_p * (1.0 - WAREHOUSE_MIN_DROP_PCT / 100.0):
             return None  # used supply is plentiful: only the deep cuts
 

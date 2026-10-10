@@ -54,6 +54,8 @@ publish:
   min_abs_savings: 5.0         # floor: absolute $ savings
   site_show_from_pct: 50       # site-only second tier: "strong deals" below the
                                # alert bar still render on the page (never alerted)
+  show_dead_hours: 6           # a dead deal stays visible this long ("just
+                               # missed it" proof), then leaves the page
   site_dir: "site"
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-

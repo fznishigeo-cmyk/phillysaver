@@ -209,6 +209,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
         if "price_moved" not in flags:
             flags.append("price_moved")
         payload["flags"] = flags
+        payload["died_at"] = util.iso(now)
         db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
         log.info("price recheck: %s is over (live price moved); marked dead",
                  deal.get("dedupe_key"))
@@ -391,7 +392,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             res = upsert_extracted(db, extracted, sav, post, cfg, now)
             deals_upserted += 1
             if text_marks_dead(post.text):
-                db.update_deal(res["dedupe_key"], status="dead")
+                res["payload"]["died_at"] = util.iso(now)
+                db.update_deal(res["dedupe_key"], payload=res["payload"],
+                               status="dead")
         summary["deals_upserted"] = deals_upserted
 
         # ---- verify tiers + dead marking ----

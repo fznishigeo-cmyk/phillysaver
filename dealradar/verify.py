@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from .config import get_secret
-from .util import parse_iso
+from .util import iso, parse_iso
 
 log = logging.getLogger("dealradar.verify")
 
@@ -87,7 +87,10 @@ def mark_expired_dead(db, cfg, now: datetime) -> int:
             continue
         dt = parse_iso(expires)
         if dt is not None and dt < now:
-            db.update_deal(deal["dedupe_key"], status="dead")
+            payload = {k: v for k, v in deal.items()
+                       if k not in ("id", "normalized_item")}
+            payload["died_at"] = iso(now)
+            db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
             n += 1
     if n:
         log.info("marked %d expired deal(s) dead", n)
