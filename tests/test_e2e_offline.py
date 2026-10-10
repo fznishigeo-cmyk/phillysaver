@@ -174,7 +174,7 @@ def test_offline_end_to_end(env, capsys):
     assert summary["posts_new"] == 5
     # config.yaml pins parse.model; unset it falls back to the cheapest-model
     # heuristic (covered in test_claude_client).
-    assert summary["parse"]["parser"] == "claude-sonnet-5-5"
+    assert summary["parse"]["parser"] == "claude-haiku-5-5"
     assert summary["parse"]["spend_usd"] > 0
 
     # 3 deals clear the savings floors: air fryer (77%), knife set (81.7%),

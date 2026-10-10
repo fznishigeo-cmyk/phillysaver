@@ -8,9 +8,11 @@ nothing and re-sends nothing.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from datetime import datetime
+from itertools import chain, zip_longest
 from typing import Any
 
 from . import util
@@ -23,6 +25,10 @@ log = logging.getLogger("dealradar.pipeline")
 
 # Seconds reserved at the end of the run budget for parse/publish when fetching.
 _RESERVE_FOR_TAIL_S = 90.0
+# Fetching stops this early so the parse phase gets real time. Live incident:
+# a 60-source sweep ran to the wire, parse got seconds, and the back half of
+# the source list never published a single deal (903 fetched, ~1 parsed).
+_RESERVE_FOR_PARSE_S = 240.0
 
 
 def _run_key(now: datetime, fast_lane: bool) -> str:
@@ -97,6 +103,33 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
     return effective
 
 
+def _rotate_for_run(sources: list[SourceConfig], run_key: str) -> list[SourceConfig]:
+    """Deterministically rotate fetch order by run key.
+
+    Any budget cut truncates the END of the sweep; a fixed order would starve
+    the same tail sources forever. Rotation moves the cut around the list
+    hour by hour while idempotent re-runs of one key keep one order.
+    """
+    if not sources:
+        return sources
+    rot = int(hashlib.sha256(run_key.encode("utf-8")).hexdigest(), 16) % len(sources)
+    return sources[rot:] + sources[:rot]
+
+
+def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
+    """Round-robin posts across sources, keeping each source's own order.
+
+    The parse loop stops at the spend cap, the max-posts cap, or the run
+    deadline; with posts grouped by source, whoever is listed first takes the
+    whole budget. Interleaved, every source lands a fair share per run.
+    """
+    queues: dict[str, list[RawPost]] = {}
+    for p in posts:
+        queues.setdefault(p.source_name, []).append(p)
+    return [p for p in chain.from_iterable(zip_longest(*queues.values()))
+            if p is not None]
+
+
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                now: datetime, deadline: float, fast_lane: bool) -> tuple[list[RawPost], dict[str, str]]:
     from .fetch.base import run_source
@@ -109,9 +142,9 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             continue
         if fast_lane and not source.fast_lane:
             continue
-        if time.monotonic() > deadline - _RESERVE_FOR_TAIL_S:
-            log.warning("run budget nearly exhausted; skipping remaining sources from %s",
-                        source.name)
+        if time.monotonic() > deadline - _RESERVE_FOR_PARSE_S:
+            log.warning("fetch window exhausted; skipping remaining sources from %s "
+                        "(rotation puts them first on a later run)", source.name)
             break
         try:
             adapter = get_adapter(source, cfg, fast_lane=fast_lane)
@@ -331,8 +364,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 deadline=deadline - _RESERVE_FOR_TAIL_S)
         tz_by_source = {s.name: s.tz for s in sources}
 
-        # ---- fetch ----
-        posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now, deadline, fast_lane)
+        # ---- fetch (rotated order; see _rotate_for_run) ----
+        posts, fetch_errors = _fetch_all(_rotate_for_run(sources, run_key),
+                                         fetcher, db, cfg, now, deadline, fast_lane)
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors
 
@@ -348,6 +382,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 continue
             seen_this_batch.add(h)
             new_posts.append(post)
+        new_posts = _interleave_by_source(new_posts)
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
 
         # ---- parse (Claude; evidence-verified) ----
@@ -365,8 +400,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             # the deal critic all draw on the same spend caps.
             parser = _build_parser(cfg, claude_client=claude_client,
                                    run_cap_usd=remaining_today)
+        # Parse stops _RESERVE_FOR_TAIL_S early: the critic, price re-checks,
+        # and publishing must still run inside the budget on heavy runs.
         pairs, pstats = _parse_new_posts(
-            new_posts, parser, cfg, now, tz_by_source, deadline)
+            new_posts, parser, cfg, now, tz_by_source,
+            deadline - _RESERVE_FOR_TAIL_S)
         summary["parse"] = pstats
         processed = set(pstats.get("processed_hashes") or [])
         recorded = 0

@@ -686,7 +686,8 @@ class TestConfigFields:
     def test_quality_trio_config_loads(self):
         cfg = load_config()
         assert cfg.used_min_pct == pytest.approx(60.0)
-        assert cfg.parse_model == "claude-sonnet-5-5"
+        # Tiered models: Haiku reads everything, Sonnet double-checks and judges.
+        assert cfg.parse_model == "claude-haiku-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"
         assert cfg.max_second_opinions_per_run == 8
         assert cfg.critic_model == "claude-sonnet-5-5"

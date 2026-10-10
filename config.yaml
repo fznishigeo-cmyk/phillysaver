@@ -10,7 +10,7 @@ timezone: "America/New_York"   # default tz for feeds with naive dates and for "
 fetch:
   request_timeout_s: 20        # hard per-request timeout
   per_source_budget_s: 90      # hard per-source budget
-  run_budget_s: 480            # hard 8 min per run
+  run_budget_s: 540            # hard 9 min per run (fetch stops ~4 min early so parse+publish get real time)
   min_host_interval_s: 1.0     # <=1 request/sec per host
   max_retries: 3               # exponential backoff 1s, 2s, 4s (+jitter)
   circuit_breaker_failures: 3  # consecutive failures -> trip
@@ -18,12 +18,12 @@ fetch:
   redirect_max_hops: 5
 
 parse:
-  # Primary extraction model. Empty = cheapest current model from the models
-  # endpoint (the original default). Set explicitly to buy extraction quality
-  # with the monthly API credit: Sonnet reads promo stacks, clip coupons and
-  # roundups far better than the cheapest model, and the spend caps below
-  # still bound the worst case.
-  model: "claude-sonnet-5-5"
+  # Primary extraction model. Haiku handles the first read of every post at
+  # roughly a third of Sonnet's price — the volume work. Sonnet stays where
+  # it earns its cost: the capped second opinion below (posts that smell like
+  # deals but Haiku found nothing) and the deal critic. This tiering is what
+  # keeps a full day of all-source sweeps inside the small daily cap.
+  model: "claude-haiku-5-5"
   max_posts_per_run: 400
   max_chars_per_post: 6000
   spend_cap_usd_per_run: 1.00          # temporarily doubled to drain today's backlog faster; revert with the daily cap          # abort parsing gracefully when hit

@@ -1,21 +1,76 @@
 """New sources.yaml entries must join the run set without waiting for the
-daily revalidation of the stored effective set."""
+daily revalidation of the stored effective set — and no source may starve
+because of its position in the list (live incident: the back half of
+sources.yaml fetched every hour yet never had one post parsed)."""
 
 from __future__ import annotations
 
-from datetime import timedelta
+import time
+from datetime import datetime, timezone, timedelta
 
 from dealradar import pipeline
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.validate import save_effective_sources
-from dealradar.models import SourceConfig
+from dealradar.models import RawPost, SourceConfig
 from dealradar.util import now_utc
 
 
 def make_source(name: str, **kw) -> SourceConfig:
     return SourceConfig(name=name, method="rss",
                         url=f"https://{name}.example/feed/", **kw)
+
+
+def make_post(source: str, i: int) -> RawPost:
+    now = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
+    return RawPost(source_name=source, uid=f"{source}-{i}",
+                   url=f"https://{source}.example/{i}", title=f"{source} {i}",
+                   text=f"deal {source} {i} $9.99", published_at=None,
+                   fetched_at=now)
+
+
+class TestFairScheduling:
+    def test_interleave_round_robins_across_sources(self):
+        posts = ([make_post("a", i) for i in range(3)]
+                 + [make_post("b", i) for i in range(2)]
+                 + [make_post("c", i) for i in range(1)])
+        out = pipeline._interleave_by_source(posts)
+        assert [p.uid for p in out] == [
+            "a-0", "b-0", "c-0", "a-1", "b-1", "a-2"]
+
+    def test_interleave_keeps_within_source_order_and_loses_nothing(self):
+        posts = [make_post("x", i) for i in range(5)] \
+            + [make_post("y", i) for i in range(4)]
+        out = pipeline._interleave_by_source(posts)
+        assert len(out) == len(posts)
+        assert [p.uid for p in out if p.source_name == "x"] == \
+            [f"x-{i}" for i in range(5)]
+        assert pipeline._interleave_by_source([]) == []
+
+    def test_rotation_is_deterministic_and_complete(self):
+        sources = [make_source(f"s{i}") for i in range(7)]
+        a = pipeline._rotate_for_run(sources, "2026-10-10T19")
+        b = pipeline._rotate_for_run(sources, "2026-10-10T19")
+        assert [s.name for s in a] == [s.name for s in b]  # idempotent re-run
+        assert sorted(s.name for s in a) == sorted(s.name for s in sources)
+        # Across the run keys of a day, the head position actually moves.
+        heads = {pipeline._rotate_for_run(sources, f"2026-10-10T{h:02d}")[0].name
+                 for h in range(24)}
+        assert len(heads) > 1
+        assert pipeline._rotate_for_run([], "k") == []
+
+    def test_fetch_stops_inside_the_parse_reserve(self):
+        """_fetch_all must leave _RESERVE_FOR_PARSE_S on the clock: with the
+        deadline already inside the reserve, no source is attempted."""
+        deadline = time.monotonic() + pipeline._RESERVE_FOR_PARSE_S - 5.0
+        posts, errors = pipeline._fetch_all(
+            [make_source("never_reached")], fetcher=None, db=None,
+            cfg=load_config(), now=now_utc(), deadline=deadline,
+            fast_lane=False)
+        assert posts == [] and errors == {}
+
+    def test_parse_reserve_exceeds_tail_reserve(self):
+        assert pipeline._RESERVE_FOR_PARSE_S > pipeline._RESERVE_FOR_TAIL_S
 
 
 def test_new_configured_sources_merge_into_stored_set(tmp_path, monkeypatch):
