@@ -207,6 +207,7 @@ def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
         tz=str(d.get("tz", "America/New_York")),
         notes=str(d.get("notes", "")),
         crawl_permission=str(d.get("crawl_permission", "")),
+        image_permission=bool(d.get("image_permission", False)),
     )
 
 

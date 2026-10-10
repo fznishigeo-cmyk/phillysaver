@@ -38,6 +38,25 @@ TRUNCATION_MARKERS = ("[…]", "...", "[&#8230;]", "Read more")
 #: A deal post's body is only useful with a price in it.
 _PRICE_PATTERN = re.compile(r"\$\s?\d")
 
+_IMG_SRC = re.compile(r"<img[^>]+src=[\"'](https?://[^\"']+)[\"']", re.I)
+#: Substrings that mark an <img> as a tracker/decoration, not a product shot.
+_IMG_JUNK = ("feedburner", "pixel", "emoji", "gravatar", "avatar", "smilies")
+
+
+def _first_image(body_html: str) -> str:
+    """First plausible product image in an entry body (empty if none).
+
+    Only ever called for sources whose written grant covers displaying their
+    images (SourceConfig.image_permission); the URL is hotlinked, never
+    copied or stored.
+    """
+    for src in _IMG_SRC.findall(body_html or ""):
+        low = src.lower()
+        if any(t in low for t in _IMG_JUNK) or low.endswith(".svg"):
+            continue
+        return src
+    return ""
+
 
 def _entry_body(entry: Any) -> str:
     """Prefer full content (content:encoded / atom content) over the summary."""
@@ -146,6 +165,8 @@ class RssAdapter(SourceAdapter):
                 text=text,
                 published_at=published_at,
                 fetched_at=now,
+                image_url=(_first_image(body_html)
+                           if source.image_permission else ""),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
@@ -184,6 +205,7 @@ class RssAdapter(SourceAdapter):
             text=post.title + "\n" + article_text,
             published_at=post.published_at,
             fetched_at=post.fetched_at,
+            image_url=post.image_url,  # enrichment must not drop the image
             # Idempotency anchor stays the summary-level text: whether (or how)
             # enrichment succeeded must never change the content hash, or the
             # same unchanged entry would re-parse on the next run.

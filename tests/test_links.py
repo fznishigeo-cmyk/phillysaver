@@ -60,6 +60,40 @@ class TestSiteAlwaysLinks:
         assert _serialize_deal(d, NOW)["url"] == ""
 
 
+class TestGrantedSourceImages:
+    """Image display is permission-gated: only sources whose written grant
+    covers their images (image_permission) ever contribute one, and a
+    post-level image never lands on a multi-deal roundup's cards."""
+
+    HTML = ('<p>Deal! <img src="https://feeds.feedburner.com/~r/x/pix.gif">'
+            '<img src="https://hip2save.com/wp-content/mixer.jpg" alt="m">'
+            " Martha Stewart mixer $71.99</p>")
+
+    def test_first_real_image_skips_trackers(self):
+        from dealradar.fetch.rss import _first_image
+        assert _first_image(self.HTML) == \
+            "https://hip2save.com/wp-content/mixer.jpg"
+        assert _first_image("<p>no images</p>") == ""
+        assert _first_image('<img src="https://a.example/logo.svg">') == ""
+
+    def test_config_flag_parses_and_defaults_off(self):
+        from dealradar.config import _source_from_dict
+        base = {"name": "x", "method": "rss", "url": "https://x.example/feed/"}
+        assert _source_from_dict(base).image_permission is False
+        assert _source_from_dict({**base, "image_permission": True
+                                  }).image_permission is True
+
+    def test_roundup_posts_lose_the_post_level_image(self):
+        from dealradar.parse.extractor import _post_for_deals
+        from dealradar.models import RawPost
+        post = RawPost(source_name="s", uid="1", url="https://s.example/p",
+                       title="t", text="x", published_at=None, fetched_at=NOW,
+                       image_url="https://s.example/img.jpg")
+        assert _post_for_deals(post, 1).image_url == "https://s.example/img.jpg"
+        assert _post_for_deals(post, 3).image_url == ""
+        assert _post_for_deals(post, 0).image_url == ""
+
+
 class TestEnrichmentTrigger:
     def test_priceless_long_summary_triggers_enrichment(self):
         """Live case: Hip2Save's 800-char teaser for a 63%-off lounge set

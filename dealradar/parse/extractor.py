@@ -7,6 +7,7 @@ counted, never guessed.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import re
 import time
@@ -187,6 +188,15 @@ def _smells_like_deal(text: str) -> bool:
     return bool(_DEAL_SMELL.search(text)) and bool(_DEAL_WORDS.search(text))
 
 
+def _post_for_deals(post: RawPost, n_deals: int) -> RawPost:
+    """A post-level image provably belongs to its deal only on a SINGLE-deal
+    post; attached to a roundup it would paint one product's photo on every
+    extracted deal. Multi-deal posts lose the image, nothing else."""
+    if post.image_url and n_deals != 1:
+        return dataclasses.replace(post, image_url="")
+    return post
+
+
 def parse_posts(
     posts: list[RawPost],
     parser,
@@ -256,6 +266,7 @@ def parse_posts(
         stats["posts_sent"] += 1
         stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
+        post = _post_for_deals(post, len(llm_deals))
         for d in llm_deals:
             stats["deals_extracted"] += 1
             deal = to_extracted(d, post, tz_name, now)

@@ -31,6 +31,10 @@ class SourceConfig:
     # Bypasses robots.txt for THIS SOURCE'S OWN HOST ONLY — never other
     # hosts, never bot walls, and every other politeness rule still applies.
     crawl_permission: str = ""
+    # True ONLY when the written grant above explicitly covers displaying the
+    # source's own deal images with credit. Images are hotlinked from the
+    # source, never copied or stored.
+    image_permission: bool = False
 
 
 @dataclass
@@ -45,8 +49,10 @@ class RawPost:
     published_at: datetime | None # tz-aware UTC, defensively parsed
     fetched_at: datetime          # tz-aware UTC
     image_url: str = ""           # retailer's own public product-image URL
-                                  # (e.g. Amazon's media CDN via Keepa). Never
-                                  # a copied/stored image, never a blog image.
+                                  # (e.g. Amazon's media CDN via Keepa), or a
+                                  # source-blog image ONLY for sources whose
+                                  # written grant covers it (image_permission).
+                                  # Always hotlinked, never copied or stored.
     hash_text: str = ""           # stable text for content_hash; adapters set it
                                   # to the PRE-enrichment text so a flaky article
                                   # fetch can't make the same post hash differently
