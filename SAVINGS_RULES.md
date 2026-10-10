@@ -51,6 +51,14 @@ conditions → excluded `in_store`.
 `basis='quoted_regular'`. "70% off everything" with no prices → `pct = 70.0`,
 `basis='list_price_claim'`.
 
+**Used / open-box (e.g. Amazon Warehouse / Amazon Resale):** the used price
+is the final and the STATED new-condition price is the regular
+(`basis='quoted_regular'` — the same math as any quoted pair). The deal must
+carry the `used` (and, when stated, `open_box`) condition so the page and
+alerts label it honestly; the condition is extracted from wording, never
+assumed. The live price re-check for used deals validates against the
+Warehouse offer, not the new price.
+
 ## 3. Ranges
 
 `price_is_range=True` ("as low as $X", "from $X", "under $X") → use

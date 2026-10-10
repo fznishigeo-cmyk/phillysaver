@@ -100,6 +100,59 @@ def text_marks_dead(text: str) -> bool:
     return bool(_DEAD_RE.search(text or ""))
 
 
+def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
+    """Is this Amazon deal's price still live? (The legal equivalent of
+    clicking the product page before publishing: Keepa's licensed API
+    mirrors it.) True = a current offer still matches the deal's final
+    price within 10%; False = the price moved (deal is over); None = no
+    opinion (flag/key off, no ASIN/price, or the API failed).
+
+    A used/open-box deal is checked against the Warehouse price; anything
+    else against Amazon's own price or the lowest new offer.
+    """
+    if not cfg.feature_flags.get("keepa"):
+        return None
+    if not get_secret("KEEPA_KEY"):
+        return None
+    asin = str(deal.get("asin") or "").strip().upper()
+    final = deal.get("final_price")
+    if not asin or final is None:
+        return None
+    is_used = bool({"used", "open_box"} & set(deal.get("conditions") or []))
+    try:
+        import httpx
+
+        resp = httpx.get(
+            "https://api.keepa.com/product",
+            params={"key": get_secret("KEEPA_KEY"), "domain": 1,
+                    "asin": asin, "stats": 1},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        products = resp.json().get("products") or []
+        stats = (products[0] or {}).get("stats") if products else None
+        current = stats.get("current") if isinstance(stats, dict) else None
+        if not isinstance(current, list) or not current:
+            return None
+        idx = [9] if is_used else [0, 1]  # warehouse vs amazon/new offer
+        prices = []
+        for i in idx:
+            if len(current) > i and isinstance(current[i], (int, float)) \
+                    and current[i] >= 0:
+                prices.append(float(current[i]) / 100.0)
+        if not prices:
+            return False  # no live offer of the right kind: deal is gone
+        live = min(prices)
+        ok = live <= float(final) * 1.10 + 0.01
+        log.info("price recheck %s: final=$%.2f live=$%.2f (%s) -> %s",
+                 asin, float(final), live,
+                 "warehouse" if is_used else "new", ok)
+        return ok
+    except Exception as e:  # tokens exhausted, transport, schema drift
+        log.warning("price recheck failed for %s: %s", asin, e)
+        return None
+
+
 def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
     """Optional Keepa price-history cross-check (feature-flagged).
 

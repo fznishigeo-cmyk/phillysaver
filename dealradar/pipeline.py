@@ -144,6 +144,54 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
     return pairs, stats
 
 
+#: Hours between live price re-checks of the same Amazon deal.
+_RECHECK_EVERY_H = 6.0
+
+
+def _recheck_prices(db: DB, cfg: AppConfig, now: datetime) -> dict[str, Any]:
+    """The 'click the page before publishing' gate, via Keepa's licensed API
+    (we never scrape retailer pages): every about-to-publish Amazon deal
+    gets its LIVE price checked at most once per 6 hours. A moved price
+    means the deal is over: status dead + 'price_moved' flag — the site
+    shows it marked dead, alerts never fire for it."""
+    from datetime import timedelta
+
+    from . import rank
+    from .dedupe import _DEAL_FIELDS
+    from .verify import recheck_amazon_price
+
+    stats = {"checked": 0, "dead": 0}
+    if not cfg.feature_flags.get("keepa"):
+        return stats
+    for deal in db.all_deals(status="alive"):
+        if not deal.get("asin"):
+            continue
+        last = util.parse_iso(deal.get("price_rechecked_at") or "")
+        if last is not None and now - last < timedelta(hours=_RECHECK_EVERY_H):
+            continue
+        ok, _reason = rank.is_publishable(deal, cfg)
+        if not ok:
+            continue  # only spend tokens on deals that would publish
+        verdict = recheck_amazon_price(deal, cfg)
+        if verdict is None:
+            continue  # API had no opinion; try again next pass
+        stats["checked"] += 1
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        payload["price_rechecked_at"] = util.iso(now)
+        if verdict:
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            continue
+        stats["dead"] += 1
+        flags = list(payload.get("flags") or [])
+        if "price_moved" not in flags:
+            flags.append("price_moved")
+        payload["flags"] = flags
+        db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
+        log.info("price recheck: %s is over (live price moved); marked dead",
+                 deal.get("dedupe_key"))
+    return stats
+
+
 def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]:
     """Deal critic: a stronger model judges whether each about-to-publish
     deal's claimed regular price is honest. An implausible verdict adds the
@@ -329,6 +377,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         summary["critic"] = _run_critic(db, cfg, parser, now)
+
+        # ---- live price re-check (Amazon deals; moved price => dead) ----
+        summary["price_recheck"] = _recheck_prices(db, cfg, now)
 
         # Total LLM spend this run: extraction + second opinions + critic.
         spend_total = (float(getattr(parser, "spend_usd", 0.0))

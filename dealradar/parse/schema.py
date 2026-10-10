@@ -164,7 +164,12 @@ Rules:
   against the post; a quote that is not in the post gets the deal rejected.
 - conditions: use only this vocabulary, zero or more of: new_customer,
   prime_only, targeted, subscribe_save, in_cart, limited_qty, pricing_error,
-  in_store_only, ymmv, clearance_aisle.
+  in_store_only, ymmv, clearance_aisle, multi_buy, used, open_box.
+- Used / open-box / refurbished / warehouse wording (e.g. Amazon Warehouse,
+  Amazon Resale): add condition 'used' (and 'open_box' when stated). These
+  are honest deals when the post states the new-condition price — extract
+  the used price as final_price and the stated new price as regular_price,
+  each with its quote.
 - online_only: 'false' when the wording is in-store (clearance aisle, YMMV,
   'my store', shelf or tag photos); 'true' only when the deal is clearly
   orderable online; otherwise 'unknown'.

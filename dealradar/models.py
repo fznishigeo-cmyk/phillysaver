@@ -158,6 +158,8 @@ class Deal:
     # Deal-critic verdict {plausible, confidence, reason} or None (not judged).
     # Implausible => 'suspect_msrp' in flags => never published (configurable).
     critic: dict[str, Any] | None = None
+    # ISO UTC of the last live price re-check (Amazon deals, via Keepa).
+    price_rechecked_at: str = ""
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0

@@ -480,6 +480,86 @@ class TestParseUnsupportedFlag:
         assert msgs.create_calls == 2         # both posts used the fallback
 
 
+# ------------------------------------------------------- live price recheck
+
+class TestPriceRecheck:
+    def _stats_response(self, current):
+        import httpx
+        return httpx.Response(
+            200, json={"products": [{"stats": {"current": current}}]},
+            request=httpx.Request("GET", "https://api.keepa.com/product"))
+
+    def test_live_price_match_and_move(self, monkeypatch):
+        import httpx
+
+        from dealradar import verify
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        deal = {"asin": "B0TESTASIN1", "final_price": 29.99, "conditions": []}
+        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+                            self._stats_response([2999, 3105, -1]))
+        assert verify.recheck_amazon_price(deal, cfg) is True
+        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+                            self._stats_response([9999, 10500, -1]))
+        assert verify.recheck_amazon_price(deal, cfg) is False
+
+    def test_used_deal_checks_warehouse_price_and_gone_offer(self, monkeypatch):
+        import httpx
+
+        from dealradar import verify
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        used_deal = {"asin": "B0TESTASIN1", "final_price": 12.07,
+                     "conditions": ["used", "limited_qty"]}
+        current = [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 1207]
+        monkeypatch.setattr(httpx, "get",
+                            lambda *a, **k: self._stats_response(current))
+        assert verify.recheck_amazon_price(used_deal, cfg) is True
+        # Warehouse offer vanished entirely -> the deal is over.
+        gone = [8155, 8155, -1, -1, -1, -1, -1, -1, -1, -1]
+        monkeypatch.setattr(httpx, "get",
+                            lambda *a, **k: self._stats_response(gone))
+        assert verify.recheck_amazon_price(used_deal, cfg) is False
+
+    def test_pipeline_recheck_marks_moved_deals_dead_once_per_window(
+            self, tmp_path, monkeypatch):
+        from dealradar import verify
+        db = DB(tmp_path / "state.db")
+        d = _deal_dict(dedupe_key="url|https://www.amazon.com/dp/B0X",
+                       item="Gone Deal")
+        d["asin"] = "B0XXXXXXXXX"
+        db.insert_deal(dedupe_key=d["dedupe_key"], store=d["store"],
+                       item=d["item"], normalized_item="gone deal",
+                       canonical_url="https://www.amazon.com/dp/B0X",
+                       payload=d, final_price=d["final_price"],
+                       pct_at_checkout=d["pct_at_checkout"],
+                       abs_savings=d["abs_savings"], online_only="true",
+                       expires_at="", now=NOW)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        calls = []
+
+        def fake_recheck(deal, _cfg):
+            calls.append(deal["asin"])
+            return False
+
+        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert stats == {"checked": 1, "dead": 1}
+        row = db.get_deal(d["dedupe_key"])
+        assert row["status"] == "dead"
+        assert "price_moved" in row["flags"]
+        assert row["price_rechecked_at"]
+        # Within the 6-hour window nothing is re-checked (and dead deals
+        # are out of the alive set anyway).
+        assert pipeline._recheck_prices(db, cfg, NOW) == {"checked": 0,
+                                                          "dead": 0}
+        assert len(calls) == 1
+        db.close()
+
+
 # --------------------------------------------------------------- site tiers
 
 class TestSiteStrongTier:

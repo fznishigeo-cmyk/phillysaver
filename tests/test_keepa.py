@@ -101,13 +101,16 @@ class TestKeepaAdapter:
 
         def handler(request: httpx.Request) -> httpx.Response:
             sel = json.loads(request.url.params["selection"])
-            assert sel["priceTypes"] == [0]
             assert sel["dateRange"] == 3  # drop vs the 90-day average
             # Popularity filters: only products people actually buy.
             assert sel["salesRankRange"] == [1, 30000]
             assert sel["minRating"] == 20
+            if sel["priceTypes"] == [0]:  # amazon-price pass
+                return httpx.Response(
+                    200, json={"deals": {"dr": [row]}, "tokensLeft": 280})
+            assert sel["priceTypes"] == [9]  # warehouse pass
             return httpx.Response(
-                200, json={"deals": {"dr": [row]}, "tokensLeft": 280})
+                200, json={"deals": {"dr": []}, "tokensLeft": 275})
 
         adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
@@ -136,6 +139,36 @@ class TestKeepaAdapter:
 
         adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
         assert adapter.fetch_posts(SRC, None, None, cfg, NOW, None) == []
+
+    def test_warehouse_pass_maps_used_vs_live_new_price(self, cfg, monkeypatch):
+        """The Brembo-rotor lesson: Amazon Resale open-box offers ARE real
+        deals when compared against the LIVE new price ($12.07 used vs
+        $81.55 new = Amazon's own -85%)."""
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        deep = {"asin": "B0WAREHOUSE", "title": "Brembo Disc Brake Rotor",
+                "current": [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 1207]}
+        shallow = {"asin": "B0SHALLOWWH", "title": "Mild Discount Gadget",
+                   "current": [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 6000]}
+        no_new = {"asin": "B0NONEWPRIC", "title": "No New Offer Item",
+                  "current": [-1, -1, -1, -1, -1, -1, -1, -1, -1, 1207]}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            sel = json.loads(request.url.params["selection"])
+            if sel["priceTypes"] == [0]:
+                return httpx.Response(200, json={"deals": {"dr": []}})
+            return httpx.Response(
+                200, json={"deals": {"dr": [deep, shallow, no_new]}})
+
+        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
+        # Only the deep drop maps: 26% off and no-live-new-price are skipped.
+        assert len(posts) == 1
+        p = posts[0]
+        assert p.uid == "B0WAREHOUSE:wh:12.07"
+        assert "yours for $12.07" in p.text
+        assert "New condition price: $81.55" in p.text
+        assert "used/open-box" in p.text
+        assert "https://www.amazon.com/dp/B0WAREHOUSE" in p.text
 
     def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
         monkeypatch.setenv("KEEPA_KEY", "kkey")

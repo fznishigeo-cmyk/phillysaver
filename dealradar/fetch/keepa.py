@@ -46,8 +46,12 @@ MAX_DEALS_PER_RUN = 20
 #: publish floor so near-misses still enter the DB and price history.
 MIN_DROP_PCT = 60
 
-#: Keepa price-type index 0 = Amazon's own price (not third-party sellers).
+#: Keepa price-type indexes: 0 = Amazon's own NEW price, 1 = lowest NEW
+#: offer, 9 = Amazon Warehouse / Amazon Resale (open-box & used, sold by
+#: Amazon). Third-party used sellers are deliberately NOT tracked.
 PRICE_TYPE_AMAZON = 0
+PRICE_TYPE_NEW = 1
+PRICE_TYPE_WAREHOUSE = 9
 
 #: Keepa dateRange 3 = drop measured against the 90-day average — the honest
 #: "typical price" basis (day/week windows miss slow-boiled clearance).
@@ -171,11 +175,54 @@ class KeepaDealsAdapter(SourceAdapter):
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
 
+        with self._client(cfg) as client:
+            # Pass 1: Amazon's own NEW price dropped >= MIN_DROP_PCT below
+            # its 90-day average.
+            _check_deadline(deadline)
+            rows = self._query_rows(client, key, PRICE_TYPE_AMAZON,
+                                    [MIN_DROP_PCT, 100], source.name)
+            posts: list[RawPost] = []
+            for row in rows[:MAX_DEALS_PER_RUN]:
+                if not isinstance(row, dict):
+                    continue
+                post = self._map_row(row, source, now)
+                if post is not None:
+                    posts.append(post)
+            n_amazon = len(posts)
+
+            # Pass 2: Amazon Warehouse (Amazon Resale) open-box/used offers.
+            # Keepa's server-side delta is vs the warehouse's OWN average, so
+            # ask loosely and apply the honest gate client-side: the used
+            # price must clear MIN_DROP_PCT against the LIVE new price.
+            _check_deadline(deadline)
+            wh_rows = self._query_rows(client, key, PRICE_TYPE_WAREHOUSE,
+                                       [30, 100], source.name + "/warehouse")
+            for row in wh_rows[:MAX_DEALS_PER_RUN]:
+                if not isinstance(row, dict):
+                    continue
+                post = self._map_warehouse_row(row, source, now)
+                if post is not None:
+                    posts.append(post)
+
+        log.info("keepa %s: mapped %d amazon-price + %d warehouse posts",
+                 source.name, n_amazon, len(posts) - n_amazon)
+        if (rows or wh_rows) and not posts:
+            sample = next((r for r in (rows + wh_rows) if isinstance(r, dict)),
+                          {})
+            log.warning(
+                "keepa %s: raw deals present but none mapped — schema drift? "
+                "sample keys=%s current=%r avg=%r",
+                source.name, sorted(sample)[:20],
+                sample.get("current"), sample.get("avg"))
+        return posts
+
+    def _query_rows(self, client: httpx.Client, key: str, price_type: int,
+                    delta_pct_range: list[int], label: str) -> list:
         selection = {
             "page": 0,
             "domainId": DOMAIN_US,
-            "priceTypes": [PRICE_TYPE_AMAZON],
-            "deltaPercentRange": [MIN_DROP_PCT, 100],
+            "priceTypes": [price_type],
+            "deltaPercentRange": delta_pct_range,
             "dateRange": DATE_RANGE_90D,
             "isRangeEnabled": True,
             "sortType": 4,      # biggest percent drop first (per Keepa docs)
@@ -190,41 +237,22 @@ class KeepaDealsAdapter(SourceAdapter):
             "salesRankRange": [1, 30000],
             "minRating": 20,
         }
-        with self._client(cfg) as client:
-            _check_deadline(deadline)
-            resp = client.get(DEALS_URL, params={
-                "key": key, "selection": json.dumps(selection),
-            })
-            resp.raise_for_status()
-            payload = resp.json()
-
+        resp = client.get(DEALS_URL, params={
+            "key": key, "selection": json.dumps(selection),
+        })
+        resp.raise_for_status()
+        payload = resp.json()
         if isinstance(payload, dict) and payload.get("error"):
             # Keepa reports some failures in-body on a 200: surface them as a
             # source failure instead of silently "mapping 0 posts".
             raise RuntimeError(f"keepa api error: {payload['error']}")
-
         deals_obj = payload.get("deals") if isinstance(payload, dict) else None
         rows = (deals_obj or {}).get("dr") if isinstance(deals_obj, dict) else None
-        posts: list[RawPost] = []
-        for row in (rows or [])[:MAX_DEALS_PER_RUN]:
-            if not isinstance(row, dict):
-                continue
-            post = self._map_row(row, source, now)
-            if post is not None:
-                posts.append(post)
         tokens_left = (payload.get("tokensLeft")
                        if isinstance(payload, dict) else None)
-        log.info("keepa %s: %d raw deals -> mapped %d price-drop posts "
-                 "(tokensLeft=%s)", source.name, len(rows or []), len(posts),
-                 tokens_left)
-        if rows and not posts:
-            sample = rows[0] if isinstance(rows[0], dict) else {}
-            log.warning(
-                "keepa %s: raw deals present but none mapped — schema drift? "
-                "sample keys=%s current=%r avg=%r",
-                source.name, sorted(sample)[:20],
-                sample.get("current"), sample.get("avg"))
-        return posts
+        log.info("keepa %s: %d raw deals (tokensLeft=%s)",
+                 label, len(rows or []), tokens_left)
+        return list(rows or [])
 
     @staticmethod
     def _map_row(row: dict[str, Any], source: SourceConfig,
@@ -262,6 +290,47 @@ class KeepaDealsAdapter(SourceAdapter):
             title=title,
             text="\n".join(lines),
             published_at=None,  # first_seen governs freshness
+            fetched_at=now,
+            image_url=_image_url(row),
+        )
+
+    @staticmethod
+    def _map_warehouse_row(row: dict[str, Any], source: SourceConfig,
+                           now: datetime) -> RawPost | None:
+        """Amazon Warehouse (Amazon Resale) open-box/used offer, compared
+        honestly against the LIVE new-condition price — exactly the
+        "$12.07 used vs $81.55 new = -85%" framing Amazon itself shows.
+        No live new price => no honest basis => skipped."""
+        asin = str(row.get("asin") or "").strip().upper()
+        title = str(row.get("title") or "").strip()
+        if not asin or not title:
+            return None
+        used = _price_at(row.get("current"), PRICE_TYPE_WAREHOUSE)
+        new_p = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
+        if new_p is None:
+            new_p = _price_at(row.get("current"), PRICE_TYPE_NEW)
+        if used is None or new_p is None or new_p <= 0:
+            return None
+        if used >= new_p * (1.0 - MIN_DROP_PCT / 100.0):
+            return None  # not deep enough vs new: not our niche
+
+        lines = [
+            title,
+            f"Amazon Warehouse (Amazon Resale) open-box/used deal: "
+            f"yours for ${used:,.2f}.",
+            f"New condition price: ${new_p:,.2f}.",
+            "Condition: used/open-box, sold online by Amazon Resale with "
+            "free returns. Warehouse stock is usually one unit and sells "
+            "out fast.",
+            f"Product link: https://www.amazon.com/dp/{asin}",
+        ]
+        return RawPost(
+            source_name=source.name,
+            uid=f"{asin}:wh:{used:.2f}",  # a further drop is a new post
+            url=f"https://keepa.com/#!product/1-{asin}",
+            title=title,
+            text="\n".join(lines),
+            published_at=None,
             fetched_at=now,
             image_url=_image_url(row),
         )
