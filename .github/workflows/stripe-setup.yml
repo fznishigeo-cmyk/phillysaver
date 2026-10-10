@@ -1,0 +1,28 @@
+name: stripe setup (one-off)
+
+# Creates the membership product, $9.99/month price, Payment Link and
+# customer-portal configuration in the Stripe account behind
+# STRIPE_SECRET_KEY, idempotently, and prints the links in the job summary.
+# Run it once in test mode, then once more after switching the secret to a
+# live key. Never prints the key.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create Stripe objects
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          WOWPRICED_SITE: https://wowpriced.com
+        run: python scripts/stripe_setup.py
