@@ -255,3 +255,27 @@ def test_confidence_max_and_canonical_url_fill(tmp_path) -> None:
     # API has no column setter for it).
     assert res_b["payload"]["canonical_url"] == "https://www.wayfair.com/p/lamp"
     db.close()
+
+
+def test_amazon_asin_recovered_from_post_text(tmp_path) -> None:
+    """Slickdeals/RetailMeNot posts hand the LLM a tracker product_url while
+    the body links the real Amazon product. One ASIN in the text => the deal
+    gets it (Keepa price checks + photo follow); a roundup with several =>
+    no guess."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    post = make_post(
+        source="slickdeals_frontpage", uid="s1",
+        text="Tarte lip plump $12.15 Shop (https://www.amazon.com/dp/B0TARTE123?tag=x) "
+             "via Slickdeals (https://slickdeals.net/f/1)")
+    ext = make_extracted(item="tarte Maracuja Juicy Lip Plump", store="Amazon",
+                         product_url="https://slickdeals.net/go/123")
+    res = dedupe.upsert_extracted(db, ext, make_savings(), post, cfg, NOW)
+    row = db.get_deal(res["dedupe_key"])
+    assert row["asin"] == "B0TARTE123"
+    assert row["canonical_url"] == "https://www.amazon.com/dp/B0TARTE123"
+    assert res["dedupe_key"] == "url|https://www.amazon.com/dp/B0TARTE123"
+    assert dedupe._asin_from_text(
+        "a (https://amazon.com/dp/B0AAAAAAAA) b (https://www.amazon.com/dp/B0BBBBBBBB)") == ""
+    assert dedupe._asin_from_text("no links here $5") == ""
+    db.close()

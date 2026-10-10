@@ -16,7 +16,9 @@ the stored payload only (the column keeps its insert-time value).
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import re
 from dataclasses import fields as dataclass_fields
 from datetime import datetime
 from typing import Any
@@ -49,6 +51,20 @@ def _distinctive_codes(codes: list[str] | None) -> set[str]:
     a code match alone never merges — a name-similarity bar still applies."""
     return {c.strip().upper() for c in (codes or [])
             if len(c.strip()) >= 6 and any(ch.isdigit() for ch in c)}
+
+
+_URL_RE = re.compile(r"https?://[^\s)\]>\"']+")
+
+
+def _asin_from_text(text: str) -> str:
+    """The one ASIN a post links to, or '' when there is none — or more than
+    one (a roundup), where guessing would pin the wrong product."""
+    from .http_client import extract_asin  # lazy: written by another layer
+
+    found = {extract_asin(u) for u in _URL_RE.findall(text or "")
+             if "amazon." in u.lower()}
+    found.discard("")
+    return found.pop() if len(found) == 1 else ""
 
 
 def find_existing(db, store: str, canonical_url: str, item: str,
@@ -177,6 +193,15 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     from .http_client import extract_asin  # lazy: written by another layer
 
     asin = extract_asin(extracted.product_url) if extracted.product_url else ""
+    if not asin and "amazon" in (extracted.store or "").lower():
+        # Deal blogs link the product in the body while the LLM's product_url
+        # is often a tracker/redirect: the one Amazon link in a single-deal
+        # post is the product. Without an ASIN the deal gets no Keepa price
+        # check and no photo (live: 6 photo-less Amazon cards for this).
+        asin = _asin_from_text(post.text)
+        if asin and "amazon." not in (extracted.product_url or "").lower():
+            extracted = dataclasses.replace(
+                extracted, product_url=f"https://www.amazon.com/dp/{asin}")
     existing = find_existing(db, extracted.store, extracted.product_url,
                              extracted.item, cfg.fuzzy_threshold,
                              codes=extracted.codes)
