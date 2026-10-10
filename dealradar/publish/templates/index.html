@@ -78,6 +78,9 @@ s{color:var(--muted)}
   // Amazon-style department tabs over the internal category vocabulary.
   var CATGROUPS = [
     ["All", null],
+    // Sentinel tab: filters on the used/open_box CONDITIONS, not category —
+    // the Amazon Warehouse giveaway-priced finds get their own front door.
+    ["Used & Open-Box", "USED"],
     ["Home & Kitchen", ["home", "kitchen"]],
     ["Beauty & Personal Care", ["beauty"]],
     ["Clothing, Shoes & Jewelry", ["fashion"]],
@@ -173,7 +176,12 @@ s{color:var(--muted)}
         if (hay.indexOf(q) === -1) return false;
       }
       if (store && d.store !== store) return false;
-      if (group && group.indexOf(d.category || "other") === -1) return false;
+      if (group === "USED") {
+        var conds = d.conditions || [];
+        if (conds.indexOf("used") === -1 && conds.indexOf("open_box") === -1) return false;
+      } else if (group && group.indexOf(d.category || "other") === -1) {
+        return false;
+      }
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
       if (hideunv && (d.badge || "unverified") === "unverified") return false;
       return true;
