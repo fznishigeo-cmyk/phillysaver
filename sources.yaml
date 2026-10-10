@@ -301,7 +301,7 @@ sources:
     fast_lane: false
     notes: "Editorial wing: promo codes, pricing errors, e-commerce sales."
 
-  # ---- freebie / price-glitch / clearance-error focused (the >=70% sweet spot) ----
+  # ---- freebie / price-glitch / clearance-error focused (the >=65% sweet spot) ----
   - name: hip2save_freebies
     method: rss
     url: https://hip2save.com/deals/freebies/feed/

@@ -81,7 +81,7 @@ Accepted inputs (case-insensitive): `''`, `'5.99'`, `'$5.99'`, `'free'`,
 `'$6.99 or free over $50'` (both values).
 
 **Worked example:** "reg $100 now $35 + $6 shipping" →
-`B_adj = 35 + 6 = 41` → `pct = 59.0%` (the shipping pushed it below a 70%
+`B_adj = 35 + 6 = 41` → `pct = 59.0%` (the shipping pushed it below a 65%
 floor it would otherwise have cleared).
 
 ## 5. Stacks

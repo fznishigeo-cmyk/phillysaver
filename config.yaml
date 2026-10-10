@@ -41,7 +41,7 @@ parse:
     claude-sonnet-5-5: { input: 2.00, output: 10.00 }
 
 publish:
-  min_pct: 70                  # floor: pct_at_checkout
+  min_pct: 65                  # floor: pct_at_checkout
   min_abs_savings: 5.0         # floor: absolute $ savings
   site_dir: "site"
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)

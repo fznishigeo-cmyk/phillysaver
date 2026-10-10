@@ -288,7 +288,10 @@ def test_readme_covers_the_contract() -> None:
     assert "SAVINGS_RULES.md" in text and "sources_report.md" in text
     for badge in ("corroborated", "history-checked", "unverified"):
         assert badge in text
-    assert "min_pct" in text and "70" in text
+    from dealradar.config import load_config
+
+    # The README's stated floor must match the configured one.
+    assert f"min_pct: {load_config().min_pct:g}" in text
     assert "min_abs_savings" in text
     # secrets honesty
     assert "DEALS_CLAUDE_API_KEY" in text and "ANTHROPIC_API_KEY" in text

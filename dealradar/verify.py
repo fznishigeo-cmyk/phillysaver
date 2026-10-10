@@ -6,8 +6,8 @@ Tiers (best to worst):
 - 'history-checked'— our OWN price_history for this dedupe_key (grown from
                      every parsed deal since day one) has at least
                      cfg.history_min_observations points and the current final
-                     price is at least 70% below our observed median
-                     (final <= 0.30 * median).
+                     price clears the publish floor against our observed
+                     median (final <= (1 - min_pct/100) * median).
 - 'unverified'     — single source / list-price claim. Still published, but
                      visibly flagged and ranked lower.
 
@@ -33,6 +33,12 @@ _DEAD_RE = re.compile(
     r"\b(expired|dead|sold\s+out|out\s+of\s+stock|oos)\b", re.IGNORECASE)
 
 
+def _history_ratio(cfg) -> float:
+    """'Well below typical' means the same thing as the publish floor:
+    final <= (1 - min_pct/100) x the typical price. One knob moves both."""
+    return max(0.0, 1.0 - float(cfg.min_pct) / 100.0)
+
+
 def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
     """Compute the verification tier for one deal row dict."""
     since = now - timedelta(hours=cfg.corroborate_window_h)
@@ -43,7 +49,7 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
     count, median = db.price_stats(deal["dedupe_key"])
     if (final is not None and median is not None
             and count >= cfg.history_min_observations
-            and final <= 0.30 * median):
+            and final <= _history_ratio(cfg) * median):
         return "history-checked"
 
     # Keepa cross-check (paid, flag + key gated): only for deals that would
@@ -95,13 +101,13 @@ def text_marks_dead(text: str) -> bool:
 
 
 def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
-    """Optional Keepa price-history cross-check (feature-flagged stub).
+    """Optional Keepa price-history cross-check (feature-flagged).
 
     Returns None (no opinion) unless cfg.feature_flags['keepa'] is on AND the
-    KEEPA_KEY secret is set. Even then this is a deliberate clean stub: the
-    real implementation would call the official paid Keepa API with the deal's
-    ASIN and compare against Keepa's price history, returning True (plausible)
-    or False (implausible).
+    KEEPA_KEY secret is set. When enabled it calls the official paid Keepa API
+    with the deal's ASIN and compares the final price against Keepa's 90-day
+    average Amazon price: True when the deal clears the publish floor against
+    that average, False when it doesn't, None on any failure.
 
     Policy, non-negotiable:
     - Keepa is a PAID, official API; we only ever use it with a key.
@@ -140,7 +146,7 @@ def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
                         break
         if avg is None:
             return None
-        verdict = float(final) <= 0.30 * avg
+        verdict = float(final) <= _history_ratio(cfg) * avg
         log.info("keepa check %s: final=$%.2f avg90=$%.2f -> %s",
                  asin, float(final), avg, verdict)
         return verdict
