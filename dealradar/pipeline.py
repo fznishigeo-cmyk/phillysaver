@@ -356,17 +356,20 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     try:
         # ---- sources ----
         if sources_override is not None:
-            sources = sources_override
+            sources = sources_override  # caller's exact order, never rotated
         else:
             sources = _load_effective_sources(
                 db, cfg, fetcher, now,
                 validate_if_missing=not skip_validation,
                 deadline=deadline - _RESERVE_FOR_TAIL_S)
+            # Production fairness only: rotate so a budget cut lands on a
+            # different tail each run (see _rotate_for_run).
+            sources = _rotate_for_run(sources, run_key)
         tz_by_source = {s.name: s.tz for s in sources}
 
-        # ---- fetch (rotated order; see _rotate_for_run) ----
-        posts, fetch_errors = _fetch_all(_rotate_for_run(sources, run_key),
-                                         fetcher, db, cfg, now, deadline, fast_lane)
+        # ---- fetch ----
+        posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
+                                         deadline, fast_lane)
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors
 
