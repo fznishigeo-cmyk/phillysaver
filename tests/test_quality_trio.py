@@ -176,7 +176,7 @@ class TestRunCritic:
         db.close()
 
     def test_unpublishable_deals_never_cost_a_critic_call(self, tmp_path):
-        db = self._db_with_deal(tmp_path, pct_at_checkout=50.0)  # below floor
+        db = self._db_with_deal(tmp_path, pct_at_checkout=40.0)  # below floor
         cfg = _cfg()
         msgs = _CriticMessages()
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
@@ -624,7 +624,7 @@ class TestConfigFields:
 
     def test_quality_trio_config_loads(self):
         cfg = load_config()
-        assert cfg.used_min_pct == pytest.approx(70.0)
+        assert cfg.used_min_pct == pytest.approx(60.0)
         assert cfg.parse_model == "claude-sonnet-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"
         assert cfg.max_second_opinions_per_run == 8

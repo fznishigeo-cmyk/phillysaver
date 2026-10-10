@@ -57,7 +57,7 @@ is the final and the STATED new-condition price is the regular
 carry the `used` (and, when stated, `open_box`) condition so the page and
 alerts label it honestly; the condition is extracted from wording, never
 assumed. Used supply is plentiful, so used/open-box deals publish only at
-`publish.used_min_pct` (70%) or better — an absolute floor that the site's
+`publish.used_min_pct` (60%) or better — an absolute floor that the site's
 lower tier never softens. The live price re-check for used deals validates
 against the Warehouse offer, not the new price.
 
@@ -91,8 +91,8 @@ Accepted inputs (case-insensitive): `''`, `'5.99'`, `'$5.99'`, `'free'`,
 `'$6.99 or free over $50'` (both values).
 
 **Worked example:** "reg $100 now $35 + $6 shipping" →
-`B_adj = 35 + 6 = 41` → `pct = 59.0%` (the shipping pushed it below a 60%
-floor it would otherwise have cleared).
+`B_adj = 35 + 6 = 41` → `pct = 59.0%` (the shipping pulled a sticker 65% down to 59%
+at the register).
 
 ## 5. Stacks
 

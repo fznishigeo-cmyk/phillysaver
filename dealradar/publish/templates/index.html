@@ -67,6 +67,12 @@ s{color:var(--muted)}
 <div id="controls">
   <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
   <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
+  <select id="sortsel" aria-label="sort order">
+    <option value="pct:-1">sort: biggest % off</option>
+    <option value="abs:-1">sort: most $ saved</option>
+    <option value="price:1">sort: cheapest first</option>
+    <option value="age:1">sort: newest first</option>
+  </select>
   <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
   <label><input id="hideunv" type="checkbox"> hide unverified</label>
 </div>
@@ -317,6 +323,14 @@ s{color:var(--muted)}
     var el = document.getElementById(id);
     el.addEventListener("input", render);
     el.addEventListener("change", render);
+  });
+
+  // Easy sorting: the dropdown drives the same state the column headers do.
+  document.getElementById("sortsel").addEventListener("change", function () {
+    var parts = this.value.split(":");
+    state.sortKey = parts[0];
+    state.sortDir = Number(parts[1]) || -1;
+    render();
   });
 
   fetch("deals.json")

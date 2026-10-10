@@ -193,6 +193,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: jungle_deals
     method: rss
     url: https://jungledealsblog.com/feed/
@@ -211,6 +212,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: living_rich_with_coupons
     method: rss
     url: https://www.livingrichwithcoupons.com/feed/
@@ -258,6 +260,7 @@ sources:
     allowed_html: false
     fast_lane: false
     notes: "Daily editorial Amazon/web deals; validation autodiscovers if the feed moved."
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: couponcabin_blog
     method: rss
     url: https://www.couponcabin.com/blog/feed/
@@ -279,6 +282,7 @@ sources:
     allowed_html: false
     fast_lane: false
     notes: "E-commerce promo codes, doorbusters, digital freebies."
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: offers_blog
     method: rss
     url: https://www.offers.com/blog/feed/
@@ -323,12 +327,14 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog known for glitch/clearance finds."
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: swaggrabber
     method: rss
     url: https://www.swaggrabber.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: coupon_mom
     method: rss
     url: https://www.couponmom.com/blog/feed/
@@ -341,6 +347,7 @@ sources:
     region: US
     allowed_html: false
     fast_lane: false
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: glitchndealz
     method: rss
     url: https://glitchndealz.com/feed/
@@ -518,6 +525,7 @@ backup_sources:
     region: US
     allowed_html: true
     fast_lane: false
+    enabled: false  # robots.txt disallows bots — respected, permanently off
   - name: consumer_queen
     method: rss
     url: https://consumerqueen.com/feed/

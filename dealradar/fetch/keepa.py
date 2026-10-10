@@ -44,14 +44,14 @@ DOMAIN_US = 1
 MAX_DEALS_PER_RUN = 20
 
 #: Ask Keepa for drops at/above this percent-off-average. Slightly below our
-#: publish floor (publish.min_pct, 60) so near-misses still enter the DB
+#: publish floor (publish.min_pct, 50) so near-misses still enter the DB
 #: and price history.
-MIN_DROP_PCT = 55
+MIN_DROP_PCT = 45
 
 #: Warehouse/used offers are plentiful, so they carry a HIGHER bar: ingest
 #: only used prices this far below the LIVE new price (publish floor for
-#: used deals is higher still — config publish.used_min_pct, 70).
-WAREHOUSE_MIN_DROP_PCT = 65
+#: used deals is higher still — config publish.used_min_pct, 60).
+WAREHOUSE_MIN_DROP_PCT = 55
 
 #: Keepa price-type indexes: 0 = Amazon's own NEW price, 1 = lowest NEW
 #: offer, 9 = Amazon Warehouse / Amazon Resale (open-box & used, sold by
