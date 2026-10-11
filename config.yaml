@@ -159,7 +159,7 @@ members:
   email_every_minutes: 1440
   email_hour_local: 7
   timezone: "America/New_York"
-  max_deals_per_email: 40
+  max_deals_per_email: 200   # ~46 KB of HTML at 200: under Gmail's ~102 KB clipping
 
 paywall:
   # Visitors and free accounts see the top teaser_count deals in full; every

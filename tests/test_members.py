@@ -232,7 +232,7 @@ class TestMemberEmail:
         assert cfg.members_email_every_minutes == 1440
         assert cfg.members_email_hour_local == 7 < cfg.newsletter_hour_local
         assert cfg.members_email_timezone == "America/New_York"
-        assert cfg.members_max_deals_per_email == 40
+        assert cfg.members_max_deals_per_email == 200
 
     def test_nothing_goes_out_without_members_or_smtp(self, db, monkeypatch):
         cfg = self._cfg()

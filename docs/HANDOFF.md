@@ -20,7 +20,7 @@ Keep this file current: whoever stops working updates it in their last commit.
 - **Cards:** the hairline runs on the free 8, on a member's new arrivals, and
   on hover. There is a deal ticker at the top and a sources wall at the bottom.
 - **Member email:** at most ONE a day, 7 am New York time. It carries the
-  best 40 of what arrived since the last one, plus a "+N more" line.
+  best 200 of what arrived since the last one, plus a "+N more" line.
 - **Cancel wording:** no "cancel" reminders on the main screen. "Manage
   membership" sits in the footer only. The full auto-renewal terms stay in
   the checkout dialog, on Stripe's page, on the welcome page and on the help
@@ -58,8 +58,11 @@ Keep this file current: whoever stops working updates it in their last commit.
    - a cheaper critic for clear cases;
    - a per-run critic cap;
    - tuned intake.
-2. Operator (Stripe dashboard): turn on the Customer Portal (Settings →
-   Billing → Customer portal → Save). Until then "Manage membership" tells
-   people to email.
-3. Operator: check that the Stripe product description matches the daily
-   email ("one email every morning").
+2. Operator (Stripe dashboard, Product catalog -> "WowPriced Alerts" -> Edit):
+   the live description still reads "Every verified deal, 50-90% off,
+   emailed to you the hour it is found. Cancel any time." (confirmed by
+   `stripe check`, 2026-10-11). Replace it with "Every deal on the wall
+   unlocked, plus the best of each day's new verified deals in one email
+   every morning. Cancel any time."
+3. Done: the Customer Portal is active (1 configuration), so "Manage
+   membership" works.
