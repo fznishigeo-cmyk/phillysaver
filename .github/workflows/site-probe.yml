@@ -1,0 +1,28 @@
+name: site probe (read-only)
+
+# Reports where wowpriced.com and the site's other copies are served from:
+# DNS answers and the response headers of each host's home page. Writes
+# nothing but the log.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: DNS and headers
+        run: |
+          for h in wowpriced.com www.wowpriced.com; do
+            echo "== dig $h"; dig +short "$h" A; dig +short "$h" CNAME; dig +short "$h" NS
+          done
+          for u in https://wowpriced.com/ https://www.wowpriced.com/ https://wowpriced.pages.dev/ \
+                   https://fznishigeo-cmyk.github.io/phillysaver/ https://wowpriced.com/sitemap.xml; do
+            echo "== $u"
+            curl -sS -o /dev/null -D - --max-time 20 -A "dealradar site probe" "$u" \
+              | grep -iE '^(HTTP/|server:|location:|cf-ray:|x-github-request-id:|x-served-by:|content-type:)' || true
+          done
