@@ -75,14 +75,15 @@ are followed by every other alive deal as a locked stub, then by the dead "Just 
 gone; FOMO is the point):
 
 ```json
-{"locked": true, "dedupe_key": "...", "pct_at_checkout": 82.1,
+{"locked": true, "key": "...", "pct_at_checkout": 82.1,
  "store": "Dick's Sporting Goods", "category": "sports",
  "first_seen_at": "...", "image_url": "https://...", "status": "alive",
- "conditions": ["used"]}
+ "conditions": ["used"], "src": ["slickdeals.net"]}
 ```
 
 No `item`, `final_price`, `regular_price`, `url`, `credits`, `codes` or
-`headline` on a locked stub. `meta.locked_count` is the number of stubs.
+`headline` on a locked stub. `src` lists the reporting sites' domains, so
+the source filter can count locked deals. `meta.locked_count` is the number of stubs.
 With `paywall.enabled: false` the file is the full payload (today's
 behavior) and `locked_count` is 0.
 

@@ -57,6 +57,15 @@ Keep this file current: whoever stops working updates it in their last commit.
 
 ## In flight
 
+- **Paywall locked-stub documentation (Codex task 003 / PR #4):** corrected
+  on `codex/task-003`, awaiting review/merge.
+  - The teaser JSON example now uses opaque `key` and includes `src`, matching
+    `STUB_KEYS` plus `locked` exactly. The following text explains that `src`
+    lists reporting-site domains so the source filter can count locked deals.
+  - Validation: full `python -m pytest -q` suite: 1,029 passed, 1 slow
+    integration test deselected by repository defaults; example keys checked
+    against the implementation. No runtime code changed.
+  - Remaining: review/merge PR #4.
 - **Friendly source credits (Codex task 001 / PR #2):** implemented on
   `codex/task-001`, awaiting Claude review/merge.
   - All 109 primary/backup entries, including disabled sources, now carry
