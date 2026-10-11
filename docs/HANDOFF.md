@@ -54,6 +54,16 @@ Keep this file current: whoever stops working updates it in their last commit.
     3. Persist `link_as_posted`.
     4. Skip listing and wall pages in the og:image backfill.
   - Status: being built and reviewed by Claude, branch `photo-fix-botwall`.
+- **Brad's Deals / Deals of America page readers:** assigned to Codex on
+  `codex/bradsdeals-dealsofamerica-readers`. Repository rules and adapter
+  routing inspected; offline baseline: 958 passed, 1 deselected. Implementation
+  is pending live markup inspection: the cloud environment proxy currently
+  refuses both hosts (ProxyError: 403 Forbidden), before any site response.
+  Network additions are saved in the environment draft and need applying.
+  Git reads work; the GitHub API is also proxy-blocked, so no PR exists yet.
+  Both sources remain paused. Next: apply the network settings, inspect
+  source markup politely, implement readers with fixtures and tests, run the
+  full suite, then open a PR against the live branch.
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
   waives robots.txt only; a site's firewall still decides.
   - **Firewall blocks GitHub's servers.** The owner must allowlist our
