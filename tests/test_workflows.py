@@ -148,6 +148,18 @@ def test_fast_shape() -> None:
     assert set(run_step["env"]) == set(SECRET_NAMES)
 
 
+@pytest.mark.parametrize("path", [HOURLY, FAST])
+def test_indexnow_step_runs_after_every_deploy_and_never_fails_the_run(path: Path) -> None:
+    steps = single_job(load_workflow(path))["steps"]
+    step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar indexnow")
+    assert step["continue-on-error"] is True
+    assert "env" not in step  # needs no secret: the key is public by design
+    at = steps.index(step)
+    for i, s in enumerate(steps):
+        if s.get("uses", "").startswith("actions/deploy-pages@") or "pages deploy site" in s.get("run", ""):
+            assert i < at, (path.name, s.get("name"))
+
+
 def test_squash_shape() -> None:
     doc = load_workflow(SQUASH)
     assert doc["name"] == "squash data branch"

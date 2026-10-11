@@ -20,6 +20,7 @@ CORE_DOMAINS = [
     "graph.threads.net",      # threads (feature-flagged)
     "api.woot.com",
     "meh.com",
+    "api.indexnow.org",       # python -m dealradar indexnow
 ]
 
 
@@ -84,6 +85,15 @@ def cmd_prune(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_indexnow(args: argparse.Namespace) -> int:
+    """Submit the URLs the last publish found changed to IndexNow (runs after
+    the deploy steps; logs counts and the HTTP status only)."""
+    from .config import load_config
+    from .publish.seo import submit_indexnow
+
+    return submit_indexnow(load_config(args.config))
+
+
 def cmd_domains(args: argparse.Namespace) -> int:
     """Print the outbound hostnames the pipeline needs (network allowlist helper)."""
     from .config import load_sources
@@ -137,6 +147,10 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("prune", help="apply retention (posts 30 d, dead deals 14 d after they died)")
     common(sp)
     sp.set_defaults(fn=cmd_prune)
+
+    sp = sub.add_parser("indexnow", help="submit the last publish's changed URLs to IndexNow")
+    sp.add_argument("--config", default=None)
+    sp.set_defaults(fn=cmd_indexnow)
 
     sp = sub.add_parser("domains", help="print outbound hostnames for allowlists")
     sp.set_defaults(fn=cmd_domains)

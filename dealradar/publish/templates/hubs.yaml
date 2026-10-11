@@ -1,0 +1,92 @@
+# Copy for the category hubs at /deals/<slug>/ (publish/seo.py), one entry
+# per wall tab in seo.CATGROUPS. Written by a person, never by the LLM: plain
+# facts the pipeline backs, no hype, and no deal-blog or community source in
+# a title or description. The H1 is the title; the page title adds the
+# brand. {site_floor} and {used_floor} come from config.yaml's publish floors.
+used-open-box:
+  title: "Used & Open-Box Deals (incl. Amazon Resale)"
+  description: "Used and open-box deals at {used_floor}% off or more, including Amazon Resale offers. Amazon prices are re-checked every few hours."
+  intro: >-
+    Used and open-box offers, each at least {used_floor}% off. Many are Amazon
+    Resale offers (formerly Amazon Warehouse), which Amazon grades by
+    condition from Like New to Acceptable; the grade is on the offer page.
+    Amazon prices here are re-checked through Keepa every few hours, and a
+    deal whose offer is gone comes off the live wall.
+home-kitchen:
+  title: "Home & Kitchen Deals"
+  description: "Home and kitchen deals at {site_floor}% off or more: cookware, small appliances, bedding and storage, each price quoted from its source."
+  intro: >-
+    Cookware, small appliances, bedding, storage and other home goods, each
+    at least {site_floor}% off. Every price on this page is quoted word for
+    word from the post that reported it, and a program checks the quote
+    before the deal goes up. Deals our list-price review flags as not
+    believable are left off.
+beauty-personal-care:
+  title: "Beauty & Personal Care Deals"
+  description: "Beauty and personal care deals at {site_floor}% off or more: skincare, makeup, hair tools and grooming, each price quoted from its source."
+  intro: >-
+    Skincare, makeup, hair tools, fragrance and grooming deals, each at least
+    {site_floor}% off. A separate review judges claimed list prices, and a
+    deal it flags as measured from a made-up price is left off. Every price is
+    quoted word for word from its source.
+clothing-shoes-jewelry:
+  title: "Clothing, Shoes & Jewelry Deals"
+  description: "Clothing, shoe and jewelry deals at {site_floor}% off or more, each price quoted word for word from its source and checked in code."
+  intro: >-
+    Clothing, shoes, bags, watches and jewelry, each at least {site_floor}%
+    off. When a price varies by option, the card says so, and the percent off
+    is figured at the highest price. Every price is quoted word for word from
+    its source and checked in code before it is published.
+electronics:
+  title: "Electronics, Computer & Gaming Deals"
+  description: "Electronics, computer and gaming deals at {site_floor}% off or more. Prices quoted word for word from the source; Amazon prices re-checked every few hours."
+  intro: >-
+    Headphones, chargers, laptops, monitors, games and other electronics,
+    each at least {site_floor}% off. Amazon deals are re-checked through
+    Keepa every few hours, and a deal whose price moved comes off the live
+    wall. When two or more independent sources report the same deal, its card
+    says "2+ sources".
+sports-outdoors:
+  title: "Sports & Outdoors Deals"
+  description: "Sports, fitness, camping and outdoor deals at {site_floor}% off or more, each price quoted from its source and checked in code."
+  intro: >-
+    Fitness gear, camping, cycling, fishing and other outdoor deals, each at
+    least {site_floor}% off. Every price is quoted word for word from its
+    source and checked in code, and deals our list-price review flags as not
+    believable are left off.
+health-household:
+  title: "Health & Household Deals"
+  description: "Health, household and grocery deals at {site_floor}% off or more: vitamins, cleaning supplies, paper goods and pantry staples."
+  intro: >-
+    Vitamins, first aid, cleaning supplies, paper goods and pantry staples,
+    each at least {site_floor}% off. Some reach their price only with a
+    coupon code; the card names the code. Every price is quoted word for word
+    from its source.
+toys-games:
+  title: "Toys, Games & Baby Deals"
+  description: "Toy, game, kids and baby deals at {site_floor}% off or more, each price quoted from its source and checked in code."
+  intro: >-
+    Toys, board games, puzzles, kids' gear and baby essentials, each at least
+    {site_floor}% off. Every price is quoted word for word from its source,
+    and a program checks the quote before the deal goes up.
+automotive:
+  title: "Automotive Deals"
+  description: "Car parts, tools and accessories at {site_floor}% off or more, each price quoted from its source and checked in code."
+  intro: >-
+    Brake parts, tools, car care and accessories, each at least {site_floor}%
+    off. Check the fit for your vehicle on the seller's page before you buy.
+    Every price is quoted word for word from its source.
+pets:
+  title: "Pet Supply Deals"
+  description: "Pet food, toys, beds and supplies at {site_floor}% off or more, each price quoted from its source and checked in code."
+  intro: >-
+    Food, treats, toys, beds and supplies for dogs, cats and other pets, each
+    at least {site_floor}% off. Every price is quoted word for word from its
+    source, and a program checks the quote before the deal goes up.
+other:
+  title: "Office, Books, Media & More Deals"
+  description: "Office supplies, books, media and other deals at {site_floor}% off or more, each price quoted from its source and checked in code."
+  intro: >-
+    Office supplies, books, movies, music and everything that fits no other
+    category, each at least {site_floor}% off. Every price is quoted word for
+    word from its source and checked in code before it is published.

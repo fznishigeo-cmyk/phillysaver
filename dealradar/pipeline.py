@@ -1218,11 +1218,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                        else pstats.get("spend_usd", 0.0))
 
         # ---- publish ----
+        # last_run lands in the public deals.json: no spend or model (the
+        # operator's; run_stats keeps the spend).
         site_res = render_site(db, cfg, now, last_run={
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
-            "spend_usd": round(spend_total, 4),
-            "parser_model": pstats.get("parser", ""),
         })
         summary["published"] = site_res.get("published", 0)
         # Source health is the operator's only: the run's GitHub Actions

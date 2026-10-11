@@ -123,3 +123,11 @@ jobs:
         if: steps.cfgpages.outcome != 'success'
         run: |
           echo "::warning::Site deploy skipped - enable GitHub Pages once at Settings -> Pages -> Source = GitHub Actions"
+
+      - name: Tell search engines what changed (IndexNow)
+        # After the deploys, so the pages and the key file are live. Posts
+        # the URLs this run's publish found changed (Bing, Yahoo, DuckDuckGo
+        # and Yandex share IndexNow); logs counts and the HTTP status only,
+        # and a failure never fails the run.
+        continue-on-error: true
+        run: python -m dealradar indexnow

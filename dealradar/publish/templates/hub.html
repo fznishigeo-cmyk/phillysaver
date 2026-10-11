@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0e7569">
+<meta name="description" content="{{DESCRIPTION}}">
+{{ROBOTS}}<title>{{TITLE}} — wowpriced</title>
+<link rel="canonical" href="{{SITE_URL}}/deals/{{SLUG}}/">
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --flag:#d9480f; --flag-fg:#ffffff; --cond:#b7791f; --cond-fg:#ffffff;
+  --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --flag:#ff6b3d; --flag-fg:#2b0e02; --cond:#f2b544; --cond-fg:#3a2503;
+         --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0;
+         --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+header{background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
+      gap:4px 14px;align-items:baseline}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
+.brand a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
+.mark{width:32px;height:32px;flex:none;transform:rotate(-8deg)}
+.word{font-weight:900;letter-spacing:-.8px}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:var(--accent)}
+.tag{color:var(--muted);font-size:13px}
+.wrap{max-width:1000px;margin:0 auto;padding:0 16px 48px}
+h1{font-size:30px;line-height:1.2;margin:32px 0 6px}
+.lede{color:var(--muted);font-size:17px;margin:0 0 20px;max-width:720px}
+h2{font-size:20px;margin:30px 0 8px}
+p{margin:0 0 14px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:14px;
+     box-shadow:var(--shadow);padding:14px 18px;margin:0 0 16px}
+.box p:last-child{margin-bottom:0}
+.muted{color:var(--muted)}
+.hubs{display:flex;flex-wrap:wrap;gap:8px;list-style:none;padding:0;margin:0 0 14px}
+.hubs a{display:inline-block;background:var(--chip);color:var(--fg);border:1px solid var(--line);
+        border-radius:999px;padding:5px 13px;font-size:14px}
+.hubs a:hover{border-color:var(--accent);text-decoration:none}
+/* deal cards: the home page's card, without the photo */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));gap:14px;margin:14px 0 6px}
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
+      box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+.media{position:relative;height:90px;border-bottom:1px solid var(--line)}
+.ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    padding:12px;text-align:center}
+.ph span{font-size:20px;font-weight:800;color:rgba(255,255,255,.95);line-height:1.2}
+.flag{position:absolute;top:8px;left:8px;background:var(--flag);color:var(--flag-fg);
+      font-size:13px;font-weight:800;padding:3px 9px;border-radius:7px}
+.condtag{position:absolute;top:8px;right:8px;background:var(--cond);color:var(--cond-fg);
+         font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
+.body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:7px;flex:1;font-size:15px;line-height:1.5}
+.pricerow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.now{font-size:21px;font-weight:800}
+.pricerow s{color:var(--muted);font-size:14px}
+.save{color:var(--good);font-size:12.5px;font-weight:700}
+.title{font-size:14px;line-height:1.35;margin:0;font-weight:600}
+.title a{color:inherit}
+.headline{font-size:12.5px;color:var(--muted);line-height:1.4}
+.metarow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:auto}
+.chip{display:inline-block;background:var(--chip);border-radius:6px;padding:2px 7px;
+      font-size:11.5px;color:var(--muted);white-space:nowrap}
+.badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;
+       font-weight:700;border:1px solid currentColor;white-space:nowrap}
+.tier-corroborated{color:var(--good)}
+.tier-history-checked{color:var(--hist)}
+.tier-unverified{color:var(--unv)}
+.actions{display:flex;align-items:center;gap:8px;margin-top:2px}
+.getdeal{display:inline-block;background:var(--accent);color:var(--accent-fg)!important;
+         font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px;flex:0 0 auto}
+.getdeal:hover{text-decoration:none;filter:brightness(1.08)}
+.credit{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap}
+.credit a{color:var(--muted);text-decoration:underline}
+footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
+       padding-top:14px}
+footer p{margin:0 0 8px}
+.fnav{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 12px;font-size:13.5px}
+@media (max-width:640px){
+  .hrow{padding:10px 16px 8px}
+  .tag{display:none}
+  h1{font-size:26px}
+}
+@media (max-width:520px){
+  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <p class="brand"><a href="/" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
+    <span class="tag">verified deals · refreshed every 10 minutes</span>
+  </div>
+</header>
+<div class="wrap">
+<main>
+<h1>{{TITLE}}</h1>
+<p class="lede">{{INTRO}}</p>
+{{STATS}}
+{{DEALS}}
+<p><a href="/">See every deal on the live wall</a> · <a href="/how-it-works.html">How we check deals</a></p>
+<h2>More categories</h2>
+{{HUB_LINKS}}
+</main>
+<footer>
+  <nav class="fnav" aria-label="site pages">
+    <a href="/">Home</a>
+    <a href="/about.html">About</a>
+    <a href="/how-it-works.html">How it works</a>
+    <a href="/hacks.html">Deal hacks</a>
+    <a href="/careers.html">Work with us</a>
+    <a href="/contact.html">Contact</a>
+  </nav>
+  <p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p>
+  <p>Every deal links to the seller and credits the source that found it. Some outbound
+     links are the source's affiliate links.</p>
+</footer>
+</div>
+<script>
+"use strict";
+// Membership starts on the home page (see about.html): the button appears
+// once deals.json names the account service. Root-absolute: this page
+// lives at /deals/<slug>/.
+fetch("/deals.json?t=" + Date.now(), {cache: "no-store"})
+  .then(function (r) { return r.json(); })
+  .then(function (d) {
+    if (d && d.meta && d.meta.api_url) {
+      var sub = document.getElementById("subscribe");
+      sub.href = "/#signup";
+      sub.style.display = "";
+    }
+  }).catch(function () {});
+</script>
+</body>
+</html>
