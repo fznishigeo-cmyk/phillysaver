@@ -347,3 +347,21 @@ class TestContentPages:
             low = html.lower()
             for banned in ("krazy", "kcl", "southern savers"):
                 assert banned not in low, (name, banned)
+
+
+class TestSiteNavigation:
+    def test_home_footer_links_every_content_page(self, db, cfg, tmp_path):
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        for page in ("about.html", "how-it-works.html", "hacks.html",
+                     "careers.html", "contact.html"):
+            assert f'href="{page}"' in html
+            assert (tmp_path / page).exists()
+
+    def test_no_page_hardcodes_the_old_floor(self, db, cfg, tmp_path):
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        for path in tmp_path.glob("*.html"):
+            text = path.read_text(encoding="utf-8")
+            assert "50–90%" not in text and "50-90%" not in text, path.name
