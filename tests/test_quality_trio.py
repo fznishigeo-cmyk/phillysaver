@@ -711,11 +711,11 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deal, _cfg, budget=None):
-            calls.append(deal["asin"])
-            return False
+        def fake_recheck(deals, _cfg, budget=None):
+            calls.extend(d["asin"] for d in deals)
+            return {d["dedupe_key"]: False for d in deals}
 
-        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert stats == {"checked": 1, "dead": 1, "image_backfill": 0,
                          "tokens_short": 0}
@@ -756,12 +756,13 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deal, _cfg, budget=None):
-            calls.append(deal["dedupe_key"])
-            deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
-            return True
+        def fake_recheck(deals, _cfg, budget=None):
+            for deal in deals:
+                calls.append(deal["dedupe_key"])
+                deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
+            return {d["dedupe_key"]: True for d in deals}
 
-        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|a"]                      # photo'd deal untouched
         assert stats == {"checked": 1, "dead": 0, "image_backfill": 1,
@@ -798,12 +799,12 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deal, _cfg, budget=None):
-            calls.append(deal["dedupe_key"])
+        def fake_recheck(deals, _cfg, budget=None):
+            calls.extend(d["dedupe_key"] for d in deals)
             budget.note({"tokensLeft": 20, "refillRate": 5}, NOW)
-            return True
+            return {d["dedupe_key"]: True for d in deals}
 
-        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
 
         def reading(tokens):
             db.meta_set(META_KEY, json.dumps({
@@ -893,3 +894,70 @@ class TestConfigFields:
         assert cfg.critic_enabled is True
         assert cfg.exclude_suspect_msrp is True
         assert cfg.spend_cap_usd_per_day == pytest.approx(6.00)
+
+
+class TestBatchedRecheck:
+    def _stats_response(self, products):
+        import httpx
+        return httpx.Response(200, json={"products": products, "tokensLeft": 900,
+                                         "refillRate": 20},
+                              request=httpx.Request("GET", "https://api.keepa.com/product"))
+
+    def test_hundred_deals_per_keepa_call(self, monkeypatch):
+        """20 tokens a minute are only usable in bulk: one /product call
+        carries up to 100 ASINs; verdicts and photos come per deal."""
+        import httpx
+
+        from dealradar import verify
+        from dealradar.keepa_budget import KeepaBudget
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        deals = [{"dedupe_key": f"k{i}", "asin": f"B0{i:08d}", "final_price": 10.0,
+                  "conditions": []} for i in range(150)]
+        seen = []
+
+        def fake_get(url, params=None, timeout=None):
+            asins = params["asin"].split(",")
+            seen.append(len(asins))
+            prods = []
+            for a in asins:
+                n = int(a[2:])
+                prods.append({"asin": a, "imagesCSV": f"{n}.jpg",
+                              "stats": {"current": [1000 if n % 2 else 5000, -1, -1]}})
+            return self._stats_response(prods)
+
+        monkeypatch.setattr(httpx, "get", fake_get)
+        budget = KeepaBudget()
+        verdicts = verify.recheck_amazon_prices(deals, cfg, budget=budget)
+        assert seen == [100, 50]
+        assert verdicts["k1"] is True and verdicts["k2"] is False
+        assert len(verdicts) == 150
+        assert deals[7]["image_url"] == "https://m.media-amazon.com/images/I/7.jpg"
+        assert budget.tokens_left == 900 and budget.refill_rate == 20
+
+    def test_pipeline_stops_at_the_deadline(self, tmp_path, monkeypatch):
+        import time as _time
+
+        from dealradar import verify
+        db = DB(tmp_path / "state.db")
+        for i in range(3):
+            d = _deal_dict(dedupe_key=f"url|{i}", item=f"deal {i}")
+            d["asin"] = f"B0DEADLINE{i}"
+            db.insert_deal(dedupe_key=d["dedupe_key"], store=d["store"],
+                           item=d["item"], normalized_item=d["item"],
+                           canonical_url="", payload=d, final_price=d["final_price"],
+                           pct_at_checkout=d["pct_at_checkout"],
+                           abs_savings=d["abs_savings"], online_only="true",
+                           expires_at="", now=NOW)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        calls = []
+        monkeypatch.setattr(verify, "recheck_amazon_prices",
+                            lambda deals, _c, budget=None: (calls.extend(deals),
+                                                            {d["dedupe_key"]: True for d in deals})[1])
+        stats = pipeline._recheck_prices(db, cfg, NOW, deadline=_time.monotonic() - 1)
+        assert calls == [] and stats["checked"] == 0 and stats["tokens_short"] == 3
+        stats = pipeline._recheck_prices(db, cfg, NOW, deadline=_time.monotonic() + 60)
+        assert len(calls) == 3 and stats["checked"] == 3
+        db.close()

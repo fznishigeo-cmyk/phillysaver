@@ -141,47 +141,143 @@ def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
                for step in (deal.get("stack_steps") or []))
 
 
-def _keepa_product(key: str, asin: str, stats: int,
-                   budget: KeepaBudget | None) -> dict[str, Any] | None:
-    """One Keepa /product call: the product dict, or None on a 429 (the
-    token bucket is empty — it refills by the minute and costs nothing, so
-    that is "no opinion", never a verdict). Every response body, the 429
-    included, feeds the shared token budget when one is given."""
+#: Keepa's /product endpoint takes up to this many ASINs per call, one
+#: token each: one request fetches a hundred photos or live prices.
+KEEPA_BATCH = 100
+
+
+def keepa_products(key: str, asins: list[str], stats: int,
+                   budget: KeepaBudget | None) -> dict[str, dict[str, Any]] | None:
+    """One Keepa /product call for up to KEEPA_BATCH ASINs: ``{asin:
+    product}`` (an ASIN Keepa does not know is simply absent), or None on
+    a 429 (the token bucket is empty — it refills by the minute and costs
+    nothing, so that is "no opinion", never a verdict). Every response
+    body, the 429 included, feeds the shared token budget when given."""
     import httpx
 
+    asins = [a for a in asins if a][:KEEPA_BATCH]
     resp = httpx.get(
         "https://api.keepa.com/product",
-        params={"key": key, "domain": 1, "asin": asin, "stats": stats},
-        timeout=20,
+        params={"key": key, "domain": 1, "asin": ",".join(asins),
+                "stats": stats},
+        timeout=30,
     )
     payload = response_payload(resp)
     if budget is not None:
         budget.note(payload)
     if resp.status_code == 429:
-        log.warning("keepa product %s: 429 Too Many Requests (%s); no "
-                    "opinion until the bucket refills", asin,
+        log.warning("keepa product x%d: 429 Too Many Requests (%s); no "
+                    "opinion until the bucket refills", len(asins),
                     describe_429(payload))
         return None
     resp.raise_for_status()
     products = (payload.get("products") if isinstance(payload, dict)
                 else None) or []
-    return (products[0] or {}) if products else {}
+    out: dict[str, dict[str, Any]] = {}
+    for i, p in enumerate(products):
+        if not isinstance(p, dict):
+            continue
+        asin = str(p.get("asin") or "").strip().upper()
+        if not asin and len(asins) == 1:
+            asin = asins[0]  # single-ASIN answers may omit the field
+        if asin:
+            out[asin] = p
+    return out
+
+
+def _keepa_product(key: str, asin: str, stats: int,
+                   budget: KeepaBudget | None) -> dict[str, Any] | None:
+    """One product, via the batch call (kept for the single-ASIN callers)."""
+    products = keepa_products(key, [asin], stats, budget)
+    if products is None:
+        return None
+    return products.get(asin, {})
+
+
+def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | None:
+    """The verdict for one deal given its Keepa product record: True =
+    a current offer still matches the deal's final price within 10% (or,
+    for a deal whose discount only shows at checkout — coupon, code,
+    Subscribe & Save — the quoted regular price); False = the price moved
+    (deal is over); None = no opinion (no current prices in the record).
+    A used/open-box deal is checked against the Warehouse price; anything
+    else against Amazon's own price or the lowest new offer. The record's
+    image is harvested for free either way."""
+    asin = str(deal.get("asin") or "").strip().upper()
+    final = deal.get("final_price")
+    is_used = bool({"used", "open_box"} & set(deal.get("conditions") or []))
+    _harvest_image(deal, product)
+    stats = product.get("stats")
+    current = stats.get("current") if isinstance(stats, dict) else None
+    if not isinstance(current, list) or not current:
+        return None
+    idx = [9] if is_used else [0, 1]  # warehouse vs amazon/new offer
+    prices = []
+    for i in idx:
+        if len(current) > i and isinstance(current[i], (int, float)) \
+                and current[i] >= 0:
+            prices.append(float(current[i]) / 100.0)
+    if not prices:
+        return False  # no live offer of the right kind: deal is gone
+    live = min(prices)
+    target = float(final)
+    basis = "final"
+    regular = deal.get("regular_price")
+    if _price_hidden_by_promo(deal) and regular:
+        # Live wart: every coupon / promo-code deal died at recheck
+        # because the listing shows the pre-coupon price. For those the
+        # deal is only over once the LISTING itself climbs past the
+        # regular price the post quoted; the coupon is invisible here.
+        target = max(target, float(regular))
+        basis = "regular (promo hidden from listing)"
+    ok = live <= target * 1.10 + 0.01
+    log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (%s)"
+             " -> %s", asin, float(final), live, basis, target,
+             "warehouse" if is_used else "new", ok)
+    return ok
+
+
+def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
+                          budget: KeepaBudget | None = None
+                          ) -> dict[str, bool | None]:
+    """Live price verdicts for many Amazon deals in as few Keepa calls as
+    possible (KEEPA_BATCH ASINs per call): ``{dedupe_key: verdict}`` per
+    judge_live_price; a deal left out (flag/key off, no ASIN or price,
+    tokens exhausted, transport failure, unknown ASIN) has no entry.
+    ``budget`` learns every response's token state."""
+    out: dict[str, bool | None] = {}
+    if not cfg.feature_flags.get("keepa"):
+        return out
+    key = get_secret("KEEPA_KEY")
+    if not key:
+        return out
+    wanted: list[tuple[str, dict[str, Any]]] = []
+    for deal in deals:
+        asin = str(deal.get("asin") or "").strip().upper()
+        if asin and deal.get("final_price") is not None:
+            wanted.append((asin, deal))
+    for start in range(0, len(wanted), KEEPA_BATCH):
+        chunk = wanted[start:start + KEEPA_BATCH]
+        try:
+            products = keepa_products(key, [a for a, _ in chunk], 1, budget)
+        except Exception as e:  # transport, schema drift
+            log.warning("price recheck batch of %d failed: %s", len(chunk), e)
+            continue
+        if products is None:
+            continue  # 429: the bucket is empty, try a later pass
+        for asin, deal in chunk:
+            product = products.get(asin)
+            if product is None:
+                continue
+            out[deal["dedupe_key"]] = judge_live_price(deal, product)
+    return out
 
 
 def recheck_amazon_price(deal: dict[str, Any], cfg,
                          budget: KeepaBudget | None = None) -> bool | None:
-    """Is this Amazon deal's price still live? (The legal equivalent of
-    clicking the product page before publishing: Keepa's licensed API
-    mirrors it.) True = a current offer still matches the deal's final
-    price within 10% (or, for a deal whose discount only shows at checkout
-    — coupon, code, Subscribe & Save — the quoted regular price); False =
-    the price moved (deal is over); None = no opinion (flag/key off, no
-    ASIN/price, tokens exhausted, or the API failed).
-
-    A used/open-box deal is checked against the Warehouse price; anything
-    else against Amazon's own price or the lowest new offer. ``budget``
-    (the caller's shared KeepaBudget) learns the response's token state.
-    """
+    """One deal's live price verdict (see judge_live_price); None = no
+    opinion (flag/key off, no ASIN/price, tokens exhausted, or the API
+    failed). The pipeline uses the batched recheck_amazon_prices."""
     if not cfg.feature_flags.get("keepa"):
         return None
     if not get_secret("KEEPA_KEY"):
@@ -190,41 +286,11 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
     final = deal.get("final_price")
     if not asin or final is None:
         return None
-    is_used = bool({"used", "open_box"} & set(deal.get("conditions") or []))
     try:
         product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget)
         if product is None:
             return None  # 429: the bucket is empty, try a later pass
-        # Each 6-hourly recheck also backfills a missing thumbnail for free.
-        _harvest_image(deal, product)
-        stats = product.get("stats")
-        current = stats.get("current") if isinstance(stats, dict) else None
-        if not isinstance(current, list) or not current:
-            return None
-        idx = [9] if is_used else [0, 1]  # warehouse vs amazon/new offer
-        prices = []
-        for i in idx:
-            if len(current) > i and isinstance(current[i], (int, float)) \
-                    and current[i] >= 0:
-                prices.append(float(current[i]) / 100.0)
-        if not prices:
-            return False  # no live offer of the right kind: deal is gone
-        live = min(prices)
-        target = float(final)
-        basis = "final"
-        regular = deal.get("regular_price")
-        if _price_hidden_by_promo(deal) and regular:
-            # Live wart: every coupon / promo-code deal died at recheck
-            # because the listing shows the pre-coupon price. For those the
-            # deal is only over once the LISTING itself climbs past the
-            # regular price the post quoted; the coupon is invisible here.
-            target = max(target, float(regular))
-            basis = "regular (promo hidden from listing)"
-        ok = live <= target * 1.10 + 0.01
-        log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (%s)"
-                 " -> %s", asin, float(final), live, basis, target,
-                 "warehouse" if is_used else "new", ok)
-        return ok
+        return judge_live_price(deal, product)
     except Exception as e:  # tokens exhausted, transport, schema drift
         log.warning("price recheck failed for %s: %s", asin, e)
         return None
