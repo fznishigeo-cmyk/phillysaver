@@ -49,16 +49,17 @@ header{background:var(--card);border-bottom:1px solid var(--line);
       padding:5px 16px 5px 5px}
 .dial{--d:40px;--w:5px;position:relative;width:var(--d);height:var(--d);flex:none}
 .dbase{position:absolute;inset:0;border-radius:50%;border:var(--w) solid var(--line);
-       box-shadow:0 0 18px -4px rgba(14,117,105,.45)}
+       box-shadow:0 0 18px -4px color-mix(in srgb,var(--dial,var(--accent)) 45%,transparent)}
 .dring{position:absolute;inset:0;border-radius:50%;overflow:hidden}
 .dslot{position:absolute;inset:0;clip-path:inset(0 0 0 50%)}
 .dslot.l{clip-path:inset(0 50% 0 0);opacity:0}
-.dslot i{position:absolute;inset:0;border-radius:50%;clip-path:inset(0 50% 0 0);background:var(--accent)}
-.dslot.l i{clip-path:inset(0 0 0 50%);background:var(--flag)}
+.dslot i{position:absolute;inset:0;border-radius:50%;clip-path:inset(0 50% 0 0);
+         background:var(--dial,var(--accent));transition:background 1s linear}
+.dslot.l i{clip-path:inset(0 0 0 50%)}
 .dhole{position:absolute;inset:var(--w);border-radius:50%;background:var(--chip);z-index:2}
 .dhead{position:absolute;left:50%;top:0;width:var(--w);height:var(--w);margin-left:calc(var(--w) / -2);
        border-radius:50%;background:#fff;z-index:3;
-       box-shadow:0 0 0 1.5px var(--flag),0 0 8px 1px rgba(217,72,15,.7);
+       box-shadow:0 0 0 1.5px var(--dial,var(--flag)),0 0 8px 1px color-mix(in srgb,var(--dial,var(--flag)) 70%,transparent);
        transform-origin:center calc(var(--d) / 2)}
 .dtag,.dtick{position:absolute;left:50%;top:50%;z-index:4;width:18px;height:18px;margin:-9px 0 0 -9px}
 .dtag{color:var(--accent);transition:opacity .28s ease,transform .34s cubic-bezier(.3,1.4,.4,1)}
@@ -123,22 +124,23 @@ header{background:var(--card);border-bottom:1px solid var(--line);
    drop, a member's new arrivals) and only under the pointer elsewhere;
    still when motion is reduced. */
 .trace{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
-.trace rect{fill:none;stroke:color-mix(in srgb,var(--fg) 40%,transparent);stroke-width:2.4;
-            stroke-dasharray:.18 .82;stroke-dashoffset:1;opacity:0;transition:opacity .4s;
-            animation:trace 5s linear infinite;animation-play-state:paused}
-.card.lit .trace rect{opacity:1;stroke:var(--accent);animation-play-state:running}
+.trace rect{fill:none;stroke:color-mix(in srgb,var(--fg) 30%,transparent);stroke-width:2;
+            stroke-dasharray:.14 .86;stroke-dashoffset:1;opacity:0;transition:opacity .4s;
+            animation:trace 8s linear infinite;animation-play-state:paused}
+.card.lit .trace rect{opacity:1;stroke:color-mix(in srgb,var(--accent) 70%,transparent);
+                      animation-play-state:running}
 /* A member's new arrivals run three laps, then rest: no endless repaint. */
 .card.isnew.lit .trace rect{animation-iteration-count:3}
 @media (hover:hover){
   .card:not(.gone):hover .trace rect{opacity:1;animation-play-state:running}
 }
 @keyframes trace{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-.freetag{display:flex;align-items:center;gap:7px;font:600 10.5px/1 ui-monospace,Menlo,Consolas,monospace;
-         letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
-.freetag i{width:7px;height:7px;border-radius:999px;background:var(--accent);flex:none;
-           animation:beat 2.8s cubic-bezier(.45,0,.55,1) infinite}
-@keyframes beat{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,.35);opacity:1}
-                50%{box-shadow:0 0 0 5px rgba(14,117,105,0);opacity:.55}}
+.freetag{display:flex;align-items:center;gap:6px;font:500 10px/1 ui-monospace,Menlo,Consolas,monospace;
+         letter-spacing:.1em;text-transform:uppercase;color:var(--muted);opacity:.85}
+.freetag i{width:5px;height:5px;border-radius:999px;background:var(--accent);flex:none;
+           animation:beat 3.6s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes beat{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,.25);opacity:1}
+                50%{box-shadow:0 0 0 3px rgba(14,117,105,0);opacity:.6}}
 @keyframes sweep{to{transform:translateX(100%)}}
 @keyframes enter{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
 .media{position:relative;height:150px;background:#fff;border-bottom:1px solid var(--line);
@@ -255,19 +257,22 @@ footer .meta{font-size:11.5px}
 .footnav{margin:0 0 10px;font-size:13px;font-weight:600}
 .footnav a{color:var(--fg)}
 .subbar{display:none}
-/* ---- the trial, as loud as the wall: a band between the free deals and
-   the locked ones, and a soft pulse on every trial button ---- */
-.trialband{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:16px 0;
-           padding:16px 20px;border-radius:14px;background:var(--accent);color:var(--accent-fg);
-           box-shadow:var(--shadow)}
-.tbtext{margin:0;flex:1 1 260px;font-size:18px;line-height:1.35}
-.trialband .pwbtn{background:var(--accent-fg);border-color:var(--accent-fg);
-                  color:var(--accent)!important;font-size:16px;padding:11px 22px}
-.trialband .disc{flex:1 1 100%;margin:0;color:var(--accent-fg);opacity:.9}
-#subscribe.getdeal{font-size:15px;padding:10px 18px}
-.trialcta{animation:ctaglow 2.4s ease-in-out infinite}
+/* ---- the trial in the wall: a quiet tinted card between the free deals
+   and the locked ones; a slow, faint glow on its button only ---- */
+.trialband{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:18px 0;
+           padding:14px 18px;border-radius:14px;color:var(--fg);
+           background:linear-gradient(100deg,color-mix(in srgb,var(--accent) 9%,var(--card)),var(--card) 70%);
+           border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));
+           border-left:3px solid var(--accent)}
+.tbtext{margin:0;flex:1 1 260px;font-size:16px;line-height:1.4}
+.tbtext strong{font-weight:700}
+.trialband .pwbtn{font-size:14px;padding:9px 18px}
+.trialband .disc{flex:1 1 100%;margin:0;color:var(--muted)}
+#subscribe.getdeal{font-size:14px;padding:9px 16px}
+.trialcta{animation:ctaglow 4.5s ease-in-out infinite}
+#subscribe.trialcta,.subbar.trialcta{animation:none}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
-                   50%{box-shadow:0 0 0 7px rgba(14,117,105,.28)}}
+                   50%{box-shadow:0 0 0 4px rgba(14,117,105,.16)}}
 
 /* ---- the sources wall: where the deals come from, two quiet rows of
    chips sliding in opposite directions (hover stops a row) ---- */
@@ -299,23 +304,23 @@ footer .meta{font-size:11.5px}
 /* ---- the deal ticker: a stencilled notice band on worn plaster above the
    header; a torn mustard label, an ink band with a spray-dot texture and
    the live deals scrolling on a seamless loop (hover or PAUSE stops it) ---- */
-.tk{--tk-plaster:#d2cbbe;--tk-band:#17263b;--tk-on:#fbf8f1;--tk-poster:#e3bf58;
+.tk{--tk-plaster:#ddd7cc;--tk-band:#22303f;--tk-on:#f3f0e8;--tk-poster:#dcc27a;
     --tk-aqua:#75b2b0;--tk-coral:#e46f58;--tk-display:"Archivo Black","Arial Black",Impact,sans-serif;
     --tk-mono:"Recursive Mono",ui-monospace,Menlo,Consolas,monospace;
     background:var(--tk-plaster);
     background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.22) 0 38%,#0000 60%),
                      repeating-linear-gradient(84deg,rgba(23,38,59,.06) 0 1px,#0000 1px 5px);
-    padding:7px 16px}
+    padding:5px 16px}
 @media (prefers-color-scheme: dark){
   .tk{--tk-plaster:#2a3742;--tk-band:#eef1ec;--tk-on:#223140;
       background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.07) 0 38%,#0000 60%),
                        repeating-linear-gradient(84deg,rgba(0,0,0,.12) 0 1px,#0000 1px 5px)}
 }
 .tkband{position:relative;display:flex;align-items:stretch;max-width:1168px;margin:0 auto;
-        min-height:40px;background:var(--tk-band);color:var(--tk-on);border-radius:2px;
+        min-height:34px;background:var(--tk-band);color:var(--tk-on);border-radius:2px;
         overflow:hidden;cursor:pointer}
 .tklabel{display:flex;align-items:center;flex:none;padding:0 22px 0 14px;background:var(--tk-poster);
-         color:#17263b;font:400 12px/1 var(--tk-display);letter-spacing:.14em;text-transform:uppercase;
+         color:#22303f;font:400 11px/1 var(--tk-display);letter-spacing:.16em;text-transform:uppercase;
          clip-path:polygon(0 0,92% 0,100% 7%,93% 15%,100% 24%,92% 33%,100% 42%,93% 51%,100% 60%,
                            92% 69%,100% 78%,93% 87%,100% 95%,94% 100%,0 100%)}
 .tkrun{position:relative;flex:1;overflow:hidden;min-width:0;
@@ -328,13 +333,12 @@ footer .meta{font-size:11.5px}
 .tkstrip{display:flex;width:max-content;height:100%;animation:tkscroll var(--tk-dur,60s) linear infinite}
 .tkband:hover .tkstrip,.tkband.paused .tkstrip,.tkband.hiddentab .tkstrip{animation-play-state:paused}
 @keyframes tkscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.tkitem{display:flex;align-items:center;gap:10px;padding:0 24px;white-space:nowrap;
+.tkitem{display:flex;align-items:center;gap:9px;padding:0 22px;white-space:nowrap;opacity:.92;
         border-right:1px solid color-mix(in srgb,var(--tk-on) 14%,transparent)}
-.tkitem i{width:8px;height:8px;border-radius:2px;flex:none}
-.tkitem s{text-decoration:none;font:700 12px/1 var(--tk-mono);letter-spacing:.06em;opacity:.75}
-.tkitem span{font:600 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.08em;
-             text-transform:uppercase}
-.tkitem b{font:400 13px/1 var(--tk-display);letter-spacing:.04em}
+.tkitem i{width:6px;height:6px;border-radius:2px;flex:none;opacity:.85}
+.tkitem s{text-decoration:none;font:500 11px/1 var(--tk-mono);letter-spacing:.06em;opacity:.65}
+.tkitem span{font:500 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}
+.tkitem b{font:600 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.01em}
 .tkpause{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:2;border:0;
          cursor:pointer;padding:4px 8px;border-radius:2px;opacity:0;transition:opacity 180ms;
          background:color-mix(in srgb,var(--tk-on) 14%,var(--tk-band));color:var(--tk-on);
@@ -757,13 +761,18 @@ footer .meta{font-size:11.5px}
     var left = clock.target - now;
     document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
     var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
-    paintDial(f);
+    paintDial(f, clock.dropping ? null : left);
   }
   // The dial's ring for f = 0..1 of the cycle, swept clockwise from 12
   // o'clock: a half-disc turns into the right half for the first 180
   // degrees, a second one into the left half after; the dot rides the head.
-  function paintDial(f) {
+  function paintDial(f, left) {
     var deg = f * 360;
+    // Green at the start, warming through yellow, red for the last minute.
+    var lastMin = 60000, warm = Math.max(0.01, 1 - lastMin / clock.step);
+    var hue = left != null && left <= lastMin ? 4 : Math.round(142 - 96 * Math.min(1, f / warm));
+    document.getElementById("dropdial").style.setProperty(
+      "--dial", "hsl(" + hue + " " + (hue < 20 ? 78 : 68) + "% " + (hue < 20 ? 52 : 42) + "%)");
     document.getElementById("dA").style.transform = "rotate(" + Math.min(deg, 180).toFixed(2) + "deg)";
     document.getElementById("dSL").style.opacity = deg > 180 ? "1" : "0";
     document.getElementById("dB").style.transform = "rotate(" + Math.max(0, deg - 180).toFixed(2) + "deg)";
@@ -1116,7 +1125,7 @@ footer .meta{font-size:11.5px}
   // deals (name and price) dealt between locked ones (store and % only,
   // the stub is all the page has) that invite the trial. Rebuilt only when
   // its items change, so a re-render never restarts the scroll.
-  var TICKER_MAX = 16, TICKER_PX_S = 55, tickerSig = "";
+  var TICKER_MAX = 16, TICKER_PX_S = 38, tickerSig = "";
   function tickerItems() {
     var live = state.deals.filter(function (d) { return d.status !== "dead"; });
     var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
@@ -1125,7 +1134,7 @@ footer .meta{font-size:11.5px}
     var out = [], o = offer();
     for (var i = 0; out.length < TICKER_MAX && (i < open.length || i < shut.length); i++) {
       if (i < open.length) out.push(open[i]);
-      if (i < shut.length && i < 8 && out.length < TICKER_MAX) out.push(shut[i]);
+      if (i % 3 === 2 && i < shut.length && out.length < TICKER_MAX) out.push(shut[i]);
     }
     return out.map(function (d) {
       var pct = Math.round(num(d.pct_at_checkout) || 0), conds = d.conditions || [];
@@ -1135,7 +1144,7 @@ footer .meta{font-size:11.5px}
       if (name.length > 42) name = name.slice(0, 40).replace(/\s+\S*$/, "") + "…";
       var text = isLocked(d)
         ? "&#128274; " + esc(d.store || "Members") + " · " +
-          (o.trial ? "unlock free for " + o.days + " days" : "members only")
+          (o.trial ? "members · " + o.days + " days free" : "members only")
         : esc(name) + (num(d.final_price) != null ? " <b>$" + Number(d.final_price).toFixed(2) + "</b>" : "") +
           (d.store ? " · " + esc(d.store) : "");
       var plain = isLocked(d) ? (d.store || "") + " deal, members only"

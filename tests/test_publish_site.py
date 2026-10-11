@@ -767,7 +767,11 @@ class TestDropClock:
         # The dial: a ring filled by two turning half-discs, a tag that
         # becomes a tick at the drop.
         assert 'id="dropdial" class="dial"' in html and ".dslot{" in html
-        assert "function paintDial(f)" in html and "paintDial(f);" in html
+        assert "function paintDial(f, left)" in html
+        assert "paintDial(f, clock.dropping ? null : left);" in html
+        # Operator: green at the start, through yellow, red for the last minute.
+        dial = _between(html, "function paintDial(", "function tick(")
+        assert "left <= lastMin ? 4 : Math.round(142 - 96" in dial and '"--dial"' in dial
         assert 'class="dtick"' in html and ".drop.dropping .dtick{opacity:1" in html
         css = html[html.index(".dropt{"):html.index("}", html.index(".dropt{"))]
         assert "font-size:22px" in css and "font-weight:800" in css
@@ -1170,7 +1174,7 @@ class TestEyeCatchers:
         body = _between(html, "function tickerItems(", "function paintTicker(")
         locked = body[body.index("var text = isLocked(d)"):body.index(": esc(name)")]
         assert "d.store" in locked and "d.item" not in locked and "final_price" not in locked
-        assert "unlock free for " in locked
+        assert "days free" in locked
         paint = _between(html, "function paintTicker(", "function gridHtml(")
         assert "strip.innerHTML = one + one;" in paint and "if (sig === tickerSig) return;" in paint
         assert 'id="tkpause" aria-pressed="false"' in html and 'id="tklist"' in html
