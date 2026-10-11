@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0e7569">
-<title>wowpriced — verified deals, 50–90% off</title>
+<title>wowpriced — verified deals</title>
 <style>
 :root{
   color-scheme: light dark;
@@ -27,16 +27,29 @@ body{margin:0;background:var(--bg);color:var(--fg);
 a{color:var(--link);text-decoration:none}
 a:hover{text-decoration:underline}
 .wrap{max-width:1200px;margin:0 auto;padding:0 16px 48px}
+[hidden]{display:none!important}
 
 /* ---- header ---- */
 header{background:var(--card);border-bottom:1px solid var(--line);
        position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
 .hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
-      gap:4px 14px;align-items:baseline}
+      gap:4px 14px;align-items:center}
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
-.meta{color:var(--muted);font-size:12.5px;margin:0;flex-basis:100%}
+/* "Next drop in m:ss" pill: the pulse says the page is live. */
+.count{margin-left:auto;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+       background:var(--chip);border:1px solid var(--line);border-radius:999px;
+       padding:4px 11px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.count::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);
+       animation:pulse 1.6s ease-in-out infinite}
+.count.loading{color:var(--accent)}
+.count.loading::before{animation-duration:.7s}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+@media (prefers-reduced-motion: reduce){.count::before{animation:none}}
+.since{max-width:1200px;margin:0 auto;padding:0 16px 2px;font-size:12.5px;
+       color:var(--good);font-weight:700}
+.meta{color:var(--muted);font-size:12.5px;margin:0}
 #cattabs{max-width:1200px;margin:0 auto;padding:4px 16px 10px;display:flex;
          flex-wrap:wrap;gap:7px}
 .cattab{flex:0 0 auto;background:var(--chip);color:var(--fg);border:1px solid var(--line);
@@ -45,6 +58,10 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .cattab:hover{border-color:var(--accent)}
 .cattab.active{background:var(--accent);border-color:var(--accent);
                color:var(--accent-fg);font-weight:700}
+.toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:40;
+       max-width:calc(100% - 24px);background:var(--accent);color:var(--accent-fg);
+       font-weight:800;font-size:14px;padding:10px 18px;border-radius:999px;
+       box-shadow:0 6px 20px rgba(0,0,0,.25);text-align:center;cursor:pointer}
 
 /* ---- controls ---- */
 #controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 6px}
@@ -111,13 +128,16 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
        padding-top:14px}
 footer p{margin:0 0 8px}
+footer .meta{font-size:11.5px}
 .subbar{display:none}
 @media (max-width:640px){
   header{position:static}
-  .hrow{padding:10px 12px 4px}
-  .tag{display:none}
-  #subscribe{margin-left:0!important;width:100%;text-align:center;order:3}
-  .meta{font-size:11.5px}
+  .hrow{padding:8px 12px 2px;gap:2px 10px}
+  .brand{font-size:20px}
+  .count{order:1;font-size:12.5px;padding:3px 9px}
+  .tag{order:2;flex-basis:100%;font-size:12px}
+  #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
+  .since{padding:0 12px 2px;font-size:12px}
   #cattabs{padding:4px 12px 8px}
   #controls{gap:6px}
   #controls input[type=search]{flex-basis:100%}
@@ -143,11 +163,12 @@ footer p{margin:0 0 8px}
 <header>
   <div class="hrow">
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
-    <span class="tag">verified deals, 50–90% off · refreshed every 10 minutes</span>
-    <a id="subscribe" class="getdeal" rel="noopener" style="display:none;margin-left:auto">
+    <span id="tagline" class="tag">verified deals</span>
+    <span id="countdown" class="count">Next drop soon</span>
+    <a id="subscribe" class="getdeal" rel="noopener" style="display:none">
       Get every deal by email — $9.99/mo</a>
-    <p id="metaline" class="meta">Loading&hellip;</p>
   </div>
+  <p id="sincevisit" class="since" hidden></p>
   <nav id="cattabs" aria-label="category tabs"></nav>
 </header>
 <div class="wrap">
@@ -155,6 +176,7 @@ footer p{margin:0 0 8px}
   <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
   <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
   <select id="sortsel" aria-label="sort order">
+    <option value="fresh:-1">sort: fresh drops</option>
     <option value="pct:-1">sort: biggest % off</option>
     <option value="abs:-1">sort: most $ saved</option>
     <option value="price:1">sort: cheapest first</option>
@@ -170,13 +192,23 @@ footer p{margin:0 0 8px}
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live. <a href="health.html">source health</a></p>
+  <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
 <a id="subbar" class="subbar" rel="noopener">Get every deal by email &mdash; $9.99/mo</a>
 </div>
+<div id="toast" class="toast" role="status" hidden></div>
 <script>
 "use strict";
 (function () {
-  var state = { deals: [], meta: {}, sortKey: "pct", sortDir: -1, catTab: 0 };
+  var state = { deals: [], meta: {}, dataKey: "", sortKey: "fresh", sortDir: -1, catTab: 0 };
+  // The fast lane redeploys the site every 10 minutes even between hourly
+  // sweeps, so the next drop is never further off than that.
+  var FAST_LANE_MIN = 10;
+  // After a drop mark passes, how long "Loading new drops" polls for the new
+  // file before the countdown aims at the next wall-clock mark instead.
+  var GRACE_MS = 6 * 60 * 1000;
+  // localStorage keys: per-viewer conveniences only, never required.
+  var SORT_KEY = "wp.sort", SEEN_KEY = "wp.seen";
   // Amazon-style department tabs over the internal category vocabulary.
   var CATGROUPS = [
     ["All", null],
@@ -199,8 +231,8 @@ footer p{margin:0 0 8px}
   // Every published deal passed the verbatim-price check and the critic;
   // the badge only says how it was corroborated. No badge = single source.
   var TIER_LABEL = {
-    "corroborated": "\u2713 2+ sources",
-    "history-checked": "\u2713 price history"
+    "corroborated": "✓ 2+ sources",
+    "history-checked": "✓ price history"
   };
 
   function esc(s) {
@@ -209,6 +241,8 @@ footer p{margin:0 0 8px}
     });
   }
   function num(v) { var n = Number(v); return (v == null || isNaN(n)) ? null : n; }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
   function sortVal(d, key) {
     switch (key) {
       case "pct":   return num(d.pct_at_checkout);
@@ -219,14 +253,47 @@ footer p{margin:0 0 8px}
     return null;
   }
 
+  // One string per published deals.json: a new run key or publish time
+  // means a new drop (the fast-lane run key only changes every quarter
+  // hour, so generated_at is what tells two 10-minute cycles apart).
+  function dataKey(m) {
+    var lr = (m && m.last_run) || {};
+    var key = (lr.run_key || "") + "|" + ((m && m.generated_at) || "");
+    return key === "|" ? "" : key;
+  }
+  function keySet(deals) {
+    var set = {};
+    deals.forEach(function (d) { if (d.dedupe_key) set[d.dedupe_key] = true; });
+    return set;
+  }
+  function liveNotIn(deals, set) {
+    return deals.filter(function (d) {
+      return d.status !== "dead" && !set[d.dedupe_key];
+    }).length;
+  }
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+
   function renderMeta() {
-    // Meta line is driven entirely by deals.json: the FTC disclosure text
-    // comes from meta.disclosure verbatim, never hardcoded in this template.
     var m = state.meta || {};
     var lr = m.last_run || {};
+    // Consumer header: brand, one tagline derived from the configured alert
+    // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
+    var floor = num((m.floors || {}).min_pct);
+    var tagline = "verified deals";
+    if (floor != null) {
+      tagline += ", " + Math.round(floor) + (floor < 90 ? "–90% off" : "%+ off");
+    }
+    var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length;
+    document.getElementById("tagline").textContent =
+      tagline + " · " + plural(live, "live deal");
+    document.title = "wowpriced — " + tagline;
+    // Footer line: last run + the FTC disclosure, which comes from
+    // meta.disclosure verbatim, never hardcoded in this template.
     var t = lr.finished_at || lr.started_at || m.generated_at || "";
+    var when = Date.parse(t);
     document.getElementById("metaline").textContent =
-      "Last run: " + t + " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
+      "Last run: " + (isNaN(when) ? t : new Date(when).toLocaleString()) +
+      " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
     // Membership: the Subscribe button exists only once the operator has a
     // Stripe Payment Link in config (it arrives here via deals.json meta).
     var sub = document.getElementById("subscribe");
@@ -237,6 +304,98 @@ footer p{margin:0 0 8px}
       bar.href = m.subscribe_url;
       bar.classList.add("ready");
     }
+  }
+
+  // ---- "Next drop in m:ss" ----
+  // Publishes land on a fixed cadence (meta.cadence_minutes, capped at the
+  // fast lane's 10) after the run that produced this file started
+  // (meta.generated_at; the run key is the fallback). The countdown aims at
+  // the next mark after that; past the mark it shows "Loading new drops"
+  // and polls every 30 s until the file changes. Cycles can land late, so
+  // no exact second is ever promised.
+  var clock = { target: 0, poll: null };
+  function publishTime(m) {
+    var t = Date.parse(m.generated_at || "");
+    if (!isNaN(t)) return t;
+    // run_key is "YYYY-MM-DDTHH:MM:fast" or "YYYY-MM-DDTHH", in UTC.
+    var rk = String((m.last_run || {}).run_key || "");
+    var mm = /^(\d{4}-\d{2}-\d{2}T\d{2})(?::(\d{2}))?/.exec(rk);
+    if (!mm) return null;
+    t = Date.parse(mm[1] + ":" + (mm[2] || "00") + ":00Z");
+    return isNaN(t) ? null : t;
+  }
+  function dropStepMs(m) {
+    var c = num(m.cadence_minutes);
+    return Math.min(c > 0 ? c : FAST_LANE_MIN, FAST_LANE_MIN) * 60 * 1000;
+  }
+  function nextMark(after, step) { return Math.floor(after / step) * step + step; }
+  function mmss(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
+  }
+  function setPolling(on) {
+    if (on && !clock.poll) clock.poll = setInterval(loadData, 30 * 1000);
+    if (!on && clock.poll) { clearInterval(clock.poll); clock.poll = null; }
+  }
+  function scheduleDrop() {
+    var m = state.meta || {};
+    var step = dropStepMs(m), pub = publishTime(m), now = Date.now();
+    var target = pub != null ? nextMark(pub, step) : 0;
+    // Publish too old to be waiting on (late cycle, or the page was opened
+    // much later): count to the next wall-clock mark instead.
+    if (target + GRACE_MS <= now) target = nextMark(now, step);
+    clock.target = target;
+    tick();
+  }
+  function tick() {
+    if (!clock.target) return;
+    var el = document.getElementById("countdown");
+    var now = Date.now(), left = clock.target - now;
+    if (left > 0) {
+      setPolling(false);
+      el.classList.remove("loading");
+      el.textContent = "Next drop in " + mmss(left);
+    } else if (left > -GRACE_MS) {
+      el.classList.add("loading");
+      el.textContent = "Loading new drops…";
+      setPolling(true);
+    } else {
+      // This cycle landed late (or not at all): aim at the next wall-clock
+      // mark; the 5-minute fallback poll still picks it up whenever it lands.
+      clock.target = nextMark(now, dropStepMs(state.meta || {}));
+      tick();
+    }
+  }
+  setInterval(tick, 1000);
+
+  var toastTimer = null;
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 8000);
+  }
+  document.getElementById("toast").addEventListener("click", function () {
+    this.hidden = true;
+  });
+
+  function sinceLastVisit(deals) {
+    // "N new since your last visit": compares against the keys stored on
+    // the previous visit; shown only when storage has one.
+    var prev = null;
+    try { prev = JSON.parse(lsGet(SEEN_KEY) || "null"); } catch (e) { prev = null; }
+    if (!Array.isArray(prev)) return;
+    var seen = {};
+    prev.forEach(function (k) { seen[k] = true; });
+    var n = liveNotIn(deals, seen);
+    if (!n) return;
+    var el = document.getElementById("sincevisit");
+    el.textContent = n + " new since your last visit";
+    el.hidden = false;
+  }
+  function rememberSeen(deals) {
+    lsSet(SEEN_KEY, JSON.stringify(Object.keys(keySet(deals))));
   }
 
   function populateSelect(id, values) {
@@ -305,6 +464,42 @@ footer p{margin:0 0 8px}
     if (ka < kb) return -1 * state.sortDir;
     if (ka > kb) return 1 * state.sortDir;
     return 0;
+  }
+
+  function hashStr(s) {
+    var h = 7;
+    for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; }
+    return h;
+  }
+  function hourBucket(d) {
+    var t = Date.parse(d.first_seen_at || "");
+    return isNaN(t) ? -1 : Math.floor(t / 3600000);   // unknown arrival: last
+  }
+  function freshOrder(rows) {
+    // "Fresh drops" (default): newest hour of arrival first; inside an hour
+    // biggest % off first, but the start of each hour's list is rotated by
+    // a hash of this publish, so every cycle visibly re-deals the top rows
+    // while nothing is ever hidden.
+    var seed = state.dataKey;
+    var buckets = {}, hours = [];
+    rows.forEach(function (d) {
+      var h = hourBucket(d);
+      if (!buckets[h]) { buckets[h] = []; hours.push(h); }
+      buckets[h].push(d);
+    });
+    hours.sort(function (a, b) { return b - a; });
+    var out = [];
+    hours.forEach(function (h) {
+      var arr = buckets[h].sort(function (x, y) {
+        return (num(y.pct_at_checkout) || 0) - (num(x.pct_at_checkout) || 0);
+      });
+      var off = hashStr(seed + "|" + h) % arr.length;
+      out = out.concat(arr.slice(off), arr.slice(0, off));
+    });
+    return out;
+  }
+  function ordered(rows) {
+    return state.sortKey === "fresh" ? freshOrder(rows) : rows.sort(cmp);
   }
 
   function storeHue(s) {
@@ -400,7 +595,7 @@ footer p{margin:0 0 8px}
       content.innerHTML = '<p class="empty">No qualifying deals this hour</p>';
       return;
     }
-    var rows = filtered().sort(cmp);
+    var rows = ordered(filtered());
     if (!rows.length) {
       content.innerHTML = '<p class="empty">No deals match the current filters</p>';
       return;
@@ -449,13 +644,28 @@ footer p{margin:0 0 8px}
     el.addEventListener("change", render);
   });
 
-  // Easy sorting: the dropdown drives the card order.
-  document.getElementById("sortsel").addEventListener("change", function () {
-    var parts = this.value.split(":");
+  // Easy sorting: the dropdown drives the card order; the choice is
+  // remembered per viewer (localStorage, optional).
+  var sortsel = document.getElementById("sortsel");
+  function applySort(v) {
+    var parts = v.split(":");
     state.sortKey = parts[0];
     state.sortDir = Number(parts[1]) || -1;
+  }
+  sortsel.addEventListener("change", function () {
+    applySort(this.value);
+    lsSet(SORT_KEY, this.value);
     render();
   });
+  (function restoreSort() {
+    var saved = lsGet(SORT_KEY);
+    for (var i = 0; saved && i < sortsel.options.length; i++) {
+      if (sortsel.options[i].value === saved) {
+        sortsel.value = saved;
+        applySort(saved);
+      }
+    }
+  })();
 
   function refreshStores() {
     // Rebuild the store list, keeping the user's current selection.
@@ -474,17 +684,28 @@ footer p{margin:0 0 8px}
     fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        state.meta = (data && data.meta) || {};
-        state.deals = (data && data.deals) || [];
+        var meta = (data && data.meta) || {};
+        var deals = (data && data.deals) || [];
+        var key = dataKey(meta);
+        if (loadedOnce && key && key === state.dataKey) return;  // same publish
+        var before = keySet(state.deals);
+        state.meta = meta;
+        state.deals = deals;
+        state.dataKey = key;
         if (loadedOnce) {
           refreshStores();
+          var fresh = liveNotIn(deals, before);
+          if (fresh) toast(plural(fresh, "new deal") + " just dropped");
         } else {
           populateStores();
           renderTabs();
+          sinceLastVisit(deals);
           loadedOnce = true;
         }
+        rememberSeen(deals);
         renderMeta();
         render();
+        scheduleDrop();
       })
       .catch(function () {
         if (!loadedOnce) {
@@ -495,7 +716,7 @@ footer p{margin:0 0 8px}
   }
 
   loadData();
-  setInterval(loadData, 5 * 60 * 1000);  // self-refresh every 5 minutes
+  setInterval(loadData, 5 * 60 * 1000);  // fallback self-refresh every 5 minutes
 })();
 </script>
 </body>

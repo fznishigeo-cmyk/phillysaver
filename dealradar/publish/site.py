@@ -20,6 +20,11 @@ logger = logging.getLogger("dealradar.publish.site")
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
+# Minutes between publishes per run kind (fast.yml: */10, hourly.yml: 0 * * * *).
+# The page's "next drop" countdown reads meta.cadence_minutes instead of
+# guessing; an unknown kind gets the fast lane's, the site's shortest cadence.
+_CADENCE_MINUTES = {"fast": 10, "hourly": 60}
+
 
 def rewrite_affiliate(url: str) -> str:
     """Return the product URL unchanged.
@@ -151,6 +156,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "meta": {
             "generated_at": iso(now),
             "last_run": last_run or {},
+            "cadence_minutes": _CADENCE_MINUTES.get(
+                (last_run or {}).get("kind", ""), _CADENCE_MINUTES["fast"]),
             "disclosure": cfg.ftc_disclosure,
             "count": len(serialized),
             # Membership links (empty until the operator pastes them in

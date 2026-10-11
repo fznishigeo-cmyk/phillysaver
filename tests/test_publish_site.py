@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -230,3 +231,70 @@ def test_out_dir_defaults_to_cfg_site_dir(db, cfg):
         (Path(cfg.site_dir) / "deals.json").read_text(encoding="utf-8")
     )
     assert doc["meta"]["count"] == 1
+
+
+class TestLiveHomePage:
+    """Meta fields and template hooks behind the rotating, counting-down
+    home page (fresh-drops sort, "Next drop in" countdown, floor-derived
+    tagline)."""
+
+    @staticmethod
+    def _meta(db, cfg, out, last_run):
+        render_site(db, cfg, NOW, out_dir=out, deals=[], last_run=last_run)
+        return json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
+
+    def test_meta_cadence_follows_run_kind(self, db, cfg, tmp_path):
+        fast = self._meta(db, cfg, tmp_path / "fast",
+                          {"run_key": "2026-10-09T14:00:fast", "kind": "fast"})
+        assert fast["cadence_minutes"] == 10
+        hourly = self._meta(db, cfg, tmp_path / "hourly",
+                            {"run_key": "2026-10-09T14", "kind": "hourly"})
+        assert hourly["cadence_minutes"] == 60
+        # The page never guesses the publish time: generated_at is always set.
+        assert fast["generated_at"] == hourly["generated_at"] == iso(NOW)
+
+    def test_meta_cadence_defaults_to_fast_lane_without_last_run(self, db, cfg, tmp_path):
+        assert self._meta(db, cfg, tmp_path / "none", None)["cadence_minutes"] == 10
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_index_has_countdown_driven_by_meta(self, html):
+        assert 'id="countdown"' in html
+        assert "Next drop in" in html and "Loading new drops" in html
+        # Publish time and cadence come from deals.json meta, not the clock alone.
+        assert "m.generated_at" in html and "m.cadence_minutes" in html
+        assert "run_key" in html  # fallback publish time
+        # Polling: 30 s while a drop is loading, 5-minute fallback kept.
+        assert "30 * 1000" in html and "5 * 60 * 1000" in html
+        assert "just dropped" in html  # toast after a new publish
+
+    def test_index_defaults_to_fresh_drops_sort(self, html):
+        start = html.index('id="sortsel"')
+        options = re.findall(r'<option value="([^"]+)"',
+                             html[start:html.index("</select>", start)])
+        assert options[0] == "fresh:-1"
+        assert options[1:] == ["pct:-1", "abs:-1", "price:1", "age:1"]
+        assert 'sortKey: "fresh"' in html
+        # Rotation is seeded by the publish (run key), never random.
+        assert "Math.random" not in html
+        assert "first_seen_at" in html
+        # Per-viewer conveniences: every localStorage touch is guarded.
+        assert "since your last visit" in html
+        for line in html.splitlines():
+            if "localStorage." in line:
+                assert "try {" in line, line
+
+    def test_index_has_no_hardcoded_floor(self, html):
+        # The tagline and empty-state copy derive from meta.floors.min_pct.
+        assert "50–90%" not in html and "50-90%" not in html
+        # (CSS uses 50% for circles/centering; the copy and script must not.)
+        assert "50%" not in html[html.index("</style>"):]
+        assert "floors.min_pct" in html
+        # "Last run" + disclosure moved to the footer, verbatim from meta.
+        assert html.index('id="metaline"') > html.index("<footer>")
+        assert "m.disclosure" in html
+        assert DISCLOSURE not in html
