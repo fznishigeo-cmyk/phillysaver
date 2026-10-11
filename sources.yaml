@@ -83,6 +83,7 @@ sources:
     notes: "Operator-sourced deal site (no public record of its shape); first-run validation autodiscovers its feed."
     crawl_permission: "operator reports written permission from this site's owner (2026-10-10) to pull from the site. Correspondence on the operator's file. Bypass applies to this host only."
   - name: bradsdeals
+    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://www.bradsdeals.com/blog
     region: US
@@ -120,6 +121,7 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealmoon_us
+    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://www.dealmoon.com/en
     region: US
@@ -235,6 +237,7 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: jungle_deals
+    enabled: false   # URL is an HTML page (now jungle.deals), not a feed, source probe 2026-10-11
     method: rss
     url: https://jungledealsblog.com/
     region: US
@@ -296,6 +299,7 @@ sources:
     fast_lane: false
     notes: "Bank bonuses, points, web gift card discounts, shopping portal stacks."
   - name: kinja_deals
+    enabled: false   # domain no longer resolves (DNS), source probe 2026-10-11
     method: rss
     url: https://kinjadeals.theinventory.com/rss
     region: US
@@ -352,6 +356,7 @@ sources:
 
   # ---- freebie / price-glitch / clearance-error focused (the >=60% sweet spot) ----
   - name: hip2save_freebies
+    enabled: false   # /deals/freebies/ is 404; its posts are in the hip2save main feed, source probe 2026-10-11
     method: rss
     url: https://hip2save.com/deals/freebies/
     region: US
@@ -391,6 +396,7 @@ sources:
     allowed_html: true
     fast_lane: false
   - name: dealsplus
+    enabled: false   # domain no longer resolves (DNS), source probe 2026-10-11
     method: rss
     url: https://www.dealsplus.com/rss
     region: US
@@ -505,6 +511,7 @@ sources:
     notes: closeout/overstock retailer; validator autodiscovers a feed if one exists
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealsofamerica
+    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://www.dealsofamerica.com/
     region: US
@@ -513,6 +520,7 @@ sources:
     notes: community deals site; validator autodiscovers the feed
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: morningsave
+    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://morningsave.com/
     region: US
@@ -740,6 +748,7 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: carolinas_and_dollars
+    enabled: false   # hosting suspended (cgi-sys/suspendedpage.cgi), source probe 2026-10-11
     method: rss
     url: https://www.carolinasanddollars.com/feed/
     region: US
@@ -767,6 +776,7 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: couponflick
+    enabled: false   # /feed/ is 404 and the site advertises no feed, source probe 2026-10-11
     method: rss
     url: https://www.couponflick.com/feed/
     region: US

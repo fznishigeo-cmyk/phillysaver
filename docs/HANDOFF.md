@@ -44,14 +44,25 @@ Keep this file current: whoever stops working updates it in their last commit.
     3. Persist `link_as_posted`.
     4. Skip listing and wall pages in the og:image backfill.
   - Status: being built and reviewed by Claude, branch `photo-fix-botwall`.
-- **Tripped sources:** almost all carry `crawl_permission`. That waives
-  robots.txt only; it does not stop the site's firewall or server errors.
-  - **403:** bot protection blocks GitHub's servers. Never bypass it; ask the
-    owner to allowlist our User-Agent.
-  - **404 / not a feed:** the feed URL is wrong.
-  - **DNS errors:** the site is gone (kinja_deals, dealsplus).
-  - Next step: probe the tripped sources from GitHub Actions, then correct the
-    URLs and retire dead sources.
+- **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
+  waives robots.txt only; a site's firewall still decides.
+  - **Firewall blocks GitHub's servers.** The owner must allowlist our
+    User-Agent: `dealradar/0.1 (+https://github.com/fznishigeo-cmyk/phillysaver;
+    contact: hello@wowpriced.com)`.
+    - Cloudflare challenge: bensbargains, coupon_lady_deals, dealmama,
+      edealinfo, offers_blog (no permission).
+    - couponcabin_blog: 403.
+    - coupon_with_kayla: 202 challenge page.
+    - dealgenius: 429 on the first request.
+    - raining_hot_coupons: serves its feed WITH a 403 status. We treat a 403
+      as a refusal; the owner should fix the status.
+  - **Paused** (`enabled: false`, reason inline in sources.yaml):
+    - dead: dealsplus and kinja_deals (DNS), carolinas_and_dollars (hosting
+      suspended), couponflick (no feed);
+    - redundant: hip2save_freebies (its posts are in the hip2save feed);
+    - HTML pages, not feeds: bradsdeals, dealmoon_us, dealsofamerica,
+      jungle_deals, morningsave. Each needs a page reader before it can return.
+  - **inspiring_savings:** their server returns 500; it retries on its own.
 
 ## Open tasks
 1. Bring daily LLM spend to $6 by 2026-10-14 (task "cut AI spend"). Ideas:
