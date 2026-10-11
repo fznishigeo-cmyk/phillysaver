@@ -321,3 +321,42 @@ def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
     assert len(db.all_deals()) == 1
     assert len(db.sightings_for(res1["deal_id"])) == 2
     db.close()
+
+
+def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
+    """A dead $50 deal re-posted at $180 backs no stored price: the
+    sighting is recorded, the deal stays dead at $50. Within the recheck's
+    10% (or cheaper) it comes back, stamped so older Keepa data cannot
+    kill it again."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    ext = make_extracted(item="Widget deluxe", store="Amazon",
+                         product_url="https://www.amazon.com/dp/B0CCCCCCCC")
+    res = dedupe.upsert_extracted(
+        db, ext, make_savings(final=50.0, regular=200.0, pct=75.0, abs_s=150.0),
+        make_post("a", "a1"), cfg, NOW)
+    key = res["dedupe_key"]
+
+    def kill() -> None:
+        payload = dict(db.get_deal(key), flags=["price_moved"],
+                       died_at=util.iso(NOW), price_rechecked_at=util.iso(NOW))
+        db.update_deal(key, payload=payload, status="dead")
+
+    kill()
+    later = NOW + timedelta(hours=1)
+    dear = make_savings(final=180.0, regular=200.0, pct=10.0, abs_s=20.0)
+    res = dedupe.upsert_extracted(db, ext, dear, make_post("b", "b1"), cfg,
+                                  later)
+    assert res["revived"] is False
+    row = db.get_deal(key)
+    assert row["status"] == "dead" and row["final_price"] == 50.0
+    assert "price_moved" in row["flags"] and row["price_rechecked_at"]
+    assert len(row["sightings"]) == 2
+    near = make_savings(final=54.99, regular=200.0, pct=72.5, abs_s=145.01)
+    res = dedupe.upsert_extracted(db, ext, near, make_post("c", "c1"), cfg,
+                                  later)
+    assert res["revived"] is True
+    row = db.get_deal(key)
+    assert row["status"] == "alive" and row["final_price"] == 50.0
+    assert row["price_since"] == util.iso(later)
+    db.close()

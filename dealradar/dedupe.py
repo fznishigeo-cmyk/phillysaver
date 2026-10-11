@@ -255,6 +255,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["flags"] = list(savings.flags)
             # The prices the critic judged changed: its verdict is stale.
             payload["critic"] = None
+            # Keepa data older than this drop cannot judge the new price.
+            payload["price_since"] = util.iso(now)
 
         payload["codes"] = _union(existing.get("codes"), extracted.codes)
         payload["conditions"] = _union(existing.get("conditions"),
@@ -290,17 +292,24 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                                 content_hash=post.content_hash,
                                 seen_at=now, final_price=savings.final_price)
         payload["sightings"] = db.sightings_for(deal_id)
-        # A NEW sighting of a dead deal is proof it is on sale again. Live
-        # wart (B0BKQSDF5C): the price recheck killed a Warehouse deal and
+        # A NEW sighting of a dead deal at (or within the recheck's 10% of)
+        # its stored price is proof it is on sale again. Live wart
+        # (B0BKQSDF5C): the price recheck killed a Warehouse deal and
         # fifteen minutes later Keepa's deals feed listed it LOWER; the
-        # merge left it dead. The recheck stamp is cleared so the next pass
-        # re-judges it; a post that says "sold out" (or a past expiry)
-        # still ends it in the same run (pipeline.run, mark_expired_dead).
-        revived = fresh and existing.get("status") == "dead"
+        # merge left it dead. A dearer sighting backs no stored price: it
+        # is recorded and the deal stays dead. The recheck stamp is cleared
+        # so the next pass re-judges it, on Keepa data newer than the
+        # revival (price_since); a post that says "sold out" (or a past
+        # expiry) still ends it in the same run (pipeline.run,
+        # mark_expired_dead).
+        backed = new_final is not None and (
+            price_improved or new_final <= float(old_final) * 1.10 + 0.01)
+        revived = fresh and existing.get("status") == "dead" and backed
         if revived:
             payload["status"] = "alive"
             payload["died_at"] = ""
             payload["price_rechecked_at"] = ""
+            payload["price_since"] = util.iso(now)
             payload["flags"] = [f for f in payload.get("flags") or []
                                 if f != "price_moved"]
 

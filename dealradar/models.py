@@ -175,6 +175,9 @@ class Deal:
     # ISO UTC of the moment status flipped to 'dead' (site shows a dead deal
     # only briefly, as "just missed it" proof, then drops it).
     died_at: str = ""
+    # ISO UTC of a later price drop or revival; the recheck kills a deal
+    # only on Keepa data newer than this and first_seen_at.
+    price_since: str = ""
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0
