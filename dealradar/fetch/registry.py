@@ -27,6 +27,9 @@ def get_adapter(source: SourceConfig, cfg: AppConfig, *, fast_lane: bool = False
     even though construction currently needs nothing from it.
     """
     method = (source.method or "").lower()
+    if method == "html" and source.adapter in {"bradsdeals", "dealsofamerica"}:
+        from .pages import PageAdapter
+        return PageAdapter()
     if method in ("rss", "html"):
         # html sources are served by the RSS adapter after first-run
         # validation has autodiscovered a feed URL for them.

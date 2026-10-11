@@ -83,9 +83,9 @@ sources:
     notes: "Operator-sourced deal site (no public record of its shape); first-run validation autodiscovers its feed."
     crawl_permission: "operator reports written permission from this site's owner (2026-10-10) to pull from the site. Correspondence on the operator's file. Bypass applies to this host only."
   - name: bradsdeals
-    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
-    method: rss
-    url: https://www.bradsdeals.com/blog
+    method: html
+    adapter: bradsdeals
+    url: https://www.bradsdeals.com/deals
     region: US
     allowed_html: true
     fast_lane: false
@@ -511,13 +511,13 @@ sources:
     notes: closeout/overstock retailer; validator autodiscovers a feed if one exists
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealsofamerica
-    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
-    method: rss
+    method: html
+    adapter: dealsofamerica
     url: https://www.dealsofamerica.com/
     region: US
-    allowed_html: false
+    allowed_html: true
     fast_lane: false
-    notes: community deals site; validator autodiscovers the feed
+    notes: server-rendered deal cards; no feed autodiscovery
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: morningsave
     enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11

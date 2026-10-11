@@ -120,6 +120,16 @@ def _validate_one(
     """(status, detail, active_config|None) for any source."""
     if not source.enabled:
         return "disabled", "disabled in sources.yaml", None
+    if source.method == "html" and source.adapter in {"bradsdeals", "dealsofamerica"}:
+        from .pages import PageAdapter
+        try:
+            PageAdapter.fetch_page(source, fetcher,
+                                   datetime.now(timezone.utc), deadline)
+        except DeadlineExceeded:
+            raise
+        except RuntimeError as exc:
+            return "dead", str(exc), None
+        return "live", source.url, source
     if source.method in ("rss", "html"):
         return _validate_feed_source(source, fetcher, deadline)
     if source.method == "api":
