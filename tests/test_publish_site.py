@@ -779,12 +779,31 @@ class TestDropClock:
 
     def test_drop_contract(self, html):
         assert "DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000" in html
-        assert "LATE_MS = 6 * 60 * 1000" in html
+        assert "POLL_MS = 15 * 1000, POLL_SLOW_MS = 30 * 1000, SLOW_AFTER_MS = 6 * 60 * 1000" in html
         start = html.index("function drop(")
         body = html[start:html.index("function loadData(")]
-        assert "withTimeout(got, DROP_FETCH_MS)" in body
-        assert "markIndex(last" in body and "reorganize(true, added + unlocked > 0)" in body
-        assert '"Fresh drop" + updatedAgo()' in body
+        assert "withTimeout(got, DROP_FETCH_MS)" in body and "markIndex(last" in body
+        present = _between(html, "function present(", "function drop(")
+        assert "reorganize(true, added + unlocked > 0)" in present
+        assert '"Fresh drop" + updatedAgo()' in present
+
+    def test_a_mark_without_a_new_publish_never_re_deals_the_wall(self, html):
+        """Operator ask (2026-10-11): the free 8 must change completely; a
+        mark that came before its publish re-dealt the same 8 (cards moved
+        rows). Now only a new publish is a drop; until it lands the clock
+        says "Next drop soon" and polls (HEAD, then the file if it changed)."""
+        finish = _between(html, "function finish(", "got.catch(noop);")
+        assert "if (pub) { present(pub, deals, seed); return; }" in finish
+        assert "clock.waiting = clock.lastPoll = Date.now();" in finish
+        assert "reorganize(" not in finish
+        assert "present(pub, deals, null);" in _between(html, "function landed(", "function merge(")
+        tick = _between(html, "function tick(", "setInterval(tick, 1000)")
+        assert "!clock.waiting && loadedOnce" in tick and "poll();" in tick
+        poll = _between(html, "function poll(", "function updatedAgo(")
+        assert 'method: "HEAD"' in poll and "fetchPublish().then(merge)" in poll
+        clockp = _between(html, "function paintClock(", "function paintDial(")
+        assert 'wait ? "Next drop" : "Next drop in"' in clockp and 'wait ? "soon"' in clockp
+        assert "lateUntil" not in html
         assert '" · updated "' in html and '" min ago"' in html
         # One ticking interval for the whole page, plus the 5-minute fallback.
         assert html.count("setInterval(") == 2
@@ -1101,7 +1120,7 @@ class TestHonestShuffleAndPage:
         assert '" · updated "' in body and "publishTime(" in body
 
     def test_toast_only_for_real_news_or_a_visible_shuffle(self, html):
-        body = _between(html, "function drop(", "function loadData(")
+        body = _between(html, "function present(", "function loadData(")
         assert 'if (added) toast(plural(added, "new deal") + " just landed");' in body
         assert ('else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");'
                 in body)

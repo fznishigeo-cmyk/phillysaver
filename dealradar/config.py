@@ -154,7 +154,8 @@ class AppConfig:
     # -- paywall: visitors see the top N deals, members the full payload --
     paywall_enabled: bool = True
     paywall_teaser_count: int = 8      # unlocked deals on the public site
-    paywall_teaser_pool: int = 48      # each drop unlocks a new teaser_count of the top N
+    paywall_teaser_pool: int = 0       # each drop unlocks a new teaser_count of the top N (0 = every live deal)
+    paywall_teaser_memory: int = 2000  # keys of past free deals kept (pool 0): no repeat within a lap
     paywall_trial_days: int = 7
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
@@ -305,8 +306,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.paywall_enabled = bool(g("paywall", "enabled", default=cfg.paywall_enabled))
     cfg.paywall_teaser_count = max(0, int(g("paywall", "teaser_count",
                                             default=cfg.paywall_teaser_count)))
-    cfg.paywall_teaser_pool = max(cfg.paywall_teaser_count, int(g("paywall", "teaser_pool",
-                                  default=cfg.paywall_teaser_pool)))
+    pool = int(g("paywall", "teaser_pool", default=cfg.paywall_teaser_pool) or 0)
+    cfg.paywall_teaser_pool = 0 if pool <= 0 else max(cfg.paywall_teaser_count, pool)
+    cfg.paywall_teaser_memory = max(0, int(g("paywall", "teaser_memory",
+                                             default=cfg.paywall_teaser_memory)))
     cfg.paywall_trial_days = max(0, int(g("paywall", "trial_days",
                                           default=cfg.paywall_trial_days)))
     cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")

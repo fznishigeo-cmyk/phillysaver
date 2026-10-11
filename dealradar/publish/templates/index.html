@@ -608,10 +608,12 @@ footer .meta{font-size:11.5px}
   // sweeps, so the next drop is never further off than that.
   var FAST_LANE_MIN = 10;
   // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
-  // for at most DROP_MAX_MS; a publish that missed its mark is polled for
-  // quietly every POLL_MS until LATE_MS after the mark.
+  // for at most DROP_MAX_MS. A mark that comes before its publish never
+  // re-deals the same deals (operator: the free 8 must really change): the
+  // clock says "Next drop soon" and asks every POLL_MS (POLL_SLOW_MS after
+  // SLOW_AFTER_MS) until the publish lands, and that is the drop.
   var DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000;
-  var POLL_MS = 30 * 1000, LATE_MS = 6 * 60 * 1000;
+  var POLL_MS = 15 * 1000, POLL_SLOW_MS = 30 * 1000, SLOW_AFTER_MS = 6 * 60 * 1000;
   // Fresh drops mix up to JITTER_H hours of seeded jitter into the arrival
   // order: every drop re-deals the wall while recent arrivals still lead.
   var JITTER_H = 3;
@@ -755,7 +757,7 @@ footer .meta{font-size:11.5px}
   // A publish that has not landed by its mark is polled for quietly and
   // merged in place when it does; "Dropping…" never sits for more than 3 s.
   var clock = { target: 0, step: FAST_LANE_MIN * 60 * 1000, phase: 0,
-                dropping: 0, lateUntil: 0, lastPoll: 0, lastSeed: null };
+                dropping: 0, waiting: 0, lastPoll: 0, tag: "", lastSeed: null };
   function publishTime(m) {
     // published_at is the moment the file was built; generated_at is the
     // run's start (a long run publishes minutes later).
@@ -794,9 +796,12 @@ footer .meta{font-size:11.5px}
     var box = document.getElementById("drop");
     box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
-    var left = clock.target - now;
-    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
-    var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
+    var wait = !clock.dropping && !!clock.waiting;
+    var left = wait ? 0 : clock.target - now;
+    box.querySelector(".droplbl").textContent = wait ? "Next drop" : "Next drop in";
+    document.getElementById("countdown").textContent =
+      clock.dropping ? "Dropping…" : wait ? "soon" : mmss(left);
+    var f = clock.dropping || wait ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
     paintDial(f, clock.dropping ? null : left);
   }
   // The dial's ring for f = 0..1 of the cycle, swept clockwise from 12
@@ -818,11 +823,11 @@ footer .meta{font-size:11.5px}
   // each mark and runs the quiet late poll.
   function tick() {
     var now = Date.now();
-    if (!clock.dropping && loadedOnce && clock.target && now >= clock.target) {
+    if (!clock.dropping && !clock.waiting && loadedOnce && clock.target && now >= clock.target) {
       drop(now);
-    } else if (!clock.dropping && clock.lateUntil) {
-      if (now >= clock.lateUntil) clock.lateUntil = 0;
-      else if (now - clock.lastPoll >= POLL_MS) { clock.lastPoll = now; poll(); }
+    } else if (!clock.dropping && clock.waiting) {
+      var every = now - clock.waiting >= SLOW_AFTER_MS ? POLL_SLOW_MS : POLL_MS;
+      if (now - clock.lastPoll >= every) { clock.lastPoll = now; poll(); }
     }
     paintClock(now);
   }
@@ -2135,7 +2140,10 @@ footer .meta{font-size:11.5px}
   // open tab should see it without anyone pressing refresh.
   function fetchPublish() {
     return fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        clock.tag = r.headers.get("etag") || r.headers.get("last-modified") || clock.tag;
+        return r.json();
+      })
       .then(function (data) {
         var meta = (data && data.meta) || {};
         maybeReloadForNewVersion(meta);
@@ -2187,22 +2195,27 @@ footer .meta{font-size:11.5px}
     renderMeta();
     return added;
   }
-  // A publish landing between marks (late, or caught by the 5-minute
-  // fallback): its new deals enter at the top, tagged NEW, everything else
-  // stays where it is, and the toast gives the true count.
+  // A publish that lands after its mark (the clock said "Next drop soon"),
+  // or before it (caught by the 5-minute fallback), is the drop.
   function landed(pub, deals) {
     if (!isNewPublish(pub)) return;  // a drop got there first
-    var added = applyPublish(pub, deals);
-    clock.lateUntil = 0;
-    reorganize(false);
-    if (added) toast(plural(added, "new deal") + " just landed");
-    else if (state.unlocked) toast(plural(state.unlocked, "new free deal") + " unlocked");
+    present(pub, deals, null);
   }
   function merge(pub) {
     if (!isNewPublish(pub)) return Promise.resolve();
     return dealsFor(pub).then(function (deals) { landed(pub, deals); });
   }
-  function poll() { fetchPublish().then(merge).catch(noop); }
+  // While a drop waits, a HEAD request asks whether deals.json changed (its
+  // ETag or Last-Modified); the file itself comes only when it did, or when
+  // the host sends neither.
+  function poll() {
+    fetch("deals.json", {method: "HEAD", cache: "no-store"}).then(function (r) {
+      var tag = r.ok ? (r.headers.get("etag") || r.headers.get("last-modified") || "") : "";
+      if (tag && tag === clock.tag) return;
+      clock.tag = tag;
+      return fetchPublish().then(merge);
+    }).catch(noop);
+  }
   // How old the list on the wall is: minutes since this publish was built
   // (meta.published_at). Building it checks no price, so it says
   // "updated", never that prices were checked.
@@ -2212,16 +2225,41 @@ footer .meta{font-size:11.5px}
     var k = Math.floor((Date.now() - t) / 60000);
     return " · updated " + (k < 1 ? "just now" : k + " min ago");
   }
-  // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS),
-  // re-deal the wall seeded by the mark's index (new arrivals first),
-  // animate it, count to the next mark. Everything happens inside
-  // DROP_MAX_MS; whatever answers later lands in place.
+  // A new publish goes up as a drop: what arrived since the last drop
+  // leads, tagged NEW (a visitor's free deals are all new: the server never
+  // repeats one while an unshown deal is left), the wall is re-dealt for the
+  // next seed and animated, and the clock counts to the next mark.
+  function present(pub, deals, seed) {
+    var added = applyPublish(pub, deals);
+    var unlocked = added ? 0 : state.unlocked;
+    if (seed == null) seed = markIndex(Date.now(), clock.phase, clock.step);
+    clock.waiting = 0;
+    state.newKeys = {};
+    state.deals.forEach(function (d) {
+      var k = dealKey(d);
+      if (k && d.status !== "dead" && !state.dropKeys[k]) state.newKeys[k] = true;
+    });
+    state.dropKeys = keySet(state.deals);
+    state.seed = clock.lastSeed =
+      clock.lastSeed == null ? seed : Math.max(seed, clock.lastSeed + 1);
+    var moved = reorganize(true, added + unlocked > 0);
+    syncClock();
+    // Only real new keys are announced as new; free deals the drop opened
+    // come next; a member's re-dealt fresh sort says so with the list's
+    // age; a sort or filter that nothing moved in gets no toast.
+    if (added) toast(plural(added, "new deal") + " just landed");
+    else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");
+    else if (moved && state.sortKey === "fresh") toast("Fresh drop" + updatedAgo());
+  }
+  // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS).
+  // A new publish is the drop (present). None yet: nothing is re-dealt,
+  // the clock says "Next drop soon" and tick() polls until it lands.
+  // Everything happens inside DROP_MAX_MS; whatever answers later lands.
   function drop(now) {
     var last = nextMarkAfter(now, clock.phase, clock.step) - clock.step;  // a sleeping tab may have missed several
     var seed = markIndex(last, clock.phase, clock.step);
     var done = false, got = fetchPublish();
     clock.dropping = now;
-    clock.lateUntil = 0;
     clock.target = nextMarkAfter(now, clock.phase, clock.step);
     paintClock(now);
     var guard = setTimeout(function () { finish(null, null); }, DROP_MAX_MS - 250);
@@ -2229,28 +2267,10 @@ footer .meta{font-size:11.5px}
       if (done) { if (pub) landed(pub, deals); return; }
       done = true;
       clearTimeout(guard);
-      var added = pub && isNewPublish(pub) ? applyPublish(pub, deals) : 0;
-      var unlocked = added || !pub ? 0 : state.unlocked;
-      var fresh = !!pub || publishTime(state.meta || {}) >= last - clock.step / 2;
-      // What arrived since the last drop leads, tagged NEW.
-      state.newKeys = {};
-      state.deals.forEach(function (d) {
-        var k = dealKey(d);
-        if (k && d.status !== "dead" && !state.dropKeys[k]) state.newKeys[k] = true;
-      });
-      state.dropKeys = keySet(state.deals);
-      state.seed = clock.lastSeed =
-        clock.lastSeed == null ? seed : Math.max(seed, clock.lastSeed + 1);
       clock.dropping = 0;
-      var moved = reorganize(true, added + unlocked > 0);
-      syncClock();
-      if (!fresh) { clock.lateUntil = last + LATE_MS; clock.lastPoll = Date.now(); }
-      // Only real new keys are announced as new; free deals the drop opened
-      // come next; a mark that just re-dealt the fresh sort says so with the
-      // list's age; a sort or filter that nothing moved in gets no toast.
-      if (added) toast(plural(added, "new deal") + " just landed");
-      else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");
-      else if (moved && state.sortKey === "fresh") toast("Fresh drop" + updatedAgo());
+      if (pub) { present(pub, deals, seed); return; }
+      clock.waiting = clock.lastPoll = Date.now();
+      paintClock(Date.now());
     }
     got.catch(noop);
     withTimeout(got, DROP_FETCH_MS).then(function (pub) {

@@ -46,8 +46,10 @@ Keep this file current: whoever stops working updates it in their last commit.
   Claude reviews and merges. Codex never pushes to the live branch.
 
 ## Operator decisions (standing rules; do not undo)
-- **Free 8:** a new 8 of the top 48 at every drop (`paywall.teaser_pool`).
-  The clock says "Next drop".
+- **Free 8:** every drop unlocks 8 completely new deals; none is free twice
+  until every live deal has had a turn (`paywall.teaser_memory`). A drop is
+  a new publish: when the 10-minute mark comes first, the clock says "Next
+  drop soon" and the page waits for it; it never re-deals the same 8.
 - **Brand:** a tilted teal tile whose "w" doubles as a price-drop zigzag,
   with a gold spark (inline SVG, also the favicon), and the "wowpriced"
   wordmark. The home header is an ink bar in both themes; top right: drop

@@ -1,8 +1,8 @@
 """Paywall: the public deals.json is a teaser; members get the full payload.
 
 The static site never holds the locked data (docs/paywall.md). render_site
-keeps cfg.paywall_teaser_count alive deals in full (a different set from the
-top cfg.paywall_teaser_pool at every drop) and turns every
+keeps cfg.paywall_teaser_count alive deals in full (a different set at every
+drop: no deal is free twice until every live deal has had a turn) and turns every
 other alive deal into a locked stub — store, percent, photo, nothing that
 names, prices or links it — then the pipeline POSTs the full payload to the
 Worker, which serves it to signed-in members only.
@@ -33,21 +33,24 @@ def _stub(deal: dict[str, Any]) -> dict[str, Any]:
 def split_teaser(deals: list[dict[str, Any]], cfg,
                  recent: list[str] | tuple[str, ...] = ()) -> tuple[list[dict[str, Any]], int]:
     """(teaser, locked_count) for serialized deals in site order: teaser_count
-    alive deals from the top teaser_pool stay full, the other alive deals
-    become locked stubs, dead deals follow unchanged. recent: the keys the
-    last drops unlocked (oldest first); they go to the back of the line, so
-    every drop unlocks different deals. Passthrough with the paywall off."""
+    alive deals stay full, the other alive deals become locked stubs, dead
+    deals follow unchanged. The full ones are the best deals not unlocked
+    before (recent: the keys past drops unlocked, oldest first), among every
+    live deal, or the top teaser_pool when that is set. A deal is free again
+    only when no unshown one is left, least recently shown first.
+    Passthrough with the paywall off."""
     if not getattr(cfg, "paywall_enabled", False):
         return deals, 0
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
-    pool = max(n, int(getattr(cfg, "paywall_teaser_pool", 48)))
+    pool = int(getattr(cfg, "paywall_teaser_pool", 0) or 0)
     alive = [d for d in deals if d.get("status") == "alive"]
     dead = [d for d in deals if d.get("status") != "alive"]
-    fresh, stale = _rotate(alive[:pool], recent)
-    # Fresh deals first (store variety among them), and a recently shown
-    # deal only once the fresh ones run out: every drop really is new.
+    fresh, stale = _rotate(alive[:max(n, pool)] if pool > 0 else alive, recent)
+    # Fresh deals first (store variety among them), and a shown deal only
+    # once the fresh ones run out: every drop really is new.
     picked = _pick_teaser(fresh, n)
-    picked += stale[:n - len(picked)]
+    if len(picked) < n:
+        picked += _pick_teaser(stale, n - len(picked))
     chosen = {id(d) for d in picked}
     teaser = picked + [_stub(d) for d in alive if id(d) not in chosen] + dead
     return teaser, max(0, len(alive) - len(picked))
@@ -64,14 +67,21 @@ def _rotate(pool: list[dict[str, Any]], recent) -> tuple[list[dict[str, Any]], l
 
 
 def teaser_memory(teaser: list[dict[str, Any]], recent, cfg) -> list[str]:
-    """recent with this drop's unlocked keys appended, keeping the last
-    teaser_pool - teaser_count: a deal comes back only after the rest of the
-    pool has had its turn."""
+    """recent with this drop's unlocked keys appended (a key once, at its
+    latest showing), keeping the last teaser_memory keys, or teaser_pool -
+    teaser_count when a pool is set: a deal comes back only after the rest
+    have had their turn."""
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
-    keep = max(0, int(getattr(cfg, "paywall_teaser_pool", 48)) - n)
+    pool = int(getattr(cfg, "paywall_teaser_pool", 0) or 0)
+    keep = max(0, pool - n) if pool > 0 else max(0, int(getattr(cfg, "paywall_teaser_memory", 2000)))
     shown = [d.get("key") for d in teaser
              if d.get("status") == "alive" and not d.get("locked") and d.get("key")]
-    return (list(recent) + shown)[-keep:] if keep else []
+    out, seen = [], set()
+    for k in reversed(list(recent) + shown):
+        if k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out[::-1][-keep:] if keep else []
 
 
 #: Unlocked picks per store in the first pass: eight $5 phone cases from one

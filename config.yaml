@@ -187,7 +187,8 @@ paywall:
   # card on file (no card-less trial). See docs/paywall.md.
   enabled: true    # teaser deals.json + full payload uploaded to the Worker
   teaser_count: 8          # unlocked deals for visitors
-  teaser_pool: 48          # every drop unlocks a new 8 of the top 48 (never the last drops' 8)
+  teaser_pool: 0           # 0 = every live deal: a drop unlocks the best 8 not yet free this lap
+  teaser_memory: 2000      # past free deals remembered: none repeats until every live deal had a turn
   trial_days: 7            # page copy only; the Stripe trial is the Worker's TRIAL_DAYS: keep them equal
   api_url: "https://wowpriced-subscribe.wowpriced.workers.dev"              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty

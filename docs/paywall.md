@@ -64,13 +64,16 @@ paywall:
 
 ## Teaser `deals.json`
 
-`deals` = `teaser_count` **alive** published deals from the top
-`teaser_pool` (by the site's score order) as full objects, at most 2 per
-store while others remain. Each publish unlocks a different set: the keys
-the last drops unlocked are kept in state.db `meta` (`teaser_recent`, the
-last `teaser_pool - teaser_count` keys) and go to the back of the line, so
-a deal is unlocked again only after the rest of the pool had its turn (one
-lap = 6 drops = an hour) while a new best deal is unlocked at once. They
+`deals` = `teaser_count` **alive** published deals as full objects: the
+best (site score order) not unlocked before, at most 2 per store while
+others remain. Each publish unlocks a completely different set: the keys
+past drops unlocked are kept in state.db `meta` (`teaser_recent`, the last
+`teaser_memory` keys, 2000), so no deal is free twice until every live deal
+has had its turn (then the least recently shown go first), while a new best
+deal is unlocked at once. `teaser_pool: N > 0` limits the rotation to the
+top N (a lap of N / teaser_count drops). On the page a drop is a new
+publish: a mark that comes before it says "Next drop soon" and polls; the
+same deals are never re-dealt as a drop. They
 are followed by every other alive deal as a locked stub, then by the dead "Just missed" deals unchanged (they are
 gone; FOMO is the point):
 

@@ -245,8 +245,9 @@ class TestTeaserRotation:
     """Operator ask: every drop must ACTUALLY change the free 8, so a visitor
     who has not subscribed keeps seeing new deals."""
 
-    def _cfg(self, n=8, pool=48):
-        return AppConfig(paywall_enabled=True, paywall_teaser_count=n, paywall_teaser_pool=pool)
+    def _cfg(self, n=8, pool=0, memory=2000):
+        return AppConfig(paywall_enabled=True, paywall_teaser_count=n, paywall_teaser_pool=pool,
+                         paywall_teaser_memory=memory)
 
     def _drops(self, deals, cfg, k):
         recent, out = [], []
@@ -256,13 +257,26 @@ class TestTeaserRotation:
             recent = P.teaser_memory(teaser, recent, cfg)
         return out
 
-    def test_consecutive_drops_unlock_different_deals_and_cycle_the_pool(self):
+    def test_no_deal_is_free_twice_until_every_live_deal_had_a_turn(self):
+        """Operator ask (2026-10-11): the free 8 must change completely at
+        every drop and not repeat until that is 100% necessary."""
         cfg = self._cfg()
         deals = [_deal(i) for i in range(100)]   # 100 stores: no variety skips
-        drops = self._drops(deals, cfg, 7)
+        drops = self._drops(deals, cfg, 13)
         assert drops[0] == [d["key"] for d in deals[:8]]     # the best 8 first
+        assert all(len(d) == 8 for d in drops)
+        first12 = [k for d in drops[:12] for k in d]
+        assert len(first12) == len(set(first12)) == 96        # 12 drops, no repeat
+        assert first12 == [d["key"] for d in deals[:96]]      # best unshown first
+        # Drop 13: the last 4 unshown, then the 4 shown longest ago.
+        assert drops[12] == [d["key"] for d in deals[96:100]] + drops[0][:4]
+
+    def test_a_top_n_pool_still_laps_when_set(self):
+        cfg = self._cfg(pool=48)
+        deals = [_deal(i) for i in range(100)]
+        drops = self._drops(deals, cfg, 7)
         for a, b in zip(drops, drops[1:]):
-            assert len(b) == 8 and not set(a) & set(b)       # never last drop's
+            assert len(b) == 8 and not set(a) & set(b)
         assert set().union(*drops[:6]) == {d["key"] for d in deals[:48]}  # top 48 only
         assert drops[6] == drops[0]                           # then round again
 
@@ -290,7 +304,7 @@ class TestTeaserRotation:
         """Review finding on live data: a pool of 25 Amazon, 21 Woot and 2
         Walmart deals brought the same 2 Walmart deals back every drop,
         because the store cap reached into the recently shown ones."""
-        cfg = self._cfg()
+        cfg = self._cfg(pool=48)
         stores = ["Amazon"] * 25 + ["Woot"] * 21 + ["Walmart"] * 2
         deals = []
         for i, store in enumerate(stores):
@@ -308,7 +322,17 @@ class TestTeaserRotation:
         assert len(P.teaser_memory(teaser, [f"x{i}" for i in range(100)], cfg)) == 40
         cfg = self._cfg(n=8, pool=8)
         assert P.teaser_memory(teaser, ["x"], cfg) == []
+        cfg = self._cfg(n=8, memory=50)   # every live deal: the memory knob bounds it
+        assert len(P.teaser_memory(teaser, [f"x{i}" for i in range(100)], cfg)) == 50
+
+    def test_memory_keeps_each_key_once_at_its_latest_showing(self):
+        cfg = self._cfg(n=2)
+        deals = [_deal(i) for i in range(2)]
+        teaser, _ = P.split_teaser(deals, cfg)
+        keys = [d["key"] for d in deals]
+        assert P.teaser_memory(teaser, [keys[0], "x", keys[1]], cfg) == ["x", *keys]
 
     def test_config_knob(self):
-        assert load_config().paywall_teaser_pool == 48
-        assert AppConfig().paywall_teaser_pool == 48
+        assert load_config().paywall_teaser_pool == 0
+        assert load_config().paywall_teaser_memory == 2000
+        assert AppConfig().paywall_teaser_pool == 0
