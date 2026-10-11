@@ -131,8 +131,10 @@ Keep this file current: whoever stops working updates it in their last commit.
   America tracker destination offline for the ASIN at ingest and for the
   retailer-photo pass; a one-time repair gave existing deals their ASIN and
   lifted the photo retry flags. Tracker links, affiliate credit and dedupe
-  keys are unchanged. Still open: short links (`on.ltk.com`,
-  `goto.target.com`) are not resolved for photos.
+  keys are unchanged. Codex task 006 (merged 2026-10-11): the fast lane
+  resolves photo-less `on.ltk.com`, `goto.target.com`, `amzn.to` and `a.co`
+  links once each through the PoliteFetcher before the photo passes (at
+  most 20 per run; flag `link_resolve_tried`), keeping dedupe keys.
 
 ## Open tasks
 1. Bring daily LLM spend to $6 by 2026-10-14 (task "cut AI spend"). Ideas:

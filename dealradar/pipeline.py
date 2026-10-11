@@ -650,6 +650,59 @@ _PRODUCT_IMAGE_JUNK = re.compile(
     re.I)
 
 
+_SHORT_LINK_HOSTS = ("on.ltk.com", "goto.target.com", "amzn.to", "a.co")
+_SHORT_LINK_PER_RUN = 20
+
+
+def _resolve_short_links(db: DB, fetcher, deadline: float | None,
+                         cfg: AppConfig) -> int:
+    """Resolve photo-less short links once, preserving the deal's identity."""
+    from .dedupe import _DEAL_FIELDS
+    from .http_client import extract_asin, is_challenge_url, resolve_redirects
+
+    resolved = tried = 0
+    now = util.now_utc()
+    show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
+    for deal in db.all_deals():
+        if deal.get("image_url") or deal.get("link_shared") or \
+                "link_resolve_tried" in (deal.get("flags") or []):
+            continue
+        if deal.get("status") == "dead":
+            died = util.parse_iso(deal.get("died_at") or "")
+            if died is None or now - died > show_dead:
+                continue
+        link = deal.get("canonical_url") or ""
+        if (urlsplit(link).hostname or "").lower() not in _SHORT_LINK_HOSTS:
+            continue
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        try:
+            target = resolve_redirects(fetcher, link, cfg.redirect_max_hops,
+                                       deadline=deadline)
+        except DeadlineExceeded:
+            break
+        tried += 1
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        flags = list(payload.get("flags") or [])
+        flags.append("link_resolve_tried")
+        changed = target != link and urlsplit(target).scheme in ("http", "https") \
+            and not is_challenge_url(target)
+        if changed:
+            payload["canonical_url"] = target
+            if not deal.get("asin"):
+                payload["asin"] = extract_asin(target)
+            flags = [f for f in flags if f not in
+                     ("product_image_tried", "image_backfill_tried")]
+            resolved += 1
+        payload["flags"] = flags
+        db.update_deal(deal["dedupe_key"], payload=payload,
+                       canonical_url=target if changed else None)
+        if tried >= _SHORT_LINK_PER_RUN:
+            break
+    log.info("short links: %d of %d attempts resolved", resolved, tried)
+    return resolved
+
+
 def _backfill_product_images(db: DB, fetcher, deadline: float | None,
                              cfg: AppConfig | None = None) -> int:
     """Give photo-less deals linking straight to a well-known retailer the
@@ -1217,6 +1270,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Fast lane only: after its small fetch and parse it has minutes to
         # spare, so the backfill runs every 10 minutes with the critic's
         # tail reserve untouched. The hourly's budget stays on the blogs.
+        summary["short_links"] = (
+            _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg)
+            if fast_lane else 0)
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
                                   deadline - _RESERVE_FOR_TAIL_S, cfg)
