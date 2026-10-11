@@ -155,8 +155,9 @@ Keep this file current: whoever stops working updates it in their last commit.
    if small categories stay noindex.
 6. Operator: paste the tracking IDs (config.yaml `tracking:`, quoted) and add
    the growth-report secrets (Growth Kit artifact has the steps). GA4 done
-   2026-10-11 (G-MHLJXK2WHF, property 558475393); Meta, TikTok, Pinterest,
-   Google Ads and the secrets still to come.
+   2026-10-11 (G-MHLJXK2WHF, property 558475393); Meta Pixel done
+   (1634493648070496; automatic advanced matching and automatic events off);
+   TikTok, Pinterest, Google Ads and the secrets still to come.
 7. Google sign-ins don't fire `sign_up` (the Worker's /api/google reply
    doesn't say whether the account is new). Needs a Worker change + deploy.
 8. Open legal question from the SEO review: six subreddits come through

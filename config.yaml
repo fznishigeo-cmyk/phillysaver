@@ -231,7 +231,7 @@ tracking:
   # page shows (a member's deal links, a typed email). The site's own events
   # already cover sign-up, checkout, trial and deal clicks.
   ga4_measurement_id: "G-MHLJXK2WHF"  # Google Analytics 4, "G-XXXXXXXXXX"
-  meta_pixel_id: ""                 # Meta (Facebook/Instagram) Pixel, digits
+  meta_pixel_id: "1634493648070496" # Meta (Facebook/Instagram) Pixel, digits
   tiktok_pixel_id: ""               # TikTok Pixel code, letters and digits
   pinterest_tag_id: ""              # Pinterest Tag, digits
   google_ads_id: ""                 # Google Ads, "AW-123456789"
