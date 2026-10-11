@@ -124,11 +124,13 @@ Keep this file current: whoever stops working updates it in their last commit.
     bradsdeals, dealmoon_us and jungle_deals stayed tripped on their old
     feeds' failures; a source whose method, adapter or URL changes now
     starts with a fresh breaker (fetch/base.py), so they retry at once.
-- **Photos:** the photo passes run but find nothing left to try. Most
-  photo-less deals link through trackers or short links
-  (cc.dealsofamerica.com, on.ltk.com, goto.target.com), so no ASIN and no
-  retailer page. Seeing through them is Codex task 005.
   - **inspiring_savings:** their server returns 500; it retries on its own.
+- **Photos:** Codex task 005 (merged 2026-10-11) decodes the Deals of
+  America tracker destination offline for the ASIN at ingest and for the
+  retailer-photo pass; a one-time repair gave existing deals their ASIN and
+  lifted the photo retry flags. Tracker links, affiliate credit and dedupe
+  keys are unchanged. Still open: short links (`on.ltk.com`,
+  `goto.target.com`) are not resolved for photos.
 
 ## Open tasks
 1. Bring daily LLM spend to $6 by 2026-10-14 (task "cut AI spend"). Ideas:

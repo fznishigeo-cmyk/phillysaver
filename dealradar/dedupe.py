@@ -261,9 +261,11 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     'revived', 'payload'}; 'revived' = a new sighting brought a dead deal
     back alive.
     """
-    from .http_client import extract_asin  # lazy: written by another layer
+    from .http_client import extract_asin, tracker_target  # lazy: written by another layer
 
     asin = extract_asin(extracted.product_url) if extracted.product_url else ""
+    if not asin:
+        asin = extract_asin(tracker_target(extracted.product_url))
     if not asin and "amazon" in (extracted.store or "").lower():
         # Deal blogs link the product in the body while the LLM's product_url
         # is often a tracker/redirect: the one Amazon link in a single-deal
