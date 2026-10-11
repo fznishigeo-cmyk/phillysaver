@@ -1,0 +1,34 @@
+name: source probe (read-only)
+
+# Probes named sources the way the pipeline fetches them (PoliteFetcher: our
+# User-Agent, robots.txt honoured except on a source's own host when
+# sources.yaml documents written crawl_permission, per-host rate limit) and
+# reports why each one fails, plus any working feed URL the site advertises.
+# Writes nothing but the log and the run summary.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated source names from sources.yaml"
+        required: true
+        default: "bensbargains,bradsdeals,carolinas_and_dollars,coupon_lady_deals,coupon_with_kayla,couponcabin_blog,couponflick,dealgenius,dealmama,dealmoon_us,dealsofamerica,dealsplus,edealinfo,hip2save_freebies,inspiring_savings,jungle_deals,kinja_deals,morningsave,offers_blog,raining_hot_coupons"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dealradar
+        run: pip install -e .
+      - name: Probe the sources
+        env:
+          SOURCE_NAMES: ${{ inputs.sources }}
+        run: python scripts/source_probe.py
