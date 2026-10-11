@@ -337,8 +337,22 @@ footer .meta{font-size:11.5px}
     // Own tab by operator call: 85%-off rotors are the "WOW that's cheap"
     // screenshot material — they get buried in a grab-bag Other tab.
     ["Automotive", ["auto"]],
-    ["Other", ["pets", "office", "books_media", "other"]]
+    ["Pets", ["pets"]],
+    ["Other", ["office", "books_media", "other"]]
   ];
+  // The version of this page as published (site.py fills it in). A newer
+  // publish carries a different meta.site_version: the page then reloads
+  // itself once, so a browser's cached copy never shows yesterday's layout
+  // over today's data.
+  var SITE_VERSION = "__SITE_VERSION__";
+  function maybeReloadForNewVersion(m) {
+    var v = m && m.site_version;
+    if (!v || !SITE_VERSION || SITE_VERSION.indexOf("__") === 0 || v === SITE_VERSION) return;
+    var key = "wp.reloaded." + v;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); }
+    catch (e) { /* storage blocked: reload anyway, once per page life */ if (window.__wpReloaded) return; window.__wpReloaded = true; }
+    location.reload();
+  }
 
   // Every published deal passed the verbatim-price check and the critic;
   // the badge only says how it was corroborated. No badge = single source.
@@ -1124,6 +1138,7 @@ footer .meta{font-size:11.5px}
       .then(function (data) {
         var meta = (data && data.meta) || {};
         var deals = (data && data.deals) || [];
+        maybeReloadForNewVersion(meta);
         var key = dataKey(meta);
         if (loadedOnce && key && key === state.dataKey) return;  // same publish
         state.teaser = deals;

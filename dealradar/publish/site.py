@@ -27,6 +27,14 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 _CADENCE_MINUTES = {"fast": 10, "hourly": 60}
 
 
+def site_template_version() -> str:
+    """Short hash of the home page template: changes with every template
+    edit, so a visitor's cached page knows a newer one was published."""
+    import hashlib
+    data = (TEMPLATES_DIR / "index.html").read_bytes()
+    return hashlib.sha256(data).hexdigest()[:12]
+
+
 def rewrite_affiliate(url: str) -> str:
     """Return the product URL unchanged.
 
@@ -157,7 +165,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
     teaser, locked_count = split_teaser(serialized, cfg)
+    site_version = site_template_version()
     meta = {
+        "site_version": site_version,
         "generated_at": iso(now),
         "last_run": last_run or {},
         "cadence_minutes": _CADENCE_MINUTES.get(
@@ -213,6 +223,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                  "careers.html", "contact.html", "how-it-works.html", "hacks.html",
                  "subscribe.html"):
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
+    # The home page learns its own version so a cached copy reloads itself
+    # when a newer publish (meta.site_version) appears.
+    index = (out / "index.html").read_text(encoding="utf-8")
+    (out / "index.html").write_text(index.replace("__SITE_VERSION__", site_version, 1),
+                                    encoding="utf-8")
 
     # The contact page carries the operator's email only once it is really
     # configured; the unset placeholder must never reach the public site

@@ -541,3 +541,25 @@ class TestFooterNewsletterForm:
         assert 'href="subscribe.html"' in html
         assert "m.newsletter_url" in html          # action comes from meta, never hardcoded
         assert "workers.dev" not in html
+
+
+class TestSelfReloadAndPetsTab:
+    def test_version_stamped_into_page_and_meta(self, db, cfg, tmp_path):
+        import json
+
+        from dealradar.publish.site import render_site, site_template_version
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        v = site_template_version()
+        assert len(v) == 12
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert f'var SITE_VERSION = "{v}"' in html and "__SITE_VERSION__" not in html
+        meta = json.loads((tmp_path / "deals.json").read_text())["meta"]
+        assert meta["site_version"] == v
+        assert "maybeReloadForNewVersion(meta)" in html
+
+    def test_pets_tab_exists_and_other_no_longer_holds_pets(self, db, cfg, tmp_path):
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert '["Pets", ["pets"]]' in html
+        assert '["Other", ["office", "books_media", "other"]]' in html
