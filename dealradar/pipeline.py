@@ -37,6 +37,20 @@ _RESERVE_FOR_TAIL_S = 90.0
 _RESERVE_FOR_PARSE_S = 300.0
 
 
+def _spend_markdown(spend_by_kind: dict, extract_by_source: dict) -> str:
+    """Operator accounting only: source names and aggregate calls/costs."""
+    lines = ["## LLM spend by kind", "", "| Kind | Calls | USD |",
+             "|---|---:|---:|"]
+    for kind, stats in sorted(spend_by_kind.items()):
+        lines.append(f"| {kind} | {stats['calls']} | {stats['usd']:.6f} |")
+    lines.extend(["", "## Extraction spend by source", "",
+                  "| Source | Calls | USD |", "|---|---:|---:|"])
+    for name, stats in sorted(extract_by_source.items()):
+        name = name.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+        lines.append(f"| {name} | {stats['calls']} | {stats['usd']:.6f} |")
+    return "\n".join(lines) + "\n"
+
+
 def _run_key(now: datetime, fast_lane: bool) -> str:
     if fast_lane:
         # One key per quarter-hour so the four fast runs in an hour each keep
@@ -1343,6 +1357,22 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                                                       parser=parser)
         if parser is not None:
             spend_total = float(getattr(parser, "spend_usd", 0.0))
+        summary["spend_usd"] = spend_total
+        summary["spend_by_kind"] = {
+            kind: dict(stats) for kind, stats in
+            getattr(parser, "spend_by_kind", {}).items()
+        }
+        summary["extract_by_source"] = {
+            name: dict(stats) for name, stats in
+            getattr(parser, "extract_by_source", {}).items()
+        }
+        if step_summary:
+            try:
+                with open(step_summary, "a", encoding="utf-8") as fh:
+                    fh.write(_spend_markdown(summary["spend_by_kind"],
+                                             summary["extract_by_source"]))
+            except OSError as e:
+                log.warning("LLM spend summary not written: %s", e)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,
                                                     items_fetched=len(posts),
                                                     kind=kind)

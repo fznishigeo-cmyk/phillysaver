@@ -229,9 +229,22 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     md = step_summary.read_text()
     assert "## Source health (2 sources, 0 tripped)" in md
     assert "| blogone | ok |" in md and "| feedtwo | ok |" in md
+    assert "## LLM spend by kind" in md
+    assert "| extract | 5 |" in md and "| critic | 3 |" in md
+    assert "## Extraction spend by source" in md
+    assert summary["spend_by_kind"]["extract"]["calls"] == 5
+    assert summary["spend_by_kind"]["critic"]["calls"] == 3
+    assert sum(s["usd"] for s in summary["spend_by_kind"].values()) == pytest.approx(
+        summary["spend_usd"])
+    assert sum(s["calls"] for s in summary["extract_by_source"].values()) == 5
+    assert sum(s["usd"] for s in summary["extract_by_source"].values()) == pytest.approx(
+        summary["spend_by_kind"]["extract"]["usd"])
+    for private in ("Ninja Foodi", "Chef Pro Knife", "FRYDAY", "$29.99", "BEGIN POST"):
+        assert private not in md
+    assert "spend_by_kind" not in last_run and "extract_by_source" not in last_run
 
 
-def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, monkeypatch):
+def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, monkeypatch, tmp_path):
     """The free list's daily pick gets the run's one parser (same caps), and
     whatever it spends is in the run's recorded total (the daily cap reads it)."""
     from dealradar.publish import newsletter
@@ -240,10 +253,12 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
 
     def fake_send(db, cfg, now, *, deadline=None, parser=None, **kw):
         seen["parser"] = parser
-        parser._account(_FakeResponse(None), parser.model)  # one pick's worth
+        parser._account(_FakeResponse(None), parser.model, kind="newsletter_pick")
         return {"sent": 0, "skipped": "test", "day": ""}
 
     monkeypatch.setattr(newsletter, "send_daily_newsletter", fake_send)
+    step_summary = tmp_path / "step_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     summary = _run(env)
     parser = seen["parser"]
     assert parser is not None and parser.model == "claude-haiku-5-5"
@@ -254,6 +269,9 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
     (recorded,) = conn.execute("SELECT spend_usd FROM run_stats").fetchone()
     conn.close()
     assert recorded == pytest.approx(parser.spend_usd)
+    assert summary["spend_usd"] == pytest.approx(recorded)
+    assert summary["spend_by_kind"]["newsletter_pick"]["calls"] == 1
+    assert "| newsletter_pick | 1 |" in step_summary.read_text()
 
 
 def test_rerun_is_idempotent(env, capsys):

@@ -213,6 +213,29 @@ class TestModelSelection:
 
 # ---------------------------------------------------- parse path + spend
 
+def test_spend_kinds_and_sources_sum_to_total_with_model_overrides():
+    messages = FakeMessagesWithParse(parse_responses=[
+        FakeParseResponse(one_deal(), FakeUsage(1000, 100)),
+        FakeParseResponse(one_deal(), FakeUsage(2000, 200)),
+        FakeParseResponse(one_deal(), FakeUsage(1000, 100)),
+    ])
+    parser = make_parser(messages)
+    parser.extract("private post one", {"source_name": "one"}, kind="extract")
+    parser.extract("private post two", {"source_name": "two"}, kind="extract")
+    parser.extract("private post one", {"source_name": "one"},
+                   model="unknown-model", kind="second_opinion")
+    parser._account(FakeParseResponse(None, FakeUsage(1000, 100)))
+    assert parser.spend_by_kind["extract"]["calls"] == 2
+    assert parser.spend_by_kind["second_opinion"] == {
+        "calls": 1, "usd": pytest.approx(0.0015)}
+    assert parser.spend_by_kind["other"]["calls"] == 1
+    assert sum(s["usd"] for s in parser.spend_by_kind.values()) == pytest.approx(parser.spend_usd)
+    assert set(parser.extract_by_source) == {"one", "two"}
+    assert sum(s["calls"] for s in parser.extract_by_source.values()) == 2
+    assert sum(s["usd"] for s in parser.extract_by_source.values()) == pytest.approx(
+        parser.spend_by_kind["extract"]["usd"])
+
+
 class TestParsePathAndSpend:
     def test_parse_path_returns_deals_and_accounts_spend(self):
         messages = FakeMessagesWithParse(parse_responses=[
@@ -249,9 +272,12 @@ class TestParsePathAndSpend:
         parser = make_parser(messages, cfg=cfg)
         assert len(parser.extract("post one", META)) == 1
         assert parser.spend_usd == pytest.approx(0.12)
+        before = {kind: dict(stats) for kind, stats in parser.spend_by_kind.items()}
         with pytest.raises(SpendCapReached):
             parser.extract("post two", META)
         assert len(messages.parse_calls) == 1  # the second call never went out
+        assert parser.spend_by_kind == before
+        assert before["extract"] == {"calls": 1, "usd": pytest.approx(0.12)}
 
     def test_refusal_stop_reason_means_zero_deals(self):
         messages = FakeMessagesWithParse(parse_responses=[
@@ -355,6 +381,9 @@ class TestJsonFallback:
         assert len(messages.create_calls) == 3
         # every attempt was still accounted against the spend cap
         assert parser.spend_usd == pytest.approx(3 * (10 * 0.10 + 10 * 0.50) / 1e6)
+        assert parser.spend_by_kind["extract"] == {
+            "calls": 3, "usd": pytest.approx(parser.spend_usd)}
+        assert parser.extract_by_source[META["source_name"]] == parser.spend_by_kind["extract"]
 
     def test_type_slips_repaired_without_a_paid_reask(self):
         """Live: a third of Haiku's answers failed validation over trivia

@@ -102,6 +102,18 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Codex task 009 (implemented on `codex/task-009`, uncommitted):** the
+  shared parser now tracks calls and USD by explicit call kind (`extract`,
+  `second_opinion`, `critic`, `newsletter_pick`, `other`) and extraction
+  calls/USD by source. Counters cover responses with usage, including paid
+  JSON re-asks; transport failures without usage add no cost or count.
+  `pipeline.run` returns `spend_usd`, `spend_by_kind` and `extract_by_source`
+  after the newsletter pick and appends aggregate-only tables to the Actions
+  step summary. Existing total accounting, run/daily caps and public site
+  payloads are unchanged. Validation: `.venv/bin/python -m pytest -q` —
+  1154 passed, 1 deselected; final targeted accounting/quality/newsletter/e2e
+  checks — 150 passed. Nothing committed or pushed; review/merge remains,
+  and the separate task to reduce daily spend to $6 is still open.
 - **GitHub Pages retirement:** remove the Pages deploy steps from fast.yml
   and hourly.yml, then the operator unpublishes it (Settings -> Pages).
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`

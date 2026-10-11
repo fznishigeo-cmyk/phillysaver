@@ -560,6 +560,9 @@ class TestPick:
         assert "VERBATIM QUOTE" not in prompt and "slickdeals" not in prompt.lower()
         # Priced by the model actually used, on the run's shared parser.
         assert parser.spend_usd == pytest.approx(PICK_COST)
+        assert parser.spend_by_kind["newsletter_pick"] == {
+            "calls": 1, "usd": pytest.approx(PICK_COST)}
+        assert parser.extract_by_source == {}
 
     def test_unknown_ids_and_repeats_dropped_then_padded_from_rank(self, cfg):
         parser, _ = make_parser(cfg, Answer(

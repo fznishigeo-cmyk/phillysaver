@@ -124,6 +124,9 @@ class TestCritiqueDeal:
         critique_deal(parser, _deal_dict())
         # 1000 in / 100 out at SONNET rates, not the default haiku model's.
         assert parser.spend_usd == pytest.approx((1000 * 2 + 100 * 10) / 1e6)
+        assert parser.spend_by_kind["critic"] == {
+            "calls": 1, "usd": pytest.approx(parser.spend_usd)}
+        assert parser.extract_by_source == {}
 
     def test_malformed_parsed_output_means_no_opinion(self):
         class _OddMessages:
@@ -439,11 +442,13 @@ class SecondOpinionParser:
         self.cfg = cfg
         self.spend_usd = 0.0
         self.calls: list[str | None] = []  # the model each call used
+        self.kinds: list[str] = []
         self._first = list(first_pass or [])
         self._second = list(second_pass or [])
 
-    def extract(self, text, meta, model=None):
+    def extract(self, text, meta, model=None, *, kind="extract"):
         self.calls.append(model)
+        self.kinds.append(kind)
         pool = self._second if model else self._first
         return pool.pop(0) if pool else []
 
@@ -475,6 +480,7 @@ class TestSecondOpinion:
         pairs, stats = parse_posts(posts, parser, cfg, NOW, {})
         assert stats["second_opinions"] == 1
         assert parser.calls == [None, "claude-sonnet-5-5"]
+        assert parser.kinds == ["extract", "second_opinion"]
         assert len(pairs) == 1
         assert pairs[0][1].item == "Missed Widget"
 

@@ -463,7 +463,7 @@ def _ask_model(candidates: list[dict[str, Any]], n: int, parser,
         log.warning("newsletter pick: no model answer (%s: %s); rank order",
                     type(e).__name__, e)
         return None
-    parser._account(resp, parser.model)
+    parser._account(resp, parser.model, kind="newsletter_pick")
     if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
         log.warning("newsletter pick: model stopped (%s); rank order",
                     resp.stop_reason)

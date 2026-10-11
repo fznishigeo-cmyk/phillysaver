@@ -251,7 +251,7 @@ def parse_posts(
             "source_url": post.url,
             "title": post.title,
         }
-        llm_deals = parser.extract(cleaned, meta)
+        llm_deals = parser.extract(cleaned, meta, kind="extract")
         # Second opinion: the cheap model found nothing, but the post
         # plainly smells like a deal (prices/percents + deal words) —
         # one re-read with a stronger model, budget- and count-capped.
@@ -261,7 +261,8 @@ def parse_posts(
                 if take:
                     stats["second_opinions"] += 1
             if take:
-                llm_deals = parser.extract(cleaned, meta, model=so_model)
+                llm_deals = parser.extract(cleaned, meta, model=so_model,
+                                           kind="second_opinion")
         return post, cleaned, llm_deals
 
     def _record(post: RawPost, cleaned: str, llm_deals: list) -> None:
