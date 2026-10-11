@@ -208,6 +208,31 @@ newsletter:
   max_per_run: 200           # messages per run; a longer list continues next run
   top_n: 10                  # deals per email (the page copy says "top 10")
 
+tracking:
+  # Analytics and ad tags (dealradar/publish/tracking.py). Public IDs only,
+  # never secrets; paste each one quoted. Empty = that tag is not on any
+  # page; all empty = no page makes a third-party request. A value that does
+  # not look like a real ID is skipped with a warning. The ad pixels never
+  # load for a visitor whose browser sends Global Privacy Control or who
+  # opted out on /privacy.html; GA4 then runs without its ad features.
+  # In each partner's settings keep automatic event detection and automatic
+  # advanced matching off (Meta, TikTok, Pinterest, Microsoft) and GA4's
+  # Enhanced measurement > Outbound clicks off: they would report what the
+  # page shows (a member's deal links, a typed email). The site's own events
+  # already cover sign-up, checkout, trial and deal clicks.
+  ga4_measurement_id: ""            # Google Analytics 4, "G-XXXXXXXXXX"
+  meta_pixel_id: ""                 # Meta (Facebook/Instagram) Pixel, digits
+  tiktok_pixel_id: ""               # TikTok Pixel code, letters and digits
+  pinterest_tag_id: ""              # Pinterest Tag, digits
+  google_ads_id: ""                 # Google Ads, "AW-123456789"
+  google_ads_trial_label: ""        # the Google Ads conversion label for start_trial
+  bing_uet_id: ""                   # Microsoft Advertising UET tag, digits
+  # Site-ownership checks: the content value of each meta tag, on every page.
+  google_site_verification: ""      # google-site-verification
+  bing_site_verification: ""        # msvalidate.01 (32 hex characters)
+  pinterest_domain_verify: ""       # p:domain_verify (32 hex characters)
+  facebook_domain_verification: ""  # facebook-domain-verification
+
 digest:
   hour_local: 8                # 08:00 America/New_York
   timezone: "America/New_York"

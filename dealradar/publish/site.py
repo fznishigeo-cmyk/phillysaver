@@ -22,6 +22,7 @@ from ..util import iso, parse_iso
 from . import seo
 from .paywall import split_teaser, teaser_memory
 from .credits import source_display_name
+from .tracking import apply_tracking
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -297,7 +298,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     pages = ("index.html", "welcome.html", "about.html",
              "careers.html", "contact.html", "how-it-works.html", "hacks.html",
-             "subscribe.html")
+             "subscribe.html", "privacy.html")
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
     # The home page learns its own version so a cached copy reloads itself
@@ -331,7 +332,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if "{{SITE_URL}}" in html:
             (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
     public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
-              "contact.html", "careers.html"]
+              "contact.html", "careers.html", "privacy.html"]
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
     seo.publish(db, cfg, now, out, teaser, site_url, public)
@@ -343,6 +344,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Actions ignore CNAME (the domain is set in Settings -> Pages).
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
+
+    # Last: the operator's analytics and ad tags (config.yaml tracking:) go
+    # into every page written above or by another pass, nested ones included.
+    apply_tracking(out, cfg)
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 len(serialized), locked_count, out)
