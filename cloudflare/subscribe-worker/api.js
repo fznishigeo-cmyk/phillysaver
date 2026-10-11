@@ -6,7 +6,7 @@
  *   POST /api/signup   {email, password} -> 200 {token, me} | 400 invalid_email
  *                      | 400 weak_password | 409 exists
  *   POST /api/login    {email, password} -> 200 {token, me} | 401 bad_credentials
- *   POST /api/google   {credential}      -> 200 {token, me} | 401 bad_token
+ *   POST /api/google   {credential}      -> 200 {token, me, new_account} | 401 bad_token
  *   POST /api/claim    Bearer <session>, {session_id} -> 200 {me} | 400 bad_session
  *                      | 403 wrong_account | 404 unknown_session | 409 already_claimed
  *                      | 502 stripe_unavailable | 401
@@ -46,10 +46,10 @@ const str = (v) => (typeof v === "string" ? v : "");
 
 // The session is signed before a new or changed account is saved, so a
 // signing failure leaves no half-created account behind.
-async function signedIn(env, acct, headers, save = false) {
+async function signedIn(env, acct, headers, save = false, extra = {}) {
   const token = await signSession(env, acct.email, undefined, acct.session_version || 0);
   if (save) await saveAccount(env, acct);
-  return json({ token, me: await meFor(env, acct) }, 200, headers);
+  return json({ token, me: await meFor(env, acct), ...extra }, 200, headers);
 }
 
 async function signup(request, env, headers) {
@@ -77,6 +77,7 @@ async function google(request, env, headers) {
   const id = await verifyGoogleToken(env, (await readJson(request)).credential);
   if (!id) return json({ error: "bad_token" }, 401, headers);
   let acct = await getAccount(env, id.email);
+  const new_account = !acct;
   let save = true;
   let unbound = null;
   if (!acct) acct = newAccount(id.email, { googleSub: id.sub }); // free: no access until a Stripe subscription
@@ -85,7 +86,7 @@ async function google(request, env, headers) {
     forgetMembership(acct.email); // the owner's email lookup must not see the squatter's cached "no"
   } else if (acct.google_sub !== id.sub) acct.google_sub = id.sub;
   else save = false;
-  const res = await signedIn(env, acct, headers, save);
+  const res = await signedIn(env, acct, headers, save, { new_account });
   if (unbound) await releaseClaim(env, unbound, acct.email);
   return res;
 }

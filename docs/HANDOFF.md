@@ -166,8 +166,14 @@ Keep this file current: whoever stops working updates it in their last commit.
    2026-10-11 (G-MHLJXK2WHF, property 558475393); Meta Pixel done
    (1634493648070496; automatic advanced matching and automatic events off);
    TikTok, Pinterest, Google Ads and the secrets still to come.
-7. Google sign-ins don't fire `sign_up` (the Worker's /api/google reply
-   doesn't say whether the account is new). Needs a Worker change + deploy.
+7. Codex task 010 implemented locally (uncommitted): `/api/google` now
+   returns `new_account` and the page fires `sign_up` with method `google`
+   only when it is true. Worker tests cover new and returning accounts
+   and existing-account takeover; the template test checks the event hook.
+   API contract updated in docs/paywall.md. Validation: `.venv/bin/python
+   -m pytest -q` (1153 passed, 1 deselected) and the Worker's `npm test`
+   both passed. Claude still needs to review
+   and merge, then run the Worker deploy workflow and publish the site.
 8. Open legal question from the SEO review: six subreddits come through
    Reddit's Data API into a paid product; Reddit's terms want a separate
    agreement for commercial use. Operator decision.
