@@ -102,6 +102,19 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Codex task 011 (merged 2026-10-11
+  deal objects through their shared serializer from 40 to 26 fields; removed
+  only fields with no serialized-data reader. `flags` and `alive` remain
+  because the existing offline e2e/publish tests read them. Published JSON
+  uses compact separators; locked stubs and every retained value are unchanged.
+  Added a documented consumer allow-list and compact public/member equality
+  test. Offline open-access render of 1,400 varied deals (seven stores, eight
+  product types, prices, codes/coupon steps, photos, two source credits each;
+  fixed publish time, current config) measured 2,385,669 -> 1,281,965 bytes
+  raw and 121,736 -> 103,128 bytes gzip (level 9, mtime 0). All retained values
+  and metadata matched the baseline. `.venv/bin/python -m pytest -q` passed:
+  1,160 passed, 1 deselected (including offline e2e/idempotency). Changes remain
+  merged 2026-10-11. No commit or push made.
 - **LLM spend breakdown** (Codex task 009, merged 2026-10-11): each run's
   summary and Actions step summary show calls and USD per kind (extract,
   second_opinion, critic, newsletter_pick, other) and extraction spend per

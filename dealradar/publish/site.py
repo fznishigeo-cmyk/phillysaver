@@ -210,34 +210,20 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
         "pct_at_checkout": deal.get("pct_at_checkout"),
-        "pct_with_rebates": deal.get("pct_with_rebates"),
         "abs_savings": deal.get("abs_savings"),
-        "basis": deal.get("basis", ""),
         "flags": deal.get("flags") or [],
         "codes": deal.get("codes") or [],
         # Get deal goes to the source post (url) and the card shows how.
         "needs_steps": steps,
         "how": _how(deal) if steps else [],
-        "stack_steps": deal.get("stack_steps") or [],
-        "rebates": deal.get("rebates") or [],
-        "deferred_value": deal.get("deferred_value", ""),
         "conditions": deal.get("conditions") or [],
-        "online_only": deal.get("online_only", "unknown"),
-        "shipping_cost_or_threshold": deal.get("shipping_cost_or_threshold", ""),
-        "quantity_or_unit": deal.get("quantity_or_unit", ""),
-        "region": deal.get("region", "US"),
-        "currency": deal.get("currency", "USD"),
         "category": deal.get("category") or "other",
-        "expires_at": deal.get("expires_at", ""),
         "badge": deal.get("verify_tier", "unverified"),
         "headline": _headline(deal),
         "status": status,
         "alive": status == "alive",
         "died_at": deal.get("died_at", ""),
         "first_seen_at": deal.get("first_seen_at", ""),
-        "last_seen_at": deal.get("last_seen_at", ""),
-        "confidence": deal.get("confidence"),
-        "score": deal.get("score"),
         "age_hours": age_hours,
         "credits": credits,
         # The sites that reported it (domains only): the source filter.
@@ -347,7 +333,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     }
     full_doc = {"meta": meta, "deals": serialized}
     (out / "deals.json").write_text(
-        json.dumps({"meta": meta, "deals": teaser}, indent=2), encoding="utf-8"
+        json.dumps({"meta": meta, "deals": teaser}, separators=(",", ":")), encoding="utf-8"
     )
 
     # Source health is the operator's, never the public site's (operator
