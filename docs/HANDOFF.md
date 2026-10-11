@@ -44,6 +44,10 @@ Keep this file current: whoever stops working updates it in their last commit.
   and tags @codex. Codex runs in the cloud environment `phillysaver-cloud`
   (network allowlist: the source hosts it reads) and pushes to that branch;
   Claude reviews and merges. Codex never pushes to the live branch.
+  Today the @codex tag on GitHub is answered with "create an environment"
+  (the app's environment isn't seen by the GitHub connector yet), so the
+  operator pastes a one-line task message into Codex (tasks 001-003 ran that
+  way, all merged).
 
 ## Operator decisions (standing rules; do not undo)
 - **Free 8:** every drop unlocks 8 completely new deals; none is free twice
@@ -83,8 +87,6 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
-- **Codex task 003 (PR #4):** docs-only fix of the locked-stub example in
-  docs/paywall.md; also the first test of @codex picking up a GitHub task.
 - **GitHub Pages retirement:** remove the Pages deploy steps from fast.yml
   and hourly.yml, then the operator unpublishes it (Settings -> Pages).
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
