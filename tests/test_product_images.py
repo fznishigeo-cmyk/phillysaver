@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from dealradar.product_images import match_product_image
+from dealradar.product_images import link_identity, match_product_image
 
 PIC, OTHER = "https://blog.example/up/mine.jpg", "https://blog.example/up/other.jpg"
 
@@ -90,6 +90,40 @@ def test_unwrap_two_levels_and_double_encoding():
 def test_retailer_product_id(deal_link, post_link):
     photos = {post_link: PIC, "https://www.target.com/p/x/-/A-1": OTHER}
     assert match_product_image([deal_link], photos) == PIC
+
+
+@pytest.mark.parametrize("deal_links,photos", [
+    # params sorted: one product whatever order its query names them in
+    (["https://shop.example/item?id=5&color=red"],
+     {"https://shop.example/item?color=red&id=5": PIC}),
+    # Best Buy's /NNNNNNN.p path names the SKU without ?skuId=
+    (["https://www.bestbuy.com/site/lg-65-oled/6501234.p"],
+     {"https://www.bestbuy.com/site/lg-tv/6501234.p?skuId=6501234": PIC}),
+    # the deal's own link is unwrapped before its product id is read (its
+    # redirect never resolved: the stored canonical is the wrapper)
+    (["https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2Fslug%2F-%2FA-111"],
+     {"https://www.target.com/p/other-slug/-/A-111": PIC}),
+    # a two-segment host+path (a Shopify /products/<handle>) names a product
+    (["https://brand.example/products/kettle"],
+     {"https://www.brand.example/products/kettle?variant=4211": PIC}),
+    # level first: the canonical's exact hit beats the posted link's id hit
+    (["https://www.target.com/p/x/-/A-111", "https://www.target.com/p/c/-/A-999"],
+     {"https://www.target.com/p/b-slug/-/A-111": OTHER,
+      "https://www.target.com/p/c/-/A-999": PIC}),
+])
+def test_matching_rules(deal_links, photos):
+    assert match_product_image(deal_links, photos) == PIC
+
+
+def test_link_identity_ignores_tracking_and_redirects():
+    """Two links that open one page (tracking params, a redirect wrapper)
+    are one link: several products holding it is a shared store page."""
+    sale = "https://www.target.com/c/home-sale/-/N-5xtnr"
+    wrapped = "https://goto.target.com/c/1/2?u=" + sale.replace(":", "%3A").replace("/", "%2F")
+    assert link_identity(sale + "?ref=h2s&utm_source=x") == link_identity(wrapped) \
+        == link_identity(sale)
+    assert link_identity("https://www.target.com/c/toy-sale/-/N-1") != link_identity(sale)
+    assert link_identity("") == link_identity("N/A") == ""
 
 
 def test_different_products_of_one_retailer_never_match():

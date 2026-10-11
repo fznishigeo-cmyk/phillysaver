@@ -162,6 +162,14 @@ def match_product_image(urls: list[str], product_images: dict[str, str]) -> str:
     return ""
 
 
+def link_identity(url: str) -> str:
+    """The page a link opens: normalized and affiliate-unwrapped, so two
+    links differing only in tracking or redirect are one; '' for none."""
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    return _forms(url)[-1]
+
+
 def other_product_photos(product_images: dict[str, str], page_url: str) -> set[str]:
     """The photos a post pairs with links off its own site — the products
     it shows. Links to the blog's own pages (related-post thumbnails) are

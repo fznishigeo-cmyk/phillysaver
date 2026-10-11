@@ -127,6 +127,10 @@ class ExtractedDeal:
     # before product_url is resolved to the retailer URL; it is what the
     # post's photos are keyed by (RawPost.product_images). Never persisted.
     link_as_posted: str = ""
+    # Set by the pipeline: two or more different products of this post hold
+    # this deal's link (a store or sale page). It names none of them; the
+    # deal row keeps the fact as Deal.link_shared.
+    link_shared: bool = False
 
 
 @dataclass
@@ -194,6 +198,10 @@ class Deal:
     # (inconclusive offers scan, stale data): the deal waits a retry window
     # instead of being re-asked, and paid for, on every run.
     recheck_tried_at: str = ""
+    # The deal's link is one several products of a post or article shared
+    # (a store or sale page): it names no product, so no photo is ever
+    # matched to it — not the post's, the article's or the retailer's.
+    link_shared: bool = False
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0

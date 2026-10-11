@@ -95,7 +95,7 @@ _PI_JUNK_WORD = re.compile(
 _PI_SOCIAL_HOSTS = ("facebook", "twitter", "pinterest", "whatsapp", "reddit",
                     "linkedin")
 _PI_SOCIAL_EXACT = ("x.com", "t.me")
-_PI_NOT_PRODUCT = ("mailto", "/feed/", "/comments", "#respond")
+_PI_NOT_PRODUCT = ("/feed/", "/comments", "#respond")  # mailto: is no http link
 #: An anchor to an image file is a lightbox, not a product.
 _PI_LIGHTBOX = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 

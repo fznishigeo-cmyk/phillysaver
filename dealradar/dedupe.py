@@ -153,6 +153,7 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
         "canonical_url": extracted.product_url,
         "asin": asin,
         "image_url": "",
+        "link_shared": extracted.link_shared,
         "final_price": savings.final_price,
         "regular_price": savings.regular_price,
         "pct_at_checkout": savings.pct_at_checkout,
@@ -193,9 +194,16 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost) -> str:
     whose photos went to other products' links but not to the post image
     (only one of its deals stored): an unmatched deal gets '' and the
     backfill tries its own photo. A collage on ONE card is never 'shared',
-    so the clear step would never take it off."""
+    so the clear step would never take it off.
+
+    A deal whose link other products of the post share (a store or sale
+    page: "shop the sale here" over a list of items) gets nothing: the
+    photo beside that link is a collage, a banner or one item's, never
+    provably this deal's."""
     from .product_images import match_product_image, other_product_photos
 
+    if extracted.link_shared:
+        return ""
     hit = match_product_image([extracted.link_as_posted, extracted.product_url],
                               post.product_images)
     if hit:
@@ -306,7 +314,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["canonical_url"] = extracted.product_url
         if not payload.get("asin") and asin:
             payload["asin"] = asin
-        if not payload.get("image_url"):
+        # Once several products shared the row's link, no post names it.
+        payload["link_shared"] = bool(existing.get("link_shared")) \
+            or extracted.link_shared
+        if not payload.get("image_url") and not payload["link_shared"]:
             image = _post_image(extracted, post)
             if image:
                 payload["image_url"] = image

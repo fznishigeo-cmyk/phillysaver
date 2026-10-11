@@ -293,10 +293,12 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     product link, else (single-product article only) its og:image. A
     roundup article is fetched once per pass for all of its deals. A deal
     whose article yields no photo is flagged so it is never fetched again.
+    A link several products share (marked at ingest, or held by two or
+    more products of one article) names none of them: no photo, no fetch.
     """
     from .dedupe import _DEAL_FIELDS
     from .fetch.rss import _first_image, _og_image, _permission_host, product_images
-    from .product_images import match_product_image, other_product_photos
+    from .product_images import link_identity, match_product_image, other_product_photos
 
     granted = {s.name: s for s in sources if s.image_permission}
     if not granted:
@@ -316,14 +318,20 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     # product: its article photo is the product's. (A first cut counted
     # deals, not products, and dropped 173 good photos in one run.)
     article_items: dict[str, set[str]] = {}
+    # (article, link) -> products: a link two or more products of one
+    # article hold is a store or sale page, naming none of them.
+    article_links: dict[tuple[str, str], set[str]] = {}
     images_in_use: dict[str, set[str]] = {}  # image -> products showing it
     for d in deals:
         if d.get("image_url"):
             images_in_use.setdefault(d["image_url"], set()).add(_product_of(d))
+        link = link_identity(d.get("canonical_url") or "")
         for sgt in db.sightings_for(d["id"]):
             if sgt["source_name"] in granted:
                 url = str(sgt.get("source_url", ""))
                 article_items.setdefault(url, set()).add(_product_of(d))
+                if link:
+                    article_links.setdefault((url, link), set()).add(_product_of(d))
     article_deals = {url: len(items) for url, items in article_items.items()}
     deals = _repair_emptied_photos(db, deals, granted, article_deals)
     deals = _lift_roundup_flags(db, deals, granted, article_deals, now, show_dead)
@@ -340,7 +348,11 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if sighting is None:
             continue
         article = str(sighting["source_url"])
-        if article not in pages:
+        # A link several products share names none: no photo beside it, no
+        # og:image, and no fetch for it.
+        shared = bool(deal.get("link_shared")) or len(article_links.get(
+            (article, link_identity(deal.get("canonical_url") or "")), ())) > 1
+        if not shared and article not in pages:
             if done >= _BLOG_IMAGE_BACKFILL_PER_RUN or \
                     (deadline is not None and time.monotonic() > deadline):
                 continue  # unflagged: the next pass fetches it
@@ -358,7 +370,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             if res.status == 200 and res.body and not res.blocked_by_robots:
                 pages[article] = res.body.decode("utf-8", errors="replace")
             done += 1
-        html = pages[article]
+        html = "" if shared else pages[article]
         image = ""
         if html:
             if article not in photos:
@@ -376,6 +388,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if image and images_in_use.get(image, set()) - {product}:
             image = ""  # already another product's photo: not this deal's
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        if shared:
+            payload["link_shared"] = True  # nor the retailer page's photo
         if image:
             payload["image_url"] = image
             images_in_use.setdefault(image, set()).add(product)
@@ -575,6 +589,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
         if deal.get("image_url") or \
                 "product_image_tried" in (deal.get("flags") or []):
             continue
+        if deal.get("link_shared"):
+            continue  # a store or sale page several products share: no one's photo
         if deal.get("status") == "dead":
             # Same window as the blog backfill: only the "Just missed" strip.
             died = util.parse_iso(deal.get("died_at") or "")
@@ -890,12 +906,24 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
 def _count_post_products(pairs) -> None:
     """Tell each post how many distinct products the parse found in it
     (one product at two stores is one): dedupe lends a post's first image
-    only to a post of one product, never across a roundup."""
+    only to a post of one product, never across a roundup. A link (as
+    posted or resolved) that two or more of a post's products hold is a
+    store or sale page naming none of them: each deal holding it is marked
+    link_shared and gets no photo."""
+    from .product_images import link_identity
+
     items: dict[int, set[str]] = {}
-    for post, extracted in pairs:
-        items.setdefault(id(post), set()).add(util.normalize_item(extracted.item))
-    for post, _extracted in pairs:
+    holders: dict[tuple[int, str], set[str]] = {}   # (post, link) -> products
+    links = [{link_identity(u) for u in (e.link_as_posted, e.product_url)} - {""}
+             for _p, e in pairs]
+    for (post, extracted), mine in zip(pairs, links):
+        item = util.normalize_item(extracted.item)
+        items.setdefault(id(post), set()).add(item)
+        for link in mine:
+            holders.setdefault((id(post), link), set()).add(item)
+    for (post, extracted), mine in zip(pairs, links):
         post.products = len(items[id(post)])
+        extracted.link_shared = any(len(holders[id(post), link]) > 1 for link in mine)
 
 
 #: Wall-clock budget for resolving product links in one run.

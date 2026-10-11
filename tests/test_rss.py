@@ -42,7 +42,8 @@ _ensure_fetch_base()
 from dealradar.config import AppConfig  # noqa: E402
 from dealradar.db import DB  # noqa: E402
 from dealradar.fetch import autodiscovery  # noqa: E402
-from dealradar.fetch.rss import MAX_ENTRIES, RssAdapter, product_images  # noqa: E402
+from dealradar.fetch.rss import (  # noqa: E402
+    MAX_ENTRIES, RssAdapter, _pi_image_url, product_images)
 from dealradar.models import FetchResult, SourceConfig  # noqa: E402
 from dealradar.product_images import match_product_image  # noqa: E402
 
@@ -514,6 +515,11 @@ def test_product_images_several_products_in_one_paragraph():
     # Without the banner the first photo is the post's featured image: it
     # still opens the run (photo-then-link) but is never paired.
     assert product_images(html.removeprefix(BANNER)) == {B: UP + "b.jpg"}
+    # Two products in one table row (a <td> opens no block): the same read.
+    row = BANNER + (
+        f'<table><tr><td><img src="{UP}a.jpg"><br>Markers $9.99 <a href="{A}">Buy</a></td>'
+        f'<td><img src="{UP}b.jpg"><br>LEGO $29.99 <a href="{B}">Buy</a></td></tr></table>')
+    assert product_images(row) == {A: UP + "a.jpg", B: UP + "b.jpg"}
 
 
 def test_product_images_extra_photo_never_falls_back_to_the_previous_product():
@@ -574,6 +580,104 @@ def test_product_images_repeated_image_is_decoration_lazy_src_wins():
     twice = (f'<p><img src="{UP}lego.jpg"></p><p>LEGO deal!</p>'
              f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
     assert product_images(twice) == {B: UP + "lego.jpg"}
+
+
+def test_product_images_picture_in_the_post_link_or_a_share_link_is_dropped():
+    """A picture linked to the post itself (its collage) or to a share
+    link (a 'pin it' graphic) is no one's photo: dropped, not kept loose,
+    even when the product right after it has no photo of its own."""
+    post = "https://blog.example/roundup/"
+    for href in (post, "https://pinterest.com/pin/create/?url=x"):
+        html = BANNER + (f'<p><a href="{href}"><img src="{UP}collage.jpg"></a></p>'
+                         f'<p>Markers $9.99 <a href="{A}">Buy</a></p>')
+        assert product_images(html, post) == {}
+
+
+def test_product_images_photo_in_a_block_nested_inside_its_link():
+    """Product boxes: the link wraps a <div> with the photo and one with the
+    text, the next product right after. A photo inside a link is that
+    link's, whatever blocks sit between them."""
+    boxes = "".join(f'<a href="{link}"><div class="pbox"><img src="{UP}{name}.jpg"></div>'
+                    f'<div>Product $9</div></a>' for link, name in ((A, "a"), (B, "b")))
+    assert product_images(BANNER + boxes) == {A: UP + "a.jpg", B: UP + "b.jpg"}
+
+
+@pytest.mark.parametrize("tag,wrap", [
+    ("p", ""), ("li", "ul"), ("div", ""), ("figure", ""), ("tr", "table"),
+    ("h3", ""), ("section", ""), ("article", ""), ("table", "")])
+def test_product_images_each_block_opener_separates_products(tag, wrap):
+    """(c) A text-only product, then one with its photo, each in its own
+    block: the photo is the second product's. Were the tag no block opener,
+    both would share one block and the photo would read both ways."""
+    towels = "https://www.walmart.com/ip/towels/111"
+    sheets = "https://www.walmart.com/ip/sheets/222"
+    items = (f'<{tag}>Towels $4 <a href="{towels}">link</a></{tag}>'
+             f'<{tag}><img src="{UP}sheets.jpg"> Mainstays Microfiber Sheet Set, Queen, '
+             f'4-piece, $9.99 (reg $30) <a href="{sheets}">link</a></{tag}>')
+    if wrap:
+        items = f"<{wrap}>{items}</{wrap}>"
+    intro = "div" if tag == "p" else "p"   # the intro never uses the tag under test
+    html = (f'<{intro}><img src="{UP}lead.jpg"></{intro}>'
+            f'<{intro}>{"Intro words. " * 70}</{intro}>{items}')
+    assert product_images(html) == {sheets: UP + "sheets.jpg"}
+
+
+def test_product_images_photo_goes_to_the_very_next_link_within_the_limit():
+    """A photo reads to the very next link: the first of two in the block
+    below it; the nearer of two photos above one link. Within 800
+    characters it pairs past a long description, beyond them never."""
+    two = BANNER + (f'<p><img src="{UP}a.jpg"></p>'
+                    f'<p>Markers $9 <a href="{A}">Buy</a>, or LEGO $5 <a href="{B}">here</a></p>')
+    assert product_images(two) == {A: UP + "a.jpg"}
+    near = BANNER + (f'<p><img src="{UP}brand-banner.jpg"> Markers deal! '
+                     f'<img src="{UP}a.jpg"> Markers $9 <a href="{A}">Buy</a></p>')
+    assert product_images(near) == {A: UP + "a.jpg"}
+    words = "Markers that never dry out. " * 11   # 308 characters
+    assert product_images(BANNER + f'<p><img src="{UP}a.jpg"></p>'
+                          f'<p>{words}$9 <a href="{A}">Buy</a></p>') == {A: UP + "a.jpg"}
+    assert product_images(BANNER + f'<p><img src="{UP}a.jpg"></p>'
+                          f'<p>{words * 3}$9 <a href="{A}">Buy</a></p>') == {}
+
+
+@pytest.mark.parametrize("href", [
+    "https://www.facebook.com/sharer.php?u=x", "https://twitter.com/intent/tweet?url=x",
+    "https://pinterest.com/pin/create/?url=x", "https://api.whatsapp.com/send?text=x",
+    "https://www.reddit.com/submit?url=x", "https://www.linkedin.com/shareArticle?url=x",
+    "https://x.com/intent/tweet?url=x", "https://mobile.x.com/intent/tweet?url=x",
+    "https://t.me/share/url?url=x", "https://other.example/feed/",
+    "https://other.example/2026/10/a-post/comments/", "https://other.example/a-post/#respond",
+    "https://blog.example/roundup/?share=email", "mailto:hi@blog.example",
+])
+def test_product_images_share_comment_and_feed_links_are_no_products(href):
+    """(e) A share, comment or feed link between a photo and its product's
+    link is not a product: the photo still reads to the product."""
+    html = BANNER + (f'<p><img src="{UP}a.jpg"></p>'
+                     f'<p>Markers $9 <a href="{href}">Share</a> <a href="{A}">Buy</a></p>')
+    assert product_images(html, "https://blog.example/roundup/") == {A: UP + "a.jpg"}
+
+
+IMG = "https://cdn.example/"
+
+
+@pytest.mark.parametrize("attrs,want", [
+    ({"src": IMG + "a.jpg", "alt": "Hip2Save logo"}, ""),            # alt says junk
+    ({"src": IMG + "a.jpg", "width": "40"}, ""),                     # headshot, icon
+    ({"src": IMG + "a.jpg", "height": "50"}, ""),
+    ({"src": IMG + "a.jpg", "width": "51", "height": "300"}, IMG + "a.jpg"),
+    ({"src": "data:image/gif;base64,R0l", "data-original": IMG + "o.jpg"}, IMG + "o.jpg"),
+    ({"data-srcset": f"{IMG}s.jpg 300w, {IMG}l.jpg 1024w"}, IMG + "l.jpg"),
+    ({"data-lazy-srcset": f"{IMG}s.jpg 1x, {IMG}l.jpg 2x"}, IMG + "l.jpg"),
+    # Lazy copies first (a lazy image's src is a placeholder), then src,
+    # then srcset.
+    ({"data-lazy-src": IMG + "1.jpg", "data-src": IMG + "2.jpg",
+      "data-original": IMG + "3.jpg", "src": IMG + "4.jpg"}, IMG + "1.jpg"),
+    ({"data-src": IMG + "2.jpg", "data-original": IMG + "3.jpg", "src": IMG + "4.jpg"},
+     IMG + "2.jpg"),
+    ({"data-original": IMG + "3.jpg", "src": IMG + "4.jpg"}, IMG + "3.jpg"),
+    ({"src": IMG + "4.jpg", "srcset": IMG + "5.jpg 2000w"}, IMG + "4.jpg"),
+])
+def test_product_images_image_source_rules(attrs, want):
+    assert _pi_image_url(attrs) == want
 
 
 #: Product links of today's photo-less roundup deals, exactly as posted

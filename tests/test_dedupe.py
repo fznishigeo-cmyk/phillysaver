@@ -479,3 +479,58 @@ def test_roundup_without_pairs_lends_no_image(tmp_path) -> None:
                                   make_savings(), own, cfg, NOW)
     assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
     db.close()
+
+
+def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
+    """Review finding: "Target home sale, shop it here" over a list of
+    items the LLM all gives the one sale-page link. The photo beside that
+    link (here the sale collage, after the post's lead image) is none of
+    theirs: no deal holding the link gets it, nor the post's image, and the
+    row keeps the fact, so a later post's photo for that link never lands
+    either. A product of the same post with its own link keeps its photo."""
+    from dealradar import pipeline
+    from dealradar.fetch.rss import product_images
+
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    sale = "https://www.target.com/c/home-sale/-/N-5xtnr"
+    lamp = "https://www.target.com/p/lamp/-/A-444"
+    html = (f'<p><img src="{SS}lead.jpg"></p><p>Target home sale!</p>'
+            f'<p><img src="{SS}sale-collage.jpg"></p><p>Shop the sale <a href="{sale}">here</a>:</p>'
+            '<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>'
+            f'<p><img src="{SS}lamp.jpg"></p><p>Lamp $9 <a href="{lamp}">Buy</a></p>')
+    post = _roundup_post("home-sale", product_images(html))
+    assert post.product_images[sale] == SS + "sale-collage.jpg"   # the layout pairs it
+    pairs = [(post, make_extracted(item=item, store="Target", product_url=url,
+                                   link_as_posted=url))
+             for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", sale),
+                               ("Desk Lamp", lamp))]
+    pipeline._count_post_products(pairs)
+    assert [e.link_shared for _p, e in pairs] == [True, True, False]
+    keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
+            for _p, e in pairs]
+    assert keys[0] == keys[1]   # one sale-page link is one row
+    row = db.get_deal(keys[0])
+    assert row["image_url"] == "" and row["link_shared"] is True
+    assert db.get_deal(keys[2])["image_url"] == SS + "lamp.jpg"
+    assert db.get_deal(keys[2])["link_shared"] is False
+    # A later one-product post showing a photo beside that link: still none.
+    later = _roundup_post("shelf-only", {sale: SS + "shelf.jpg"})
+    later.products = 1
+    dedupe.upsert_extracted(db, make_extracted(item="SONGMICS Shelf", store="Target",
+                                               product_url=sale), make_savings(), later, cfg, NOW)
+    assert db.get_deal(keys[0])["image_url"] == ""
+    # One short link as posted, resolved for one deal and not for the other
+    # (out of time): still one shared link.
+    short = "https://howl.me/cSale1"
+    timed = [(post, make_extracted(item=item, store="Target", product_url=url,
+                                   link_as_posted=short))
+             for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", short))]
+    pipeline._count_post_products(timed)
+    assert [e.link_shared for _p, e in timed] == [True, True]
+    # One product at two stores sharing a link is one product, not a sale page.
+    bluey = [(post, make_extracted(item="Bluey Boo Book", store=s, product_url=sale))
+             for s in ("Amazon", "Walmart")]
+    pipeline._count_post_products(bluey)
+    assert [e.link_shared for _p, e in bluey] == [False, False]
+    db.close()

@@ -192,32 +192,46 @@ class TestBlogImageBackfill:
                    image="https://hip2save.com/i/rack.jpg", item="rack")
         self._seed(db, "lamp", "https://hip2save.com/deals/c/",
                    image="https://hip2save.com/i/shelf.jpg")
+        # Within one pass too: two articles about different products whose
+        # og:image is one picture; the second never gets what the first took.
+        same = b"<meta property='og:image' content='https://hip2save.com/i/same.jpg'>"
+        self._seed(db, "mug", "https://hip2save.com/deals/d/")
+        self._seed(db, "kettle", "https://hip2save.com/deals/e/")
         src = make_source("hip2save", allowed_html=True, image_permission=True)
         pipeline._backfill_blog_images(
-            db, self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE}), [src], deadline=None)
+            db, self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE,
+                               "https://hip2save.com/deals/d/": same,
+                               "https://hip2save.com/deals/e/": same}), [src], deadline=None)
         assert db.get_deal("shelf")["image_url"] == ""
         assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        assert [db.get_deal(k)["image_url"] for k in ("mug", "kettle")] == [
+            "https://hip2save.com/i/same.jpg", ""]
         db.close()
 
     def test_one_time_lift_retries_flagged_roundup_deals(self, tmp_path):
         """The old rule flagged every roundup deal 'tried' without a fetch.
         Once (meta-keyed), photo-less roundup deals on the page lose that
-        flag and get the per-product pass; dead-and-gone deals and later
-        flags are left alone."""
+        flag and get the per-product pass; dead-and-gone deals, deals of a
+        single-product article and later flags are left alone."""
         db = DB(tmp_path / "state.db")
+        db.meta_set("image_repair_2026_10_11", "done")  # the earlier repair ran
         tried = ("image_backfill_tried",)
         self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, flags=tried)
         self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK, flags=tried)
         self._seed(db, "gone", self.ROUNDUP, canonical=self.SHELF + "9", flags=tried)
         db.update_deal("gone", status="dead")  # no died_at: off the page
+        single = "https://hip2save.com/deals/single/"
+        self._seed(db, "single", single, flags=tried)
         src = make_source("hip2save", allowed_html=True, image_permission=True,
                           crawl_permission="written grant on file")
-        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE})
+        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE, single:
+                                 b"<meta property='og:image' content='https://hip2save.com/i/s.jpg'>"})
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
         assert fetcher.calls == [self.ROUNDUP]
         assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/shelf.jpg"
         assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
         assert db.get_deal("gone")["flags"] == ["image_backfill_tried"]
+        assert db.get_deal("single")["flags"] == ["image_backfill_tried"]
         assert db.meta_get("roundup_images_2026_10_11")
         # Runs once: a roundup deal flagged after the lift stays flagged.
         self._seed(db, "later", self.ROUNDUP, canonical=self.SHELF + "8", flags=tried)
@@ -351,6 +365,97 @@ class TestBlogImageBackfill:
         # No granted source in the run set -> no fetches, ever.
         plain = make_source("hip2save", allowed_html=True)
         assert pipeline._backfill_blog_images(db, fetcher, [plain], None) == 0
+        db.close()
+
+    def test_link_shared_by_several_products_names_none(self, tmp_path):
+        """Review finding: two deals of one article hold the store's sale
+        page ("shop the sale here"), which the page pairs with its sale
+        collage after the lead image. Neither gets it nor the og:image, in
+        any pass, and neither asks the retailer's sale page for its share
+        image; a row marked at ingest (deals merged on that link) is not
+        even fetched for. A deal with its own link on the page gets its own
+        photo."""
+        db = DB(tmp_path / "state.db")
+        article = "https://hip2save.com/deals/home-sale/"
+        sale = "https://www.target.com/c/home-sale/-/N-5xtnr"
+        lamp = "https://www.target.com/p/desk-lamp/-/A-444"
+        page = ("<meta property='og:image' content='https://hip2save.com/i/lead.jpg'>"
+                "<p><img src='https://hip2save.com/i/lead.jpg'></p><p>Target home sale!</p>"
+                "<p><img src='https://hip2save.com/i/sale-collage.jpg'></p>"
+                f"<p>Shop the sale <a href='{sale}'>here</a>:</p>"
+                "<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>"
+                "<p><img src='https://hip2save.com/i/lamp.jpg'></p>"
+                f"<p>Lamp $9 <a href='{lamp}'>Buy</a></p>").encode()
+        self._seed(db, "shelf", article, canonical=sale)
+        self._seed(db, "rack", article, canonical=sale + "?ref=h2s")  # same page
+        self._seed(db, "lamp", article, canonical=lamp)
+        marked = "https://hip2save.com/deals/rollbacks/"
+        self._seed(db, "merged", marked, canonical="https://www.walmart.com/cp/rollbacks/123")
+        db.update_deal("merged", payload=dict(db.get_deal("merged"), link_shared=True))
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({article: page, marked: page})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert fetcher.calls == [article]
+        for key in ("shelf", "rack", "merged"):
+            d = db.get_deal(key)
+            assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
+            assert d["link_shared"] is True
+        assert db.get_deal("lamp")["image_url"] == "https://hip2save.com/i/lamp.jpg"
+        fetcher.calls.clear()
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        pipeline._backfill_product_images(db, fetcher, None)
+        assert fetcher.calls == []
+        assert [db.get_deal(k)["image_url"] for k in ("shelf", "rack", "merged")] == [""] * 3
+        db.close()
+
+    def test_per_run_cap_leaves_deals_unflagged(self, tmp_path, monkeypatch):
+        """Out of fetches, a deal is left as it was (never flagged 'tried'
+        without a fetch) for the next pass; a deal of an article already
+        fetched this pass is still settled."""
+        db = DB(tmp_path / "state.db")
+        solo = "https://hip2save.com/deals/solo/"
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "solo", solo)
+        self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK)
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        monkeypatch.setattr(pipeline, "_BLOG_IMAGE_BACKFILL_PER_RUN", 1)
+        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE, solo:
+                                 b"<meta property='og:image' content='https://hip2save.com/i/solo.jpg'>"})
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        assert fetcher.calls == [self.ROUNDUP]
+        assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        d = db.get_deal("solo")
+        assert d["image_url"] == "" and "image_backfill_tried" not in d["flags"]
+        fetcher.calls.clear()
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        assert fetcher.calls == [solo]
+        assert db.get_deal("solo")["image_url"] == "https://hip2save.com/i/solo.jpg"
+        db.close()
+
+    def test_deadline_leaves_deals_unflagged(self, tmp_path):
+        """Out of time before a fetch, or mid-fetch (DeadlineExceeded): the
+        pass ends and no deal is flagged 'tried', so the next pass tries."""
+        class Late(self._Fetcher):
+            def get(self, url, **kw):
+                self.calls.append(url)
+                raise DeadlineExceeded("run deadline")
+
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "solo", "https://hip2save.com/deals/solo/")
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = Late({})
+        assert pipeline._backfill_blog_images(
+            db, fetcher, [src], deadline=time.monotonic() - 1) == 0
+        assert fetcher.calls == []
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 0
+        assert fetcher.calls == [self.ROUNDUP]
+        for key in ("shelf", "solo"):
+            d = db.get_deal(key)
+            assert d["image_url"] == "" and "image_backfill_tried" not in d["flags"]
         db.close()
 
 
