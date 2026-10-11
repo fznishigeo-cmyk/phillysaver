@@ -10,13 +10,16 @@ the operator's documented written permission (sources.yaml
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from dealradar.fetch.kcl_wall import (
     MAX_CHUNK_CHARS,
     MAX_CHUNKS,
     KclWallAdapter,
     _chunk_lines,
+    _ld_offers,
+    _match_offer,
+    _parse_cards,
 )
 from dealradar.models import FetchResult, SourceConfig
 
@@ -178,3 +181,77 @@ class TestChunking:
     def test_small_priced_text_is_one_chunk(self) -> None:
         chunks = _chunk_lines("Widget\n$5.00 was $25.00")
         assert chunks == ["Widget\n$5.00 was $25.00"]
+
+
+# ------------------------------------------------------------ live card shape
+
+#: The wall as it renders live (2026-10-11): one field per line, no hrefs,
+#: and a Schema.org offers block carrying the Amazon links.
+CARD_WALL_HTML = """<html><head><title>Amazon Deals</title>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Amazon Deals","offers":{"@type":"AggregateOffer","priceCurrency":"USD","offerCount":3,"offers":[{"@type":"Offer","price":"5.99","priceCurrency":"USD","url":"https://www.amazon.com/dp/B0TEE12345?tag=kclunicorn-20&th=1"},{"@type":"Offer","price":"3.00","url":"https://www.amazon.com/dp/B0STEAM123?tag=kclunicorn-20"},{"@type":"Offer","price":"3.00","url":"https://www.amazon.com/dp/B0DUPL1234?tag=kclunicorn-20"}]}}</script>
+</head><body>
+<nav>Home<br>Stores<br>Popular Pages</nav>
+<div>Online Deal<br>Amazon<br>Scott ComfortPlus Toilet Paper<br><span>$5.40</span><s>$6.49</s><br>17% Off<br>8 hours ago</div>
+<div>Online Deal<br>Amazon<br>Women's Christmas Tee<br><span>$5.99</span><s>$19.99</s><br>70% Off<br>6 hours ago</div>
+<div>Get all the new deals and savings hacks straight to your inbox<br>Enter your email</div>
+<div>Online Deal<br>Amazon<br>Shower Steamers<br><span>$3.00</span><s>$9.99</s><br>70% Off<br>16 hours ago</div>
+<div>Online Deal<br>Amazon<br>No Strike Item<br><span>$12.00</span><br>Just now</div>
+<div>Show More</div>
+</body></html>"""
+
+
+class TestCards:
+    def test_cards_parse_from_live_text(self) -> None:
+        from dealradar import util
+        cards = _parse_cards(util.html_to_text(CARD_WALL_HTML))
+        assert [c["name"] for c in cards] == [
+            "Scott ComfortPlus Toilet Paper", "Women's Christmas Tee",
+            "Shower Steamers", "No Strike Item"]
+        tee = cards[1]
+        assert (tee["final"], tee["regular"], tee["pct"], tee["age"]) == \
+            (5.99, 19.99, "70", "6 hours ago")
+        assert cards[3]["regular"] is None and cards[3]["age"] == "Just now"
+
+    def test_offers_and_price_match(self) -> None:
+        offers = _ld_offers(CARD_WALL_HTML)
+        assert [o["asin"] for o in offers] == ["B0TEE12345", "B0STEAM123",
+                                               "B0DUPL1234"]
+        tee = {"final": 5.99}
+        assert _match_offer(tee, offers)["asin"] == "B0TEE12345"
+        # Two offers at $3.00: no guess.
+        assert _match_offer({"final": 3.0}, offers) is None
+        assert _match_offer({"final": 12.0}, offers) is None
+
+    def test_wall_maps_one_post_per_card(self) -> None:
+        fetcher = FakeFetcher(fr(body=CARD_WALL_HTML.encode()))
+        posts = KclWallAdapter().fetch_posts(
+            make_source(), fetcher, None, None, NOW, None)
+        assert [p.title for p in posts] == [
+            "Scott ComfortPlus Toilet Paper", "Women's Christmas Tee",
+            "Shower Steamers", "No Strike Item"]
+        tee = posts[1]
+        assert tee.uid.startswith("card:") and len(tee.uid) == 17
+        assert tee.url == WALL_URL                      # credit: the wall
+        # Every number verbatim, for the evidence check.
+        assert "$5.99" in tee.text and "$19.99" in tee.text and "70% Off" in tee.text
+        assert "Buy: https://www.amazon.com/dp/B0TEE12345?tag=kclunicorn-20" in tee.text
+        assert "6 hours ago" not in tee.text             # age never in the text
+        assert tee.published_at == NOW - timedelta(hours=6)
+        assert posts[3].published_at == NOW
+        assert "Buy:" not in posts[2].text               # ambiguous price: no link
+
+    def test_card_hashes_stably_as_the_age_ticks(self) -> None:
+        later = CARD_WALL_HTML.replace("6 hours ago", "7 hours ago")
+        a = KclWallAdapter().fetch_posts(
+            make_source(), FakeFetcher(fr(body=CARD_WALL_HTML.encode())),
+            None, None, NOW, None)[1]
+        b = KclWallAdapter().fetch_posts(
+            make_source(), FakeFetcher(fr(body=later.encode())),
+            None, None, NOW, None)[1]
+        assert (a.uid, a.text) == (b.uid, b.text)        # parsed once, not hourly
+
+    def test_cardless_wall_falls_back_to_chunks(self) -> None:
+        posts = KclWallAdapter().fetch_posts(
+            make_source(), FakeFetcher(fr(body=WALL_HTML.encode())),
+            None, None, NOW, None)
+        assert len(posts) == 1 and posts[0].uid.startswith("wall:0:")
