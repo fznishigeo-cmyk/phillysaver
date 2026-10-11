@@ -1049,15 +1049,16 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
 
         # ---- parse (Claude; evidence-verified) ----
-        # Daily ceiling: this run may spend at most what remains of
-        # cfg.spend_cap_usd_per_day for the current UTC day.
-        remaining_today = max(0.0, cfg.spend_cap_usd_per_day
-                              - db.spend_usd_for_day(now))
+        # Daily ceiling: this run may spend at most what remains of the cap
+        # in force for the current UTC day (a temporary boost, else the base).
+        from .config import daily_spend_cap
+        day_cap = daily_spend_cap(cfg, now)
+        remaining_today = max(0.0, day_cap - db.spend_usd_for_day(now))
         parser = None
         if remaining_today <= 0:
             log.warning("daily LLM spend cap ($%.2f) exhausted; parse skipped "
                         "this run (posts stay unrecorded and retry tomorrow)",
-                        cfg.spend_cap_usd_per_day)
+                        day_cap)
         else:
             # Built once per run and shared: extraction, second opinions, and
             # the deal critic all draw on the same spend caps.

@@ -74,6 +74,11 @@ class AppConfig:
     max_chars_per_post: int = 6000
     spend_cap_usd_per_run: float = 0.50
     spend_cap_usd_per_day: float = 5.00
+    # A temporary, self-expiring raise of the daily cap (operator-approved):
+    # used instead of spend_cap_usd_per_day on UTC days before
+    # spend_cap_boost_until (an ISO date, exclusive); 0 / "" = none.
+    spend_cap_boost_usd_per_day: float = 0.0
+    spend_cap_boost_until: str = ""
     retries_on_invalid_json: int = 2
     # Probe the structured messages.parse endpoint for extraction. Off by
     # default: our schema is rejected as "too complex" after a MINUTES-long
@@ -195,6 +200,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.max_chars_per_post = int(g("parse", "max_chars_per_post", default=cfg.max_chars_per_post))
     cfg.spend_cap_usd_per_run = float(g("parse", "spend_cap_usd_per_run", default=cfg.spend_cap_usd_per_run))
     cfg.spend_cap_usd_per_day = float(g("parse", "spend_cap_usd_per_day", default=cfg.spend_cap_usd_per_day))
+    cfg.spend_cap_boost_usd_per_day = float(g("parse", "spend_cap_boost_usd_per_day",
+                                              default=cfg.spend_cap_boost_usd_per_day) or 0.0)
+    cfg.spend_cap_boost_until = str(g("parse", "spend_cap_boost_until",
+                                      default=cfg.spend_cap_boost_until) or "")
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
     cfg.parse_concurrency = max(1, int(g("parse", "concurrency", default=cfg.parse_concurrency)))
@@ -313,3 +322,21 @@ def load_sources(path: str | Path | None = None) -> tuple[list[SourceConfig], li
     primary = [_source_from_dict(d) for d in raw.get("sources", [])]
     backup = [_source_from_dict(d) for d in raw.get("backup_sources", [])]
     return primary, backup
+
+
+def daily_spend_cap(cfg: "AppConfig", now) -> float:
+    """The daily LLM spend cap in force for ``now``'s UTC day: the temporary
+    boost while that day is before spend_cap_boost_until, else the base
+    spend_cap_usd_per_day. The boost expires on its own, so spending falls
+    back to the base cap even if nobody edits the config."""
+    from datetime import date, timezone
+
+    boost = float(getattr(cfg, "spend_cap_boost_usd_per_day", 0.0) or 0.0)
+    until = str(getattr(cfg, "spend_cap_boost_until", "") or "")
+    if boost > 0 and until:
+        try:
+            if now.astimezone(timezone.utc).date() < date.fromisoformat(until):
+                return boost
+        except ValueError:
+            pass  # a malformed date never raises the cap
+    return float(cfg.spend_cap_usd_per_day)

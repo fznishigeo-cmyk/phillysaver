@@ -1,0 +1,33 @@
+name: stripe check (read-only)
+
+# Repeats the Worker's trial checkout against Stripe with the repository's
+# STRIPE_SECRET_KEY and prints Stripe's answer at each step (payment link ->
+# price, a trial Checkout Session created then expired at once, subscription
+# search, portal configurations). Never prints the key; charges nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stripe_payment_link:
+        description: "Payment Link URL the Worker uses (STRIPE_PAYMENT_LINK)"
+        required: false
+        default: "https://buy.stripe.com/14A5kE5LjgC01PN3zZeIw01"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the trial checkout against Stripe
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PAYMENT_LINK: ${{ inputs.stripe_payment_link }}
+          WOWPRICED_SITE: https://wowpriced.com
+        run: python scripts/stripe_check.py

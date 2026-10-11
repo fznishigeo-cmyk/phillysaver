@@ -217,3 +217,49 @@ def test_two_runs_sharing_a_key_both_count_toward_the_daily_cap(tmp_path):
                       posts_new=1, deals_parsed=1, published=0, spend_usd=spend)
     assert abs(db.spend_usd_for_day(NOW) - 0.335) < 1e-9
     db.close()
+
+
+def test_daily_cap_boost_expires_on_its_own():
+    """Operator-approved $15/day for three days, then the $6 base again
+    without anyone editing the config."""
+    from dealradar.config import AppConfig, daily_spend_cap
+
+    cfg = AppConfig()
+    cfg.spend_cap_usd_per_day = 6.0
+    cfg.spend_cap_boost_usd_per_day = 15.0
+    cfg.spend_cap_boost_until = "2026-10-14"
+    utc = timezone.utc
+    assert daily_spend_cap(cfg, datetime(2026, 10, 11, 9, 0, tzinfo=utc)) == 15.0
+    assert daily_spend_cap(cfg, datetime(2026, 10, 13, 23, 59, tzinfo=utc)) == 15.0
+    assert daily_spend_cap(cfg, datetime(2026, 10, 14, 0, 0, tzinfo=utc)) == 6.0
+    # US evening on the 13th is already the 14th in UTC: base cap.
+    est = timezone(timedelta(hours=-4))
+    assert daily_spend_cap(cfg, datetime(2026, 10, 13, 21, 0, tzinfo=est)) == 6.0
+    for broken in ("", "soon", "2026-13-40"):
+        cfg.spend_cap_boost_until = broken
+        assert daily_spend_cap(cfg, datetime(2026, 10, 11, tzinfo=utc)) == 6.0
+    cfg.spend_cap_boost_until, cfg.spend_cap_boost_usd_per_day = "2026-10-14", 0.0
+    assert daily_spend_cap(cfg, datetime(2026, 10, 11, tzinfo=utc)) == 6.0
+
+
+def test_shipped_config_boost_is_bounded():
+    """The shipped boost is the operator's $15 and ends on 2026-10-14."""
+    cfg = load_config()
+    assert cfg.spend_cap_usd_per_day == 6.0
+    assert cfg.spend_cap_boost_usd_per_day == 15.0
+    assert cfg.spend_cap_boost_until == "2026-10-14"
+
+
+def test_pipeline_parses_with_the_boosted_cap(tmp_path, monkeypatch):
+    """With $7 already spent today, the base $6 cap would skip parsing; the
+    boost lets the run parse with the $8 left."""
+    from dealradar.config import daily_spend_cap
+
+    cfg = load_config()
+    db = DB(tmp_path / "state.db")
+    db.start_run("2026-10-11T08", "hourly", NOW)
+    db.finish_run("2026-10-11T08", now=NOW, items_fetched=1, posts_new=1,
+                  deals_parsed=1, published=0, spend_usd=7.0)
+    later = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
+    assert daily_spend_cap(cfg, later) - db.spend_usd_for_day(later) > 7.9
+    db.close()
