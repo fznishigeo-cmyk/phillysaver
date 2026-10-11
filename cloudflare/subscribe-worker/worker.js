@@ -1,5 +1,5 @@
 /**
- * wowpriced Worker: the free daily email list plus the paywall API, in one
+ * wowpriced Worker: the daily top-10 sign-up list plus the paywall API, in one
  * deployment with no server of our own. KV (binding SUBS) holds one key per
  * subscriber,
  *   sub:<email> -> {"ts", "token", "confirmed", "confirm_sent_at"}  (also in metadata)

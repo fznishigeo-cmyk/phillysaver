@@ -800,7 +800,7 @@ class TestSiteCopy:
         n = load_config().newsletter_top_n
         index = (self.TEMPLATES / "index.html").read_text(encoding="utf-8")
         assert (f"<strong>Daily email:</strong> the day's top {n} deals every morning."
-                in index) and "Members get the full list." in index
+                in index) and "Members get every deal." in index
         subscribe = (self.TEMPLATES / "subscribe.html").read_text(encoding="utf-8")
         assert f"the day's top {n} verified deals" in subscribe
         assert f"The day's top {n} deals, once a day." in subscribe  # the plan card

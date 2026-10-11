@@ -1,4 +1,4 @@
-# subscribe worker — the free daily email list and the paywall API
+# subscribe worker — the daily top-10 sign-up list and the paywall API
 
 The only moving part of wowpriced that lives outside GitHub: one Cloudflare
 Worker + KV namespace. It holds the newsletter's subscriber list (the site's
