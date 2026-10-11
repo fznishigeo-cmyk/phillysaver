@@ -804,7 +804,7 @@ class TestSiteCopy:
             assert "id=\"nlform\"" not in text, page.name
             assert "top 10" not in text, page.name
         index = (self.TEMPLATES / "index.html").read_text(encoding="utf-8")
-        assert "every deal on the wall, new deals every\n     10 minutes." in index
+        assert "every deal on the wall, new deals every\n     {{DROP_MINUTES}} minutes." in index
 
 
 # ---------------------------------------------------------------- list + config

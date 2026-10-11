@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
-<meta name="description" content="Who runs wowpriced, why list prices lie, and what we do about it: every deal quoted word-for-word, checked in code, and refreshed every 10 minutes.">
+<meta name="description" content="Who runs wowpriced, why list prices lie, and what we do about it: every deal quoted word-for-word, checked in code, and refreshed every {{DROP_MINUTES}} minutes.">
 <title>About wowpriced</title>
 <link rel="canonical" href="{{SITE_URL}}/about.html">
 <style>
@@ -62,7 +62,7 @@ footer p{margin:0 0 8px}
 <header>
   <div class="hrow">
     <p class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
-    <span class="tag">verified deals · refreshed every 10 minutes</span>
+    <span class="tag">verified deals · refreshed every {{DROP_MINUTES}} minutes</span>
   </div>
 </header>
 <div class="wrap">
@@ -109,7 +109,7 @@ footer p{margin:0 0 8px}
    badge. When the price sits well below what we, or Keepa's 90-day Amazon
    history, have seen for that item, it gets a "price history" badge.</p>
 <p>We set floors and stick to them: 40% off or better for new items, 50% off or better
-   for used and open-box. The wall refreshes every 10 minutes. Deals that died in the
+   for used and open-box. The wall refreshes every {{DROP_MINUTES}} minutes. Deals that died in the
    last 48 hours sit in a "Just missed" strip, so you can see how fast the good ones go.</p>
 <p>Every deal links straight to the seller and credits the source that found it. Some
    of those links are the source's affiliate links. That is how they keep the lights
@@ -126,9 +126,9 @@ footer p{margin:0 0 8px}
 
 <h2>The promise</h2>
 <p><!--paywall-->Eight top deals on the wall are free for everyone, a new eight at every drop. The
-   $9.99 a month membership unlocks every deal on the wall, with new deals every 10
+   $9.99 a month membership unlocks every deal on the wall, with new deals every {{DROP_MINUTES}}
    minutes. It starts<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with
-   new deals every 10 minutes. Membership is $9.99 a month. It starts<!--/open--> with a 7-day free trial (card
+   new deals every {{DROP_MINUTES}} minutes. Membership is $9.99 a month. It starts<!--/open--> with a 7-day free trial (card
    required), then $9.99/month, renews monthly until you cancel. Cancel anytime
    online<span class="mailalt"> or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></span>. That is the
    whole business. No ads dressed up as deals, no pop-ups, no spin.</p>

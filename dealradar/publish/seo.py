@@ -372,11 +372,13 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     (out / "index.html").write_text(
         _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall), encoding="utf-8")
     (out / "404.html").write_text(_fill((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
-                                        HUB_LINKS=_hub_links()), encoding="utf-8")
+                                        HUB_LINKS=_hub_links(),
+                                        DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
 
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
-    template = (TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8")
+    template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
+                     DROP_MINUTES=str(int(cfg.drop_minutes)))
     floor = int(getattr(cfg, "seo_hub_min_items", 10))
     listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
     for label, group, slug in CATGROUPS[1:]:
