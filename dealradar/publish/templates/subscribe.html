@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e7569">
+<title>wowpriced — get deals in your inbox</title>
+<style>
+:root{ color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --good:#107a3d; --bad:#b42318; }
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --good:#3fce7c; --bad:#ff7a6b; } }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+a{color:var(--link)}
+.wrap{max-width:640px;margin:0 auto;padding:40px 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;
+      margin-bottom:16px}
+.brand{font-size:22px;font-weight:800;margin:0 0 18px}
+.brand a{color:inherit;text-decoration:none}
+.brand .dot{color:var(--accent)}
+h1{font-size:28px;margin:0 0 10px}
+h2{font-size:17px;margin:0 0 6px}
+p{margin:0 0 14px}
+.muted{color:var(--muted);font-size:14px}
+.notice{border-radius:10px;padding:12px 14px;margin-bottom:16px;font-weight:600}
+.notice.ok{background:var(--chip);color:var(--good)}
+.notice.bad{background:var(--chip);color:var(--bad)}
+form{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+.btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:700;
+     padding:10px 16px;border-radius:10px;text-decoration:none;border:0;font:inherit;
+     cursor:pointer}
+.btn:hover{filter:brightness(1.08)}
+.btn.alt{background:var(--chip);color:var(--fg)}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.plan{border:1px solid var(--line);border-radius:12px;padding:14px}
+.plan .price{font-size:20px;font-weight:800}
+@media (max-width:520px){ .plans{grid-template-columns:1fr} .wrap{padding:24px 12px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="card">
+  <p class="brand"><a href="./">wowpriced<span class="dot">●</span></a></p>
+  <h1>Get deals in your inbox</h1>
+  <div id="notice" class="notice" style="display:none"></div>
+  <p>One email a day, free: the day's best verified deals — 50 to 90% off, fake
+     "list prices" removed, Amazon prices re-checked live — every morning around
+     8am Eastern. Unsubscribe with one click any time.</p>
+  <form id="nlform" method="post" action="" style="display:none">
+    <input type="email" name="email" placeholder="you@example.com" required
+           autocomplete="email" aria-label="your email address">
+    <button type="submit" class="btn">Subscribe free</button>
+  </form>
+  <p id="pending" class="muted" style="display:none">Email signup is being set up —
+     check back soon, or <a href="./">browse the live deal wall</a> meanwhile.</p>
+  <p class="muted">We store your address and nothing else, never share it, and
+     every email carries an unsubscribe link.</p>
+</div>
+
+<div class="card">
+  <div class="plans">
+    <div class="plan">
+      <h2>Free daily email</h2>
+      <div class="price">$0</div>
+      <p class="muted">The top 25 deals of the day, once a day. Good deals
+         don't wait, though: many are gone by the afternoon.</p>
+    </div>
+    <div class="plan">
+      <h2>Membership</h2>
+      <div class="price">$9.99/mo</div>
+      <p class="muted">Every verified deal emailed the hour it's found, bundled at
+         most once an hour, cancel anytime.</p>
+      <a id="member" class="btn alt" rel="noopener" style="display:none">Become a member</a>
+    </div>
+  </div>
+</div>
+
+<p class="muted"><a href="./">&larr; Back to the deal wall</a></p>
+</div>
+<script>
+"use strict";
+(function () {
+  // Result states arrive as query parameters: the subscribe Worker redirects
+  // form posts back here with ?ok=1 or ?err=email; unsubscribe pages link
+  // here with ?unsubscribed=1.
+  var q = location.search;
+  var notice = document.getElementById("notice");
+  function show(cls, text) {
+    notice.className = "notice " + cls;
+    notice.textContent = text;
+    notice.style.display = "";
+  }
+  if (/[?&]ok=1(&|$)/.test(q)) {
+    show("ok", "You're on the list! Your first email arrives the next morning " +
+         "around 8am Eastern. Add the sender to your contacts so it never hits spam.");
+  } else if (/[?&]err=email(&|$)/.test(q)) {
+    show("bad", "That email address doesn't look right — please try again.");
+  } else if (/[?&]unsubscribed=1(&|$)/.test(q)) {
+    show("ok", "You're unsubscribed — no more emails from us. " +
+         "Changed your mind? Sign up again below.");
+  }
+
+  // The Worker's URL (and the membership link) travel in deals.json meta, so
+  // the page needs no hardcoded endpoints and hides the form until the
+  // operator has deployed the Worker and pasted its URL into config.
+  fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var m = (d && d.meta) || {};
+      var form = document.getElementById("nlform");
+      if (m.newsletter_url) {
+        form.action = String(m.newsletter_url).replace(/\/+$/, "") + "/subscribe";
+        form.style.display = "";
+      } else {
+        document.getElementById("pending").style.display = "";
+      }
+      if (m.subscribe_url) {
+        var btn = document.getElementById("member");
+        btn.href = m.subscribe_url;
+        btn.style.display = "";
+      }
+    })
+    .catch(function () {
+      document.getElementById("pending").style.display = "";
+    });
+})();
+</script>
+</body>
+</html>

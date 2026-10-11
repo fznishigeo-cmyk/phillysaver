@@ -23,7 +23,7 @@ SECRET_NAMES = [
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
-    "NEWSLETTER_SECRET",  # paywall: authorizes the full-payload upload
+    "NEWSLETTER_SECRET",  # bearer token for the Worker: /list (newsletter) and /api/publish (paywall)
 ]
 
 
@@ -132,6 +132,12 @@ class AppConfig:
     paywall_trial_days: int = 7
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
+    # -- newsletter: the free daily email list (Cloudflare Worker + KV) --
+    newsletter_enabled: bool = True
+    newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
+    newsletter_hour_local: int = 8
+    newsletter_timezone: str = "America/New_York"
+    newsletter_max_per_run: int = 200  # messages per run; the rest ride the next run
 
     # -- retention / flags --
     posts_seen_days: int = 30
@@ -227,6 +233,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                           default=cfg.paywall_trial_days)))
     cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")
     cfg.paywall_google_client_id = str(g("paywall", "google_client_id", default="") or "").strip()
+    cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
+    cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
+    cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))
+    cfg.newsletter_timezone = g("newsletter", "timezone", default=cfg.newsletter_timezone)
+    cfg.newsletter_max_per_run = max(1, int(g("newsletter", "max_per_run",
+                                              default=cfg.newsletter_max_per_run)))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))

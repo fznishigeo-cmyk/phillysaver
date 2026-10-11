@@ -44,6 +44,36 @@ def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, 
     return subject, text_body, html_body
 
 
+def smtp_connect(host: str, port: int, *, smtp_factory: Any = None):
+    """Open and authenticate the transport the SMTP_* secrets describe.
+
+    Port 465 is implicit TLS (SMTP_SSL), 587 upgrades with STARTTLS, any
+    other port is used as is; SMTP_USER (when set) logs in. The caller
+    sends and quits. Shared by the digest and the newsletter so the TLS
+    rules live in one place; `smtp_factory` (tests) replaces the socket.
+    """
+    if smtp_factory is not None:
+        server = smtp_factory(host, port)
+    elif port == 465:
+        # Implicit-TLS providers (e.g. gmail:465); 587 uses STARTTLS below.
+        server = smtplib.SMTP_SSL(host, port, timeout=30)
+    else:
+        server = smtplib.SMTP(host, port, timeout=30)
+    try:
+        if port == 587:
+            server.starttls()
+        user = get_secret("SMTP_USER")
+        if user:
+            server.login(user, get_secret("SMTP_PASSWORD"))
+    except Exception:
+        try:
+            server.quit()
+        except Exception:  # pragma: no cover - best-effort cleanup
+            pass
+        raise
+    return server
+
+
 def maybe_send_digest(db, cfg, now: datetime, *,
                       deals: list[dict[str, Any]] | None = None,
                       smtp_factory: Any = None) -> bool:
@@ -83,18 +113,8 @@ def maybe_send_digest(db, cfg, now: datetime, *,
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     try:
-        if smtp_factory is not None:
-            server = smtp_factory(host, port)
-        elif port == 465:
-            # Implicit-TLS providers (e.g. gmail:465); 587 uses STARTTLS below.
-            server = smtplib.SMTP_SSL(host, port, timeout=30)
-        else:
-            server = smtplib.SMTP(host, port, timeout=30)
+        server = smtp_connect(host, port, smtp_factory=smtp_factory)
         try:
-            if port == 587:
-                server.starttls()
-            if user:
-                server.login(user, get_secret("SMTP_PASSWORD"))
             server.send_message(msg)
         finally:
             try:

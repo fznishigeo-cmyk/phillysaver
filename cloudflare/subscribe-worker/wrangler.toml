@@ -1,0 +1,17 @@
+# wowpriced subscribe Worker (see worker.js and README.md).
+# Deployed by .github/workflows/deploy-subscribe-worker.yml, which creates the
+# KV namespace on first run and substitutes its id below (on a copy) before
+# `wrangler deploy`. NEWSLETTER_SECRET is set with `wrangler secret put`,
+# never written here.
+name = "wowpriced-subscribe"
+main = "worker.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[vars]
+# Browser origins allowed to call POST /subscribe cross-origin (comma list).
+ALLOWED_ORIGINS = "https://wowpriced.com,https://www.wowpriced.com,https://fznishigeo-cmyk.github.io"
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "REPLACED_AT_DEPLOY"

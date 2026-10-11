@@ -5,8 +5,10 @@ local temporary git repositories (file:// remotes), never the network.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 from pathlib import Path
@@ -19,6 +21,8 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 HOURLY = WORKFLOWS / "hourly.yml"
 FAST = WORKFLOWS / "fast.yml"
 SQUASH = WORKFLOWS / "squash-data.yml"
+DEPLOY_WORKER = WORKFLOWS / "deploy-subscribe-worker.yml"
+WORKER_DIR = ROOT / "cloudflare" / "subscribe-worker"
 SCRIPT = ROOT / "scripts" / "commit_state.sh"
 README = ROOT / "README.md"
 
@@ -58,7 +62,7 @@ def run_commands(doc: dict) -> list[str]:
 
 
 def test_all_workflows_parse() -> None:
-    for p in (HOURLY, FAST, SQUASH):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER):
         assert p.is_file(), p
         load_workflow(p)
 
@@ -146,12 +150,45 @@ def test_squash_shape() -> None:
     assert "git push --force-with-lease=refs/heads/data:" in body
 
 
+def test_deploy_subscribe_worker_shape() -> None:
+    """Manual deploy of the subscribe Worker: dispatch only, read-only token,
+    KV namespace found-or-created, id substituted on a copy, secret piped in."""
+    doc = load_workflow(DEPLOY_WORKER)
+    assert doc["name"] == "deploy subscribe worker"
+    on = workflow_on(doc)
+    assert "workflow_dispatch" in on and "schedule" not in on
+    assert doc["permissions"] == {"contents": "read"}
+    job = single_job(doc)
+    assert job["defaults"]["run"]["working-directory"] == "cloudflare/subscribe-worker"
+    assert job["env"] == {
+        "CLOUDFLARE_API_TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+        "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+    }
+    steps = job["steps"]
+    node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
+    assert node["uses"] == "actions/setup-node@v4"
+    assert str(node["with"]["node-version"]) == "20"
+
+    body = "\n".join(run_commands(doc))
+    assert "npm install -g wrangler" in body
+    assert "wrangler kv namespace list" in body
+    assert "wrangler kv namespace create wowpriced_subs" in body
+    assert 'sed "s/REPLACED_AT_DEPLOY/$KV_ID/" wrangler.toml > wrangler.deploy.toml' in body
+    assert "wrangler deploy --config wrangler.deploy.toml" in body
+    assert "wrangler secret put NEWSLETTER_SECRET" in body
+    assert "GITHUB_STEP_SUMMARY" in body and "newsletter.worker_url" in body
+    assert "git push" not in body
+    # The list secret reaches wrangler through the step env only.
+    put = next(s for s in steps if "wrangler secret put" in s.get("run", ""))
+    assert put["env"] == {"NEWSLETTER_SECRET": "${{ secrets.NEWSLETTER_SECRET }}"}
+
+
 # ------------------------------------------------------------------- safety
 
 
 def test_no_workflow_pushes_to_main() -> None:
     """Every git push in any workflow or in commit_state.sh targets data only."""
-    texts = {p.name: p.read_text() for p in (HOURLY, FAST, SQUASH, SCRIPT)}
+    texts = {p.name: p.read_text() for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, SCRIPT)}
     for name, text in texts.items():
         for line in text.splitlines():
             if "git push" in line or re.search(r"\bpush origin\b", line):
@@ -162,7 +199,7 @@ def test_no_workflow_pushes_to_main() -> None:
 def test_no_secret_is_echoed() -> None:
     """`${{ secrets.X }}` appears only as env-map values, never inside run/echo."""
     env_line = re.compile(r"^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z_]+ \}\}$")
-    for p in (HOURLY, FAST, SQUASH):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER):
         for line in p.read_text().splitlines():
             if "secrets." in line:
                 assert env_line.match(line), (p.name, line)
@@ -319,3 +356,159 @@ def test_readme_covers_the_contract() -> None:
     assert "ftc_disclosure" in text
     # ops
     assert "first_seen_at" in text and "TELEGRAM_ADMIN_CHAT_ID" in text
+
+
+# ----------------------------------------------------- subscribe Worker
+
+
+WORKER_HARNESS = r"""
+import worker from "./worker.mjs";
+
+// Workers KV, enough of it: values + metadata, prefix listing with cursors.
+class FakeKV {
+  constructor() { this.m = new Map(); }
+  async get(k) { const v = this.m.get(k); return v ? v.value : null; }
+  async put(k, value, opts = {}) { this.m.set(k, { value, metadata: opts.metadata || null }); }
+  async delete(k) { this.m.delete(k); }
+  async list({ prefix = "", cursor, limit = 1000 } = {}) {
+    const keys = [...this.m.keys()].filter((k) => k.startsWith(prefix)).sort();
+    const start = cursor ? Number(cursor) : 0;
+    const page = keys.slice(start, start + limit)
+      .map((name) => ({ name, metadata: this.m.get(name).metadata }));
+    const done = start + limit >= keys.length;
+    return { keys: page, list_complete: done, cursor: done ? undefined : String(start + limit) };
+  }
+}
+const env = { SUBS: new FakeKV(), NEWSLETTER_SECRET: "s3cret" };
+const BASE = "https://wowpriced-subscribe.example.workers.dev";
+const call = (method, path, init = {}) => worker.fetch(new Request(BASE + path, { method, ...init }), env);
+const JSON_HDR = { "Content-Type": "application/json", "Origin": "https://wowpriced.com",
+                   "CF-Connecting-IP": "1.2.3.4" };
+const FORM_HDR = { "Content-Type": "application/x-www-form-urlencoded", "CF-Connecting-IP": "5.6.7.8" };
+const out = {};
+let r;
+
+r = await call("POST", "/subscribe", { body: JSON.stringify({ email: " You@Example.COM " }), headers: JSON_HDR });
+out.json_subscribe = { status: r.status, body: await r.json(), cors: r.headers.get("Access-Control-Allow-Origin") };
+const first = JSON.parse(await env.SUBS.get("sub:you@example.com"));
+r = await call("POST", "/subscribe", { body: JSON.stringify({ email: "you@example.com" }), headers: JSON_HDR });
+out.resubscribe = { status: r.status, same_token: JSON.parse(await env.SUBS.get("sub:you@example.com")).token === first.token };
+out.token_shape = /^[0-9a-f]{32}$/.test(first.token) && typeof first.ts === "string";
+out.metadata_token = env.SUBS.m.get("sub:you@example.com").metadata.token === first.token;
+
+r = await call("POST", "/subscribe", { body: new URLSearchParams({ email: "Second@example.com" }),
+                                       headers: { ...FORM_HDR, "Referer": "https://www.wowpriced.com/" } });
+out.form_subscribe = { status: r.status, location: r.headers.get("Location") };
+r = await call("POST", "/subscribe", { body: new URLSearchParams({ email: "not-an-email" }),
+                                       headers: { ...FORM_HDR, "Referer": "https://evil.example/" } });
+out.form_invalid = { status: r.status, location: r.headers.get("Location") };
+r = await call("POST", "/subscribe", { body: JSON.stringify({ email: "nope@" }), headers: JSON_HDR });
+out.json_invalid = { status: r.status, body: await r.json() };
+r = await call("POST", "/subscribe", { body: JSON.stringify({ email: "x@y.com" }),
+                                       headers: { ...JSON_HDR, "Origin": "https://evil.example" } });
+out.foreign_origin_cors = r.headers.get("Access-Control-Allow-Origin");
+out.stored_keys = [...env.SUBS.m.keys()].filter((k) => k.startsWith("sub:")).sort();
+
+r = await call("GET", "/list");
+out.list_unauth = r.status;
+r = await call("GET", "/list", { headers: { "Authorization": "Bearer wrong" } });
+out.list_wrong = r.status;
+r = await call("GET", "/list", { headers: { "Authorization": "Bearer s3cret" } });
+out.list = { status: r.status, body: await r.json() };
+
+const tok = first.token;
+r = await call("GET", "/unsubscribe?e=you@example.com&t=badtoken");
+out.unsub_wrong = { status: r.status, kept: !!(await env.SUBS.get("sub:you@example.com")) };
+r = await call("GET", "/unsubscribe?e=You@example.com&t=" + tok);
+out.unsub_ok = { status: r.status, text: await r.text(), gone: !(await env.SUBS.get("sub:you@example.com")) };
+r = await call("POST", "/unsubscribe?e=you@example.com&t=" + tok, { body: "List-Unsubscribe=One-Click",
+               headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+out.unsub_again = r.status;
+
+let last;
+for (let i = 0; i < 20; i++) {
+  last = await call("POST", "/subscribe", { body: JSON.stringify({ email: `u${i}@example.com` }),
+                                            headers: { ...JSON_HDR, "CF-Connecting-IP": "9.9.9.9" } });
+}
+out.twentieth = last.status;
+r = await call("POST", "/subscribe", { body: JSON.stringify({ email: "u21@example.com" }),
+                                       headers: { ...JSON_HDR, "CF-Connecting-IP": "9.9.9.9" } });
+out.twenty_first = r.status;
+
+r = await call("OPTIONS", "/subscribe", { headers: { "Origin": "https://wowpriced.com" } });
+out.preflight_ok = { status: r.status, origin: r.headers.get("Access-Control-Allow-Origin") };
+r = await call("OPTIONS", "/subscribe", { headers: { "Origin": "https://evil.example" } });
+out.preflight_bad = r.status;
+out.not_found = [(await call("GET", "/")).status, (await call("GET", "/subscribe")).status,
+                 (await call("DELETE", "/list")).status];
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def run_worker_harness(tmp_path: Path) -> dict:
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    shutil.copyfile(WORKER_DIR / "worker.js", tmp_path / "worker.mjs")
+    (tmp_path / "harness.mjs").write_text(WORKER_HARNESS)
+    res = subprocess.run(["node", "harness.mjs"], cwd=tmp_path,
+                         capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    return json.loads(res.stdout)
+
+
+def test_worker_static_shape() -> None:
+    import tomllib
+
+    js = (WORKER_DIR / "worker.js").read_text()
+    assert js.count("\n") <= 175, "keep the Worker small and readable"
+    for needle in ('"/subscribe"', '"/unsubscribe"', '"/list"', "crypto.getRandomValues",
+                   "env.NEWSLETTER_SECRET", "env.SUBS", "https://wowpriced.com",
+                   "https://fznishigeo-cmyk.github.io", "export default"):
+        assert needle in js, needle
+    toml = tomllib.loads((WORKER_DIR / "wrangler.toml").read_text())
+    assert toml["name"] == "wowpriced-subscribe"
+    assert toml["main"] == "worker.js"
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", toml["compatibility_date"])
+    assert toml["kv_namespaces"] == [{"binding": "SUBS", "id": "REPLACED_AT_DEPLOY"}]
+    assert "https://wowpriced.com" in toml["vars"]["ALLOWED_ORIGINS"]
+    assert (WORKER_DIR / "README.md").is_file()
+
+
+def test_worker_behaviour(tmp_path: Path) -> None:
+    """Runs worker.js under node against an in-memory KV."""
+    out = run_worker_harness(tmp_path)
+    # POST /subscribe: JSON -> 200 {ok:true} with CORS for an allowed origin;
+    # address trimmed + lowercased; idempotent (token kept); token in metadata.
+    assert out["json_subscribe"] == {"status": 200, "body": {"ok": True},
+                                     "cors": "https://wowpriced.com"}
+    assert out["resubscribe"] == {"status": 200, "same_token": True}
+    assert out["token_shape"] is True and out["metadata_token"] is True
+    # Form posts bounce to the signup page of the (allowed) referring site.
+    assert out["form_subscribe"] == {
+        "status": 303, "location": "https://www.wowpriced.com/subscribe.html?ok=1"}
+    # Invalid address: form -> back with ?err=email (never to a foreign
+    # Referer), JSON -> 400.
+    assert out["form_invalid"] == {
+        "status": 303, "location": "https://wowpriced.com/subscribe.html?err=email"}
+    assert out["json_invalid"] == {"status": 400, "body": {"ok": False, "error": "invalid email"}}
+    assert out["foreign_origin_cors"] is None
+    assert out["stored_keys"] == ["sub:second@example.com", "sub:x@y.com", "sub:you@example.com"]
+    # GET /list: bearer secret only; emails + tokens, nothing else.
+    assert out["list_unauth"] == 401 and out["list_wrong"] == 401
+    assert out["list"]["status"] == 200
+    rows = out["list"]["body"]["emails"]
+    assert [r["email"] for r in rows] == ["second@example.com", "x@y.com", "you@example.com"]
+    assert all(set(r) == {"email", "token"} and re.fullmatch(r"[0-9a-f]{32}", r["token"])
+               for r in rows)
+    # /unsubscribe: wrong token keeps the record (403); right token deletes
+    # (200 HTML); a second click (one-click POST) is still a 200.
+    assert out["unsub_wrong"] == {"status": 403, "kept": True}
+    assert out["unsub_ok"]["status"] == 200 and out["unsub_ok"]["gone"] is True
+    assert "You're unsubscribed" in out["unsub_ok"]["text"]
+    assert out["unsub_again"] == 200
+    # Abuse control: 20 posts per IP per hour, the 21st is refused.
+    assert out["twentieth"] == 200 and out["twenty_first"] == 429
+    # CORS preflight for allowed origins only; everything else 404.
+    assert out["preflight_ok"] == {"status": 204, "origin": "https://wowpriced.com"}
+    assert out["preflight_bad"] == 403
+    assert out["not_found"] == [404, 404, 404]

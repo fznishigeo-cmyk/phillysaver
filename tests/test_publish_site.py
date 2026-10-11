@@ -441,3 +441,35 @@ class TestPaywallTeaser:
         assert doc["meta"]["teaser_count"] == 8 and doc["meta"]["api_url"] == ""
         assert len(doc["deals"]) == 10
         assert all("locked" not in d and d["item"] for d in doc["deals"])
+
+
+class TestNewsletterSite:
+    """The free daily email list reaches the page through deals.json meta and
+    the standalone subscribe.html template."""
+
+    def test_meta_newsletter_url_and_subscribe_page(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        cfg.newsletter_worker_url = "https://wowpriced-subscribe.example.workers.dev"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert doc["meta"]["newsletter_url"] == \
+            "https://wowpriced-subscribe.example.workers.dev"
+        html = (out / "subscribe.html").read_text(encoding="utf-8")
+        assert html.startswith("<!doctype html>")
+        # The form posts to the Worker from meta (never a hardcoded endpoint)
+        # and the page explains free daily vs the paid hourly membership.
+        assert "newsletter_url" in html and '"/subscribe"' in html
+        assert 'name="email"' in html and 'method="post"' in html
+        assert "Email signup is being set up" in html
+        assert "ok=1" in html and "unsubscribed=1" in html
+        assert "$9.99/mo" in html and "subscribe_url" in html
+        assert 'href="./"' in html  # back home
+        assert "prefers-color-scheme" in html
+        assert "<script src=" not in html and "<link" not in html
+
+    def test_meta_newsletter_url_empty_until_configured(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert doc["meta"]["newsletter_url"] == ""
+        assert (out / "subscribe.html").exists()
