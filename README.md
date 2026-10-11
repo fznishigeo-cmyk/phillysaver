@@ -138,7 +138,7 @@ Three workflows in `.github/workflows/`:
 
 | Workflow | Cron | Does |
 |---|---|---|
-| `hourly.yml` | `0 * * * *` | Full run + commit state + deploy the site to GitHub Pages. |
+| `hourly.yml` | `0 * * * *` | Full run + commit state + deploy the site to Cloudflare Pages. |
 | `fast.yml` | `*/15 * * * *` | `run --fast-lane` (fast-lane sources only) + commit state. No Pages deploy — the hourly deploy refreshes the site; a 15-min site lag is fine, the Telegram alerts are the fast path. |
 | `squash-data.yml` | `17 3 1 * *` | Monthly: squashes the `data` branch to one commit. |
 
@@ -154,8 +154,9 @@ Three workflows in `.github/workflows/`:
 - Keep hourly runs under ~3 min of runner time (the job has a hard
   `timeout-minutes: 15`; internal budget is 8 min). The run budget in
   `config.yaml` (`fetch.run_budget_s`) is the knob.
-- **One-time setup:** repo Settings → Pages → Source = **GitHub Actions**
-  (the deploy uses the official Pages artifact actions, no `gh-pages` branch).
+- **Hosting:** Cloudflare Pages (project `wowpriced`, secrets
+  `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) serves wowpriced.com and
+  www. GitHub Pages is not used: its terms bar commercial sites.
 - Honesty note: GitHub's cron is best-effort — under load, scheduled runs can
   be delayed or skipped entirely. The upgrade path is a small VPS cron with the
   identical command and state file:

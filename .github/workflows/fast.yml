@@ -19,17 +19,12 @@ concurrency:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   run:
     name: fast-lane run
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -81,48 +76,23 @@ jobs:
         run: bash scripts/commit_state.sh
 
       - name: Deploy site to Cloudflare Pages
-        # Second host for the same site/ directory: commercial use is allowed
-        # there, bandwidth is unmetered and the custom domain gets its own
-        # certificate. Soft-fails so a Cloudflare hiccup never fails a run;
-        # skipped until the Cloudflare secrets exist.
-        continue-on-error: true
+        # The site's only host (wowpriced.com and www point at this project;
+        # GitHub Pages was retired 2026-10-11: its terms bar commercial
+        # sites). A failed deploy turns the run red; state is already
+        # committed, and the next run deploys again.
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::notice::Cloudflare Pages deploy skipped (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID unset)"
-            exit 0
+            echo "::error::Cloudflare Pages deploy skipped (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID unset): wowpriced.com is not updated"
+            exit 1
           fi
           npx --yes wrangler@4 pages project create wowpriced --production-branch main >/dev/null 2>&1 || true
           npx --yes wrangler@4 pages deploy site --project-name wowpriced --branch main --commit-dirty=true | tee cf-pages.log
           url="$(grep -o 'https://[A-Za-z0-9.-]*\.pages\.dev' cf-pages.log | tail -1 || true)"
           echo "Cloudflare Pages: ${url:-see log}" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Configure GitHub Pages
-        id: cfgpages
-        # Soft-fail guard mirrors hourly.yml (see the comment there).
-        continue-on-error: true
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Upload site artifact
-        if: steps.cfgpages.outcome == 'success'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-      - name: Deploy to GitHub Pages
-        if: steps.cfgpages.outcome == 'success'
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-      - name: Note skipped deploy
-        if: steps.cfgpages.outcome != 'success'
-        run: |
-          echo "::warning::Site deploy skipped - enable GitHub Pages once at Settings -> Pages -> Source = GitHub Actions"
 
       - name: Tell search engines what changed (IndexNow)
         # After the deploys, so the pages and the key file are live. Posts

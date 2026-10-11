@@ -69,6 +69,20 @@ def assert_state_steps_get_the_key(steps: list[dict]) -> None:
         assert step["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
 
 
+def assert_cloudflare_is_the_only_host(doc: dict) -> None:
+    """wowpriced.com is served by Cloudflare Pages (since 2026-10-11; GitHub
+    Pages' terms bar commercial sites): the site deploys there, a failed or
+    skipped deploy fails the run, and nothing deploys to GitHub Pages."""
+    job = single_job(doc)
+    assert "environment" not in job
+    assert "pages" not in doc["permissions"] and "id-token" not in doc["permissions"]
+    assert not any("pages" in s.get("uses", "") for s in job["steps"])
+    deploy = next(s for s in job["steps"] if s.get("name") == "Deploy site to Cloudflare Pages")
+    assert "continue-on-error" not in deploy
+    assert "pages deploy site --project-name wowpriced" in deploy["run"]
+    assert "set -euo pipefail" in deploy["run"] and "exit 1" in deploy["run"]
+
+
 # ---------------------------------------------------------------- YAML shape
 
 
@@ -85,9 +99,7 @@ def test_hourly_shape() -> None:
     assert on["schedule"] == [{"cron": "0 * * * *"}]
     assert "workflow_dispatch" in on
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
-    assert doc["permissions"] == {
-        "contents": "write", "pages": "write", "id-token": "write",
-    }
+    assert doc["permissions"] == {"contents": "write"}
     job = single_job(doc)
     assert job["timeout-minutes"] == 15
 
@@ -108,11 +120,7 @@ def test_hourly_shape() -> None:
     assert any("bash scripts/commit_state.sh" in r for r in runs)
     assert_state_steps_get_the_key(steps)
 
-    # Official Pages artifact actions only — no gh-pages branch commits.
-    assert "actions/configure-pages@v5" in uses
-    upload = next(s for s in steps if s.get("uses") == "actions/upload-pages-artifact@v3")
-    assert upload["with"]["path"] == "site"
-    assert "actions/deploy-pages@v4" in uses
+    assert_cloudflare_is_the_only_host(doc)
 
     run_step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar run")
     assert set(run_step["env"]) == set(SECRET_NAMES)
@@ -138,11 +146,7 @@ def test_fast_shape() -> None:
 
     # The fast lane deploys the site too: a 15-minute-lane find (Keepa price
     # drop) must reach the page in minutes, not wait for the hourly deploy.
-    uses = " ".join(s.get("uses", "") for s in job["steps"])
-    assert "actions/upload-pages-artifact" in uses
-    assert "actions/deploy-pages" in uses
-    assert doc["permissions"]["pages"] == "write"
-    assert doc["permissions"]["id-token"] == "write"
+    assert_cloudflare_is_the_only_host(doc)
 
     run_step = next(s for s in job["steps"]
                     if s.get("run", "").strip() == "python -m dealradar run --fast-lane")
