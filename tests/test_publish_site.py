@@ -669,6 +669,27 @@ def _render_pages(db, cfg, out):
     return {p.name: p.read_text(encoding="utf-8") for p in out.glob("*.html")}
 
 
+class TestDropCadenceCopy:
+    @pytest.mark.parametrize("open_access", [False, True])
+    @pytest.mark.parametrize("drop_minutes", [15, 12])
+    def test_every_page_uses_configured_cadence(self, db, cfg, tmp_path,
+                                              open_access, drop_minutes):
+        cfg.paywall_open_access = open_access
+        cfg.drop_minutes = drop_minutes
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        pages = list(out.rglob("*.html"))
+        assert (out / "404.html") in pages
+        assert any("deals" in p.relative_to(out).parts for p in pages)
+        for page in pages:
+            html = " ".join(page.read_text(encoding="utf-8").split())
+            for stale in ("{{DROP_MINUTES}}", "10 minutes", "10-minute"):
+                assert stale not in html, (page, stale)
+            assert f"every {drop_minutes} minutes" in html, page
+        how = (out / "how-it-works.html").read_text(encoding="utf-8")
+        assert f"a {drop_minutes}-minute" in how
+
+
 class TestCardRequiredTrial:
     """A free account sees the same top-8 teaser; every other deal unlocks
     only with a Stripe subscription (card up front: Stripe's 7-day trial,
@@ -907,7 +928,7 @@ class TestMembershipCopyIsTrue:
             text = " ".join(pages[name].split())
             assert "free for everyone, a new eight at every drop" in text, name
             # Membership is site access only (operator, 2026-10-11): no email.
-            assert "new deals every 10 minutes" in text, name
+            assert f"new deals every {cfg.drop_minutes} minutes" in text, name
             assert "one email every morning" not in text and "once an hour" not in text, name
             assert "7-day free trial" in text and "card" in text, name
             assert "every deal on the wall" in text, name

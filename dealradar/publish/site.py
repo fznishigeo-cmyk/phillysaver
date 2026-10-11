@@ -382,9 +382,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         email = ""
     for name in pages:
         html = (out / name).read_text(encoding="utf-8")
-        if "{{CONTACT_EMAIL}}" in html:
-            (out / name).write_text(html.replace("{{CONTACT_EMAIL}}", email),
-                                    encoding="utf-8")
+        html = html.replace("{{CONTACT_EMAIL}}", email)
+        html = html.replace("{{DROP_MINUTES}}", str(int(cfg.drop_minutes)))
+        (out / name).write_text(html, encoding="utf-8")
 
     # Search engines: canonical/og URLs on every page ({{SITE_URL}}), plus
     # robots.txt and sitemap.xml for the public pages (welcome.html is

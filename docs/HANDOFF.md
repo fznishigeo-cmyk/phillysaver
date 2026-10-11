@@ -152,7 +152,7 @@ Keep this file current: whoever stops working updates it in their last commit.
 2. Done (2026-10-11): the Stripe product description reads "wowpriced
    membership. Cancel any time." (confirmed by `stripe check`). When the
    paywall returns: "Every deal on the wall unlocked, with new deals every
-   10 minutes. Cancel any time."
+   15 minutes. Cancel any time."
 3. Done: the Customer Portal is active (1 configuration), so "Manage
    membership" works.
 4. Any change under `cloudflare/subscribe-worker/` goes live only after the
@@ -173,3 +173,11 @@ Keep this file current: whoever stops working updates it in their last commit.
    agreement for commercial use. Operator decision.
 9. IndexNow records a URL as sent at publish time, before the POST; a failed
    POST is retried within a week (`seo.indexnow_resubmit_days`).
+
+## Codex task 008 (2026-10-11, changes uncommitted)
+- All template cadence copy now uses `{{DROP_MINUTES}}`, filled from
+  `publish.drop_minutes` on regular pages, category hubs and the 404 page.
+- Regression coverage checks every published HTML page with 15- and
+  12-minute settings, in both open-access and paywall modes.
+- Validation: `.venv/bin/python -m pytest -q` — 1157 passed, 1 deselected.
+- No commit or push requested; no implementation work remains.

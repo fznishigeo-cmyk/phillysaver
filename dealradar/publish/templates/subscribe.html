@@ -6,7 +6,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
 <title>wowpriced — membership</title>
-<!--paywall--><meta name="description" content="wowpriced membership: every verified deal on the wall unlocked, new deals every 10 minutes."><!--/paywall--><!--open--><meta name="description" content="wowpriced membership: a 7-day free trial, then $9.99/month."><!--/open-->
+<!--paywall--><meta name="description" content="wowpriced membership: every verified deal on the wall unlocked, new deals every {{DROP_MINUTES}} minutes."><!--/paywall--><!--open--><meta name="description" content="wowpriced membership: a 7-day free trial, then $9.99/month."><!--/open-->
 <link rel="canonical" href="{{SITE_URL}}/subscribe.html">
 <style>
 :root{ color-scheme: light dark;
@@ -54,10 +54,10 @@ p{margin:0 0 14px}
   <h1><!--paywall-->Every deal, unlocked<!--/paywall--><!--open-->Membership<!--/open--></h1>
   <div id="notice" class="notice" style="display:none"></div>
   <!--paywall--><p>Membership opens every deal on the wall — up to 90% off, fake "list prices"
-     removed, Amazon prices re-checked live — with new deals every 10 minutes.
+     removed, Amazon prices re-checked live — with new deals every {{DROP_MINUTES}} minutes.
      Eight deals stay free for everyone, a new eight at every drop.</p><!--/paywall--><!--open--><p>Every deal on the wall — up to 90% off, fake "list prices" removed, Amazon
      prices re-checked live — is open to everyone right now, with new deals every
-     10 minutes.</p><!--/open-->
+     {{DROP_MINUTES}} minutes.</p><!--/open-->
   <div class="plans">
     <div class="plan">
       <h2>Free</h2>
@@ -95,7 +95,7 @@ p{margin:0 0 14px}
   if (/[?&]unsubscribed=1(&|$)/.test(q)) {
     show("You're unsubscribed — no more emails from us.");
   } else if (/[?&](confirmed|ok)=1(&|$)/.test(q)) {
-    show("We no longer send a daily email: every deal is on the live wall, new every 10 minutes.");
+    show("We no longer send a daily email: every deal is on the live wall, new every {{DROP_MINUTES}} minutes.");
   }
 
   // Membership starts on the home page: a free account, then the

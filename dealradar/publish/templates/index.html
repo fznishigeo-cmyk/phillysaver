@@ -6,14 +6,14 @@
 <meta name="theme-color" content="#0f1b22">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <title>wowpriced — verified deals</title>
-<meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every 10 minutes.">
+<meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every {{DROP_MINUTES}} minutes.">
 <link rel="canonical" href="{{SITE_URL}}/">
 <!-- Locked cards show a blurred product photo: never in image search. -->
 <meta name="robots" content="noimageindex">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="wowpriced">
 <meta property="og:title" content="wowpriced — verified deals, up to 90% off">
-<meta property="og:description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every 10 minutes.">
+<meta property="og:description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every {{DROP_MINUTES}} minutes.">
 <meta property="og:url" content="{{SITE_URL}}/">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"wowpriced","alternateName":"Wow Priced","url":"{{SITE_URL}}/"}</script>
@@ -542,9 +542,9 @@ footer .meta{font-size:11.5px}
 </div>
 <footer>
   <p><!--paywall--><strong>Membership — $9.99/month:</strong> every deal on the wall, new deals every
-     10 minutes.<!--/paywall--><!--open--><strong>Membership — $9.99/month.</strong><!--/open-->
+     {{DROP_MINUTES}} minutes.<!--/paywall--><!--open--><strong>Membership — $9.99/month.</strong><!--/open-->
      <span id="footterms">7-day free trial for new members. $0 today.</span>
-     <!--paywall-->Eight deals stay free for everyone, new at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with new deals every 10 minutes.<!--/open--></p>
+     <!--paywall-->Eight deals stay free for everyone, new at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with new deals every {{DROP_MINUTES}} minutes.<!--/open--></p>
   <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live.</p>
@@ -678,7 +678,7 @@ footer .meta{font-size:11.5px}
 
   // One string per published deals.json: a new run key or publish time
   // means a new drop (the fast-lane run key only changes every quarter
-  // hour, so generated_at is what tells two 10-minute cycles apart).
+  // hour, so generated_at is what tells two {{DROP_MINUTES}}-minute cycles apart).
   function dataKey(m) {
     var lr = (m && m.last_run) || {};
     var key = (lr.run_key || "") + "|" + ((m && m.generated_at) || "");
