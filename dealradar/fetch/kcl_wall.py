@@ -26,6 +26,7 @@ text is split into card-group chunks for the parser, with loud diagnostics.
 from __future__ import annotations
 
 import hashlib
+import html as _html_lib
 import json
 import logging
 import re
@@ -229,13 +230,14 @@ class KclWallAdapter(SourceAdapter):
                 matched += offer is not None
                 posts.append(_card_post(card, offer, source, now))
             # One window kept for the next iteration (the sandbox cannot
-            # reach the host): the markup around the first card, to find
-            # the cards' own KCL deal-page links (codes live there).
-            i = html.find(cards[0]["name"][:30])
+            # reach the host): the page embeds every card as a serialized
+            # state object ("initialDeals": _id, title, imageUrl, ...);
+            # show one whole object to find the per-deal link and code.
+            i = html.find("initialDeals")
             log.info("kcl wall %s: %d cards, %d matched to %d ld+json offers; "
-                     "markup around card 1: %r", source.name, len(cards),
+                     "initialDeals head: %r", source.name, len(cards),
                      matched, len(offers),
-                     html[max(0, i - 400):i + 300] if i != -1 else "")
+                     _html_lib.unescape(html[i:i + 4000]) if i != -1 else "")
             return posts
 
         log.info("kcl wall %s: no cards parsed; %d price tokens in text "
