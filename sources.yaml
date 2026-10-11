@@ -538,6 +538,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Coupon/deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: frugal_coupon_living
     method: rss
     url: https://www.frugalcouponliving.com/feed/
@@ -545,6 +547,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog; Amazon and online deals."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: deal_seeking_mom
     method: rss
     url: https://www.dealseekingmom.com/feed/
@@ -552,6 +556,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: bargain_babe
     method: rss
     url: https://www.bargainbabe.com/feed/
@@ -559,6 +565,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: couponing_with_rachel
     method: rss
     url: https://www.couponingwithrachel.com/feed/
@@ -566,6 +574,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: raining_hot_coupons
     method: rss
     url: https://www.raininghotcoupons.com/feed/
@@ -573,6 +583,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog; heavy online-deal mix."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: all_things_target
     method: rss
     url: https://www.allthingstarget.com/feed/
@@ -580,6 +592,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Target-focused; store-run posts are discarded."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: printable_coupons_and_deals
     method: rss
     url: https://www.printablecouponsanddeals.com/feed/
@@ -587,6 +601,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: coupons_and_freebies_mom
     method: rss
     url: https://www.couponsandfreebiesmom.com/feed/
@@ -594,6 +610,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal and freebie blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: cuckoo_for_coupon_deals
     method: rss
     url: https://www.cuckooforcoupondeals.com/feed/
@@ -601,6 +619,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: lady_savings
     method: rss
     url: https://www.ladysavings.com/feed/
@@ -608,6 +628,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: edealinfo
     method: rss
     url: https://www.edealinfo.com/feed/
@@ -615,6 +637,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Online deals and codes."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: spoofee
     method: rss
     url: https://www.spoofee.com/feed/
@@ -622,6 +646,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal forum/blog; online-deal posts."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: inspiring_savings
     method: rss
     url: https://www.inspiringsavings.com/feed/
@@ -629,6 +655,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: couponing_to_disney
     method: rss
     url: https://www.couponingtodisney.com/feed/
@@ -636,6 +664,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog; many Amazon posts."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: coupons_for_your_family
     method: rss
     url: https://www.couponsforyourfamily.com/feed/
@@ -643,6 +673,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: dealmama
     method: rss
     url: https://www.dealmama.com/feed/
@@ -650,6 +682,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: my_bjs_wholesale
     method: rss
     url: https://www.mybjswholesale.com/feed/
@@ -657,6 +691,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "BJ's-focused deals; online-orderable posts pass."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: my_couponing_buddy
     method: rss
     url: https://www.mycouponingbuddy.com/feed/
@@ -664,6 +700,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: steals_and_deals_for_kids
     method: rss
     url: https://www.stealsanddealsforkids.com/feed/
@@ -671,6 +709,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Kids/baby deals."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: coupon_lady_deals
     method: rss
     url: https://www.couponladydeals.com/feed/
@@ -678,6 +718,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: savings_angel
     method: rss
     url: https://www.savingsangel.com/feed/
@@ -685,6 +727,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: torok_coupon_hunter
     method: rss
     url: https://www.torokcouponhunter.com/feed/
@@ -692,6 +736,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: carolinas_and_dollars
     method: rss
     url: https://www.carolinasanddollars.com/feed/
@@ -699,6 +745,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: coupon_with_star
     method: rss
     url: https://www.couponwithstar.com/feed/
@@ -706,6 +754,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: crazy_for_couponing
     method: rss
     url: https://www.crazyforcouponing.com/feed/
@@ -713,6 +763,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: couponflick
     method: rss
     url: https://www.couponflick.com/feed/
@@ -720,6 +772,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: the_crazy_coupons
     method: rss
     url: https://www.thecrazycoupons.com/feed/
@@ -727,6 +781,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: couponing_with_greg
     method: rss
     url: https://www.couponingwithgregthatdude.com/feed/
@@ -734,6 +790,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: coupon_with_kayla
     method: rss
     url: https://www.couponwithkayla.com/feed/
@@ -741,6 +799,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
   - name: saving_our_way
     method: rss
     url: https://www.savingourway.com/feed/
@@ -748,6 +808,8 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Deal blog."
+    crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
+    image_permission: true
 
 backup_sources:
   - name: dealspotr
