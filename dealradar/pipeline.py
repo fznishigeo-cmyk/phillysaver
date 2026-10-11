@@ -11,15 +11,17 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import logging
+import re
 import time
 from datetime import datetime, timedelta
 from itertools import chain, zip_longest
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import util
 from .config import AppConfig, load_config, load_sources
 from .db import DB
-from .errors import ParserNotConfigured, SpendCapReached
+from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
 from .models import RawPost, SourceConfig
 
 log = logging.getLogger("dealradar.pipeline")
@@ -312,6 +314,133 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     return done
 
 
+#: Retailer product pages fetched per run for a missing photo: one polite
+#: GET each (the fetcher still holds 1 req/s per host), never repeated,
+#: time-boxed by the run.
+_PRODUCT_IMAGE_PER_RUN = 30
+#: Link hosts never fetched for a photo (substring match): Amazon, whose
+#: photos come from Keepa, and deal trackers, blogs and affiliate
+#: redirectors, whose share image is their own branding, not the product's.
+_PRODUCT_IMAGE_SKIP_HOSTS = (
+    "amazon", "slickdeals", "retailmenot", "dealnews", "redirectingat",
+    "shareasale", "awin", "anrdoezrs", "linksynergy", "dpbolvw", "jdoqocy",
+    "tkqlhce", "kqzyfj", "clickbank", "bit.ly", "go.skimresources", "rstyle",
+    "bradsdeals", "dealmoon", "hip2save", "kcl", "thekrazycouponlady",
+    "southernsavers", "moneysavingmom",
+)
+#: Well-known retailers (all <name>.com) whose own product page may be asked
+#: for its share image. The picture must come from the seller the deal
+#: links to, so a link to any other host is skipped, never fetched.
+_PRODUCT_IMAGE_RETAILERS = frozenset((
+    "walmart", "target", "bestbuy", "dickssportinggoods", "kohls", "macys",
+    "homedepot", "lowes", "costco", "samsclub", "wayfair", "newegg",
+    "staples", "officedepot", "cvs", "walgreens", "chewy", "petco",
+    "petsmart", "ulta", "sephora", "oldnavy", "gap", "nike", "adidas",
+    "lego", "gamestop", "bhphotovideo", "michaels", "joann", "rei",
+    "zappos", "dell", "lenovo", "samsung", "apple", "hsn", "qvc", "ebay",
+    "woot", "academy", "bathandbodyworks", "bedbathandbeyond", "overstock",
+    "crateandbarrel", "williams-sonoma", "potterybarn", "nordstrom",
+    "jcpenney", "belk", "dsw", "famousfootwear", "underarmour", "columbia",
+    "patagonia",
+))
+#: The share-preview tags a product page declares for link previews (what
+#: Slack or iMessage show): og:image / twitter:image, either attribute
+#: order, absolute or protocol-relative URL.
+_PRODUCT_IMAGE_META = (
+    re.compile(r"<meta[^>]+(?:property|name)=[\"'](?:og|twitter):image"
+               r"(?::secure_url|:url|:src)?[\"'][^>]+content=[\"']"
+               r"((?:https?:)?//[^\"']+)[\"']", re.I),
+    re.compile(r"<meta[^>]+content=[\"']((?:https?:)?//[^\"']+)[\"'][^>]+"
+               r"(?:property|name)=[\"'](?:og|twitter):image"
+               r"(?::secure_url|:url|:src)?[\"']", re.I),
+)
+#: A share image that is not the product: the store's logo, placeholder or
+#: default art, a sprite or icon, or a tracking pixel. "icon" and "default"
+#: count only at a word start, so a silicone spatula and Nike's t_default
+#: image transform keep their photo. SVGs are rejected separately.
+_PRODUCT_IMAGE_JUNK = re.compile(
+    r"logo|placeholder|sprite|favicon|(?<![a-z])icon|(?<![a-z_])default"
+    r"|/(?:pixel|spacer|blank|1x1|beacon|transparent)[^/]*\.(?:gif|png)(?:[?#]|$)",
+    re.I)
+
+
+def _backfill_product_images(db: DB, fetcher, deadline: float | None,
+                             cfg: AppConfig | None = None) -> int:
+    """Give photo-less deals linking straight to a well-known retailer the
+    picture that retailer itself publishes for link previews.
+
+    Deals from sources without image rights (DealNews, Slickdeals, ...)
+    show a store-name tile. The product page the deal links to declares an
+    og:image / twitter:image for exactly this use — what Slack or iMessage
+    would show for the link — and only that URL is stored, never the bytes
+    (store facts only). This function reads NOTHING else from the page: no
+    price, no text; the deal's facts stay as the evidence-backed extraction
+    left them.
+
+    Politeness is the fetcher's, with no override: robots.txt honored, one
+    request per second per host, our descriptive User-Agent, conditional
+    GET. A robots block, 403, 404, 5xx or timeout simply flags the deal as
+    tried and moves on, quietly. One attempt per deal ever
+    ("product_image_tried"), at most _PRODUCT_IMAGE_PER_RUN per run, inside
+    the run deadline; run() keeps it on the fast lane.
+    """
+    from html import unescape
+
+    from .dedupe import _DEAL_FIELDS
+
+    found = tried = 0
+    show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
+    now = util.now_utc()
+    for deal in db.all_deals():
+        if deal.get("image_url") or \
+                "product_image_tried" in (deal.get("flags") or []):
+            continue
+        if deal.get("status") == "dead":
+            # Same window as the blog backfill: only the "Just missed" strip.
+            died = util.parse_iso(deal.get("died_at") or "")
+            if died is None or now - died > show_dead:
+                continue
+        link = deal.get("canonical_url") or deal.get("product_url") or ""
+        parts = urlsplit(link)
+        host = (parts.hostname or "") if parts.scheme in ("http", "https") else ""
+        labels = host.split(".")
+        if len(labels) < 2 or labels[-1] != "com" \
+                or labels[-2] not in _PRODUCT_IMAGE_RETAILERS \
+                or any(t in host for t in _PRODUCT_IMAGE_SKIP_HOSTS):
+            continue  # not the seller's own page: left alone, never fetched
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        try:
+            res = fetcher.get(link, conditional=True, deadline=deadline)
+        except DeadlineExceeded:
+            break  # out of time mid-fetch: stays unflagged for the next run
+        tried += 1
+        image = ""
+        if res.status == 200 and res.body and not res.blocked_by_robots:
+            page = res.body.decode("utf-8", errors="replace")
+            # First declared share image that is not junk; a "//cdn/..."
+            # URL is resolved to https, attribute entities are decoded.
+            cands = (unescape(c) if c.startswith("http") else "https:" + unescape(c)
+                     for pat in _PRODUCT_IMAGE_META for c in pat.findall(page))
+            image = next((c for c in cands
+                          if not urlsplit(c).path.lower().endswith(".svg")
+                          and not _PRODUCT_IMAGE_JUNK.search(c)), "")
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        flags = list(payload.get("flags") or [])
+        flags.append("product_image_tried")
+        payload["flags"] = flags
+        if image:
+            payload["image_url"] = image
+            found += 1
+        db.update_deal(deal["dedupe_key"], payload=payload)
+        if tried >= _PRODUCT_IMAGE_PER_RUN:
+            break
+    if tried:
+        log.info("product image backfill: %d of %d retailer pages gave a photo",
+                 found, tried)
+    return found
+
+
 def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     image_backfill: bool = True) -> dict[str, Any]:
     """The 'click the page before publishing' gate, via Keepa's licensed API
@@ -584,6 +713,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
                                   deadline - _RESERVE_FOR_TAIL_S, cfg)
+            if fast_lane else 0)
+        # ---- photos from the retailer's own product page (non-Amazon) ----
+        # Same fast-lane slack: one polite page fetch per photo-less deal
+        # that links straight to a well-known seller, for its og:image.
+        summary["product_images"] = (
+            _backfill_product_images(db, fetcher,
+                                     deadline - _RESERVE_FOR_TAIL_S, cfg)
             if fast_lane else 0)
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----

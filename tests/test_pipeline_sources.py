@@ -7,13 +7,17 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+
+import httpx
 
 from dealradar import pipeline
-from dealradar.config import load_config
+from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
+from dealradar.errors import DeadlineExceeded
 from dealradar.fetch.validate import save_effective_sources
 from dealradar.models import FetchResult, RawPost, SourceConfig
-from dealradar.util import now_utc
+from dealradar.util import iso, now_utc
 
 NOW = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -229,3 +233,246 @@ def test_failing_sources_take_config_edits_immediately(tmp_path, monkeypatch):
     assert by_name["broken"].url == "https://broken.example/real-feed/"
     assert by_name["broken"].crawl_permission
     db.close()
+
+
+class TestProductImageBackfill:
+    """Photo-less deals that link straight to a well-known retailer get ONE
+    polite fetch of that product page for its og:image / twitter:image —
+    the picture the retailer publishes for link previews. Amazon (Keepa's
+    job), trackers, blogs and unknown hosts are never fetched; a robots
+    block or HTTP error flags the deal tried and moves on."""
+
+    DICKS = "https://www.dickssportinggoods.com/p/dsg-ultimate-backpack-5-0"
+    WALMART = "https://www.walmart.com/ip/Silicone-Spatula/123"
+    TARGET = "https://www.target.com/p/thing/-/A-1"
+    BESTBUY = "https://www.bestbuy.com/site/x/6535208.p"
+    NIKE = "https://www.nike.com/t/air-force-1-07-mens-shoes/CW2288-111"
+
+    class _Fetcher:
+        """Canned product pages: a bytes body is a 200, an int is that HTTP
+        status, a URL in ``blocked`` is a robots.txt disallow (the real
+        fetcher makes no request for those), anything else a 404."""
+
+        def __init__(self, pages, blocked=()):
+            self.pages = pages
+            self.blocked = set(blocked)
+            self.calls = []
+
+        def get(self, url, *, conditional=True, headers=None, deadline=None,
+                **kw):
+            self.calls.append(url)
+            assert conditional and not kw  # conditional GET, no robots override
+            if url in self.blocked:
+                return FetchResult(url=url, final_url=url, status=0, body=None,
+                                   error="robots_disallowed",
+                                   blocked_by_robots=True)
+            body = self.pages.get(url)
+            if isinstance(body, int):
+                return FetchResult(url=url, final_url=url, status=body, body=b"")
+            return FetchResult(url=url, final_url=url,
+                               status=200 if body is not None else 404,
+                               body=body)
+
+    @staticmethod
+    def _seed(db, key, link, image="", flags=(), died_at=""):
+        payload = {"dedupe_key": key, "store": "Dick's", "item": key,
+                   "flags": list(flags), "image_url": image,
+                   "conditions": [], "died_at": died_at}
+        db.insert_deal(
+            dedupe_key=key, store="Dick's", item=key, normalized_item=key,
+            canonical_url=link, payload=payload, final_price=9.99,
+            pct_at_checkout=60.0, abs_savings=15.0, online_only="true",
+            expires_at="", now=NOW)
+        if died_at:
+            db.update_deal(key, status="dead")
+
+    def test_retailer_page_yields_its_share_image(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "dicks", self.DICKS)
+        self._seed(db, "walmart", self.WALMART)
+        self._seed(db, "target", self.TARGET)
+        self._seed(db, "bestbuy", self.BESTBUY)
+        self._seed(db, "nike", self.NIKE)
+        fetcher = self._Fetcher({
+            # Dick's-style page: og:image with an entity-escaped query; the
+            # price on the page is never read.
+            self.DICKS: (b"<html><head><title>Now $4.99!</title>"
+                         b"<meta property=\"og:image\" content=\"https://dks."
+                         b"scene7.com/is/image/GolfGalaxy/X?qlt=70&amp;wid=600\">"
+                         b"</head></html>"),
+            # twitter:image only, content attribute first, protocol-relative.
+            self.WALMART: (b"<meta content='//i5.walmartimages.com/seo/"
+                           b"Silicone-Spatula_1.jpeg' name='twitter:image'>"),
+            # Logo and placeholder declared first; the product shot wins.
+            self.TARGET: (
+                b"<meta property='og:image' content='https://t.com/logo.svg'>"
+                b"<meta property='og:image' content='https://t.com/placeholder.png'>"
+                b"<meta name='twitter:image' content='https://t.scene7.com/G1'>"),
+            # Nothing but the store's logo: tried, no picture.
+            self.BESTBUY: (b"<meta property='og:image' "
+                           b"content='https://bby.com/logo.png'>"),
+            # A CDN transform named t_default is not a default image.
+            self.NIKE: (b"<meta property='og:image' content='https://static."
+                        b"nike.com/a/images/t_default/abc/air-force-1.png'>"),
+        })
+        n = pipeline._backfill_product_images(db, fetcher, deadline=None)
+        assert n == 4
+        assert db.get_deal("dicks")["image_url"] == \
+            "https://dks.scene7.com/is/image/GolfGalaxy/X?qlt=70&wid=600"
+        assert db.get_deal("dicks")["final_price"] == 9.99
+        assert db.get_deal("walmart")["image_url"] == \
+            "https://i5.walmartimages.com/seo/Silicone-Spatula_1.jpeg"
+        assert db.get_deal("target")["image_url"] == "https://t.scene7.com/G1"
+        assert db.get_deal("bestbuy")["image_url"] == ""
+        assert db.get_deal("nike")["image_url"] == \
+            "https://static.nike.com/a/images/t_default/abc/air-force-1.png"
+        for key in ("dicks", "walmart", "target", "bestbuy", "nike"):
+            assert "product_image_tried" in db.get_deal(key)["flags"]
+        assert sorted(fetcher.calls) == sorted(
+            [self.DICKS, self.WALMART, self.TARGET, self.BESTBUY, self.NIKE])
+        # One attempt per deal ever: a second pass makes no fetch at all.
+        fetcher.calls.clear()
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
+        assert fetcher.calls == []
+        db.close()
+
+    def test_only_the_sellers_own_page_is_fetched(self, tmp_path):
+        """Amazon is Keepa's; trackers, blogs, affiliate redirectors and any
+        host outside the retailer allowlist are left alone, never fetched."""
+        db = DB(tmp_path / "state.db")
+        links = {
+            "amazon": "https://www.amazon.com/dp/B000000000",
+            "slick": "https://slickdeals.net/f/123-deal",
+            "shortener": "https://bit.ly/abc",
+            "unknown": "https://shop.unknownstore.example/p/1",
+            "not_com": "https://www.target.co.uk/p/1",
+            "nolink": "",
+        }
+        for key, link in links.items():
+            self._seed(db, key, link)
+        self._seed(db, "has_pic", self.DICKS + "?v=1",
+                   image="https://x.example/i.jpg")
+        self._seed(db, "tried", self.DICKS + "?v=2",
+                   flags=["product_image_tried"])
+        fetcher = self._Fetcher({})
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
+        assert fetcher.calls == []
+        for key in links:
+            assert db.get_deal(key)["flags"] == []
+        db.close()
+
+    def test_blocks_and_errors_flag_tried_without_image(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "robots", self.DICKS + "?v=robots")
+        self._seed(db, "forbidden", self.WALMART + "?v=403")
+        self._seed(db, "down", self.TARGET + "?v=500")
+        self._seed(db, "gone", self.BESTBUY + "?v=404")
+        fetcher = self._Fetcher({self.WALMART + "?v=403": 403,
+                                 self.TARGET + "?v=500": 500},
+                                blocked={self.DICKS + "?v=robots"})
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
+        assert len(fetcher.calls) == 4
+        for key in ("robots", "forbidden", "down", "gone"):
+            deal = db.get_deal(key)
+            assert deal["image_url"] == ""
+            assert "product_image_tried" in deal["flags"]
+        # Never fetched again, blocked or not.
+        fetcher.calls.clear()
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
+        assert fetcher.calls == []
+        db.close()
+
+    def test_per_run_cap_and_deadline_hold(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cap = pipeline._PRODUCT_IMAGE_PER_RUN
+        pages = {}
+        for i in range(cap + 5):
+            link = f"{self.DICKS}-{i}"
+            self._seed(db, f"d{i}", link)
+            pages[link] = (b"<meta property='og:image' "
+                           b"content='https://dks.scene7.com/is/image/G/%d'>" % i)
+        fetcher = self._Fetcher(pages)
+        # A deadline already behind us: nothing is fetched or flagged.
+        assert pipeline._backfill_product_images(
+            db, fetcher, deadline=time.monotonic() - 1.0) == 0
+        assert fetcher.calls == []
+
+        # The fetcher crossing the deadline mid-pass ends the pass; that
+        # deal stays unflagged for the next run.
+        class _OutOfTime(self._Fetcher):
+            def get(self, url, **kw):
+                raise DeadlineExceeded("test")
+
+        assert pipeline._backfill_product_images(db, _OutOfTime({}), None) == 0
+        assert all("product_image_tried" not in d["flags"]
+                   for d in db.all_deals())
+        # Per-run cap, the remainder next run, then nothing.
+        assert pipeline._backfill_product_images(db, fetcher, None) == cap
+        assert len(fetcher.calls) == cap
+        assert pipeline._backfill_product_images(db, fetcher, None) == 5
+        assert len(fetcher.calls) == cap + 5
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
+        assert len(fetcher.calls) == cap + 5
+        db.close()
+
+    def test_dead_deals_only_inside_the_just_missed_window(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cfg = AppConfig()  # default show_dead_hours
+        real_now = now_utc()
+        self._seed(db, "fresh_dead", self.DICKS + "?v=1",
+                   died_at=iso(real_now - timedelta(hours=1)))
+        self._seed(db, "old_dead", self.DICKS + "?v=2",
+                   died_at=iso(real_now - timedelta(hours=cfg.show_dead_hours + 1)))
+        fetcher = self._Fetcher({
+            self.DICKS + "?v=1": (b"<meta property='og:image' "
+                                  b"content='https://dks.scene7.com/G/1'>")})
+        assert pipeline._backfill_product_images(db, fetcher, None, cfg) == 1
+        assert fetcher.calls == [self.DICKS + "?v=1"]
+        assert db.get_deal("fresh_dead")["image_url"] == "https://dks.scene7.com/G/1"
+        assert db.get_deal("old_dead")["flags"] == []
+        db.close()
+
+    def test_run_wires_it_on_the_fast_lane_only(self, tmp_path, monkeypatch):
+        """run() calls the backfill only on the fast lane (through the real
+        PoliteFetcher: robots.txt first) and reports the count as
+        summary['product_images']; the hourly never touches retailer pages."""
+        for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
+                    "DEALS_CLAUDE_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(root_cfg.read_text().replace(
+            'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
+        db_path = tmp_path / "state.db"
+        db = DB(db_path)
+        self._seed(db, "dicks", self.DICKS)
+        db.close()
+        requests = []
+
+        def handler(request):
+            requests.append(request.url.path)
+            if request.url.path == "/robots.txt":
+                return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            if str(request.url) == self.DICKS:
+                return httpx.Response(200, text=(
+                    "<meta property='og:image' "
+                    "content='https://dks.scene7.com/is/image/GolfGalaxy/X'>"))
+            return httpx.Response(404)
+
+        def run(fast_lane):
+            return pipeline.run(
+                fast_lane=fast_lane, db_path=str(db_path),
+                config_path=str(cfg_path), dry_run_telegram=True,
+                transport=httpx.MockTransport(handler), sources_override=[],
+                skip_validation=True, now=NOW)
+
+        summary = run(fast_lane=False)
+        assert summary["product_images"] == 0
+        assert requests == []
+        summary = run(fast_lane=True)
+        assert summary["product_images"] == 1
+        assert requests == ["/robots.txt", "/p/dsg-ultimate-backpack-5-0"]
+        db = DB(db_path)
+        assert db.get_deal("dicks")["image_url"] == \
+            "https://dks.scene7.com/is/image/GolfGalaxy/X"
+        db.close()
