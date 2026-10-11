@@ -292,16 +292,18 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     fills the card by the ingest contract (product_images.pick_photo): the
     photo inside the deal's own product link, else the one the page names
     after its item (against the names of every deal stored for the
-    article); both, and they differ: none. Else, for a single-product
-    article only, its og:image. An article is fetched once per pass for all
-    of its deals. A deal whose article yields no photo is flagged so it is
-    never fetched again. A link several products share (marked at ingest,
-    or held by two or more products of one article) names none of them:
-    no photo inside it, no og:image — only one named after the item.
+    article and every product the page itself names: an unstored product's
+    photo is not lent out); both, and they differ: none. Else, for a
+    single-product article only, its og:image. An article is fetched once
+    per pass for all of its deals. A deal whose article yields no photo is
+    flagged so it is never fetched again. A link several products share
+    (marked at ingest, or held by two or more products of one article), or
+    one that is a store, search or category page, names none of them: no
+    photo inside it, no og:image — only one named after the item.
     """
     from .dedupe import _DEAL_FIELDS
     from .fetch.rss import _first_image, _og_image, _permission_host, post_photos
-    from .product_images import link_identity, pick_photo, single_product
+    from .product_images import _names_no_product, link_identity, pick_photo, single_product
 
     granted = {s.name: s for s in sources if s.image_permission}
     if not granted:
@@ -322,7 +324,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     # product: its article photo is the product's. (A first cut counted
     # deals, not products, and dropped 173 good photos in one run.)
     article_items: dict[str, set[str]] = {}
-    article_names: dict[str, list[str]] = {}  # article -> its deals' item names
+    # article -> (item, link) of its deals: the names a photo is matched against
+    article_names: dict[str, list[tuple[str, str]]] = {}
     # (article, link) -> products: a link two or more products of one
     # article hold is a store or sale page, naming none of them.
     article_links: dict[tuple[str, str], set[str]] = {}
@@ -335,7 +338,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             if sgt["source_name"] in granted:
                 url = str(sgt.get("source_url", ""))
                 article_items.setdefault(url, set()).add(_product_of(d))
-                article_names.setdefault(url, []).append(str(d.get("item") or ""))
+                article_names.setdefault(url, []).append(
+                    (str(d.get("item") or ""), str(d.get("canonical_url") or "")))
                 if link:
                     article_links.setdefault((url, link), set()).add(_product_of(d))
     article_deals = {url: len(items) for url, items in article_items.items()}
@@ -381,10 +385,15 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if html:
             if article not in photos:
                 photos[article] = post_photos(html, article)
-            image = pick_photo([] if shared else [deal.get("canonical_url") or ""],
-                               str(deal.get("item") or ""),
-                               article_names.get(article, []), photos[article])
-            if image == "" and not shared and article_deals.get(article, 0) <= 1 \
+            canonical = str(deal.get("canonical_url") or "")
+            # A store, search or category page names no product either.
+            no_product = canonical.lower().startswith(("http://", "https://")) \
+                and _names_no_product(canonical)
+            image = pick_photo([canonical], str(deal.get("item") or ""),
+                               article_names.get(article, []), photos[article],
+                               in_link=not (shared or no_product))
+            if image == "" and not (shared or no_product) \
+                    and article_deals.get(article, 0) <= 1 \
                     and single_product(photos[article]):
                 # Single-product article: its share image is the product's.
                 # One stored deal is not enough: a page with two or more

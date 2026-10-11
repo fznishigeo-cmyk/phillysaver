@@ -97,6 +97,27 @@ _PI_SOCIAL_EXACT = ("x.com", "t.me")
 _PI_NOT_PRODUCT = ("/feed/", "/comments", "#respond")  # mailto: is no http link
 #: An anchor to an image file is a lightbox, not a product.
 _PI_LIGHTBOX = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+#: Link cloakers' prefixes on the blog's own host (ThirstyAffiliates
+#: /recommends/, Pretty Links and Lasso /go/, ...): a product link in disguise.
+_PI_CLOAK = frozenset(("recommends", "recommend", "go", "goto", "out", "link", "links",
+                       "refer", "visit", "aff", "affiliate"))
+#: First path segments of the blog's own archive and system pages.
+_PI_ARCHIVE = frozenset(("category", "tag", "author", "page", "feed", "search", "comments",
+                         "amp", "wp-content", "wp-admin", "wp-json", "wp-login.php"))
+#: Lazy-load plugins repeat each <img> inside <noscript>: one photo, not two.
+_PI_NOSCRIPT = re.compile(r"<noscript\b[^>]*>.*?</noscript\s*>", re.I | re.S)
+_PI_HEADING = re.compile(r"<h([1-6])\b[^>]*>(.*?)</h\1\s*>", re.I | re.S)
+_PI_OPEN_A = re.compile(r"<a\b([^>]*)>", re.I)
+#: A list number before a heading or a link text ("1. ", "#2) ").
+_PI_LIST_NO = re.compile(r"^\s*#?\d{1,2}\s*[.):]\s+")
+_PI_TITLE = (
+    re.compile(r"<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']*)[\"']", re.I),
+    re.compile(r"<meta[^>]+content=[\"']([^\"']*)[\"'][^>]+property=[\"']og:title[\"']", re.I),
+    re.compile(r"<title\b[^>]*>(.*?)</title\s*>", re.I | re.S),
+)
+#: A photo is named after the post (a featured collage) when at least
+#: this share of its words, two or more, are the post's title or slug.
+_PI_POST_SHARE = 0.6
 
 
 def _pi_attrs(raw: str) -> dict[str, str]:
@@ -107,12 +128,32 @@ def _pi_attrs(raw: str) -> dict[str, str]:
             for m in _PI_ATTR.finditer(raw)}
 
 
+def _pi_own_page(path: str, article_path: str) -> bool:
+    """A path on the blog's own host that is one of its pages, not a
+    product: the home page, a page of the post itself (/amp/, /2/), an
+    archive, a dated /YYYY/ permalink, or a link shaped like the post's
+    own permalink (same depth; same section when there is one: Hip2Save
+    /deals/<slug>/). A cloaker's prefix (/recommends/, /go/, /out/,
+    /link/, /refer/) or any other same-host path is a cloaked product
+    link."""
+    segments = [s for s in path.split("/") if s]
+    post = [s for s in article_path.split("/") if s]
+    if not segments or (post and segments[:len(post)] == post):
+        return True
+    if segments[0] in _PI_CLOAK:
+        return False
+    if re.fullmatch(r"(?:19|20)\d\d", segments[0]) or segments[0] in _PI_ARCHIVE:
+        return True
+    return len(segments) == len(post) and (len(post) < 2 or segments[0] == post[0])
+
+
 def _pi_anchor_kind(href: str, article_url: str) -> str:
     """What one <a href> is: 'product' (an off-site page naming one
-    product), 'listing' (a category, sale, search or home page: every
-    product, so none), 'site' (the blog's own other pages: related posts,
-    redirects), 'lightbox' (an image file) or 'ignore' (share, follow,
-    comment and feed links, the post itself, non-http)."""
+    product, or a cloaked affiliate link on the blog's own host),
+    'listing' (a category, sale, search or home page: every product, so
+    none), 'site' (the blog's own pages: related posts, archives, home),
+    'lightbox' (an image file) or 'ignore' (share, follow, comment and
+    feed links, the post itself, non-http)."""
     if not href.startswith(("http://", "https://")):
         return "ignore"  # fragment, mailto:, javascript:, tel:, relative
     low = href.lower()
@@ -130,7 +171,7 @@ def _pi_anchor_kind(href: str, article_url: str) -> str:
                 and parts.path.rstrip("/") == art.path.rstrip("/"):
             return "ignore"  # the post itself (?share=..., #comments)
         if host.removeprefix("www.") == (art.hostname or "").removeprefix("www."):
-            return "site"
+            return "site" if _pi_own_page(parts.path, art.path) else "product"
     return "listing" if _names_no_product(href) else "product"
 
 
@@ -172,9 +213,32 @@ def _pi_image_url(attrs: dict[str, str]) -> str:
     return best
 
 
-def post_photos(html: str, article_url: str = "") -> PostPhotos:
+def _pi_name(fragment: str) -> frozenset[str]:
+    """The product words of a heading or a link text (HTML), list number
+    and prices dropped; none under two words ("Buy now", "here")."""
+    text = html_lib.unescape(re.sub(r"<[^>]*>", " ", fragment))
+    words = name_words(_PI_LIST_NO.sub("", text))
+    return words if len(words) >= 2 else frozenset()
+
+
+def _post_words(html: str, article_url: str, title: str) -> frozenset[str]:
+    """The words of the post's own name: its title (as given, og:title,
+    <title>) and its slug."""
+    words = set(name_words(title))
+    for pattern in _PI_TITLE:
+        m = pattern.search(html)
+        if m:
+            words |= name_words(html_lib.unescape(re.sub(r"<[^>]*>", " ", m.group(1))))
+    slug = [s for s in urlsplit(article_url).path.split("/") if s]
+    if slug:
+        words |= name_words(slug[-1], file_name=True)
+    return frozenset(words)
+
+
+def post_photos(html: str, article_url: str = "", title: str = "") -> PostPhotos:
     """What a post's HTML shows: the photo inside each product link, the
-    words naming each photo, and how many products and photos it shows.
+    words naming each photo, the products it names, and how many products
+    and photos it shows.
 
     Live wart: a roundup (one post, several products) put its FIRST image —
     a collage or one product's photo — on every deal of the post. Pairing
@@ -182,38 +246,55 @@ def post_photos(html: str, article_url: str = "") -> PostPhotos:
     heading, a price line or a featured image between a photo and its link
     shifted every photo to the next product), and a wrong photo is worse
     than none. So nothing here is paired by position:
+      - featured: the post's own pictures — og:image, its first image, a
+        collage, and any photo named after the post (most of its words, two
+        or more, are the title's or the slug's: crayola-markers-and-more-
+        toy-deals.jpg, an SEO plugin's alt). On a roundup they are no
+        product's, neither in a link nor by name (product_images.
+        photo_by_name);
       - in_link: an <img> inside <a href=X>..</a> is X's — only when X names
-        a product (not a category, sale, search or home page, a share or
-        follow link, a lightbox or the post itself), the image is not the
-        post's featured image (og:image, its first image), and it appears
-        once in the post (a repeated picture is decoration: a lazy
-        placeholder, a button, a divider);
-      - named: every photo (loose or linked, the featured one too) with its
-        words: alt, title, its figure's figcaption and its file name.
-        Photos inside the blog's own links (related posts) are not this
-        post's;
-      - links / images: the distinct off-site product links, and the
-        distinct photos besides the featured one.
+        a product (an off-site product page, or a cloaked affiliate link on
+        the blog's own host; not a category, sale, search or home page, a
+        related post, a share or follow link, a lightbox or the post
+        itself), the image is not featured, and it appears once in the
+        post (a repeated picture is decoration: a lazy placeholder, a
+        button, a divider). A lazy image's <noscript> twin is no repeat;
+      - named: every photo (loose or linked, featured too) with its words:
+        alt, title, its figure's figcaption and its file name. Photos
+        inside the blog's own links (related posts) are not this post's;
+        one inside a sale or category link names a brand, not a product:
+        its words only compete;
+      - names: every product the page names — product-ish headings and
+        product link texts — with the link it carries: a photo fitting one
+        of them better is not a deal's;
+      - links / images: the distinct product links, and the distinct
+        photos besides the featured ones.
     The deal side (product_images.pick_photo) takes the photo in its own
     link, else the one named after its item.
 
     Only ever called for image-granted sources; the URLs are hotlinked,
-    never copied or stored, and no text of the post is kept.
+    never copied or stored, and no text of the post is kept (names are
+    normalized word sets, transient like the post).
     """
-    html = html or ""
+    html = _PI_NOSCRIPT.sub(" ", html or "")
     figures = [(m.start(), m.end(), _PI_CAPTION.search(m.group(0)))
                for m in _PI_FIGURE.finditer(html)]
     found: list[tuple[str, str, str, frozenset[str]]] = []   # url, kind, href, words
     photos = PostPhotos()
     first = ""                                               # the first image, wherever it sits
-    kind, href = "", ""
+    kind, href, opened = "", "", 0
     for m in _PI_TAG.finditer(html):
         closing, tag = m.group(1), m.group(2).lower()
         if tag == "a":
+            if closing and kind == "product":
+                words = _pi_name(html[opened:m.start()])
+                if words:
+                    photos.names.add((words, link_key(href)))
             kind, href = "", ""
             if not closing:
                 href = _pi_attrs(m.group(3)).get("href", "")
                 kind = _pi_anchor_kind(href, article_url)
+                opened = m.end()
                 if kind == "product":
                     photos.links.add(link_key(href))
             continue
@@ -227,37 +308,56 @@ def post_photos(html: str, article_url: str = "") -> PostPhotos:
                          html_lib.unescape(re.sub(r"<[^>]*>", " ", caption))))
         found.append((url, kind, href, name_words(text) | file_words(url)))
 
+    for heading in _PI_HEADING.finditer(html):
+        words = _pi_name(heading.group(2))
+        if words:
+            hrefs = (_pi_attrs(a.group(1)).get("href", "")
+                     for a in _PI_OPEN_A.finditer(heading.group(2)))
+            photos.names.add((words, next((link_key(h) for h in hrefs
+                                           if _pi_anchor_kind(h, article_url) == "product"), "")))
+
+    post = _post_words(html, article_url, title)
     featured = {photo_key(u) for u in (_og_image(html), _first_image(html), first) if u}
+    featured |= {photo_key(u) for u, _kind, _href, words in found if "collage" in words
+                 or (len(words) >= 2 and len(words & post) >= _PI_POST_SHARE * len(words))}
     seen = Counter(photo_key(u) for u, *_rest in found)
     named_as: dict[str, str] = {}                            # photo key -> its first URL
     for url, kind, href, words in found:
         key = photo_key(url)
-        if key not in featured and seen[key] == 1 and (kind == "product" or (
-                kind == "site" and not _names_no_product(href))):
+        if key not in featured and seen[key] == 1 and kind == "product":
             photos.in_link.setdefault(href, url)
         if kind == "site":
             continue  # a related post's thumbnail is not this post's photo
-        url = named_as.setdefault(key, url)
-        photos.named[url] = photos.named.get(url, frozenset()) | words
         if key not in featured:
             photos.images.add(key)
+        if kind == "listing":
+            if len(words) >= 2:
+                photos.names.add((words, ""))  # a sale banner: a brand, not a product
+            continue
+        url = named_as.setdefault(key, url)
+        photos.named[url] = photos.named.get(url, frozenset()) | words
+    photos.featured = featured
     return photos
 
 
 def _merge_photos(body: PostPhotos, page: PostPhotos) -> PostPhotos:
     """The entry body's photos plus its article page's. The body's links
     win; the page fills gaps, never with a photo the body gave another
-    link. One photo is one entry whatever size each served it at."""
+    link, nor with a featured photo of either. One photo is one entry
+    whatever size each served it at."""
+    featured = body.featured | page.featured
     taken = {photo_key(v) for v in body.in_link.values()}
     in_link = {**{k: v for k, v in page.in_link.items() if photo_key(v) not in taken},
                **body.in_link}
+    in_link = {k: v for k, v in in_link.items() if photo_key(v) not in featured}
     named = dict(body.named)
     urls = {photo_key(u): u for u in named}
     for url, words in page.named.items():
         url = urls.setdefault(photo_key(url), url)
         named[url] = named.get(url, frozenset()) | words
     return PostPhotos(in_link=in_link, named=named, links=body.links | page.links,
-                      images=body.images | page.images)
+                      images=(body.images | page.images) - featured, featured=featured,
+                      names=body.names | page.names)
 
 
 def _entry_body(entry: Any) -> str:
@@ -369,7 +469,7 @@ class RssAdapter(SourceAdapter):
                 fetched_at=now,
                 image_url=(_first_image(body_html)
                            if source.image_permission else ""),
-                photos=(post_photos(body_html, url)
+                photos=(post_photos(body_html, url, title)
                         if source.image_permission else PostPhotos()),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
@@ -411,7 +511,7 @@ class RssAdapter(SourceAdapter):
             image = _og_image(html) or _first_image(html)
         photos = post.photos
         if images:
-            photos = _merge_photos(post.photos, post_photos(html, post.url))
+            photos = _merge_photos(post.photos, post_photos(html, post.url, post.title))
         article_text = util.html_to_text(html)[:ARTICLE_TEXT_CAP]
         if not article_text:
             # Nothing readable to add — but a picture found is still kept.

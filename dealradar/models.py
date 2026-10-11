@@ -48,10 +48,18 @@ class PostPhotos:
     # Photo -> the words naming it (alt, title, figcaption, file name),
     # normalized (product_images.name_words).
     named: dict[str, frozenset[str]] = field(default_factory=dict)
-    # Distinct off-site product links, and distinct photos besides the
-    # post's featured one: more than one of either is more than one product.
+    # Distinct product links (off-site, or cloaked on the blog's own host),
+    # and distinct photos besides the post's featured ones: more than one of
+    # either is more than one product.
     links: set[str] = field(default_factory=set)
     images: set[str] = field(default_factory=set)
+    # The post's featured photos (product_images.photo_key): og:image, its
+    # first image, any named after the post. No product's on a roundup.
+    featured: set[str] = field(default_factory=set)
+    # Every product the page names, as (words, product_images.link_key or
+    # ''): product-ish headings and link texts. Competing names a photo is
+    # checked against, so an unparsed product's photo is not lent out.
+    names: set[tuple[frozenset[str], str]] = field(default_factory=set)
 
 
 @dataclass

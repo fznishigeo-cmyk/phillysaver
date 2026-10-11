@@ -7,10 +7,12 @@ product), so a deal gets a photo only on evidence (pick_photo):
   1. in its link: the photo inside <a href=X> is X's (fetch.rss.post_photos
      keeps only links that name a product), matched to the deal's link by
      match_product_image;
-  2. by name: the photo whose alt, title, caption or file name names the
-     deal's item, clearly better than any other photo and no better for
-     another deal of the post (photo_by_name);
+  2. by name: the photo whose alt, title, caption or file name covers the
+     deal's item beyond its brand, clearly better than any other photo,
+     and fits no other product the page names as well (photo_by_name);
   3. both, and they differ: none.
+On a roundup the post's featured photos (og:image, its first image, one
+named after the post) are no product's.
 A deal knows its link twice: as the post gave it (often an affiliate
 redirect) and resolved to the retailer's product page. When nothing
 matches the answer is '' rather than a guess — a wrong photo on a card is
@@ -21,8 +23,6 @@ from __future__ import annotations
 
 import re
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
-
-from rapidfuzz import fuzz
 
 from .models import PostPhotos
 
@@ -116,9 +116,10 @@ def _product_id(url: str) -> str:
 
 #: Retailer pages listing many products (category, sale, search, promo).
 _LISTING_PAGES = (
-    ("target.com", re.compile(r"^/c/", re.I)),
+    ("target.com", re.compile(r"^/(?:c/|s/?$)", re.I)),
     ("walmart.com", re.compile(r"^/(?:browse|cp|search)(?:/|$)", re.I)),
-    ("bestbuy.com", re.compile(r"^/site/promo", re.I)),
+    ("bestbuy.com", re.compile(r"^/site/(?:promo|searchpage\.jsp)", re.I)),
+    ("kohls.com", re.compile(r"^/search\.jsp", re.I)),
 )
 
 
@@ -126,8 +127,8 @@ def _names_no_product(url: str) -> bool:
     """A link (after unwrapping) that is every product, so none: an Amazon
     link without an ASIN (a search /s?k=, a node /b?node=, a store or the
     deals page), a retailer's category, sale, search or promo page (Target
-    /c/, Walmart /browse/ /cp/ /search, Best Buy /site/promo), or a home
-    page (path "/")."""
+    /c/ /s, Walmart /browse/ /cp/ /search, Best Buy /site/promo and
+    searchpage.jsp, Kohl's search.jsp), or a home page (path "/")."""
     from .http_client import extract_asin  # lazy: written by another layer
 
     deepest = _forms(url)[-1]
@@ -224,27 +225,43 @@ _NAME_STOP = frozenset((
     "deal sale off price amazon walmart target new best today "
     "set pack pk piece pc pcs count ct size color style img image photo scaled"
 ).split())
-#: A photo names a deal from this rapidfuzz token_set_ratio up (0-100)...
-_NAME_MIN = 70
-#: ...and only this many points clear of the deal's next-best photo.
-_NAME_MARGIN = 10
+#: A price or a percentage names no product ("$19.99", "50% off").
+_NAME_PRICE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%")
+#: A count is its number: 40ct, 40pk, 40pc and "40 Count" are one word.
+_NAME_COUNT = re.compile(r"^(\d+)(?:ct|pk|pcs|pc)$")
+#: A photo names a deal when its words show this share of the deal's
+#: distinguishing words...
+_NAME_COVER = 0.6
+#: ...of which the deal has at least this many...
+_NAME_DISTINCT = 2
+#: ...and no other photo of the post comes within this share of it.
+_NAME_MARGIN = 0.1
+
+
+def _name_seq(text: str, file_name: bool = False) -> list[str]:
+    """name_words in the order the name gives them (its brand first)."""
+    out: list[str] = []
+    text = _NAME_PRICE.sub(" ", re.sub(r"['\u2019]", "", text.lower()))
+    for word in re.split(r"[^a-z0-9]+", text):
+        if not word or word in _NAME_STOP or re.fullmatch(r"\d+x\d+", word) \
+                or (file_name and word.isdigit()):
+            continue
+        word = _NAME_COUNT.sub(r"\1", word)
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        if (len(word) > 1 or word.isdigit()) and word not in _NAME_STOP \
+                and word not in out:
+            out.append(word)
+    return out
 
 
 def name_words(text: str, file_name: bool = False) -> frozenset[str]:
     """The words of a name, normalized: lowercase alphanumerics, no
-    stopwords or generic deal words, no -WxH size tokens, a plural's s
-    dropped; a file name also loses its digits-only tokens (upload
+    stopwords, generic deal words, prices or -WxH size tokens, a count as
+    its number (40ct -> 40), a plural's s dropped; numbers kept (Series 9,
+    5-Pack), but a file name loses its digits-only tokens (upload
     counters, dates)."""
-    out = set()
-    for word in re.split(r"[^a-z0-9]+", re.sub(r"['\u2019]", "", text.lower())):
-        if word in _NAME_STOP or re.fullmatch(r"\d+x\d+", word) \
-                or (file_name and word.isdigit()):
-            continue
-        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
-            word = word[:-1]
-        if len(word) > 1 and word not in _NAME_STOP:
-            out.add(word)
-    return frozenset(out)
+    return frozenset(_name_seq(text, file_name))
 
 
 def file_words(url: str) -> frozenset[str]:
@@ -254,46 +271,108 @@ def file_words(url: str) -> frozenset[str]:
     return name_words(re.sub(r"\.[a-z0-9]{2,5}$", "", name, flags=re.I), file_name=True)
 
 
-def _name_score(a: frozenset[str], b: frozenset[str]) -> float:
-    """How well two names match (0-100). One shared word (a brand: two
-    Crayola products) never counts."""
-    if len(a & b) < 2:
-        return 0.0
-    return fuzz.token_set_ratio(" ".join(sorted(a)), " ".join(sorted(b)))
+def _dice(a: frozenset[str], b: frozenset[str]) -> float:
+    """How well two names fit each other (0-1), both ways at once."""
+    return 2 * len(a & b) / (len(a) + len(b)) if a and b else 0.0
 
 
-def photo_by_name(item: str, items: list[str], named: dict[str, frozenset[str]]) -> str:
-    """The photo whose words name this deal's item, or ''. ``items`` are
-    the names of every deal of the post (this one included); ``named``
-    maps each photo to its words (PostPhotos.named). The best photo must
-    score _NAME_MIN or more, beat the deal's next-best photo by
-    _NAME_MARGIN, score this deal higher than any other deal of the post,
-    and name no other deal besides (two or more of its words beyond this
-    deal's name are another deal's: a collage, a bundle shot)."""
-    mine = name_words(item)
-    others = {name_words(i) for i in items} - {mine}
-    ranked = sorted(((_name_score(mine, words), url) for url, words in named.items()),
-                    reverse=True)
-    if not ranked or ranked[0][0] < _NAME_MIN:
+def _link_keys(links) -> set[str]:
+    return {link_key(u) for u in links
+            if u and u.lower().startswith(("http://", "https://"))} - {""}
+
+
+def photo_by_name(item: str, links: list[str], items: list[tuple[str, str]],
+                  photos: PostPhotos) -> str:
+    """The photo whose words name this deal's item, or ''.
+
+    ``links`` are the deal's own links, ``items`` (name, link) of every
+    deal of the post (this one included), ``photos`` the post's. A photo
+    names the deal only when it COVERS the item, not merely overlaps it:
+      - its words show at least 60% of the item's distinguishing words, of
+        which there are two or more: the item's words minus its brand —
+        its first word (of three or more) and the leading words it shares
+        with another product or photo of the page (Crayola, Hot Wheels,
+        Apple Watch Series) — and reach past the start of the name: a
+        photo naming only a brand (hot-wheels-sale.jpg, "Melissa & Doug")
+        never matches;
+      - it beats the deal's next-best photo by 10 points;
+      - it fits no other product named on the page as well (Dice): another
+        deal, a product-ish heading or link text (PostPhotos.names),
+        another photo's words; nor names one besides (two or more of its
+        words beyond the item's are another's: a collage);
+      - no other product of the page has the same distinguishing words
+        under a different link (a variant, or one product at two stores:
+        nothing tells their photos apart).
+    On a page that is not single_product(), the post's featured photos
+    (og:image, its first image, one named after the post) are no one's.
+    """
+    seq = _name_seq(item)
+    mine = frozenset(seq)
+    own = _link_keys(links)
+    rest = list(items)
+    me = next((i for i, (name, link) in enumerate(rest) if name == item and link in links),
+              next((i for i, (name, _link) in enumerate(rest) if name == item), None))
+    if me is not None:
+        del rest[me]
+    rivals: list[frozenset[str]] = []      # every other product the page names
+    for name, link in rest:
+        words, keys = name_words(name), _link_keys([link])
+        if words == mine:
+            if keys == own or keys & own:
+                continue                  # this product, parsed twice
+            return ""                     # a variant under another link
+        rivals.append(words)
+    for words, key in photos.names:
+        if (key and key in own) or (words == mine and not key):
+            continue                      # this deal's own heading or link text
+        if words == mine:
+            return ""                     # a variant under another link
+        rivals.append(words)
+    candidates = photos.named if single_product(photos) else {
+        url: words for url, words in photos.named.items()
+        if photo_key(url) not in photos.featured}
+
+    def brand_and_cover(url: str) -> tuple[frozenset[str], float]:
+        words = photos.named[url]
+        shared = frozenset().union(*rivals, *(w for u, w in photos.named.items() if u != url))
+        brand = seq[:1] if len(seq) >= 3 else []
+        for word in seq[len(brand):]:
+            if word not in shared:
+                break
+            brand.append(word)
+        distinct = mine - set(brand)
+        if len(distinct) < _NAME_DISTINCT:
+            return frozenset(brand), 0.0
+        start = next((i for i, w in enumerate(seq) if w not in words), len(seq))
+        if 0 < start < len(seq) and not words & set(seq[start:]):
+            return frozenset(brand), 0.0  # names only the start of it: a brand
+        return frozenset(brand), len(distinct & words) / len(distinct)
+
+    ranked = sorted(((brand_and_cover(url)[1], url) for url in candidates), reverse=True)
+    if not ranked or ranked[0][0] < _NAME_COVER:
         return ""
     best, url = ranked[0]
     if len(ranked) > 1 and best - ranked[1][0] < _NAME_MARGIN:
         return ""
-    rest = named[url] - mine
-    if any(_name_score(other, named[url]) >= best or len(rest & other) >= 2
-           for other in others):
-        return ""
+    words, brand = photos.named[url], brand_and_cover(url)[0]
+    fit = _dice(words, mine)
+    for other in rivals + [w for u, w in photos.named.items() if u != url and w]:
+        if _dice(words, other) >= fit or len((words - mine) & other) >= 2:
+            return ""                     # another product's photo, or several
+    if any(other - brand == mine - brand for other in rivals):
+        return ""                         # a variant: nothing tells them apart
     return url
 
 
-def pick_photo(links: list[str], item: str, items: list[str],
-               photos: PostPhotos) -> str | None:
-    """This deal's photo in a post: the one inside its own product link,
-    or the one named after its item; '' when neither (a
-    single-product post may then lend its own image); None when both give
-    one and they differ — no photo at all."""
-    linked = match_product_image(links, photos.in_link)
-    named = photo_by_name(item, items, photos.named)
+def pick_photo(links: list[str], item: str, items: list[tuple[str, str]],
+               photos: PostPhotos, in_link: bool = True) -> str | None:
+    """This deal's photo in a post: the one inside its own product link
+    (unless ``in_link`` is off: a link several products share, or one
+    resolving to a store or search page), or the one named after its item;
+    '' when neither (a single-product post may then lend its own image);
+    None when both give one and they differ — no photo at all."""
+    linked = match_product_image(links, photos.in_link) if in_link else ""
+    named = photo_by_name(item, links, items, photos)
     if linked and named and photo_key(linked) != photo_key(named):
         return None
     return linked or named

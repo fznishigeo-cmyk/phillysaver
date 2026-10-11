@@ -201,18 +201,23 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
     A link several products share (``shared``, or the deal's link_shared:
     a store or sale page, "shop the sale here" over a list of items) names
     none of them: no photo inside it and no post image, only one named
-    after the item."""
-    from .product_images import pick_photo, single_product
+    after the item. So does a link that resolved to a store, search or
+    category page (an amzn.to short link to a brand store): no photo
+    inside the link as posted either, and no post image."""
+    from .product_images import _names_no_product, pick_photo, single_product
 
     shared = shared or extracted.link_shared
-    links = [] if shared else [extracted.link_as_posted, extracted.product_url]
-    items = [item for item, _link in post.parsed] or [extracted.item]
-    photo = pick_photo(links, extracted.item, items, post.photos)
+    url = extracted.product_url or ""
+    no_product = url.lower().startswith(("http://", "https://")) and _names_no_product(url)
+    links = [extracted.link_as_posted, extracted.product_url]
+    items = list(post.parsed) or [(extracted.item, extracted.link_as_posted)]
+    photo = pick_photo(links, extracted.item, items, post.photos,
+                       in_link=not (shared or no_product))
     if photo is None:
         return ""  # its link and its name point at different photos
     if photo:
         return photo
-    if shared or not single_product(post.photos):
+    if shared or no_product or not single_product(post.photos):
         return ""
     return post.image_url
 

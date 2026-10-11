@@ -43,9 +43,9 @@ from dealradar.config import AppConfig  # noqa: E402
 from dealradar.db import DB  # noqa: E402
 from dealradar.fetch import autodiscovery  # noqa: E402
 from dealradar.fetch.rss import (  # noqa: E402
-    MAX_ENTRIES, RssAdapter, _pi_image_url, post_photos)
+    MAX_ENTRIES, RssAdapter, _pi_anchor_kind, _pi_image_url, post_photos)
 from dealradar.models import FetchResult, PostPhotos, SourceConfig  # noqa: E402
-from dealradar.product_images import match_product_image  # noqa: E402
+from dealradar.product_images import link_key, match_product_image  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 NOW = datetime(2026, 10, 9, 15, 0, 0, tzinfo=timezone.utc)
@@ -409,13 +409,18 @@ def test_post_photos_lazy_sources_and_srcset():
 ])
 def test_post_photos_photo_inside_a_listing_link_is_no_ones(href):
     """In-link rule: the photo inside a link belongs to it only when the
-    link names a product. A sale, category, search or home page (or a
-    lightbox) is every product: its photo is kept only for the by-name
-    rule, and the link is no product of the post."""
-    photos = post_photos(BANNER + f'<p><a href="{href}"><img src="{UP}lego.jpg"></a></p>')
+    link names a product. A sale, category, search or home page is every
+    product: its photo (a brand banner) names no product by name either —
+    its words only compete — and the link is no product of the post. A
+    lightbox's photo is still a photo of the post."""
+    photos = post_photos(BANNER + f'<p><a href="{href}"><img src="{UP}lego-toys.jpg"></a></p>')
     assert photos.in_link == {}
-    assert UP + "lego.jpg" in photos.named
     assert photos.links == set()
+    if href.endswith(".jpg"):
+        assert UP + "lego-toys.jpg" in photos.named
+    else:
+        assert UP + "lego-toys.jpg" not in photos.named
+        assert (frozenset({"lego", "toy"}), "") in photos.names
 
 
 @pytest.mark.parametrize("href", [
@@ -516,7 +521,7 @@ def test_post_photos_words_name_each_photo():
         ' alt="LEGO Classic Tower"></a></p>')
     named = post_photos(html, post).named
     assert named == {
-        UP + "IMG_2041.jpg": {"crayola", "marker", "40ct"},
+        UP + "IMG_2041.jpg": {"crayola", "marker", "40"},
         UP + "LEGO-Classic-Bricks-300x300.jpg": {"lego", "classic", "brick", "box",
                                                  "storage", "tub"},
         "https://cdn.example/1-2026.png": {"play", "doh", "starter"},
@@ -544,6 +549,103 @@ def test_post_photos_counts_products_and_photos():
     photos = post_photos(html, post)
     assert len(photos.links) == 3
     assert photos.images == {"2026/10/kettle.jpg"}
+
+
+def test_post_photos_lazy_image_and_its_noscript_twin_are_one():
+    """Review finding (medium): WP Rocket, Smush, a3 Lazy Load and Jetpack
+    emit each lazy <img> again inside <noscript>; counted twice, every
+    photo read as a repeat and no link kept its photo. A twin is one
+    photo, read from the lazy copy."""
+    html = BANNER + "".join(
+        f'<p><a href="{link}"><img src="data:image/gif;base64,R0l" data-lazy-src="{UP}{n}.jpg">'
+        f'<noscript><img src="{UP}{n}.jpg"></noscript></a></p>'
+        for link, n in ((A, "a"), (B, "b")))
+    photos = post_photos(html)
+    assert photos.in_link == {A: UP + "a.jpg", B: UP + "b.jpg"}
+    assert photos.images == {"2026/10/a.jpg", "2026/10/b.jpg"}
+
+
+@pytest.mark.parametrize("post,href,kind", [
+    # Link cloakers on the blog's own host: a product link in disguise.
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/recommends/markers/",
+     "product"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/go/lego", "product"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://www.blog.example/out/doh/", "product"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/link/barbie/", "product"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/refer/kettle", "product"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/crayola-40ct", "product"),
+    ("https://blog.example/toy-deals/", "https://blog.example/go/lego", "product"),
+    # The blog's own pages: dated posts, posts shaped like this one,
+    # archives, home.
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/2026/10/09/older/", "site"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/category/toys/", "site"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/tag/lego/", "site"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/", "site"),
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/?p=12", "site"),
+    ("https://hip2save.com/deals/nike-sale/", "https://hip2save.com/deals/other-post/", "site"),
+    ("https://hip2save.com/deals/nike-sale/", "https://hip2save.com/deals/nike-sale/amp/", "site"),
+    ("https://blog.example/toy-deals/", "https://blog.example/other-post/", "site"),
+])
+def test_same_host_links_cloaked_or_the_blogs_own(post, href, kind):
+    """Review finding (medium): ThirstyAffiliates /recommends/ and Pretty
+    Links /go/ links on the blog's own host read as the blog's pages, so a
+    roundup of cloaked links counted no product and lent its collage. Any
+    same-host link that is not the post itself, a dated or same-shaped
+    permalink, an archive or the home page is a product link."""
+    assert _pi_anchor_kind(href, post) == kind
+
+
+def test_post_photos_cloaked_links_count_and_keep_their_photos():
+    post = "https://www.couponingwithrachel.com/2026/10/11/toy-deals/"
+    cloaked = [f"https://www.couponingwithrachel.com/recommends/{n}/" for n in "abc"]
+    html = (f'<meta property="og:image" content="{UP}toy-deals-collage.jpg">'
+            f'<p><img src="{UP}toy-deals-collage.jpg"></p>' + "".join(
+                f"<p><a href='{link}'><img src='{UP}IMG_90{i}.jpg'></a></p>"
+                f"<p><a href='{link}'>Toy {i}</a> $9.99</p>" for i, link in enumerate(cloaked)))
+    photos = post_photos(html, post)
+    assert len(photos.links) == 3 and len(photos.images) == 3
+    assert photos.in_link == {link: f"{UP}IMG_90{i}.jpg" for i, link in enumerate(cloaked)}
+
+
+def test_post_photos_photo_named_after_the_post_is_featured():
+    """Review finding (high): a featured collage named after the post's
+    slug or title (WordPress upload names, SEO-plugin alts) is the post's
+    own picture wherever it sits, never a product's on a roundup."""
+    url = "https://blog.example/2026/10/11/crayola-markers-and-more-toy-deals/"
+    title = "Back to School Deals: Crayola, Elmer's and More"
+    html = (f'<p><img src="{UP}masthead.jpg"></p>'
+            f'<figure><img src="{UP}crayola-markers-and-more-toy-deals-1.jpg"></figure>'
+            f'<p><a href="{A}"><img src="{UP}IMG_1.jpg" alt="{title}"></a></p>'
+            f'<p><a href="{B}"><img src="{UP}lego-classic.jpg"></a></p>'
+            f'<p><a href="{C}"><img src="{UP}IMG_2.jpg" alt="Toy collage"></a></p>')
+    photos = post_photos(html, url, title=title)
+    assert photos.featured == {"2026/10/masthead.jpg", "2026/10/img_1.jpg", "2026/10/img_2.jpg",
+                               "2026/10/crayola-markers-and-more-toy-deals-1.jpg"}
+    assert photos.in_link == {B: UP + "lego-classic.jpg"}
+    assert photos.images == {"2026/10/lego-classic.jpg"}
+    # An article page names itself in og:title or <title>.
+    page = f'<head><meta property="og:title" content="{title}"></head>' + html
+    assert post_photos(page, "https://blog.example/?p=1").in_link == {B: UP + "lego-classic.jpg"}
+    page = f'<head><title>{title} | Blog</title></head>' + html
+    assert post_photos(page, "https://blog.example/?p=1").in_link == {B: UP + "lego-classic.jpg"}
+
+
+def test_post_photos_names_every_product_the_page_names():
+    """Competing names: product-ish headings and product link texts (list
+    numbers and prices dropped; "Buy now" names nothing), with the product
+    link each carries."""
+    cloak = "https://blog.example/recommends/doh/"
+    html = (BANNER + f'<h3><a href="{A}">1. Crayola Markers 40ct $19.99</a></h3>'
+            '<h2>Crayola Washable Kids Paint</h2>'
+            f'<p><a href="{B}">LEGO Classic Bricks</a> $20 <a href="{B}">Buy now</a></p>'
+            f'<p><a href="{cloak}">Play-Doh Starter Set</a></p>'
+            '<p><a href="https://blog.example/other-post/">Our other LEGO deals</a></p>')
+    assert post_photos(html, "https://blog.example/roundup/").names == {
+        (frozenset({"crayola", "marker", "40"}), link_key(A)),
+        (frozenset({"crayola", "washable", "kid", "paint"}), ""),
+        (frozenset({"lego", "classic", "brick"}), link_key(B)),
+        (frozenset({"play", "doh", "starter"}), link_key(cloak)),
+    }
 
 
 ROUNDUP_URL = "https://blog.example/target-roundup/"

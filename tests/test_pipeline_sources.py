@@ -516,6 +516,115 @@ class TestBlogImageBackfill:
             assert d["image_url"] == "" and "image_backfill_tried" not in d["flags"]
         db.close()
 
+    def _run(self, tmp_path, pages, seeds):
+        """One backfill pass over ``pages`` (article -> html) for deals seeded
+        as (key, article, canonical, item); returns key -> card photo."""
+        db = DB(tmp_path / "state.db")
+        for key, article, canonical, item in seeds:
+            self._seed(db, key, article, canonical=canonical, item=item)
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        pipeline._backfill_blog_images(
+            db, self._Fetcher({a: h.encode() for a, h in pages.items()}), [src], deadline=None)
+        out = {key: db.get_deal(key)["image_url"] for key, *_rest in seeds}
+        db.close()
+        return out
+
+    def test_post_image_collage_named_after_the_post_lands_on_no_card(self, tmp_path):
+        """Review finding (high), backfill: og:image is the collage, the theme
+        renders it as <img class=wp-post-image> with the post's title as
+        alt, three deals are stored. The markers deal took the collage by
+        name; on a roundup a featured photo is no product's."""
+        from tests.test_dedupe import TOYS
+
+        collage = "https://hip2save.com/i/crayola-markers-and-more-toy-deals.jpg"
+        page = (f"<head><meta property='og:image' content='{collage}'>"
+                "<title>Crayola Markers + More Toy Deals | Hip2Save</title></head>"
+                f"<img class='wp-post-image' src='{collage}' alt='Crayola Markers + More Toy Deals'>"
+                + "".join(f"<figure><img src='https://hip2save.com/i/IMG_80{i}.jpg' alt=''></figure>"
+                          f"<p>{item} $9 <a href='{link}'>Buy</a></p>"
+                          for i, (item, link) in enumerate(TOYS)))
+        seeds = [(k, self.ROUNDUP, link, item) for k, (item, link) in zip("xyz", TOYS)]
+        assert self._run(tmp_path, {self.ROUNDUP: page}, seeds) == dict.fromkeys("xyz", "")
+
+    def test_a_product_the_page_names_is_a_rival_even_unstored(self, tmp_path):
+        """Review finding (high): the backfill matched names only against the
+        STORED deals. Only the markers deal is stored (the paint was in
+        store; another was dropped), so the paint's photo, sharing
+        {crayola, washable}, went to the markers card; a classroom pack's
+        photo named all of a shorter 'Crayola Washable Markers'. Coverage
+        and the page's own names (headings, link texts, photos) settle
+        both: no card gets another product's photo."""
+        markers = "https://www.amazon.com/dp/B0000000A1"
+        paint = ("<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>"
+                 "<p><img src='https://hip2save.com/i/collage.jpg'></p>"
+                 "<figure><img src='https://hip2save.com/i/IMG_5001.jpg' alt=''></figure>"
+                 f"<p>Crayola Washable Markers 40ct $9.99 <a href='{markers}'>Buy</a></p>"
+                 "<figure><img src='https://hip2save.com/i/IMG_5002.jpg' "
+                 "alt='Crayola Washable Kids Paint'></figure>"
+                 "<p>Crayola Washable Kids Paint $4.99 in store at Target</p>")
+        pack = "Crayola Washable Markers 100ct Classroom Pack"
+        classroom = ("<figure><img src='https://hip2save.com/i/IMG_6001.jpg' alt=''></figure>"
+                     f"<p>Crayola Washable Markers $9.99 <a href='{markers}'>Buy</a></p>"
+                     f"<h3><a href='https://www.amazon.com/dp/B0000000A3'>{pack}</a></h3>"
+                     f"<figure><img src='https://hip2save.com/i/IMG_6003.jpg' alt='{pack}'></figure>")
+        second = "https://hip2save.com/deals/classroom/"
+        assert self._run(tmp_path, {self.ROUNDUP: paint, second: classroom}, [
+            ("markers", self.ROUNDUP, markers, "Crayola Washable Markers 40ct"),
+            ("generic", second, markers + "?th=1", "Crayola Washable Markers")]) \
+            == {"markers": "", "generic": ""}
+
+    def test_cloaked_affiliate_roundup_lends_no_collage(self, tmp_path):
+        """Review finding (medium): a couponingwithrachel.com roundup whose
+        product links are its own /recommends/ redirects read as a single
+        product, and its one stored deal (canonical resolved past the cloak)
+        took the og:image collage. Cloaked links are product links: three
+        of them is a roundup. A single-product article of the same blog
+        (one cloaked link, dated related posts) keeps its og:image."""
+        blog = "https://www.couponingwithrachel.com"
+        roundup, single = f"{blog}/2026/10/11/toy-deals/", f"{blog}/2026/10/12/kettle-deal/"
+        page = (f"<meta property='og:image' content='{blog}/i/toy-deals-collage.jpg'>"
+                f"<p><img src='{blog}/i/toy-deals-collage.jpg'></p>" + "".join(
+                    f"<p><a href='{blog}/recommends/{n}/'><img src='{blog}/i/IMG_90{i}.jpg'></a></p>"
+                    f"<p><a href='{blog}/recommends/{n}/'>Toy {n}</a> $9.99</p>"
+                    for i, n in enumerate(("markers", "lego", "playdoh"))))
+        kettle = (f"<meta property='og:image' content='{blog}/i/kettle.jpg'>"
+                  f"<p>Steel kettle $12 <a href='{blog}/recommends/kettle/'>Buy</a></p>"
+                  + "".join(f"<p><a href='{blog}/2026/10/0{i}/older-{i}/'>"
+                            f"<img src='{blog}/i/thumb-{i}.jpg'></a></p>" for i in range(3)))
+        assert self._run(tmp_path, {roundup: page, single: kettle}, [
+            ("markers", roundup, "https://www.amazon.com/dp/B0000000A1", "Crayola Markers 40ct"),
+            ("kettle", single, "https://www.amazon.com/dp/B0000KETTL", "Steel Kettle")]) \
+            == {"markers": "", "kettle": f"{blog}/i/kettle.jpg"}
+
+    def test_store_page_link_gets_no_og_image(self, tmp_path):
+        """Review finding (medium), backfill: a deal whose link is a store,
+        search or category page names no product, so even a single-product
+        article lends it no og:image."""
+        solo = "https://hip2save.com/deals/crayola-store/"
+        page = ("<meta property='og:image' content='https://hip2save.com/i/crayola.jpg'>"
+                "<p>Crayola sale <a href='https://amzn.to/3CrAyS'>shop</a></p>")
+        assert self._run(tmp_path, {solo: page}, [
+            ("store", solo, "https://www.amazon.com/stores/Crayola/page/1234-ABCD",
+             "Crayola Washable Markers 40ct")]) == {"store": ""}
+
+    def test_lazy_images_with_noscript_twins_keep_their_links(self, tmp_path):
+        """Review finding (medium): lazy-load plugins repeat each <img> in a
+        <noscript>; the article page read every photo twice, so no product
+        link kept its photo and both deals were flagged for good. A lazy
+        image and its twin are one photo: each deal gets its own."""
+        a, b = "https://www.amazon.com/dp/B0000000L1", "https://www.amazon.com/dp/B0000000L2"
+        page = ("<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>"
+                "<p><img src='https://hip2save.com/i/collage.jpg'></p>" + "".join(
+                    f"<p><a href='{link}'><img src='data:image/gif;base64,R0l' "
+                    f"data-lazy-src='https://hip2save.com/i/{n}.jpg'><noscript>"
+                    f"<img src='https://hip2save.com/i/{n}.jpg'></noscript></a></p>"
+                    f"<p>Product {n} $9 <a href='{link}'>Buy</a></p>"
+                    for link, n in ((a, "lamp"), (b, "rug"))))
+        assert self._run(tmp_path, {self.ROUNDUP: page}, [
+            ("lamp", self.ROUNDUP, a, "Desk Lamp"), ("rug", self.ROUNDUP, b, "Area Rug")]) \
+            == {"lamp": "https://hip2save.com/i/lamp.jpg", "rug": "https://hip2save.com/i/rug.jpg"}
+
 
 def test_resolving_the_product_url_keeps_the_link_as_posted(monkeypatch):
     """A roundup's photos are keyed by its links as posted; resolving a

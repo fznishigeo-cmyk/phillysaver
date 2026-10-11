@@ -378,24 +378,26 @@ POST_URL = "https://blog.example/toy-roundup/"
 _DBS = itertools.count()
 
 
-def _ingest(tmp_path, html: str, deals, dropped=()) -> dict[str, str]:
+def _ingest(tmp_path, html: str, deals, dropped=(), url: str = POST_URL) -> dict[str, str]:
     """An image-granted feed entry through the ingest path, as the pipeline
     runs it: the body's photos and first image (RssAdapter), every deal the
     parse read on post.parsed (parse_posts; ``dropped`` items failed the
     evidence check and are not upserted), shared links marked, each
-    surviving deal upserted. Returns item -> its card photo (UP stripped)."""
+    surviving deal upserted. A deal is (item, link as posted) or (item,
+    link as posted, link resolved). Returns item -> its card photo (UP
+    stripped)."""
     from dealradar import pipeline
     from dealradar.fetch.rss import _first_image, post_photos
     from dealradar.parse.extractor import _post_for_deals
 
     db = DB(tmp_path / f"state{next(_DBS)}.db")
-    post = make_post(source="blog", uid="roundup", url=POST_URL)
+    post = make_post(source="blog", uid="roundup", url=url)
     post.image_url = _first_image(html)
-    post.photos = post_photos(html, POST_URL)
+    post.photos = post_photos(html, url)
     post = _post_for_deals(post, len(deals))
-    extracted = [make_extracted(item=item, store="Amazon", product_url=link,
-                                link_as_posted=link) for item, link in deals]
-    post.parsed = [(e.item, e.product_url) for e in extracted]
+    extracted = [make_extracted(item=d[0], store="Amazon", product_url=d[-1],
+                                link_as_posted=d[1]) for d in deals]
+    post.parsed = [(e.item, e.link_as_posted) for e in extracted]
     pairs = [(post, e) for e in extracted if e.item not in dropped]
     pipeline._mark_shared_links(pairs)
     keys = {e.item: dedupe.upsert_extracted(db, e, make_savings(), post, make_cfg(), NOW)
@@ -530,7 +532,9 @@ def test_photo_inside_one_link_named_after_another_product_gives_none(tmp_path) 
 
 def test_two_products_of_one_brand_need_names_that_separate_them(tmp_path) -> None:
     """Brand-only collision: two Crayola products whose photos say only
-    'Crayola' get none; photos whose words separate them go to each."""
+    'Crayola' get none, nor do photos naming only the start of them
+    ('Crayola Markers' for the 40ct); photos whose words separate them go
+    to each."""
     deals = [("Crayola Markers 40ct", "https://www.amazon.com/dp/B0000000A1"),
              ("Crayola Colored Pencils 50ct", "https://www.amazon.com/dp/B0000000A2")]
     html = FEATURED + "".join(
@@ -538,8 +542,11 @@ def test_two_products_of_one_brand_need_names_that_separate_them(tmp_path) -> No
         f'<p>{item} $9.99 <a href="{link}">Buy</a></p>'
         for i, (alt, (item, link)) in enumerate(zip(("Crayola", "Crayola"), deals)))
     assert _ingest(tmp_path, html, deals) == {deals[0][0]: "", deals[1][0]: ""}
-    html = html.replace('alt="Crayola"', 'alt="Crayola Markers"', 1) \
+    start = html.replace('alt="Crayola"', 'alt="Crayola Markers"', 1) \
         .replace('alt="Crayola"', 'alt="Crayola Colored Pencils"', 1)
+    assert _ingest(tmp_path, start, deals) == {deals[0][0]: "", deals[1][0]: ""}
+    html = html.replace('alt="Crayola"', 'alt="Crayola Markers 40ct"', 1) \
+        .replace('alt="Crayola"', 'alt="Crayola Colored Pencils, 50 Count"', 1)
     assert _ingest(tmp_path, html, deals) == {deals[0][0]: "crayola-0.jpg",
                                               deals[1][0]: "crayola-1.jpg"}
 
@@ -629,12 +636,12 @@ def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
     sale = "https://www.kohls.com/catalog/home-sale.jsp"
     lamp = "https://www.target.com/p/lamp/-/A-444"
     html = (f'<p><img src="{UP}lead.jpg"></p><p>Home sale!</p>'
-            f'<p><a href="{sale}"><img src="{UP}sale-collage.jpg"></a> Shop the sale:</p>'
+            f'<p><a href="{sale}"><img src="{UP}home-sale-banner.jpg"></a> Shop the sale:</p>'
             '<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>'
             f'<p><a href="{lamp}"><img src="{UP}lamp.jpg"></a> Lamp $9</p>')
     post = make_post(uid="home-sale", url=POST_URL)
     post.photos = post_photos(html, POST_URL)
-    assert post.photos.in_link[sale] == UP + "sale-collage.jpg"   # the link holds it
+    assert post.photos.in_link[sale] == UP + "home-sale-banner.jpg"   # the link holds it
     pairs = [(post, make_extracted(item=item, store="Kohls", product_url=url,
                                    link_as_posted=url))
              for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", sale),
@@ -687,3 +694,145 @@ def test_shared_link_counts_every_deal_the_parse_read() -> None:
              for s in ("Amazon", "Walmart")]
     pipeline._mark_shared_links(bluey)
     assert [e.link_shared for _p, e in bluey] == [False, False]
+
+
+# ---- review round 5: a wrong photo is worse than none; when in doubt, none
+
+NONE = dict.fromkeys((i for i, _l in TOYS), "")
+SLUG = "crayola-markers-and-more-toy-deals"
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_featured_image_named_after_the_post_lands_on_no_card(tmp_path, layout) -> None:
+    """Review finding (high): the featured image named the way WordPress
+    names uploads after the post slug (crayola-markers-and-more-toy-
+    deals.jpg) stayed a by-name candidate and landed on the lead product's
+    card in every reviewed layout. On a roundup a featured photo (the
+    first image, og:image, one named after the post) is no product's,
+    neither in a link nor by name; named photos still go to each."""
+    url = f"https://blog.example/2026/10/11/{SLUG}/"
+    lead = _listicle(layout, GENERIC).replace(f"{UP}featured.jpg", f"{UP}{SLUG}.jpg")
+    assert _ingest(tmp_path, lead, TOYS, url=url) == NONE
+    # Not the first image, but named after the post: a featured collage too.
+    second = lead.replace(f'<figure class="wp-block-image"><img src="{UP}{SLUG}.jpg">',
+                          f'<p><img src="{UP}masthead.jpg"></p><figure><img src="{UP}{SLUG}-2.jpg">',
+                          1)
+    assert _ingest(tmp_path, second, TOYS, url=url) == NONE
+    # Photos named after their products still go to each — but the lead
+    # product's, whose words are the post's own name, is no different from
+    # a collage named after the post: none (when in doubt, no photo).
+    named = _listicle(layout, ("a", "b", "c"), ALTS).replace(f"{UP}featured.jpg",
+                                                             f"{UP}{SLUG}.jpg")
+    assert _ingest(tmp_path, named, TOYS, url=url) \
+        == {TOYS[0][0]: "", TOYS[1][0]: "b.jpg", TOYS[2][0]: "c.jpg"}
+
+
+def test_lead_collage_with_the_title_as_alt_lands_on_no_card(tmp_path) -> None:
+    """Review finding (high): a classic-editor lead <p><img><br>intro</p>
+    whose alt an SEO plugin set to the post title named the markers."""
+    classic = (f'<p><img src="{UP}collage.jpg" alt="Crayola Washable Markers + More Back to '
+               'School Deals on Amazon"><br>Big toy deals today!</p>')
+    deals = [("Crayola Washable Markers 40ct", TOYS[0][1])] + TOYS[1:]
+    assert _ingest(tmp_path, _heading_listicle(GENERIC, lead=classic), deals) \
+        == dict.fromkeys((i for i, _l in deals), "")
+
+
+def test_brand_banner_lands_on_no_card(tmp_path) -> None:
+    """Review finding (high): a Target category banner hot-wheels-sale.jpg
+    ({hot, wheel}) and a loose melissa-and-doug-toys.jpg banner scored 100
+    against their brand's deal: a two-word brand alone names no product."""
+    deals = [("Hot Wheels 20-Car Gift Pack", "https://www.target.com/p/hw/-/A-7001"),
+             ("LEGO Classic Bricks", "https://www.target.com/p/lego/-/A-7002"),
+             ("Barbie Dreamhouse", "https://www.target.com/p/barbie/-/A-7003")]
+    products = "".join(f'<p><img src="{UP}IMG_700{i}.jpg" alt=""></p>'
+                       f'<p>{item} $19.99 <a href="{link}">Buy</a></p>'
+                       for i, (item, link) in enumerate(deals, 1))
+    html = (f'<p><img src="{UP}lead.jpg"></p><p>Toy deals at Target!</p>'
+            f'<p><a href="https://www.target.com/c/hot-wheels/-/N-4y8b1">'
+            f'<img src="{UP}hot-wheels-sale.jpg"></a> Hot Wheels toys are 30% off</p>' + products)
+    assert _ingest(tmp_path, html, deals) == dict.fromkeys((i for i, _l in deals), "")
+    deals[0] = ("Melissa & Doug Wooden Shape Sorting Puzzle", deals[0][1])
+    html = (f'<p><img src="{UP}lead.jpg"></p><p>Toy deals at Target!</p>'
+            f'<p><img src="{UP}melissa-and-doug-toys.jpg"></p>' + products)
+    assert _ingest(tmp_path, html, deals) == dict.fromkeys((i for i, _l in deals), "")
+
+
+def _post_photos_of(html: str, deals) -> dict[str, str]:
+    """Each deal's photo from one post (dedupe._post_image), every deal of
+    the parse known: the photo decision alone, before rows are merged."""
+    from dealradar.fetch.rss import _first_image
+
+    post = make_post(source="blog", uid="variants", url=POST_URL)
+    post.image_url = _first_image(html)
+    post.photos = post_photos(html, POST_URL)
+    post.parsed = list(deals)
+    return {item: dedupe._post_image(make_extracted(item=item, product_url=link,
+                                                    link_as_posted=link), post)
+            .removeprefix(UP) for item, link in deals}
+
+
+def test_variant_photo_goes_to_its_own_variant_only() -> None:
+    """Review finding (medium): 'Apple Watch Series 9 GPS' and 'Series 8'
+    normalized alike (single digits dropped) and both cards showed the
+    Series 9 photo; the 5-Pack card showed the 9-Pack photo. Numbers are
+    kept: the Series 9 photo is Series 9's alone; a one-number difference
+    (5-Pack vs 9-Pack) tells no photo apart, so neither gets it."""
+    watches = [("Apple Watch Series 9 GPS", "https://www.amazon.com/dp/B0000WATC9"),
+               ("Apple Watch Series 8 GPS", "https://www.amazon.com/dp/B0000WATC8")]
+    html = (FEATURED + f'<figure><img src="{UP}s9.jpg" alt="Apple Watch Series 9 GPS"></figure>'
+            f'<p>Series 9 $299 <a href="{watches[0][1]}">Buy</a></p>'
+            f'<figure><img src="{UP}IMG_0042.jpg" alt=""></figure>'
+            f'<p>Series 8 $199 <a href="{watches[1][1]}">Buy</a></p>')
+    assert _post_photos_of(html, watches) == {watches[0][0]: "s9.jpg", watches[1][0]: ""}
+    packs = [("Hot Wheels 5-Pack", "https://www.amazon.com/dp/B0000HWPK5"),
+             ("Hot Wheels 9-Pack", "https://www.amazon.com/dp/B0000HWPK9")]
+    html = (FEATURED + f'<figure><img src="{UP}IMG_0050.jpg" alt=""></figure>'
+            f'<p>5-Pack $5 <a href="{packs[0][1]}">Buy</a></p>'
+            f'<figure><img src="{UP}hw9.jpg" alt="Hot Wheels 9-Pack"></figure>'
+            f'<p>9-Pack $9 <a href="{packs[1][1]}">Buy</a></p>')
+    assert _post_photos_of(html, packs) == {packs[0][0]: "", packs[1][0]: ""}
+
+
+def test_short_link_resolving_to_a_store_page_names_no_photo(tmp_path) -> None:
+    """Review finding (medium): the markers' amzn.to short link (the sale
+    collage inside it) resolved to Amazon's Crayola store page, yet the
+    link as posted still matched the collage. A link that resolves to a
+    store, search or category page names no product: no photo inside it
+    as posted, and no post image either; Elmer's keeps its own."""
+    short = "https://amzn.to/3CrAyS"
+    store = "https://www.amazon.com/stores/Crayola/page/1234-ABCD"
+    glue = "https://www.amazon.com/dp/B0000GLUE1"
+    html = (f'<p><img src="{UP}lead.jpg"></p><p>Back to school!</p>'
+            f'<p><a href="{short}"><img src="{UP}crayola-sale-collage.jpg"></a></p>'
+            '<p>Amazon has a big Crayola sale: Crayola Washable Markers 40ct $9.99</p>'
+            f'<p><a href="{glue}"><img src="{UP}glue.jpg"></a> Elmer\'s Glue Sticks $4</p>')
+    deals = [("Crayola Washable Markers 40ct", short, store), ("Elmer's Glue Sticks 30ct", glue)]
+    assert _ingest(tmp_path, html, deals) == {deals[0][0]: "", deals[1][0]: "glue.jpg"}
+    search = [(deals[0][0], short, "https://www.target.com/s?searchTerm=crayola"), deals[1]]
+    assert _ingest(tmp_path, html, search) == {deals[0][0]: "", deals[1][0]: "glue.jpg"}
+    one = (f'<p><img src="{UP}crayola-store.jpg"></p>'
+           f'<p>Crayola sale on Amazon: markers $9.99 <a href="{short}">shop</a></p>')
+    assert _ingest(tmp_path, one, deals[:1]) == {deals[0][0]: ""}
+    # The same one-product post whose link resolves to a product lends it.
+    item = [("Crayola Washable Markers 40ct", short, "https://www.amazon.com/dp/B0000000A1")]
+    assert _ingest(tmp_path, one, item) == {item[0][0]: "crayola-store.jpg"}
+
+
+def test_cloaked_same_host_links_are_product_links(tmp_path) -> None:
+    """Review finding (medium): ThirstyAffiliates /recommends/ and Pretty
+    Links /go/ links on the blog's own host were never counted, so a
+    roundup read as one product and lent its collage. They are product
+    links: each deal holding one gets the photo inside it, and a post with
+    several is a roundup whose post image is no deal's."""
+    url = "https://blog.example/2026/10/11/toy-deals/"
+    links = [f"https://blog.example/recommends/{n}/" for n in ("markers", "lego")] \
+        + ["https://blog.example/go/playdoh"]
+    html = (f'<p><img src="{UP}toy-deals-collage.jpg"></p><p>Toy deals!</p>' + "".join(
+        f'<p><a href="{link}"><img src="{UP}IMG_90{i}.jpg"></a></p>'
+        f'<p><a href="{link}">{item}</a> $9.99</p>'
+        for i, ((item, _l), link) in enumerate(zip(TOYS, links))))
+    cloaked = [(item, link) for (item, _l), link in zip(TOYS, links)]
+    assert _ingest(tmp_path, html, cloaked, url=url) \
+        == {item: f"IMG_90{i}.jpg" for i, (item, _l) in enumerate(TOYS)}
+    # One deal parsed, its link resolved past the cloak: no collage.
+    assert _ingest(tmp_path, html, TOYS[:1], url=url) == {TOYS[0][0]: ""}
