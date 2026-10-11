@@ -63,6 +63,25 @@ Keep this file current: whoever stops working updates it in their last commit.
     3. Persist `link_as_posted`.
     4. Skip listing and wall pages in the og:image backfill.
   - Status: being built and reviewed by Claude, branch `photo-fix-botwall`.
+- **Brad's Deals / Deals of America page readers:** implemented by Codex on
+  `codex/bradsdeals-dealsofamerica-readers` (awaiting PR review/merge).
+  - Explicit HTML adapters and page validation replace RSS autodiscovery for
+    these two sources; both are enabled in this branch. Brad's URL is now
+    `/deals`, since `/blog` contains editorial articles, not live deal cards.
+  - Each card becomes one transient RawPost with its own source permalink,
+    exact price/coupon wording and stable identity. No source images copied
+    or displayed. Brad's unseen cards fetch their source detail page for
+    matching `/go/d/<deal-id>-...` shopping links; known content is not
+    enriched again, and enrichment does not change the card's content hash.
+  - All requests use PoliteFetcher, preserving deadlines, conditional GETs,
+    rate limits, permission scoped to the source host, and refusal handling.
+    Changed markup/empty cards fail loudly; missing Brad's shopping links
+    are excluded from paid parsing. No retailer pages are crawled.
+  - Verified live: 24 Brad's posts with matching shopping links and 60 Deals
+    of America posts (the per-fetch entry cap). Offline suite: 979 passed,
+    1 deselected, including 21 page-reader tests. No paid LLM/publish run.
+  - Remaining: review/merge PR; monitor source health in the first deployed
+    runs. The cloud network access blocker was resolved in environment settings.
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
   waives robots.txt only; a site's firewall still decides.
   - **Firewall blocks GitHub's servers.** The owner must allowlist our
@@ -79,8 +98,7 @@ Keep this file current: whoever stops working updates it in their last commit.
     - dead: dealsplus and kinja_deals (DNS), carolinas_and_dollars (hosting
       suspended), couponflick (no feed);
     - redundant: hip2save_freebies (its posts are in the hip2save feed);
-    - HTML pages, not feeds: bradsdeals, dealmoon_us, dealsofamerica,
-      jungle_deals, morningsave. Each needs a page reader before it can return.
+    - HTML pages, not feeds: dealmoon_us, jungle_deals, morningsave. Each needs a page reader before it can return.
   - **inspiring_savings:** their server returns 500; it retries on its own.
 
 ## Open tasks

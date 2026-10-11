@@ -1,0 +1,170 @@
+"""Server-rendered deal cards; no scripts, pagination, or retailer crawling."""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from html.parser import HTMLParser
+from urllib.parse import urljoin, urlsplit
+
+from .. import util
+from ..models import RawPost
+from .base import SourceAdapter
+from .rss import MAX_ENTRIES, _permission_host
+
+PAGE_ADAPTERS = {"bradsdeals", "dealsofamerica"}
+
+
+@dataclass
+class _Node:
+    tag: str
+    attrs: dict[str, str]
+    children: list = field(default_factory=list)
+
+    def find(self, *, tag=None, cls=None):
+        for child in self.children:
+            if isinstance(child, _Node):
+                if (tag is None or child.tag == tag) and (
+                        cls is None or cls in child.attrs.get("class", "").split()):
+                    yield child
+                yield from child.find(tag=tag, cls=cls)
+
+    def text(self):
+        if self.tag in {"script", "style", "noscript"}:
+            return ""
+        return " ".join(c.text() if isinstance(c, _Node) else c
+                        for c in self.children).strip()
+
+
+class _Tree(HTMLParser):
+    def __init__(self, markup):
+        super().__init__(convert_charrefs=True)
+        self.root = _Node("root", {})
+        self.stack = [self.root]
+        self.feed(markup)
+
+    def handle_starttag(self, tag, attrs):
+        node = _Node(tag, dict(attrs))
+        self.stack[-1].children.append(node)
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input",
+                       "link", "meta", "param", "source", "track", "wbr"}:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, 0, -1):
+            if self.stack[i].tag == tag:
+                del self.stack[i:]
+                break
+
+    def handle_data(self, data):
+        self.stack[-1].children.append(data)
+
+
+def _first(node, **kw):
+    return next(node.find(**kw), None)
+
+
+def parse_page(source, body: bytes, now: datetime) -> list[RawPost]:
+    root = _Tree(body.decode("utf-8", "replace")).root
+    brads = source.adapter == "bradsdeals"
+    cards = root.find(cls="post-tile-vertical" if brads else "deal")
+    posts, seen = [], set()
+    for card in cards:
+        if not brads and card.tag != "section":
+            continue  # sidebar recommendations are not complete deal cards
+        title_node = _first(card, cls="post-tile-vertical__headline-text" if brads else "title")
+        details = _first(card, cls="post-tile-vertical__details-content" if brads else "more_details")
+        if title_node is None or details is None:
+            continue
+        title = title_node.text() if brads else (_first(title_node, tag="a") or title_node).text()
+        candidates = card.find(tag="a")
+        url = ""
+        for a in candidates:
+            candidate = urljoin(source.url, a.attrs.get("href") or "")
+            parts = urlsplit(candidate)
+            if parts.scheme not in {"http", "https"} or parts.netloc != urlsplit(source.url).netloc:
+                continue
+            if (brads and parts.path.startswith("/deals/")
+                    or not brads and re.fullmatch(r"/[^/]+/\d+\.htm", parts.path)):
+                url = candidate.split("#", 1)[0].split("?", 1)[0]
+                break
+        text = title + "\n" + details.text()
+        if not url or url in seen or not re.search(r"\$\s?\d", text):
+            continue
+        # Preserve affiliate links exactly as posted, never resolve or fetch them.
+        for a in details.find(tag="a"):
+            link = urljoin(source.url, a.attrs.get("href") or "")
+            if urlsplit(link).scheme in {"http", "https"}:
+                text += "\n" + link
+        published = None
+        if not brads:
+            stamp = _first(card, tag="time")
+            if stamp:
+                published = util.parse_feed_date(stamp.text().removeprefix("Posted at ").strip(), source.tz, now)
+        posts.append(RawPost(source.name, url, url, title, text, published, now))
+        seen.add(url)
+        if len(posts) >= MAX_ENTRIES:
+            break
+    return posts
+
+
+class PageAdapter(SourceAdapter):
+    def fetch_posts(self, source, fetcher, db, cfg, now, deadline=None):
+        posts = self.fetch_page(source, fetcher, now, deadline)
+        if source.adapter != "bradsdeals":
+            return posts
+        enriched = []
+        for post in posts:
+            if db.post_is_known(post.content_hash):
+                enriched.append(post)
+                continue
+            kw = {}
+            if override := _permission_host(source):
+                kw["robots_override_host"] = override
+            res = fetcher.get(post.url, conditional=False, deadline=deadline, **kw)
+            if res.status != 200 or res.blocked_by_robots or not res.body:
+                continue  # no usable shopping link; do not submit a paid parse
+            root = _Tree(res.body.decode("utf-8", "replace")).root
+            deal_id = re.search(r"-(blt[a-z0-9]+)$", urlsplit(post.url).path)
+            if not deal_id:
+                continue
+            links = []
+            for a in root.find(tag="a"):
+                link = urljoin(post.url, a.attrs.get("href") or "")
+                parts = urlsplit(link)
+                if (parts.scheme in {"http", "https"}
+                        and parts.netloc == urlsplit(source.url).netloc
+                        and parts.path.startswith(f"/go/d/{deal_id[1]}-")):
+                    if link not in links:
+                        links.append(link)
+            if links:
+                enriched.append(replace(post, hash_text=post.text,
+                                        text=post.text + "\nBuy: " + "\n".join(links)))
+        if posts and not enriched:
+            raise RuntimeError("missing_deal_shopping_links")
+        return enriched
+
+    @staticmethod
+    def fetch_page(source, fetcher, now, deadline=None):
+        if not source.allowed_html:
+            raise RuntimeError("html_not_allowed")
+        if source.adapter not in PAGE_ADAPTERS:
+            raise ValueError(f"unknown page adapter {source.adapter!r}")
+        kw = {}
+        if override := _permission_host(source):
+            kw["robots_override_host"] = override
+        res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)
+        if res.not_modified or res.status == 304:
+            return []
+        if res.blocked_by_robots:
+            raise RuntimeError("blocked_by_robots")
+        if res.status != 200 or not res.body:
+            raise RuntimeError(f"http_{res.status} {res.error}".strip())
+        posts = parse_page(source, res.body, now)
+        if not posts:
+            raise RuntimeError("empty_or_changed_deal_page")
+        return posts
