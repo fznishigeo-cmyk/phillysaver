@@ -75,11 +75,12 @@ PRICE_TYPE_WAREHOUSE = 9
 #: "typical price" basis (day/week windows miss slow-boiled clearance).
 DATE_RANGE_90D = 3
 
-#: Self-throttle: the fast lane fires every 5 minutes, but Keepa queries
-#: stay on a ~15-minute cadence so the token allowance (1/min regen) covers
-#: the two deals queries plus verification calls. 14, not 15, so normal
-#: scheduler jitter never makes a legitimate pull miss its slot.
-MIN_INTERVAL_MINUTES = 14.0
+#: Self-throttle: one pull per fast-lane cycle (every 10 minutes). The
+#: operator's Keepa plan refills 20 tokens/min; the two /deal queries cost
+#: ~10 per pull, which leaves the bucket to the product calls (photos,
+#: rechecks). The shared token budget still gates every query when the
+#: bucket runs low. 9, not 10, so scheduler jitter never skips a slot.
+MIN_INTERVAL_MINUTES = 9.0
 
 
 def _cents(v: Any) -> float | None:
@@ -204,7 +205,7 @@ class KeepaDealsAdapter(SourceAdapter):
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
 
-        # Self-throttle to ~15-minute pulls whatever the lane's cadence:
+        # Self-throttle to one pull per cycle whatever the lane's cadence:
         # a pull inside the window is a clean no-op, not a failure.
         if db is not None:
             last = util.parse_iso(db.meta_get("keepa_last_fetch_at") or "")

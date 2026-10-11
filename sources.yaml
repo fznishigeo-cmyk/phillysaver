@@ -471,8 +471,8 @@ sources:
     url: https://api.keepa.com/deal
     region: US
     allowed_html: false
-    fast_lane: true   # price errors die fast — ask Keepa every 15 minutes
-    notes: "Official paid Keepa API, two /deal queries per pull: Amazon's own price >=35% below its 90-day average, and Amazon Warehouse open-box/used offers >=45% under the live new price (each 5 points under its publish floor so near-misses still feed price history). Requires KEEPA_KEY; flat-fee token model, never overbills — a 429 means the per-minute token bucket is empty and is retried next tick, never a breaker failure. Every response's tokensLeft/refillRate feeds the shared token budget (db meta keepa_budget) that holds back product calls first. ~6 tokens per query; 15-min cadence fits even the 1 token/min allowance."
+    fast_lane: true   # price errors die fast — ask Keepa every 10 minutes
+    notes: "Official paid Keepa API, two /deal queries per pull: Amazon's own price >=35% below its 90-day average, and Amazon Warehouse open-box/used offers >=45% under the live new price (each 5 points under its publish floor so near-misses still feed price history). Requires KEEPA_KEY; flat-fee token model, never overbills — a 429 means the per-minute token bucket is empty and is retried next tick, never a breaker failure. Every response's tokensLeft/refillRate feeds the shared token budget (db meta keepa_budget) that holds back product calls first. ~5 tokens per query; one pull per 10-minute cycle on the 20 token/min plan."
 
   # ---- gated / stubbed connectors ----
   - name: threads_search
