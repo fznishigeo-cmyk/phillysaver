@@ -6,6 +6,17 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <title>wowpriced — you're in</title>
 <meta name="robots" content="noindex">
+<script>
+// The Checkout Session id Stripe adds (?session_id=) is the payer's receipt:
+// it leaves the address bar before anything later on the page (the
+// analytics and ad tags in the head, when on) can read or send the URL.
+// The page script below takes it from window.wpCheckoutId.
+(function () {
+  var id = new URLSearchParams(location.search).get("session_id") || "";
+  window.wpCheckoutId = id;
+  if (id) { try { history.replaceState(null, "", location.pathname); } catch (e) { /* fine */ } }
+})();
+</script>
 <style>
 :root{ color-scheme: light dark;
   --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
@@ -76,7 +87,7 @@ p{margin:0 0 14px}
     ? "Email " + MAILTO + " and we'll cancel or change your membership."
     : "Use the <a href=\"contact.html\">contact page</a> and we'll cancel or change your membership.");
 
-  var fromUrl = new URLSearchParams(location.search).get("session_id") || "";
+  var fromUrl = window.wpCheckoutId || "";  // taken off the URL in the head
   if (fromUrl) ssSet(CLAIM_KEY, fromUrl);
   var sid = fromUrl || ssGet(CLAIM_KEY) || "";
   var token = lsGet(SESSION_KEY) || "";

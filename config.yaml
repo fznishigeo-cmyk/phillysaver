@@ -200,6 +200,11 @@ tracking:
   # not look like a real ID is skipped with a warning. The ad pixels never
   # load for a visitor whose browser sends Global Privacy Control or who
   # opted out on /privacy.html; GA4 then runs without its ad features.
+  # In each partner's settings keep automatic event detection and automatic
+  # advanced matching off (Meta, TikTok, Pinterest, Microsoft) and GA4's
+  # Enhanced measurement > Outbound clicks off: they would report what the
+  # page shows (a member's deal links, a typed email). The site's own events
+  # already cover sign-up, checkout, trial and deal clicks.
   ga4_measurement_id: ""            # Google Analytics 4, "G-XXXXXXXXXX"
   meta_pixel_id: ""                 # Meta (Facebook/Instagram) Pixel, digits
   tiktok_pixel_id: ""               # TikTok Pixel code, letters and digits

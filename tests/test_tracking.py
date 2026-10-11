@@ -67,11 +67,14 @@ def _between(text: str, start: str, end: str) -> str:
 
 # ---- config ----
 
-def test_shipped_config_lists_every_key_empty():
+def test_shipped_config_lists_every_key_and_only_valid_values():
     raw = yaml.safe_load((ROOT / "config.yaml").read_text())["tracking"]
     assert set(raw) == set(PATTERNS)
-    assert all(v == "" for v in raw.values())
-    assert load_config().tracking == {}
+    # Empty ships nothing; a pasted ID must be a real one (a bad paste fails here).
+    pasted = {k: str(v).strip() for k, v in raw.items() if v not in (None, "")}
+    for key, val in pasted.items():
+        assert re.fullmatch(PATTERNS[key], val, re.ASCII), key
+    assert load_config().tracking == pasted
 
 
 def test_loader_reads_the_block(tmp_path):
@@ -190,12 +193,14 @@ def test_the_consent_gate_wraps_every_ad_pixel_loader(ids):
             assert not _gated(js, at), line  # GA4 is for everyone
         else:
             assert _gated(js, at), line
-    for needle in ('fbq("init"', 'ttq.load("', 'pintrk("load"', "window.uetq = window.uetq",
-                   'gtag("config", "AW-'):
+    for needle in ('fbq("set", "autoConfig", false', 'fbq("init"', 'ttq.load("', 'pintrk("load"',
+                   "window.uetq = window.uetq", 'gtag("config", "AW-'):
         if needle in js:
             assert _gated(js, js.index(needle)), needle
     if "G-ABC123XYZ9" in js:
         assert "{ allow_google_signals: false, allow_ad_personalization_signals: false }" in js
+    if 'fbq("init"' in js:  # Meta's automatic click/page scraping is off before init
+        assert js.index('fbq("set", "autoConfig", false, "') < js.index('fbq("init"')
 
 
 HARNESS = r"""
@@ -274,6 +279,8 @@ def test_consent_and_event_fan_out_in_a_browser_like_run(tmp_path):
                                     "send_to": "G-ABC123XYZ9"}] in o["dataLayer"]
     assert ["event", "conversion", {"send_to": "AW-123456789/AbC-dEf_123", "value": 0,
                                     "currency": "USD"}] in o["dataLayer"]
+    assert o["fbq"][:2] == [["set", "autoConfig", False, "123456789012345"],
+                            ["init", "123456789012345"]]
     assert ["trackCustom", "DealClick", {"store": "Walmart", "category": "home"}] in o["fbq"]
     assert ["track", "StartTrial", {"value": 0, "currency": "USD", "predicted_ltv": 9.99}] in o["fbq"]
     assert ["track", "CompleteRegistration", {"method": "email"}] in o["fbq"]
@@ -373,3 +380,44 @@ def test_event_hooks_at_sign_up_checkout_deal_click_and_welcome(db, cfg, tmp_pat
     # The dispatcher is defined in the head, before any page script calls it.
     for page in (html, welcome):
         assert page.index("window.wpTrack = function") < page.index("<body>")
+
+
+# ---- the checkout receipt never reaches a tag ----
+
+SCRUB = r"""
+const vm = require("vm");
+const out = {};
+for (const search of ["?session_id=cs_live_ABCdef123456", ""]) {
+  const urls = [];
+  const ctx = { location: { search, pathname: "/welcome.html" }, URLSearchParams,
+                history: { replaceState: (s, t, url) => urls.push(url) } };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(require("fs").readFileSync(process.argv[2], "utf8"), ctx);
+  out[search || "none"] = { id: ctx.wpCheckoutId, urls };
+}
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def test_welcome_takes_the_session_id_off_the_url_before_any_tag(db, cfg, tmp_path):
+    cfg.tracking = dict(SAMPLE)
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    page = (out / "welcome.html").read_text(encoding="utf-8")
+    # The scrub is a head script ahead of the tags' block, and nothing after
+    # it reads the address: the page script takes the id from its stash.
+    scrub = _between(page[:page.index(START)], "<script>\n", "</script>")[len("<script>\n"):]
+    assert 'history.replaceState(null, "", location.pathname)' in scrub
+    assert "location.search" not in page[page.index(START):] and "location.href" not in page
+    assert 'var fromUrl = window.wpCheckoutId || "";' in page
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    (tmp_path / "scrub.js").write_text(scrub)
+    (tmp_path / "harness.cjs").write_text(SCRUB)
+    res = subprocess.run(["node", "harness.cjs", "scrub.js"], cwd=tmp_path,
+                         capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    assert json.loads(res.stdout) == {
+        "?session_id=cs_live_ABCdef123456": {"id": "cs_live_ABCdef123456", "urls": ["/welcome.html"]},
+        "none": {"id": "", "urls": []}}

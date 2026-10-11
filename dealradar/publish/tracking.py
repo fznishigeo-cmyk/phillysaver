@@ -103,6 +103,9 @@ _META = """\
     if (!window._fbq) window._fbq = fbq;
     fbq.push = fbq; fbq.loaded = true; fbq.version = "2.0"; fbq.queue = [];
     load("https://connect.facebook.net/en_US/fbevents.js");
+    // Automatic configuration off: it would report clicked buttons' text
+    // and links (a member's deal names and product URLs) on its own.
+    fbq("set", "autoConfig", false, %(id)s);
     fbq("init", %(id)s);
     fbq("track", "PageView");
     on.meta = true;
