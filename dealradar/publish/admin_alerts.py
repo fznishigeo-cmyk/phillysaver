@@ -52,6 +52,23 @@ def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
                         dedup_token=dedup_token, now=now)
         return warnings
 
+    status = send_admin_text(text, http_client=http_client)
+    if status != 200:
+        # NOT recorded -> retried on the next run this hour.
+        logger.error("admin alert send failed (%s); will retry", status)
+        return warnings
+
+    db.record_alert(deal_key="admin", channel="admin",
+                    dedup_token=dedup_token, now=now)
+    logger.info("admin alert sent: %s", "; ".join(warnings))
+    return warnings
+
+
+def send_admin_text(text: str, *, http_client: Any = None) -> int:
+    """POST `text` to the admin chat; returns Telegram's HTTP status. The
+    caller checks TELEGRAM_BOT_TOKEN and TELEGRAM_ADMIN_CHAT_ID first."""
+    token = get_secret("TELEGRAM_BOT_TOKEN")
+    admin_chat = get_secret("TELEGRAM_ADMIN_CHAT_ID")
     client = http_client
     created_client = False
     try:
@@ -63,15 +80,7 @@ def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
             json={"chat_id": admin_chat, "text": text,
                   "disable_web_page_preview": True},
         )
-        if resp.status_code != 200:
-            # NOT recorded -> retried on the next run this hour.
-            logger.error("admin alert send failed (%s); will retry", resp.status_code)
-            return warnings
+        return resp.status_code
     finally:
         if created_client and client is not None:
             client.close()
-
-    db.record_alert(deal_key="admin", channel="admin",
-                    dedup_token=dedup_token, now=now)
-    logger.info("admin alert sent: %s", "; ".join(warnings))
-    return warnings

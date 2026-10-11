@@ -1,0 +1,51 @@
+# Daily PRIVATE growth report: GA4, Search Console (plus the daily sitemap
+# submit), Meta ads/followers and Stripe numbers, sent to the operator's
+# email and/or the Telegram admin chat. Read-only everywhere. The repo and
+# this log are public: the job logs section names and ok / skipped / error
+# only, never a number or a token. It never touches state.db or the data
+# branch. Each missing secret skips only its own section.
+name: growth report
+
+on:
+  schedule:
+    - cron: '23 12 * * *'  # ~8:23 New York (EDT; 7:23 in winter)
+  workflow_dispatch:
+
+concurrency:
+  group: growth-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        run: pip install -e .
+
+      - name: Send the growth report
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          REPORT_EMAIL_TO: ${{ secrets.REPORT_EMAIL_TO }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+        run: python -m dealradar growth-report

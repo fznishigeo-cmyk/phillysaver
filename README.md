@@ -51,6 +51,7 @@ python -m dealradar validate-sources   # live-validate sources, write sources_re
 python -m dealradar digest             # force the daily-digest check now
 python -m dealradar prune              # retention cleanup (posts 30 d, deals 14 d)
 python -m dealradar domains            # print outbound hostnames (allowlist helper)
+python -m dealradar growth-report      # daily PRIVATE growth report to the operator (growth-report.yml)
 ```
 
 The hourly pipeline runs source validation automatically on its first run
