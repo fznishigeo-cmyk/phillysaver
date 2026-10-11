@@ -303,6 +303,7 @@ footer .meta{font-size:11.5px}
 /* "$0 today": the one price line next to a trial button on the main screen
    (operator's call); a slow sheen crosses it, none when motion is reduced */
 .zerotoday{position:relative;overflow:hidden;display:inline-flex;align-items:baseline;gap:5px;
+           border:0;font-family:inherit;cursor:pointer;
            padding:4px 13px 4px 11px;border-radius:999px;font-size:13px;font-weight:700;
            letter-spacing:.02em;color:var(--accent-fg);white-space:nowrap;
            background:linear-gradient(110deg,var(--accent) 35%,color-mix(in srgb,var(--accent) 70%,#ffc94d));
@@ -313,6 +314,12 @@ footer .meta{font-size:11.5px}
                   animation:zeroshine 4.2s ease-in-out infinite}
 @keyframes zeroshine{0%,62%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
 @media (prefers-reduced-motion: reduce){.zerotoday::after{display:none}}
+.zerotoday:hover{filter:brightness(1.08)}
+.zerotoday:focus-visible{outline:3px solid #ffc94d;outline-offset:2px}
+/* In the sticky panel the badge shares the title's row. */
+.paywall:has(#pwnote .zerotoday) .pwtext{flex:1 1 0}
+.paywall:has(#pwnote .zerotoday) .pwbtns{order:2}
+.paywall #pwnote:has(.zerotoday){flex:0 0 auto;order:1}
 .trialcta{animation:ctaglow 4.5s ease-in-out infinite}
 #subscribe.trialcta,.subbar.trialcta{animation:none}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
@@ -421,11 +428,6 @@ footer .meta{font-size:11.5px}
   .pwbtns{flex:1 1 100%}
   .pwbtn{flex:1 1 auto;text-align:center;padding:10px 8px;white-space:normal}
   .paywall .disc{font-size:12px}
-  /* phones: the "$0 today" badge shares the title's row, saving a row of
-     the sticky panel */
-  .paywall:has(#pwnote .zerotoday) .pwtext{flex:1 1 0}
-  .paywall:has(#pwnote .zerotoday) .pwbtns{order:2}
-  .paywall #pwnote:has(.zerotoday){flex:0 0 auto;order:1}
   .paywall .zerotoday{font-size:12px;padding:3px 10px 3px 9px}
   .paywall .zerotoday b{font-size:16px}
   .footnav a{display:inline-block;padding:5px 0}
@@ -1463,9 +1465,11 @@ footer .meta{font-size:11.5px}
   function shortNote(o) {
     return o.trial ? "$0 today." : "$9.99/month, renews monthly.";
   }
-  // The same line as a badge on the wall (band and panel).
+  // The same line as a badge on the wall (band and panel); a click on it
+  // takes the next step, like the trial button beside it.
   function noteHtml(o) {
-    return o.trial ? '<span class="zerotoday"><b>$0</b> today</span>' : esc(shortNote(o));
+    return o.trial ? '<button type="button" class="zerotoday" data-cta="1" ' +
+      'aria-label="$0 today: start your free trial"><b>$0</b> today</button>' : esc(shortNote(o));
   }
   // The Payment Link has no trial: its own terms, never the trial's.
   function fallbackTerms() {
@@ -2005,6 +2009,9 @@ footer .meta{font-size:11.5px}
   document.getElementById("content").addEventListener("click", function (e) {
     var card = e.target.closest ? e.target.closest(".card.locked, [data-cta]") : null;
     if (card) nextStep();
+  });
+  panel.querySelector("#pwnote").addEventListener("click", function (e) {
+    if (e.target.closest(".zerotoday")) nextStep();
   });
   // The ticker: a locked deal takes the next step; a free one scrolls to
   // its card and flashes it. PAUSE (or hover) stops the scroll.

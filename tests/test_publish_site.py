@@ -895,7 +895,10 @@ class TestTrialCtasAreHonest:
         assert 'pn.innerHTML = note ? noteHtml(o) : ""' in panel
         short = _between(html, "function shortNote(", "function fallbackTerms(")
         assert 'o.trial ? "$0 today." : "$9.99/month, renews monthly."' in short
-        assert '<span class="zerotoday"><b>$0</b> today</span>' in short
+        # The badge is a button: a click takes the next step (sign up, then
+        # the trial), like the trial button beside it.
+        assert '<button type="button" class="zerotoday" data-cta="1" ' in short
+        assert 'if (e.target.closest(".zerotoday")) nextStep();' in html
         assert "<strong>Membership — $9.99/month:</strong>" in html
         assert "card" not in short.lower()  # operator call: no "Card required" on the main screen
         assert "cancel" not in short.lower()
