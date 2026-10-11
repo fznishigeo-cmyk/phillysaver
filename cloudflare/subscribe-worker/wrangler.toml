@@ -1,16 +1,23 @@
-# wowpriced subscribe Worker (see worker.js and README.md).
+# wowpriced Worker (see worker.js and README.md): the newsletter subscribe
+# endpoints and the paywall API in one deployment.
 # Deployed by .github/workflows/deploy-subscribe-worker.yml, which creates the
 # KV namespace on first run and substitutes its id below (on a copy) before
-# `wrangler deploy`. NEWSLETTER_SECRET is set with `wrangler secret put`,
-# never written here.
+# `wrangler deploy`. The secrets NEWSLETTER_SECRET, SESSION_SECRET and
+# STRIPE_SECRET_KEY are set with `wrangler secret put`, never written here.
 name = "wowpriced-subscribe"
 main = "worker.js"
 compatibility_date = "2025-10-01"
 workers_dev = true
 
 [vars]
-# Browser origins allowed to call POST /subscribe cross-origin (comma list).
+# Browser origins allowed to call the Worker cross-origin (comma list).
 ALLOWED_ORIGINS = "https://wowpriced.com,https://www.wowpriced.com,https://fznishigeo-cmyk.github.io"
+# Public paywall settings. The deploy workflow's inputs override these on the
+# deployed copy for that run; commit real values here to make them stick.
+GOOGLE_CLIENT_ID = ""       # OAuth Web client ID; Google sign-in is off when empty
+STRIPE_PAYMENT_LINK = ""    # the $9.99/mo Payment Link; me.subscribe_url is "" when empty
+STRIPE_PORTAL_LINK = ""     # customer-portal link; me.portal_url is "" when empty
+TRIAL_DAYS = "7"            # free full access after sign-up, in days
 
 [[kv_namespaces]]
 binding = "SUBS"

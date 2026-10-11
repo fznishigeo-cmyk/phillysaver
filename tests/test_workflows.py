@@ -449,6 +449,8 @@ def run_worker_harness(tmp_path: Path) -> dict:
     if shutil.which("node") is None:
         pytest.skip("node is not installed")
     shutil.copyfile(WORKER_DIR / "worker.js", tmp_path / "worker.mjs")
+    for mod in WORKER_DIR.glob("*.js"):  # the ES modules worker.js imports
+        shutil.copyfile(mod, tmp_path / mod.name)
     (tmp_path / "harness.mjs").write_text(WORKER_HARNESS)
     res = subprocess.run(["node", "harness.mjs"], cwd=tmp_path,
                          capture_output=True, text=True, timeout=60)

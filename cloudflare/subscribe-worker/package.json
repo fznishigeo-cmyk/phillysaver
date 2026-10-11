@@ -1,0 +1,9 @@
+{
+  "name": "wowpriced-subscribe",
+  "private": true,
+  "type": "module",
+  "main": "worker.test.mjs",
+  "scripts": {
+    "test": "node --test worker.test.mjs"
+  }
+}

@@ -1,10 +1,11 @@
 /**
- * wowpriced subscribe Worker: the free daily email list, with no server of
- * our own. KV (binding SUBS) holds one key per subscriber,
+ * wowpriced Worker: the free daily email list plus the paywall API, in one
+ * deployment with no server of our own. KV (binding SUBS) holds one key per
+ * subscriber,
  *   sub:<email> -> {"ts": "<ISO time>", "token": "<32 hex>"}  (token also in metadata)
- * plus short-lived abuse counters rl:<ip>:<hour>. Nothing else is stored, and
- * no mail is sent from here: the pipeline (GitHub Actions) reads the list via
- * GET /list with the shared NEWSLETTER_SECRET and sends over SMTP.
+ * plus short-lived abuse counters rl:<ip>:<hour>. No mail is sent from here:
+ * the pipeline (GitHub Actions) reads the list via GET /list with the shared
+ * NEWSLETTER_SECRET and sends over SMTP.
  *
  *   POST /subscribe              {email} as JSON or a form field -> 200 {ok:true};
  *                                a form post gets a 303 to <site>/subscribe.html?ok=1
@@ -12,33 +13,22 @@
  *                                (POST is the RFC 8058 one-click form mail apps send)
  *   GET /list                    Authorization: Bearer <NEWSLETTER_SECRET>
  *                                -> {emails:[{email, token}]}, at most 10k
+ *   /api/*                       the paywall: accounts, sessions, membership and
+ *                                the members-only deals (api.js, docs/paywall.md)
  *   OPTIONS *                    CORS preflight, allowed origins only; else 404
  *
- * Bindings: SUBS (KV), NEWSLETTER_SECRET (wrangler secret put), ALLOWED_ORIGINS
- * (optional comma list; the default below).
+ * Bindings: SUBS (KV); secrets NEWSLETTER_SECRET, SESSION_SECRET,
+ * STRIPE_SECRET_KEY (wrangler secret put); vars ALLOWED_ORIGINS (comma list,
+ * default https://wowpriced.com, https://www.wowpriced.com and
+ * https://fznishigeo-cmyk.github.io), GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
+ * STRIPE_PORTAL_LINK, TRIAL_DAYS (wrangler.toml).
  */
 
-const DEFAULT_ORIGINS =
-  "https://wowpriced.com,https://www.wowpriced.com,https://fznishigeo-cmyk.github.io";
-const EMAIL_RE = /^[a-z0-9._%+'-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
+import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, rateKey, overLimit } from "./util.js";
+import { handleApi } from "./api.js";
+
 const MAX_POSTS_PER_IP_PER_HOUR = 20;
 const LIST_MAX = 10000;
-
-function allowedOrigins(env) {
-  return (env.ALLOWED_ORIGINS || DEFAULT_ORIGINS).split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-function corsHeaders(request, env) {
-  const origin = request.headers.get("Origin") || "";
-  if (!allowedOrigins(env).includes(origin)) return {};
-  return { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "POST, OPTIONS",
-           "Access-Control-Allow-Headers": "Content-Type", "Vary": "Origin" };
-}
-
-function json(body, status = 200, headers = {}) {
-  headers = { "Content-Type": "application/json; charset=utf-8", ...headers };
-  return new Response(JSON.stringify(body), { status, headers });
-}
 
 function page(title, text, link, status = 200) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -54,14 +44,6 @@ function randomToken() {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Constant-time string compare for the bearer secret and unsubscribe tokens.
-function safeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 async function readEmail(request) {
   const type = request.headers.get("Content-Type") || "";
   let email = "";
@@ -70,16 +52,6 @@ async function readEmail(request) {
     else email = (await request.formData()).get("email");
   } catch (e) { /* unreadable body: treated as an invalid address below */ }
   return String(email || "").trim().toLowerCase();
-}
-
-// Light abuse control: a KV counter per client IP per clock hour. KV is
-// eventually consistent, so the count is approximate; fine against spam.
-async function overLimit(request, env) {
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  const key = `rl:${ip}:${Math.floor(Date.now() / 3600000)}`;
-  const n = Number(await env.SUBS.get(key)) + 1;
-  await env.SUBS.put(key, String(n), { expirationTtl: 7200 });
-  return n > MAX_POSTS_PER_IP_PER_HOUR;
 }
 
 // Form posts land on the signup page of the site they came from, which shows
@@ -97,7 +69,7 @@ async function subscribe(request, env) {
   const isForm = !(request.headers.get("Content-Type") || "").includes("application/json");
   const cors = corsHeaders(request, env);
   const email = await readEmail(request);
-  if (await overLimit(request, env)) {
+  if (await overLimit(env, rateKey(request), MAX_POSTS_PER_IP_PER_HOUR)) {
     return isForm
       ? page("Slow down", "Too many sign-ups from your network right now; please try again in an hour.",
              { href: allowedOrigins(env)[0], text: "Back to wowpriced" }, 429)
@@ -161,6 +133,7 @@ export default {
       const cors = corsHeaders(request, env);
       return new Response(null, { status: Object.keys(cors).length ? 204 : 403, headers: cors });
     }
+    if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
     if (method === "POST" && url.pathname === "/subscribe") return subscribe(request, env);
     if ((method === "GET" || method === "POST") && url.pathname === "/unsubscribe") return unsubscribe(url, env);
     if (method === "GET" && url.pathname === "/list") return list(request, env);
