@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e7569">
+<meta name="description" content="Who runs wowpriced, why list prices lie, and what we do about it: every deal quoted word-for-word, checked in code, and refreshed every 10 minutes.">
+<title>About wowpriced</title>
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+header{background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
+      gap:4px 14px;align-items:baseline}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
+.brand a{color:inherit}
+.brand .dot{color:var(--accent)}
+.tag{color:var(--muted);font-size:13px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px 48px}
+h1{font-size:30px;line-height:1.2;margin:32px 0 6px}
+.lede{color:var(--muted);font-size:17px;margin:0 0 24px}
+h2{font-size:20px;margin:30px 0 8px}
+p{margin:0 0 14px}
+ul{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+      box-shadow:var(--shadow);padding:18px 20px;margin:0 0 16px}
+.card p:last-child{margin-bottom:0}
+footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
+       padding-top:14px}
+footer p{margin:0 0 8px}
+.fnav{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 12px;font-size:13.5px}
+.getdeal{display:inline-block;background:var(--accent);color:var(--accent-fg)!important;
+         font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px}
+.getdeal:hover{text-decoration:none;filter:brightness(1.08)}
+@media (max-width:640px){
+  .hrow{padding:10px 16px 8px}
+  .tag{display:none}
+  h1{font-size:26px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <p class="brand"><a href="./">wowpriced<span class="dot">●</span></a></p>
+    <span class="tag">verified deals, 50–90% off · refreshed every 10 minutes</span>
+  </div>
+</header>
+<div class="wrap">
+<main>
+<h1>About wowpriced</h1>
+<p class="lede">We used to help make the prices. Now we check them.</p>
+
+<h2>Where we came from</h2>
+<p>We spent years on sales floors and behind store counters. We hung the signs. We
+   built the end caps. We learned, early and often, how a "regular price" gets born.</p>
+<p>Here is the part most shoppers never see. A list price is not a measurement. It is
+   a decision. Someone picks a number high enough that the sale number underneath it
+   looks like a gift. The bigger the gap, the better the sign works. That is the whole
+   trick, and it works on nearly everyone, including us.</p>
+
+<h2>The anchor trick, in all its outfits</h2>
+<p>Retail has a name for this: anchor pricing. Show a big number first, and every
+   number after it feels small. The trick wears a lot of costumes.</p>
+<ul>
+  <li><strong>Inflated MSRPs on marketplaces.</strong> On many marketplaces the seller
+      picks the "list price" themselves. Some pick a number nobody has ever paid.</li>
+  <li><strong>"Compare at" tags.</strong> Compare at what? Where? When? The tag rarely
+      says, because the honest answer is often "nowhere."</li>
+  <li><strong>Strike-through theater.</strong> A crossed-out price is a stage prop. It
+      only means something if that price was real, recent, and actually charged.</li>
+  <li><strong>Coupons on prices nobody paid.</strong> A 30% coupon on a price that was
+      raised 30% last week is a coupon for zero.</li>
+  <li><strong>"Was" prices that never were.</strong> Some items go on "sale" the day
+      they arrive and stay there forever. The "was" is fiction with a dollar sign.</li>
+</ul>
+<p>None of this is rare, and most of it is legal. It is just tiring. You end up doing
+   math in the aisle, phone in one hand, trying to work out if a deal is a deal.</p>
+
+<h2>What we do about it</h2>
+<p>We built wowpriced to do that math for you, and to show our work.</p>
+<p>Every price we publish is backed by a word-for-word quote from the source, and a
+   program checks that the quote really says what we say it says. No quote, no deal.</p>
+<p>A "fake list price" critic looks at every claimed regular price and throws out the
+   ones that are not believable. A 90% discount off a made-up number is a 0% discount,
+   and it does not get on the wall.</p>
+<p>Amazon prices are re-checked live before we publish. When a deal dies, we mark it
+   GONE instead of leaving it up to waste your click.</p>
+<p>When two or more independent sources agree on a deal, the card gets a "2+ sources"
+   badge. When our own price history backs the discount, it gets a "price history"
+   badge.</p>
+<p>We set floors and stick to them: 40% off or better for new items, 50% off or better
+   for used and open-box. The wall refreshes every 10 minutes. Deals that died in the
+   last 48 hours sit in a "Just missed" strip, so you can see how fast the good ones go.</p>
+<p>Every deal links straight to the seller and credits the source that found it. Some
+   of those links are the source's affiliate links. That is how they keep the lights
+   on, and we think they earned it.</p>
+
+<h2>What we will not do</h2>
+<div class="card">
+  <p><strong>No fake urgency.</strong> No invented countdowns, no "only 3 left" unless
+     the seller said so.</p>
+  <p><strong>No made-up prices.</strong> If we cannot quote it, we do not publish it.</p>
+  <p><strong>No copying other deal sites.</strong> We check sources, credit them by
+     name, and link to them.</p>
+</div>
+
+<h2>The promise</h2>
+<p>The site stays free. The $9.99 a month membership emails you every verified deal
+   the hour it is found, bundled at most once an hour, cancel anytime. That is the
+   whole business. No ads dressed up as deals, no pop-ups, no spin.</p>
+<p>We spent a long time helping stores make prices look good. We would rather help
+   you find the ones that actually are.</p>
+</main>
+<footer>
+  <nav class="fnav" aria-label="site pages">
+    <a href="./">Home</a>
+    <a href="about.html">About</a>
+    <a href="how-it-works.html">How it works</a>
+    <a href="hacks.html">Deal hacks</a>
+    <a href="careers.html">Work with us</a>
+    <a href="contact.html">Contact</a>
+  </nav>
+  <p><a id="subscribe" class="getdeal" rel="noopener" style="display:none">Get every deal by email — $9.99/mo</a></p>
+  <p>Every deal links to the seller and credits the source that found it. Some outbound
+     links are the source's affiliate links. <a href="health.html">source health</a></p>
+</footer>
+</div>
+<script>
+"use strict";
+// The Subscribe button appears only once deals.json carries a subscribe link.
+fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+  .then(function (r) { return r.json(); })
+  .then(function (d) {
+    var url = d && d.meta && d.meta.subscribe_url;
+    if (url) {
+      var sub = document.getElementById("subscribe");
+      sub.href = url;
+      sub.style.display = "";
+    }
+  }).catch(function () {});
+</script>
+</body>
+</html>

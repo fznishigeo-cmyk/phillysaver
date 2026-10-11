@@ -196,8 +196,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         json.dumps(health_doc, indent=2), encoding="utf-8"
     )
 
-    for name in ("index.html", "health.html", "welcome.html"):
+    for name in ("index.html", "health.html", "welcome.html", "about.html",
+                 "careers.html", "contact.html", "how-it-works.html", "hacks.html"):
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
+
+    # The contact page carries the operator's email only once it is really
+    # configured; the unset placeholder must never reach the public site
+    # (the page hides its email line when the token resolves to "").
+    email = getattr(cfg, "contact_email", "") or ""
+    if email == "set-me@example.com":
+        email = ""
+    contact = (out / "contact.html").read_text(encoding="utf-8")
+    (out / "contact.html").write_text(
+        contact.replace("{{CONTACT_EMAIL}}", email), encoding="utf-8"
+    )
 
     # GitHub Pages keeps a custom domain only while the deployed site
     # carries this file; every run redeploys, so every run writes it.

@@ -298,3 +298,52 @@ class TestLiveHomePage:
         assert html.index('id="metaline"') > html.index("<footer>")
         assert "m.disclosure" in html
         assert DISCLOSURE not in html
+
+
+class TestContentPages:
+    """The five static content pages (about, careers, contact, how-it-works,
+    hacks) are copied alongside index.html; contact.html gets the operator's
+    email substituted in, and the unset placeholder never reaches the site."""
+
+    PAGES = ("about.html", "careers.html", "contact.html",
+             "how-it-works.html", "hacks.html")
+
+    def _render(self, db, cfg, out):
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return {n: (out / n).read_text(encoding="utf-8") for n in self.PAGES}
+
+    def test_pages_written_and_self_contained(self, db, cfg, tmp_path):
+        pages = self._render(db, cfg, tmp_path / "site")
+        for name, html in pages.items():
+            assert html.startswith("<!doctype html>"), name
+            assert "<title>" in html and 'name="description"' in html, name
+            assert "prefers-color-scheme" in html, name
+            assert "<script src=" not in html and "<link" not in html, name
+            # Footer links every content page, Home, and the Subscribe button.
+            for other in self.PAGES:
+                assert f'href="{other}"' in html, (name, other)
+            assert 'href="./"' in html, name
+            assert "Get every deal by email" in html, name
+            assert "subscribe_url" in html, name
+
+    def test_contact_email_substituted_when_configured(self, db, cfg, tmp_path):
+        cfg.contact_email = "hello@wowpriced.example"
+        html = self._render(db, cfg, tmp_path / "site")["contact.html"]
+        assert "mailto:hello@wowpriced.example" in html
+        assert "{{CONTACT_EMAIL}}" not in html
+
+    def test_contact_email_blank_when_placeholder(self, db, cfg, tmp_path):
+        # AppConfig default is the placeholder; the page then hides its line.
+        assert cfg.contact_email == "set-me@example.com"
+        html = self._render(db, cfg, tmp_path / "site")["contact.html"]
+        assert 'href="mailto:"' in html
+        assert "{{CONTACT_EMAIL}}" not in html
+        assert "emailline" in html  # the JS hook that hides the empty line
+
+    def test_placeholder_and_competitor_names_never_appear(self, db, cfg, tmp_path):
+        pages = self._render(db, cfg, tmp_path / "site")
+        for name, html in pages.items():
+            assert "set-me@example.com" not in html, name
+            low = html.lower()
+            for banned in ("krazy", "kcl", "southern savers"):
+                assert banned not in low, (name, banned)
