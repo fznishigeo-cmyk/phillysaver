@@ -217,6 +217,25 @@ alerting:
   min_items_ratio: 0.5         # warn if run items < 50% of 7-day hourly average
   tripped_sources_warn: 5      # warn if >=5 sources tripped
 
+growth:
+  # The daily PRIVATE growth report (python -m dealradar growth-report,
+  # .github/workflows/growth-report.yml): GA4, Search Console (+ a daily
+  # sitemap submit), Meta ads/followers and Stripe, sent to the operator by
+  # email (REPORT_EMAIL_TO secret, else contact_email) and/or the Telegram
+  # admin chat. Secrets: GOOGLE_SA_JSON, META_SYSTEM_TOKEN, STRIPE_SECRET_KEY.
+  # Read-only everywhere. An empty value (or a missing secret) skips its section.
+  report_days: 7
+  ga4_property_id: ""                        # numeric GA4 property ID (Admin -> Property details)
+  search_console_site: "sc-domain:wowpriced.com"
+  sitemap_url: ""                            # "" = https://<publish.custom_domain>/sitemap.xml
+  # Pinned Graph API version (v24.0, released 2025-10; Meta keeps a version
+  # about two years). Bump it when Meta announces its deprecation.
+  meta_graph_version: "v24.0"
+  meta_ad_account_id: ""                     # digits, with or without "act_"
+  meta_page_id: ""                           # Facebook Page ID (followers)
+  instagram_user_id: ""                      # Instagram professional account ID (followers)
+  monthly_price_usd: 9.99                    # MRR estimate = active subscriptions x this
+
 retention:
   posts_seen_days: 30
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age

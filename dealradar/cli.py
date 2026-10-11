@@ -94,6 +94,14 @@ def cmd_indexnow(args: argparse.Namespace) -> int:
     return submit_indexnow(load_config(args.config))
 
 
+def cmd_growth_report(args: argparse.Namespace) -> int:
+    """The daily private growth report; logs section status only (public logs)."""
+    from .config import load_config
+    from .growth.report import run
+
+    return run(load_config(args.config))
+
+
 def cmd_domains(args: argparse.Namespace) -> int:
     """Print the outbound hostnames the pipeline needs (network allowlist helper)."""
     from .config import load_sources
@@ -151,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("indexnow", help="submit the last publish's changed URLs to IndexNow")
     sp.add_argument("--config", default=None)
     sp.set_defaults(fn=cmd_indexnow)
+    sp = sub.add_parser("growth-report",
+                        help="daily private growth report (operator email / Telegram admin)")
+    sp.add_argument("--config", default=None)
+    sp.set_defaults(fn=cmd_growth_report)
 
     sp = sub.add_parser("domains", help="print outbound hostnames for allowlists")
     sp.set_defaults(fn=cmd_domains)

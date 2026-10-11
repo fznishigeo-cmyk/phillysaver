@@ -22,6 +22,7 @@ HOURLY = WORKFLOWS / "hourly.yml"
 FAST = WORKFLOWS / "fast.yml"
 SQUASH = WORKFLOWS / "squash-data.yml"
 DEPLOY_WORKER = WORKFLOWS / "deploy-subscribe-worker.yml"
+GROWTH = WORKFLOWS / "growth-report.yml"
 WORKER_DIR = ROOT / "cloudflare" / "subscribe-worker"
 SCRIPT = ROOT / "scripts" / "commit_state.sh"
 RESTORE = ROOT / "scripts" / "restore_state.sh"
@@ -72,7 +73,7 @@ def assert_state_steps_get_the_key(steps: list[dict]) -> None:
 
 
 def test_all_workflows_parse() -> None:
-    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
         assert p.is_file(), p
         load_workflow(p)
 
@@ -206,6 +207,33 @@ def test_deploy_subscribe_worker_shape() -> None:
     assert put["env"] == {"NEWSLETTER_SECRET": "${{ secrets.NEWSLETTER_SECRET }}"}
 
 
+def test_growth_report_shape() -> None:
+    """Daily + manual, read-only, its own concurrency group, never near
+    state.db or the data branch; the secrets reach the report step only."""
+    doc = load_workflow(GROWTH)
+    assert doc["name"] == "growth report"
+    on = workflow_on(doc)
+    assert on["schedule"] == [{"cron": "23 12 * * *"}]
+    assert "workflow_dispatch" in on
+    assert doc["permissions"] == {"contents": "read"}
+    assert doc["concurrency"] == {"group": "growth-report", "cancel-in-progress": False}
+    job = single_job(doc)
+    body = "\n".join(run_commands(doc))
+    assert "python -m dealradar growth-report" in body
+    for banned in ("state", "git ", "GITHUB_STEP_SUMMARY", "echo"):
+        assert banned not in body, banned
+    step = next(s for s in job["steps"] if s.get("run", "").strip() == "python -m dealradar growth-report")
+    assert set(step["env"]) == {
+        "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
+        "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID",
+    }
+    for name, value in step["env"].items():
+        assert value == "${{ secrets.%s }}" % name
+    assert all("env" not in s for s in job["steps"] if s is not step)
+    assert "env" not in job and "env" not in doc
+
+
 def _stripe_mode_step() -> tuple[list[dict], dict]:
     steps = single_job(load_workflow(DEPLOY_WORKER))["steps"]
     return steps, next(s for s in steps if s.get("name") == "Report the Stripe key mode")
@@ -282,7 +310,7 @@ def test_deploy_subscribe_worker_warns_without_portal_link(tmp_path: Path, porta
 
 def test_no_workflow_pushes_to_main() -> None:
     """Every git push in any workflow or in commit_state.sh targets data only."""
-    texts = {p.name: p.read_text() for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, SCRIPT)}
+    texts = {p.name: p.read_text() for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH, SCRIPT)}
     for name, text in texts.items():
         for line in text.splitlines():
             if "git push" in line or re.search(r"\bpush origin\b", line):
@@ -293,7 +321,7 @@ def test_no_workflow_pushes_to_main() -> None:
 def test_no_secret_is_echoed() -> None:
     """`${{ secrets.X }}` appears only as env-map values, never inside run/echo."""
     env_line = re.compile(r"^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z_]+ \}\}$")
-    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
         for line in p.read_text().splitlines():
             if "secrets." in line:
                 assert env_line.match(line), (p.name, line)

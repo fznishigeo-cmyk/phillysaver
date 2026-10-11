@@ -131,6 +131,17 @@ class AppConfig:
     min_items_ratio: float = 0.5
     tripped_sources_warn: int = 5
 
+    # -- growth: the daily private report (config.yaml growth:); "" skips a section --
+    growth_report_days: int = 7
+    growth_ga4_property_id: str = ""
+    growth_search_console_site: str = ""
+    growth_sitemap_url: str = ""
+    growth_meta_graph_version: str = "v24.0"
+    growth_meta_ad_account_id: str = ""
+    growth_meta_page_id: str = ""
+    growth_instagram_user_id: str = ""
+    growth_monthly_price_usd: float = 9.99
+
     # -- members: Stripe subscribers get every new verified deal by email --
     subscribe_url: str = ""            # Stripe Payment Link (site Subscribe button)
     portal_url: str = ""               # Stripe customer portal (manage / cancel)
@@ -262,6 +273,21 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg.min_items_ratio = float(g("alerting", "min_items_ratio", default=cfg.min_items_ratio))
     cfg.tripped_sources_warn = int(g("alerting", "tripped_sources_warn", default=cfg.tripped_sources_warn))
+
+    def gs(key: str) -> str:
+        return str(g("growth", key, default="") or "").strip()
+
+    cfg.growth_report_days = max(1, int(g("growth", "report_days", default=cfg.growth_report_days)))
+    cfg.growth_ga4_property_id = gs("ga4_property_id").removeprefix("properties/")
+    cfg.growth_search_console_site = gs("search_console_site")
+    cfg.growth_sitemap_url = gs("sitemap_url") or (
+        f"https://{cfg.custom_domain}/sitemap.xml" if cfg.custom_domain else "")
+    cfg.growth_meta_graph_version = gs("meta_graph_version") or cfg.growth_meta_graph_version
+    cfg.growth_meta_ad_account_id = gs("meta_ad_account_id").removeprefix("act_")
+    cfg.growth_meta_page_id = gs("meta_page_id")
+    cfg.growth_instagram_user_id = gs("instagram_user_id")
+    cfg.growth_monthly_price_usd = float(g("growth", "monthly_price_usd",
+                                           default=cfg.growth_monthly_price_usd))
 
     cfg.subscribe_url = str(g("members", "subscribe_url", default="") or "").strip()
     cfg.portal_url = str(g("members", "portal_url", default="") or "").strip()
