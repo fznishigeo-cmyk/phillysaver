@@ -120,11 +120,18 @@ def _validate_one(
     """(status, detail, active_config|None) for any source."""
     if not source.enabled:
         return "disabled", "disabled in sources.yaml", None
-    if source.method == "html" and source.adapter in {"bradsdeals", "dealsofamerica"}:
+    from .pages import PAGE_ADAPTERS
+    if ((source.method == "html" and source.adapter in PAGE_ADAPTERS)
+            or (source.method == "api" and source.adapter == "jungle_deals")):
         from .pages import PageAdapter
         try:
-            PageAdapter.fetch_page(source, fetcher,
-                                   datetime.now(timezone.utc), deadline)
+            if source.adapter == "jungle_deals":
+                from .jungle import JungleAdapter
+                JungleAdapter.fetch_deals(source, fetcher,
+                                          datetime.now(timezone.utc), deadline)
+            else:
+                PageAdapter.fetch_page(source, fetcher,
+                                       datetime.now(timezone.utc), deadline)
         except DeadlineExceeded:
             raise
         except RuntimeError as exc:
