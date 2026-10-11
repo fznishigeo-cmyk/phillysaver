@@ -2,17 +2,22 @@
  * wowpriced Worker: the free daily email list plus the paywall API, in one
  * deployment with no server of our own. KV (binding SUBS) holds one key per
  * subscriber,
- *   sub:<email> -> {"ts": "<ISO time>", "token": "<32 hex>"}  (token also in metadata)
- * plus short-lived abuse counters rl:<ip>:<hour>. No mail is sent from here:
- * the pipeline (GitHub Actions) reads the list via GET /list with the shared
- * NEWSLETTER_SECRET and sends over SMTP.
+ *   sub:<email> -> {"ts", "token", "confirmed", "confirm_sent_at"}  (also in metadata)
+ * No mail is sent from here: the pipeline (GitHub Actions) reads the list via
+ * GET /list with the shared NEWSLETTER_SECRET and sends over SMTP, confirm
+ * links first (double opt-in, subscribers.js), the daily email to confirmed
+ * addresses only.
  *
  *   POST /subscribe              {email} as JSON or a form field -> 200 {ok:true};
  *                                a form post gets a 303 to <site>/subscribe.html?ok=1
- *   GET|POST /unsubscribe?e=&t=  deletes when the token matches -> 200 HTML
- *                                (POST is the RFC 8058 one-click form mail apps send)
- *   GET /list                    Authorization: Bearer <NEWSLETTER_SECRET>
- *                                -> {emails:[{email, token}]}, at most 10k
+ *   GET  /confirm?e=&t=          sets confirmed=true when the token matches -> 200 HTML
+ *   GET  /unsubscribe?e=&t=      200 HTML page with one POST button "Unsubscribe"
+ *   POST /unsubscribe?e=&t=      deletes when the token matches -> 200 HTML
+ *                                (also the RFC 8058 one-click form mail apps send)
+ *   GET  /list                   Authorization: Bearer <NEWSLETTER_SECRET>
+ *                                -> {emails:[{email, token}]} confirmed only, at most 10k;
+ *                                ?pending=1 -> unconfirmed addresses not yet mailed a link
+ *   POST /list/confirm-sent      same bearer, {emails:[...]} -> 204, stamps confirm_sent_at
  *   /api/*                       the paywall: accounts, sessions, membership and
  *                                the members-only deals (api.js, docs/paywall.md)
  *   OPTIONS *                    CORS preflight, allowed origins only; else 404
@@ -21,23 +26,16 @@
  * STRIPE_SECRET_KEY (wrangler secret put); vars ALLOWED_ORIGINS (comma list,
  * default https://wowpriced.com, https://www.wowpriced.com and
  * https://fznishigeo-cmyk.github.io), GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
- * STRIPE_PORTAL_LINK, TRIAL_DAYS (wrangler.toml).
+ * STRIPE_PORTAL_LINK, TRIAL_DAYS, PBKDF2_ITERATIONS (wrangler.toml).
  */
 
-import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, rateKey, overLimit } from "./util.js";
+import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
+import { page, isConfirmed, getSub, putSub, confirm, unsubscribe } from "./subscribers.js";
 import { handleApi } from "./api.js";
 
 const MAX_POSTS_PER_IP_PER_HOUR = 20;
 const LIST_MAX = 10000;
-
-function page(title, text, link, status = 200) {
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title></head>
-<body style="font:16px/1.5 system-ui,sans-serif;max-width:560px;margin:60px auto;padding:0 16px">
-<h1 style="font-size:24px">${title}</h1><p>${text}</p><p><a href="${link.href}">${link.text}</a></p>
-</body></html>`;
-  return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
-}
+const CONFIRM_SENT_MAX = 1000;
 
 function randomToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -69,7 +67,7 @@ async function subscribe(request, env) {
   const isForm = !(request.headers.get("Content-Type") || "").includes("application/json");
   const cors = corsHeaders(request, env);
   const email = await readEmail(request);
-  if (await overLimit(env, rateKey(request), MAX_POSTS_PER_IP_PER_HOUR)) {
+  if (overLimit(request, "subscribe", MAX_POSTS_PER_IP_PER_HOUR)) {
     return isForm
       ? page("Slow down", "Too many sign-ups from your network right now; please try again in an hour.",
              { href: allowedOrigins(env)[0], text: "Back to wowpriced" }, 429)
@@ -79,50 +77,52 @@ async function subscribe(request, env) {
     return isForm ? backToSite(request, env, "err=email")
                   : json({ ok: false, error: "invalid email" }, 400, cors);
   }
-  const key = `sub:${email}`;
-  if (!(await env.SUBS.get(key))) { // idempotent: signing up twice keeps the first token
-    const record = { ts: new Date().toISOString(), token: randomToken() };
-    await env.SUBS.put(key, JSON.stringify(record), { metadata: record });
+  // Idempotent: signing up twice keeps the first token, and an address that
+  // is still unconfirmed simply stays pending (the confirm email goes once).
+  if (!(await getSub(env, email))) {
+    await putSub(env, email, { ts: new Date(Date.now()).toISOString(), token: randomToken(), confirmed: false, confirm_sent_at: "" });
   }
   return isForm ? backToSite(request, env, "ok=1") : json({ ok: true }, 200, cors);
 }
 
-async function unsubscribe(url, env) {
-  const email = (url.searchParams.get("e") || "").trim().toLowerCase();
-  const token = url.searchParams.get("t") || "";
-  const site = allowedOrigins(env)[0];
-  const raw = email ? await env.SUBS.get(`sub:${email}`) : null;
-  if (raw) {
-    let stored = "";
-    try { stored = JSON.parse(raw).token || ""; } catch (e) { /* malformed: never matches */ }
-    if (!token || !safeEqual(stored, token)) {
-      return page("That link isn't valid", "This unsubscribe link doesn't match our records. Use the link in your latest email.",
-                  { href: site, text: "Back to wowpriced" }, 403);
-    }
-    await env.SUBS.delete(`sub:${email}`);
-  }
-  // Already gone counts as success: clicking the link twice must not error.
-  return page("You're unsubscribed", "No more emails from wowpriced. Sorry to see you go.",
-              { href: `${site}/subscribe.html?unsubscribed=1`, text: "Changed your mind? Subscribe again" });
+function pipelineAuthorized(request, env) {
+  const auth = request.headers.get("Authorization") || "";
+  return !!env.NEWSLETTER_SECRET && safeEqual(auth, `Bearer ${env.NEWSLETTER_SECRET}`);
 }
 
-async function list(request, env) {
-  const auth = request.headers.get("Authorization") || "";
-  if (!env.NEWSLETTER_SECRET || !safeEqual(auth, `Bearer ${env.NEWSLETTER_SECRET}`)) {
-    return json({ error: "unauthorized" }, 401);
-  }
-  // Tokens ride in key metadata, so a page of 1000 subscribers costs one KV
-  // operation (a get per key would blow the per-invocation budget).
+async function list(request, env, url) {
+  if (!pipelineAuthorized(request, env)) return json({ error: "unauthorized" }, 401);
+  const pending = url.searchParams.get("pending") === "1";
+  // Everything the filter needs rides in key metadata, so a page of 1000
+  // subscribers costs one KV operation (a get per key would blow the budget).
   const emails = [];
   let cursor;
   do {
     const res = await env.SUBS.list({ prefix: "sub:", cursor, limit: 1000 });
     for (const k of res.keys) {
-      if (k.metadata && k.metadata.token) emails.push({ email: k.name.slice(4), token: k.metadata.token });
+      const m = k.metadata;
+      if (!m || !m.token) continue;
+      const wanted = pending ? !isConfirmed(m) && !m.confirm_sent_at : isConfirmed(m);
+      if (wanted) emails.push({ email: k.name.slice(4), token: m.token });
     }
     cursor = res.list_complete ? undefined : res.cursor;
   } while (cursor && emails.length < LIST_MAX);
   return json({ emails: emails.slice(0, LIST_MAX) });
+}
+
+// The pipeline reports which pending addresses it mailed a confirm link to,
+// so the next /list?pending=1 leaves them out (one confirm email per address).
+async function confirmSent(request, env) {
+  if (!pipelineAuthorized(request, env)) return json({ error: "unauthorized" }, 401);
+  const { emails } = await readJson(request);
+  if (!Array.isArray(emails) || emails.length > CONFIRM_SENT_MAX) return json({ error: "bad_request" }, 400);
+  const now = new Date(Date.now()).toISOString();
+  for (const e of emails) {
+    const email = String(e || "").trim().toLowerCase();
+    const rec = EMAIL_RE.test(email) ? await getSub(env, email) : null;
+    if (rec && !isConfirmed(rec)) await putSub(env, email, { ...rec, confirm_sent_at: now });
+  }
+  return new Response(null, { status: 204 });
 }
 
 export default {
@@ -135,8 +135,10 @@ export default {
     }
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
     if (method === "POST" && url.pathname === "/subscribe") return subscribe(request, env);
-    if ((method === "GET" || method === "POST") && url.pathname === "/unsubscribe") return unsubscribe(url, env);
-    if (method === "GET" && url.pathname === "/list") return list(request, env);
+    if (method === "GET" && url.pathname === "/confirm") return confirm(url, env);
+    if ((method === "GET" || method === "POST") && url.pathname === "/unsubscribe") return unsubscribe(request, url, env);
+    if (method === "GET" && url.pathname === "/list") return list(request, env, url);
+    if (method === "POST" && url.pathname === "/list/confirm-sent") return confirmSent(request, env);
     return new Response("not found", { status: 404 });
   },
 };

@@ -1,6 +1,7 @@
 /**
  * Helpers shared by worker.js (newsletter routes + router) and the paywall
- * modules (api.js, auth.js, membership.js). No state, no bindings.
+ * modules (api.js, auth.js, membership.js). No bindings; the only state is
+ * the per-isolate memory at the bottom.
  */
 
 export const DEFAULT_ORIGINS =
@@ -41,20 +42,6 @@ export async function readJson(request) {
   } catch (e) { return {}; }
 }
 
-// Light abuse control: a KV counter per client IP per clock hour, keyed
-// rl:[<bucket>:]<ip>:<hour>. KV is eventually consistent, so the count is
-// approximate; fine against spam. Counters expire after two hours.
-export function rateKey(request, bucket = "") {
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  return ["rl", ...(bucket ? [bucket] : []), ip, Math.floor(Date.now() / 3600000)].join(":");
-}
-
-export async function overLimit(env, key, max) {
-  const n = Number(await env.SUBS.get(key)) + 1;
-  await env.SUBS.put(key, String(n), { expirationTtl: 7200 });
-  return n > max;
-}
-
 // base64url without padding, as JWTs and the session token use it.
 export function b64url(bytes) {
   let s = "";
@@ -65,4 +52,40 @@ export function b64url(bytes) {
 export function unb64url(str) { // throws on malformed input
   const s = String(str).replace(/-/g, "+").replace(/_/g, "/");
   return Uint8Array.from(atob(s + "=".repeat((4 - (s.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+
+// ------------------------------------------------------- isolate memory
+// Best-effort state that must not cost KV writes (the Free plan allows 1,000
+// a day): abuse counters and the membership cache. An isolate recycles
+// whenever Cloudflare likes, which only means a fresh counter or one more
+// Stripe call; KV holds only accounts, subscribers, deals:full and the JWKS.
+
+const memory = new Map(); // key -> {value, expires_at}
+const MEMORY_SWEEP_AT = 10000;
+
+export function memGet(key) {
+  const hit = memory.get(key);
+  if (!hit) return undefined;
+  if (hit.expires_at <= Date.now()) { memory.delete(key); return undefined; }
+  return hit.value;
+}
+
+export function memSet(key, value, ttlMs) {
+  if (memory.size >= MEMORY_SWEEP_AT) {
+    for (const [k, v] of memory) if (v.expires_at <= Date.now()) memory.delete(k);
+  }
+  memory.set(key, { value, expires_at: Date.now() + ttlMs });
+}
+
+export function memDel(key) { memory.delete(key); }
+export function memClear() { memory.clear(); } // tests only
+
+// Light abuse control: a counter per client IP per clock hour and bucket.
+// Per isolate, so the count is approximate; fine against spam.
+export function overLimit(request, bucket, max) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const key = `rl:${bucket}:${ip}:${Math.floor(Date.now() / 3600000)}`;
+  const n = (memGet(key) || 0) + 1;
+  memSet(key, n, 7200000);
+  return n > max;
 }

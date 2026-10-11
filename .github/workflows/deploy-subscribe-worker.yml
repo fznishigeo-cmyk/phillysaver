@@ -105,7 +105,9 @@ jobs:
               if (name === "TRIAL_DAYS" && !/^\d+$/.test(value)) throw new Error("trial_days must be a whole number");
               const re = new RegExp("^" + name + " = .*$", "m");
               if (!re.test(toml)) throw new Error(name + " is missing from wrangler.toml [vars]");
-              toml = toml.replace(re, name + " = " + JSON.stringify(value));
+              // A function replacer: "$&", "$1" and friends inside a value go in
+              // verbatim instead of being read as replacement patterns.
+              toml = toml.replace(re, () => name + " = " + JSON.stringify(value));
               console.log("set " + name + " from the workflow input");
             }
             fs.writeFileSync("wrangler.deploy.toml", toml);'

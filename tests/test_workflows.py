@@ -413,6 +413,17 @@ r = await call("GET", "/list");
 out.list_unauth = r.status;
 r = await call("GET", "/list", { headers: { "Authorization": "Bearer wrong" } });
 out.list_wrong = r.status;
+// Double opt-in: new addresses are pending until their confirm link is
+// clicked; /list carries confirmed addresses only, ?pending=1 the rest.
+r = await call("GET", "/list", { headers: { "Authorization": "Bearer s3cret" } });
+out.list_before_confirm = (await r.json()).emails.length;
+r = await call("GET", "/list?pending=1", { headers: { "Authorization": "Bearer s3cret" } });
+out.pending = { status: r.status, emails: (await r.json()).emails.map((e) => e.email) };
+for (const k of out.stored_keys) {
+  const rec = JSON.parse(await env.SUBS.get(k));
+  r = await call("GET", "/confirm?e=" + k.slice(4) + "&t=" + rec.token);
+  out.confirm = { status: r.status, confirmed: JSON.parse(await env.SUBS.get(k)).confirmed };
+}
 r = await call("GET", "/list", { headers: { "Authorization": "Bearer s3cret" } });
 out.list = { status: r.status, body: await r.json() };
 
@@ -420,6 +431,9 @@ const tok = first.token;
 r = await call("GET", "/unsubscribe?e=you@example.com&t=badtoken");
 out.unsub_wrong = { status: r.status, kept: !!(await env.SUBS.get("sub:you@example.com")) };
 r = await call("GET", "/unsubscribe?e=You@example.com&t=" + tok);
+out.unsub_page = { status: r.status, text: await r.text(), kept: !!(await env.SUBS.get("sub:you@example.com")) };
+r = await call("POST", "/unsubscribe?e=You@example.com&t=" + tok, { body: "List-Unsubscribe=One-Click",
+               headers: { "Content-Type": "application/x-www-form-urlencoded" } });
 out.unsub_ok = { status: r.status, text: await r.text(), gone: !(await env.SUBS.get("sub:you@example.com")) };
 r = await call("POST", "/unsubscribe?e=you@example.com&t=" + tok, { body: "List-Unsubscribe=One-Click",
                headers: { "Content-Type": "application/x-www-form-urlencoded" } });
@@ -451,6 +465,9 @@ def run_worker_harness(tmp_path: Path) -> dict:
     shutil.copyfile(WORKER_DIR / "worker.js", tmp_path / "worker.mjs")
     for mod in WORKER_DIR.glob("*.js"):  # the ES modules worker.js imports
         shutil.copyfile(mod, tmp_path / mod.name)
+    # The .js modules are ES modules on every supported node only when the
+    # nearest package.json says so.
+    (tmp_path / "package.json").write_text('{"type": "module"}\n')
     (tmp_path / "harness.mjs").write_text(WORKER_HARNESS)
     res = subprocess.run(["node", "harness.mjs"], cwd=tmp_path,
                          capture_output=True, text=True, timeout=60)
@@ -495,16 +512,24 @@ def test_worker_behaviour(tmp_path: Path) -> None:
     assert out["json_invalid"] == {"status": 400, "body": {"ok": False, "error": "invalid email"}}
     assert out["foreign_origin_cors"] is None
     assert out["stored_keys"] == ["sub:second@example.com", "sub:x@y.com", "sub:you@example.com"]
-    # GET /list: bearer secret only; emails + tokens, nothing else.
+    # GET /list: bearer secret only; confirmed emails + tokens, nothing else.
+    # New addresses are pending (?pending=1) until GET /confirm?e=&t=.
     assert out["list_unauth"] == 401 and out["list_wrong"] == 401
+    assert out["list_before_confirm"] == 0
+    assert out["pending"] == {"status": 200,
+                              "emails": ["second@example.com", "x@y.com", "you@example.com"]}
+    assert out["confirm"] == {"status": 200, "confirmed": True}
     assert out["list"]["status"] == 200
     rows = out["list"]["body"]["emails"]
     assert [r["email"] for r in rows] == ["second@example.com", "x@y.com", "you@example.com"]
     assert all(set(r) == {"email", "token"} and re.fullmatch(r"[0-9a-f]{32}", r["token"])
                for r in rows)
-    # /unsubscribe: wrong token keeps the record (403); right token deletes
-    # (200 HTML); a second click (one-click POST) is still a 200.
+    # /unsubscribe: wrong token keeps the record (403); GET with the right
+    # token shows a page with one POST button and keeps it; POST (the button
+    # or the RFC 8058 one-click form) deletes (200 HTML); twice is still 200.
     assert out["unsub_wrong"] == {"status": 403, "kept": True}
+    assert out["unsub_page"]["status"] == 200 and out["unsub_page"]["kept"] is True
+    assert 'method="post"' in out["unsub_page"]["text"]
     assert out["unsub_ok"]["status"] == 200 and out["unsub_ok"]["gone"] is True
     assert "You're unsubscribed" in out["unsub_ok"]["text"]
     assert out["unsub_again"] == 200

@@ -1,23 +1,40 @@
 /**
  * Accounts, sessions and Google sign-in for the paywall (docs/paywall.md).
  *
- *   acct:<email>  {email, salt, hash, created_at, trial_ends_at, google_sub}
- *                 salt/hash are base64url; both null for a Google-only account
+ *   acct:<email>  {email, scheme, iterations, salt, hash, created_at, trial_ends_at,
+ *                  google_sub, email_verified, stripe_customer, claimed_at}
+ *                 scheme/iterations/salt/hash are null for a Google-only account
  *   jwks:google   Google's signing keys, cached one hour (also in memory)
  *
  * A session is a stateless token base64url(json).base64url(hmac-sha256) of
  * {email, exp} (30 days) signed with SESSION_SECRET; nothing is stored.
- * Passwords are PBKDF2-SHA256, 100 000 iterations, 16-byte random salt.
+ *
+ * Passwords, scheme 2: HMAC-SHA256(SESSION_SECRET, password) (a server-side
+ * pepper, so KV hashes alone cannot be brute-forced), then PBKDF2-SHA256 over
+ * that with a 16-byte random salt and PBKDF2_ITERATIONS rounds (default
+ * 20,000: ~3 ms CPU, inside the Workers Free plan's 10 ms). Scheme 1 (accounts
+ * written before the pepper) ran PBKDF2 on the bare password, 100,000 rounds;
+ * each account stores its own params, is verified with them, and is re-hashed
+ * with the current ones after a good login. Rotating SESSION_SECRET therefore
+ * invalidates every scheme-2 password as well as every session.
+ *
+ * email_verified is true for an account created or taken over by Google
+ * sign-in, or whose Stripe claim carried the same email; false for a password
+ * sign-up (anyone can type an address). Membership by Stripe email lookup is
+ * only granted to verified accounts (membership.js).
  */
 
 import { EMAIL_RE, b64url, unb64url, safeEqual } from "./util.js";
 
 const SESSION_DAYS = 30;
-const PBKDF2_ITERATIONS = 100000;
+const SCHEME = 2;
+const DEFAULT_ITERATIONS = 20000;
+const LEGACY_ITERATIONS = 100000; // scheme 1
 const DEFAULT_TRIAL_DAYS = 7;
 const GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
 const GOOGLE_ISSUERS = ["accounts.google.com", "https://accounts.google.com"];
 const JWKS_TTL_MS = 3600 * 1000;
+const JWKS_REFETCH_EVERY_MS = 60 * 1000;
 const DUMMY_SALT = new Uint8Array(16); // keeps a miss as slow as a wrong password
 
 const enc = new TextEncoder();
@@ -55,14 +72,51 @@ export async function sessionFromRequest(request, env) {
   return auth.startsWith("Bearer ") ? verifySession(env, auth.slice(7).trim()) : null;
 }
 
-// ------------------------------------------------------------- accounts
+// ------------------------------------------------------------ passwords
 
-export async function hashPassword(password, salt) {
-  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations: PBKDF2_ITERATIONS }, key, 256);
-  return b64url(bits);
+export function iterations(env) {
+  const n = Number.parseInt(env.PBKDF2_ITERATIONS, 10);
+  return Number.isFinite(n) && n >= 1000 ? n : DEFAULT_ITERATIONS;
 }
+
+async function deriveHash(env, password, { scheme, iterations: rounds, salt }) {
+  let material = enc.encode(password);
+  if (scheme === SCHEME) material = await crypto.subtle.sign("HMAC", await hmacKey(env.SESSION_SECRET), material);
+  const key = await crypto.subtle.importKey("raw", material, "PBKDF2", false, ["deriveBits"]);
+  return b64url(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: rounds }, key, 256));
+}
+
+// Sets (or replaces) the account's password with the current scheme.
+export async function setPassword(env, acct, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  acct.scheme = SCHEME;
+  acct.iterations = iterations(env);
+  acct.salt = b64url(salt);
+  acct.hash = await deriveHash(env, password, { scheme: SCHEME, iterations: acct.iterations, salt });
+}
+
+// The params a stored hash was made with; null when the account has none.
+function storedParams(acct) {
+  if (!acct || !acct.hash || !acct.salt) return null;
+  try {
+    return { scheme: acct.scheme || 1, iterations: acct.iterations || LEGACY_ITERATIONS, salt: unb64url(acct.salt) };
+  } catch (e) { return null; } // malformed salt: never matches
+}
+
+// Always derives a hash, so an unknown address, a Google-only account and a
+// wrong password all take the same time and give the same answer.
+export async function checkPassword(env, acct, password) {
+  const params = storedParams(acct);
+  const got = await deriveHash(env, password, params || { scheme: SCHEME, iterations: iterations(env), salt: DUMMY_SALT });
+  return !!params && safeEqual(got, acct.hash);
+}
+
+// After a good login: the hash predates the current scheme or round count.
+export function needsRehash(env, acct) {
+  return acct.scheme !== SCHEME || acct.iterations !== iterations(env);
+}
+
+// ------------------------------------------------------------- accounts
 
 export async function getAccount(env, email) {
   const raw = await env.SUBS.get(`acct:${email}`);
@@ -78,32 +132,33 @@ function trialDays(env) {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_TRIAL_DAYS;
 }
 
-// The trial starts now, whichever way the account is created.
-export async function createAccount(env, email, { password, googleSub } = {}) {
+// A fresh account, not yet saved (the caller signs the session first, so a
+// signing failure leaves nothing behind). The trial starts now either way.
+export function newAccount(env, email, { googleSub } = {}) {
   const now = Date.now();
-  const acct = { email, salt: null, hash: null, created_at: new Date(now).toISOString(),
-                 trial_ends_at: new Date(now + trialDays(env) * 86400000).toISOString(),
-                 google_sub: googleSub || null };
-  if (password) {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    acct.salt = b64url(salt);
-    acct.hash = await hashPassword(password, salt);
-  }
-  await saveAccount(env, acct);
-  return acct;
+  return { email, scheme: null, iterations: null, salt: null, hash: null,
+           created_at: new Date(now).toISOString(),
+           trial_ends_at: new Date(now + trialDays(env) * 86400000).toISOString(),
+           google_sub: googleSub || null, email_verified: !!googleSub, stripe_customer: null, claimed_at: null };
 }
 
-// Always derives a hash, so an unknown address, a Google-only account and a
-// wrong password all take the same time and give the same answer.
-export async function checkPassword(acct, password) {
-  const salt = acct && acct.salt ? unb64url(acct.salt) : DUMMY_SALT;
-  const got = await hashPassword(password, salt);
-  return !!(acct && acct.hash) && safeEqual(got, acct.hash);
+// Accounts written before email_verified existed count as verified only when
+// Google alone could have created them (a google_sub and no password).
+export function isVerified(acct) {
+  if (acct.email_verified !== undefined) return acct.email_verified === true;
+  return !!acct.google_sub && !acct.hash;
+}
+
+// A verified Google sign-in takes over an unverified (password) account on the
+// same address: whoever typed that address at sign-up does not own it.
+export function takeOver(acct, googleSub) {
+  Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null });
 }
 
 // --------------------------------------------------------------- google
 
 let jwksMemo = null; // {keys, fetched_at} for this isolate
+let jwksRefetchedAt = 0; // a forced refetch (unknown kid) at most once a minute per isolate
 
 async function googleKeys(env, refresh = false) {
   const now = Date.now();
@@ -116,6 +171,9 @@ async function googleKeys(env, refresh = false) {
         return cached.keys;
       }
     } catch (e) { /* no usable cache: fetch */ }
+  } else {
+    if (now - jwksRefetchedAt < JWKS_REFETCH_EVERY_MS) return jwksMemo ? jwksMemo.keys : [];
+    jwksRefetchedAt = now;
   }
   const res = await fetch(GOOGLE_JWKS_URL);
   if (!res.ok) throw new Error(`jwks fetch ${res.status}`);
@@ -138,8 +196,9 @@ function jwtPart(s) {
   try { return JSON.parse(dec.decode(unb64url(s))); } catch (e) { return null; }
 }
 
-// Verifies a Google ID token (RS256 against Google's JWKS, aud, iss, exp,
-// verified email). {email, sub} when good, null otherwise; never throws.
+// Verifies a Google ID token: the claims first (aud, iss, exp, verified
+// email: no network for junk), then RS256 against Google's JWKS. {email, sub}
+// when good, null otherwise; never throws.
 export async function verifyGoogleToken(env, credential) {
   if (!env.GOOGLE_CLIENT_ID || typeof credential !== "string") return null;
   const parts = credential.split(".");
@@ -149,6 +208,11 @@ export async function verifyGoogleToken(env, credential) {
   let signature;
   try { signature = unb64url(parts[2]); } catch (e) { return null; }
   if (!header || !claims || header.alg !== "RS256" || typeof header.kid !== "string") return null;
+  if (claims.aud !== env.GOOGLE_CLIENT_ID || !GOOGLE_ISSUERS.includes(claims.iss)) return null;
+  if (!(claims.exp > Date.now() / 1000)) return null;
+  if (claims.email_verified !== true && claims.email_verified !== "true") return null;
+  const email = String(claims.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email) || email.length > 254 || typeof claims.sub !== "string") return null;
   try {
     let jwk = (await googleKeys(env)).find((k) => k.kid === header.kid);
     if (!jwk) jwk = (await googleKeys(env, true)).find((k) => k.kid === header.kid); // keys rotate
@@ -157,10 +221,5 @@ export async function verifyGoogleToken(env, credential) {
     console.warn("google sign-in check failed:", e && e.message); // JWKS fetch or WebCrypto, not the token
     return null;
   }
-  if (claims.aud !== env.GOOGLE_CLIENT_ID || !GOOGLE_ISSUERS.includes(claims.iss)) return null;
-  if (!(claims.exp > Date.now() / 1000)) return null;
-  if (claims.email_verified !== true && claims.email_verified !== "true") return null;
-  const email = String(claims.email || "").trim().toLowerCase();
-  if (!EMAIL_RE.test(email) || email.length > 254 || typeof claims.sub !== "string") return null;
   return { email, sub: claims.sub };
 }

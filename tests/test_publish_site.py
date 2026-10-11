@@ -588,3 +588,34 @@ class TestOpaqueKeysAndPublishTime:
             assert len(d["key"]) == 16 and d["key"] != d["dedupe_key"]
         html = (tmp_path / "index.html").read_text(encoding="utf-8")
         assert "d.key || d.dedupe_key" in html and "m.published_at" in html
+
+class TestWelcomeClaim:
+    """welcome.html is the Payment Link's after-payment page: with
+    ?session_id= it binds the payment to the signed-in account through
+    POST /api/claim (docs/paywall.md "Claiming a payment"), or parks the id
+    in sessionStorage until the viewer signs in and comes back."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "welcome.html").read_text(encoding="utf-8")
+
+    def test_claims_through_the_worker_from_meta(self, html):
+        assert html.startswith("<!doctype html>")
+        assert "<script src=" not in html and "<link" not in html
+        assert '"session_id"' in html and "/api/claim" in html
+        assert '"wp.session"' in html and "Bearer " in html
+        assert "api_url" in html and "workers.dev" not in html
+        assert "Membership activated" in html
+
+    def test_signed_out_keeps_the_receipt_and_points_at_sign_in(self, html):
+        assert "sessionStorage" in html and '"wp.claim"' in html
+        assert "Create your account (or log in) to attach this membership" in html
+        assert 'href=\\"./#login\\"' in html  # inside a JS string literal
+        assert "portal_url" in html  # the billing-portal line is unchanged
+
+    def test_every_claim_error_code_has_copy(self, html):
+        for code in ("bad_session", "unknown_session", "stripe_unavailable",
+                     "signin_unavailable", "rate_limited", "unauthorized"):
+            assert f"{code}:" in html, code

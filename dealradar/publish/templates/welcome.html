@@ -7,10 +7,10 @@
 <style>
 :root{ color-scheme: light dark;
   --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
-  --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4; }
+  --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4; --warn:#b45309; }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
-         --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff; } }
+         --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff; --warn:#fbbf24; } }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -24,12 +24,16 @@ p{margin:0 0 14px}
 .btn{display:inline-block;background:var(--accent);color:var(--accent-fg);font-weight:700;
      padding:10px 16px;border-radius:10px;text-decoration:none;margin-top:6px}
 .muted{color:var(--muted);font-size:14px}
+.claim{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;
+       padding:12px 14px;margin:0 0 16px}
+.claim.err{border-left-color:var(--warn)}
 </style>
 </head>
 <body>
 <div class="wrap"><div class="card">
   <p class="brand">wowpriced<span class="dot">●</span></p>
   <h1>You're in 🎉</h1>
+  <div class="claim" id="claim" hidden></div>
   <p>Every new verified deal — up to 90% off, fake "list prices" removed, prices
      re-checked live — lands in your inbox as one bundled email, at most once an
      hour, only when there is something new.</p>
@@ -42,15 +46,72 @@ p{margin:0 0 14px}
 </div></div>
 <script>
 "use strict";
-fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
-  .then(function (r) { return r.json(); })
-  .then(function (d) {
-    var url = d && d.meta && d.meta.portal_url;
-    if (url) {
-      document.getElementById("portallink").href = url;
-      document.getElementById("portal").style.display = "";
-    }
-  }).catch(function () {});
+// Stripe's Payment Link sends the payer here with ?session_id={CHECKOUT_SESSION_ID}
+// (docs/paywall.md). Signed in: POST /api/claim binds that payment to the
+// account. Signed out: the id waits in sessionStorage until they sign in on
+// the home page and come back, so the receipt is never lost.
+(function () {
+  var box = document.getElementById("claim");
+  var CLAIM_KEY = "wp.claim", SESSION_KEY = "wp.session";
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* blocked */ } }
+  function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) { /* blocked */ } }
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function show(html, isErr) { box.innerHTML = html; box.className = "claim" + (isErr ? " err" : ""); box.hidden = false; }
+  function text(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  var fromUrl = new URLSearchParams(location.search).get("session_id") || "";
+  if (fromUrl) ssSet(CLAIM_KEY, fromUrl);
+  var sid = fromUrl || ssGet(CLAIM_KEY) || "";
+  var token = lsGet(SESSION_KEY) || "";
+
+  var ERRORS = {
+    bad_session: "That payment isn't a completed membership checkout, so there is nothing to attach.",
+    unknown_session: "Stripe doesn't recognise that payment. Open this page from the link Stripe sent you after paying.",
+    stripe_unavailable: "Stripe could not be reached just now. Reload this page in a minute to try again.",
+    signin_unavailable: "Sign-in is being set up on our side. Reload this page in a few minutes.",
+    rate_limited: "Too many attempts from your network. Try again in an hour.",
+    unauthorized: "Your sign-in expired. Log in again on the home page, then come back here."
+  };
+
+  function claim(apiUrl) {
+    show("Attaching your membership to <b>this account</b>…");
+    fetch(apiUrl + "/api/claim", {
+      method: "POST", cache: "no-store",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      body: JSON.stringify({ session_id: sid })
+    }).then(function (r) { return r.json().then(function (j) { return { status: r.status, json: j || {} }; }); })
+      .then(function (res) {
+        if (res.status === 200 && res.json.me) {
+          ssDel(CLAIM_KEY);
+          show("<b>Membership activated</b> for " + text(res.json.me.email) +
+               ". Every deal on the wall is yours now. <a href=\"./\">Open the deal wall</a>.");
+          return;
+        }
+        if (res.status === 401) { try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* blocked */ } }
+        var code = res.json.error || ("http_" + res.status);
+        if (code === "bad_session" || code === "unknown_session") ssDel(CLAIM_KEY);
+        show("<b>Couldn't attach this membership.</b> " + (ERRORS[code] || ("Error: " + text(code) + ".")), true);
+      })
+      .catch(function () { show("<b>Couldn't attach this membership.</b> " + ERRORS.stripe_unavailable, true); });
+  }
+
+  fetch("deals.json?t=" + Date.now(), { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var meta = (d && d.meta) || {};
+      if (meta.portal_url) {
+        document.getElementById("portallink").href = meta.portal_url;
+        document.getElementById("portal").style.display = "";
+      }
+      if (!sid || !meta.api_url) return;
+      var apiUrl = String(meta.api_url).replace(/\/+$/, "");
+      if (token) claim(apiUrl);
+      else show("<b>Create your account (or log in) to attach this membership.</b> " +
+                "Use <a href=\"./#login\">Log in</a> at the top of the home page (sign up free if you don't have an account yet), " +
+                "then come back to this page: your payment is remembered on this device until then.");
+    }).catch(function () {});
+})();
 </script>
 </body>
 </html>

@@ -18,6 +18,10 @@ GOOGLE_CLIENT_ID = ""       # OAuth Web client ID; Google sign-in is off when em
 STRIPE_PAYMENT_LINK = ""    # the $9.99/mo Payment Link; me.subscribe_url is "" when empty
 STRIPE_PORTAL_LINK = ""     # customer-portal link; me.portal_url is "" when empty
 TRIAL_DAYS = "7"            # free full access after sign-up, in days
+# PBKDF2 rounds for new password hashes (auth.js scheme 2). 20,000 is ~3 ms of
+# CPU, inside the Free plan's 10 ms per request; raise it on Workers Paid.
+# Older hashes are re-made with the current count at the next login.
+PBKDF2_ITERATIONS = "20000"
 
 [[kv_namespaces]]
 binding = "SUBS"
