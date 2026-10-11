@@ -312,6 +312,29 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             (out / name).write_text(html.replace("{{CONTACT_EMAIL}}", email),
                                     encoding="utf-8")
 
+    # Search engines: canonical/og URLs on every page ({{SITE_URL}}), plus
+    # robots.txt and sitemap.xml for the public pages (welcome.html is
+    # noindex: it is the after-checkout page).
+    domain = getattr(cfg, "custom_domain", "") or ""
+    site_url = f"https://{domain}" if domain else ""
+    for name in pages:
+        html = (out / name).read_text(encoding="utf-8")
+        if "{{SITE_URL}}" in html:
+            (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
+    public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
+              "contact.html", "careers.html"]
+    if site_url:
+        day = now.strftime("%Y-%m-%d")
+        urls = "".join(f"  <url><loc>{site_url}/{p}</loc><lastmod>{day}</lastmod></url>\n"
+                       for p in public)
+        (out / "sitemap.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{urls}</urlset>\n", encoding="utf-8")
+    (out / "robots.txt").write_text(
+        "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
+        + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
+
     # GitHub Pages keeps a custom domain only while the deployed site
     # carries this file; every run redeploys, so every run writes it.
     if getattr(cfg, "custom_domain", ""):

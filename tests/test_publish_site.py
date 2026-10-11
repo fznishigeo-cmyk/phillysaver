@@ -182,7 +182,7 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     assert "prefers-color-scheme" in html
     # Self-contained: no external scripts/stylesheets.
     assert "<script src=" not in html
-    assert "<link" not in html
+    assert 'rel="stylesheet"' not in html
 
 
 def test_custom_domain_writes_cname_every_render(db, cfg, tmp_path):
@@ -213,7 +213,7 @@ def test_membership_links_reach_page_meta_and_welcome_page(db, cfg, tmp_path):
     assert 'id="subscribe"' in html and "m.subscribe_url" not in html
     welcome = (out / "welcome.html").read_text(encoding="utf-8")
     assert welcome.startswith("<!doctype html>")
-    assert "<script src=" not in welcome and "<link" not in welcome
+    assert "<script src=" not in welcome and 'rel="stylesheet"' not in welcome
 
 
 def test_source_health_is_private_and_reaches_the_run_summary(db, cfg, tmp_path):
@@ -333,7 +333,7 @@ class TestContentPages:
             assert html.startswith("<!doctype html>"), name
             assert "<title>" in html and 'name="description"' in html, name
             assert "prefers-color-scheme" in html, name
-            assert "<script src=" not in html and "<link" not in html, name
+            assert "<script src=" not in html and 'rel="stylesheet"' not in html, name
             # Footer links every content page, Home, and the Subscribe button.
             for other in self.PAGES:
                 assert f'href="{other}"' in html, (name, other)
@@ -484,7 +484,7 @@ class TestNoDailyEmail:
         assert '"./#signup"' in html and "Start 7-day free trial" in html
         assert "unsubscribed=1" in html and "You're unsubscribed" in html
         assert "subscribe_url" not in html and 'href="./"' in html
-        assert "<script src=" not in html and "<link" not in html
+        assert "<script src=" not in html and 'rel="stylesheet"' not in html
 
     def test_home_page_has_no_email_form(self, db, cfg, tmp_path):
         render_site(db, cfg, NOW, out_dir=tmp_path)
@@ -619,7 +619,7 @@ class TestWelcomeClaim:
 
     def test_claims_through_the_worker_from_meta(self, html):
         assert html.startswith("<!doctype html>")
-        assert "<script src=" not in html and "<link" not in html
+        assert "<script src=" not in html and 'rel="stylesheet"' not in html
         assert '"session_id"' in html and "/api/claim" in html
         assert '"wp.session"' in html and "Bearer " in html
         assert "api_url" in html and "workers.dev" not in html
@@ -1195,3 +1195,25 @@ def test_source_sites_meta_folds_subdomains_and_ranks(db, cfg, tmp_path):
     render_site(db, cfg, NOW, out_dir=out, deals=deals + [dead])
     meta = json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
     assert meta["source_sites"] == ["woot.com", "hip2save.com", "slickdeals.net"]
+
+
+def test_search_engines_get_a_sitemap_robots_and_canonical_urls(db, cfg, tmp_path):
+    """Operator: "how do i get my website to start showing up in google
+    searches?" The site tells search engines what it is and where its pages
+    are; the after-checkout page is never indexed."""
+    cfg.custom_domain = "wowpriced.com"
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    index = (out / "index.html").read_text(encoding="utf-8")
+    assert '<link rel="canonical" href="https://wowpriced.com/">' in index
+    assert '<meta name="description"' in index and 'property="og:title"' in index
+    assert '"@type":"WebSite"' in index and "{{SITE_URL}}" not in index
+    for name in ("about.html", "how-it-works.html", "subscribe.html", "contact.html"):
+        page = (out / name).read_text(encoding="utf-8")
+        assert f'<link rel="canonical" href="https://wowpriced.com/{name}">' in page, name
+    assert '<meta name="robots" content="noindex">' in (out / "welcome.html").read_text(encoding="utf-8")
+    sitemap = (out / "sitemap.xml").read_text(encoding="utf-8")
+    assert "<loc>https://wowpriced.com/</loc>" in sitemap and "welcome.html" not in sitemap
+    robots = (out / "robots.txt").read_text(encoding="utf-8")
+    assert "Sitemap: https://wowpriced.com/sitemap.xml" in robots
+    assert "Disallow: /welcome.html" in robots
