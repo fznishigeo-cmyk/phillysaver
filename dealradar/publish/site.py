@@ -15,6 +15,7 @@ from typing import Any
 
 from ..config import redact_secrets
 from ..util import iso, parse_iso
+from .paywall import split_teaser
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -152,30 +153,39 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     out.mkdir(parents=True, exist_ok=True)
 
     serialized = [_serialize_deal(d, now) for d in deals]
-    deals_doc = {
-        "meta": {
-            "generated_at": iso(now),
-            "last_run": last_run or {},
-            "cadence_minutes": _CADENCE_MINUTES.get(
-                (last_run or {}).get("kind", ""), _CADENCE_MINUTES["fast"]),
-            "disclosure": cfg.ftc_disclosure,
-            "count": len(serialized),
-            # Membership links (empty until the operator pastes them in
-            # config.yaml); the page hides the Subscribe button when empty.
-            "subscribe_url": getattr(cfg, "subscribe_url", "") or "",
-            "portal_url": getattr(cfg, "portal_url", "") or "",
-            "floors": {
-                "min_pct": cfg.min_pct,
-                "min_abs_savings": cfg.min_abs_savings,
-                "site_show_from_pct": min(
-                    cfg.min_pct,
-                    getattr(cfg, "site_show_from_pct", cfg.min_pct)),
-            },
+    # The public file is a teaser when the paywall is on: the top deals in
+    # full, the rest as locked stubs (docs/paywall.md). The full payload is
+    # returned for the member upload and never written to the site.
+    teaser, locked_count = split_teaser(serialized, cfg)
+    meta = {
+        "generated_at": iso(now),
+        "last_run": last_run or {},
+        "cadence_minutes": _CADENCE_MINUTES.get(
+            (last_run or {}).get("kind", ""), _CADENCE_MINUTES["fast"]),
+        "disclosure": cfg.ftc_disclosure,
+        "count": len(serialized),
+        # Membership links (empty until the operator pastes them in
+        # config.yaml); the page hides the Subscribe button when empty.
+        "subscribe_url": getattr(cfg, "subscribe_url", "") or "",
+        "portal_url": getattr(cfg, "portal_url", "") or "",
+        "floors": {
+            "min_pct": cfg.min_pct,
+            "min_abs_savings": cfg.min_abs_savings,
+            "site_show_from_pct": min(
+                cfg.min_pct,
+                getattr(cfg, "site_show_from_pct", cfg.min_pct)),
         },
-        "deals": serialized,
+        # Paywall: the page draws the locked cards and the auth modal
+        # from these; api_url empty = no paywall UI at all.
+        "api_url": getattr(cfg, "paywall_api_url", "") or "",
+        "google_client_id": getattr(cfg, "paywall_google_client_id", "") or "",
+        "teaser_count": int(getattr(cfg, "paywall_teaser_count", 8)),
+        "locked_count": locked_count,
+        "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
     }
+    full_doc = {"meta": meta, "deals": serialized}
     (out / "deals.json").write_text(
-        json.dumps(deals_doc, indent=2), encoding="utf-8"
+        json.dumps({"meta": meta, "deals": teaser}, indent=2), encoding="utf-8"
     )
 
     sources = []
@@ -216,5 +226,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
 
-    logger.info("site rendered: %d deals -> %s", len(serialized), out)
-    return {"published": len(serialized), "out_dir": str(out)}
+    logger.info("site rendered: %d deals (%d locked) -> %s",
+                len(serialized), locked_count, out)
+    return {"published": len(serialized), "out_dir": str(out),
+            "full_payload": full_doc}

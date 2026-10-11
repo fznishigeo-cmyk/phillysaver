@@ -600,6 +600,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.admin_alerts import check_and_alert
     from .publish.email_digest import maybe_send_digest
     from .publish.members import send_member_alerts
+    from .publish.paywall import publish_full
     from .publish.site import render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
@@ -744,6 +745,14 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "parser_model": pstats.get("parser", ""),
         })
         summary["published"] = site_res.get("published", 0)
+        # The site got the teaser; members get the full payload through the
+        # Worker. A failed upload is a warning, never a failed run.
+        try:
+            summary["paywall_publish"] = publish_full(
+                site_res.get("full_payload") or {}, cfg)
+        except Exception as e:
+            log.warning("paywall publish failed: %s", e)
+            summary["paywall_publish"] = False
         tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram,
                          deadline=deadline)
         summary["telegram"] = tg

@@ -23,6 +23,7 @@ SECRET_NAMES = [
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
+    "NEWSLETTER_SECRET",  # paywall: authorizes the full-payload upload
 ]
 
 
@@ -125,6 +126,13 @@ class AppConfig:
     portal_url: str = ""               # Stripe customer portal (manage / cancel)
     members_email_every_minutes: int = 60  # one bundled email per window, max
 
+    # -- paywall: visitors see the top N deals, members the full payload --
+    paywall_enabled: bool = True
+    paywall_teaser_count: int = 8      # unlocked deals on the public site
+    paywall_trial_days: int = 7
+    paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
+    paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
+
     # -- retention / flags --
     posts_seen_days: int = 30
     deals_days: int = 14
@@ -211,6 +219,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.portal_url = str(g("members", "portal_url", default="") or "").strip()
     cfg.members_email_every_minutes = max(10, int(g("members", "email_every_minutes",
                                                      default=cfg.members_email_every_minutes)))
+
+    cfg.paywall_enabled = bool(g("paywall", "enabled", default=cfg.paywall_enabled))
+    cfg.paywall_teaser_count = max(0, int(g("paywall", "teaser_count",
+                                            default=cfg.paywall_teaser_count)))
+    cfg.paywall_trial_days = max(0, int(g("paywall", "trial_days",
+                                          default=cfg.paywall_trial_days)))
+    cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")
+    cfg.paywall_google_client_id = str(g("paywall", "google_client_id", default="") or "").strip()
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))

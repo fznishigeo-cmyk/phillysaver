@@ -102,6 +102,17 @@ members:
   portal_url: ""             # Stripe customer-portal link (manage / cancel), shown on the welcome page
   email_every_minutes: 60    # at most one member email per hour; new deals queue for the next one
 
+paywall:
+  # Visitors see the top teaser_count deals in full; every other live deal
+  # is a locked stub on the public site. The full payload is POSTed to the
+  # Worker at api_url each render (NEWSLETTER_SECRET secret) and served to
+  # members only. See docs/paywall.md.
+  enabled: true
+  teaser_count: 8          # unlocked deals for visitors
+  trial_days: 7
+  api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
+  google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
+
 digest:
   hour_local: 8                # 08:00 America/New_York
   timezone: "America/New_York"

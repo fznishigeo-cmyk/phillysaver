@@ -72,6 +72,7 @@ jobs:
           KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
           THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          NEWSLETTER_SECRET: ${{ secrets.NEWSLETTER_SECRET }}
         run: python -m dealradar run --fast-lane
 
       - name: Commit state to data branch

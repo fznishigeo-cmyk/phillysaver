@@ -95,7 +95,7 @@ def test_render_site_writes_all_four_files(db, cfg, tmp_path):
                                     verify_tier="unverified")]
     result = render_site(db, cfg, NOW, out_dir=out, deals=deals,
                          last_run={"finished_at": iso(NOW)})
-    assert result == {"published": 2, "out_dir": str(out)}
+    assert result["published"] == 2 and result["out_dir"] == str(out)
     for name in ("deals.json", "health.json", "index.html", "health.html"):
         assert (out / name).exists(), name
 
@@ -365,3 +365,79 @@ class TestSiteNavigation:
         for path in tmp_path.glob("*.html"):
             text = path.read_text(encoding="utf-8")
             assert "50–90%" not in text and "50-90%" not in text, path.name
+
+
+class TestPaywallTeaser:
+    """docs/paywall.md: with the paywall on, deals.json is a teaser (top N
+    alive deals full, the rest locked stubs, dead deals unchanged) and
+    render_site hands the full payload back for the member upload."""
+
+    STUB_KEYS = {"locked", "dedupe_key", "pct_at_checkout", "store", "category",
+                 "first_seen_at", "image_url", "status", "conditions"}
+
+    @staticmethod
+    def _deals(n):
+        # Distinctive names, prices and URLs so a leak is unmistakable.
+        return [make_deal(dedupe_key=f"walmart|zz-{i}", item=f"ZZSECRET-ITEM-{i}",
+                          canonical_url=f"https://www.walmart.com/ip/zz{i}",
+                          final_price=1000.0 + i, regular_price=5000.0 + i,
+                          score=100.0 - i)
+                for i in range(n)]
+
+    def test_teaser_file_never_holds_a_locked_deals_facts(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        cfg.paywall_enabled = True
+        cfg.paywall_teaser_count = 3
+        cfg.paywall_trial_days = 7
+        cfg.paywall_api_url = "https://api.example.workers.dev"
+        cfg.paywall_google_client_id = "cid-123"
+        deals = self._deals(5) + [make_deal(dedupe_key="target|mug", item="ZZSECRET-MUG",
+                                            status="dead")]
+        res = render_site(db, cfg, NOW, out_dir=out, deals=deals)
+        text = (out / "deals.json").read_text(encoding="utf-8")
+        for i in (0, 1, 2):
+            assert f"ZZSECRET-ITEM-{i}" in text
+        for i in (3, 4):  # locked: no name, price, link or headline anywhere
+            assert f"ZZSECRET-ITEM-{i}" not in text
+            assert f"walmart.com/ip/zz{i}" not in text
+            assert f"100{i}.0" not in text and f"1,00{i}.00" not in text
+            assert f"500{i}.0" not in text
+        assert "ZZSECRET-MUG" in text  # just-missed deals stay public
+
+        doc = json.loads(text)
+        meta = doc["meta"]
+        assert meta["api_url"] == "https://api.example.workers.dev"
+        assert meta["google_client_id"] == "cid-123"
+        assert meta["teaser_count"] == 3
+        assert meta["locked_count"] == 2
+        assert meta["trial_days"] == 7
+        assert meta["count"] == 6 and len(doc["deals"]) == 6
+        for stub, i in zip(doc["deals"][3:5], (3, 4)):
+            assert set(stub) == self.STUB_KEYS
+            assert stub["locked"] is True and stub["status"] == "alive"
+            assert stub["dedupe_key"] == f"walmart|zz-{i}"
+            assert stub["store"] == "Walmart" and stub["pct_at_checkout"] == 80.0
+        dead = doc["deals"][5]
+        assert dead["status"] == "dead" and dead["item"] == "ZZSECRET-MUG"
+        assert "locked" not in dead
+
+        # The full payload: same meta, every deal complete, nothing locked.
+        full = res["full_payload"]
+        assert full["meta"] == meta
+        assert [d["item"] for d in full["deals"]] == (
+            [f"ZZSECRET-ITEM-{i}" for i in range(5)] + ["ZZSECRET-MUG"])
+        assert all("locked" not in d and d["url"] for d in full["deals"])
+        # health.json is untouched by the paywall.
+        health = json.loads((out / "health.json").read_text(encoding="utf-8"))
+        assert set(health) == {"generated_at", "sources", "last_run"}
+
+    def test_disabled_writes_the_full_payload(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        cfg.paywall_enabled = False
+        res = render_site(db, cfg, NOW, out_dir=out, deals=self._deals(10))
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert doc == res["full_payload"]
+        assert doc["meta"]["locked_count"] == 0
+        assert doc["meta"]["teaser_count"] == 8 and doc["meta"]["api_url"] == ""
+        assert len(doc["deals"]) == 10
+        assert all("locked" not in d and d["item"] for d in doc["deals"])
