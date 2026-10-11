@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from dealradar import http_client
 from dealradar.config import AppConfig
 from dealradar.db import DB
 from dealradar.errors import DeadlineExceeded
@@ -584,4 +585,37 @@ def test_resolve_redirects_deadline_applies_to_hops(tmp_path):
     with pytest.raises(DeadlineExceeded):
         resolve_redirects(fetcher, "https://short.ly/x", deadline=clock())
     assert router.requests == []
+    fetcher.close()
+
+
+def test_resolve_redirects_gives_a_rate_limited_store_one_quick_try(tmp_path):
+    """Live wart: a store answering 429 with Retry-After 30 was retried 3x,
+    90 s per link, and slow stores ate 5.5 minutes of a 12-minute run.
+    Resolution is best effort: one try per hop, a short timeout, no backoff;
+    the link as posted is kept."""
+    clock, router = FakeClock(), Router()
+    router.add("HEAD", "https://slowstore.example/p/1",
+               lambda r: httpx.Response(429, headers={"Retry-After": "30"}))
+    seen_timeouts = []
+
+    def timed(r):
+        seen_timeouts.append(r.extensions.get("timeout"))
+        return httpx.Response(301, headers={"Location": "https://slowstore.example/p/1"})
+
+    router.add("HEAD", "https://short.ly/q", timed)
+    fetcher, _, _ = make_fetcher(tmp_path, router, clock,
+                                 min_host_interval_s=0.0, max_retries=3)
+    out = resolve_redirects(fetcher, "https://short.ly/q")
+    assert out == "https://slowstore.example/p/1"
+    assert router.count("HEAD", "https://slowstore.example/p/1") == 1
+    assert clock.sleeps == []  # no backoff, no Retry-After wait
+    assert seen_timeouts and all(
+        t and t.get("read") == http_client.REDIRECT_HOP_TIMEOUT_S for t in seen_timeouts)
+    # Ordinary fetches keep their retries.
+    router.add("GET", "https://slowstore.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nAllow: /\n"))
+    router.add("GET", "https://slowstore.example/feed",
+               lambda r: httpx.Response(429))
+    fetcher.get("https://slowstore.example/feed", conditional=False)
+    assert router.count("GET", "https://slowstore.example/feed") == 3
     fetcher.close()

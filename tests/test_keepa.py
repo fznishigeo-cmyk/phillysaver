@@ -315,8 +315,8 @@ class TestKeepaAdapter:
         LLM bound), and paging stops once the cap is full: no tokens are
         spent on rows that could not be emitted."""
         monkeypatch.setenv("KEEPA_KEY", "kkey")
-        assert cfg.keepa_amazon_max_new_posts_per_pull == 10
-        assert cfg.keepa_warehouse_max_new_posts_per_pull == 20
+        cfg.keepa_amazon_max_new_posts_per_pull = 10
+        cfg.keepa_warehouse_max_new_posts_per_pull = 20
         fake = FakeKeepa(amazon=[_amazon_row(i) for i in range(1000)],
                          deep=[_wh_row(i) for i in range(1000)])
         posts = _adapter(fake, cfg).fetch_posts(SRC, None, None, cfg, NOW, None)
@@ -936,12 +936,13 @@ class TestKeepaWootConfig:
         """The release blocker: the first pulls after a deploy re-hash every
         Keepa post and select a new Woot list (~510 new posts at the old
         caps; the fast run's untimed tail then overran its 12-minute job).
-        The shipped caps admit at most 50 NEW posts per run from Keepa and
-        Woot together; the backlog arrives over the next runs."""
+        The shipped caps admit at most 80 NEW posts per run from Keepa and
+        Woot together (live: 75 posts parsed in ~80 s once link resolution
+        stopped sitting in store backoff); the backlog arrives later."""
         burst = (cfg.keepa_amazon_max_new_posts_per_pull
                  + cfg.keepa_warehouse_max_new_posts_per_pull
                  + cfg.woot_max_new_items_per_run)
-        assert burst <= 50
+        assert burst <= 80
 
 
 class TestFirstRunBurst:
@@ -955,6 +956,8 @@ class TestFirstRunBurst:
 
     def test_new_posts_are_capped_and_the_rest_arrive_on_later_pulls(
             self, cfg, tmp_path):
+        cfg.keepa_amazon_max_new_posts_per_pull = 10
+        cfg.keepa_warehouse_max_new_posts_per_pull = 20
         db = DB(tmp_path / "state.db")
         fake = FakeKeepa(amazon=[_amazon_row(i) for i in range(300)],
                          deep=[_wh_row(i, "B0DEP") for i in range(300)])

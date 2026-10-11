@@ -818,6 +818,10 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
     return stats
 
 
+#: Wall-clock budget for resolving product links in one run.
+_RESOLVE_BUDGET_S = 60.0
+
+
 def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> None:
     """Resolve redirect/affiliate chains to canonical retailer URLs (budget-aware).
 
@@ -826,10 +830,13 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     """
     from .http_client import canonicalize_url, resolve_redirects
 
+    # Best effort, bounded: past _RESOLVE_BUDGET_S the rest keep their link
+    # canonicalized as posted (live wart: three slow stores ate 5.5 min).
+    stop_at = time.monotonic() + _RESOLVE_BUDGET_S
     for _post, extracted in pairs:
         if not extracted.product_url:
             continue
-        if time.monotonic() > deadline - 30:
+        if time.monotonic() > min(deadline - 30, stop_at):
             extracted.product_url = canonicalize_url(extracted.product_url)
             continue
         try:

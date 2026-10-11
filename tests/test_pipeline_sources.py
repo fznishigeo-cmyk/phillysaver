@@ -583,3 +583,23 @@ class TestProductImageBackfill:
         assert db.get_deal("dicks")["image_url"] == \
             "https://dks.scene7.com/is/image/GolfGalaxy/X"
         db.close()
+
+
+def test_link_resolution_stops_at_its_budget(monkeypatch):
+    """Resolution is bounded per run: past the budget every remaining link
+    is canonicalized as posted, without a request."""
+    from dealradar import http_client
+    from dealradar.models import ExtractedDeal
+
+    calls = []
+    monkeypatch.setattr(http_client, "resolve_redirects",
+                        lambda fetcher, url, hops, deadline=None: calls.append(url) or url)
+    monkeypatch.setattr(pipeline, "_RESOLVE_BUDGET_S", -1.0)
+    deals = [ExtractedDeal(source_url="s", source_name="n", store="X", item=f"i{i}",
+                           product_url=f"https://short.ly/{i}?utm_source=t")
+             for i in range(3)]
+    cfg = load_config()
+    pipeline._resolve_product_urls([(None, d) for d in deals], None, cfg,
+                                   time.monotonic() + 600)
+    assert calls == []
+    assert [d.product_url for d in deals] == [f"https://short.ly/{i}" for i in range(3)]

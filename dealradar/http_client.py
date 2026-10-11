@@ -110,6 +110,10 @@ def canonicalize_url(url: str) -> str:
     )
 
 
+#: Per-request timeout for a redirect-resolution hop (best effort).
+REDIRECT_HOP_TIMEOUT_S = 6.0
+
+
 class PoliteFetcher:
     """Robots-respecting, rate-limited, retrying HTTP fetcher.
 
@@ -322,6 +326,8 @@ class PoliteFetcher:
         follow_redirects: bool,
         read_body: bool,
         robots_override_host: str | None = None,
+        max_attempts: int | None = None,
+        timeout_s: float | None = None,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Polite manual hop loop around the per-URL attempt loop.
 
@@ -337,7 +343,8 @@ class PoliteFetcher:
         hop_cap = REDIRECT_HOP_CAP if follow_redirects else 0
         for hop in range(hop_cap + 1):
             result, resp_headers = self._attempt_url(
-                method, current, hdrs, deadline=deadline, read_body=read_body)
+                method, current, hdrs, deadline=deadline, read_body=read_body,
+                max_attempts=max_attempts, timeout_s=timeout_s)
             status = result.status
             location = (resp_headers.get("Location", "")
                         if resp_headers is not None else "")
@@ -376,16 +383,19 @@ class PoliteFetcher:
         *,
         deadline: float | None,
         read_body: bool,
+        max_attempts: int | None = None,
+        timeout_s: float | None = None,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Run the retry loop for ONE url (no redirect following)."""
         host = urlsplit(url).netloc.lower()
-        attempts = max(1, int(self.cfg.max_retries))
+        attempts = max(1, int(max_attempts or self.cfg.max_retries))
         for attempt in range(attempts):
             self._check_deadline(deadline)
             self._rate_wait(host)
             try:
                 resp, body = self._send(method, url, headers,
-                                        read_body=read_body)
+                                        read_body=read_body,
+                                        timeout_s=timeout_s)
             except httpx.HTTPError as exc:
                 error = f"{type(exc).__name__}: {exc}".strip().rstrip(":")
                 logger.warning("%s %s failed (attempt %d/%d): %s",
@@ -424,11 +434,13 @@ class PoliteFetcher:
         headers: dict[str, str],
         *,
         read_body: bool,
+        timeout_s: float | None = None,
     ) -> tuple[httpx.Response, bytes | None]:
         req_headers = dict(headers)
         req_headers["User-Agent"] = self.cfg.resolved_user_agent()
+        extra = {"timeout": timeout_s} if timeout_s else {}
         with self._client.stream(method, url, headers=req_headers,
-                                 follow_redirects=False) as resp:
+                                 follow_redirects=False, **extra) as resp:
             body: bytes | None = None
             if (read_body and method != "HEAD"
                     and resp.status_code not in (204, 304)):
@@ -452,10 +464,15 @@ class PoliteFetcher:
         """One redirect hop: HEAD first, on 403/405/501 fall back to GET.
 
         The GET honors robots.txt. Returns (FetchResult, Location header).
+        Resolution is best effort (the link as posted is kept on failure), so
+        each hop gets ONE quick try: live wart, a store answering 429 with
+        Retry-After 30 and another hanging 20 s per request ate 5.5 minutes
+        of a 12-minute run in backoff. Not retrying a 429 is also politer.
         """
+        quick = {"max_attempts": 1, "timeout_s": REDIRECT_HOP_TIMEOUT_S}
         result, resp_headers = self._request_with_retries(
             "HEAD", url, {}, deadline=deadline, conditional=False,
-            follow_redirects=False, read_body=False,
+            follow_redirects=False, read_body=False, **quick,
         )
         if result.status in _HEAD_FALLBACK_STATUSES:
             self._check_deadline(deadline)
@@ -466,7 +483,7 @@ class PoliteFetcher:
                                     blocked_by_robots=True), "")
             result, resp_headers = self._request_with_retries(
                 "GET", url, {}, deadline=deadline, conditional=False,
-                follow_redirects=False, read_body=False,
+                follow_redirects=False, read_body=False, **quick,
             )
         location = ""
         if resp_headers is not None:

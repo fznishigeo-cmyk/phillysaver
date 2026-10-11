@@ -166,7 +166,7 @@ def test_unseen_posts_are_capped_per_run_and_the_rest_arrive_later(
     """The first-run burst bound: at most max_new_items_per_run unseen
     posts per run, deepest first; posts the pipeline already handled ride
     free, and the rest of the selection arrives over the next runs."""
-    assert cfg.woot_max_new_items_per_run == 20
+    cfg.woot_max_new_items_per_run = 20
     db = DB(tmp_path / "state.db")
     feed = [_offer(f"refurb-{i:02d}", 20.0 + i, 199.99, "Refurbished")
             for i in range(50)]

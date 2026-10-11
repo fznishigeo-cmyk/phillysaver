@@ -103,11 +103,13 @@ keepa:
   # call and a keepa_check) emitted per pull; posts already handled ride
   # free and the rest arrive over the next pulls. Bounds the first pulls
   # after a deploy (every Keepa hash changes, Woot's selection is new):
-  # with woot.max_new_items_per_run, at most 10 + 20 + 20 = 50 new posts a
-  # run, ~4 min of parse + critic + keepa_check at the live rates, inside
-  # the fast job's 12-minute timeout (see the Keepa/Woot commit message).
+  # with woot.max_new_items_per_run, at most 10 + 30 + 40 = 80 new posts a
+  # run. Live 2026-10-11 07:00 run: 75 new posts parsed in ~80 s; the run
+  # took 506 s only because link resolution sat ~330 s in store backoff,
+  # now one quick try per hop inside a 60 s budget. 80 posts fit the fast
+  # job's 12-minute timeout with room to spare.
   amazon_max_new_posts_per_pull: 10
-  warehouse_max_new_posts_per_pull: 20   # FRESH, DEEP and the sweep share it
+  warehouse_max_new_posts_per_pull: 30   # FRESH, DEEP and the sweep share it
   warehouse_min_drop_pct: 45       # used price this far under the HONEST new price
                                    # (5 points under publish.used_min_pct)
   warehouse_min_new_price: 25.0    # honest new price floor: no $10 phone cases
@@ -127,7 +129,7 @@ woot:
   # their publish floor (used_min_pct for anything not plainly new, min_pct
   # for new) are selected deepest-first, used before new, up to this cap.
   max_items_per_run: 300
-  max_new_items_per_run: 20        # unseen posts per run, deepest first; the
+  max_new_items_per_run: 40        # unseen posts per run, deepest first; the
                                    # rest of the selection rides later runs
 
 telegram:
