@@ -391,7 +391,7 @@ class TestPaywallTeaser:
     render_site hands the full payload back for the member upload."""
 
     STUB_KEYS = {"locked", "key", "pct_at_checkout", "store", "category",
-                 "first_seen_at", "image_url", "status", "conditions"}
+                 "first_seen_at", "image_url", "status", "conditions", "src"}
 
     @staticmethod
     def _deals(n):
@@ -435,6 +435,8 @@ class TestPaywallTeaser:
             assert stub["locked"] is True and stub["status"] == "alive"
             assert "dedupe_key" not in stub and len(stub["key"]) == 16
             assert stub["store"] == "Walmart" and stub["pct_at_checkout"] == 80.0
+            # The source filter: the reporting sites, never the post URL.
+            assert stub["src"] and all("/" not in s for s in stub["src"])
         dead = doc["deals"][5]
         assert dead["status"] == "dead" and dead["item"] == "ZZSECRET-MUG"
         assert "locked" not in dead

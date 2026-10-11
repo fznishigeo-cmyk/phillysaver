@@ -33,19 +33,24 @@ _CADENCE_MINUTES = {"fast": 10, "hourly": 60}
 _SOURCE_SITES_MAX = 36
 
 
+def _credit_site(url: str) -> str:
+    """The site a credit URL belongs to, subdomains folded
+    (home.woot.com -> woot.com); "" when it has none."""
+    host = urlsplit(url or "").netloc.lower().split(":")[0]
+    site = ".".join(host.split(".")[-2:])
+    return site if "." in site else ""
+
+
 def _source_sites(deals: list[dict[str, Any]]) -> list[str]:
-    """The sites the live deals were found on (credit domains, subdomains
-    folded: home.woot.com -> woot.com), most deals first. Public credit,
-    nothing about any locked deal beyond where deals come from."""
+    """The sites the live deals were found on (credit domains), most deals
+    first. Public credit, nothing about any locked deal beyond where deals
+    come from."""
     count: dict[str, int] = {}
     for d in deals:
         if d.get("status") != "alive":
             continue
-        for host in {urlsplit(c.get("url") or "").netloc.lower().split(":")[0]
-                     for c in d.get("credits") or []}:
-            site = ".".join(host.split(".")[-2:])
-            if "." in site:
-                count[site] = count.get(site, 0) + 1
+        for site in set(d.get("src") or ()):
+            count[site] = count.get(site, 0) + 1
     return sorted(count, key=lambda k: (-count[k], k))[:_SOURCE_SITES_MAX]
 
 
@@ -177,6 +182,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "score": deal.get("score"),
         "age_hours": age_hours,
         "credits": credits,
+        # The sites that reported it (domains only): the source filter.
+        "src": sorted({_credit_site(c["url"]) for c in credits} - {""}),
     }
 
 
