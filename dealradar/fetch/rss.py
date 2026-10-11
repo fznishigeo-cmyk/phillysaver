@@ -11,12 +11,12 @@ an autodiscovered feed URL.
 
 from __future__ import annotations
 
-import bisect
 import dataclasses
 import hashlib
 import html as html_lib
 import logging
 import re
+from collections import Counter
 from datetime import datetime
 from urllib.parse import urlsplit
 from typing import Any
@@ -90,7 +90,7 @@ _PI_MAX_GAP = 800
 #: or a throw blanket keeps its photo.
 _PI_JUNK_WORD = re.compile(
     r"(?<![a-z])(?:logo|icon|badge|button|spinner|placeholder|blank|loading"
-    r"|share|sprite)s?(?![a-z])", re.I)
+    r"|share|sprite|buy[-_ ]?now|shop[-_ ]?now)s?(?![a-z])", re.I)
 #: Anchors that are never a product: social share/comment links.
 _PI_SOCIAL_HOSTS = ("facebook", "twitter", "pinterest", "whatsapp", "reddit",
                     "linkedin")
@@ -138,16 +138,17 @@ def _pi_url_ok(url: str) -> bool:
 
 
 def _pi_image_url(attrs: dict[str, str]) -> str:
-    """The <img>'s product photo URL: src, else the lazy-load copies, else
+    """The <img>'s product photo URL: the lazy-load copies, else src, else
     the largest srcset candidate; '' for decoration. A lazy image's src is
-    a data: URI or a placeholder gif, so the first USABLE source wins."""
+    a data: URI or a placeholder gif (Jetpack: 1x1.trans.gif), so the lazy
+    copy wins whenever there is one."""
     if _PI_JUNK_WORD.search(attrs.get("class", "") + " " + attrs.get("alt", "")):
         return ""
     for dim in ("width", "height"):
         m = re.match(r"\d+", attrs.get(dim, ""))
         if m and int(m.group(0)) <= 50:
             return ""  # tracking pixel, avatar, icon
-    for name in ("src", "data-src", "data-lazy-src", "data-original"):
+    for name in ("data-lazy-src", "data-src", "data-original", "src"):
         if _pi_url_ok(attrs.get(name, "")):
             return attrs[name]
     best, best_size = "", -1.0
@@ -177,74 +178,116 @@ def product_images(html: str, article_url: str = "") -> dict[str, str]:
 
     One sequential scan of <a>, </a> and <img> tags (positions kept), the
     HTML split into blocks at <p|li|div|figure|h1-6|tr|section|article|
-    table> openers. Pairing, strongest first:
+    table> openers. A wrong photo is worse than none, so a photo pairs
+    only when the layout says whose it is:
       0. an <img> inside <a href=X>..</a> belongs to X;
-      1. else to the nearest product anchor in its own block;
-      2. else (its block has none) to the first anchor of the next block
-         that has one, then 3. the last anchor of the previous one —
-    always within _PI_MAX_GAP characters, never across a block holding
-    another anchor. Each image goes to one href, each href keeps its
-    first/nearest image. Share, comment, mailto and the post's own links
-    are not products (an image inside them is dropped); a lightbox link
-    (href to an image file) is not either, but its image is kept loose.
+      1. a block holding one loose photo and one product link (a list
+         item, a paragraph, a figure) is that product;
+      2. else photos and links are read in runs, a run cut wherever a
+         text-bearing block (a description, a heading) or more than
+         _PI_MAX_GAP characters separates two of them. A run opening with
+         a photo and closing with a link reads photo-then-link: each photo
+         is the very next link's. One opening with a link and closing with
+         a photo reads link-then-photo (a heading-linked listicle): each
+         photo is the link just before it. Any other run reads both ways
+         and pairs nothing — the reviewed swaps (two products in one <p>,
+         a product's second photo after a text-only product) were all
+         such runs read one way.
+    Never paired loose: the post's featured image (og:image, its first
+    image: a collage, a banner, or one product's photo), and decoration —
+    a picture repeated across the post, inside two products' links or
+    loose twice (a lazy placeholder, a 'buy now' button, a divider); it
+    is no one's photo. Each image goes to one href, each href keeps its
+    first image. Share, comment, mailto and the post's own links are not
+    products (an image inside them is dropped); a lightbox link (href to
+    an image file) is not either, but its image is kept loose.
 
     Only ever called for image-granted sources; the URLs are hotlinked,
     never copied or stored, and no text of the post is kept.
     """
-    anchors: list[tuple[str, int, int, int]] = []        # href, start, end, block
+    html = html or ""
+    anchors: list[list] = []                             # href, start, end of </a>, block
     images: list[tuple[str, int, int, int, str]] = []    # url, start, end, block, owner
-    block = 0
+    openers = [0]                                        # block k starts at openers[k]
+    first = ""                                           # the first image, wherever it sits
     open_kind, open_href = "", ""
-    for m in _PI_TAG.finditer(html or ""):
+    for m in _PI_TAG.finditer(html):
         closing, tag = m.group(1), m.group(2).lower()
+        block = len(openers) - 1
         if tag == "a":
             if closing:
+                if open_kind == "product":
+                    anchors[-1][2] = m.end()
                 open_kind, open_href = "", ""
                 continue
             href = _pi_attrs(m.group(3)).get("href", "")
             open_kind, open_href = _pi_anchor_kind(href, article_url), href
             if open_kind == "product":
-                anchors.append((href, m.start(), m.end(), block))
+                anchors.append([href, m.start(), m.end(), block])
         elif tag == "img":
-            if closing or open_kind == "ignore":
-                continue
-            url = _pi_image_url(_pi_attrs(m.group(3)))
-            if url:
+            url = "" if closing else _pi_image_url(_pi_attrs(m.group(3)))
+            first = first or url
+            if url and open_kind != "ignore":
                 owner = open_href if open_kind == "product" else ""
                 images.append((url, m.start(), m.end(), block, owner))
         elif not closing:
-            block += 1
+            openers.append(m.start())
 
-    by_block: dict[int, list[tuple[str, int, int, int]]] = {}
-    for a in anchors:
-        by_block.setdefault(a[3], []).append(a)
-    blocks = sorted(by_block)
-    cands: list[tuple[int, int, int, str]] = []          # rank, gap, image, href
-    for i, (_url, start, end, blk, owner) in enumerate(images):
-        if owner:
-            cands.append((0, 0, i, owner))
-            continue
-        if blk in by_block:
-            for href, a_start, a_end, _b in by_block[blk]:
-                gap = a_start - end if a_start >= end else start - a_end
-                cands.append((1, max(gap, 0), i, href))
-            continue
-        k = bisect.bisect_right(blocks, blk)
-        if k < len(blocks):
-            href, a_start, _e, _b = by_block[blocks[k]][0]
-            cands.append((2, a_start - end, i, href))
-        if k > 0:
-            href, _s, a_end, _b = by_block[blocks[k - 1]][-1]
-            cands.append((3, start - a_end, i, href))
+    owners: dict[str, list[str]] = {}
+    for url, _s, _e, _b, owner in images:
+        owners.setdefault(url, []).append(owner)
+    decor = {u for u, o in owners.items() if len(set(o) - {""}) > 1 or o.count("") > 1}
+    featured = {_og_image(html), _first_image(html), first}
     out: dict[str, str] = {}
     used: set[str] = set()
-    for _rank, gap, i, href in sorted(cands):
-        url = images[i][0]
-        if gap > _PI_MAX_GAP or href in out or url in used:
-            continue
-        out[href] = url
-        used.add(url)
+
+    def take(href: str, url: str) -> None:
+        if href not in out and url not in used:
+            out[href] = url
+            used.add(url)
+
+    for url, _s, _e, _b, owner in images:                # 0. inside its own link
+        if owner and url not in decor:
+            take(owner, url)
+    # The featured image stays in the layout (it opens the run it sits in:
+    # dropping it would flip how that run reads) but is never paired.
+    loose = [i for i in images if not i[4] and i[0] not in decor]
+    links_in: dict[int, set[str]] = {}
+    for href, _s, _e, blk in anchors:
+        links_in.setdefault(blk, set()).add(href)
+    photos_in = Counter(i[3] for i in loose)
+    rest = []
+    for url, start, end, blk, _o in loose:               # 1. its block's product
+        if url not in featured and photos_in[blk] == 1 and len(links_in.get(blk, ())) == 1 \
+                and min(max(a[1] - end, start - a[2])
+                        for a in anchors if a[3] == blk) <= _PI_MAX_GAP:
+            take(next(iter(links_in[blk])), url)
+        else:
+            rest.append((start, end, blk, "", url))
+    runs: list[list[tuple[int, int, int, str, str]]] = []  # 2. by the layout
+    for tok in sorted([(a[1], a[2], a[3], a[0], "") for a in anchors] + rest):
+        prev = runs[-1][-1] if runs else None
+        if prev and tok[0] - prev[1] <= _PI_MAX_GAP and (
+                tok[2] == prev[2]
+                or not _pi_has_text(html, openers[prev[2] + 1], openers[tok[2]])):
+            runs[-1].append(tok)
+        else:
+            runs.append([tok])
+    for run in runs:
+        opens_photo, closes_photo = bool(run[0][4]), bool(run[-1][4])
+        if opens_photo == closes_photo:
+            continue  # reads both ways
+        step = 1 if opens_photo else -1
+        for j, (_s, _e, _b, _h, url) in enumerate(run):
+            if url and url not in featured and 0 <= j + step < len(run) and run[j + step][3]:
+                take(run[j + step][3], url)
     return out
+
+
+def _pi_has_text(html: str, start: int, end: int) -> bool:
+    """Visible text (tags dropped) in html[start:end]."""
+    return end > start and bool(
+        html_lib.unescape(re.sub(r"<[^>]*>", " ", html[start:end])).strip())
 
 
 def _entry_body(entry: Any) -> str:

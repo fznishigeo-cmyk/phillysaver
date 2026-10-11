@@ -136,6 +136,51 @@ class TestBlogImageBackfill:
         assert fetcher.calls == []
         db.close()
 
+    def test_roundup_page_with_one_stored_deal_never_lends_its_collage(self, tmp_path):
+        """The page shows two products with their own photos, but only one
+        deal is stored for it (the other was in-store, failed evidence, or
+        comes later) and its link matches neither: it gets nothing — not
+        the og:image collage. A single-product page whose only other photos
+        are the blog's own related-post thumbnails still lends its og:image."""
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "towels", self.ROUNDUP,
+                   canonical="https://www.kohls.com/product/prd-9/towels.jsp")
+        solo = "https://hip2save.com/deals/solo/"
+        self._seed(db, "solo", solo)
+        related = "".join(
+            f"<p><a href='https://hip2save.com/deals/other-{i}/'>"
+            f"<img src='https://hip2save.com/i/thumb-{i}.jpg'></a></p><p>Other {i}</p>"
+            for i in range(3))
+        page = ("<meta property='og:image' content='https://hip2save.com/i/solo.jpg'>"
+                "<p>One great deal today.</p>" + related).encode()
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE, solo: page})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        towels = db.get_deal("towels")
+        assert towels["image_url"] == "" and "image_backfill_tried" in towels["flags"]
+        assert db.get_deal("solo")["image_url"] == "https://hip2save.com/i/solo.jpg"
+        db.close()
+
+    def test_real_affiliate_links_get_their_own_photo(self, tmp_path):
+        """Today's photo-less roundup deals keep the affiliate link exactly as
+        posted (on.ltk.com, clicks.trx-hub.com, shoplowes.me, creator.anchor
+        .store, goto.target.com, go.shopmy.us, Walmart /ip/, Amazon /dp/):
+        one fetch of the article gives each its own photo."""
+        from tests.test_rss import REAL_LINKS, UP, real_roundup_html
+
+        db = DB(tmp_path / "state.db")
+        article = "https://hip2save.com/deals/nike-sale/"
+        for i, link in enumerate(REAL_LINKS):
+            self._seed(db, f"deal{i}", article, canonical=link)
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({article: real_roundup_html(article).encode()})
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        assert [db.get_deal(f"deal{i}")["image_url"] for i in range(len(REAL_LINKS))] == [
+            f"{UP}p{i}.jpg" for i in range(len(REAL_LINKS))]
+        db.close()
+
     def test_roundup_photo_never_goes_to_a_different_product(self, tmp_path):
         """The photo next to the shelf link is already another product's
         card photo: the shelf deal does not get it. The same product listed
@@ -340,6 +385,24 @@ def test_resolving_the_product_url_keeps_the_link_as_posted(monkeypatch):
     failed = deal()
     pipeline._resolve_product_urls([(None, failed)], None, cfg, time.monotonic() + 600)
     assert failed.link_as_posted == posted and "utm_source" not in failed.product_url
+
+
+def test_posts_parsed_into_several_products_are_marked_roundups():
+    """dedupe lends a post's first image only to a post of one product; the
+    pipeline counts the distinct products each post yielded (one product
+    at two stores is one)."""
+    from dealradar.models import ExtractedDeal
+
+    def deal(item, store):
+        return ExtractedDeal(item=item, store=store, source_url="s", source_name="n")
+
+    roundup, single, two_stores = make_post("a", 1), make_post("a", 2), make_post("a", 3)
+    pipeline._count_post_products([
+        (roundup, deal("SONGMICS Shelf", "Target")), (roundup, deal("Drying Rack", "Target")),
+        (single, deal("Ninja Blender", "Target")),
+        (two_stores, deal("Bluey Boo Book", "Amazon")),
+        (two_stores, deal("Bluey Boo Book", "Walmart"))])
+    assert (roundup.products, single.products, two_stores.products) == (2, 1, 1)
 
 
 def make_post(source: str, i: int) -> RawPost:

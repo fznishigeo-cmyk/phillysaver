@@ -14,9 +14,11 @@ import re
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 #: Query params that only say who sent the click, never which product.
+#: Not pid/sid/cid: Old Navy, Gap, Banana Republic and Athleta name the
+#: product by ?pid= (product.do?pid=111002 vs 222002).
 _TRACKING = frozenset({
     "ref", "ref_", "tag", "ascsubtag", "afsrc", "cjevent", "clickid",
-    "irclickid", "sid", "cid", "pid", "u1", "subid",
+    "irclickid", "u1", "subid",
 })
 #: Affiliate redirectors carry the retailer URL in one of these params.
 _WRAP_PARAMS = frozenset({"url", "u", "murl", "ued", "dest", "destination",
@@ -118,8 +120,11 @@ def match_product_image(urls: list[str], product_images: dict[str, str]) -> str:
     tracking params, trailing slash); affiliate-unwrapped on either side;
     then the product id (Amazon ASIN, Target A-id, Walmart item, Best Buy
     SKU, ...; else host+path). An Amazon link without an ASIN matches
-    nothing. A bare host+path counts only when one photo stands behind it:
-    two different photos behind one path is a redirector, not a product.
+    nothing. A normalized, unwrapped or host+path hit counts only when
+    every link it matches shows the same photo: two photos behind one
+    form is two products. A bare host+path also never matches a link
+    whose shared query param says otherwise (all trx-hub links of an
+    article share one path; only ?q= names the product).
     """
     urls = [u for u in urls if u and u.lower().startswith(("http://", "https://"))
             and not _names_no_product(u)]
@@ -133,20 +138,48 @@ def match_product_image(urls: list[str], product_images: dict[str, str]) -> str:
     forms = {k: _forms(k) for k, _v in keys}
     for url in urls:
         mine = _normalize(url)
-        hit = next((v for k, v in keys if forms[k][0] == mine), "")
+        hit = _one({v for k, v in keys if forms[k][0] == mine})
         if hit:
             return hit
     for url in urls:
         mine_all = set(_forms(url))
-        hit = next((v for k, v in keys if mine_all & set(forms[k])), "")
+        hit = _one({v for k, v in keys if mine_all & set(forms[k])})
         if hit:
             return hit
     ids = {k: _product_id(forms[k][-1]) for k, _v in keys}
     for url in urls:
-        mine = _product_id(_forms(url)[-1])
+        deepest = _forms(url)[-1]
+        mine = _product_id(deepest)
         if not mine:
             continue
-        found = [v for k, v in keys if ids[k] == mine]
-        if found and (not mine.startswith("path:") or len(set(found)) == 1):
-            return found[0]
+        if not mine.startswith("path:"):
+            hit = next((v for k, v in keys if ids[k] == mine), "")
+        else:
+            hit = _one({v for k, v in keys if ids[k] == mine
+                        and not _params_differ(forms[k][-1], deepest)})
+        if hit:
+            return hit
     return ""
+
+
+def other_product_photos(product_images: dict[str, str], page_url: str) -> set[str]:
+    """The photos a post pairs with links off its own site — the products
+    it shows. Links to the blog's own pages (related-post thumbnails) are
+    not products of this post."""
+    def site(url: str) -> str:
+        return (urlsplit(url).hostname or "").lower().removeprefix("www.")
+
+    own = site(page_url)
+    return {v for k, v in (product_images or {}).items() if v and site(k) != own}
+
+
+def _one(photos: set[str]) -> str:
+    """The photo when exactly one stands behind a match, else ''."""
+    return next(iter(photos)) if len(photos) == 1 else ""
+
+
+def _params_differ(a: str, b: str) -> bool:
+    """Both (normalized) links carry a query param with different values."""
+    qa = dict(parse_qsl(urlsplit(a).query, keep_blank_values=True))
+    qb = dict(parse_qsl(urlsplit(b).query, keep_blank_values=True))
+    return any(qa[k] != qb[k] for k in qa.keys() & qb.keys())

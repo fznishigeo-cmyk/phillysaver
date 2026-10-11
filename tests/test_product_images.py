@@ -34,8 +34,7 @@ ENC = "https%3A%2F%2Fshop.example%2Fkettle-9"
 
 def test_normalized_case_fragment_tracking_trailing_slash():
     key = ("https://Shop.Example/kettle-9/?utm_source=blog&tag=h2s-20&ref=x&ref_=y"
-           "&ascsubtag=a&afsrc=1&cjevent=c&clickid=k&irclickid=i&sid=s&cid=c"
-           "&pid=p&u1=u&subid=z#reviews")
+           "&ascsubtag=a&afsrc=1&cjevent=c&clickid=k&irclickid=i&u1=u&subid=z#reviews")
     assert match_product_image(["HTTPS://shop.example/kettle-9"], {key: PIC}) == PIC
     # A param that names the variant is not tracking: no normalized match.
     assert match_product_image([RETAIL + "?size=xl"], {RETAIL + "?size=s": PIC}) == ""
@@ -85,7 +84,8 @@ def test_unwrap_two_levels_and_double_encoding():
      "https://www.wayfair.com/b/pdp/z.html?sku=abc123"),
     ("https://home.woot.com/offers/kettle-2-pack",
      "https://www.woot.com/offers/kettle-2-pack?ref=w_cnt"),
-    ("https://shop.example/p/kettle/9?color=red", "https://www.shop.example/p/kettle/9?color=blue"),
+    # host+path: www or not, and a param only one side carries, is no matter
+    ("https://shop.example/p/kettle/9?color=red", "https://www.shop.example/p/kettle/9?th=1"),
 ])
 def test_retailer_product_id(deal_link, post_link):
     photos = {post_link: PIC, "https://www.target.com/p/x/-/A-1": OTHER}
@@ -114,5 +114,48 @@ def test_host_path_only_when_one_photo_stands_behind_it():
     photos = {"https://share.example/r/click?b=1&x=kettle": PIC,
               "https://share.example/r/click?b=1&x=toaster": OTHER}
     assert match_product_image(["https://share.example/r/click?b=1&x=mixer"], photos) == ""
+    # One photo behind the path, but the shared param names another product.
+    assert match_product_image(["https://shop.example/p/kettle/9?color=red"],
+                               {"https://shop.example/p/kettle/9?color=blue": PIC}) == ""
     assert match_product_image(["https://share.example/r.cfm?b=2"],
                                {"https://share.example/r.cfm?b=1": PIC}) == ""
+
+
+def test_old_navy_pid_names_the_product():
+    """Gap-family product pages differ only in ?pid=: pid (also sid, cid)
+    is no tracking param, and a bare host+path never pairs two different
+    pids. Live risk: the jeans card showed the hoodie photo, and the clear
+    step then took the photo off both."""
+    hoodie = "https://oldnavy.gap.com/browse/product.do?pid=111002"
+    jeans = "https://oldnavy.gap.com/browse/product.do?pid=222002"
+    assert match_product_image([jeans], {hoodie: PIC}) == ""
+    assert match_product_image([hoodie + "&utm_source=x"], {hoodie: PIC, jeans: OTHER}) == PIC
+    # The same pid with a browse-path param on one side only is one product.
+    assert match_product_image([jeans], {jeans + "&cid=5": PIC}) == PIC
+
+
+def test_normalized_and_unwrapped_hits_must_agree():
+    """Two post links that normalize (or unwrap) alike but show different
+    photos: no single photo is the deal's."""
+    photos = {"https://shop.example/kettle-9?tag=a": PIC,
+              "https://shop.example/kettle-9?tag=b": OTHER}
+    assert match_product_image(["https://shop.example/kettle-9"], photos) == ""
+    wrapped = {f"https://go.example/c?u={ENC}": PIC, f"https://go.example/d?url={ENC}": OTHER}
+    assert match_product_image([RETAIL], wrapped) == ""
+    same = {f"https://go.example/c?u={ENC}": PIC, f"https://go.example/d?url={ENC}": PIC}
+    assert match_product_image([RETAIL], same) == PIC
+
+
+TRX = ("https://clicks.trx-hub.com/xid/hip2save_c4db4_hip2save?q=https%3A%2F%2Fwww.dpbolvw.net"
+       "%2Fclick-3278587-17049705%3Furl%3Dhttps%253A%252F%252Fwww.nike.com%252Ft%252F{}"
+       "&p=https%3A%2F%2Fhip2save.com%2Fdeals%2Fnike-sale%2F&event_type=click&devicetype=desktop")
+
+
+def test_redirector_links_of_one_article_never_share_a_photo():
+    """Every trx-hub link of one Hip2Save article has the same host+path;
+    only its q param names the product. The one photo behind that path is
+    still another product's."""
+    assert match_product_image([TRX.format("revolution-8")],
+                               {TRX.format("team-hustle"): PIC}) == ""
+    assert match_product_image([TRX.format("team-hustle")],
+                               {TRX.format("team-hustle"): PIC}) == PIC

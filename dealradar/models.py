@@ -61,6 +61,10 @@ class RawPost:
     # one photo per product). Image-granted sources only; transient like
     # `text`, never persisted. Values are hotlinked, never copied or stored.
     product_images: dict[str, str] = field(default_factory=dict)
+    # Distinct products the parse found in this post (set by the pipeline
+    # before upsert; 0 = not counted). Two or more: a roundup, whose first
+    # image is never lent to a deal it was not paired with. Transient.
+    products: int = 0
 
     @property
     def content_hash(self) -> str:

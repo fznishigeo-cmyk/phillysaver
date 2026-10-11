@@ -296,7 +296,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     """
     from .dedupe import _DEAL_FIELDS
     from .fetch.rss import _first_image, _og_image, _permission_host, product_images
-    from .product_images import match_product_image
+    from .product_images import match_product_image, other_product_photos
 
     granted = {s.name: s for s in sources if s.image_permission}
     if not granted:
@@ -365,8 +365,12 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
                 photos[article] = product_images(html, article)
             image = match_product_image([deal.get("canonical_url") or ""],
                                         photos[article])
-            if not image and article_deals.get(article, 0) <= 1:
+            if not image and article_deals.get(article, 0) <= 1 \
+                    and len(other_product_photos(photos[article], article)) < 2:
                 # Single-product article: its share image is the product's.
+                # One stored deal is not enough: a page that shows two or
+                # more products by their own photos is a roundup, and its
+                # share image is the collage.
                 image = _og_image(html) or _first_image(html)
         product = _product_of(deal)
         if image and images_in_use.get(image, set()) - {product}:
@@ -883,6 +887,17 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
     return stats
 
 
+def _count_post_products(pairs) -> None:
+    """Tell each post how many distinct products the parse found in it
+    (one product at two stores is one): dedupe lends a post's first image
+    only to a post of one product, never across a roundup."""
+    items: dict[int, set[str]] = {}
+    for post, extracted in pairs:
+        items.setdefault(id(post), set()).add(util.normalize_item(extracted.item))
+    for post, _extracted in pairs:
+        post.products = len(items[id(post)])
+
+
 #: Wall-clock budget for resolving product links in one run.
 _RESOLVE_BUDGET_S = 60.0
 
@@ -1019,6 +1034,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         _resolve_product_urls(pairs, fetcher, cfg, deadline)
 
         # ---- savings math + dedupe/upsert ----
+        _count_post_products(pairs)
         deals_upserted = 0
         for post, extracted in pairs:
             sav = compute_savings(extracted)

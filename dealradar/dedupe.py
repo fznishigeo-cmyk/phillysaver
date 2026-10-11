@@ -187,16 +187,23 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost) -> str:
     own link, else the post's image — but never a roundup's. Live wart:
     the first image of a roundup (a collage, or another product's photo)
     went onto every deal of the post (three Target cards from one Southern
-    Savers post, then cleared to store-name tiles)."""
-    from .product_images import match_product_image
+    Savers post, then cleared to store-name tiles).
+
+    A roundup is a post the parse found two or more products in, or one
+    whose photos went to other products' links but not to the post image
+    (only one of its deals stored): an unmatched deal gets '' and the
+    backfill tries its own photo. A collage on ONE card is never 'shared',
+    so the clear step would never take it off."""
+    from .product_images import match_product_image, other_product_photos
 
     hit = match_product_image([extracted.link_as_posted, extracted.product_url],
                               post.product_images)
     if hit:
         return hit
-    if len(set(post.product_images.values())) <= 1:
-        return post.image_url
-    return ""
+    others = other_product_photos(post.product_images, post.url)
+    if post.products > 1 or (others and post.image_url not in others):
+        return ""
+    return post.image_url
 
 
 def upsert_extracted(db, extracted: models.ExtractedDeal,

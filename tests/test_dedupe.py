@@ -431,3 +431,51 @@ def test_single_product_post_still_lends_its_image(tmp_path) -> None:
         db, make_extracted(item="Steel Kettle", store="Target"), make_savings(), bare, cfg, NOW)
     assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
     db.close()
+
+
+def test_roundup_collage_never_lands_on_an_unmatched_deal(tmp_path) -> None:
+    """Hip2Save roundup: the featured collage is the post's first image, one
+    product's photo sits in its link, the other product is text-only. The
+    unmatched deal stays photo-less (the backfill tries its own photo
+    later) instead of carrying the collage for good: one card showing it
+    is never 'shared', so the clear step never removed it."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    post = _roundup_post("hip-roundup",
+                         {"https://www.target.com/p/shelf/-/A-111": SS + "shelf.jpg"})
+    shelf = make_extracted(item="SONGMICS Shelf", store="Target",
+                           product_url="https://www.target.com/p/shelf/-/A-111")
+    rack = make_extracted(item="Drying Rack", store="Walmart",
+                          product_url="https://www.walmart.com/ip/rack/222")
+    bluey = [make_extracted(item="Bluey Boo Book", store=s, product_url=u) for s, u in (
+        ("Amazon", "https://www.amazon.com/dp/B0BLUEY001"),
+        ("Walmart", "https://www.walmart.com/ip/bluey/333"))]
+    keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
+            for e in (shelf, rack, *bluey)]
+    assert [db.get_deal(k)["image_url"] for k in keys] == [SS + "shelf.jpg", "", "", ""]
+    db.close()
+
+
+def test_roundup_without_pairs_lends_no_image(tmp_path) -> None:
+    """A post the pipeline parsed into two or more products is a roundup:
+    when its photos could not be told apart (none paired), its first image
+    is one product's or a collage, never every deal's. A post of one
+    product still lends its image."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    post = _roundup_post("two-products", {})
+    post.products = 2
+    res = dedupe.upsert_extracted(db, make_extracted(item="Steel Kettle", store="Target"),
+                                  make_savings(), post, cfg, NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == ""
+    one = _roundup_post("one-product", {})
+    one.products = 1
+    res = dedupe.upsert_extracted(db, make_extracted(item="Ninja Blender", store="Target"),
+                                  make_savings(), one, cfg, NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
+    # A related-post thumbnail (the blog's own link) is no other product.
+    own = _roundup_post("own-links", {"https://www.southernsavers.com/other-post/": SS + "t.jpg"})
+    res = dedupe.upsert_extracted(db, make_extracted(item="Steel Pan", store="Target"),
+                                  make_savings(), own, cfg, NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
+    db.close()
