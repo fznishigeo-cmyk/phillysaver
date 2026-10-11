@@ -19,14 +19,11 @@ Keep this file current: whoever stops working updates it in their last commit.
   The clock says "Next drop".
 - **Cards:** the hairline runs on the free 8, on a member's new arrivals, and
   on hover. There is a deal ticker at the top and a sources wall at the bottom.
-- **Member email:** at most ONE a day, 7 am New York time. It carries the
-  best 200 of what arrived since the last one, plus a "+N more" line.
-- **Free sign-up list:** one email a day, 8 am New York time, with the day's
-  top 10 (`newsletter.top_n`). The parse model (Haiku) picks them once a day
-  from the best 40 by rank, under the same spend caps; rank order when it
-  can't run. The pick is stored per day (meta `newsletter:pick:<date>`).
-  The email ends with the trial link; members get every deal. The site
-  never says "Free daily email".
+- **No customer emails at all.** Membership is website access only.
+  - `members.email_enabled: false` and `newsletter.enabled: false` in
+    config.yaml; the code paths stay, switched off.
+  - No page offers or promises an email. `subscribe.html` is a plain
+    membership page; old email links land there with a short note.
 - **Cancel wording:** no "cancel" reminders on the main screen. "Manage
   membership" sits in the footer only. The full auto-renewal terms stay in
   the checkout dialog, on Stripe's page, on the welcome page and on the help
@@ -86,8 +83,7 @@ Keep this file current: whoever stops working updates it in their last commit.
    the live description still reads "Every verified deal, 50-90% off,
    emailed to you the hour it is found. Cancel any time." (confirmed by
    `stripe check`, 2026-10-11). Replace it with "Every deal on the wall
-   unlocked, plus the best of each day's new verified deals in one email
-   every morning. Cancel any time."
+   unlocked, with new deals every 10 minutes. Cancel any time."
 3. Done: the Customer Portal is active (1 configuration), so "Manage
    membership" works.
 4. Any change under `cloudflare/subscribe-worker/` goes live only after the

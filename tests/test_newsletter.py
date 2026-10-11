@@ -794,19 +794,17 @@ class TestTopEmail:
 class TestSiteCopy:
     TEMPLATES = Path(N.__file__).resolve().parent / "templates"
 
-    def test_no_free_daily_email_and_the_number_matches_config(self):
+    def test_no_daily_email_is_offered_anywhere(self):
+        """Operator call (2026-10-11): no daily emails for anyone; the
+        membership is website access. No page offers or promises one."""
         for page in self.TEMPLATES.glob("*.html"):
-            assert "free daily email" not in page.read_text(encoding="utf-8").lower(), page.name
-        n = load_config().newsletter_top_n
+            text = page.read_text(encoding="utf-8").lower()
+            assert "free daily email" not in text, page.name
+            assert "one email every morning" not in text, page.name
+            assert "id=\"nlform\"" not in text, page.name
+            assert "top 10" not in text, page.name
         index = (self.TEMPLATES / "index.html").read_text(encoding="utf-8")
-        assert (f"<strong>Daily email:</strong> the day's top {n} deals every morning."
-                in index) and "Members get every deal." in index
-        subscribe = (self.TEMPLATES / "subscribe.html").read_text(encoding="utf-8")
-        assert f"the day's top {n} verified deals" in subscribe
-        assert f"The day's top {n} deals, once a day." in subscribe  # the plan card
-        assert "top 25" not in subscribe
-        _subject, text, _html = N.build_confirmation(load_config(), "https://w/confirm")
-        assert f"the day's top {n} deals, once a day" in text
+        assert "every deal on the wall, new deals every\n     10 minutes." in index
 
 
 # ---------------------------------------------------------------- list + config
@@ -838,7 +836,8 @@ class TestListAndConfig:
 
     def test_repo_config_has_the_newsletter_block(self):
         cfg = load_config()
-        assert cfg.newsletter_enabled is True
+        assert cfg.newsletter_enabled is False  # operator: no daily emails
+        assert cfg.members_email_enabled is False
         # The Worker URL is an operator value (pasted in after the deploy);
         # only its shape is asserted here.
         assert cfg.newsletter_worker_url == "" or cfg.newsletter_worker_url.startswith("https://")

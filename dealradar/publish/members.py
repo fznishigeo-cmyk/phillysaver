@@ -137,6 +137,9 @@ def send_member_alerts(db, cfg, now: datetime, *,
     cfg.members_email_hour_local, carrying what arrived since the last one).
     Returns {members, deals, sent, skipped}."""
     stats: dict[str, Any] = {"members": 0, "deals": 0, "sent": 0, "skipped": ""}
+    if not getattr(cfg, "members_email_enabled", True):
+        stats["skipped"] = "member email off"  # membership is site access only
+        return stats
     members = member_list(db, http_client)
     stats["members"] = len(members)
     if not members:

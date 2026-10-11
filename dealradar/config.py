@@ -129,6 +129,7 @@ class AppConfig:
     # -- members: Stripe subscribers get every new verified deal by email --
     subscribe_url: str = ""            # Stripe Payment Link (site Subscribe button)
     portal_url: str = ""               # Stripe customer portal (manage / cancel)
+    members_email_enabled: bool = True     # the members' deal email at all
     members_email_every_minutes: int = 60  # one bundled email per window, max
     members_email_hour_local: int = 7      # daily window: first run at/after this local hour
     members_email_timezone: str = "America/New_York"
@@ -253,6 +254,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg.subscribe_url = str(g("members", "subscribe_url", default="") or "").strip()
     cfg.portal_url = str(g("members", "portal_url", default="") or "").strip()
+    cfg.members_email_enabled = bool(g("members", "email_enabled", default=cfg.members_email_enabled))
     cfg.members_email_every_minutes = max(10, int(g("members", "email_every_minutes",
                                                      default=cfg.members_email_every_minutes)))
     cfg.members_email_hour_local = min(23, max(0, int(g("members", "email_hour_local",

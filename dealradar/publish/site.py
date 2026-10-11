@@ -255,7 +255,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "portal_url": getattr(cfg, "portal_url", "") or "",
         # Daily email list (the day's top 10): the subscribe Worker's URL (the forms
         # POST to it); empty until the Worker is deployed and pasted in.
-        "newsletter_url": getattr(cfg, "newsletter_worker_url", "") or "",
+        "newsletter_url": (getattr(cfg, "newsletter_worker_url", "") or "")
+        if getattr(cfg, "newsletter_enabled", True) else "",
         "floors": {
             "min_pct": cfg.min_pct,
             "min_abs_savings": cfg.min_abs_savings,

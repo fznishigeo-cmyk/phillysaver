@@ -460,57 +460,38 @@ class TestPaywallTeaser:
         assert all("locked" not in d and d["item"] for d in doc["deals"])
 
 
-class TestNewsletterSite:
-    """The free daily email list reaches the page through deals.json meta and
-    the standalone subscribe.html template."""
+class TestNoDailyEmail:
+    """Operator call (2026-10-11): no daily emails for anyone; membership is
+    website access. subscribe.html is a plain membership page, the home
+    page has no email form, and meta carries no list endpoint while the
+    list is off."""
 
-    def test_meta_newsletter_url_and_subscribe_page(self, db, cfg, tmp_path):
+    def test_meta_has_no_list_endpoint_while_the_list_is_off(self, db, cfg, tmp_path):
         out = tmp_path / "site"
         cfg.newsletter_worker_url = "https://wowpriced-subscribe.example.workers.dev"
-        render_site(db, cfg, NOW, out_dir=out, deals=[])
-        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
-        assert doc["meta"]["newsletter_url"] == \
-            "https://wowpriced-subscribe.example.workers.dev"
-        html = (out / "subscribe.html").read_text(encoding="utf-8")
-        assert html.startswith("<!doctype html>")
-        # The form posts to the Worker from meta (never a hardcoded endpoint)
-        # and the page explains free daily vs the paid hourly membership.
-        assert "newsletter_url" in html and '"/subscribe"' in html
-        assert 'name="email"' in html and 'method="post"' in html
-        assert "Email signup is being set up" in html
-        assert "ok=1" in html and "unsubscribed=1" in html
-        assert "$9.99/mo" in html and '"./#signup"' in html
-        assert "subscribe_url" not in html
-        assert 'href="./"' in html  # back home
-        assert "prefers-color-scheme" in html
-        assert "<script src=" not in html and "<link" not in html
-
-    def test_meta_newsletter_url_empty_until_configured(self, db, cfg, tmp_path):
-        out = tmp_path / "site"
+        cfg.newsletter_enabled = False
         render_site(db, cfg, NOW, out_dir=out, deals=[])
         doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
         assert doc["meta"]["newsletter_url"] == ""
-        assert (out / "subscribe.html").exists()
 
-
-class TestSubscribePageDoubleOptIn:
-    """subscribe.html with double opt-in: ?ok=1 points at the inbox, the
-    Worker's confirm page lands here on ?confirmed=1, ?unsubscribed=1 is
-    unchanged and the copy explains the confirmation step."""
-
-    def test_states_and_copy(self, db, cfg, tmp_path):
+    def test_subscribe_page_is_a_membership_page(self, db, cfg, tmp_path):
         out = tmp_path / "site"
-        cfg.newsletter_worker_url = "https://wowpriced-subscribe.example.workers.dev"
         render_site(db, cfg, NOW, out_dir=out, deals=[])
         html = (out / "subscribe.html").read_text(encoding="utf-8")
-        assert "ok=1" in html
-        assert "Check your inbox and click the confirmation link" in html
-        assert "You're on the list" not in html  # the old promise is gone
-        assert "confirmed=1" in html and "You're confirmed" in html
+        assert html.startswith("<!doctype html>")
+        assert "<form" not in html and 'name="email"' not in html
+        assert "Every deal, unlocked" in html and "$9.99/mo" in html
+        assert '"./#signup"' in html and "Start 7-day free trial" in html
         assert "unsubscribed=1" in html and "You're unsubscribed" in html
-        assert "err=email" in html
-        assert "one confirmation link first" in html  # the intro copy
-        assert "Nothing is sent until you confirm" in html
+        assert "subscribe_url" not in html and 'href="./"' in html
+        assert "<script src=" not in html and "<link" not in html
+
+    def test_home_page_has_no_email_form(self, db, cfg, tmp_path):
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert 'id="nlform"' not in html and 'name="email"' not in html.replace('type="email"', "")
+        assert '<a href="subscribe.html">Membership</a>' in html
+        assert "workers.dev" not in html
 
 
 class TestPaywallPage:
@@ -576,17 +557,6 @@ class TestPaywallPage:
         start = html.index("function lockedHtml")
         body = html[start:html.index("function cardHtml")]
         assert "href" not in body and "d.item" not in body and "d.url" not in body
-
-
-class TestFooterNewsletterForm:
-    def test_form_present_and_wired_from_meta(self, db, cfg, tmp_path):
-        from dealradar.publish.site import render_site
-        render_site(db, cfg, NOW, out_dir=tmp_path)
-        html = (tmp_path / "index.html").read_text(encoding="utf-8")
-        assert 'id="nlform"' in html and 'name="email"' in html
-        assert 'href="subscribe.html"' in html
-        assert "m.newsletter_url" in html          # action comes from meta, never hardcoded
-        assert "workers.dev" not in html
 
 
 class TestSelfReloadAndPetsTab:
@@ -857,7 +827,9 @@ class TestMembershipCopyIsTrue:
         for name in ("about.html", "how-it-works.html"):
             text = " ".join(pages[name].split())
             assert "free for everyone, a new eight at every drop" in text, name
-            assert "one email every morning" in text and "once an hour" not in text, name
+            # Membership is site access only (operator, 2026-10-11): no email.
+            assert "new deals every 10 minutes" in text, name
+            assert "one email every morning" not in text and "once an hour" not in text, name
             assert "7-day free trial" in text and "card" in text, name
             assert "every deal on the wall" in text, name
 

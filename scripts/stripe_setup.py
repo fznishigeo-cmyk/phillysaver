@@ -70,8 +70,8 @@ def main() -> None:
     if product is None:
         product = call("POST", "/products", {
             "name": PRODUCT_NAME,
-            "description": "Every deal on the wall unlocked, plus the best of each "
-                           "day's new verified deals in one email every morning.",
+            "description": "Every deal on the wall unlocked, with new deals "
+                           "every 10 minutes.",
             **APP_TAG,
         })
         print(f"created product {product['id']}")
