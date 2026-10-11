@@ -19,8 +19,14 @@ quote, which the synthesized text carries. The "N hours ago" stamp is kept
 out of the text, so an unchanged card hashes identically run after run and
 is parsed (paid for) once; it only feeds ``published_at``.
 
-When no card parses (layout change) the older path still applies: the
-text is split into card-group chunks for the parser, with loud diagnostics.
+The page also embeds its cards' full data objects (an "initialDeals"
+array in a serialized-state attribute: title, store, products with the
+regular/sale prices and KCL's Amazon affiliate link, promo lines and codes,
+final price, percent, expiry). That is the primary path: one synthesized
+post per embedded deal, every number and promo line as the page states it,
+so the evidence check still holds and a coupon-only price reaches the
+parser WITH its coupon. The text cards are the fallback, and the chunk
+path the fallback's fallback, each with loud diagnostics.
 """
 
 from __future__ import annotations
@@ -134,6 +140,164 @@ def _match_offer(card: dict[str, Any],
     return hits[0] if len(hits) == 1 else None
 
 
+_INITIAL_DEALS_KEY = '"initialDeals":'
+
+
+def _bracketed(text: str, start: int) -> str:
+    """The JSON array starting at text[start] == '[' through its matching
+    ']', respecting strings; '' when unbalanced."""
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return ""
+
+
+def _devalue(v: Any) -> Any:
+    """Decode the page's serialized state: ``[0, x]`` is the value x,
+    ``[0]`` is null, ``[1, [...]]`` is an array; objects carry encoded
+    values. Anything else is returned as is."""
+    if isinstance(v, list):
+        if v and v[0] == 0:
+            return _devalue(v[1]) if len(v) > 1 else None
+        if len(v) == 2 and v[0] == 1 and isinstance(v[1], list):
+            return [_devalue(x) for x in v[1]]
+        return [_devalue(x) for x in v]
+    if isinstance(v, dict):
+        return {k: _devalue(x) for k, x in v.items()}
+    return v
+
+
+def _embedded_deals(html: str) -> list[dict[str, Any]]:
+    """The deal objects the page embeds for its own cards (title, store,
+    products with regular/sale price and Amazon link, promos with codes,
+    final price, percent, expiry), decoded; [] when absent or changed."""
+    raw = _html_lib.unescape(html)
+    i = raw.find(_INITIAL_DEALS_KEY)
+    if i == -1:
+        return []
+    j = raw.find("[", i + len(_INITIAL_DEALS_KEY))
+    if j == -1:
+        return []
+    block = _bracketed(raw, j)
+    if not block:
+        return []
+    try:
+        decoded = _devalue(json.loads(block))
+    except ValueError:
+        return []
+    return [d for d in decoded if isinstance(d, dict) and d.get("title")] \
+        if isinstance(decoded, list) else []
+
+
+def _fmt_money(v: Any) -> str:
+    try:
+        return f"${float(v):,.2f}"
+    except (TypeError, ValueError):
+        return ""
+
+
+def _promo_lines(product: dict[str, Any]) -> list[str]:
+    """Every promo / coupon line (with its code when given) attached to a
+    product, in the page's own words: the parser turns these into stack
+    steps, so a coupon-only price is never mistaken for a shelf price."""
+    out: list[str] = []
+    for key, val in product.items():
+        if not (key == "promos" or key.endswith("oupons")) or not isinstance(val, list):
+            continue
+        for entry in val:
+            if not isinstance(entry, dict):
+                continue
+            line = str(entry.get("line") or entry.get("title") or
+                       entry.get("description") or "").strip()
+            code = str(entry.get("code") or "").strip()
+            if line and code:
+                out.append(f"{line} (code {code})")
+            elif line:
+                out.append(line)
+            elif code:
+                out.append(f"use code {code}")
+    return out
+
+
+def _embedded_post(deal: dict[str, Any], source: SourceConfig,
+                   now: datetime) -> RawPost | None:
+    """One synthesized post per embedded deal; the text carries every
+    number as the page states it (regular, sale, final, percent), the
+    promo wording and codes, the expiry and the Amazon link. Volatile
+    fields (updatedAt) stay out so an unchanged deal hashes identically."""
+    products = [p for p in (deal.get("products") or []) if isinstance(p, dict)]
+    product = products[0] if products else {}
+    name = str(product.get("name") or deal.get("title") or "").strip()
+    final = deal.get("finalPrice")
+    if not name or final is None:
+        return None
+    store = (deal.get("store") or {}).get("name") if isinstance(
+        deal.get("store"), dict) else ""
+    store = str(store or "Amazon")
+    kinds = [k for k in (deal.get("dealType") or []) if isinstance(k, str)]
+    kind = "Online Deal" if "Online" in kinds or not kinds else "In-Store Deal"
+    regular = deal.get("originalPrice")
+    if regular is None:
+        regular = product.get("regularPrice")
+    sale = product.get("discountPrice")
+    pct = deal.get("percentSavings")
+
+    price = _fmt_money(final)
+    bits = []
+    if regular is not None and _fmt_money(regular):
+        bits.append(f"regular price {_fmt_money(regular)}")
+    if pct is not None:
+        try:
+            bits.append(f"{int(round(float(pct)))}% Off")
+        except (TypeError, ValueError):
+            pass
+    lines = [name, f"{kind} at {store}: {price}" + (f" ({', '.join(bits)})" if bits else "") + "."]
+    if sale is not None and _fmt_money(sale) and _fmt_money(sale) != price:
+        lines.append(f"Sale price {_fmt_money(sale)}; final price {price} after the promo below.")
+    promos = _promo_lines(product)
+    if promos:
+        lines.append("How: " + " + ".join(promos) + ".")
+    if deal.get("displayAsLowAs"):
+        lines.append("Price shown is \"as low as\".")
+    expires = str(deal.get("expiredAt") or "").strip()
+    if expires:
+        lines.append(f"Expires: {expires[:10]}.")
+    url = str(product.get("url") or "").strip()
+    if url.startswith("http"):
+        lines.append(f"Buy: {url}")
+    created = util.parse_iso(str(deal.get("createdAt") or ""))
+    uid = str(deal.get("_id") or "").strip()
+    if not uid:
+        uid = hashlib.sha256(f"{name}|{final}|{regular}".encode("utf-8")).hexdigest()[:12]
+    return RawPost(
+        source_name=source.name,
+        uid=f"deal:{uid}",
+        url=source.url,                     # credit: the wall itself
+        title=name,
+        text="\n".join(lines),
+        published_at=created,
+        fetched_at=now,
+    )
+
+
 def _published_from_age(age: str, now: datetime) -> datetime | None:
     if not age:
         return None
@@ -220,6 +384,14 @@ class KclWallAdapter(SourceAdapter):
         text = util.html_to_text(html)
         n_prices = len(_PRICE_TOKEN.findall(text))
 
+        embedded = _embedded_deals(html)
+        if embedded:
+            posts = [p for p in (_embedded_post(d, source, now) for d in embedded)
+                     if p is not None]
+            log.info("kcl wall %s: %d embedded deals -> %d posts",
+                     source.name, len(embedded), len(posts))
+            return posts
+
         cards = _parse_cards(text)
         if cards:
             offers = _ld_offers(html)
@@ -229,15 +401,12 @@ class KclWallAdapter(SourceAdapter):
                 offer = _match_offer(card, offers)
                 matched += offer is not None
                 posts.append(_card_post(card, offer, source, now))
-            # One window kept for the next iteration (the sandbox cannot
-            # reach the host): the page embeds every card as a serialized
-            # state object ("initialDeals": _id, title, imageUrl, ...);
-            # show one whole object to find the per-deal link and code.
-            i = html.find("initialDeals")
-            log.info("kcl wall %s: %d cards, %d matched to %d ld+json offers; "
-                     "initialDeals head: %r", source.name, len(cards),
-                     matched, len(offers),
-                     _html_lib.unescape(html[i:i + 4000]) if i != -1 else "")
+            # Reached only when the embedded deal objects are gone (page
+            # change): say so loudly, with the markup head for the next fix.
+            log.warning("kcl wall %s: no embedded deals; %d text cards, %d "
+                        "matched to %d ld+json offers; markup head: %r",
+                        source.name, len(cards), matched, len(offers),
+                        html[:600])
             return posts
 
         log.info("kcl wall %s: no cards parsed; %d price tokens in text "
