@@ -79,8 +79,7 @@ publish:
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-
     Disclosure: some outbound links credit the deal source and may be affiliate links
-    that earn the source (or, in the future, this site) a commission. Prices change
-    fast and are not guaranteed.
+    that earn the source a commission. Prices change fast and are not guaranteed.
 
 seo:
   # Category hubs (/deals/<slug>/): a hub is indexable and in the sitemap

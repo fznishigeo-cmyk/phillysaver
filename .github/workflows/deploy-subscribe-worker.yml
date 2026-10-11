@@ -171,7 +171,13 @@ jobs:
           link="$(sed -n 's/^STRIPE_PAYMENT_LINK = "\([^"]*\)".*/\1/p' wrangler.deploy.toml)"
           link_mode=""
           case "$link" in
-            "") echo "::notice::Payment Link mode: not set" ;;
+            "") if [ -n "$key_mode" ]; then
+                  # Live key, no link: /api/checkout has no price and answers
+                  # 503 (live, 2026-10-11). Fail the deploy run loudly.
+                  echo "::error::STRIPE_PAYMENT_LINK is empty on the deployed Worker: checkout has no price. Commit it in wrangler.toml or pass the input."
+                  exit 1
+                fi
+                echo "::notice::Payment Link mode: not set" ;;
             */test_*) link_mode=test; echo "::warning::Payment Link is a TEST link: real cards cannot pay it" ;;
             https://*) link_mode=live; echo "::notice::Payment Link mode: live" ;;
             *) echo "::warning::Payment Link mode: unrecognized (expected https://buy.stripe.com/...)" ;;
