@@ -39,23 +39,43 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
-/* The drop clock: "Next drop in m:ss" over a bar that fills across
-   the cycle; the pulse says the page is live. */
-.drop{margin-left:auto;position:relative;display:inline-flex;align-items:center;gap:8px;
-      white-space:nowrap;background:var(--chip);border:1px solid var(--line);border-radius:12px;
-      padding:5px 14px 9px;overflow:hidden}
-.drop::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);
-      flex:0 0 auto;animation:pulse 1.6s ease-in-out infinite}
+/* The drop clock: a dial whose ring fills across the cycle (a half-disc
+   turning inside each fixed half: transforms only, teal then orange as the
+   drop nears), a glowing dot riding the
+   arc's head, a price tag in the middle; at the mark the ring turns green
+   and a tick draws in. "Next drop in m:ss" beside it. */
+.drop{margin-left:auto;position:relative;display:inline-flex;align-items:center;gap:10px;
+      white-space:nowrap;background:var(--chip);border:1px solid var(--line);border-radius:999px;
+      padding:5px 16px 5px 5px}
+.dial{--d:40px;--w:5px;position:relative;width:var(--d);height:var(--d);flex:none}
+.dbase{position:absolute;inset:0;border-radius:50%;border:var(--w) solid var(--line);
+       box-shadow:0 0 18px -4px rgba(14,117,105,.45)}
+.dring{position:absolute;inset:0;border-radius:50%;overflow:hidden}
+.dslot{position:absolute;inset:0;clip-path:inset(0 0 0 50%)}
+.dslot.l{clip-path:inset(0 50% 0 0);opacity:0}
+.dslot i{position:absolute;inset:0;border-radius:50%;clip-path:inset(0 50% 0 0);background:var(--accent)}
+.dslot.l i{clip-path:inset(0 0 0 50%);background:var(--flag)}
+.dhole{position:absolute;inset:var(--w);border-radius:50%;background:var(--chip);z-index:2}
+.dhead{position:absolute;left:50%;top:0;width:var(--w);height:var(--w);margin-left:calc(var(--w) / -2);
+       border-radius:50%;background:#fff;z-index:3;
+       box-shadow:0 0 0 1.5px var(--flag),0 0 8px 1px rgba(217,72,15,.7);
+       transform-origin:center calc(var(--d) / 2)}
+.dtag,.dtick{position:absolute;left:50%;top:50%;z-index:4;width:18px;height:18px;margin:-9px 0 0 -9px}
+.dtag{color:var(--accent);transition:opacity .28s ease,transform .34s cubic-bezier(.3,1.4,.4,1)}
+.dtick{opacity:0;transform:scale(.4);transition:opacity .26s ease,transform .42s cubic-bezier(.2,1.5,.35,1)}
+.dtick path{stroke:var(--good);stroke-width:4;fill:none;stroke-linecap:round;stroke-linejoin:round;
+            stroke-dasharray:30;stroke-dashoffset:30;transition:stroke-dashoffset .42s cubic-bezier(.5,0,.2,1) .12s}
+.drop.dropping .dtag{opacity:0;transform:scale(.7)}
+.drop.dropping .dtick{opacity:1;transform:scale(1)}
+.drop.dropping .dtick path{stroke-dashoffset:0}
+.drop.dropping .dslot i{background:var(--good);transition:background .3s ease}
+.drop.dropping .dhead{opacity:0}
+.drop.dropping .dbase{box-shadow:0 0 18px -4px rgba(16,122,61,.55)}
 .droplbl{font-size:13px;font-weight:700;color:var(--muted)}
 .dropt{font-size:22px;line-height:1.15;font-weight:800;font-variant-numeric:tabular-nums;
        color:var(--fg);min-width:3.1em}
 .drop.dropping .droplbl{display:none}
-.drop.dropping .dropt{color:var(--accent);min-width:0}
-.drop.dropping::before{animation-duration:.6s}
-.dropbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--line)}
-.dropfill{display:block;height:100%;background:var(--accent);transform-origin:left center;
-          transform:scaleX(0)}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+.drop.dropping .dropt{color:var(--good);min-width:0}
 .since{max-width:1200px;margin:0 auto;padding:0 16px 2px;font-size:12.5px;
        color:var(--good);font-weight:700}
 .meta{color:var(--muted);font-size:12.5px;margin:0}
@@ -214,11 +234,103 @@ footer .meta{font-size:11.5px}
 .footnav{margin:0 0 10px;font-size:13px;font-weight:600}
 .footnav a{color:var(--fg)}
 .subbar{display:none}
+/* ---- the trial, as loud as the wall: a band between the free deals and
+   the locked ones, and a soft pulse on every trial button ---- */
+.trialband{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:16px 0;
+           padding:16px 20px;border-radius:14px;background:var(--accent);color:var(--accent-fg);
+           box-shadow:var(--shadow)}
+.tbtext{margin:0;flex:1 1 260px;font-size:18px;line-height:1.35}
+.trialband .pwbtn{background:var(--accent-fg);border-color:var(--accent-fg);
+                  color:var(--accent)!important;font-size:16px;padding:11px 22px}
+.trialband .disc{flex:1 1 100%;margin:0;color:var(--accent-fg);opacity:.9}
+#subscribe.getdeal{font-size:15px;padding:10px 18px}
+.trialcta{animation:ctaglow 2.4s ease-in-out infinite}
+@keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
+                   50%{box-shadow:0 0 0 7px rgba(14,117,105,.28)}}
+
+/* ---- the sources wall: where the deals come from, two quiet rows of
+   chips sliding in opposite directions (hover stops a row) ---- */
+.srcwall{margin:18px 0 6px;display:flex;flex-direction:column;gap:12px}
+.srchead{display:flex;justify-content:center}
+.srceye{display:inline-flex;align-items:center;gap:12px;font-size:11px;font-weight:700;
+        letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.srceye::before,.srceye::after{content:"";width:32px;height:1px;
+        background:linear-gradient(90deg,transparent,var(--muted))}
+.srceye::after{transform:scaleX(-1)}
+.srcrows{position:relative;display:flex;flex-direction:column;gap:10px}
+.srcrows::before,.srcrows::after{content:"";position:absolute;top:0;bottom:0;width:13%;
+        z-index:2;pointer-events:none}
+.srcrows::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
+.srcrows::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
+.srcrow{overflow:hidden}
+.srctrack{display:flex;width:max-content;padding:2px 0;animation:srcslide 60s linear infinite;
+          will-change:transform}
+.srctrack.rev{animation-duration:72s;animation-direction:reverse}
+.srcrow:hover .srctrack,.srcwall.hiddentab .srctrack{animation-play-state:paused}
+.srcchip{flex:none;display:inline-flex;align-items:center;gap:8px;margin-right:10px;
+         padding:7px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);
+         transition:border-color .4s,transform .4s}
+.srcchip:hover{border-color:color-mix(in srgb,var(--muted) 45%,var(--line));transform:translateY(-2px)}
+.srcchip svg{width:16px;height:16px;display:block;color:var(--muted)}
+.srcchip span{font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--fg);white-space:nowrap}
+@keyframes srcslide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion: reduce){.srctrack{animation:none}}
+/* ---- the deal ticker: a stencilled notice band on worn plaster above the
+   header; a torn mustard label, an ink band with a spray-dot texture and
+   the live deals scrolling on a seamless loop (hover or PAUSE stops it) ---- */
+.tk{--tk-plaster:#d2cbbe;--tk-band:#17263b;--tk-on:#fbf8f1;--tk-poster:#e3bf58;
+    --tk-aqua:#75b2b0;--tk-coral:#e46f58;--tk-display:"Archivo Black","Arial Black",Impact,sans-serif;
+    --tk-mono:"Recursive Mono",ui-monospace,Menlo,Consolas,monospace;
+    background:var(--tk-plaster);
+    background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.22) 0 38%,#0000 60%),
+                     repeating-linear-gradient(84deg,rgba(23,38,59,.06) 0 1px,#0000 1px 5px);
+    padding:7px 16px}
+@media (prefers-color-scheme: dark){
+  .tk{--tk-plaster:#2a3742;--tk-band:#eef1ec;--tk-on:#223140;
+      background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.07) 0 38%,#0000 60%),
+                       repeating-linear-gradient(84deg,rgba(0,0,0,.12) 0 1px,#0000 1px 5px)}
+}
+.tkband{position:relative;display:flex;align-items:stretch;max-width:1168px;margin:0 auto;
+        min-height:40px;background:var(--tk-band);color:var(--tk-on);border-radius:2px;
+        overflow:hidden;cursor:pointer}
+.tklabel{display:flex;align-items:center;flex:none;padding:0 22px 0 14px;background:var(--tk-poster);
+         color:#17263b;font:400 12px/1 var(--tk-display);letter-spacing:.14em;text-transform:uppercase;
+         clip-path:polygon(0 0,92% 0,100% 7%,93% 15%,100% 24%,92% 33%,100% 42%,93% 51%,100% 60%,
+                           92% 69%,100% 78%,93% 87%,100% 95%,94% 100%,0 100%)}
+.tkrun{position:relative;flex:1;overflow:hidden;min-width:0;
+       -webkit-mask:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent);
+       mask:linear-gradient(90deg,transparent,#000 14px,#000 calc(100% - 14px),transparent)}
+.tkrun::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:1;opacity:.5;
+               background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.28) 0 1px,#0000 1px),
+                          radial-gradient(circle at 70% 60%,rgba(255,255,255,.18) 0 1px,#0000 1px);
+               background-size:14px 14px}
+.tkstrip{display:flex;width:max-content;height:100%;animation:tkscroll var(--tk-dur,60s) linear infinite}
+.tkband:hover .tkstrip,.tkband.paused .tkstrip,.tkband.hiddentab .tkstrip{animation-play-state:paused}
+@keyframes tkscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tkitem{display:flex;align-items:center;gap:10px;padding:0 24px;white-space:nowrap;
+        border-right:1px solid color-mix(in srgb,var(--tk-on) 14%,transparent)}
+.tkitem i{width:8px;height:8px;border-radius:2px;flex:none}
+.tkitem s{text-decoration:none;font:700 12px/1 var(--tk-mono);letter-spacing:.06em;opacity:.75}
+.tkitem span{font:600 13px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.08em;
+             text-transform:uppercase}
+.tkitem b{font:400 13px/1 var(--tk-display);letter-spacing:.04em}
+.tkpause{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:2;border:0;
+         cursor:pointer;padding:4px 8px;border-radius:2px;opacity:0;transition:opacity 180ms;
+         background:color-mix(in srgb,var(--tk-on) 14%,var(--tk-band));color:var(--tk-on);
+         font:700 10px/1 var(--tk-mono);letter-spacing:.06em}
+.tkband:hover .tkpause,.tkpause:focus-visible,.tkband.paused .tkpause{opacity:1}
+.tksr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);margin:0;padding:0}
+.card.flash{outline:3px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){
+  .trialcta{animation:none}
+  .tkstrip{animation:none}
+}
 @media (max-width:640px){
   header{position:static}
   .hrow{padding:8px 12px 2px;gap:2px 10px}
   .brand{font-size:20px}
-  .drop{order:1;padding:4px 11px 8px;gap:7px}
+  .drop{order:1;padding:4px 13px 4px 4px;gap:8px}
+  .dial{--d:34px;--w:4px}
   .droplbl{font-size:12.5px}
   .dropt{font-size:20px}
   .tag{order:2;flex-basis:100%;font-size:12px}
@@ -250,37 +362,57 @@ footer .meta{font-size:11.5px}
   .now{font-size:18px}
   .ph span{font-size:17px}
   .getdeal{padding:9px 11px;font-size:12.5px}
+  #subscribe.getdeal{font-size:13px;padding:9px 12px}
+  .tk{padding:5px 8px}
+  .tklabel{padding:0 16px 0 10px;font-size:10px}
+  .tkitem{padding:0 16px}
+  .tbtext{font-size:16px}
   .title{font-size:13.5px}
   .lock{font-size:12px;padding:5px 10px}
 }
 /* Reduced motion: no pulse, no sweep, no slide; a drop reorders instantly. */
 @media (prefers-reduced-motion: reduce){
-  .drop::before,.card.moved::after,.card.enter{animation:none}
+  .card.moved::after,.card.enter{animation:none}
+  .dtag,.dtick,.dtick path{transition:none}
   .card{transition:none}
 }
 </style>
 </head>
 <body>
+<section id="ticker" class="tk" aria-label="Live deals" hidden>
+  <div class="tkband" id="tkband">
+    <div class="tklabel" aria-hidden="true">Live deals</div>
+    <div class="tkrun"><div class="tkstrip" id="tkstrip" aria-hidden="true"></div></div>
+    <button type="button" class="tkpause" id="tkpause" aria-pressed="false">PAUSE</button>
+    <ul class="tksr" id="tklist"></ul>
+  </div>
+</section>
 <header>
   <div class="hrow">
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span id="tagline" class="tag">verified deals</span>
     <div id="drop" class="drop" role="timer" aria-live="off">
+      <span id="dropdial" class="dial" aria-hidden="true">
+        <span class="dbase"></span>
+        <span class="dring"><span class="dslot"><i id="dA"></i></span><span class="dslot l" id="dSL"><i id="dB"></i></span></span>
+        <span class="dhole"></span>
+        <span class="dhead" id="dhead"></span>
+        <svg class="dtag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4l-7.2 7.2a2 2 0 01-2.8 0L3 13V3h10l7.6 7.6a2 2 0 010 2.8z"/><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor"/></svg>
+        <svg class="dtick" viewBox="0 0 32 32"><path d="M7 17l6 6 12-13"/></svg>
+      </span>
       <span class="droplbl">Next drop in</span>
       <span id="countdown" class="dropt">-:--</span>
-      <span class="dropbar" aria-hidden="true"><span id="dropfill" class="dropfill"></span></span>
     </div>
     <span id="account" class="acct" hidden>
       <button type="button" id="loginlink" class="linkbtn" data-auth="login">Log in</button>
       <span id="acctin" class="in" hidden><span id="acctemail" class="email"></span>
-        <button type="button" id="billing" class="linkbtn" hidden>Manage or cancel</button>
         <button type="button" id="logout" class="linkbtn">Log out</button></span>
     </span>
-    <a id="subscribe" class="getdeal" href="#signup" style="display:none">
-      Get every deal by email — $9.99/mo</a>
+    <a id="subscribe" class="getdeal trialcta" href="#signup" style="display:none">
+      Start 7-day free trial</a>
   </div>
   <p id="sincevisit" class="since" hidden></p>
-  <p id="trialnote" class="since trial" hidden></p>
   <nav id="cattabs" aria-label="category tabs"></nav>
 </header>
 <div class="wrap">
@@ -303,9 +435,9 @@ footer .meta{font-size:11.5px}
   <div class="pwbtns">
     <button type="button" id="pwsignup" class="pwbtn" data-auth="signup">Sign up free</button>
     <button type="button" id="pwlogin" class="pwbtn alt" data-auth="login">Log in</button>
-    <button type="button" id="pwbuy" class="pwbtn" hidden>Start free trial</button>
+    <button type="button" id="pwbuy" class="pwbtn trialcta" hidden>Start free trial</button>
     <a id="pwclaim" class="pwbtn" href="welcome.html" hidden>Finish attaching your payment</a>
-    <button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage or cancel</button>
+    <button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage membership</button>
     <button type="button" id="pwcheck" class="pwbtn alt" hidden>I just subscribed</button>
   </div>
   <p id="pwnote" class="disc" hidden></p>
@@ -316,8 +448,8 @@ footer .meta{font-size:11.5px}
 <footer>
   <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus every verified
      deal emailed to you the hour it's found, bundled at most once an hour.
-     <span id="footterms">7-day free trial for new members. Card required. Free for 7 days,
-     then $9.99/month, renews monthly until you cancel. Cancel anytime online.</span>
+     <span id="footterms">7-day free trial for new members. $0 today. Card required, then
+     $9.99/month, renews monthly.</span>
      Today's top deals stay free for everyone.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
@@ -329,6 +461,15 @@ footer .meta{font-size:11.5px}
            autocomplete="email" aria-label="your email address">
     <button type="submit" class="getdeal">Get deals in your inbox</button>
   </form>
+  <div id="srcwall" class="srcwall" role="img" hidden>
+    <div class="srchead"><span class="srceye">Deals found across</span></div>
+    <div class="srcrows">
+      <div class="srcrow"><div class="srctrack" id="srca"></div></div>
+      <div class="srcrow"><div class="srctrack rev" id="srcb"></div></div>
+    </div>
+  </div>
+  <p id="acctfoot" class="meta" hidden>Your account:
+    <button type="button" id="billing" class="linkbtn">Manage membership</button></p>
   <nav class="footnav" aria-label="site pages">
     <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
     <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
@@ -336,7 +477,7 @@ footer .meta{font-size:11.5px}
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
-<a id="subbar" class="subbar" href="#signup">Get every deal by email &mdash; $9.99/mo</a>
+<a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a>
 </div>
 <div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
   <div class="mcard">
@@ -360,7 +501,7 @@ footer .meta{font-size:11.5px}
       <button type="button" id="cobtn" class="pwbtn">Start free trial</button>
       <p id="codisc" class="disc"></p>
       <p id="coerr" class="autherr" role="alert" hidden></p>
-      <button type="button" id="comanage" class="pwbtn alt" hidden>Manage or cancel</button>
+      <button type="button" id="comanage" class="pwbtn alt" hidden>Manage membership</button>
       <a id="cofb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
       <p id="cofbnote" class="disc" hidden></p>
       <p class="meta switch"><button type="button" id="conotnow" class="linkbtn">Not now</button></p>
@@ -528,21 +669,16 @@ footer .meta{font-size:11.5px}
     var join = on && !isMember() && !auth.checking && !unknownMembership() && !auth.block;
     document.getElementById("subscribe").style.display = join ? "" : "none";
     document.getElementById("subbar").classList.toggle("ready", join);
-    // "Manage or cancel" (Stripe's billing portal): members, and any account
-    // with a Stripe customer (a lapsed or past-due one fixes its card here).
-    document.getElementById("billing").hidden = !(on && hasBilling());
-    var trial = document.getElementById("trialnote");
-    trial.hidden = !(on && isMember() && me.reason === "trial");
-    if (!trial.hidden) {
-      // A me without trial_available comes from a Worker that predates the
-      // card-up-front trial: nothing will be charged, so no billing terms.
-      var day = fmtDay(me.trial_ends_at);
-      trial.textContent = "Free trial" + (day ? " — ends " + day : "") + "." +
-        ("trial_available" in me ? " Then $9.99/month, renews monthly until you cancel. " +
-          cancelLine() : "");
-    }
+    // The trial button reads as the trial wherever there is one.
+    document.getElementById("subscribe").textContent = offer().btn;
+    document.getElementById("subbar").textContent = offer().btn;
+    // "Manage membership" (Stripe's billing portal) sits in the footer:
+    // members, and any account with a Stripe customer (a lapsed or
+    // past-due one fixes its card there). The wall itself carries no
+    // trial or billing line for members.
+    document.getElementById("acctfoot").hidden = !(on && hasBilling());
     document.getElementById("footterms").textContent =
-      (offer().trial ? trialDays() + "-day free trial for new members. " : "") + offer().note;
+      (offer().trial ? trialDays() + "-day free trial for new members. " : "") + shortNote(offer());
     syncSubbar();
   }
 
@@ -597,7 +733,17 @@ footer .meta{font-size:11.5px}
     var left = clock.target - now;
     document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
     var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
-    document.getElementById("dropfill").style.transform = "scaleX(" + f.toFixed(4) + ")";
+    paintDial(f);
+  }
+  // The dial's ring for f = 0..1 of the cycle, swept clockwise from 12
+  // o'clock: a half-disc turns into the right half for the first 180
+  // degrees, a second one into the left half after; the dot rides the head.
+  function paintDial(f) {
+    var deg = f * 360;
+    document.getElementById("dA").style.transform = "rotate(" + Math.min(deg, 180).toFixed(2) + "deg)";
+    document.getElementById("dSL").style.opacity = deg > 180 ? "1" : "0";
+    document.getElementById("dB").style.transform = "rotate(" + Math.max(0, deg - 180).toFixed(2) + "deg)";
+    document.getElementById("dhead").style.transform = "rotate(" + deg.toFixed(2) + "deg)";
   }
   // The page's one ticking interval: paints the clock, fires the drop at
   // each mark and runs the quiet late poll.
@@ -877,11 +1023,110 @@ footer .meta{font-size:11.5px}
       "</div></article>";
   }
 
+  // ---- the sources wall (footer) ----
+  // meta.source_sites: the sites the live deals were found on, most first;
+  // dealt into two rows, each chip with an invented geometric mark (no
+  // real logos) picked by the site's name.
+  var SRC_MARKS = [
+    '<circle cx="12" cy="12" r="8"/>',
+    '<path d="M12 4l8.4 15H3.6z" fill="currentColor" stroke="none"/>',
+    '<path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"/>',
+    '<path d="M12 3l9 9-9 9-9-9z"/>',
+    '<path d="M4 8l8 5 8-5M4 14l8 5 8-5"/>',
+    '<path d="M4 17a8 8 0 0116 0"/>',
+    '<circle cx="9.3" cy="12" r="6"/><circle cx="14.7" cy="12" r="6"/>',
+    '<path d="M12 3l8.5 6.2-3.2 10H6.7l-3.2-10z"/>',
+    '<path d="M6 18V9M12 18V5M18 18v-6" stroke-width="3"/>',
+    '<circle cx="12" cy="12" r="7.5" fill="currentColor" stroke="none"/>',
+    '<path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z" fill="currentColor" stroke="none"/>',
+    '<path d="M12 3v18M4.4 7.5l15.2 9M19.6 7.5l-15.2 9" stroke-width="1.8"/>'
+  ];
+  var srcSig = "";
+  function paintSources() {
+    var sites = ((state.meta || {}).source_sites || []).filter(function (x) {
+      return typeof x === "string" && /^[a-z0-9.-]+$/i.test(x);
+    });
+    var sig = sites.join(",");
+    if (sig === srcSig) return;
+    srcSig = sig;
+    var wall = document.getElementById("srcwall");
+    wall.hidden = sites.length < 4;
+    if (wall.hidden) return;
+    wall.setAttribute("aria-label", "Deals found across " + sites.join(", "));
+    function chip(site) {
+      return '<span class="srcchip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+        'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        SRC_MARKS[hashStr(site) % SRC_MARKS.length] + "</svg><span>" + esc(site) + "</span></span>";
+    }
+    var rows = [[], []];
+    sites.forEach(function (site, i) { rows[i % 2].push(chip(site)); });
+    ["srca", "srcb"].forEach(function (id, i) {
+      var h = rows[i].join("");
+      document.getElementById(id).innerHTML = h + h;  // doubled: the half-width loop has no seam
+    });
+  }
+
+  // ---- the deal ticker ----
+  // What scrolls: a member's best live deals; for everyone else the free
+  // deals (name and price) dealt between locked ones (store and % only,
+  // the stub is all the page has) that invite the trial. Rebuilt only when
+  // its items change, so a re-render never restarts the scroll.
+  var TICKER_MAX = 16, TICKER_PX_S = 55, tickerSig = "";
+  function tickerItems() {
+    var live = state.deals.filter(function (d) { return d.status !== "dead"; });
+    var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
+    var open = live.filter(function (d) { return !isLocked(d); }).sort(byPct);
+    var shut = live.filter(isLocked).sort(byPct);
+    var out = [], o = offer();
+    for (var i = 0; out.length < TICKER_MAX && (i < open.length || i < shut.length); i++) {
+      if (i < open.length) out.push(open[i]);
+      if (i < shut.length && i < 8 && out.length < TICKER_MAX) out.push(shut[i]);
+    }
+    return out.map(function (d) {
+      var pct = Math.round(num(d.pct_at_checkout) || 0), conds = d.conditions || [];
+      var tone = conds.indexOf("used") !== -1 || conds.indexOf("open_box") !== -1 ? "var(--tk-poster)"
+        : (pct >= 85 ? "var(--tk-coral)" : "var(--tk-aqua)");
+      var name = String(d.item || "");
+      if (name.length > 42) name = name.slice(0, 40).replace(/\s+\S*$/, "") + "…";
+      var text = isLocked(d)
+        ? "&#128274; " + esc(d.store || "Members") + " · " +
+          (o.trial ? "unlock free for " + o.days + " days" : "members only")
+        : esc(name) + (num(d.final_price) != null ? " <b>$" + Number(d.final_price).toFixed(2) + "</b>" : "") +
+          (d.store ? " · " + esc(d.store) : "");
+      var plain = isLocked(d) ? (d.store || "") + " deal, members only"
+        : name + (num(d.final_price) != null ? " $" + Number(d.final_price).toFixed(2) : "") +
+          (d.store ? " at " + d.store : "");
+      return { key: dealKey(d), locked: isLocked(d), tone: tone, stamp: "-" + pct + "%",
+               html: text, plain: "-" + pct + "% " + plain };
+    });
+  }
+  function paintTicker() {
+    var box = document.getElementById("ticker"), items = tickerItems();
+    var sig = items.map(function (it) { return it.key + "|" + it.html; }).join("\n");
+    if (sig === tickerSig) return;
+    tickerSig = sig;
+    box.hidden = items.length < 3;
+    if (box.hidden) return;
+    var strip = document.getElementById("tkstrip");
+    var one = items.map(function (it) {
+      return '<span class="tkitem" data-k="' + esc(it.key) + '"' + (it.locked ? ' data-locked="1"' : "") +
+        '><i style="background:' + it.tone + '"></i><s>' + esc(it.stamp) + "</s><span>" + it.html +
+        "</span></span>";
+    }).join("");
+    strip.innerHTML = one + one;  // doubled so the half-width translate wraps with no seam
+    document.getElementById("tklist").innerHTML = items.map(function (it) {
+      return "<li>" + esc(it.plain) + "</li>";
+    }).join("");
+    strip.style.setProperty("--tk-dur", Math.max(20, Math.round(strip.scrollWidth / 2 / TICKER_PX_S)) + "s");
+  }
+
   function gridHtml(deals) {
     return '<div class="grid">' + deals.map(cardHtml).join("") + "</div>";
   }
 
   function render() {
+    paintTicker();
+    paintSources();
     var content = document.getElementById("content");
     var rows = state.deals.length ? ordered(filtered()) : [];
     updatePaywall(rows.some(isLocked));
@@ -910,9 +1155,17 @@ footer .meta{font-size:11.5px}
       headliners = live.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
       strong = live.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
     }
-    var html = "";
+    var html = "", banded = false;
+    // The first grid with locked cards gets the trial band ahead of them.
+    function grid(list) {
+      var shut = banded || !canJoin() ? [] : list.filter(isLocked);
+      if (!shut.length) return gridHtml(list);
+      banded = true;
+      var open = list.filter(function (d) { return !isLocked(d); });
+      return (open.length ? gridHtml(open) : "") + trialBand() + gridHtml(shut);
+    }
     if (headliners.length) {
-      html += gridHtml(headliners);
+      html += grid(headliners);
     } else {
       html += '<p class="empty">No deals above the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
@@ -921,7 +1174,7 @@ footer .meta{font-size:11.5px}
     if (strong.length) {
       html += '<h2 class="secth">Strong deals <span class="meta">— below the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
-        "alert bar, still big savings</span></h2>" + gridHtml(strong);
+        "alert bar, still big savings</span></h2>" + grid(strong);
     }
     if (missed.length) {
       html += '<h2 class="secth missed">Just missed &#128557; <span class="meta">— ' +
@@ -1109,6 +1362,13 @@ footer .meta{font-size:11.5px}
   function plainDisclosure() {
     return "Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine();
   }
+  // The main screen's one line under a trial button (panel, banner,
+  // footer): what it costs and that it renews, no cancel reminders (the
+  // operator's call). The full terms sit in
+  // the dialog next to the button that starts checkout, and on Stripe's.
+  function shortNote(o) {
+    return o.trial ? "$0 today. Card required, then $9.99/month, renews monthly." : "$9.99/month, renews monthly.";
+  }
   // The Payment Link has no trial: its own terms, never the trial's.
   function fallbackTerms() {
     return "$9.99 charged today, renews monthly until you cancel. " + cancelLine();
@@ -1125,7 +1385,7 @@ footer .meta{font-size:11.5px}
       found: "We found a subscription for this email. " +
         (google ? "If it's yours, log out and continue with Google using this address (it unlocks at once), or " : "") +
         (mail ? "email " + mail + " and we'll attach it." : "use the contact page and we'll attach it."),
-      payment_issue: "There's a problem with your last payment. Update your card in Manage or cancel.",
+      payment_issue: "There's a problem with your last payment. Update your card in Manage membership.",
       contact_support: (mail ? "Email " + mail : "Use the contact page") + " and we'll sort it out."
     }[code] || "";
   }
@@ -1138,6 +1398,19 @@ footer .meta{font-size:11.5px}
     return { trial: trial, lapsed: me.reason === "lapsed", days: days,
              btn: trial ? "Start " + days + "-day free trial" : "Subscribe — $9.99/month",
              note: trial ? trialDisclosure(days) : plainDisclosure() };
+  }
+  // Anyone who can start the trial (or subscribe) right now.
+  function canJoin() {
+    return !!apiUrl() && !isMember() && !auth.checking && !unknownMembership() && !auth.block;
+  }
+  // The trial in the wall itself, between the free deals and the locked ones.
+  function trialBand() {
+    var o = offer(), locked = num((state.meta || {}).locked_count) || 0;
+    return '<div class="trialband"><p class="tbtext"><strong>&#128275; Unlock ' +
+      esc(plural(locked, "more deal")) + "</strong>" +
+      (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every hour.") +
+      '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
+      '</button><p class="disc">' + esc(shortNote(o)) + "</p></div>";
   }
   function lockLabel() {
     return !apiUrl() ? "" : (!state.me ? "Sign up free"
@@ -1224,12 +1497,12 @@ footer .meta{font-size:11.5px}
           total + " deals.",
         sub: "You're signed in. Subscribe to unlock all " + total + " deals.",
         lapsed: "No active membership on this account right now. If a payment failed, " +
-          "update your card with Manage or cancel.",
+          "update your card with Manage membership.",
         claim: "Your payment on this device isn't attached to this account yet.",
         unknown: "Couldn't check your membership right now",
         retry: "Couldn't load your deals right now"
       }[mode];
-      var note = (mode === "out" || buy) && !blk ? o.note : "";
+      var note = (mode === "out" || buy) && !blk ? shortNote(o) : "";
       var show = { pwsignup: mode === "out", pwlogin: mode === "out", pwbuy: buy && !fb && !blk,
                    pwclaim: mode === "claim",
                    pwmanage: blk ? blk === "payment_issue" : mode === "lapsed",
@@ -1318,7 +1591,7 @@ footer .meta{font-size:11.5px}
     });
   }
   // Checkout refused with a reason: the dialog and the panel trade the
-  // buy button for what to do instead (Manage or cancel for a payment
+  // buy button for what to do instead (Manage membership for a payment
   // issue), for as long as this account stays signed in on the page.
   function refuse(code, ui, had) {
     auth.block = code;
@@ -1331,10 +1604,10 @@ footer .meta{font-size:11.5px}
   // Without the billing portal, cancelling is one email away.
   function noPortalText() {
     return "Online billing is unavailable right now. " + (contactEmail()
-      ? "Email " + contactEmail() + " and we'll cancel or change your membership."
-      : "Use the contact page and we'll cancel or change your membership.");
+      ? "Email " + contactEmail() + " and we'll take care of your membership."
+      : "Use the contact page and we'll take care of your membership.");
   }
-  // "Manage or cancel": POST /api/portal → a Stripe billing-portal session
+  // "Manage membership": POST /api/portal → a Stripe billing-portal session
   // for the account's customer. 404/503 (or no such route yet): the portal
   // link (me.portal_url) when there is one, else the email route; the
   // button stays, so the portal is tried again on the next click.
@@ -1375,8 +1648,8 @@ footer .meta{font-size:11.5px}
   }
   // Step 2's button and its terms, or (checkout unavailable) the Payment
   // Link with its own terms in their place.
-  // A refusal (auth.block) puts its message there instead, with Manage or
-  // cancel for a payment issue (and for a lapsed account beside its
+  // A refusal (auth.block) puts its message there instead, with Manage
+  // membership for a payment issue (and for a lapsed account beside its
   // button: the subscription may only need a new card).
   function paintStep2() {
     var o = offer(), blk = auth.block, fb = o.lapsed || blk ? "" : auth.fb;
@@ -1408,7 +1681,7 @@ footer .meta{font-size:11.5px}
     if (co) {
       title = auth.block ? "Checkout didn't start" : (o.lapsed ? "No active membership right now"
         : (o.trial ? "Step 2 of 2 — start your free trial" : "Step 2 of 2 — subscribe"));
-      sub = auth.block ? "" : (o.lapsed ? "If a payment failed, update your card with Manage or cancel. " +
+      sub = auth.block ? "" : (o.lapsed ? "If a payment failed, update your card with Manage membership. " +
                        "Or restart for $9.99/month."
         : (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial to unlock all " +
                      dealTotal() + " deals."
@@ -1555,7 +1828,7 @@ footer .meta{font-size:11.5px}
     var rest = q.toString();
     try { history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash); }
     catch (e) { /* fine */ }
-    toast("Checkout cancelled — no charge.");
+    toast("Checkout closed — no charge.");
   })();
   document.querySelectorAll("[data-auth]").forEach(function (b) {
     b.addEventListener("click", function () { openAuth(b.getAttribute("data-auth")); });
@@ -1632,8 +1905,35 @@ footer .meta{font-size:11.5px}
   // A click on a locked card takes the next step: sign up when signed out,
   // the trial (step 2) for a free account, a retry for a member.
   document.getElementById("content").addEventListener("click", function (e) {
-    var card = e.target.closest ? e.target.closest(".card.locked") : null;
+    var card = e.target.closest ? e.target.closest(".card.locked, [data-cta]") : null;
     if (card) nextStep();
+  });
+  // The ticker: a locked deal takes the next step; a free one scrolls to
+  // its card and flashes it. PAUSE (or hover) stops the scroll.
+  document.getElementById("tkband").addEventListener("click", function (e) {
+    if (e.target.closest("#tkpause")) return;
+    var it = e.target.closest(".tkitem");
+    if (!it) return;
+    if (it.getAttribute("data-locked") && !isMember()) { nextStep(); return; }
+    var k = it.getAttribute("data-k"), cards = cardEls();
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].getAttribute("data-key") !== k) continue;
+      var card = cards[i];
+      card.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "center" });
+      card.classList.add("flash");
+      setTimeout(function () { card.classList.remove("flash"); }, 1600);
+      return;
+    }
+  });
+  document.getElementById("tkpause").addEventListener("click", function () {
+    var band = document.getElementById("tkband"), on = !band.classList.contains("paused");
+    band.classList.toggle("paused", on);
+    this.setAttribute("aria-pressed", on ? "true" : "false");
+    this.textContent = on ? "PLAY" : "PAUSE";
+  });
+  document.addEventListener("visibilitychange", function () {
+    document.getElementById("tkband").classList.toggle("hiddentab", document.hidden);
+    document.getElementById("srcwall").classList.toggle("hiddentab", document.hidden);
   });
 
   ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {

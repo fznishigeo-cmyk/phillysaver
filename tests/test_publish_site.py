@@ -523,7 +523,7 @@ class TestPaywallPage:
                       "conotnow", "paywall", "pwsignup", "pwlogin", "pwbuy", "pwcheck",
                       "pwclaim", "pwmanage", "pwnote", "pwerr", "pwfb", "pwfbnote",
                       "authdisc", "cofbnote",
-                      "account", "loginlink", "logout", "billing", "trialnote"):
+                      "account", "loginlink", "logout", "billing", "acctfoot"):
             assert f'id="{el_id}"' in html, el_id
         assert 'role="dialog"' in html and 'aria-modal="true"' in html
         assert '"Escape"' in html  # Esc closes the dialog
@@ -559,8 +559,10 @@ class TestPaywallPage:
         assert '" with a " + o.days + "-day free trial"' in html
         # The card-less trial and its copy are gone.
         assert "Your free week ended" not in html and "No card needed" not in html
-        assert '"Free trial" + (day ? " — ends " + day : "")' in html
-        assert "Manage or cancel" in html
+        # Operator call: members see no trial or billing line on the wall,
+        # and nothing on the main screen says "cancel".
+        assert 'id="trialnote"' not in html and "Manage or cancel" not in html
+        assert "Manage membership" in html
         # Stub cards never carry a product link or title text.
         start = html.index("function lockedHtml")
         body = html[start:html.index("function cardHtml")]
@@ -723,12 +725,18 @@ class TestCardRequiredTrial:
         body = html[start:html.index("function showErr(")]
         assert "location.assign" in body and "portal_url" in body
         assert "say(noPortalText())" in body and "btn.hidden" not in body
-        assert 'id="billing"' in html and ">Manage or cancel<" in html
+        assert 'id="billing" class="linkbtn">Manage membership<' in html
 
-    def test_trial_member_note_and_cancel_toast(self, html):
-        assert '" Then $9.99/month, renews monthly until you cancel. "' in html
+    def test_membership_link_lives_in_the_footer_and_no_member_line(self, html):
+        """Operator call: the billing link sits at the bottom of the page as
+        "Manage membership"; members get no trial/terms line on the wall."""
+        foot = html[html.index("<footer>"):html.index("</footer>")]
+        assert 'id="acctfoot"' in foot and 'id="billing"' in foot
+        header = html[html.index("<header>"):html.index("</header>")]
+        assert 'id="billing"' not in header and "trialnote" not in html
+        assert 'getElementById("acctfoot").hidden = !(on && hasBilling())' in html
         assert "checkout=cancel" in html
-        assert "Checkout cancelled — no charge." in html
+        assert "Checkout closed — no charge." in html
         start = html.index("function checkoutCancelled()")
         assert "history.replaceState" in html[start:start + 600]
 
@@ -747,7 +755,11 @@ class TestDropClock:
 
     def test_big_countdown_with_progress_bar_and_no_live_region(self, html):
         assert 'id="drop" class="drop" role="timer" aria-live="off"' in html
-        assert 'id="dropfill"' in html and ".dropbar{" in html
+        # The dial: a ring filled by two turning half-discs, a tag that
+        # becomes a tick at the drop.
+        assert 'id="dropdial" class="dial"' in html and ".dslot{" in html
+        assert "function paintDial(f)" in html and "paintDial(f);" in html
+        assert 'class="dtick"' in html and ".drop.dropping .dtick{opacity:1" in html
         css = html[html.index(".dropt{"):html.index("}", html.index(".dropt{"))]
         assert "font-size:22px" in css and "font-weight:800" in css
         assert "tabular-nums" in css
@@ -805,7 +817,7 @@ class TestWelcomeTrialClaim:
         assert "You won't be charged until " in html
         assert "Then $9.99/month, renews monthly " in html
         assert "Membership activated" in html
-        assert "/api/portal" in html and "Manage or cancel" in html
+        assert "/api/portal" in html and "Manage membership" in html
 
     def test_wrong_account_copy(self, html):
         assert "wrong_account:" in html
@@ -865,8 +877,8 @@ class TestTrialCtasAreHonest:
         assert html.count("subscribe_url") == 1
         assert "subscribe_url" in _between(html, "function checkout(", "function noPortalText(")
         assert 'id="pwplain"' not in html
-        assert '<a id="subscribe" class="getdeal" href="#signup"' in html
-        assert '<a id="subbar" class="subbar" href="#signup"' in html
+        assert '<a id="subscribe" class="getdeal trialcta" href="#signup"' in html
+        assert '<a id="subbar" class="subbar trialcta" href="#signup"' in html
         start = html.index('["subscribe", "subbar"].forEach')
         assert "nextStep()" in html[start:start + 250]
         for name, page in pages.items():
@@ -888,7 +900,14 @@ class TestTrialCtasAreHonest:
         assert 'renews monthly " +\n      "until you cancel. " + cancelLine()' in html
         assert '"Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine()' in html
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
-        assert 'var note = (mode === "out" || buy) && !blk ? o.note : ""' in panel
+        # The main screen (panel, band, footer) says what it costs and that
+        # it renews, never "cancel" (operator's call); the dialog that starts
+        # checkout keeps every term, and Stripe's page repeats them.
+        assert 'var note = (mode === "out" || buy) && !blk ? shortNote(o) : ""' in panel
+        short = _between(html, "function shortNote(", "function fallbackTerms(")
+        assert '"$0 today. Card required, then $9.99/month, renews monthly."' in short
+        assert "cancel" not in short.lower()
+        assert 'disc.textContent = o.note;' in _between(html, "function paintStep2(", "function setMode(")
         mode = _between(html, "function setMode(", "function openAuth(")
         assert 'disc.textContent = up ? o.note : ""' in mode   # the sign-up step
         assert 'id="authdisc" class="disc"' in html
@@ -934,7 +953,7 @@ class TestTrialCtasAreHonest:
     def test_no_portal_means_email_never_a_receipt(self, pages):
         html = pages["index.html"]
         body = _between(html, "function noPortalText(", "function portal(")
-        assert '"Email " + contactEmail() + " and we\'ll cancel or change your membership."' in body
+        assert '"Email " + contactEmail() + " and we\'ll take care of your membership."' in body
         for name, page in pages.items():
             assert "reply to your stripe receipt" not in " ".join(page.lower().split()), name
         welcome = pages["welcome.html"]
@@ -943,12 +962,12 @@ class TestTrialCtasAreHonest:
 
     def test_billing_reaches_lapsed_accounts(self, pages):
         html = pages["index.html"]
-        assert 'getElementById("billing").hidden = !(on && hasBilling())' in html
+        assert 'getElementById("acctfoot").hidden = !(on && hasBilling())' in html
         body = _between(html, "function hasBilling(", "function pendingClaim(")
         assert 'me.member || me.claimed || me.reason === "lapsed"' in body
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
         assert 'pwmanage: blk ? blk === "payment_issue" : mode === "lapsed"' in panel
-        assert '<button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage or cancel</button>' in html
+        assert '<button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage membership</button>' in html
         assert '["billing", "pwmanage", "comanage"].forEach' in html
         assert "Manage billing" not in html
         assert "Your membership ended" not in html
@@ -998,9 +1017,9 @@ class TestTrialCtasAreHonest:
         assert 'window.addEventListener("pageshow"' in welcome and "e.persisted" in welcome
 
     def test_old_worker_trial_gets_no_billing_terms(self, pages):
-        assert '"trial_available" in me ? " Then $9.99/month' in pages["index.html"]
+        assert "trialnote" not in pages["index.html"]  # no member terms line at all
         assert 'me.reason === "trial" && "trial_available" in me' in pages["welcome.html"]
-        # ...and no "Manage or cancel" for a card-less trial: nothing to manage.
+        # ...and no "Manage membership" for a card-less trial: nothing to manage.
         body = _between(pages["index.html"], "function hasBilling(", "function pendingClaim(")
         assert ('me.member && me.reason === "trial" && !("trial_available" in me) && !me.claimed'
                 in body)
@@ -1009,7 +1028,7 @@ class TestTrialCtasAreHonest:
         html = pages["index.html"]
         texts = _between(html, "function blockText(", "function offer(")
         assert ('payment_issue: "There\'s a problem with your last payment. '
-                'Update your card in Manage or cancel."') in texts
+                'Update your card in Manage membership."') in texts
         assert ('contact_support: (mail ? "Email " + mail : "Use the contact page") + '
                 '" and we\'ll sort it out."') in texts
         body = _between(html, "function checkout(", "function noPortalText(")
@@ -1018,11 +1037,11 @@ class TestTrialCtasAreHonest:
         refuse = _between(html, "function refuse(", "function noPortalText(")
         assert "auth.block = code;" in refuse and 'auth.fb = "";' in refuse
         # The step-2 dialog and the panel trade the buy button for the way on:
-        # Manage or cancel for a payment issue.
+        # Manage membership for a payment issue.
         step2 = _between(html, "function paintStep2(", "function setMode(")
         assert 'getElementById("comanage").hidden = blk ? blk !== "payment_issue" : !o.lapsed' in step2
         assert "err.textContent = blockText(blk)" in step2
-        assert '<button type="button" id="comanage" class="pwbtn alt" hidden>Manage or cancel</button>' in html
+        assert '<button type="button" id="comanage" class="pwbtn alt" hidden>Manage membership</button>' in html
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
         assert '.textContent = blk ? blockText(blk) : {' in panel
         assert 'var fb = buy && !o.lapsed && !blk ? auth.fb : ""' in panel
@@ -1123,3 +1142,54 @@ def test_each_render_unlocks_a_new_teaser(db, tmp_path):
         shown.append({d["key"] for d in doc["deals"] if not d.get("locked")})
     assert len(shown[0]) == len(shown[1]) == 8 and not shown[0] & shown[1]
     assert len(json.loads(db.meta_get("teaser_recent"))) == 16
+
+
+class TestEyeCatchers:
+    """Operator asks (2026-10-11): a stencil deal ticker at the top, the
+    trial in the wall itself, the source sites at the bottom."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_ticker_tops_the_page_and_never_names_a_locked_deal(self, html):
+        assert html.index('id="ticker"') < html.index("<header>")
+        body = _between(html, "function tickerItems(", "function paintTicker(")
+        locked = body[body.index("var text = isLocked(d)"):body.index(": esc(name)")]
+        assert "d.store" in locked and "d.item" not in locked and "final_price" not in locked
+        assert "unlock free for " in locked
+        paint = _between(html, "function paintTicker(", "function gridHtml(")
+        assert "strip.innerHTML = one + one;" in paint and "if (sig === tickerSig) return;" in paint
+        assert 'id="tkpause" aria-pressed="false"' in html and 'id="tklist"' in html
+        assert ".tkstrip{animation:none}" in html  # reduced motion: no scroll
+
+    def test_trial_band_sits_between_free_and_locked_deals(self, html):
+        grid = _between(html, "function render() {", "content.innerHTML = html;")
+        assert 'return (open.length ? gridHtml(open) : "") + trialBand() + gridHtml(shut);' in grid
+        assert "banded || !canJoin()" in grid
+        assert 'closest(".card.locked, [data-cta]")' in html
+        assert "!isMember() && !auth.checking" in _between(html, "function canJoin(", "function trialBand(")
+
+    def test_sources_wall_in_the_footer(self, html):
+        foot = html[html.index("<footer>"):html.index("</footer>")]
+        assert 'id="srcwall"' in foot and "Deals found across" in foot
+        paint = _between(html, "function paintSources(", "// ---- the deal ticker ----")
+        assert "/^[a-z0-9.-]+$/i.test(x)" in paint and "h + h" in paint
+        assert ".srctrack{animation:none}" in html
+
+
+def test_source_sites_meta_folds_subdomains_and_ranks(db, cfg, tmp_path):
+    deals = []
+    for i, url in enumerate(["https://home.woot.com/a", "https://electronics.woot.com/b",
+                             "https://www.slickdeals.net/c", "https://hip2save.com/d"]):
+        d = make_deal(dedupe_key=f"walmart|s-{i}", canonical_url=f"https://www.walmart.com/ip/s{i}")
+        d["sightings"] = [{"source_name": "x", "source_url": url, "seen_at": iso(NOW)}]
+        deals.append(d)
+    dead = make_deal(dedupe_key="walmart|gone", status="dead")
+    dead["sightings"] = [{"source_name": "x", "source_url": "https://deadsite.com/x", "seen_at": iso(NOW)}]
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=deals + [dead])
+    meta = json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
+    assert meta["source_sites"] == ["woot.com", "hip2save.com", "slickdeals.net"]

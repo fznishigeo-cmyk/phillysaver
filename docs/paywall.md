@@ -15,7 +15,7 @@ Stripe's: `TRIAL_DAYS` days (default 7), the card collected up front
 every month until cancelled. One trial per account and email address, and
 never a second subscription (nor a second open checkout) while one has not
 ended. Members cancel either way: online in Stripe's customer portal
-(the "Manage or cancel" link), or by emailing hello@wowpriced.com
+(the "Manage membership" link at the bottom of the home page), or by emailing hello@wowpriced.com
 (`config.yaml` `contact_email`), and the operator cancels the subscription
 for them in the Stripe dashboard.
 
@@ -615,7 +615,7 @@ and click the confirmation link, `?confirmed=1` says "You're confirmed",
      subscription already exists for this email: say so, with "I just
      subscribed", Google sign-in and hello@wowpriced.com as the ways on);
    - `409 payment_issue` → "Your last payment didn't go through: update
-     your card" with the "Manage or cancel" action (`POST /api/portal`, else
+     your card" with the "Manage membership" action (`POST /api/portal`, else
      `me.portal_url`), never a second checkout;
    - `409 contact_support` → "Email hello@wowpriced.com and we'll sort it
      out" (a subscription from before this account's Google sign-in is

@@ -14,6 +14,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..config import redact_secrets
 from ..util import iso, parse_iso
@@ -27,6 +28,26 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 # The page's "next drop" countdown reads meta.cadence_minutes instead of
 # guessing; an unknown kind gets the fast lane's, the site's shortest cadence.
 _CADENCE_MINUTES = {"fast": 10, "hourly": 60}
+#: Sites shown in the footer's "deals found across" wall, at most.
+_SOURCE_SITES_MAX = 36
+
+
+def _source_sites(deals: list[dict[str, Any]]) -> list[str]:
+    """The sites the live deals were found on (credit domains, subdomains
+    folded: home.woot.com -> woot.com), most deals first. Public credit,
+    nothing about any locked deal beyond where deals come from."""
+    count: dict[str, int] = {}
+    for d in deals:
+        if d.get("status") != "alive":
+            continue
+        for host in {urlsplit(c.get("url") or "").netloc.lower().split(":")[0]
+                     for c in d.get("credits") or []}:
+            site = ".".join(host.split(".")[-2:])
+            if "." in site:
+                count[site] = count.get(site, 0) + 1
+    return sorted(count, key=lambda k: (-count[k], k))[:_SOURCE_SITES_MAX]
+
+
 #: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
 _TEASER_META = "teaser_recent"
 
@@ -218,6 +239,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "teaser_count": int(getattr(cfg, "paywall_teaser_count", 8)),
         "locked_count": locked_count,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
+        "source_sites": _source_sites(serialized),
     }
     full_doc = {"meta": meta, "deals": serialized}
     (out / "deals.json").write_text(

@@ -43,7 +43,7 @@ p{margin:0 0 14px}
   <p>Your first email arrives within the hour. Add the sender to your contacts
      so it never hits spam, and bookmark the live wall:</p>
   <p><a class="btn" href="./">Open the deal wall</a></p>
-  <p class="muted" id="portal" style="display:none">Manage or cancel your
+  <p class="muted" id="portal" style="display:none">Manage your
      membership any time: <a id="portallink" rel="noopener">billing portal</a>.</p>
   <p class="muted">Questions? Reply to any alert email.</p>
 </div></div>
@@ -97,7 +97,7 @@ p{margin:0 0 14px}
     var t = Date.parse(s || "");
     return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "long", day: "numeric" });
   }
-  // "Manage or cancel": POST /api/portal opens Stripe's billing portal for
+  // "Manage membership": POST /api/portal opens Stripe's billing portal for
   // this account; without one (404/503, or no such route yet) the portal
   // link from me or deals.json meta, else the email route beside it.
   function manage(apiUrl, me) {
@@ -140,7 +140,7 @@ p{margin:0 0 14px}
           ssDel(CLAIM_KEY);
           var me = res.json.me, day = fmtDay(me.trial_ends_at);
           var manageBtn = " " + CANCEL + " <button type=\"button\" id=\"manage\" class=\"linkbtn\">" +
-            "Manage or cancel</button><span id=\"managenote\"></span>";
+            "Manage membership</button><span id=\"managenote\"></span>";
           // A me without trial_available comes from a Worker that predates
           // the card-up-front trial (a card-less trial charges nothing), so
           // the trial's billing terms are shown only with the new shape.
