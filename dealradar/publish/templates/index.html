@@ -272,6 +272,19 @@ footer .meta{font-size:11.5px}
 .tbtext strong{font-weight:700}
 .trialband .pwbtn{font-size:14px;padding:9px 18px}
 .trialband .disc{flex:1 1 100%;margin:0;color:var(--muted)}
+/* "$0 today": the one price line next to a trial button on the main screen
+   (operator's call); a slow sheen crosses it, none when motion is reduced */
+.zerotoday{position:relative;overflow:hidden;display:inline-flex;align-items:baseline;gap:5px;
+           padding:4px 13px 4px 11px;border-radius:999px;font-size:13px;font-weight:700;
+           letter-spacing:.02em;color:var(--accent-fg);white-space:nowrap;
+           background:linear-gradient(110deg,var(--accent) 35%,color-mix(in srgb,var(--accent) 70%,#ffc94d));
+           box-shadow:0 3px 12px -5px var(--accent)}
+.zerotoday b{font-size:19px;font-weight:800;line-height:1}
+.zerotoday::after{content:"";position:absolute;inset:0;transform:translateX(-130%);
+                  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%);
+                  animation:zeroshine 4.2s ease-in-out infinite}
+@keyframes zeroshine{0%,62%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
+@media (prefers-reduced-motion: reduce){.zerotoday::after{display:none}}
 #subscribe.getdeal{font-size:14px;padding:9px 16px}
 .trialcta{animation:ctaglow 4.5s ease-in-out infinite}
 #subscribe.trialcta,.subbar.trialcta{animation:none}
@@ -480,8 +493,7 @@ footer .meta{font-size:11.5px}
 <footer>
   <p><strong>Membership — $9.99/month:</strong> every deal on the wall, new deals every
      10 minutes.
-     <span id="footterms">7-day free trial for new members. $0 today, then $9.99/month,
-     renews monthly.</span>
+     <span id="footterms">7-day free trial for new members. $0 today.</span>
      Eight deals stay free for everyone, new at every drop.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
@@ -1404,12 +1416,16 @@ footer .meta{font-size:11.5px}
   function plainDisclosure() {
     return "Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine();
   }
-  // The main screen's one line under a trial button (panel, banner,
-  // footer): what it costs and that it renews, no cancel reminders (the
-  // operator's call). The full terms sit in
-  // the dialog next to the button that starts checkout, and on Stripe's.
+  // The main screen's one line next to a trial button (panel, band,
+  // footer): just "$0 today" (the operator's call). The footer's own line
+  // names the $9.99/month, and the full terms sit in the dialog next to the
+  // button that starts checkout, and on Stripe's page.
   function shortNote(o) {
-    return o.trial ? "$0 today, then $9.99/month, renews monthly." : "$9.99/month, renews monthly.";
+    return o.trial ? "$0 today." : "$9.99/month, renews monthly.";
+  }
+  // The same line as a badge on the wall (band and panel).
+  function noteHtml(o) {
+    return o.trial ? '<span class="zerotoday"><b>$0</b> today</span>' : esc(shortNote(o));
   }
   // The Payment Link has no trial: its own terms, never the trial's.
   function fallbackTerms() {
@@ -1452,7 +1468,7 @@ footer .meta{font-size:11.5px}
       esc(plural(locked, "more deal")) + "</strong>" +
       (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every drop.") +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
-      '</button><p class="disc">' + esc(shortNote(o)) + "</p></div>";
+      "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
   }
   function lockLabel() {
     return !apiUrl() ? "" : (!state.me ? "Sign up free"
@@ -1552,7 +1568,7 @@ footer .meta{font-size:11.5px}
       Object.keys(show).forEach(function (id) { panel.querySelector("#" + id).hidden = !show[id]; });
       panel.querySelector("#pwbuy").textContent = o.btn;
       var pn = panel.querySelector("#pwnote");
-      pn.textContent = note;
+      pn.innerHTML = note ? noteHtml(o) : "";
       pn.hidden = !note || !!fb;
       var pf = panel.querySelector("#pwfb"), pfn = panel.querySelector("#pwfbnote");
       pf.hidden = pfn.hidden = !fb;

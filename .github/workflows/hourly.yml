@@ -43,9 +43,9 @@ jobs:
         run: pip install -e .
 
       - name: Restore state from data branch
-        run: |
-          git fetch origin data || true
-          git checkout origin/data -- state.db 2>/dev/null || echo 'no prior state'
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/restore_state.sh
 
       - name: Run pipeline
         env:
@@ -73,6 +73,8 @@ jobs:
         run: python -m dealradar run
 
       - name: Commit state to data branch
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/commit_state.sh
 
       - name: Deploy site to Cloudflare Pages

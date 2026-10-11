@@ -24,6 +24,8 @@ SQUASH = WORKFLOWS / "squash-data.yml"
 DEPLOY_WORKER = WORKFLOWS / "deploy-subscribe-worker.yml"
 WORKER_DIR = ROOT / "cloudflare" / "subscribe-worker"
 SCRIPT = ROOT / "scripts" / "commit_state.sh"
+RESTORE = ROOT / "scripts" / "restore_state.sh"
+CRYPT = ROOT / "scripts" / "state_crypt.sh"
 README = ROOT / "README.md"
 
 SECRET_NAMES = [
@@ -56,6 +58,14 @@ def single_job(doc: dict) -> dict:
 
 def run_commands(doc: dict) -> list[str]:
     return [s["run"] for s in single_job(doc)["steps"] if "run" in s]
+
+
+def assert_state_steps_get_the_key(steps: list[dict]) -> None:
+    """Restore and commit both see STATE_DB_KEY (decrypt / encrypt state.db);
+    the pipeline step does not need it."""
+    for script in ("restore_state.sh", "commit_state.sh"):
+        step = next(s for s in steps if script in s.get("run", ""))
+        assert step["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
 
 
 # ---------------------------------------------------------------- YAML shape
@@ -92,10 +102,10 @@ def test_hourly_shape() -> None:
 
     runs = run_commands(doc)
     assert any(r.strip() == "pip install -e ." for r in runs)
-    assert any("git fetch origin data || true" in r
-               and "git checkout origin/data -- state.db" in r for r in runs)
+    assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any(r.strip() == "python -m dealradar run" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
+    assert_state_steps_get_the_key(steps)
 
     # Official Pages artifact actions only — no gh-pages branch commits.
     assert "actions/configure-pages@v5" in uses
@@ -121,8 +131,9 @@ def test_fast_shape() -> None:
 
     runs = run_commands(doc)
     assert any(r.strip() == "python -m dealradar run --fast-lane" for r in runs)
-    assert any("git fetch origin data || true" in r for r in runs)
+    assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
+    assert_state_steps_get_the_key(job["steps"])
 
     # The fast lane deploys the site too: a 15-minute-lane find (Keepa price
     # drop) must reach the page in minutes, not wait for the hourly deploy.
@@ -276,9 +287,12 @@ def test_no_secret_is_echoed() -> None:
                 assert env_line.match(line), (p.name, line)
             if "echo" in line:
                 assert "secrets." not in line and "$DEALS" not in line, (p.name, line)
-    script = SCRIPT.read_text()
-    for name in SECRET_NAMES:
-        assert name not in script
+    for path in (SCRIPT, RESTORE, CRYPT):
+        script = path.read_text()
+        for name in SECRET_NAMES:
+            assert name not in script
+        # The state key reaches openssl through the environment only.
+        assert "$STATE_DB_KEY" not in script and "${STATE_DB_KEY}" not in script
 
 
 # ----------------------------------------------------------- commit_state.sh
@@ -326,12 +340,15 @@ def repo(tmp_path: Path) -> Path:
     return clone
 
 
-def run_script(repo_dir: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["bash", str(SCRIPT)], cwd=repo_dir, capture_output=True, text=True,
-        env={**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null",
-             "GIT_CONFIG_SYSTEM": "/dev/null"},
-    )
+def run_script(repo_dir: Path, script: Path = SCRIPT,
+               key: str | None = None) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null",
+           "GIT_CONFIG_SYSTEM": "/dev/null"}
+    env.pop("STATE_DB_KEY", None)
+    if key is not None:
+        env["STATE_DB_KEY"] = key
+    return subprocess.run(["bash", str(script)], cwd=repo_dir,
+                          capture_output=True, text=True, env=env)
 
 
 def origin_branches(repo_dir: Path) -> set[str]:
@@ -390,6 +407,120 @@ def test_commit_state_appends_and_includes_report(repo: Path) -> None:
     files = set(_git(repo, "ls-tree", "--name-only", "origin/data").splitlines())
     assert files == {"state.db", "sources_report.md"}
     assert not (repo / ".state-worktree").exists()
+
+
+# ----------------------------------------------- encrypted state (public repo)
+
+KEY = "correct horse battery staple"
+SQLITE_V1 = b"SQLite format 3\x00" + b"member deal: secret-link-v1 " * 8
+SQLITE_V2 = b"SQLite format 3\x00" + b"member deal: secret-link-v2 " * 8
+
+
+def branch_blob(repo: Path, path: str) -> bytes:
+    _git(repo, "fetch", "origin", "data")
+    return subprocess.run(["git", "cat-file", "blob", f"origin/data:{path}"], cwd=repo,
+                          check=True, capture_output=True).stdout
+
+
+def decrypt(blob: bytes, tmp_path: Path, key: str = KEY) -> bytes:
+    enc, out = tmp_path / "in.enc", tmp_path / "out.db"
+    enc.write_bytes(blob)
+    subprocess.run(["bash", "-c", '. "$0"; state_decrypt "$1" "$2"', str(CRYPT), str(enc), str(out)],
+                   check=True, capture_output=True, env={**os.environ, "STATE_DB_KEY": key})
+    return out.read_bytes()
+
+
+def test_state_scripts_static() -> None:
+    assert RESTORE.stat().st_mode & stat.S_IXUSR
+    assert RESTORE.read_text().startswith("#!/usr/bin/env bash")
+    assert "set -euo pipefail" in RESTORE.read_text()
+    assert "-pass env:STATE_DB_KEY" in CRYPT.read_text()
+    for p in (RESTORE, CRYPT):
+        subprocess.run(["bash", "-n", str(p)], check=True)
+
+
+def test_commit_state_encrypts_with_key(repo: Path, tmp_path: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    res = run_script(repo, key=KEY)
+    assert res.returncode == 0, res.stderr + res.stdout
+    files = _git(repo, "ls-tree", "--name-only", "origin/data").splitlines()
+    assert files == ["state.db.enc"]
+    blob = branch_blob(repo, "state.db.enc")
+    assert b"secret-link" not in blob and b"SQLite format" not in blob
+    assert decrypt(blob, tmp_path) == SQLITE_V1
+
+
+def test_commit_state_encrypted_noop_when_unchanged(repo: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo, key=KEY).returncode == 0
+    res = run_script(repo, key=KEY)  # same plaintext -> no new ciphertext
+    assert res.returncode == 0, res.stderr
+    assert "no-op" in res.stdout
+    _git(repo, "fetch", "origin", "data")
+    assert _git(repo, "rev-list", "--count", "origin/data") == "1"
+
+
+def test_commit_state_moves_a_clear_branch_to_encrypted(repo: Path, tmp_path: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    res = run_script(repo)  # no key yet: today's behaviour, with a warning
+    assert res.returncode == 0 and "::warning::" in res.stdout
+    (repo / "state.db").write_bytes(SQLITE_V2)
+    (repo / "sources_report.md").write_text("# report\n")
+    assert run_script(repo, key=KEY).returncode == 0
+    _git(repo, "fetch", "origin", "data")
+    files = set(_git(repo, "ls-tree", "--name-only", "origin/data").splitlines())
+    assert files == {"state.db.enc", "sources_report.md"}
+    assert decrypt(branch_blob(repo, "state.db.enc"), tmp_path) == SQLITE_V2
+
+
+def test_commit_state_never_commits_clear_text_over_an_encrypted_branch(repo: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "state.db").write_bytes(SQLITE_V2)
+    res = run_script(repo)  # key missing
+    assert res.returncode != 0
+    assert "STATE_DB_KEY is not set" in res.stdout
+    _git(repo, "fetch", "origin", "data")
+    assert _git(repo, "rev-list", "--count", "origin/data") == "1"
+    assert _git(repo, "ls-tree", "--name-only", "origin/data").splitlines() == ["state.db.enc"]
+    assert not (repo / ".state-worktree").exists()
+
+
+def test_restore_state_without_a_data_branch(repo: Path) -> None:
+    res = run_script(repo, RESTORE, key=KEY)
+    assert res.returncode == 0, res.stderr
+    assert "no prior state" in res.stdout
+    assert not (repo / "state.db").exists()
+
+
+def test_restore_state_reads_a_clear_branch(repo: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo).returncode == 0
+    (repo / "state.db").unlink()
+    res = run_script(repo, RESTORE)
+    assert res.returncode == 0, res.stderr
+    assert (repo / "state.db").read_bytes() == SQLITE_V1
+
+
+def test_restore_state_decrypts(repo: Path) -> None:
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "state.db").unlink()
+    res = run_script(repo, RESTORE, key=KEY)
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert (repo / "state.db").read_bytes() == SQLITE_V1
+
+
+@pytest.mark.parametrize("key", [None, "", "the wrong key"])
+def test_restore_state_fails_rather_than_start_empty(repo: Path, key: str | None) -> None:
+    """A run that cannot read its state must stop: an empty state.db would be
+    committed over the real one."""
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "state.db").unlink()
+    res = run_script(repo, RESTORE, key=key)
+    assert res.returncode != 0
+    assert not (repo / "state.db").exists()
 
 
 # ------------------------------------------------------------------- README

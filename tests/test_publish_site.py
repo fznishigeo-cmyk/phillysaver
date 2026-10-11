@@ -672,11 +672,12 @@ class TestCardRequiredTrial:
         assert disclosure in html
         assert ('"Cancel anytime online" + (contactEmail() ? " or email " + '
                 'contactEmail() : "") + "."') in html
-        # Both trial buttons (panel and dialog) get the line written right
-        # beside them, as visible text (never a title= tooltip).
+        # Both trial buttons (panel and dialog) get a line written right
+        # beside them, as visible text (never a title= tooltip): "$0 today"
+        # by the panel's (operator's call), every term by the dialog's.
         assert 'id="pwbuy"' in html and 'id="pwnote" class="disc"' in html
         assert 'id="cobtn"' in html and 'id="codisc" class="disc"' in html
-        assert "pn.textContent = note" in html
+        assert 'pn.innerHTML = note ? noteHtml(o) : ""' in html
         assert "disc.textContent = o.note" in html
         assert "title=" not in html[html.index('id="pwbuy"'):html.index('id="pwfb"')]
 
@@ -886,12 +887,16 @@ class TestTrialCtasAreHonest:
         assert 'renews monthly " +\n      "until you cancel. " + cancelLine()' in html
         assert '"Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine()' in html
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
-        # The main screen (panel, band, footer) says what it costs and that
-        # it renews, never "cancel" (operator's call); the dialog that starts
-        # checkout keeps every term, and Stripe's page repeats them.
+        # The main screen (panel, band) says only "$0 today" next to a trial
+        # button, never "cancel" (operator's call); the footer line opens
+        # with "Membership — $9.99/month"; the dialog that starts checkout
+        # keeps every term, and Stripe's page repeats them.
         assert 'var note = (mode === "out" || buy) && !blk ? shortNote(o) : ""' in panel
+        assert 'pn.innerHTML = note ? noteHtml(o) : ""' in panel
         short = _between(html, "function shortNote(", "function fallbackTerms(")
-        assert '"$0 today, then $9.99/month, renews monthly."' in short
+        assert 'o.trial ? "$0 today." : "$9.99/month, renews monthly."' in short
+        assert '<span class="zerotoday"><b>$0</b> today</span>' in short
+        assert "<strong>Membership — $9.99/month:</strong>" in html
         assert "card" not in short.lower()  # operator call: no "Card required" on the main screen
         assert "cancel" not in short.lower()
         assert 'disc.textContent = o.note;' in _between(html, "function paintStep2(", "function setMode(")

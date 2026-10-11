@@ -7,6 +7,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   hourly. Each run fetches the sources, parses deals (Claude Haiku; Sonnet
   critic), and publishes the site to Cloudflare Pages and GitHub Pages.
   `state.db` is committed to the `data` branch.
+- **The repository is public, so state.db is encrypted** on the `data` branch
+  (`state.db.enc`, key = the `STATE_DB_KEY` repository secret). Restore
+  fails the run when the key is missing or wrong: never "fix" that by
+  starting empty. Without the secret, commits stay unencrypted with a
+  warning. After the first encrypted commit, run `squash data branch` once
+  so no unencrypted copy stays in the branch history.
 - **Billing and accounts:** the Cloudflare Worker `cloudflare/subscribe-worker`.
   Deploy it with the `deploy subscribe worker` workflow.
   - Stripe Checkout with a 7-day card-up-front trial.
@@ -24,6 +30,9 @@ Keep this file current: whoever stops working updates it in their last commit.
     config.yaml; the code paths stay, switched off.
   - No page offers or promises an email. `subscribe.html` is a plain
     membership page; old email links land there with a short note.
+- **"$0 today":** next to a trial button on the main screen the only price
+  line is a "$0 today" badge. The footer opens with "Membership —
+  $9.99/month", and the full terms stay in the dialog and on Stripe's page.
 - **Cancel wording:** no "cancel" reminders on the main screen. "Manage
   membership" sits in the footer only. The full auto-renewal terms stay in
   the checkout dialog, on Stripe's page, on the welcome page and on the help

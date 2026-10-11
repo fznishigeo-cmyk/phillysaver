@@ -145,7 +145,10 @@ Three workflows in `.github/workflows/`:
   (SQLite state stays consistent).
 - `state.db` (and `sources_report.md`) live on the **`data` branch** — committed
   after every run by `scripts/commit_state.sh`, squashed monthly, **never on
-  main**. The commit messages carry `[skip ci]`.
+  main**. The commit messages carry `[skip ci]`. The repository is public, so
+  with the `STATE_DB_KEY` repository secret set the branch holds only
+  `state.db.enc` (`scripts/state_crypt.sh`); `scripts/restore_state.sh`
+  decrypts it before each run and fails the run rather than start empty.
 - Keep hourly runs under ~3 min of runner time (the job has a hard
   `timeout-minutes: 15`; internal budget is 8 min). The run budget in
   `config.yaml` (`fetch.run_budget_s`) is the knob.
