@@ -111,7 +111,7 @@ paywall:
   teaser_count: 8          # unlocked deals for visitors
   trial_days: 7
   api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
-  google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
+  google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty
 
 newsletter:
   # The FREE daily email list, with no server of our own: a Cloudflare

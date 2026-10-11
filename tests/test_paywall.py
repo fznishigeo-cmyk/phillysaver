@@ -148,8 +148,9 @@ class TestConfig:
         assert isinstance(cfg.paywall_enabled, bool)
         assert cfg.paywall_teaser_count == 8
         assert cfg.paywall_trial_days == 7
-        assert cfg.paywall_api_url == ""
-        assert cfg.paywall_google_client_id == ""
+        assert isinstance(cfg.paywall_api_url, str)
+        # Operator values (set once the Worker and the Google client exist).
+        assert isinstance(cfg.paywall_google_client_id, str)
 
     def test_dataclass_defaults_match_the_block(self):
         cfg = AppConfig()

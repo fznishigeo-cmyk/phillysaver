@@ -529,8 +529,9 @@ sources:
     notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
 
-  # ---- added 2026-10-11: public RSS feeds, polite defaults (robots honored, no
-  # grants). Dead guesses are autodiscovered or culled at the daily revalidation. ----
+  # ---- added 2026-10-11: public RSS feeds. Each entry below carries the crawl
+  # and image grant the operator reports from that site (see its text); a dead
+  # feed guess is autodiscovered or culled at the daily revalidation. ----
   - name: couponztime
     method: rss
     url: https://www.couponztime.com/feed/
