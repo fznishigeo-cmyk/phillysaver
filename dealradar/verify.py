@@ -111,16 +111,42 @@ def text_marks_dead(text: str) -> bool:
     return bool(_DEAD_RE.search(text or ""))
 
 
+_IMAGE_NAME_RE = re.compile(r"[\w.,+%-]+")
+
+
+def _keepa_image_name(product: dict[str, Any]) -> str:
+    """The product's main image filename from a Keepa product record.
+    Keepa deprecated ``imagesCSV`` for ``images`` (a list of {l: large
+    filename, m: medium filename, ...}); live wart: 41 of 41 rechecked
+    Amazon deals in one run came back photo-less because only imagesCSV
+    was read. Both shapes are accepted; a path or junk is never used."""
+    images = product.get("images")
+    if isinstance(images, list):
+        for img in images:
+            name = ""
+            if isinstance(img, dict):
+                name = img.get("l") or img.get("m") or ""
+            elif isinstance(img, str):
+                name = img
+            name = name.strip() if isinstance(name, str) else ""
+            if name and "/" not in name and _IMAGE_NAME_RE.fullmatch(name):
+                return name
+    csv = product.get("imagesCSV")
+    if isinstance(csv, str) and csv.strip():
+        first = csv.split(",")[0].strip()
+        if first and "/" not in first and _IMAGE_NAME_RE.fullmatch(first):
+            return first
+    return ""
+
+
 def _harvest_image(deal: dict[str, Any], product: dict[str, Any]) -> None:
     """Free ride on any Keepa product response: the product's image filename
     on Amazon's public CDN (no extra tokens, no image ever stored by us)."""
     if deal.get("image_url"):
         return
-    csv = product.get("imagesCSV")
-    if isinstance(csv, str) and csv.strip():
-        first = csv.split(",")[0].strip()
-        if first and "/" not in first:
-            deal["image_url"] = f"https://m.media-amazon.com/images/I/{first}"
+    name = _keepa_image_name(product)
+    if name:
+        deal["image_url"] = f"https://m.media-amazon.com/images/I/{name}"
 
 
 #: Stack-step wording whose discount Amazon's listed price never shows: the

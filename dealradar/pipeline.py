@@ -586,8 +586,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             continue  # only spend tokens on deals that would publish
         (photo if in_window else due).append(deal)
 
-    def apply(deal: dict[str, Any], verdict: bool | None) -> None:
+    def apply(deal: dict[str, Any], verdict: bool | None,
+              had_photo: bool = True) -> None:
         if verdict is None:
+            # No price opinion, but a photo the record carried is still
+            # kept (live wart: photo-only answers were thrown away).
+            if not had_photo and deal.get("image_url"):
+                payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+                db.update_deal(deal["dedupe_key"], payload=payload)
             return  # API had no opinion; try again next pass
         stats["checked"] += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
@@ -624,11 +630,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             size = KEEPA_BATCH if avail is None else max(
                 1, min(KEEPA_BATCH, int(avail - MIN_FOR_DEAL_QUERY)))
             batch = group[i:i + size]
+            photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget)
             if is_photo:
                 stats["image_backfill"] += len(batch)
             for deal in batch:
-                apply(deal, verdicts.get(deal["dedupe_key"]))
+                apply(deal, verdicts.get(deal["dedupe_key"]),
+                      had_photo=deal["dedupe_key"] not in photo_less)
+            found = sum(1 for d in batch
+                        if d["dedupe_key"] in photo_less and d.get("image_url"))
+            if photo_less:
+                log.info("price recheck: %d of %d photo-less deal(s) got a "
+                         "Keepa photo", found, len(photo_less))
             i += len(batch)
     budget.save(db)
     if stats["tokens_short"]:

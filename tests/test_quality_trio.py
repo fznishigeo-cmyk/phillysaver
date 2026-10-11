@@ -674,6 +674,30 @@ class TestPriceRecheck:
         verify.recheck_amazon_price(deal, cfg)
         assert deal["image_url"].endswith("KEEP.jpg")
 
+    def test_harvests_keepa_images_list(self):
+        """Keepa deprecated imagesCSV for images=[{l, m, ...}]; live wart:
+        41 of 41 rechecked deals came back photo-less reading only the old
+        field. The large image wins, then medium; junk is never used."""
+        from dealradar import verify
+        cdn = "https://m.media-amazon.com/images/I/"
+        cases = [
+            ({"images": [{"l": "81big.jpg", "lH": 1500, "m": "51mid.jpg"}]}, cdn + "81big.jpg"),
+            ({"images": [{"m": "51mid.jpg"}]}, cdn + "51mid.jpg"),
+            ({"images": [None, {"l": "../evil/x.jpg"}, {"l": "71ok.jpg"}]}, cdn + "71ok.jpg"),
+            ({"images": ["61str.jpg"]}, cdn + "61str.jpg"),
+            ({"images": None, "imagesCSV": "71old.jpg,41b.jpg"}, cdn + "71old.jpg"),
+            ({"images": [], "imagesCSV": ""}, None),
+            ({"images": [{"l": "<script>"}]}, None),
+            ({}, None),
+        ]
+        for product, want in cases:
+            deal = {"asin": "B0TESTASIN1"}
+            verify._harvest_image(deal, product)
+            assert deal.get("image_url") == want, product
+        kept = {"image_url": cdn + "KEEP.jpg"}
+        verify._harvest_image(kept, {"images": [{"l": "81big.jpg"}]})
+        assert kept["image_url"] == cdn + "KEEP.jpg"
+
     def test_used_deal_checks_warehouse_price_and_gone_offer(self, monkeypatch):
         import httpx
 
@@ -768,6 +792,38 @@ class TestPriceRecheck:
         assert stats == {"checked": 1, "dead": 0, "image_backfill": 1,
                          "tokens_short": 0}
         assert db.get_deal("url|a")["image_url"].endswith("new.jpg")
+        db.close()
+
+    def test_photo_kept_when_recheck_has_no_price_opinion(self, tmp_path,
+                                                          monkeypatch):
+        """A Keepa record with a photo but no usable current price used to
+        be thrown away whole: the verdict was None, so nothing was saved.
+        The photo is kept; the deal stays due for its price check."""
+        from dealradar import verify
+        db = DB(tmp_path / "state.db")
+        d = _deal_dict(dedupe_key="url|p", item="url|p")
+        d["asin"] = "B0PPPPPPPP"
+        d["image_url"] = ""
+        db.insert_deal(dedupe_key="url|p", store=d["store"], item=d["item"],
+                       normalized_item="url|p", canonical_url="", payload=d,
+                       final_price=d["final_price"],
+                       pct_at_checkout=d["pct_at_checkout"],
+                       abs_savings=d["abs_savings"], online_only="true",
+                       expires_at="", now=NOW)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+
+        def fake_recheck(deals, _cfg, budget=None):
+            for deal in deals:
+                deal["image_url"] = "https://m.media-amazon.com/images/I/p.jpg"
+            return {deal["dedupe_key"]: None for deal in deals}
+
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
+        pipeline._recheck_prices(db, cfg, NOW)
+        got = db.get_deal("url|p")
+        assert got["image_url"].endswith("/p.jpg")
+        assert not got.get("price_rechecked_at")  # still due for its check
+        assert got["status"] == "alive"
         db.close()
 
     def test_token_budget_holds_back_photo_calls_before_rechecks(
