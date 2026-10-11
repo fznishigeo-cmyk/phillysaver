@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#0e7569">
+<meta name="theme-color" content="#0f1b22">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <title>wowpriced — verified deals</title>
 <meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every 10 minutes.">
 <link rel="canonical" href="{{SITE_URL}}/">
@@ -40,14 +41,41 @@ a:hover{text-decoration:underline}
 .wrap{max-width:1200px;margin:0 auto;padding:0 16px 48px}
 [hidden]{display:none!important}
 
-/* ---- header ---- */
-header{background:var(--card);border-bottom:1px solid var(--line);
-       position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
-.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
-      gap:4px 14px;align-items:center}
-.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
-.brand .dot{color:var(--accent)}
-.tag{color:var(--muted);font-size:13px}
+/* ---- header: an ink bar in both themes. Everything inside it (dial,
+   tabs, links) re-themes through the variables redefined here. ---- */
+header{--card:#0f1b22; --fg:#f3f7f8; --muted:#9db0ba; --line:rgba(255,255,255,.13);
+       --chip:rgba(255,255,255,.065); --link:#9fe6da; --accent:#2fc4b2; --accent-fg:#04201c;
+       --good:#45d68a;
+       position:sticky;top:0;z-index:20;color:var(--fg);
+       background:radial-gradient(110% 160% at 0% 0%,#163b40 0%,#0f1b22 52%,#0c151b 100%);
+       box-shadow:0 1px 0 rgba(255,255,255,.04),0 8px 24px -14px rgba(0,0,0,.6)}
+header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;pointer-events:none;
+              background:linear-gradient(90deg,transparent,var(--accent) 28%,#ffc94d 72%,transparent);
+              opacity:.75}
+.hrow{max-width:1200px;margin:0 auto;padding:12px 16px 10px;display:flex;flex-wrap:wrap;
+      gap:6px 16px;align-items:center}
+.brand{margin:0;font-size:24px;line-height:1}
+.brand a{display:inline-flex;align-items:center;gap:10px;color:var(--fg);text-decoration:none}
+.mark{width:36px;height:36px;flex:none;transform:rotate(-8deg);
+      filter:drop-shadow(0 4px 10px rgba(47,196,178,.35));
+      transition:transform .35s cubic-bezier(.3,1.5,.4,1)}
+.brand a:hover .mark{transform:rotate(0) scale(1.06)}
+.word{font-weight:900;letter-spacing:-.9px}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.5px;color:#cfe9e5}
+.tag{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+     border-left:1px solid var(--line);padding-left:14px}
+header .drop,header .dhole{background:#18252c}
+#account .linkbtn{color:var(--fg);border:1px solid rgba(255,255,255,.28);border-radius:999px;
+                  padding:7px 15px;font-size:13px}
+#account .linkbtn:hover{text-decoration:none;border-color:var(--accent);background:rgba(255,255,255,.06)}
+#account .in .linkbtn{border:0;padding:0;color:var(--link)}
+#subscribe.getdeal{display:inline-flex;align-items:center;gap:9px;border-radius:999px;
+                   padding:6px 6px 6px 17px;font-size:14px;font-weight:800;color:#04201c!important;
+                   background:linear-gradient(135deg,#5ee0cf,#21a998);
+                   box-shadow:0 8px 22px -10px #2fc4b2,inset 0 1px 0 rgba(255,255,255,.4)}
+#subscribe[data-zero]::after{content:"$0 today";font-size:11.5px;font-weight:800;letter-spacing:.02em;
+                             padding:4px 10px;border-radius:999px;background:#ffc94d;color:#2b1d00}
+#subscribe:not([data-zero]){padding:9px 17px}
 /* The drop clock: a dial whose ring fills across the cycle (a half-disc
    turning inside each fixed half: transforms only, teal then orange as the
    drop nears), a glowing dot riding the
@@ -285,7 +313,6 @@ footer .meta{font-size:11.5px}
                   animation:zeroshine 4.2s ease-in-out infinite}
 @keyframes zeroshine{0%,62%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
 @media (prefers-reduced-motion: reduce){.zerotoday::after{display:none}}
-#subscribe.getdeal{font-size:14px;padding:9px 16px}
 .trialcta{animation:ctaglow 4.5s ease-in-out infinite}
 #subscribe.trialcta,.subbar.trialcta{animation:none}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
@@ -368,14 +395,15 @@ footer .meta{font-size:11.5px}
   .tkstrip{animation:none}
 }
 @media (max-width:640px){
-  header{position:static}
-  .hrow{padding:8px 12px 2px;gap:2px 10px}
-  .brand{font-size:20px}
+  header{position:relative}
+  .hrow{padding:10px 12px 4px;gap:4px 10px}
+  .brand{font-size:21px}
+  .mark{width:31px;height:31px}
   .drop{order:1;padding:4px 13px 4px 4px;gap:8px}
   .dial{--d:34px;--w:4px}
   .droplbl{font-size:12.5px}
   .dropt{font-size:20px}
-  .tag{order:2;flex-basis:100%;font-size:12px}
+  .tag{order:2;flex-basis:100%;font-size:10.5px;border-left:0;padding-left:0}
   #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
   .since{padding:0 12px 2px;font-size:12px}
   #cattabs{padding:4px 12px 8px}
@@ -404,7 +432,7 @@ footer .meta{font-size:11.5px}
   .now{font-size:18px}
   .ph span{font-size:17px}
   .getdeal{padding:9px 11px;font-size:12.5px}
-  #subscribe.getdeal{font-size:13px;padding:9px 12px}
+  #subscribe.getdeal{font-size:13.5px;justify-content:center}
   .tk{padding:5px 8px}
   .tklabel{padding:0 16px 0 10px;font-size:10px}
   .tkitem{padding:0 16px}
@@ -434,7 +462,7 @@ footer .meta{font-size:11.5px}
 </section>
 <header>
   <div class="hrow">
-    <h1 class="brand">wowpriced<span class="dot">●</span></h1>
+    <h1 class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></h1>
     <span id="tagline" class="tag">verified deals</span>
     <div id="drop" class="drop" role="timer" aria-live="off">
       <span id="dropdial" class="dial" aria-hidden="true">
@@ -698,6 +726,7 @@ footer .meta{font-size:11.5px}
     document.getElementById("subbar").classList.toggle("ready", join);
     // The trial button reads as the trial wherever there is one.
     document.getElementById("subscribe").textContent = offer().btn;
+    document.getElementById("subscribe").toggleAttribute("data-zero", offer().trial);
     document.getElementById("subbar").textContent = offer().btn;
     // "Manage membership" (Stripe's billing portal) sits in the footer:
     // members, and any account with a Stripe customer (a lapsed or

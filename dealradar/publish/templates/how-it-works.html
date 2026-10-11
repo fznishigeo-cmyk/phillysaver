@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
 <meta name="description" content="How to use the wowpriced deal wall: tabs, the Used and Open-Box pillar, search, sorting, badges, the floors, the Next drop countdown, the Just missed strip, and membership.">
 <title>How to use wowpriced</title>
@@ -30,8 +31,10 @@ header{background:var(--card);border-bottom:1px solid var(--line);box-shadow:var
 .hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
       gap:4px 14px;align-items:baseline}
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
-.brand a{color:inherit}
-.brand .dot{color:var(--accent)}
+.brand a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
+.mark{width:32px;height:32px;flex:none;transform:rotate(-8deg)}
+.word{font-weight:900;letter-spacing:-.8px}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
 .wrap{max-width:720px;margin:0 auto;padding:0 16px 48px}
 h1{font-size:30px;line-height:1.2;margin:32px 0 6px}
@@ -67,7 +70,7 @@ footer p{margin:0 0 8px}
 <body>
 <header>
   <div class="hrow">
-    <p class="brand"><a href="./">wowpriced<span class="dot">●</span></a></p>
+    <p class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
     <span class="tag">verified deals · refreshed every 10 minutes</span>
   </div>
 </header>

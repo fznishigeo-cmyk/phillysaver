@@ -23,6 +23,10 @@ Keep this file current: whoever stops working updates it in their last commit.
 ## Operator decisions (standing rules; do not undo)
 - **Free 8:** a new 8 of the top 48 at every drop (`paywall.teaser_pool`).
   The clock says "Next drop".
+- **Brand:** a tilted teal tile whose "w" doubles as a price-drop zigzag,
+  with a gold spark (inline SVG, also the favicon), and the "wowpriced"
+  wordmark. The home header is an ink bar in both themes; top right: drop
+  dial, "Log in" pill, trial button with a gold "$0 today" chip.
 - **Cards:** the hairline runs on the free 8, on a member's new arrivals, and
   on hover. There is a deal ticker at the top and a sources wall at the bottom.
 - **No customer emails at all.** Membership is website access only.
