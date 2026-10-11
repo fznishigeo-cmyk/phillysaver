@@ -141,13 +141,10 @@ Keep this file current: whoever stops working updates it in their last commit.
    - a cheaper critic for clear cases;
    - a per-run critic cap;
    - tuned intake.
-2. Operator (Stripe dashboard, Product catalog -> "WowPriced Alerts" -> Edit):
-   the live description still reads "Every verified deal, 50-90% off,
-   emailed to you the hour it is found. Cancel any time." (confirmed by
-   `stripe check`, 2026-10-11). There are no emails, and while the wall
-   is open nothing is unlocked: replace it with "wowpriced membership.
-   Cancel any time." (when the paywall returns: "Every deal on the wall
-   unlocked, with new deals every 10 minutes. Cancel any time.").
+2. Done (2026-10-11): the Stripe product description reads "wowpriced
+   membership. Cancel any time." (confirmed by `stripe check`). When the
+   paywall returns: "Every deal on the wall unlocked, with new deals every
+   10 minutes. Cancel any time."
 3. Done: the Customer Portal is active (1 configuration), so "Manage
    membership" works.
 4. Any change under `cloudflare/subscribe-worker/` goes live only after the
@@ -157,7 +154,9 @@ Keep this file current: whoever stops working updates it in their last commit.
    `dealradar/publish/templates/hubs.yaml`; lower `seo.hub_min_items` (10)
    if small categories stay noindex.
 6. Operator: paste the tracking IDs (config.yaml `tracking:`, quoted) and add
-   the growth-report secrets (Growth Kit artifact has the steps).
+   the growth-report secrets (Growth Kit artifact has the steps). GA4 done
+   2026-10-11 (G-MHLJXK2WHF, property 558475393); Meta, TikTok, Pinterest,
+   Google Ads and the secrets still to come.
 7. Google sign-ins don't fire `sign_up` (the Worker's /api/google reply
    doesn't say whether the account is new). Needs a Worker change + deploy.
 8. Open legal question from the SEO review: six subreddits come through

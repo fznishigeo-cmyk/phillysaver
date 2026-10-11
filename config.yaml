@@ -230,7 +230,7 @@ tracking:
   # Enhanced measurement > Outbound clicks off: they would report what the
   # page shows (a member's deal links, a typed email). The site's own events
   # already cover sign-up, checkout, trial and deal clicks.
-  ga4_measurement_id: ""            # Google Analytics 4, "G-XXXXXXXXXX"
+  ga4_measurement_id: "G-MHLJXK2WHF"  # Google Analytics 4, "G-XXXXXXXXXX"
   meta_pixel_id: ""                 # Meta (Facebook/Instagram) Pixel, digits
   tiktok_pixel_id: ""               # TikTok Pixel code, letters and digits
   pinterest_tag_id: ""              # Pinterest Tag, digits
@@ -260,7 +260,7 @@ growth:
   # admin chat. Secrets: GOOGLE_SA_JSON, META_SYSTEM_TOKEN, STRIPE_SECRET_KEY.
   # Read-only everywhere. An empty value (or a missing secret) skips its section.
   report_days: 7
-  ga4_property_id: ""                        # numeric GA4 property ID (Admin -> Property details)
+  ga4_property_id: "558475393"               # numeric GA4 property ID (Admin -> Property details)
   search_console_site: "sc-domain:wowpriced.com"
   sitemap_url: ""                            # "" = https://<publish.custom_domain>/sitemap.xml
   # Pinned Graph API version (v24.0, released 2025-10; Meta keeps a version
