@@ -144,8 +144,10 @@ Keep this file current: whoever stops working updates it in their last commit.
 2. Operator (Stripe dashboard, Product catalog -> "WowPriced Alerts" -> Edit):
    the live description still reads "Every verified deal, 50-90% off,
    emailed to you the hour it is found. Cancel any time." (confirmed by
-   `stripe check`, 2026-10-11). Replace it with "Every deal on the wall
-   unlocked, with new deals every 10 minutes. Cancel any time."
+   `stripe check`, 2026-10-11). There are no emails, and while the wall
+   is open nothing is unlocked: replace it with "wowpriced membership.
+   Cancel any time." (when the paywall returns: "Every deal on the wall
+   unlocked, with new deals every 10 minutes. Cancel any time.").
 3. Done: the Customer Portal is active (1 configuration), so "Manage
    membership" works.
 4. Any change under `cloudflare/subscribe-worker/` goes live only after the

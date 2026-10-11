@@ -1398,3 +1398,28 @@ class TestOpenAccess:
         assert "5 more deals on the live wall" in wall
         doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
         assert len(doc["deals"]) == n  # the live wall still has every one
+
+    def test_review_fixes(self, db, cfg, tmp_path):
+        from dealradar.publish.site import site_template_version
+
+        out = tmp_path / "site"
+        render_site(db, self._open(cfg), NOW, out_dir=out, deals=self._deals(3))
+        welcome = (out / "welcome.html").read_text(encoding="utf-8")
+        assert "Every deal on the wall is yours now" not in welcome
+        assert "Thanks for joining." in welcome
+        home = (out / "index.html").read_text(encoding="utf-8")
+        assert "8 free deals, new at every drop" not in home
+        assert '<p id="authsub" class="meta">Free account first, then your 7-day free trial.</p>' in home
+        # Sign-up keeps its in-wall band while open, with nothing to unlock.
+        assert "function openBand()" in home and "openBand() + gridHtml" in home
+        # Members read the public file while open (the Worker copy can lag).
+        assert "(pub.meta || {}).open_access ||" in home
+        # A flip of the mode changes the version, so open tabs reload.
+        meta = json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
+        assert meta["site_version"] == site_template_version() + "-open"
+        assert f'var SITE_VERSION = "{site_template_version()}-open"' in home
+        closed = tmp_path / "closed"
+        render_site(db, self._open(cfg, on=False), NOW, out_dir=closed, deals=self._deals(3))
+        meta = json.loads((closed / "deals.json").read_text(encoding="utf-8"))["meta"]
+        assert meta["site_version"] == site_template_version()
+        assert "Every deal on the wall is yours now" in (closed / "welcome.html").read_text(encoding="utf-8")

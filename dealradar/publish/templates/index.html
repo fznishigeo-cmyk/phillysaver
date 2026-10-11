@@ -571,7 +571,7 @@ footer .meta{font-size:11.5px}
   <div class="mcard">
     <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
     <h2 id="authtitle">Create your free account</h2>
-    <p id="authsub" class="meta">Free account: 8 free deals, new at every drop. Every deal: 7-day free trial.</p>
+    <p id="authsub" class="meta"><!--paywall-->Free account: 8 free deals, new at every drop. Every deal: 7-day free trial.<!--/paywall--><!--open-->Free account first, then your 7-day free trial.<!--/open--></p>
     <div id="authstep1">
       <p id="authdisc" class="disc"></p>
       <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
@@ -1308,6 +1308,10 @@ footer .meta{font-size:11.5px}
     var html = "", banded = false;
     // The first grid with locked cards gets the trial band ahead of them.
     function grid(list) {
+      if (openAccess() && !banded && canJoin() && list.length > 8) {
+        banded = true;
+        return gridHtml(list.slice(0, 8)) + openBand() + gridHtml(list.slice(8));
+      }
       var shut = banded || !canJoin() ? [] : list.filter(isLocked);
       if (!shut.length) return gridHtml(list);
       banded = true;
@@ -1542,7 +1546,8 @@ footer .meta{font-size:11.5px}
     var google = !!(state.meta || {}).google_client_id;
     return {
       found: "We found a subscription for this email. " +
-        (google ? "If it's yours, log out and continue with Google using this address (it unlocks at once), or " : "") +
+        (google ? "If it's yours, log out and continue with Google using this address (it " +
+          (openAccess() ? "attaches" : "unlocks") + " at once), or " : "") +
         (mail ? "email " + mail + " and we'll attach it." : "use the contact page and we'll attach it."),
       payment_issue: "There's a problem with your last payment. Update your card in Manage membership.",
       contact_support: (mail ? "Email " + mail : "Use the contact page") + " and we'll sort it out."
@@ -1568,6 +1573,15 @@ footer .meta{font-size:11.5px}
     return '<div class="trialband"><p class="tbtext"><strong>&#128275; Unlock ' +
       esc(plural(locked, "more deal")) + "</strong>" +
       (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every drop.") +
+      '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
+      "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
+  }
+  // The same band while every deal is open: the membership and its trial,
+  // with nothing to unlock.
+  function openBand() {
+    var o = offer();
+    return '<div class="trialband"><p class="tbtext"><strong>wowpriced membership</strong>' +
+      (o.trial ? " — your first " + o.days + " days free." : " — $9.99/month.") +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
       "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
   }
@@ -1616,7 +1630,8 @@ footer .meta{font-size:11.5px}
   function memberDeals(fresh) {
     if (!apiUrl() || !token()) return Promise.resolve(null);
     var who = (state.me && !fresh) ? Promise.resolve(state.me) : fetchMe(fresh);
-    return who.then(function (me) { return me && me.member ? fetchFull() : null; })
+    // Open access: the public file already holds every deal, and fresher.
+    return who.then(function (me) { return me && me.member && !openAccess() ? fetchFull() : null; })
       .catch(function () { return null; });
   }
   function showDeals(full) {
@@ -2199,7 +2214,7 @@ footer .meta{font-size:11.5px}
   // until the Worker answers (cards never blur and unblur between
   // publishes); everyone else gets the teaser.
   function dealsFor(pub) {
-    if (!(isMember() && token())) return Promise.resolve(pub.deals);
+    if ((pub.meta || {}).open_access || !(isMember() && token())) return Promise.resolve(pub.deals);
     return memberDeals(false).then(function (full) {
       auth.checking = false;
       return (full && token()) ? full : pub.deals;

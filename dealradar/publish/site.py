@@ -303,7 +303,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     open_access = is_open(cfg)
     if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
-    site_version = site_template_version()
+    # The mode changes the published wording: a flip reloads open tabs.
+    site_version = site_template_version() + ("-open" if open_access else "")
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
