@@ -35,6 +35,8 @@ class SourceConfig:
     # source's own deal images with credit. Images are hotlinked from the
     # source, never copied or stored.
     image_permission: bool = False
+    display_name: str = ""
+    site: str = ""
 
 
 @dataclass

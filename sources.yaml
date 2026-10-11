@@ -11,6 +11,8 @@
 sources:
   # ---- blogs / deal sites (RSS first, autodiscovery fallback on first-run validation) ----
   - name: hip2save
+    display_name: "Hip2Save"
+    site: https://hip2save.com/
     method: rss
     url: https://hip2save.com/feed/
     region: US
@@ -19,24 +21,32 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: krazy_coupon_lady
+    display_name: "The Krazy Coupon Lady"
+    site: https://thekrazycouponlady.com/
     method: rss
     url: https://thekrazycouponlady.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: slickdeals_frontpage
+    display_name: "Slickdeals"
+    site: https://slickdeals.net/
     method: rss
     url: "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1"
     region: US
     allowed_html: false   # never scrape Slickdeals HTML — official RSS only
     fast_lane: true
   - name: slickdeals_popular
+    display_name: "Slickdeals"
+    site: https://slickdeals.net/
     method: rss
     url: "https://slickdeals.net/newsearch.php?mode=popdeals&searcharea=deals&searchin=first&rss=1"
     region: US
     allowed_html: false
     fast_lane: false
   - name: slickdeals_amazon
+    display_name: "Slickdeals"
+    site: https://slickdeals.net/
     method: rss
     url: "https://slickdeals.net/newsearch.php?q=amazon&searcharea=deals&searchin=first&rss=1"
     region: US
@@ -44,6 +54,8 @@ sources:
     fast_lane: false
     notes: "Amazon-filtered official search RSS — catches heavy Amazon promos and Lightning deals."
   - name: hip2save_amazon
+    display_name: "Hip2Save"
+    site: https://hip2save.com/
     method: rss
     url: https://hip2save.com/deals/amazon/feed/
     region: US
@@ -53,6 +65,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: kcl_amazon
+    display_name: "The Krazy Coupon Lady"
+    site: https://thekrazycouponlady.com/
     method: rss
     url: https://thekrazycouponlady.com/deals/amazon/feed
     region: US
@@ -60,6 +74,8 @@ sources:
     fast_lane: false
     notes: "KCL Amazon category feed; validation autodiscovers/culls if the path differs."
   - name: kcl_wall_amazon
+    display_name: "The Krazy Coupon Lady"
+    site: https://thekrazycouponlady.com/
     method: api
     adapter: kcl_wall
     url: https://thekrazycouponlady.com/coupons-for/amazon
@@ -69,12 +85,16 @@ sources:
     notes: "KCL live deal wall (cards never enter their RSS). Dedicated adapter chunks the wall text for the evidence-verified parse."
     crawl_permission: "operator reports written email permission from KCL (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealnews
+    display_name: "DealNews"
+    site: https://www.dealnews.com/
     method: rss
     url: https://www.dealnews.com/rss/todays-edition.xml
     region: US
     allowed_html: false
     fast_lane: false
   - name: dealradar_cc
+    display_name: "DealRadar"
+    site: https://dealradar.cc/
     method: html
     url: https://dealradar.cc/
     region: US
@@ -83,6 +103,8 @@ sources:
     notes: "Operator-sourced deal site (no public record of its shape); first-run validation autodiscovers its feed."
     crawl_permission: "operator reports written permission from this site's owner (2026-10-10) to pull from the site. Correspondence on the operator's file. Bypass applies to this host only."
   - name: bradsdeals
+    display_name: "Brad's Deals"
+    site: https://www.bradsdeals.com/
     method: html
     adapter: bradsdeals
     url: https://www.bradsdeals.com/deals
@@ -91,6 +113,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: bensbargains
+    display_name: "Ben's Bargains"
+    site: https://bensbargains.com/
     method: rss
     url: https://bensbargains.com/feed/
     region: US
@@ -98,6 +122,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: woot
+    display_name: "Woot!"
+    site: https://www.woot.com/
     method: api
     adapter: woot
     url: https://developer.woot.com/feed/All
@@ -106,6 +132,8 @@ sources:
     fast_lane: true
     notes: "Official Woot developer API; requires WOOT_API_KEY secret. Reported as needs_key until set."
   - name: meh
+    display_name: "Meh"
+    site: https://meh.com/
     method: api
     adapter: meh
     url: https://meh.com/api/1/current.json
@@ -114,6 +142,8 @@ sources:
     fast_lane: false
     notes: "Official Meh API; requires MEH_API_KEY secret. Reported as needs_key until set."
   - name: techbargains
+    display_name: "TechBargains"
+    site: https://www.techbargains.com/
     method: rss
     url: https://www.techbargains.com/rss.xml
     region: US
@@ -121,6 +151,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealmoon_us
+    display_name: "DealMoon"
+    site: https://www.dealmoon.com/
     enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://www.dealmoon.com/en
@@ -130,6 +162,8 @@ sources:
     notes: "US (English) edition only."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: moneysavingmom
+    display_name: "Money Saving Mom"
+    site: https://moneysavingmom.com/
     method: rss
     url: https://moneysavingmom.com/feed/
     region: US
@@ -138,6 +172,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: passionate_penny_pincher
+    display_name: "Passionate Penny Pincher"
+    site: https://passionatepennypincher.com/
     method: rss
     url: https://passionatepennypincher.com/feed/
     region: US
@@ -146,6 +182,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: freebies2deals
+    display_name: "Freebies2Deals"
+    site: https://www.freebies2deals.com/
     method: rss
     url: https://www.freebies2deals.com/feed/
     region: US
@@ -154,6 +192,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: southernsavers
+    display_name: "Southern Savers"
+    site: https://www.southernsavers.com/
     method: rss
     url: https://www.southernsavers.com/feed/
     region: US
@@ -162,6 +202,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: southernsavers_online
+    display_name: "Southern Savers"
+    site: https://www.southernsavers.com/
     method: rss
     url: https://www.southernsavers.com/category/online-deals/feed/
     region: US
@@ -171,6 +213,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: southernsavers_amazon
+    display_name: "Southern Savers"
+    site: https://www.southernsavers.com/
     method: rss
     url: https://www.southernsavers.com/category/amazon-deals/
     region: US
@@ -180,6 +224,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: queen_bee_today
+    display_name: "Queen Bee Today"
+    site: https://queenbeetoday.com/
     method: rss
     url: https://queenbeetoday.com/feed/
     region: US
@@ -187,6 +233,8 @@ sources:
     fast_lane: false
     notes: "Coupons, sales, rebates."
   - name: coupon_cravings
+    display_name: "Coupon Cravings"
+    site: https://couponcravings.com/
     method: rss
     url: https://couponcravings.com/feed/
     region: US
@@ -194,6 +242,8 @@ sources:
     fast_lane: false
     notes: "Coupons, price matching, everyday deals."
   - name: how_to_shop_for_free
+    display_name: "How to Shop for Free"
+    site: https://www.howtoshopforfree.net/
     method: rss
     url: https://www.howtoshopforfree.net/
     region: US
@@ -202,6 +252,8 @@ sources:
     notes: "Mixed online/in-store; the in-store filter keeps only online posts."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: totally_target
+    display_name: "Totally Target"
+    site: https://www.totallytarget.com/
     method: rss
     url: https://www.totallytarget.com/feed/
     region: US
@@ -209,6 +261,8 @@ sources:
     fast_lane: false
     notes: "Target-focused; online-orderable deals pass, store-run posts are discarded."
   - name: fabulessly_frugal
+    display_name: "Fabulessly Frugal"
+    site: https://fabulesslyfrugal.com/
     method: rss
     url: https://fabulesslyfrugal.com/feed/
     region: US
@@ -218,18 +272,24 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupon_pro
+    display_name: "Coupon Pro"
+    site: https://couponproblog.com/
     method: rss
     url: https://couponproblog.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: the_freebie_guy
+    display_name: "The Freebie Guy"
+    site: https://thefreebieguy.com/
     method: rss
     url: https://thefreebieguy.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: yes_we_coupon
+    display_name: "Yes We Coupon"
+    site: https://yeswecoupon.com/
     method: rss
     url: https://yeswecoupon.com/feed/
     region: US
@@ -237,6 +297,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: jungle_deals
+    display_name: "Jungle Deals"
+    site: https://jungledealsblog.com/
     enabled: false   # URL is an HTML page (now jungle.deals), not a feed, source probe 2026-10-11
     method: rss
     url: https://jungledealsblog.com/
@@ -245,6 +307,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: clark_deals
+    display_name: "Clark Deals"
+    site: https://clarkdeals.com/
     method: rss
     url: https://clarkdeals.com/feed/
     region: US
@@ -252,6 +316,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: hunt4freebies
+    display_name: "Hunt4Freebies"
+    site: https://hunt4freebies.com/
     method: rss
     url: https://hunt4freebies.com/feed/
     region: US
@@ -259,24 +325,32 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: living_rich_with_coupons
+    display_name: "Living Rich With Coupons"
+    site: https://www.livingrichwithcoupons.com/
     method: rss
     url: https://www.livingrichwithcoupons.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: 9to5toys
+    display_name: "9to5Toys"
+    site: https://9to5toys.com/
     method: rss
     url: https://9to5toys.com/feed/
     region: US
     allowed_html: false
     fast_lane: false
   - name: cnet_deals
+    display_name: "CNET"
+    site: https://www.cnet.com/
     method: rss
     url: https://www.cnet.com/rss/deals/
     region: US
     allowed_html: false
     fast_lane: false
   - name: tomsguide_deals
+    display_name: "Tom's Guide"
+    site: https://www.tomsguide.com/
     method: rss
     url: https://www.tomsguide.com/feeds/all
     region: US
@@ -285,6 +359,8 @@ sources:
     notes: "US edition; deal items filtered by category/keywords in the adapter."
 
   - name: dansdeals
+    display_name: "DansDeals"
+    site: https://www.dansdeals.com/
     method: rss
     url: https://www.dansdeals.com/feed/
     region: US
@@ -292,6 +368,8 @@ sources:
     fast_lane: false
     notes: "Web-only promo codes, e-commerce price drops, gift card sales, online price mistakes."
   - name: doctor_of_credit
+    display_name: "Doctor of Credit"
+    site: https://www.doctorofcredit.com/
     method: rss
     url: https://www.doctorofcredit.com/feed/
     region: US
@@ -299,6 +377,8 @@ sources:
     fast_lane: false
     notes: "Bank bonuses, points, web gift card discounts, shopping portal stacks."
   - name: kinja_deals
+    display_name: "Kinja Deals"
+    site: https://kinjadeals.theinventory.com/
     enabled: false   # domain no longer resolves (DNS), source probe 2026-10-11
     method: rss
     url: https://kinjadeals.theinventory.com/rss
@@ -308,6 +388,8 @@ sources:
     notes: "Daily editorial Amazon/web deals; validation autodiscovers if the feed moved."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: couponcabin_blog
+    display_name: "CouponCabin"
+    site: https://www.couponcabin.com/
     method: rss
     url: https://www.couponcabin.com/blog/feed/
     region: US
@@ -316,6 +398,8 @@ sources:
     notes: "Cash-back stacking, e-commerce promo codes."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: retailmenot_blog
+    display_name: "RetailMeNot"
+    site: https://www.retailmenot.com/
     method: rss
     url: https://www.retailmenot.com/blog/feed/
     region: US
@@ -323,6 +407,8 @@ sources:
     fast_lane: false
     notes: "The Real Deal: promo code guides, sale-event breakdowns, cash-back offers."
   - name: gottadeal
+    display_name: "GottaDEAL"
+    site: https://www.gottadeal.com/
     method: rss
     url: https://www.gottadeal.com/rss.php
     region: US
@@ -331,6 +417,8 @@ sources:
     notes: "E-commerce promo codes, doorbusters, digital freebies."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: offers_blog
+    display_name: "Offers.com"
+    site: https://www.offers.com/
     method: rss
     url: https://www.offers.com/blog/feed/
     region: US
@@ -339,6 +427,8 @@ sources:
     notes: "DISABLED: owner denied crawl permission (2026-10-10); do not re-enable without a new written grant. Promo code stacking, digital coupon codes."
     enabled: false
   - name: wirecutter_deals
+    display_name: "Wirecutter"
+    site: https://www.nytimes.com/wirecutter/
     method: rss
     url: https://www.nytimes.com/wirecutter/rss/
     region: US
@@ -347,6 +437,8 @@ sources:
     notes: "DISABLED: owner denied crawl permission (2026-10-10); do not re-enable without a new written grant. NYT Wirecutter."
     enabled: false
   - name: slickdeals_blog
+    display_name: "Slickdeals"
+    site: https://slickdeals.net/
     method: rss
     url: https://slickdeals.net/deal-news/feed/
     region: US
@@ -356,6 +448,8 @@ sources:
 
   # ---- freebie / price-glitch / clearance-error focused (the >=60% sweet spot) ----
   - name: hip2save_freebies
+    display_name: "Hip2Save"
+    site: https://hip2save.com/
     enabled: false   # /deals/freebies/ is 404; its posts are in the hip2save main feed, source probe 2026-10-11
     method: rss
     url: https://hip2save.com/deals/freebies/
@@ -366,6 +460,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: free_stuff_finder
+    display_name: "Free Stuff Finder"
+    site: https://www.freestufffinder.com/
     method: rss
     url: https://www.freestufffinder.com/feed/
     region: US
@@ -375,6 +471,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: stl_mommy
+    display_name: "STL Mommy"
+    site: https://stlmommy.com/
     method: rss
     url: https://stlmommy.com/feed/
     region: US
@@ -383,6 +481,8 @@ sources:
     notes: "Deal blog known for glitch/clearance finds."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: swaggrabber
+    display_name: "SwagGrabber"
+    site: https://www.swaggrabber.com/
     method: rss
     url: https://www.swaggrabber.com/feed/
     region: US
@@ -390,12 +490,16 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: coupon_mom
+    display_name: "Coupon Mom"
+    site: https://www.couponmom.com/
     method: rss
     url: https://www.couponmom.com/blog/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: dealsplus
+    display_name: "DealsPlus"
+    site: https://www.dealsplus.com/
     enabled: false   # domain no longer resolves (DNS), source probe 2026-10-11
     method: rss
     url: https://www.dealsplus.com/rss
@@ -404,6 +508,8 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: glitchndealz
+    display_name: "Glitchndealz"
+    site: https://glitchndealz.com/
     method: rss
     url: https://glitchndealz.com/feed/
     region: US
@@ -411,6 +517,8 @@ sources:
     fast_lane: false
     notes: "Price-error focused — exactly the heavy-hitter niche."
   - name: dealcatcher
+    display_name: "DealCatcher"
+    site: https://www.dealcatcher.com/
     method: rss
     url: https://www.dealcatcher.com/rss
     region: US
@@ -419,6 +527,8 @@ sources:
 
   # ---- Reddit (official OAuth API, registered app, required UA format, <=100 req/min) ----
   - name: reddit_deals
+    display_name: "r/deals"
+    site: https://www.reddit.com/r/deals/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/deals/new
@@ -426,6 +536,8 @@ sources:
     allowed_html: false
     fast_lane: true
   - name: reddit_coupons
+    display_name: "r/coupons"
+    site: https://www.reddit.com/r/coupons/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/coupons/new
@@ -433,6 +545,8 @@ sources:
     allowed_html: false
     fast_lane: false
   - name: reddit_frugal
+    display_name: "r/frugal"
+    site: https://www.reddit.com/r/frugal/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/frugal/new
@@ -440,6 +554,8 @@ sources:
     allowed_html: false
     fast_lane: false
   - name: reddit_buildapcsales
+    display_name: "r/buildapcsales"
+    site: https://www.reddit.com/r/buildapcsales/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/buildapcsales/new
@@ -447,6 +563,8 @@ sources:
     allowed_html: false
     fast_lane: false
   - name: reddit_gamedeals
+    display_name: "r/GameDeals"
+    site: https://www.reddit.com/r/GameDeals/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/GameDeals/new
@@ -454,6 +572,8 @@ sources:
     allowed_html: false
     fast_lane: false
   - name: reddit_frugalfemalefashion
+    display_name: "r/FrugalFemaleFashion"
+    site: https://www.reddit.com/r/FrugalFemaleFashion/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/FrugalFemaleFashion/new
@@ -463,6 +583,8 @@ sources:
 
   # ---- Telegram public channels (MTProto client API via Telethon; NOT the Bot API) ----
   - name: telegram_channels
+    display_name: "Telegram"
+    site: https://telegram.org/
     method: api
     adapter: telegram
     url: mtproto://channels   # channel usernames live in config.yaml -> telegram.channels
@@ -472,6 +594,8 @@ sources:
     notes: "Requires TELEGRAM_API_ID/TELEGRAM_API_HASH/TELEGRAM_SESSION secrets and config.telegram.channels."
 
   - name: keepa_amazon_drops
+    display_name: "Keepa"
+    site: https://keepa.com/
     method: api
     adapter: keepa
     url: https://api.keepa.com/deal
@@ -482,6 +606,8 @@ sources:
 
   # ---- gated / stubbed connectors ----
   - name: threads_search
+    display_name: "Threads"
+    site: https://www.threads.net/
     method: api
     adapter: threads
     url: https://graph.threads.net/v1.0/keyword_search
@@ -490,6 +616,8 @@ sources:
     fast_lane: false
     enabled: false            # behind feature_flags.threads — off until app review passes
   - name: instagram_hashtags
+    display_name: "Instagram"
+    site: https://www.instagram.com/
     method: api
     adapter: instagram
     url: https://graph.facebook.com/v21.0/ig_hashtag_search
@@ -503,6 +631,8 @@ sources:
   # ---- added on request: more active online-deal sites (validation culls
   # dead guesses and autodiscovers moved feeds politely) ----
   - name: dealgenius
+    display_name: "Deal Genius"
+    site: https://www.dealgenius.com/
     method: rss
     url: https://www.dealgenius.com/
     region: US
@@ -511,6 +641,8 @@ sources:
     notes: closeout/overstock retailer; validator autodiscovers a feed if one exists
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealsofamerica
+    display_name: "Deals of America"
+    site: https://www.dealsofamerica.com/
     method: html
     adapter: dealsofamerica
     url: https://www.dealsofamerica.com/
@@ -520,6 +652,8 @@ sources:
     notes: server-rendered deal cards; no feed autodiscovery
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: morningsave
+    display_name: "MorningSave"
+    site: https://morningsave.com/
     enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
     method: rss
     url: https://morningsave.com/
@@ -529,6 +663,8 @@ sources:
     notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: sidedeal
+    display_name: "SideDeal"
+    site: https://sidedeal.com/
     method: rss
     url: https://sidedeal.com/
     region: US
@@ -541,6 +677,8 @@ sources:
   # and image grant the operator reports from that site (see its text); a dead
   # feed guess is autodiscovered or culled at the daily revalidation. ----
   - name: couponztime
+    display_name: "CouponzTime"
+    site: https://www.couponztime.com/
     method: rss
     url: https://www.couponztime.com/feed/
     region: US
@@ -550,6 +688,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: frugal_coupon_living
+    display_name: "Frugal Coupon Living"
+    site: https://www.frugalcouponliving.com/
     method: rss
     url: https://www.frugalcouponliving.com/feed/
     region: US
@@ -559,6 +699,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: deal_seeking_mom
+    display_name: "Deal Seeking Mom"
+    site: https://www.dealseekingmom.com/
     method: rss
     url: https://www.dealseekingmom.com/feed/
     region: US
@@ -568,6 +710,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: bargain_babe
+    display_name: "Bargain Babe"
+    site: https://www.bargainbabe.com/
     method: rss
     url: https://www.bargainbabe.com/feed/
     region: US
@@ -577,6 +721,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: couponing_with_rachel
+    display_name: "Couponing With Rachel"
+    site: https://www.couponingwithrachel.com/
     method: rss
     url: https://www.couponingwithrachel.com/feed/
     region: US
@@ -586,6 +732,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: raining_hot_coupons
+    display_name: "Raining Hot Coupons"
+    site: https://www.raininghotcoupons.com/
     method: rss
     url: https://www.raininghotcoupons.com/feed/
     region: US
@@ -595,6 +743,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: all_things_target
+    display_name: "All Things Target"
+    site: https://www.allthingstarget.com/
     method: rss
     url: https://www.allthingstarget.com/feed/
     region: US
@@ -604,6 +754,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: printable_coupons_and_deals
+    display_name: "Printable Coupons and Deals"
+    site: https://www.printablecouponsanddeals.com/
     method: rss
     url: https://www.printablecouponsanddeals.com/feed/
     region: US
@@ -613,6 +765,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupons_and_freebies_mom
+    display_name: "Coupons and Freebies Mom"
+    site: https://www.couponsandfreebiesmom.com/
     method: rss
     url: https://www.couponsandfreebiesmom.com/feed/
     region: US
@@ -622,6 +776,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: cuckoo_for_coupon_deals
+    display_name: "Cuckoo for Coupon Deals"
+    site: https://www.cuckooforcoupondeals.com/
     method: rss
     url: https://www.cuckooforcoupondeals.com/feed/
     region: US
@@ -631,6 +787,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: lady_savings
+    display_name: "Lady Savings"
+    site: https://www.ladysavings.com/
     method: rss
     url: https://www.ladysavings.com/feed/
     region: US
@@ -640,6 +798,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: edealinfo
+    display_name: "eDealinfo"
+    site: https://www.edealinfo.com/
     method: rss
     url: https://www.edealinfo.com/feed/
     region: US
@@ -649,6 +809,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: spoofee
+    display_name: "Spoofee"
+    site: https://www.spoofee.com/
     method: rss
     url: https://www.spoofee.com/feed/
     region: US
@@ -658,6 +820,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: inspiring_savings
+    display_name: "Inspiring Savings"
+    site: https://www.inspiringsavings.com/
     method: rss
     url: https://www.inspiringsavings.com/feed/
     region: US
@@ -667,6 +831,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: couponing_to_disney
+    display_name: "Couponing to Disney"
+    site: https://www.couponingtodisney.com/
     method: rss
     url: https://www.couponingtodisney.com/feed/
     region: US
@@ -676,6 +842,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupons_for_your_family
+    display_name: "Coupons for Your Family"
+    site: https://www.couponsforyourfamily.com/
     method: rss
     url: https://www.couponsforyourfamily.com/feed/
     region: US
@@ -685,6 +853,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: dealmama
+    display_name: "DealMama"
+    site: https://www.dealmama.com/
     method: rss
     url: https://www.dealmama.com/feed/
     region: US
@@ -694,6 +864,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: my_bjs_wholesale
+    display_name: "My BJ's Wholesale"
+    site: https://www.mybjswholesale.com/
     method: rss
     url: https://www.mybjswholesale.com/feed/
     region: US
@@ -703,6 +875,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: my_couponing_buddy
+    display_name: "My Couponing Buddy"
+    site: https://www.mycouponingbuddy.com/
     method: rss
     url: https://www.mycouponingbuddy.com/feed/
     region: US
@@ -712,6 +886,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: steals_and_deals_for_kids
+    display_name: "Steals and Deals for Kids"
+    site: https://www.stealsanddealsforkids.com/
     method: rss
     url: https://www.stealsanddealsforkids.com/feed/
     region: US
@@ -721,6 +897,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupon_lady_deals
+    display_name: "Coupon Lady Deals"
+    site: https://www.couponladydeals.com/
     method: rss
     url: https://www.couponladydeals.com/feed/
     region: US
@@ -730,6 +908,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: savings_angel
+    display_name: "SavingsAngel"
+    site: https://www.savingsangel.com/
     method: rss
     url: https://www.savingsangel.com/feed/
     region: US
@@ -739,6 +919,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: torok_coupon_hunter
+    display_name: "Torok Coupon Hunter"
+    site: https://www.torokcouponhunter.com/
     method: rss
     url: https://www.torokcouponhunter.com/feed/
     region: US
@@ -748,6 +930,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: carolinas_and_dollars
+    display_name: "Carolinas and Dollars"
+    site: https://www.carolinasanddollars.com/
     enabled: false   # hosting suspended (cgi-sys/suspendedpage.cgi), source probe 2026-10-11
     method: rss
     url: https://www.carolinasanddollars.com/feed/
@@ -758,6 +942,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupon_with_star
+    display_name: "Coupon With Star"
+    site: https://www.couponwithstar.com/
     method: rss
     url: https://www.couponwithstar.com/feed/
     region: US
@@ -767,6 +953,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: crazy_for_couponing
+    display_name: "Crazy for Couponing"
+    site: https://www.crazyforcouponing.com/
     method: rss
     url: https://www.crazyforcouponing.com/feed/
     region: US
@@ -776,6 +964,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: couponflick
+    display_name: "CouponFlick"
+    site: https://www.couponflick.com/
     enabled: false   # /feed/ is 404 and the site advertises no feed, source probe 2026-10-11
     method: rss
     url: https://www.couponflick.com/feed/
@@ -786,6 +976,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: the_crazy_coupons
+    display_name: "The Crazy Coupons"
+    site: https://www.thecrazycoupons.com/
     method: rss
     url: https://www.thecrazycoupons.com/feed/
     region: US
@@ -795,6 +987,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: couponing_with_greg
+    display_name: "Couponing With Greg That Dude"
+    site: https://www.couponingwithgregthatdude.com/
     method: rss
     url: https://www.couponingwithgregthatdude.com/feed/
     region: US
@@ -804,6 +998,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: coupon_with_kayla
+    display_name: "Coupon With Kayla"
+    site: https://www.couponwithkayla.com/
     method: rss
     url: https://www.couponwithkayla.com/feed/
     region: US
@@ -813,6 +1009,8 @@ sources:
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: saving_our_way
+    display_name: "Saving Our Way"
+    site: https://www.savingourway.com/
     method: rss
     url: https://www.savingourway.com/feed/
     region: US
@@ -824,48 +1022,64 @@ sources:
 
 backup_sources:
   - name: dealspotr
+    display_name: "Dealspotr"
+    site: https://dealspotr.com/
     method: rss
     url: https://dealspotr.com/feed
     region: US
     allowed_html: false
     fast_lane: false
   - name: daily_steals
+    display_name: "Daily Steals"
+    site: https://www.dailysteals.com/
     method: rss
     url: https://www.dailysteals.com/blogs/news.atom
     region: US
     allowed_html: false
     fast_lane: false
   - name: tanga
+    display_name: "Tanga"
+    site: https://www.tanga.com/
     method: rss
     url: https://www.tanga.com/deals.rss
     region: US
     allowed_html: false
     fast_lane: false
   - name: 1sale
+    display_name: "1Sale"
+    site: https://www.1sale.com/
     method: rss
     url: https://www.1sale.com/feed/
     region: US
     allowed_html: false
     fast_lane: false
   - name: mojo_savings
+    display_name: "Mojo Savings"
+    site: https://www.mojosavings.com/
     method: rss
     url: https://www.mojosavings.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: common_sense_with_money
+    display_name: "Common Sense With Money"
+    site: https://www.commonsensewithmoney.com/
     method: rss
     url: https://www.commonsensewithmoney.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: frugal_living_nw
+    display_name: "Frugal Living NW"
+    site: https://www.frugallivingnw.com/
     method: rss
     url: https://www.frugallivingnw.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: saving_dollars_and_sense
+    display_name: "Saving Dollars and Sense"
+    site: https://savingdollarsandsense.com/
     method: rss
     url: https://savingdollarsandsense.com/feed/
     region: US
@@ -873,12 +1087,16 @@ backup_sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: consumer_queen
+    display_name: "Consumer Queen"
+    site: https://consumerqueen.com/
     method: rss
     url: https://consumerqueen.com/feed/
     region: US
     allowed_html: true
     fast_lane: false
   - name: reddit_flipping
+    display_name: "r/Flipping"
+    site: https://www.reddit.com/r/Flipping/
     method: api
     adapter: reddit
     url: https://oauth.reddit.com/r/Flipping/new

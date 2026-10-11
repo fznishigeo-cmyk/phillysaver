@@ -120,7 +120,7 @@ def test_deals_json_has_disclosure_credit_badge_age(db, cfg, tmp_path):
     # credit is required: one entry per sighting with name + url
     assert deal["credits"] == [
         {"name": "Slickdeals", "url": "https://slickdeals.net/f/1"},
-        {"name": "hip2save", "url": "https://hip2save.com/p/2"},
+        {"name": "Hip2Save", "url": "https://hip2save.com/p/2"},
     ]
     assert deal["badge"] == "corroborated"
     assert deal["alive"] is True
