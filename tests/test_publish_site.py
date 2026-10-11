@@ -11,7 +11,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
-from dealradar.publish.site import render_site, rewrite_affiliate
+from dealradar.publish.site import _serialize_deal, render_site, rewrite_affiliate
 from dealradar.util import iso
 
 NOW = datetime(2026, 10, 9, 14, 0, 0, tzinfo=timezone.utc)
@@ -86,6 +86,52 @@ def test_rewrite_affiliate_is_identity():
     url = "https://www.walmart.com/ip/12345?athcpid=abc"
     assert rewrite_affiliate(url) == url
     assert rewrite_affiliate("") == ""
+
+
+def test_serialized_fields_have_consumers():
+    # Maintain this list with the reader when adding a public field. The
+    # Worker stores/serves the full payload verbatim, without field readers.
+    fields = {
+        "dedupe_key",  # index.html dealKey fallback
+        "key",  # index.html dealKey; paywall rotation and STUB_KEYS
+        "store",  # index.html cards/search/filter; SEO cards; STUB_KEYS
+        "item",  # index.html cards/search/ticker; SEO cards
+        "brand",  # index.html search haystack
+        "url",  # index.html Get deal; SEO card links
+        "image_url",  # index.html mediaHtml; STUB_KEYS
+        "final_price",  # index.html cards/price sort/ticker; SEO cards
+        "regular_price",  # index.html and SEO crossed-out card price
+        "pct_at_checkout",  # index.html sort/filter/cards; SEO; STUB_KEYS
+        "abs_savings",  # index.html savings sort/cards; SEO cards
+        "flags",  # test_e2e_offline.py range-price assertion
+        "codes",  # index.html and SEO how-to box; e2e promo assertion
+        "needs_steps",  # index.html and SEO how-to box/Get deal
+        "how",  # index.html and SEO how-to steps
+        "conditions",  # index.html labels/category filter; SEO; STUB_KEYS
+        "category",  # index.html filter/click tracking; SEO hubs; STUB_KEYS
+        "badge",  # index.html source filter/card badge; SEO cards
+        "headline",  # index.html and SEO card explanation
+        "status",  # index.html/SEO alive/dead split; paywall rotation
+        "alive",  # test_deals_json_has_disclosure_credit_badge_age/dead deal
+        "died_at",  # index.html and SEO Just missed sort
+        "first_seen_at",  # index.html freshOrder; SEO hub lastmod; STUB_KEYS
+        "age_hours",  # index.html age sort/card age; publish age assertion
+        "credits",  # index.html and SEO source credit; publish/e2e assertions
+        "src",  # index.html source filter; site source_sites; STUB_KEYS
+    }
+    assert set(_serialize_deal(make_deal(), NOW)) == fields
+
+
+def test_public_json_is_compact_and_matches_members_payload(db, cfg, tmp_path):
+    cfg.paywall_enabled = True
+    cfg.paywall_open_access = True
+    out = tmp_path / "site"
+    result = render_site(db, cfg, NOW, out_dir=out, deals=[make_deal(
+        stack_steps=["Clip the coupon", "Apply SAVE10"],
+        image_url="https://images.example/lego.jpg")])
+    text = (out / "deals.json").read_text(encoding="utf-8")
+    assert json.loads(text) == result["full_payload"]
+    assert text == json.dumps(result["full_payload"], separators=(",", ":"))
 
 
 def test_render_site_writes_all_four_files(db, cfg, tmp_path):
