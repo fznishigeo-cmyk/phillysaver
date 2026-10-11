@@ -53,7 +53,8 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
   <div id="notice" class="notice" style="display:none"></div>
   <p>One email a day, free: the day's best verified deals — up to 90% off, fake
      "list prices" removed, Amazon prices re-checked live — every morning around
-     8am Eastern. Unsubscribe with one click any time.</p>
+     8am Eastern. We send one confirmation link first; the daily email starts
+     once you click it. Unsubscribe with one click any time.</p>
   <form id="nlform" method="post" action="" style="display:none">
     <input type="email" name="email" placeholder="you@example.com" required
            autocomplete="email" aria-label="your email address">
@@ -62,7 +63,7 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
   <p id="pending" class="muted" style="display:none">Email signup is being set up —
      check back soon, or <a href="./">browse the live deal wall</a> meanwhile.</p>
   <p class="muted">We store your address and nothing else, never share it, and
-     every email carries an unsubscribe link.</p>
+     every email carries an unsubscribe link. Nothing is sent until you confirm.</p>
 </div>
 
 <div class="card">
@@ -89,8 +90,9 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
 "use strict";
 (function () {
   // Result states arrive as query parameters: the subscribe Worker redirects
-  // form posts back here with ?ok=1 or ?err=email; unsubscribe pages link
-  // here with ?unsubscribed=1.
+  // form posts back here with ?ok=1 or ?err=email; the confirmation link
+  // lands on ?confirmed=1 and unsubscribe pages link here with
+  // ?unsubscribed=1.
   var q = location.search;
   var notice = document.getElementById("notice");
   function show(cls, text) {
@@ -99,7 +101,10 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
     notice.style.display = "";
   }
   if (/[?&]ok=1(&|$)/.test(q)) {
-    show("ok", "You're on the list! Your first email arrives the next morning " +
+    show("ok", "Check your inbox and click the confirmation link to start " +
+         "getting the daily email. Nothing arrives until you do.");
+  } else if (/[?&]confirmed=1(&|$)/.test(q)) {
+    show("ok", "You're confirmed! Your first email arrives the next morning " +
          "around 8am Eastern. Add the sender to your contacts so it never hits spam.");
   } else if (/[?&]err=email(&|$)/.test(q)) {
     show("bad", "That email address doesn't look right — please try again.");

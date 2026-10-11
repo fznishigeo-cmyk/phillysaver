@@ -504,3 +504,240 @@ class TestListAndConfig:
         fp = N.fingerprint("A@X.com ")
         assert fp == N.fingerprint("a@x.com") and len(fp) == 16
         assert "x.com" not in fp and fp != N.fingerprint("b@x.com")
+
+
+# ---------------------------------------------------------------- double opt-in
+
+
+class FakeOptInWorker:
+    """GET /list?pending=1 and POST /list/confirm-sent as an httpx
+    MockTransport. A successful confirm-sent drops those addresses from the
+    pending list, as the real Worker's confirm_sent_at does."""
+
+    def __init__(self, pending: list[tuple[str, str]], list_status: int = 200,
+                 mark_status: int = 204):
+        self.pending = list(pending)
+        self.list_status = list_status
+        self.mark_status = mark_status
+        self.list_calls = 0
+        self.marked: list[list[str]] = []  # the body of every confirm-sent POST
+
+    def client(self) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(self))
+
+    def __call__(self, req: httpx.Request) -> httpx.Response:
+        assert req.headers["Authorization"] == f"Bearer {SECRET}"
+        if req.method == "GET":
+            assert str(req.url) == WORKER + "/list?pending=1"
+            self.list_calls += 1
+            if self.list_status != 200:
+                return httpx.Response(self.list_status, json={"error": "nope"})
+            return httpx.Response(200, json={
+                "emails": [{"email": e, "token": t} for e, t in self.pending]})
+        assert req.method == "POST" and str(req.url) == WORKER + "/list/confirm-sent"
+        assert req.headers["Content-Type"].startswith("application/json")
+        emails = json.loads(req.content)["emails"]
+        self.marked.append(emails)
+        if self.mark_status != 204:
+            return httpx.Response(self.mark_status, json={"error": "nope"})
+        self.pending = [(e, t) for e, t in self.pending if e not in emails]
+        return httpx.Response(204)
+
+
+def confirm(db, cfg, now, worker, factory, deadline=None):
+    return N.send_confirmations(db, cfg, now, smtp_factory=factory,
+                                http_client=worker.client(), deadline=deadline)
+
+
+def guarded(db) -> set[str]:
+    """Fingerprints the 24 h guard holds (hashes, never addresses)."""
+    return set(json.loads(db.meta_get(N.CONFIRM_META_KEY) or "{}"))
+
+
+class TestConfirmations:
+    def test_each_pending_address_gets_one_link_and_is_marked(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker = FakeOptInWorker([("a@x.com", "tok-a"), ("b@x.com", "tok-b")])
+        factory = Factory()
+        # Any hour, any lane: a sign-up never waits for the 08:00 send.
+        stats = confirm(db, cfg, BEFORE_8_LOCAL, worker, factory)
+        assert stats == {"sent": 2, "skipped": ""}
+
+        (server,) = factory.servers  # one connection for the whole batch
+        assert server.host == "smtp.example.com" and server.port == 587
+        assert server.starttls_called and server.login_args == ("mailer@example.com", "hunter2")
+        assert server.quit_called
+        assert [m["To"] for m in server.messages] == ["a@x.com", "b@x.com"]
+        a, b = server.messages
+        for m in (a, b):
+            assert m["Subject"] == "Confirm your wowpriced email"
+            assert m["From"] == "deals@wowpriced.com" and "," not in m["To"]
+            assert m["List-Unsubscribe"] is None  # transactional, no list headers
+        text, html = bodies(a)["plain"], bodies(a)["html"]
+        link_a = f"{WORKER}/confirm?e=a%40x.com&t=tok-a"
+        assert link_a in text and link_a.replace("&", "&amp;") in html
+        assert "If you didn't sign up, ignore this and you won't hear from us" in text
+        assert "ignore this and you won" in html
+        assert "tok-b" not in text and "tok-b" not in html
+        assert f"{WORKER}/confirm?e=b%40x.com&t=tok-b" in bodies(b)["plain"]
+        # No deals, prices or unsubscribe links in a confirmation.
+        for body in (text, html):
+            assert "Get deal" not in body and "$" not in body
+            assert "% off" not in body and "unsubscribe" not in body.lower()
+        # The Worker is told exactly who got a link; it stops listing them.
+        assert worker.marked == [["a@x.com", "b@x.com"]] and worker.pending == []
+        # The 24 h guard in state.db (a git branch) holds hashes, not addresses.
+        assert guarded(db) == fps("a@x.com", "b@x.com")
+        raw = db.meta_get(N.CONFIRM_META_KEY)
+        assert "a@x.com" not in raw and "b@x.com" not in raw
+        # The daily send's own progress is untouched.
+        assert db.meta_get(N.meta_key(LOCAL_DAY)) is None
+
+        again = confirm(db, cfg, BEFORE_8_LOCAL + timedelta(minutes=10), worker, factory)
+        assert again == {"sent": 0, "skipped": "no pending sign-ups"}
+        assert len(factory.servers) == 1 and worker.marked == [["a@x.com", "b@x.com"]]
+
+    def test_cap_of_fifty_per_run_continues_next_run(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        subs = [(f"u{i:02d}@x.com", f"tok-{i}") for i in range(55)]
+        worker, factory = FakeOptInWorker(subs), Factory()
+        assert N.MAX_CONFIRMATIONS_PER_RUN == 50
+        sent = [confirm(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10 * i), worker,
+                        factory)["sent"] for i in range(3)]
+        assert sent == [50, 5, 0]
+        assert [len(m) for m in worker.marked] == [50, 5]
+        recipients = [m["To"] for m in factory.messages]
+        assert sorted(recipients) == sorted(e for e, _ in subs)
+        assert len(set(recipients)) == 55  # everyone exactly once
+
+    def test_run_deadline_stops_the_batch_for_the_next_run(self, db, cfg, monkeypatch):
+        import time as _time
+        configure(monkeypatch)
+        subs = [(f"{c}@x.com", f"tok-{c}") for c in "abc"]
+        worker, factory = FakeOptInWorker(subs), Factory()
+        past = _time.monotonic() - 1  # already crossed before the first send
+        r = confirm(db, cfg, AFTER_8_LOCAL, worker, factory, deadline=past)
+        assert r == {"sent": 0, "skipped": "nothing sent this run"}
+        assert factory.messages == [] and worker.marked == [] and guarded(db) == set()
+        future = _time.monotonic() + 60
+        r = confirm(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, factory,
+                    deadline=future)
+        assert r["sent"] == 3 and worker.marked == [["a@x.com", "b@x.com", "c@x.com"]]
+
+    def test_failed_confirm_sent_post_never_means_a_second_email(self, db, cfg, monkeypatch):
+        """The Worker keeps listing an address whose confirm-sent POST failed;
+        the 24 h guard holds the email back and only the mark is retried."""
+        configure(monkeypatch)
+        worker = FakeOptInWorker([("a@x.com", "tok-a")], mark_status=500)
+        factory = Factory()
+        assert confirm(db, cfg, AFTER_8_LOCAL, worker, factory)["sent"] == 1
+        assert worker.marked == [["a@x.com"]] and worker.pending == [("a@x.com", "tok-a")]
+        later = AFTER_8_LOCAL + timedelta(hours=1)
+        stats = confirm(db, cfg, later, worker, factory)
+        assert stats == {"sent": 0, "skipped": "every pending sign-up emailed in the last 24 h"}
+        assert len(factory.messages) == 1  # no second email
+        assert worker.marked == [["a@x.com"], ["a@x.com"]]  # the Worker is told again
+        assert len(factory.servers) == 1  # nothing to send: no SMTP connection
+        # The Worker recovers: the retried mark lands and the address drops out.
+        worker.mark_status = 204
+        assert confirm(db, cfg, later + timedelta(hours=1), worker, factory)["sent"] == 0
+        assert worker.pending == [] and len(worker.marked) == 3
+        assert confirm(db, cfg, later + timedelta(hours=2), worker,
+                       factory)["skipped"] == "no pending sign-ups"
+        assert len(factory.messages) == 1
+
+    def test_guard_expires_after_24h(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker = FakeOptInWorker([("a@x.com", "tok-a")], mark_status=500)
+        factory = Factory()
+        assert confirm(db, cfg, AFTER_8_LOCAL, worker, factory)["sent"] == 1
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=23), worker, factory)["sent"] == 0
+        # Still listed a day later (the Worker never took the mark): one more link.
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=25), worker, factory)["sent"] == 1
+        assert len(factory.messages) == 2
+        # A new sign-up alongside a guarded one: only the new one is emailed,
+        # both are marked in the one POST.
+        worker.pending.append(("b@x.com", "tok-b"))
+        stats = confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=26), worker, factory)
+        assert stats["sent"] == 1 and factory.messages[-1]["To"] == "b@x.com"
+        assert worker.marked[-1] == ["b@x.com", "a@x.com"]
+
+    def test_refused_recipient_and_connection_drop_retry_next_run(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker = FakeOptInWorker([("a@x.com", "t1"), ("bad@x.com", "t2"), ("c@x.com", "t3")])
+        factory = Factory(fail_for={"bad@x.com"})
+        stats = confirm(db, cfg, AFTER_8_LOCAL, worker, factory)
+        assert stats == {"sent": 2, "skipped": ""}
+        assert worker.marked == [["a@x.com", "c@x.com"]] and worker.pending == [("bad@x.com", "t2")]
+        assert guarded(db) == fps("a@x.com", "c@x.com")  # the refusal is not guarded
+        ok = Factory()
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 1
+        assert [m["To"] for m in ok.messages] == ["bad@x.com"] and worker.pending == []
+
+        dropping = FakeOptInWorker([("d@x.com", "t4"), ("e@x.com", "t5")])
+        drop = Factory(drop_after=1)
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=1), dropping, drop)["sent"] == 1
+        assert dropping.marked == [["d@x.com"]] and dropping.pending == [("e@x.com", "t5")]
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=2), dropping, Factory())["sent"] == 1
+
+    @pytest.mark.parametrize("missing, reason", [
+        ("worker_url", "newsletter.worker_url not configured"),
+        ("NEWSLETTER_SECRET", "NEWSLETTER_SECRET not configured"),
+        ("SMTP_HOST", "SMTP_HOST not configured"),
+    ])
+    def test_skips_quietly_when_unconfigured(self, db, cfg, monkeypatch, missing, reason):
+        configure(monkeypatch)
+        if missing == "worker_url":
+            cfg.newsletter_worker_url = ""
+        else:
+            monkeypatch.delenv(missing)
+        worker, factory = FakeOptInWorker([("a@x.com", "t1")]), Factory()
+        stats = confirm(db, cfg, AFTER_8_LOCAL, worker, factory)
+        assert stats == {"sent": 0, "skipped": reason}
+        assert worker.list_calls == 0 and factory.servers == []
+        assert db.meta_get(N.CONFIRM_META_KEY) is None
+
+    def test_disabled_unreachable_list_and_smtp_failure_skip(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker, factory = FakeOptInWorker([("a@x.com", "t1")]), Factory()
+        cfg.newsletter_enabled = False
+        assert confirm(db, cfg, AFTER_8_LOCAL, worker, factory)["skipped"] == "disabled in config"
+        assert worker.list_calls == 0
+        cfg.newsletter_enabled = True
+
+        down = FakeOptInWorker([("z@x.com", "t9")], list_status=500)
+        stats = confirm(db, cfg, AFTER_8_LOCAL, down, factory)
+        assert stats == {"sent": 0, "skipped": "pending list unavailable"}
+        assert factory.servers == [] and down.marked == []
+        down.list_status = 200  # the Worker is back: the next run sends
+        assert confirm(db, cfg, AFTER_8_LOCAL, down, factory)["sent"] == 1
+        assert down.marked == [["z@x.com"]]
+
+        def boom(host, port):
+            raise OSError("smtp down")
+
+        stats = N.send_confirmations(db, cfg, AFTER_8_LOCAL, smtp_factory=boom,
+                                     http_client=worker.client())
+        assert stats["skipped"].startswith("smtp connect failed") and stats["sent"] == 0
+        assert worker.marked == [] and N.fingerprint("a@x.com") not in guarded(db)
+
+    def test_fetch_subscribers_pending_flag_and_build_confirmation(self):
+        urls: list[str] = []
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            urls.append(str(req.url))
+            return httpx.Response(200, json={"emails": [{"email": "A@x.com", "token": "t"}]})
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        assert N.fetch_subscribers(WORKER, "k", client, pending=True) == [
+            {"email": "a@x.com", "token": "t"}]
+        assert N.fetch_subscribers(WORKER, "k", client) == [{"email": "a@x.com", "token": "t"}]
+        assert urls == [WORKER + "/list?pending=1", WORKER + "/list"]
+
+        cfg = AppConfig()
+        cfg.custom_domain = "wowpriced.com"
+        subject, text, html = N.build_confirmation(cfg, "https://w/confirm?e=a%40x.com&t=1")
+        assert subject == "Confirm your wowpriced email"
+        assert "https://w/confirm?e=a%40x.com&t=1" in text
+        assert 'href="https://w/confirm?e=a%40x.com&amp;t=1"' in html
+        assert text.count("https://") == 1 and html.count("href=") == 1  # one link

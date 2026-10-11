@@ -475,6 +475,26 @@ class TestNewsletterSite:
         assert (out / "subscribe.html").exists()
 
 
+class TestSubscribePageDoubleOptIn:
+    """subscribe.html with double opt-in: ?ok=1 points at the inbox, the
+    Worker's confirm page lands here on ?confirmed=1, ?unsubscribed=1 is
+    unchanged and the copy explains the confirmation step."""
+
+    def test_states_and_copy(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        cfg.newsletter_worker_url = "https://wowpriced-subscribe.example.workers.dev"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        html = (out / "subscribe.html").read_text(encoding="utf-8")
+        assert "ok=1" in html
+        assert "Check your inbox and click the confirmation link" in html
+        assert "You're on the list" not in html  # the old promise is gone
+        assert "confirmed=1" in html and "You're confirmed" in html
+        assert "unsubscribed=1" in html and "You're unsubscribed" in html
+        assert "err=email" in html
+        assert "one confirmation link first" in html  # the intro copy
+        assert "Nothing is sent until you confirm" in html
+
+
 class TestPaywallPage:
     """The page side of docs/paywall.md ("Page behavior"): member fetch,
     locked stubs, the CTA panel, the account menu and the auth dialog live

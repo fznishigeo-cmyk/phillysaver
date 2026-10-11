@@ -96,6 +96,8 @@ on another origin).
 | `POST /api/publish` | `Bearer NEWSLETTER_SECRET` | full payload | `204`; `401` |
 | `/subscribe`, `/confirm`, `/unsubscribe`, `/list`, `/list/confirm-sent` | (newsletter, below) | | |
 
+| `POST /subscribe`, `GET /confirm`, `GET /unsubscribe`, `POST /unsubscribe`, `GET /list`, `GET /list?pending=1`, `POST /list/confirm-sent` | (newsletter: "Newsletter double opt-in" below) | | |
+
 `POST /api/signup|login|google|claim` answer `503 {error:"signin_unavailable"}`
 while the Worker has no `SESSION_SECRET`, before any KV write; and a new
 account is saved only after its session token signed, so a signing failure
@@ -216,6 +218,46 @@ metadata). A record written before this version has no `confirmed` key and
 
 The pipeline builds the links as `<worker_url>/confirm?e=<email>&t=<token>`
 and `<worker_url>/unsubscribe?e=<email>&t=<token>`.
+
+## Newsletter double opt-in
+
+KV `sub:<email>` = `{ts, token, confirmed, confirm_sent_at}`. A record
+written before the field existed (no `confirmed` key) counts as confirmed,
+so nobody already on the list is dropped. `POST /subscribe` creates
+`confirmed: false` (and leaves an existing record alone: re-subscribing an
+unconfirmed address just returns ok).
+
+| Route | Auth | Effect |
+|---|---|---|
+| `GET /confirm?e=&t=` | token | sets `confirmed: true`; 200 HTML page linking to `<site>/subscribe.html?confirmed=1` (or a 303 there for a browser) |
+| `GET /list` | `Bearer NEWSLETTER_SECRET` | confirmed addresses only, `{emails:[{email, token}]}` (unchanged shape) |
+| `GET /list?pending=1` | same bearer | unconfirmed addresses with an empty `confirm_sent_at`, same shape |
+| `POST /list/confirm-sent` `{emails:[...]}` | same bearer | sets `confirm_sent_at = now` on those records; `204` |
+| `GET /unsubscribe?e=&t=` | token | no longer deletes: 200 HTML page with a POST form button "Unsubscribe" |
+| `POST /unsubscribe?e=&t=` | token | deletes when the token matches (the form, or the RFC 8058 one-click POST mail clients send) |
+
+Pipeline (`dealradar/publish/newsletter.py::send_confirmations`): EVERY run,
+the fast lane included, right before the daily send. It reads
+`/list?pending=1`, emails each address ONE confirmation link
+(`<worker_url>/confirm?e=<urlencoded>&t=<token>`; subject "Confirm your
+wowpriced email"; text + minimal HTML; the line "If you didn't sign up,
+ignore this and you won't hear from us"; no deals, no list headers), then
+`POST /list/confirm-sent` with those addresses so the Worker never lists
+them again. At most `MAX_CONFIRMATIONS_PER_RUN` (50) per run, never past
+the run deadline; it skips quietly (one log line) when
+`newsletter.worker_url`, `NEWSLETTER_SECRET` or `SMTP_HOST` is missing or
+the list call fails. The Worker's `confirm_sent_at` is the record; state.db
+meta `newsletter:confirm_sent` (fingerprints of the addresses emailed in
+the last 24 h, never addresses) keeps a failed confirm-sent POST from
+causing a second email the same day: the next run re-posts the mark for
+those addresses instead of emailing them.
+
+The daily send keeps using `GET /list` (confirmed only) and builds the
+unsubscribe link exactly as before (`<worker_url>/unsubscribe?e=&t=`, now
+a confirm page; the `List-Unsubscribe-Post` one-click header targets
+`POST /unsubscribe`). `subscribe.html`: `?ok=1` says to check the inbox
+and click the confirmation link, `?confirmed=1` says "You're confirmed",
+`?unsubscribed=1` is unchanged.
 
 ## Page behavior
 

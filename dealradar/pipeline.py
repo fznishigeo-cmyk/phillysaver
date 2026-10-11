@@ -726,7 +726,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.email_digest import maybe_send_digest
     from .publish.members import send_member_alerts
     from .publish.paywall import publish_full
-    from .publish.newsletter import send_daily_newsletter
+    from .publish.newsletter import send_confirmations, send_daily_newsletter
     from .publish.site import render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
@@ -886,6 +886,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Paying members (Stripe) get the same new deals by email, bundled.
         summary["member_alerts"] = send_member_alerts(db, cfg, now)
         summary["digest_sent"] = maybe_send_digest(db, cfg, now)
+        # Double opt-in: new sign-ups get their confirmation link every run
+        # (small and capped, so it goes before the day's big send).
+        summary["confirmations"] = send_confirmations(db, cfg, now,
+                                                      deadline=deadline)
         summary["newsletter"] = send_daily_newsletter(db, cfg, now,
                                                       deadline=deadline)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,

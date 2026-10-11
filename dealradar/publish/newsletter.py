@@ -16,6 +16,14 @@ continues next run, and a failed recipient (or an unreachable list) is
 simply retried next run. Nothing is recorded for a skipped day, so
 configuring things later still sends. Only extracted facts, a product
 link, the retailer's thumbnail URL and the source credit leave this module.
+
+Double opt-in: GET /list returns confirmed addresses only. A fresh sign-up
+sits on GET /list?pending=1 until send_confirmations (every run, the fast
+lane included) emails it ONE confirmation link (<worker_url>/confirm?e=&t=)
+and reports that through POST /list/confirm-sent. The Worker's
+confirm_sent_at is the record; meta CONFIRM_META_KEY keeps the fingerprints
+emailed in the last 24 h so a failed confirm-sent POST cannot mean a second
+email the same day.
 """
 
 from __future__ import annotations
@@ -45,6 +53,12 @@ log = logging.getLogger("dealradar.publish.newsletter")
 MAX_DEALS = 25
 #: Stands in for the per-subscriber unsubscribe link in the shared bodies.
 UNSUB_PLACEHOLDER = "{{unsubscribe_url}}"
+#: Confirmation links per run: the pass rides every run and must stay quick.
+MAX_CONFIRMATIONS_PER_RUN = 50
+#: meta key: JSON {fingerprint: ISO time} of the addresses emailed a
+#: confirmation link in the last CONFIRM_GUARD_HOURS (hashes, never addresses).
+CONFIRM_META_KEY = "newsletter:confirm_sent"
+CONFIRM_GUARD_HOURS = 24
 
 
 def meta_key(day: str) -> str:
@@ -69,10 +83,13 @@ def _mask(email: str) -> str:
 
 
 def fetch_subscribers(worker_url: str, secret: str,
-                      http_client: Any = None) -> list[dict[str, str]] | None:
+                      http_client: Any = None, *,
+                      pending: bool = False) -> list[dict[str, str]] | None:
     """[{email, token}] from the Worker, sorted; None when it is unreachable
-    (the caller skips this run and tries again next run)."""
-    url = worker_url.rstrip("/") + "/list"
+    (the caller skips this run and tries again next run). GET /list is the
+    confirmed subscribers; ``pending`` asks /list?pending=1 instead: the
+    sign-ups not yet emailed a confirmation link."""
+    url = worker_url.rstrip("/") + ("/list?pending=1" if pending else "/list")
     headers = {"Authorization": f"Bearer {secret}"}
     try:
         if http_client is not None:
@@ -83,7 +100,8 @@ def fetch_subscribers(worker_url: str, secret: str,
         resp.raise_for_status()
         rows = resp.json().get("emails") or []
     except Exception as e:  # transport, auth, schema drift: retry next run
-        log.warning("newsletter list unavailable (retries next run): %s", e)
+        log.warning("newsletter %s list unavailable (retries next run): %s",
+                    "pending" if pending else "subscriber", e)
         return None
     seen: dict[str, str] = {}
     for row in rows:
@@ -339,3 +357,170 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
              day, stats["sent"], min(len(deals), MAX_DEALS), len(done),
              len(subscribers))
     return stats
+
+
+# ---------------------------------------------------------------- double opt-in
+
+
+def post_confirm_sent(worker_url: str, secret: str, emails: list[str],
+                      http_client: Any = None) -> bool:
+    """Tell the Worker these addresses got their confirmation link, so it
+    stops listing them under /list?pending=1. False on any failure: the
+    24 h guard in state.db keeps the next run from emailing them again."""
+    url = worker_url.rstrip("/") + "/list/confirm-sent"
+    headers = {"Authorization": f"Bearer {secret}"}
+    body = {"emails": emails}
+    try:
+        if http_client is not None:
+            resp = http_client.post(url, json=body, headers=headers)
+        else:
+            with httpx.Client(timeout=20) as client:
+                resp = client.post(url, json=body, headers=headers)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        log.warning("confirmations: confirm-sent POST failed for %d addresses "
+                    "(retried next run; the 24 h guard prevents a repeat): %s",
+                    len(emails), e)
+        return False
+
+
+def _confirm_guard(db, now: datetime) -> dict[str, str]:
+    """{fingerprint: ISO time} of the confirmation links emailed in the last
+    CONFIRM_GUARD_HOURS; older or unreadable entries drop out as it is read."""
+    try:
+        raw = json.loads(db.meta_get(CONFIRM_META_KEY) or "{}")
+    except ValueError:
+        raw = {}
+    cutoff = now - timedelta(hours=CONFIRM_GUARD_HOURS)
+    recent: dict[str, str] = {}
+    for fp, ts in (raw.items() if isinstance(raw, dict) else ()):
+        try:
+            if datetime.fromisoformat(str(ts)) > cutoff:
+                recent[str(fp)] = str(ts)
+        except ValueError:
+            continue
+    return recent
+
+
+def build_confirmation(cfg, confirm_url: str) -> tuple[str, str, str]:
+    """(subject, text_body, html_body) for ONE address: the link and nothing
+    else. No deals: nothing is owed to someone who may never have asked."""
+    brand = _brand(cfg)
+    subject = f"Confirm your {brand} email"
+    lead = ("Click the link below to start getting the daily email: "
+            "the day's best verified deals, once a day.")
+    ignore = "If you didn't sign up, ignore this and you won't hear from us."
+    text_body = f"{subject}\n\n{lead}\n{confirm_url}\n\n{ignore}\n"
+    esc = html_lib.escape
+    html_body = (
+        '<!doctype html><html><body style="margin:0;background:#f3f5f7;color:#1a1d21;'
+        'font:15px/1.5 system-ui,-apple-system,\'Segoe UI\',sans-serif">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+        '<tr><td align="center" style="padding:20px 12px">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" '
+        'style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e2e6eb;'
+        'border-radius:14px;padding:20px 22px"><tr><td>'
+        f'<div style="font-size:22px;font-weight:800">{esc(brand)}'
+        '<span style="color:#0e7569">●</span></div>'
+        f"<p>{esc(lead)}</p>"
+        f'<p><a href="{esc(confirm_url)}" style="display:inline-block;background:#0e7569;'
+        'color:#ffffff;font-weight:700;padding:10px 16px;border-radius:8px;'
+        'text-decoration:none">Confirm my email</a></p>'
+        f'<p style="color:#616a75;font-size:12px;line-height:1.5">{esc(ignore)}</p>'
+        "</td></tr></table></td></tr></table></body></html>"
+    )
+    return subject, text_body, html_body
+
+
+def send_confirmations(db, cfg, now: datetime, *,
+                       smtp_factory: Any = None,
+                       http_client: Any = None,
+                       deadline: float | None = None) -> dict[str, Any]:
+    """One confirmation link to each pending sign-up the Worker lists, at
+    most MAX_CONFIRMATIONS_PER_RUN per run and never past ``deadline``
+    (time.monotonic), then POST /list/confirm-sent so the Worker never
+    lists them again. Runs every run, the fast lane included. Returns
+    {sent, skipped}; `skipped` is "" whenever messages went out."""
+    stats: dict[str, Any] = {"sent": 0, "skipped": ""}
+
+    def skip(reason: str, emit=log.info) -> dict[str, Any]:
+        emit("confirmations skipped: %s", reason)
+        stats["skipped"] = reason
+        return stats
+
+    if not getattr(cfg, "newsletter_enabled", True):
+        return skip("disabled in config", log.debug)
+    worker_url = (getattr(cfg, "newsletter_worker_url", "") or "").rstrip("/")
+    secret = get_secret("NEWSLETTER_SECRET")
+    host = get_secret("SMTP_HOST")
+    missing = [name for name, value in (("newsletter.worker_url", worker_url),
+                                        ("NEWSLETTER_SECRET", secret),
+                                        ("SMTP_HOST", host)) if not value]
+    if missing:
+        return skip(", ".join(missing) + " not configured")
+
+    pending = fetch_subscribers(worker_url, secret, http_client, pending=True)
+    if pending is None:
+        return skip("pending list unavailable")
+    if not pending:
+        return skip("no pending sign-ups", log.debug)
+    recent = _confirm_guard(db, now)
+    # Emailed within 24 h yet still listed: the confirm-sent POST failed
+    # last time. No second email; the Worker is simply told again below.
+    already = [s["email"] for s in pending if fingerprint(s["email"]) in recent]
+    todo = [s for s in pending
+            if fingerprint(s["email"]) not in recent][:MAX_CONFIRMATIONS_PER_RUN]
+    sent: list[str] = []
+    if todo:
+        port = int(get_secret("SMTP_PORT") or "587")
+        sender = (get_secret("SMTP_FROM") or get_secret("SMTP_USER")
+                  or f"{_brand(cfg)}@{host}")
+        try:
+            server = smtp_connect(host, port, smtp_factory=smtp_factory)
+        except Exception as e:
+            return skip(f"smtp connect failed: {e}", log.warning)
+        try:
+            for sub in todo:
+                if deadline is not None and time.monotonic() > deadline:
+                    log.info("confirmations: run deadline reached after %d sends; "
+                             "the rest ride the next run", len(sent))
+                    break
+                confirm = (f"{worker_url}/confirm?"
+                           + urlencode({"e": sub["email"], "t": sub["token"]}))
+                subject, text_body, html_body = build_confirmation(cfg, confirm)
+                msg = MIMEMultipart("alternative")
+                msg["Subject"] = subject
+                msg["From"] = sender
+                msg["To"] = sub["email"]
+                msg.attach(MIMEText(text_body, "plain", "utf-8"))
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
+                try:
+                    server.send_message(msg)
+                except smtplib.SMTPServerDisconnected as e:
+                    log.warning("confirmations: connection lost after %d sends (%s); "
+                                "the rest ride the next run", len(sent), e)
+                    break
+                except Exception as e:
+                    log.warning("confirmations: send to %s failed (retries next run): %s",
+                                _mask(sub["email"]), e)
+                    continue
+                recent[fingerprint(sub["email"])] = now.isoformat()
+                # Recorded after EVERY send: a crash mid-batch resends nothing.
+                db.meta_set(CONFIRM_META_KEY, json.dumps(recent, sort_keys=True))
+                sent.append(sub["email"])
+        finally:
+            try:
+                server.quit()
+            except Exception:  # pragma: no cover - best-effort cleanup
+                pass
+    stats["sent"] = len(sent)
+    if sent or already:
+        post_confirm_sent(worker_url, secret, sent + already, http_client)
+    if sent:
+        log.info("confirmations: %d of %d pending sent this run, %d re-marked",
+                 len(sent), len(pending), len(already))
+        return stats
+    if not todo:
+        return skip("every pending sign-up emailed in the last 24 h", log.debug)
+    return skip("nothing sent this run")  # deadline, drop or refusals: next run
