@@ -1504,6 +1504,12 @@ describe("never billed twice, every member can cancel online", () => {
     stripe.customers = { "H1@Example.COM": ["cus_h1"] };
     travel(6 * MIN);
     assert.equal((await portal(env, token)).json.url, "https://billing.stripe.com/p/session/test_cus_h1");
+    // ...and checkout sees it too, whatever case the payer typed (review
+    // finding: the exact-case customers?email= read missed it and sold a
+    // second subscription to a member whose renewal had failed).
+    let mixed = await checkout(env, token, { ip: "7.7.7.9" });
+    assert.deepEqual([mixed.status, mixed.json.error], [409, "payment_issue"]);
+    assert.deepEqual(checkoutPosts(), [], "never a second subscription, any case");
     stripe.subs.cus_h1 = ["canceled"];
     travel(6 * MIN);
     assert.deepEqual([(await portal(env, token)).status, (await me(env, token)).json.reason], [404, "none"]);

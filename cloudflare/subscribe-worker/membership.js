@@ -163,6 +163,13 @@ export async function checkoutHistory(env, acct) {
   for (const c of customers) {
     if (c.id !== acct.stripe_customer) subs.push(...(await customerSubscriptions(env, c.id)));
   }
+  // A verified address also counts its (b) subscriptions compared lowercased:
+  // customers?email= above is exact-case, and a payer who typed H1@Example.com
+  // must still never be sold a second subscription (review finding).
+  if (isVerified(acct)) {
+    const viaEmail = await emailSubscription(env, acct.email, NOT_ENDED);
+    if (viaEmail && !subs.some((s) => s.id && s.id === viaEmail.id)) subs.push(viaEmail);
+  }
   const released = acct.released_customer ? (await subscriptionsOrGone(env, acct.released_customer)) || [] : [];
   return { open: bestOpen(subs), released: !!bestOpen(released), had: bound === null || subs.length > 0, gone: bound === null };
 }
