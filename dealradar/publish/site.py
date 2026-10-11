@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from ..config import redact_secrets
 from ..util import iso, parse_iso
 from .paywall import split_teaser, teaser_memory
+from .credits import source_display_name
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -133,7 +134,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
     if first_seen is not None:
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
     credits = [
-        {"name": s.get("source_name", ""), "url": s.get("source_url", "")}
+        {"name": source_display_name(s.get("source_name", "")), "url": s.get("source_url", "")}
         for s in (deal.get("sightings") or [])
     ]
     status = deal.get("status", "alive")

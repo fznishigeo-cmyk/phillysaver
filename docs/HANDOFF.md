@@ -56,6 +56,22 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+
+- **Friendly source credits (Codex task 001 / PR #2):** implemented on
+  `codex/task-001`, awaiting Claude review/merge.
+  - All 109 primary/backup entries, including disabled sources, now carry
+    `display_name` and `site`; feeds of one brand share a display name.
+  - Loader falls back to the internal ID when branding is absent. A small
+    publishing helper resolves credits; source post URLs and internal IDs
+    stay intact. No templates changed.
+  - Homepage names confirmed with one polite homepage GET each: Brad's Deals,
+    DealMoon, Deals of America, MorningSave. Jungle Deals returned a generic
+    Amazon-deals title; Meh was blocked at robots.txt. Other sites are outside
+    this environment's source-host allowlist. Unconfirmed names are listed in
+    PR #2 and derived from feed domains/source configuration.
+  - Validation: full `python -m pytest -q` suite: 993 passed, 1 slow
+    integration test deselected by repository defaults.
+  - Remaining: review/merge and confirm the remaining brand spellings.
 - **Walmart/eBay photos:**
   - The redirect resolver stores the retailer's bot-wall page
     (`walmart.com/blocked?url=…`, `ebay …/splashui/challenge?ru=…`) as the

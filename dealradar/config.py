@@ -316,6 +316,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
     return SourceConfig(
         name=str(d["name"]),
+        display_name=str(d.get("display_name") or d["name"]),
+        site=str(d.get("site") or ""),
         method=str(d["method"]),
         url=str(d["url"]),
         region=str(d.get("region", "US")),
