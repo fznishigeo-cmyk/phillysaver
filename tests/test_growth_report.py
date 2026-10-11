@@ -563,10 +563,13 @@ def test_exit_code_only_fails_when_every_configured_section_failed(cfg, rsa_key,
     assert code == 0  # the other sections worked
 
 
-def test_exit_code_fails_when_no_channel_took_the_report(cfg, rsa_key, monkeypatch):
+def test_a_failed_delivery_is_logged_but_exits_0(cfg, rsa_key, monkeypatch, caplog):
+    """Per the brief, only sections set the exit code; delivery logs its error."""
+    caplog.set_level(logging.INFO)
     set_telegram(monkeypatch)
-    code, _, _ = full_run(cfg, rsa_key, monkeypatch, fail={"api.telegram.org": 502})
-    assert code == 1
+    code, _, _ = full_run(cfg, rsa_key, monkeypatch, fail={"api.telegram.org": 403})
+    assert code == 0
+    assert "telegram: error HTTP 403" in caplog.messages
 
 
 def test_telegram_text_stays_under_the_limit(cfg, rsa_key, monkeypatch):

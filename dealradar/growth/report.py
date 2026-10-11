@@ -230,8 +230,8 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
 
 def run(cfg, now: datetime | None = None, *, http_client: Any = None,
         smtp_factory: Any = None) -> int:
-    """The exit code: 1 when every configured section failed, or when no
-    configured channel took the report; else 0."""
+    """The exit code: 1 only when every configured section failed; a
+    delivery failure is logged (channel + error class) but exits 0."""
     now = now or now_utc()
     client = http_client or httpx.Client(timeout=30)
     try:
@@ -242,9 +242,8 @@ def run(cfg, now: datetime | None = None, *, http_client: Any = None,
             return 0
         yesterday = now.astimezone(ZoneInfo(cfg.timezone)).date() - timedelta(days=1)
         subject, text = build_report(cfg, data, status, yesterday)
-        configured, delivered = deliver(cfg, subject, text, client=client,
-                                        smtp_factory=smtp_factory)
+        deliver(cfg, subject, text, client=client, smtp_factory=smtp_factory)
     finally:
         if http_client is None:
             client.close()
-    return 1 if all(s == "error" for s in ran) or (configured and not delivered) else 0
+    return 1 if all(s == "error" for s in ran) else 0
