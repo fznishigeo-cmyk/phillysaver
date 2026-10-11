@@ -393,20 +393,26 @@ def test_featured_photos_are_no_ones_on_a_roundup():
 
 
 def test_pick_photo_link_name_and_conflict():
-    """In its link, or by name; both and they differ: none (None: no post
-    image either); both and one photo (any size): that photo. With the
-    in-link rule off (a shared or store link) only the name counts."""
+    """In-link evidence only: the photo inside the deal's own link, or
+    nothing. Names never place a photo (an adversarial review found a
+    sibling's photo on 19 of 21 layouts by name); they only VETO: a photo
+    inside this deal's link that the post names after ANOTHER of its
+    products is no one's (None: no post image either). With the in-link
+    rule off (a shared or store link) there is no photo."""
     link = "https://www.amazon.com/dp/B0ABCDEFGH"
     items = _deals(ITEMS)
     named = {MARKERS: name_words("Crayola Markers 40ct")}
     assert pick_photo([link], ITEMS[0], items, PostPhotos(in_link={link: LEGO}, named=named)) \
-        is None
+        == LEGO
     assert pick_photo([link], ITEMS[0], items,
                       PostPhotos(in_link={link: LEGO}, named={LEGO: frozenset()})) == LEGO
-    assert pick_photo([], ITEMS[0], items, PostPhotos(in_link={link: LEGO}, named=named)) \
-        == MARKERS
+    assert pick_photo([], ITEMS[0], items, PostPhotos(in_link={link: LEGO}, named=named)) == ""
     assert pick_photo([link], ITEMS[0], items, PostPhotos(in_link={link: LEGO}, named=named),
-                      in_link=False) == MARKERS
+                      in_link=False) == ""
+    # The veto: the photo in the markers' link is named after the LEGO deal.
+    vetoed = {LEGO: name_words("LEGO Classic Bricks"), MARKERS: name_words("Crayola Markers 40ct")}
+    assert pick_photo([link], ITEMS[0], items, PostPhotos(in_link={link: LEGO}, named=vetoed)) \
+        is None
     sized = MARKERS.replace(".jpg", "-300x300.jpg")
     assert pick_photo([link], ITEMS[0], items,
                       PostPhotos(in_link={link: sized}, named=named)) == sized

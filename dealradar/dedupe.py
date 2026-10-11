@@ -222,6 +222,22 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
     return post.image_url
 
 
+def _same_product(existing: dict[str, Any], extracted: models.ExtractedDeal) -> bool:
+    """True when an incoming deal names the stored row's product: the same
+    retailer product id / link when both have one, else the same item."""
+    from .product_images import link_key
+
+    def keys(*urls: str) -> set[str]:
+        return {link_key(u) for u in urls
+                if u and u.lower().startswith(("http://", "https://"))} - {""}
+
+    row = keys(existing.get("canonical_url") or "")
+    new = keys(extracted.product_url or "", extracted.link_as_posted or "")
+    if row and new:
+        return bool(row & new)
+    return util.normalize_item(extracted.item or "") == (existing.get("normalized_item") or "")
+
+
 def upsert_extracted(db, extracted: models.ExtractedDeal,
                      savings: models.SavingsResult, post: models.RawPost,
                      cfg, now: datetime) -> dict[str, Any]:
@@ -325,7 +341,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # Once several products shared the row's link, no post names it.
         payload["link_shared"] = bool(existing.get("link_shared")) \
             or extracted.link_shared
-        if not payload.get("image_url"):
+        # The incoming deal's photo only when it IS this row's product: a
+        # fuzzy item match can merge a variant (review finding: the Series 9
+        # photo landed on the Series 8 row, the 65-inch TV's on the 55-inch).
+        if not payload.get("image_url") and _same_product(existing, extracted):
             image = _post_image(extracted, post, shared=payload["link_shared"])
             if image:
                 payload["image_url"] = image

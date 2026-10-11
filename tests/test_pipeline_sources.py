@@ -126,7 +126,7 @@ class TestBlogImageBackfill:
         fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE})
         assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
         assert fetcher.calls == [self.ROUNDUP]
-        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/shelf.jpg"
+        assert db.get_deal("shelf")["image_url"] == ""  # names never place a photo (in-link evidence only)
         assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
         for key in ("nolink", "amazon_search"):
             d = db.get_deal(key)
@@ -233,7 +233,7 @@ class TestBlogImageBackfill:
                                  b"<meta property='og:image' content='https://hip2save.com/i/s.jpg'>"})
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
         assert fetcher.calls == [self.ROUNDUP]
-        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/shelf.jpg"
+        assert db.get_deal("shelf")["image_url"] == ""  # names never place a photo (in-link evidence only)
         assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
         assert db.get_deal("gone")["flags"] == ["image_backfill_tried"]
         assert db.get_deal("single")["flags"] == ["image_backfill_tried"]
@@ -407,7 +407,7 @@ class TestBlogImageBackfill:
                                  b"<meta property='og:image' content='https://hip2save.com/i/rb.jpg'>"})
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
         assert fetcher.calls == [article, marked]
-        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/songmics.jpg"
+        assert db.get_deal("shelf")["image_url"] == ""  # names never place a photo (in-link evidence only)
         for key in ("rack", "merged"):
             d = db.get_deal(key)
             assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
@@ -434,7 +434,7 @@ class TestBlogImageBackfill:
                           crawl_permission="written grant on file")
         for i, (names, alts, want) in enumerate((
                 (GENERIC, ("", "", ""), ["", "", ""]),
-                (("a", "b", "c"), ALTS, [UP + "a.jpg", UP + "b.jpg", UP + "c.jpg"]))):
+                (("a", "b", "c"), ALTS, ["", "", ""]))):  # names never place a photo (in-link evidence only)
             db = DB(tmp_path / f"state{i}.db")
             for key, (item, link) in zip("xyz", TOYS):
                 self._seed(db, key, self.ROUNDUP, canonical=link, item=item)

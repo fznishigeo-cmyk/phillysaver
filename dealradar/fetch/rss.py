@@ -140,11 +140,11 @@ def _pi_own_page(path: str, article_path: str) -> bool:
     post = [s for s in article_path.split("/") if s]
     if not segments or (post and segments[:len(post)] == post):
         return True
-    if segments[0] in _PI_CLOAK:
-        return False
-    if re.fullmatch(r"(?:19|20)\d\d", segments[0]) or segments[0] in _PI_ARCHIVE:
-        return True
-    return len(segments) == len(post) and (len(post) < 2 or segments[0] == post[0])
+    # Only a cloaker's prefix makes a same-host link a product link; every
+    # other path is the blog's own page (review finding: one header nav link
+    # such as https://hip2save.com/deals/ made a single-product post a
+    # "roundup" and its card lost its photo).
+    return segments[0] not in _PI_CLOAK
 
 
 def _pi_anchor_kind(href: str, article_url: str) -> str:

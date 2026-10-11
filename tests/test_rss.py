@@ -573,7 +573,11 @@ def test_post_photos_lazy_image_and_its_noscript_twin_are_one():
     ("https://blog.example/2026/10/11/toy-deals/", "https://www.blog.example/out/doh/", "product"),
     ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/link/barbie/", "product"),
     ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/refer/kettle", "product"),
-    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/crayola-40ct", "product"),
+    # Any other same-host path is the blog's own page: a header nav link
+    # (hip2save.com/deals/) must never make a one-product post a roundup.
+    ("https://blog.example/2026/10/11/toy-deals/", "https://blog.example/crayola-40ct", "site"),
+    ("https://hip2save.com/deals/nike-sale/", "https://hip2save.com/deals/", "site"),
+    ("https://hip2save.com/deals/nike-sale/", "https://hip2save.com/freebies/", "site"),
     ("https://blog.example/toy-deals/", "https://blog.example/go/lego", "product"),
     # The blog's own pages: dated posts, posts shaped like this one,
     # archives, home.

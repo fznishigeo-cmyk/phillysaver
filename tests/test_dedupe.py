@@ -466,10 +466,10 @@ def test_reviewed_layouts_never_give_a_neighbours_photo(tmp_path, layout) -> Non
     file name names each product give each deal its own."""
     assert _ingest(tmp_path, _listicle(layout, GENERIC), TOYS) \
         == dict.fromkeys((i for i, _l in TOYS), "")
-    own = {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, NAMED_FILES)}
-    assert _ingest(tmp_path, _listicle(layout, NAMED_FILES), TOYS) == own
-    own = {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, ("a", "b", "c"))}
-    assert _ingest(tmp_path, _listicle(layout, ("a", "b", "c"), ALTS), TOYS) == own
+    # Names alone never place a photo (in-link evidence only): none.
+    none = dict.fromkeys((i for i, _l in TOYS), "")
+    assert _ingest(tmp_path, _listicle(layout, NAMED_FILES), TOYS) == none
+    assert _ingest(tmp_path, _listicle(layout, ("a", "b", "c"), ALTS), TOYS) == none
 
 
 def _heading_listicle(names, alts=("", "", ""), lead: str = FEATURED,
@@ -492,7 +492,7 @@ def test_heading_listicle_with_featured_image_and_shop_more_link(tmp_path) -> No
     for lead in (FEATURED, classic):
         assert _ingest(tmp_path, _heading_listicle(GENERIC, lead=lead), TOYS) == none
         assert _ingest(tmp_path, _heading_listicle(("a", "b", "c"), ALTS, lead=lead), TOYS) \
-            == {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, "abc")}
+            == none  # names never place a photo (in-link evidence only)
     sale = ('<p><a href="https://www.target.com/c/toy-sale/-/N-1">Shop the sale here</a></p>'
             + "".join(f'<figure>{_img(n, "")}</figure><p>{item} $19.99 <a href="{link}">Buy</a>'
                       '</p>' for n, (item, link) in zip(GENERIC, TOYS))
@@ -504,8 +504,7 @@ def test_heading_listicle_with_featured_image_and_shop_more_link(tmp_path) -> No
                + '</ul>')
     assert _ingest(tmp_path, FEATURED + gallery, TOYS) == none
     named_gallery = gallery.replace('alt=""', 'alt="{}"').format(*ALTS)
-    assert _ingest(tmp_path, FEATURED + named_gallery, TOYS) \
-        == {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, GENERIC)}
+    assert _ingest(tmp_path, FEATURED + named_gallery, TOYS) == none  # names never place a photo (in-link evidence only)
 
 
 def test_photo_inside_its_own_link_needs_no_name(tmp_path) -> None:
@@ -526,8 +525,9 @@ def test_photo_inside_one_link_named_after_another_product_gives_none(tmp_path) 
     html = FEATURED + (
         f'<p><a href="{TOYS[0][1]}"><img src="{UP}x.jpg" alt="LEGO Classic Bricks"></a></p>'
         f'<p><img src="{UP}y.jpg" alt="Crayola Markers 40ct"></p>')
-    # The LEGO deal (its link not on the page) is named by x.jpg alone.
-    assert _ingest(tmp_path, html, TOYS[:2]) == {TOYS[0][0]: "", TOYS[1][0]: "x.jpg"}
+    # Names only veto: the markers' in-link photo is named after LEGO, so
+    # no one's; LEGO (its link not on the page) gets nothing from a name.
+    assert _ingest(tmp_path, html, TOYS[:2]) == {TOYS[0][0]: "", TOYS[1][0]: ""}
 
 
 def test_two_products_of_one_brand_need_names_that_separate_them(tmp_path) -> None:
@@ -547,8 +547,7 @@ def test_two_products_of_one_brand_need_names_that_separate_them(tmp_path) -> No
     assert _ingest(tmp_path, start, deals) == {deals[0][0]: "", deals[1][0]: ""}
     html = html.replace('alt="Crayola"', 'alt="Crayola Markers 40ct"', 1) \
         .replace('alt="Crayola"', 'alt="Crayola Colored Pencils, 50 Count"', 1)
-    assert _ingest(tmp_path, html, deals) == {deals[0][0]: "crayola-0.jpg",
-                                              deals[1][0]: "crayola-1.jpg"}
+    assert _ingest(tmp_path, html, deals) == {deals[0][0]: "", deals[1][0]: ""}  # names never place a photo (in-link evidence only)
 
 
 def test_sale_page_collage_never_lands_on_a_card(tmp_path) -> None:
@@ -641,7 +640,9 @@ def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
             f'<p><a href="{lamp}"><img src="{UP}lamp.jpg"></a> Lamp $9</p>')
     post = make_post(uid="home-sale", url=POST_URL)
     post.photos = post_photos(html, POST_URL)
-    assert post.photos.in_link[sale] == UP + "home-sale-banner.jpg"   # the link holds it
+    # A known store's page without a product id is a listing: its banner is
+    # never in a product link's keeping in the first place.
+    assert sale not in post.photos.in_link
     pairs = [(post, make_extracted(item=item, store="Kohls", product_url=url,
                                    link_as_posted=url))
              for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", sale),
@@ -663,11 +664,12 @@ def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
     shelf = make_extracted(item="SONGMICS Shelf", store="Kohls", product_url=sale)
     dedupe.upsert_extracted(db, shelf, make_savings(), later, cfg, NOW)
     assert db.get_deal(keys[0])["image_url"] == ""
-    # ...but a photo the post names after the item is the item's.
+    # ...nor a photo the post merely names after the item (names never
+    # place a photo: in-link evidence only).
     named = make_post(uid="shelf-named")
     named.photos = PostPhotos(named={UP + "s.jpg": name_words("SONGMICS 5-Tier Shelf")})
     dedupe.upsert_extracted(db, shelf, make_savings(), named, cfg, NOW)
-    assert db.get_deal(keys[0])["image_url"] == UP + "s.jpg"
+    assert db.get_deal(keys[0])["image_url"] == ""
     db.close()
 
 
@@ -723,8 +725,7 @@ def test_featured_image_named_after_the_post_lands_on_no_card(tmp_path, layout) 
     # a collage named after the post: none (when in doubt, no photo).
     named = _listicle(layout, ("a", "b", "c"), ALTS).replace(f"{UP}featured.jpg",
                                                              f"{UP}{SLUG}.jpg")
-    assert _ingest(tmp_path, named, TOYS, url=url) \
-        == {TOYS[0][0]: "", TOYS[1][0]: "b.jpg", TOYS[2][0]: "c.jpg"}
+    assert _ingest(tmp_path, named, TOYS, url=url) == NONE  # names never place a photo (in-link evidence only)
 
 
 def test_lead_collage_with_the_title_as_alt_lands_on_no_card(tmp_path) -> None:
@@ -783,7 +784,7 @@ def test_variant_photo_goes_to_its_own_variant_only() -> None:
             f'<p>Series 9 $299 <a href="{watches[0][1]}">Buy</a></p>'
             f'<figure><img src="{UP}IMG_0042.jpg" alt=""></figure>'
             f'<p>Series 8 $199 <a href="{watches[1][1]}">Buy</a></p>')
-    assert _post_photos_of(html, watches) == {watches[0][0]: "s9.jpg", watches[1][0]: ""}
+    assert _post_photos_of(html, watches) == {watches[0][0]: "", watches[1][0]: ""}  # names never place a photo (in-link evidence only)
     packs = [("Hot Wheels 5-Pack", "https://www.amazon.com/dp/B0000HWPK5"),
              ("Hot Wheels 9-Pack", "https://www.amazon.com/dp/B0000HWPK9")]
     html = (FEATURED + f'<figure><img src="{UP}IMG_0050.jpg" alt=""></figure>'

@@ -3,14 +3,13 @@
 A roundup post (one article, several products) shows one photo per
 product. Where a photo sits says nothing provable about whose it is (three
 review rounds of layout pairing each found photos shifted to the next
-product), so a deal gets a photo only on evidence (pick_photo):
-  1. in its link: the photo inside <a href=X> is X's (fetch.rss.post_photos
-     keeps only links that name a product), matched to the deal's link by
-     match_product_image;
-  2. by name: the photo whose alt, title, caption or file name covers the
-     deal's item beyond its brand, clearly better than any other photo,
-     and fits no other product the page names as well (photo_by_name);
-  3. both, and they differ: none.
+product), so a deal gets a photo only on evidence (pick_photo): the photo
+inside <a href=X> is X's (fetch.rss.post_photos keeps only links that name
+a product), matched to the deal's link by match_product_image. Matching by
+name (photo_by_name: alt, caption, file name) is NOT used: an adversarial
+review put a sibling's photo on 19 of 21 new layouts (the 65-inch TV's
+photo on the 55-inch card, a brand banner on the brand's deal) while
+in-link evidence was right 33 of 33.
 On a roundup the post's featured photos (og:image, its first image, one
 named after the post) are no product's.
 A deal knows its link twice: as the post gave it (often an affiliate
@@ -138,6 +137,16 @@ def _names_no_product(url: str) -> bool:
         return not extract_asin(deepest)
     if not parts.path.strip("/"):
         return True
+    # A known retailer's page names a product only through its product id;
+    # any other page of theirs (Target /b/ brand pages, Walmart /shop/deals,
+    # Kohl's /catalog/) is a listing (review finding: sale banners reached
+    # cards through brand-page links the explicit list did not know).
+    # Only the store's own site: its redirect subdomains (goto.target.com,
+    # goto.walmart.com) are affiliate short links that name a product.
+    where = parts.path + ("?" + parts.query if parts.query else "")
+    for retailer, pattern in _RETAILER_IDS:
+        if host in (retailer, "www." + retailer):
+            return not pattern.search(where)
     return any((host == r or host.endswith("." + r)) and p.search(parts.path)
                for r, p in _LISTING_PAGES)
 
@@ -371,11 +380,18 @@ def pick_photo(links: list[str], item: str, items: list[tuple[str, str]],
     resolving to a store or search page), or the one named after its item;
     '' when neither (a single-product post may then lend its own image);
     None when both give one and they differ — no photo at all."""
+    # In-link evidence only (see the module docstring). Names may only
+    # VETO: a photo inside this deal's link that the post clearly names
+    # after ANOTHER of its products is no one's (None), never reassigned.
     linked = match_product_image(links, photos.in_link) if in_link else ""
-    named = photo_by_name(item, links, items, photos)
-    if linked and named and photo_key(linked) != photo_key(named):
-        return None
-    return linked or named
+    if linked:
+        own = _link_keys(links)
+        for name, link in items:
+            if name == item or (own and _link_keys([link]) & own):
+                continue
+            if photo_by_name(name, [link], items, photos) == linked:
+                return None
+    return linked
 
 
 def single_product(photos: PostPhotos) -> bool:
