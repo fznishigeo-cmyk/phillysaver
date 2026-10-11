@@ -563,3 +563,14 @@ class TestSelfReloadAndPetsTab:
         html = (tmp_path / "index.html").read_text(encoding="utf-8")
         assert '["Pets", ["pets"]]' in html
         assert '["Other", ["office", "books_media", "other"]]' in html
+
+
+class TestLoginDeepLink:
+    def test_hash_opens_the_auth_dialog_only_with_an_api(self, db, cfg, tmp_path):
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert "function openFromHash()" in html
+        assert '"#login"' in html and '"#signup"' in html
+        assert "state.meta.api_url" in html.split("function openFromHash()")[1][:400]
+        assert "setTimeout(openFromHash, 0)" in html
