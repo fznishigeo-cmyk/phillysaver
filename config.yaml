@@ -2,7 +2,7 @@
 
 # Contact email advertised in the User-Agent, per our politeness policy.
 # SET THIS before the first live run (robots-respecting crawlers must be contactable).
-contact_email: "set-me@example.com"
+contact_email: "hello@wowpriced.com"
 user_agent: "dealradar/0.1 (+https://github.com/fznishigeo-cmyk/phillysaver; contact: {contact_email})"
 
 timezone: "America/New_York"   # default tz for feeds with naive dates and for "ends today"
