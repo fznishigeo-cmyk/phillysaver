@@ -102,6 +102,21 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Codex task 013 (2026-10-11 on `codex/task-013`):**
+  the retailer photo pass now accepts other HTTPS product hosts, prioritizes
+  the existing retailer list, and caps attempts at 40. Blog/tracker/Amazon
+  exclusions, listings, bot walls, junk filtering and one-attempt flags stay.
+  Woot photos support the feed's `Photo` and offer/item `Photos[].Url`;
+  blog-sourced Woot product links are eligible for the retailer pass.
+  Before fast-lane photo passes, up to 30 distinct stored image URLs get
+  oldest-first metadata checks, with per-URL check times in DB meta and a
+  24-hour interval. HEAD and GET fallback honor robots and rate limits,
+  follow no bot walls, and read no image bytes. Failed/non-image answers
+  clear the photo and lift its two photo-attempt flags so backfills retry.
+  Regression tests cover these paths, deadlines, budgets and reruns.
+  `.venv/bin/python -m pytest -q`: 1,188 passed, 1 deselected, including
+  offline e2e/idempotency. No task implementation remains; review and
+  merge/deployment are pending. No commit or push made.
 - **Codex task 011 (merged 2026-10-11
   deal objects through their shared serializer from 40 to 26 fields; removed
   only fields with no serialized-data reader. `flags` and `alive` remain

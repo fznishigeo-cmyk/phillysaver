@@ -321,6 +321,27 @@ class PoliteFetcher:
     def close(self) -> None:
         self._client.close()
 
+    def check_image(self, url: str, *, deadline: float | None = None
+                    ) -> tuple[FetchResult, str]:
+        """Check image metadata without reading bytes, honoring robots on
+        HEAD and GET and every redirect. Unsupported or inconclusive HEAD
+        answers get a GET fallback; a refusal is never worked around."""
+        if is_challenge_url(url):
+            return (FetchResult(url=url, final_url=url, status=0, body=None,
+                                error="challenge_page"), "")
+        for method in ("HEAD", "GET"):
+            result, headers = self._request_with_retries(
+                method, url, {}, deadline=deadline, conditional=False,
+                follow_redirects=True, read_body=False, respect_robots=True,
+            )
+            content_type = headers.get("Content-Type", "").strip() if headers else ""
+            if method == "HEAD" and (result.status in (405, 501) or
+                    (200 <= result.status < 300 and
+                     not content_type.lower().startswith("image/"))):
+                continue
+            return result, content_type
+        return result, content_type
+
     # ---------------------------------------------------------------- robots
 
     def _robots_allowed(self, url: str) -> bool:
@@ -420,6 +441,7 @@ class PoliteFetcher:
         robots_override_host: str | None = None,
         max_attempts: int | None = None,
         timeout_s: float | None = None,
+        respect_robots: bool = False,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Polite manual hop loop around the per-URL attempt loop.
 
@@ -436,6 +458,11 @@ class PoliteFetcher:
         hdrs = dict(headers)
         hop_cap = REDIRECT_HOP_CAP if follow_redirects else 0
         for hop in range(hop_cap + 1):
+            self._check_deadline(deadline)
+            if respect_robots and not self._robots_allowed(current):
+                return (FetchResult(url=url, final_url=current, status=0,
+                                    body=None, error="robots_disallowed",
+                                    blocked_by_robots=True), None)
             result, resp_headers = self._attempt_url(
                 method, current, hdrs, deadline=deadline, read_body=read_body,
                 max_attempts=max_attempts, timeout_s=timeout_s)
@@ -450,7 +477,7 @@ class PoliteFetcher:
                     return (FetchResult(url=url, final_url=nxt, status=0,
                                         body=None, error="challenge_page"),
                             resp_headers)
-                if (method == "GET"
+                if ((method == "GET" or respect_robots)
                         and not self._host_overridden(nxt, robots_override_host)
                         and not self._robots_allowed(nxt)):
                     logger.info("robots.txt disallows redirect target %s", nxt)

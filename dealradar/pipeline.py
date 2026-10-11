@@ -617,7 +617,7 @@ def _repair_tracker_asins(db: DB) -> int:
 #: Retailer product pages fetched per run for a missing photo: one polite
 #: GET each (the fetcher still holds 1 req/s per host), never repeated,
 #: time-boxed by the run.
-_PRODUCT_IMAGE_PER_RUN = 30
+_PRODUCT_IMAGE_PER_RUN = 40
 #: Link hosts never fetched for a photo (substring match): Amazon, whose
 #: photos come from Keepa, and deal trackers, blogs and affiliate
 #: redirectors, whose share image is their own branding, not the product's.
@@ -626,11 +626,9 @@ _PRODUCT_IMAGE_SKIP_HOSTS = (
     "shareasale", "awin", "anrdoezrs", "linksynergy", "dpbolvw", "jdoqocy",
     "tkqlhce", "kqzyfj", "clickbank", "bit.ly", "go.skimresources", "rstyle",
     "bradsdeals", "dealmoon", "hip2save", "kcl", "thekrazycouponlady",
-    "southernsavers", "moneysavingmom",
+    "southernsavers", "moneysavingmom", "cc.dealsofamerica",
 )
-#: Well-known retailers (all <name>.com) whose own product page may be asked
-#: for its share image. The picture must come from the seller the deal
-#: links to, so a link to any other host is skipped, never fetched.
+#: Well-known retailers (all <name>.com) get priority over other sellers.
 _PRODUCT_IMAGE_RETAILERS = frozenset((
     "walmart", "target", "bestbuy", "dickssportinggoods", "kohls", "macys",
     "homedepot", "lowes", "costco", "samsclub", "wayfair", "newegg",
@@ -719,7 +717,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
 
 def _backfill_product_images(db: DB, fetcher, deadline: float | None,
                              cfg: AppConfig | None = None) -> int:
-    """Give photo-less deals linking straight to a well-known retailer the
+    """Give photo-less deals linking straight to an HTTPS retailer the
     picture that retailer itself publishes for link previews.
 
     Deals from sources without image rights (DealNews, Slickdeals, ...)
@@ -748,6 +746,7 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     found = tried = 0
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
     now = util.now_utc()
+    candidates = []
     for deal in db.all_deals():
         if deal.get("image_url") or \
                 "product_image_tried" in (deal.get("flags") or []):
@@ -761,17 +760,23 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
                 continue
         link = deal.get("canonical_url") or deal.get("product_url") or ""
         link = tracker_target(link) or link
-        parts = urlsplit(link)
-        host = (parts.hostname or "") if parts.scheme in ("http", "https") else ""
-        labels = host.split(".")
-        if len(labels) < 2 or labels[-1] != "com" \
-                or labels[-2] not in _PRODUCT_IMAGE_RETAILERS \
+        try:
+            parts = urlsplit(link)
+            host = (parts.hostname or "").lower()
+        except ValueError:
+            continue
+        if parts.scheme != "https" or not host \
+                or host in _SHORT_LINK_HOSTS \
                 or any(t in host for t in _PRODUCT_IMAGE_SKIP_HOSTS):
-            continue  # not the seller's own page: left alone, never fetched
+            continue
         if _names_no_product(link) or is_challenge_url(link):
             # A category, search or sale page shows no one product (its
             # share image is a banner); a bot wall is never fetched.
             continue
+        priority = any(host == r + ".com" or host.endswith("." + r + ".com")
+                       for r in _PRODUCT_IMAGE_RETAILERS)
+        candidates.append((not priority, deal, link))
+    for _other, deal, link in sorted(candidates, key=lambda c: c[0]):
         if deadline is not None and time.monotonic() > deadline:
             break
         try:
@@ -803,6 +808,54 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
         log.info("product image backfill: %d of %d retailer pages gave a photo",
                  found, tried)
     return found
+
+
+_IMAGE_CHECK_PER_RUN = 30
+_IMAGE_CHECK_META_PREFIX = "image_checked:"
+
+
+def _check_stored_images(db: DB, fetcher, deadline: float | None,
+                         now: datetime) -> int:
+    """Check oldest URLs first, once per day; broken photos may retry."""
+    from .dedupe import _DEAL_FIELDS
+
+    by_url: dict[str, list[dict[str, Any]]] = {}
+    for deal in db.all_deals():
+        image = deal.get("image_url") or ""
+        if image:
+            by_url.setdefault(image, []).append(deal)
+    pending = []
+    for image in by_url:
+        key = _IMAGE_CHECK_META_PREFIX + hashlib.sha256(image.encode()).hexdigest()
+        checked = util.parse_iso(db.meta_get(key) or "")
+        if checked is None or now - checked >= timedelta(hours=24):
+            pending.append((checked, image, key))
+    pending.sort(key=lambda c: c[0] or datetime.min.replace(tzinfo=now.tzinfo))
+    cleared = 0
+    for _checked, image, key in pending[:_IMAGE_CHECK_PER_RUN]:
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        try:
+            res, content_type = fetcher.check_image(image, deadline=deadline)
+        except DeadlineExceeded:
+            break  # no completed check: retry next run
+        db.meta_set(key, util.iso(now))
+        # Only proof clears a photo: gone (404/410) or a page that is not an
+        # image. A timeout, robots rule, 401/403 (a CDN refusing our crawler,
+        # not a browser), 429 or 5xx proves nothing: checked again in 24 h.
+        gone = res.status in (404, 410)
+        not_image = 200 <= res.status < 300 \
+            and not content_type.lower().startswith("image/")
+        if not (gone or not_image):
+            continue
+        for deal in by_url[image]:
+            payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+            payload["image_url"] = ""
+            payload["flags"] = [f for f in deal.get("flags") or [] if f not in
+                                ("product_image_tried", "image_backfill_tried")]
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            cleared += 1
+    return cleared
 
 
 _REVIVE_USED_KEY = "revive_used_2026_10_11"
@@ -1284,6 +1337,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Fast lane only: after its small fetch and parse it has minutes to
         # spare, so the backfill runs every 10 minutes with the critic's
         # tail reserve untouched. The hourly's budget stays on the blogs.
+        summary["images_cleared"] = (
+            _check_stored_images(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, now)
+            if fast_lane else 0)
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg)
             if fast_lane else 0)
@@ -1293,7 +1349,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if fast_lane else 0)
         # ---- photos from the retailer's own product page (non-Amazon) ----
         # Same fast-lane slack: one polite page fetch per photo-less deal
-        # that links straight to a well-known seller, for its og:image.
+        # that links straight to a seller, for its og:image.
         summary["product_images"] = (
             _backfill_product_images(db, fetcher,
                                      deadline - _RESERVE_FOR_TAIL_S, cfg)
