@@ -931,14 +931,18 @@ class TestProductImageBackfill:
 
     def test_only_the_sellers_own_page_is_fetched(self, tmp_path):
         """Amazon is Keepa's; trackers, blogs, affiliate redirectors and any
-        host outside the retailer allowlist are left alone, never fetched."""
+        non-HTTPS links are left alone, never fetched."""
         db = DB(tmp_path / "state.db")
         links = {
             "amazon": "https://www.amazon.com/dp/B000000000",
             "slick": "https://slickdeals.net/f/123-deal",
             "shortener": "https://bit.ly/abc",
-            "unknown": "https://shop.unknownstore.example/p/1",
-            "not_com": "https://www.target.co.uk/p/1",
+            "blog": "https://www.bradsdeals.com/deals/123",
+            "tracker": "https://www.anrdoezrs.net/click-123",
+            "ltk": "https://on.ltk.com/abc",
+            "target_tracker": "https://goto.target.com/c/1/2/3",
+            "amazon_short": "https://a.co/abc",
+            "http": "http://www.revolve.com/dress/dp/123",
             "nolink": "",
         }
         for key, link in links.items():
@@ -952,6 +956,30 @@ class TestProductImageBackfill:
         assert fetcher.calls == []
         for key in links:
             assert db.get_deal(key)["flags"] == []
+        db.close()
+
+    def test_unlisted_sellers_and_woot_get_photos_after_known_retailers(
+            self, tmp_path, monkeypatch):
+        db = DB(tmp_path / "state.db")
+        links = ["https://www.revolve.com/dress/dp/123",
+                 "https://shop.unknownstore.example/p/1",
+                 "https://shop.example.co.uk/product/123",
+                 "https://www.sephora.com/product/lipstick-P123",
+                 "https://electronics.woot.com/offers/headphones"]
+        for i, link in enumerate(links):
+            self._seed(db, f"d{i}", link)
+        photo = "https://cdn.example/product.jpg"
+        fetcher = self._Fetcher({link: (
+            f"<meta property='og:image' content='{photo}'>".encode())
+            for link in links})
+        monkeypatch.setattr(pipeline, "_PRODUCT_IMAGE_PER_RUN", 2)
+        assert pipeline._backfill_product_images(db, fetcher, None) == 2
+        assert fetcher.calls == links[3:]
+        monkeypatch.setattr(pipeline, "_PRODUCT_IMAGE_PER_RUN", 40)
+        assert pipeline._backfill_product_images(db, fetcher, None) == 3
+        assert fetcher.calls == links[3:] + links[:3]
+        assert all(d["image_url"] == photo for d in db.all_deals())
+        assert pipeline._backfill_product_images(db, fetcher, None) == 0
         db.close()
 
     def test_blocks_and_errors_flag_tried_without_image(self, tmp_path):
@@ -1100,6 +1128,176 @@ class TestProductImageBackfill:
         db = DB(db_path)
         assert db.get_deal("dicks")["image_url"] == \
             "https://dks.scene7.com/is/image/GolfGalaxy/X"
+        db.close()
+
+
+class TestStoredImageChecks:
+    _seed = staticmethod(TestProductImageBackfill._seed)
+
+    class _Fetcher:
+        def __init__(self, responses):
+            self.responses = responses
+            self.calls = []
+
+        def check_image(self, url, *, deadline=None):
+            self.calls.append(url)
+            status, content_type = self.responses[url]
+            return (FetchResult(url=url, final_url=url, status=status, body=None),
+                    content_type)
+
+    @staticmethod
+    def _meta_key(url):
+        import hashlib
+        return pipeline._IMAGE_CHECK_META_PREFIX + hashlib.sha256(url.encode()).hexdigest()
+
+    def test_broken_images_clear_all_deals_sharing_url_and_lift_photo_flags(
+            self, tmp_path):
+        db_path = tmp_path / "state.db"
+        db = DB(db_path)
+        good, gone, html = [f"https://cdn.example/{n}.jpg" for n in ("good", "gone", "html")]
+        flags = ["product_image_tried", "image_backfill_tried", "unknown_shipping",
+                 "link_resolve_tried"]
+        for key, image in (("good", good), ("gone", gone), ("same", gone), ("html", html)):
+            self._seed(db, key, f"https://www.revolve.com/{key}/dp/1",
+                       image=image, flags=flags)
+        fetcher = self._Fetcher({good: (200, "image/jpeg; charset=binary"),
+                                 gone: (404, "image/jpeg"), html: (200, "text/html")})
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 3
+        assert fetcher.calls == [good, gone, html]  # shared URL checked only once
+        assert db.get_deal("good")["flags"] == flags
+        for key in ("gone", "same", "html"):
+            deal = db.get_deal(key)
+            assert deal["image_url"] == ""
+            assert deal["flags"] == ["unknown_shipping", "link_resolve_tried"]
+            assert deal["final_price"] == 9.99 and deal["status"] == "alive"
+        # Even a backfill restoring the same broken URL cannot recheck it today.
+        deal = db.get_deal("gone")
+        from dealradar.dedupe import _DEAL_FIELDS
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        payload["image_url"] = gone
+        db.update_deal("gone", payload=payload)
+        db.close()
+        db = DB(db_path)
+        fetcher.calls.clear()
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 0
+        assert pipeline._check_stored_images(
+            db, fetcher, None, NOW + timedelta(hours=24) - timedelta(seconds=1)) == 0
+        assert fetcher.calls == []
+        assert pipeline._check_stored_images(
+            db, fetcher, None, NOW + timedelta(hours=24)) == 1
+        assert fetcher.calls == [good, gone]
+        assert len(db.all_deals()) == 4
+        db.close()
+
+    def test_inconclusive_answers_never_clear_a_photo(self, tmp_path):
+        """A CDN refusing our crawler (401/403), a rate limit, a server error,
+        a robots rule or a timeout (status 0) proves nothing about what a
+        visitor's browser sees: the photo stays, checked again in 24 h."""
+        db = DB(tmp_path / "state.db")
+        answers = {f"https://cdn.example/{s}.jpg": (s, "") for s in (0, 401, 403, 429, 500, 503)}
+        for i, image in enumerate(answers):
+            self._seed(db, f"d{i}", "https://www.revolve.com/x/dp/1", image=image)
+        fetcher = self._Fetcher(answers)
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 0
+        assert all(d["image_url"] for d in db.all_deals())
+        db.close()
+
+    def test_oldest_checks_first_per_run_cap_and_remaining_next_run(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        cap = pipeline._IMAGE_CHECK_PER_RUN
+        assert cap == 30
+        images = [f"https://cdn.example/{i}.jpg" for i in range(cap + 4)]
+        for i, image in enumerate(images):
+            self._seed(db, f"d{i}", "https://www.woot.com/offers/test", image=image)
+            db.meta_set(self._meta_key(image), iso(NOW - timedelta(hours=25 + i)))
+        # Too recent: never checked this run. Unchecked URLs go before dated ones.
+        db.meta_set(self._meta_key(images[0]), iso(NOW - timedelta(hours=23)))
+        unchecked = "https://cdn.example/unchecked.jpg"
+        self._seed(db, "unchecked", "https://www.woot.com/offers/test", image=unchecked)
+        fetcher = self._Fetcher({u: (200, "image/png") for u in images + [unchecked]})
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 0
+        order = [unchecked] + list(reversed(images[1:]))
+        assert fetcher.calls == order[:cap]
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 0
+        assert fetcher.calls == order
+        assert pipeline._check_stored_images(db, fetcher, None, NOW) == 0
+        assert fetcher.calls == order
+        db.close()
+
+    def test_deadline_leaves_unfinished_checks_for_next_run(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        image = "https://cdn.example/product.jpg"
+        self._seed(db, "deal", "https://www.woot.com/offers/test", image=image)
+        fetcher = self._Fetcher({image: (200, "image/jpeg")})
+        assert pipeline._check_stored_images(
+            db, fetcher, time.monotonic() - 1, NOW) == 0
+        assert fetcher.calls == []
+
+        class OutOfTime(self._Fetcher):
+            def check_image(self, url, **kw):
+                raise DeadlineExceeded("test")
+
+        assert pipeline._check_stored_images(db, OutOfTime({}), None, NOW) == 0
+        assert db.meta_get(self._meta_key(image)) is None
+        assert db.get_deal("deal")["image_url"] == image
+        pipeline._check_stored_images(db, fetcher, None, NOW)
+        assert fetcher.calls == [image]
+        db.close()
+
+    def test_fast_lane_repairs_broken_photo_before_backfill(self, tmp_path, monkeypatch):
+        for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
+                    "DEALS_CLAUDE_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(root_cfg.read_text().replace(
+            'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
+        db_path = tmp_path / "state.db"
+        db = DB(db_path)
+        link = "https://www.revolve.com/dress/dp/123"
+        broken = "https://cdn.example/broken.jpg"
+        replacement = "https://cdn.example/new.jpg"
+        self._seed(db, "dress", link, image=broken,
+                   flags=["product_image_tried", "image_backfill_tried"])
+        db.close()
+        requests = []
+
+        def handler(request):
+            requests.append((request.method, str(request.url)))
+            if request.url.path == "/robots.txt":
+                return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            if str(request.url) == broken:
+                return httpx.Response(404)
+            if str(request.url) == replacement:
+                return httpx.Response(200, headers={"Content-Type": "image/jpeg"})
+            if str(request.url) == link:
+                return httpx.Response(200, text=(
+                    f"<meta property='og:image' content='{replacement}'>"))
+            return httpx.Response(404)
+
+        def run(fast_lane):
+            return pipeline.run(
+                fast_lane=fast_lane, db_path=str(db_path),
+                config_path=str(cfg_path), dry_run_telegram=True,
+                transport=httpx.MockTransport(handler), sources_override=[],
+                skip_validation=True, now=NOW)
+
+        assert run(False)["images_cleared"] == 0
+        assert requests == []
+        summary = run(True)
+        assert summary["images_cleared"] == summary["product_images"] == 1
+        assert ("HEAD", broken) in requests
+        assert ("GET", broken) not in requests
+        assert requests.index(("HEAD", broken)) < requests.index(("GET", link))
+        db = DB(db_path)
+        assert db.get_deal("dress")["image_url"] == replacement
+        db.close()
+        summary = run(True)
+        assert summary["images_cleared"] == summary["product_images"] == 0
+        assert requests.count(("HEAD", broken)) == 1
+        assert requests.count(("GET", link)) == 1
+        db = DB(db_path)
+        assert len(db.all_deals()) == 1
         db.close()
 
 

@@ -91,6 +91,83 @@ def make_fetcher(tmp_path, router: Router, clock: FakeClock, **cfg_overrides):
 # --------------------------------------------------------------------- robots
 
 
+@pytest.mark.parametrize("head_status,head_type,get_status,get_type,valid", [
+    (200, "image/jpeg", 500, "", True),  # HEAD suffices: no GET
+    (405, "", 200, "image/png", True),
+    (501, "", 200, "image/webp", True),
+    (200, "", 200, "image/jpeg", True),
+    (200, "text/html", 200, "image/jpeg", True),
+    (200, "text/html", 200, "text/html", False),
+    (405, "", 404, "text/html", False),
+    (404, "image/jpeg", 200, "image/jpeg", False),
+    (403, "text/html", 200, "image/jpeg", False),  # refusal: no fallback
+])
+def test_image_check_head_and_get_without_reading_bytes(
+        tmp_path, head_status, head_type, get_status, get_type, valid):
+    clock, router = FakeClock(), Router()
+    image = "https://cdn.example/product.jpg"
+    router.add("GET", "https://cdn.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nAllow: /\n"))
+    router.add("HEAD", image,
+               lambda r: httpx.Response(head_status, headers={"Content-Type": head_type}))
+
+    class UnreadImage(httpx.SyncByteStream):
+        def __iter__(self):
+            raise AssertionError("image bytes must never be read")
+            yield b""  # make this a generator
+
+    router.add("GET", image, lambda r: httpx.Response(
+        get_status, headers={"Content-Type": get_type}, stream=UnreadImage()))
+    fetcher, db, cfg = make_fetcher(tmp_path, router, clock, max_retries=1)
+    result, content_type = fetcher.check_image(image)
+    assert (200 <= result.status < 300 and content_type.startswith("image/")) is valid
+    assert result.body is None
+    fallback = head_status in (405, 501) or (head_status == 200 and
+                                           not head_type.startswith("image/"))
+    assert router.count("GET", image) == int(fallback)
+    assert clock.sleeps == [cfg.min_host_interval_s] * (1 + int(fallback))
+    assert all(r.headers["User-Agent"] == cfg.resolved_user_agent()
+               for r in router.requests)
+    fetcher.close()
+    db.close()
+
+
+@pytest.mark.parametrize("method", ["HEAD", "GET"])
+def test_image_check_honors_robots_on_redirects(tmp_path, method):
+    clock, router = FakeClock(), Router()
+    image = "https://cdn.example/product.jpg"
+    target = "https://other.example/private/product.jpg"
+    router.add("GET", "https://cdn.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nAllow: /\n"))
+    router.add("HEAD", image, lambda r: httpx.Response(
+        302, headers={"Location": target}) if method == "HEAD" else httpx.Response(405))
+    router.add("GET", image,
+               lambda r: httpx.Response(302, headers={"Location": target}))
+    router.add("GET", "https://other.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /private\n"))
+    fetcher, db, _ = make_fetcher(tmp_path, router, clock)
+    result, _ = fetcher.check_image(image)
+    assert result.blocked_by_robots
+    assert router.count("HEAD", target) == router.count("GET", target) == 0
+    fetcher.close()
+    db.close()
+
+
+def test_image_check_never_requests_disallowed_images_or_bot_walls(tmp_path):
+    clock, router = FakeClock(), Router()
+    image = "https://cdn.example/private.jpg"
+    wall = "https://www.ebay.com/splashui/challenge?ru=product"
+    router.add("GET", "https://cdn.example/robots.txt",
+               lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /\n"))
+    fetcher, db, _ = make_fetcher(tmp_path, router, clock)
+    assert fetcher.check_image(image)[0].blocked_by_robots
+    assert router.count("HEAD", image) == router.count("GET", image) == 0
+    assert fetcher.check_image(wall)[0].error == "challenge_page"
+    assert len(router.requests) == 1
+    fetcher.close()
+    db.close()
+
+
 def test_robots_disallow_blocks_without_request(tmp_path):
     clock, router = FakeClock(), Router()
     router.add("GET", "https://example.com/robots.txt",

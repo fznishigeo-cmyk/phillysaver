@@ -126,6 +126,9 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
         calls.append(str(request.url))
         if request.url.host == "on.ltk.com":
             return httpx.Response(301, headers={"Location": "https://www.walmart.com/ip/123"})
+        if request.url.host == "images.example":
+            assert request.method == "HEAD"
+            return httpx.Response(200, headers={"Content-Type": "image/jpeg"})
         return httpx.Response(200, text='<meta property="og:image" content="https://images.example/product.jpg">')
 
     def run(fast):
@@ -139,7 +142,11 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
     assert first["short_links"] == 1 and first["product_images"] == 1
     before = list(calls)
     assert run(True)["short_links"] == 0
-    assert calls == before
+    # The newly stored photo gets one metadata check on the next pass.
+    assert calls == before + ["https://images.example/product.jpg"]
+    before = list(calls)
+    assert run(True)["short_links"] == 0
+    assert calls == before  # checked URLs wait 24 h, including on reruns
     db = DB(db_path)
     assert len(db.all_deals()) == 1
     assert db.get_deal("stable")["image_url"] == "https://images.example/product.jpg"

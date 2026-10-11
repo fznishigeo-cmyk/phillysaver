@@ -102,18 +102,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
-- **Codex task 012 (2026-10-11):** added a secret-free
-  `site_health` section to the private growth report. It reads the public
-  deals JSON and home page, reports live photo coverage, the top ten stores
-  and source sites missing photos, publish age/staleness and locked count.
-  It checks up to 60 photos (at most six per store), with HEAD and ranged
-  GET fallback, six-second timeouts, robots checks on GETs, per-host rate
-  limits and safe redirect handling. Warnings flag low coverage, broken
-  photos, stale publishes and home-page failures; Actions logs contain only
-  section status/error class. Added offline MockTransport coverage and
-  updated growth-report integration fixtures. Full suite passed:
-  `.venv/bin/python -m pytest -q` — 1,176 passed, 1 deselected.
-  No commit or push; deployment remains for the reviewing agent.
+- **Site health in the daily report** (Codex task 012, merged 2026-10-11):
+  the operator's email opens with photo coverage, the stores and sources
+  missing most photos, a 60-photo load check, minutes since the last publish
+  and the home page; a ⚠ line flags coverage under 85%, broken over 5%, a
+  stale publish or a bad home page. Broken = 404/410 or not an image only.
+- **More photos** (Codex task 013, merged 2026-10-11): the retailer photo
+  pass reads any https product page (allow-listed retailers first; blogs,
+  trackers, short links, bot walls, listings never), 40 per run; Woot photos
+  from all item shapes; the fast lane re-checks 30 stored photos a run and
+  clears only proven-broken ones (404/410 or not an image) so they refetch.
 - **Codex task 011 (merged 2026-10-11
   deal objects through their shared serializer from 40 to 26 fields; removed
   only fields with no serialized-data reader. `flags` and `alive` remain

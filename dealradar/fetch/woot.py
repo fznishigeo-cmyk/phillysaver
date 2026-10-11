@@ -144,6 +144,31 @@ def _fmt_money(value: Any) -> str:
     return s if s.startswith("$") else f"${s}"
 
 
+def _photo_url(value: Any) -> str:
+    """Woot's feed Photo URI or its offer/OfferItem Photos [{Url, ...}]."""
+    if isinstance(value, str):
+        return value if value.startswith(("http://", "https://")) else ""
+    if isinstance(value, dict):
+        return _photo_url(value.get("Url"))
+    if isinstance(value, list):
+        return next((url for photo in value if (url := _photo_url(photo))), "")
+    return ""
+
+
+def _item_photo(item: dict) -> str:
+    image = _photo_url(item.get("Photo")) or _photo_url(item.get("Photos"))
+    if image:
+        return image
+    # Offer-level Photos take precedence over the variants' photos.
+    for variant in item.get("Items") or []:
+        if isinstance(variant, dict):
+            image = (_photo_url(variant.get("Photo")) or
+                     _photo_url(variant.get("Photos")))
+            if image:
+                return image
+    return ""
+
+
 class WootAdapter(SourceAdapter):
     def __init__(
         self,
@@ -267,9 +292,6 @@ class WootAdapter(SourceAdapter):
         if end_date:
             lines.append(f"Ends: {end_date}")
         lines.append("Sold online at Woot.com (Amazon's official deals site).")
-        photo = item.get("Photo")
-        image = photo if isinstance(photo, str) \
-            and photo.startswith(("http://", "https://")) else ""
         return RawPost(
             source_name=source.name,
             uid=uid,
@@ -279,5 +301,5 @@ class WootAdapter(SourceAdapter):
             published_at=util.parse_feed_date(item.get("StartDate"),
                                               source.tz, now),
             fetched_at=now,
-            image_url=image,
+            image_url=_item_photo(item),
         )

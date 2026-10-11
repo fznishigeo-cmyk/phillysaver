@@ -143,6 +143,34 @@ def test_one_get_per_run(cfg):
     assert len(calls) == 3
 
 
+@pytest.mark.parametrize("fields,expected", [
+    ({"Photo": "https://img.woot.com/feed.jpg"}, "feed.jpg"),
+    ({"Photo": {"Url": "https://img.woot.com/photo.jpg"}}, "photo.jpg"),
+    ({"Photos": [{"Url": "https://img.woot.com/offer.jpg",
+                  "Width": 1000, "Height": 1000}]}, "offer.jpg"),
+    ({"Photo": None, "Photos": [None, {}, {"Url": "bad"},
+                                 {"Url": "https://img.woot.com/valid.jpg"}]},
+     "valid.jpg"),
+    ({"Photos": ["https://img.woot.com/string.jpg"]}, "string.jpg"),
+    ({"Items": [{"Photos": []},
+                {"Photos": [{"Url": "https://img.woot.com/variant.jpg"}]}]},
+     "variant.jpg"),
+    ({"Photo": "https://img.woot.com/feed.jpg",
+      "Photos": [{"Url": "https://img.woot.com/offer.jpg"}]}, "feed.jpg"),
+    ({"Photos": [{"Url": "https://img.woot.com/offer.jpg"}],
+      "Items": [{"Photos": [{"Url": "https://img.woot.com/variant.jpg"}]}]},
+     "offer.jpg"),
+    ({"Photo": "javascript:bad", "Photos": [None, {}], "Items": [None]}, ""),
+])
+def test_feed_and_offer_photo_shapes(cfg, fields, expected):
+    # API schema: https://developer.woot.com/#schemaoffer (Photos[].Url,
+    # including OfferItem photos); the feed itself uses Photo.
+    posts = _adapter([_offer("photo", 20, 100, **fields)]).fetch_posts(
+        SRC, None, None, cfg, NOW, None)
+    assert len(posts) == 1
+    assert posts[0].image_url == ("https://img.woot.com/" + expected if expected else "")
+
+
 def test_unchanged_offer_hashes_identically_across_runs(cfg):
     adapter = _adapter({"Items": MIXED})
     first = {p.uid: p.content_hash
