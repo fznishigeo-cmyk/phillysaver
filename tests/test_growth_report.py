@@ -254,6 +254,31 @@ def client_for(fake: FakeApis) -> httpx.Client:
 # ------------------------------------------------------------------ Google auth
 
 
+def test_service_account_key_with_bom_and_whitespace_parses():
+    sa = {"client_email": "fake@example.com", "private_key": "fake-key"}
+    assert google.load_service_account(" \n\ufeff " + json.dumps(sa) + "\n ") == sa
+
+
+@pytest.mark.parametrize("text, starts, filename", [
+    ("private-service-account.json", False, True),
+    ('{"client_email": "private@example.com", "private_key": "truncated', True, False),
+    ('{"client_email": "private@example.com"}', True, False),
+    ('{"private_key": "private-key-marker"}', True, False),
+    ('["private-key-marker"]', False, False),
+])
+def test_invalid_service_account_reports_only_shape(text, starts, filename):
+    with pytest.raises(ValueError) as exc:
+        google.load_service_account(text)
+    message = str(exc.value)
+    assert f"character count: {len(text)}" in message
+    assert f"starts with {{: {starts}" in message
+    assert f"ends with .json: {filename}" in message
+    assert text not in message
+    assert "private@example.com" not in message
+    assert "private-key-marker" not in message
+    assert exc.value.__suppress_context__ or exc.value.__context__ is None
+
+
 def test_jwt_is_signed_and_accepted_by_the_token_endpoint(rsa_key, tmp_path, monkeypatch):
     tmp = tmp_path / "t"
     tmp.mkdir()
@@ -269,7 +294,7 @@ def test_jwt_is_signed_and_accepted_by_the_token_endpoint(rsa_key, tmp_path, mon
     monkeypatch.setattr(google.subprocess, "run", spy)
     fake = FakeApis(rsa_key[1])
     with client_for(fake) as client:
-        assert google.access_token(client, sa_json(rsa_key[0])) == GOOGLE_TOKEN
+        assert google.access_token(client, " \ufeff" + sa_json(rsa_key[0]) + "\n") == GOOGLE_TOKEN
     assert fake.verified == 1
     assert modes == [0o600]
     assert list(tmp.iterdir()) == []  # the key file is gone
@@ -440,6 +465,35 @@ def test_a_failing_section_does_not_stop_the_others(cfg, rsa_key, monkeypatch, c
     assert status["ga4"] == status["stripe"] == status["meta_ads"] == "ok"
     assert "search_console: error HTTPStatusError 403" in caplog.messages
     assert GOOGLE_TOKEN not in caplog.text and "denied" not in caplog.text
+
+
+def test_invalid_service_account_logs_shape_without_content(cfg, monkeypatch, caplog):
+    text = "private-service-account.json"
+    monkeypatch.setenv("GOOGLE_SA_JSON", text)
+    fake = FakeApis()
+    with client_for(fake) as client:
+        _, status = report.collect(cfg, NOW, client)
+    for name in ("ga4", "search_console", "sitemap"):
+        assert status[name] == "error"
+        assert any(f"{name}: error GOOGLE_SA_JSON" in m for m in caplog.messages)
+    assert "character count: 28" in caplog.text
+    assert "ends with .json: True" in caplog.text
+    assert text not in caplog.text
+    assert not fake.requests
+
+
+def test_other_value_error_messages_remain_private(cfg, monkeypatch, caplog):
+    monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+
+    def fail(*args):
+        raise ValueError("private-response-marker")
+
+    monkeypatch.setattr(google, "access_token", fail)
+    with client_for(FakeApis()) as client:
+        _, status = report.collect(cfg, NOW, client)
+    assert status["ga4"] == "error"
+    assert "ga4: error ValueError" in caplog.messages
+    assert "private-response-marker" not in caplog.text
 
 
 def test_config_loader_reads_the_growth_block(tmp_path):

@@ -2,8 +2,9 @@
 
 Each section is skipped (one log line) when its secret or config is missing,
 and a failing section never stops the others. Logs carry section names and
-ok / skipped / error class only: the Actions logs are public, and an
-exception message may echo a response body or a token.
+ok / skipped / error class only, except safe service-account shape errors:
+the Actions logs are public, and other exception messages may echo a response
+body or a token.
 """
 
 from __future__ import annotations
@@ -92,7 +93,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
             log.info("%s: ok", name)
         except Exception as e:  # one section never stops the others
             status[name] = "error"
-            log.warning("%s: error %s", name, _error(e))
+            detail = str(e) if isinstance(e, google.ServiceAccountError) else _error(e)
+            log.warning("%s: error %s", name, detail)
     return data, status
 
 
