@@ -118,10 +118,12 @@ Keep this file current: whoever stops working updates it in their last commit.
     bradsdeals, dealmoon_us and jungle_deals stayed tripped on their old
     feeds' failures; a source whose method, adapter or URL changes now
     starts with a fresh breaker (fetch/base.py), so they retry at once.
-- **Photos:** the photo passes run but find nothing left to try. Most
-  photo-less deals link through trackers or short links
-  (cc.dealsofamerica.com, on.ltk.com, goto.target.com), so no ASIN and no
-  retailer page. Seeing through them is Codex task 005.
+- **Photos:** Codex task 005 (PR #6, `codex/task-005`) decodes the
+  Deals of America tracker destination offline for ASIN ingest and the
+  existing retailer-photo pass. A one-time repair restores missing ASINs
+  and lifts photo retry flags across all statuses, preserving affiliate
+  URLs and dedupe keys. Other short links (`on.ltk.com`, `goto.target.com`)
+  remain outside this task. Review and merge pending; no live-branch push.
   - **inspiring_savings:** their server returns 500; it retries on its own.
 
 ## Open tasks

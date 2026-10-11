@@ -179,6 +179,29 @@ def challenge_target(url: str) -> str:
     return target
 
 
+_TRACKER_PARAMS = {"cc.dealsofamerica.com": "url"}
+
+
+def tracker_target(url: str) -> str:
+    """Decode a known tracker's HTTPS destination without making a request."""
+    try:
+        parts = urlsplit(url)
+        param = _TRACKER_PARAMS.get((parts.hostname or "").lower())
+        if not param:
+            return ""
+        params = {k: unquote(v) for k, _eq, v in
+                  (p.partition("=") for p in parts.query.split("&"))}
+        target = params.get(param, "")
+        if not target.startswith("https://") or "\\" in target \
+                or any(ord(c) <= 0x20 or ord(c) == 0x7f for c in target):
+            return ""
+        if not urlsplit(target).hostname or is_challenge_url(target):
+            return ""
+        return target
+    except (ValueError, TypeError, AttributeError):
+        return ""
+
+
 #: Per-request timeout for a redirect-resolution hop (best effort).
 REDIRECT_HOP_TIMEOUT_S = 6.0
 

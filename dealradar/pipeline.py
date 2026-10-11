@@ -574,6 +574,32 @@ def _repair_botwall_urls(db: DB) -> int:
     return fixed
 
 
+_TRACKER_ASIN_REPAIR_KEY = "tracker_asins_2026_10_11"
+
+
+def _repair_tracker_asins(db: DB) -> int:
+    """Restore tracker ASINs and retry photos once, preserving affiliate links."""
+    from .dedupe import _DEAL_FIELDS
+    from .http_client import extract_asin, tracker_target
+
+    if db.meta_get(_TRACKER_ASIN_REPAIR_KEY):
+        return 0
+    fixed = 0
+    for d in db.all_deals():
+        target = tracker_target(d.get("canonical_url") or "")
+        if not target:
+            continue
+        payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+        if not d.get("asin"):
+            payload["asin"] = extract_asin(target)
+        payload["flags"] = [f for f in d.get("flags") or []
+                            if f not in ("product_image_tried", "image_backfill_tried")]
+        db.update_deal(d["dedupe_key"], payload=payload)
+        fixed += 1
+    db.meta_set(_TRACKER_ASIN_REPAIR_KEY, util.iso(util.now_utc()))
+    return fixed
+
+
 #: Retailer product pages fetched per run for a missing photo: one polite
 #: GET each (the fetcher still holds 1 req/s per host), never repeated,
 #: time-boxed by the run.
@@ -649,7 +675,7 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     from html import unescape
 
     from .dedupe import _DEAL_FIELDS
-    from .http_client import is_challenge_url
+    from .http_client import is_challenge_url, tracker_target
     from .product_images import _names_no_product
 
     found = tried = 0
@@ -667,6 +693,7 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
             if died is None or now - died > show_dead:
                 continue
         link = deal.get("canonical_url") or deal.get("product_url") or ""
+        link = tracker_target(link) or link
         parts = urlsplit(link)
         host = (parts.hostname or "") if parts.scheme in ("http", "https") else ""
         labels = host.split(".")
@@ -1184,6 +1211,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # One-time: product links stored as a retailer's bot wall (the
         # card's link on every lane; the photo passes retry them).
         _repair_botwall_urls(db)
+        _repair_tracker_asins(db)
 
         # ---- photos for existing deals from image-granted sources ----
         # Fast lane only: after its small fetch and parse it has minutes to
