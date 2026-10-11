@@ -473,3 +473,60 @@ class TestNewsletterSite:
         doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
         assert doc["meta"]["newsletter_url"] == ""
         assert (out / "subscribe.html").exists()
+
+
+class TestPaywallPage:
+    """The page side of docs/paywall.md ("Page behavior"): member fetch,
+    locked stubs, the CTA panel, the account menu and the auth dialog live
+    in index.html and key off deals.json meta (api_url, google_client_id,
+    locked_count, trial_days) — never a baked-in Worker URL."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_auth_dialog_and_panel_markup(self, html):
+        for el_id in ("authmodal", "authform", "authemail", "authpass", "autherr",
+                      "authsubmit", "authswitch", "authclose", "gsibtn",
+                      "paywall", "pwsignup", "pwlogin", "pwsub", "pwcheck", "pwplain",
+                      "account", "loginlink", "logout", "billing", "trialnote"):
+            assert f'id="{el_id}"' in html, el_id
+        assert 'role="dialog"' in html and 'aria-modal="true"' in html
+        assert '"Escape"' in html  # Esc closes the dialog
+        # The existing membership affordances are untouched.
+        assert 'id="subscribe"' in html and 'id="subbar"' in html
+
+    def test_session_and_worker_paths_come_from_meta(self, html):
+        assert '"wp.session"' in html
+        for path in ("/api/me", "/api/deals", "/api/signup", "/api/login",
+                     "/api/google", "/api/logout", "?fresh=1"):
+            assert path in html, path
+        for field in ("api_url", "google_client_id", "locked_count", "trial_days"):
+            assert field in html, field
+        # The Worker base URL only ever arrives through deals.json meta.
+        assert "workers.dev" not in html
+        assert "wowpriced-api" not in html
+        assert "Bearer " in html
+
+    def test_gis_loaded_only_by_the_conditional_loader(self, html):
+        url = "https://accounts.google.com/gsi/client"
+        assert html.count(url) == 1
+        assert "<script src=" not in html  # injected by script, never static
+        line = next(ln for ln in html.splitlines() if url in ln)
+        assert "GIS_SRC" in line
+        start = html.index("function loadGis")
+        assert "google_client_id" in html[start:start + 400]
+
+    def test_locked_stub_rendering_and_cta_copy(self, html):
+        assert "blur(8px)" in html
+        assert "d.locked === true" in html
+        assert "Sign up free" in html and "Log in" in html
+        assert "Unlock all " in html and "then $9.99/mo" in html
+        assert "Your free week ended" in html and "I just subscribed" in html
+        assert "Free trial: ends" in html and "Manage billing" in html
+        # Stub cards never carry a product link or title text.
+        start = html.index("function lockedHtml")
+        body = html[start:html.index("function cardHtml")]
+        assert "href" not in body and "d.item" not in body and "d.url" not in body

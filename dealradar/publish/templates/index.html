@@ -121,6 +121,56 @@ header{background:var(--card);border-bottom:1px solid var(--line);
         text-overflow:ellipsis;white-space:nowrap}
 .credit a{color:var(--muted);text-decoration:underline}
 
+/* ---- paywall: locked stubs, CTA panel, account menu, auth dialog ---- */
+.card.locked .media{overflow:hidden}
+.card.locked .media img,.card.locked .ph{filter:blur(8px);transform:scale(1.12)}
+.card.locked .body{pointer-events:none}
+.card.locked:hover{transform:none;box-shadow:var(--shadow)}
+.lock{position:absolute;left:calc(50% - 19px);top:calc(50% - 19px);width:38px;height:38px;
+      border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:flex;
+      align-items:center;justify-content:center;font-size:17px}
+.sk{display:block;height:11px;border-radius:6px;background:var(--chip)}
+.sk.price{height:20px;width:55%}
+.sk.t2{width:70%;margin-top:6px}
+.paywall{position:sticky;bottom:12px;z-index:25;margin:14px 0;padding:12px 16px;
+         background:var(--card);border:1px solid var(--accent);border-radius:14px;
+         box-shadow:0 8px 28px rgba(0,0,0,.18);display:flex;flex-wrap:wrap;
+         gap:8px 16px;align-items:center}
+.pwtext{margin:0;flex:1 1 240px;min-width:0;font-size:16px;font-weight:800}
+.pwtext .meta{font-size:14px;font-weight:600}
+.pwbtns{display:flex;gap:8px;flex:0 0 auto}
+.pwbtn{font:inherit;font-weight:800;font-size:14px;padding:9px 16px;border-radius:10px;
+       border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg)!important;
+       cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-block}
+.pwbtn.alt{background:var(--chip);border-color:var(--line);color:var(--fg)!important}
+.pwbtn:hover{text-decoration:none;filter:brightness(1.06)}
+.pwbtn:disabled{opacity:.6;cursor:wait}
+.acct,.acct .in{display:inline-flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap}
+.acct .email{color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.linkbtn{background:none;border:0;padding:0;margin:0;color:var(--link);font:inherit;
+         font-weight:700;cursor:pointer}
+.linkbtn:hover{text-decoration:underline}
+.since.trial{color:var(--muted)}
+.modal{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.5);display:flex;
+       align-items:center;justify-content:center;padding:16px}
+.mcard{position:relative;width:100%;max-width:380px;background:var(--card);color:var(--fg);
+       border-radius:16px;box-shadow:0 14px 44px rgba(0,0,0,.35);padding:22px 22px 16px}
+.mcard h2{margin:0 24px 2px 0;font-size:20px}
+.mx{position:absolute;top:8px;right:8px;background:none;border:0;color:var(--muted);
+    font-size:24px;line-height:1;padding:4px 8px;cursor:pointer}
+.gsi{display:flex;justify-content:center;margin-top:14px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:12px 0 0}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.mcard form{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.mcard label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);
+             font-weight:600}
+.mcard input{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);
+             border-radius:8px;padding:9px 10px;font:inherit}
+.mcard input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+.mcard .pwbtn{width:100%;margin-top:2px}
+.autherr{margin:0;color:var(--dead);font-size:13px;font-weight:600}
+.switch{margin:12px 0 0;text-align:center}
+
 /* ---- sections ---- */
 .secth{font-size:17px;margin:28px 0 2px;padding-top:18px;border-top:1px solid var(--line)}
 .secth .meta{font-weight:400;display:inline}
@@ -146,6 +196,12 @@ footer .meta{font-size:11.5px}
   #controls select{flex:1 1 45%;min-width:0}
   #controls label{flex:1 1 45%;justify-content:center}
   .wrap{padding:0 12px 84px}
+  .acct{order:4;flex-basis:100%;justify-content:center;font-size:12.5px;margin-top:2px}
+  .paywall{bottom:8px;padding:10px 12px;gap:6px 10px}
+  .pwtext{flex-basis:100%;font-size:14px}
+  .pwtext .meta{font-size:12.5px}
+  .pwbtns{flex:1 1 100%}
+  .pwbtn{flex:1;text-align:center;padding:10px 8px}
   .subbar.ready{display:flex;position:fixed;left:12px;right:12px;bottom:12px;z-index:30;
     justify-content:center;align-items:center;min-height:48px;border-radius:12px;
     background:var(--accent);color:var(--accent-fg);font-weight:800;font-size:15px;
@@ -167,10 +223,17 @@ footer .meta{font-size:11.5px}
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span id="tagline" class="tag">verified deals</span>
     <span id="countdown" class="count">Next drop soon</span>
+    <span id="account" class="acct" hidden>
+      <button type="button" id="loginlink" class="linkbtn" data-auth="login">Log in</button>
+      <span id="acctin" class="in" hidden><span id="acctemail" class="email"></span>
+        <a id="billing" target="_blank" rel="noopener" hidden>Manage billing</a>
+        <button type="button" id="logout" class="linkbtn">Log out</button></span>
+    </span>
     <a id="subscribe" class="getdeal" rel="noopener" style="display:none">
       Get every deal by email — $9.99/mo</a>
   </div>
   <p id="sincevisit" class="since" hidden></p>
+  <p id="trialnote" class="since trial" hidden></p>
   <nav id="cattabs" aria-label="category tabs"></nav>
 </header>
 <div class="wrap">
@@ -188,6 +251,16 @@ footer .meta{font-size:11.5px}
   <label><input id="hideunv" type="checkbox"> 2+ sources only</label>
 </div>
 <div id="content"><p class="empty">Loading&hellip;</p></div>
+<div id="paywall" class="paywall" hidden>
+  <p class="pwtext"></p>
+  <div class="pwbtns">
+    <button type="button" id="pwsignup" class="pwbtn" data-auth="signup">Sign up free</button>
+    <button type="button" id="pwlogin" class="pwbtn alt" data-auth="login">Log in</button>
+    <a id="pwsub" class="pwbtn" target="_blank" rel="noopener" hidden>Subscribe</a>
+    <button type="button" id="pwcheck" class="pwbtn alt" hidden>I just subscribed</button>
+    <a id="pwplain" class="pwbtn" rel="noopener" hidden>Get every deal by email &mdash; $9.99/mo</a>
+  </div>
+</div>
 <footer>
   <p><strong>Membership — $9.99/month:</strong> every verified deal emailed to you the hour
      it's found, bundled at most once an hour, cancel anytime. The wall here stays free.</p>
@@ -203,11 +276,31 @@ footer .meta{font-size:11.5px}
 </footer>
 <a id="subbar" class="subbar" rel="noopener">Get every deal by email &mdash; $9.99/mo</a>
 </div>
+<div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
+  <div class="mcard">
+    <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
+    <h2 id="authtitle">Start your free trial</h2>
+    <p id="authsub" class="meta">7 days of every deal, free. No card needed.</p>
+    <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
+    <form id="authform">
+      <label>Email <input id="authemail" type="email" autocomplete="email" required></label>
+      <label>Password <input id="authpass" type="password" autocomplete="new-password"
+                             minlength="8" required></label>
+      <p id="autherr" class="autherr" role="alert" hidden></p>
+      <button type="submit" id="authsubmit" class="pwbtn">Sign up free</button>
+    </form>
+    <p class="meta switch"><span id="authswitchtxt">Already have an account?</span>
+      <button type="button" id="authswitch" class="linkbtn">Log in</button></p>
+  </div>
+</div>
 <div id="toast" class="toast" role="status" hidden></div>
 <script>
 "use strict";
 (function () {
-  var state = { deals: [], meta: {}, dataKey: "", sortKey: "fresh", sortDir: -1, catTab: 0 };
+  // deals: the list on screen (teaser, or a member's full payload);
+  // teaser: what deals.json carried; me: the Worker's account record.
+  var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "",
+                sortKey: "fresh", sortDir: -1, catTab: 0 };
   // The fast lane redeploys the site every 10 minutes even between hourly
   // sweeps, so the next drop is never further off than that.
   var FAST_LANE_MIN = 10;
@@ -311,6 +404,23 @@ footer .meta{font-size:11.5px}
       bar.href = m.subscribe_url;
       bar.classList.add("ready");
     }
+    // Account menu (docs/paywall.md): only once a Worker is configured.
+    var me = state.me, on = !!apiUrl(m);
+    document.getElementById("account").hidden = !on;
+    document.getElementById("loginlink").hidden = !!me;
+    document.getElementById("acctin").hidden = !me;
+    if (me) {
+      document.getElementById("acctemail").textContent = me.email || "";
+      var bill = document.getElementById("billing");
+      bill.hidden = !me.portal_url;
+      bill.href = me.portal_url || "";
+    }
+    var trial = document.getElementById("trialnote");
+    trial.hidden = !(on && isMember() && me.reason === "trial");
+    if (!trial.hidden) trial.textContent = "Free trial: ends " + fmtDay(me.trial_ends_at);
+    // A paying member is never pointed back at the Payment Link.
+    if (isMember() && me.reason === "subscribed") sub.style.display = "none";
+    syncSubbar();
   }
 
   // ---- "Next drop in m:ss" ----
@@ -458,7 +568,8 @@ footer .meta{font-size:11.5px}
         return false;
       }
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
-      if (hideunv && (d.badge || "unverified") === "unverified") return false;
+      // A locked stub carries no badge: unknown, not single-source.
+      if (hideunv && !isLocked(d) && (d.badge || "unverified") === "unverified") return false;
       return true;
     });
   }
@@ -522,13 +633,13 @@ footer .meta{font-size:11.5px}
     return Math.round(h / 24) + "d ago";
   }
 
-  function cardHtml(d) {
-    var url = d.url || "";
-    var dead = d.status === "dead";
+  function usedTag(d) {
     var conds = d.conditions || [];
-    var usedTag = conds.indexOf("open_box") !== -1 ? "OPEN BOX"
+    return conds.indexOf("open_box") !== -1 ? "OPEN BOX"
       : (conds.indexOf("used") !== -1 ? "USED" : "");
+  }
 
+  function mediaHtml(d) {
     // Media: retailer's own public product image; without one (or on a
     // broken link) a store-colored tile keeps the card looking intentional.
     var phStyle = "background:hsl(" + storeHue(d.store) + ",42%,62%)" +
@@ -545,8 +656,35 @@ footer .meta{font-size:11.5px}
     if (pct != null) {
       media += '<span class="flag">-' + Math.round(pct) + "%</span>";
     }
-    if (usedTag) media += '<span class="condtag">' + usedTag + "</span>";
-    if (dead) media += '<span class="gonetag">GONE</span>';
+    if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
+    if (d.status === "dead") media += '<span class="gonetag">GONE</span>';
+    return media;
+  }
+
+  function lockedHtml(d) {
+    // Locked stub (docs/paywall.md): the same frame with the photo (or
+    // tile) blurred, the percent and store, and skeleton bars where the
+    // name and price would be. No link; nothing the stub does not carry.
+    var pct = num(d.pct_at_checkout);
+    return '<article class="card locked" aria-label="Locked deal: ' +
+      (pct != null ? Math.round(pct) + "% off at " : "") + esc(d.store || "") +
+      ', members only">' +
+      '<div class="media">' + mediaHtml(d) +
+      '<span class="lock" aria-hidden="true">&#128274;</span></div>' +
+      '<div class="body">' +
+      '<div class="pricerow" aria-hidden="true"><span class="sk price"></span></div>' +
+      '<h3 class="title" aria-hidden="true"><span class="sk t1"></span>' +
+      '<span class="sk t2"></span></h3>' +
+      '<div class="metarow"><span class="chip">' + esc(d.store || "") + "</span></div>" +
+      "</div></article>";
+  }
+
+  function cardHtml(d) {
+    if (isLocked(d)) return lockedHtml(d);
+    var url = d.url || "";
+    var dead = d.status === "dead";
+    var conds = d.conditions || [];
+    var media = mediaHtml(d);
 
     var price = d.final_price != null
       ? '<span class="now">$' + Number(d.final_price).toFixed(2) + "</span>" : "";
@@ -598,11 +736,12 @@ footer .meta{font-size:11.5px}
 
   function render() {
     var content = document.getElementById("content");
+    var rows = state.deals.length ? ordered(filtered()) : [];
+    updatePaywall(rows.some(isLocked));
     if (!state.deals.length) {
       content.innerHTML = '<p class="empty">No qualifying deals this hour</p>';
       return;
     }
-    var rows = ordered(filtered());
     if (!rows.length) {
       content.innerHTML = '<p class="empty">No deals match the current filters</p>';
       return;
@@ -638,12 +777,257 @@ footer .meta{font-size:11.5px}
         "alert bar, still big savings</span></h2>" + gridHtml(strong);
     }
     if (missed.length) {
-      html += '<h2 class="secth">Just missed &#128557; <span class="meta">— ' +
+      html += '<h2 class="secth missed">Just missed &#128557; <span class="meta">— ' +
         "gone before you got here. Check back more often (or get alerts)." +
         "</span></h2>" + gridHtml(missed);
     }
     content.innerHTML = html;
+    // The CTA panel (one persistent node, listeners intact) goes after the
+    // live grids, ahead of the public "Just missed" strip: sticky at the
+    // viewport bottom while the locked area scrolls, gone past it.
+    var miss = content.querySelector(".missed");
+    if (miss) content.insertBefore(panel, miss); else content.appendChild(panel);
   }
+
+  // ---- paywall (docs/paywall.md, "Page behavior") ----
+  // The static site only ever holds the teaser: the top deals in full and
+  // every other live deal as a locked stub. A visitor holding a session
+  // token (from the Worker at meta.api_url, kept in localStorage) is looked
+  // up once per page; members get the full payload from the Worker through
+  // the same renderer. With meta.api_url empty none of this UI exists.
+  var SESSION_KEY = "wp.session";
+  var GIS_SRC = "https://accounts.google.com/gsi/client";
+  var AUTH_ERR = {
+    exists: "An account with this email already exists — log in instead.",
+    invalid_email: "Enter a valid email address.",
+    weak_password: "Use a password of at least 8 characters.",
+    bad_credentials: "Wrong email or password.",
+    bad_token: "Google sign-in didn't go through — try again.",
+    http_429: "Too many attempts — try again in an hour.",
+    network: "Couldn't reach the server — check your connection and try again."
+  };
+  // token: in-memory copy so a blocked localStorage still signs in for the
+  // page's lifetime; checking: a member lookup is in flight (CTA waits).
+  var auth = { mode: "signup", token: "", opener: null, gis: false, checking: false };
+  var panel = document.getElementById("paywall");
+  var modal = document.getElementById("authmodal");
+
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) { /* blocked */ } }
+  function apiUrl(m) { return String((m || state.meta || {}).api_url || "").replace(/\/+$/, ""); }
+  function token() { return auth.token || lsGet(SESSION_KEY) || ""; }
+  function setToken(t) { auth.token = t; lsSet(SESSION_KEY, t); }
+  function dropSession() { auth.token = ""; lsDel(SESSION_KEY); state.me = null; }
+  function isMember() { return !!(state.me && state.me.member); }
+  function isLocked(d) { return d.locked === true; }
+  function fmtDay(s) {
+    var t = Date.parse(s || "");
+    return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  function api(path, body, method) {
+    var headers = {};
+    if (body) headers["Content-Type"] = "application/json";
+    if (token()) headers["Authorization"] = "Bearer " + token();
+    return fetch(apiUrl() + path, {
+      method: method || (body ? "POST" : "GET"), headers: headers,
+      body: body ? JSON.stringify(body) : undefined, cache: "no-store"
+    });
+  }
+  // GET /api/me → me, or null when signed out (a 401 clears the token).
+  function fetchMe(fresh) {
+    return api("/api/me" + (fresh ? "?fresh=1" : "")).then(function (r) {
+      if (r.status === 401) { dropSession(); return null; }
+      if (!r.ok) throw new Error("me " + r.status);
+      return r.json();
+    }).then(function (me) { state.me = me; return me; });
+  }
+  // GET /api/deals → the full payload's deals for a member, else null
+  // (a 402 carries the refreshed me; a 401 clears the token).
+  function fetchFull() {
+    return api("/api/deals").then(function (r) {
+      if (r.status === 401) { dropSession(); return null; }
+      if (r.status === 402) return r.json().then(function (me) { state.me = me; return null; });
+      if (!r.ok) throw new Error("deals " + r.status);
+      return r.json();
+    }).then(function (d) { return (d && d.deals) || null; });
+  }
+  // The member flow. Resolves to the deals to show, or null for the
+  // teaser; any failure keeps the teaser, silently.
+  function memberDeals(fresh) {
+    if (!apiUrl() || !token()) return Promise.resolve(null);
+    var who = (state.me && !fresh) ? Promise.resolve(state.me) : fetchMe(fresh);
+    return who.then(function (me) { return me && me.member ? fetchFull() : null; })
+      .catch(function () { return null; });
+  }
+  function showDeals(full) {
+    auth.checking = false;
+    state.deals = (full && token()) ? full : state.teaser;
+    refreshStores();
+    renderMeta();
+    render();
+  }
+
+  function syncSubbar() {
+    // The mobile bottom bar yields to the CTA panel and is off for members.
+    document.getElementById("subbar").hidden = isMember() || !panel.hidden;
+  }
+  // The CTA panel: shown only while locked stubs are in the list on screen.
+  function updatePaywall(hasLocked) {
+    var m = state.meta || {}, me = state.me;
+    panel.hidden = !hasLocked || auth.checking;
+    if (!panel.hidden) {
+      var unlocked = state.deals.filter(function (d) {
+        return !isLocked(d) && d.status !== "dead";
+      }).length;
+      var locked = num(m.locked_count) || 0;
+      var mode = !apiUrl() ? "plain" : (!me ? "out" : (me.member ? "retry" : "expired"));
+      panel.querySelector(".pwtext").innerHTML = {
+        plain: plural(locked, "more deal") + " for members",
+        out: "Unlock all " + (locked + unlocked) + ' deals <span class="meta">— ' +
+          (num(m.trial_days) || 7) + " days free, then $9.99/mo</span>",
+        expired: 'Your free week ended <span class="meta">— keep every deal for $9.99/mo</span>',
+        retry: "Couldn't load your deals right now"
+      }[mode];
+      var sUrl = (me && me.subscribe_url) || m.subscribe_url || "";
+      var show = { pwsignup: mode === "out", pwlogin: mode === "out",
+                   pwsub: mode === "expired" && !!sUrl,
+                   pwcheck: mode === "expired" || mode === "retry",
+                   pwplain: mode === "plain" && !!m.subscribe_url };
+      Object.keys(show).forEach(function (id) { panel.querySelector("#" + id).hidden = !show[id]; });
+      panel.querySelector("#pwsub").href = sUrl;
+      panel.querySelector("#pwplain").href = m.subscribe_url || "";
+      panel.querySelector("#pwcheck").textContent = mode === "retry" ? "Retry" : "I just subscribed";
+    }
+    syncSubbar();
+  }
+
+  // ---- auth dialog ----
+  function showErr(code) {
+    var el = document.getElementById("autherr");
+    el.hidden = !code;
+    el.textContent = code ? (AUTH_ERR[code] || "Something went wrong (" + code + ") — try again.") : "";
+  }
+  function setMode(mode) {
+    auth.mode = mode;
+    var up = mode === "signup", days = num((state.meta || {}).trial_days) || 7;
+    document.getElementById("authtitle").textContent = up ? "Start your free trial" : "Log in";
+    document.getElementById("authsub").textContent = up
+      ? days + " days of every deal, free. No card needed." : "Welcome back.";
+    document.getElementById("authsubmit").textContent = up ? "Sign up free" : "Log in";
+    document.getElementById("authswitchtxt").textContent = up ? "Already have an account?" : "New here?";
+    document.getElementById("authswitch").textContent = up ? "Log in" : "Sign up free";
+    var pass = document.getElementById("authpass");
+    pass.autocomplete = up ? "new-password" : "current-password";
+    pass.minLength = up ? 8 : 1;
+    showErr("");
+  }
+  function openAuth(mode) {
+    auth.opener = document.activeElement;
+    setMode(mode);
+    modal.hidden = false;
+    document.body.style.overflow = "hidden";
+    loadGis();
+    document.getElementById("authemail").focus();
+  }
+  function closeAuth() {
+    if (modal.hidden) return;
+    modal.hidden = true;
+    document.body.style.overflow = "";
+    if (auth.opener && auth.opener.focus) auth.opener.focus();
+    auth.opener = null;
+  }
+  function signedIn(tok, me) {
+    setToken(tok);
+    state.me = me || null;
+    closeAuth();
+    auth.checking = true;
+    render();
+    var key = state.dataKey;
+    memberDeals(false).then(function (full) { if (state.dataKey === key) showDeals(full); });
+  }
+  // POST to the Worker: a 200 {token, me} signs the visitor in; anything
+  // else lands as an inline error.
+  function authPost(path, body) {
+    var btn = document.getElementById("authsubmit");
+    btn.disabled = true;
+    showErr("");
+    api(path, body).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.ok && j.token) signedIn(j.token, j.me);
+        else showErr(j.error || ("http_" + r.status));
+      });
+    }).catch(function () { showErr("network"); })
+      .then(function () { btn.disabled = false; });
+  }
+  // Google Identity Services: fetched on the first dialog open, and only
+  // when the operator configured a client id (never otherwise).
+  function loadGis() {
+    var cid = (state.meta || {}).google_client_id;
+    if (!cid || auth.gis) return;
+    auth.gis = true;
+    var s = document.createElement("script");
+    s.src = GIS_SRC;
+    s.async = true;
+    s.defer = true;
+    s.onload = function () {
+      var g = window.google && window.google.accounts && window.google.accounts.id;
+      if (!g) return;
+      var box = document.getElementById("gsibtn");
+      g.initialize({ client_id: cid, callback: function (resp) {
+        if (resp && resp.credential) authPost("/api/google", { credential: resp.credential });
+      } });
+      g.renderButton(box, { theme: "outline", size: "large", text: "continue_with",
+                            width: Math.min(400, box.parentNode.clientWidth || 320) });
+      document.getElementById("gsiwrap").hidden = false;
+    };
+    document.head.appendChild(s);
+  }
+
+  document.querySelectorAll("[data-auth]").forEach(function (b) {
+    b.addEventListener("click", function () { openAuth(b.getAttribute("data-auth")); });
+  });
+  document.getElementById("authclose").addEventListener("click", closeAuth);
+  modal.addEventListener("click", function (e) { if (e.target === modal) closeAuth(); });
+  document.getElementById("authswitch").addEventListener("click", function () {
+    setMode(auth.mode === "signup" ? "login" : "signup");
+    document.getElementById("authemail").focus();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (modal.hidden) return;
+    if (e.key === "Escape") { e.preventDefault(); closeAuth(); return; }
+    if (e.key !== "Tab") return;
+    // Keep Tab inside the dialog.
+    var f = Array.prototype.filter.call(
+      modal.querySelectorAll("input,button,a[href]"),
+      function (el) { return !el.disabled && el.offsetParent !== null; });
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  document.getElementById("authform").addEventListener("submit", function (e) {
+    e.preventDefault();
+    authPost(auth.mode === "signup" ? "/api/signup" : "/api/login", {
+      email: document.getElementById("authemail").value.trim(),
+      password: document.getElementById("authpass").value
+    });
+  });
+  document.getElementById("logout").addEventListener("click", function () {
+    if (token()) api("/api/logout", null, "POST").catch(function () { /* token dropped anyway */ });
+    dropSession();
+    showDeals(null);
+  });
+  panel.querySelector("#pwcheck").addEventListener("click", function () {
+    // "I just subscribed" / "Retry": re-check membership past the cache.
+    var b = this;
+    b.disabled = true;
+    memberDeals(true).then(function (full) {
+      b.disabled = false;
+      showDeals(full);
+      if (!full) toast(token() ? "No active subscription found yet — try again in a minute"
+                               : "Please log in again");
+    });
+  });
 
   ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
     var el = document.getElementById(id);
@@ -685,6 +1069,26 @@ footer .meta{font-size:11.5px}
   }
 
   var loadedOnce = false;
+  function applyPublish(meta, deals, key) {
+    var before = keySet(state.deals);
+    state.meta = meta;
+    state.deals = deals;
+    state.dataKey = key;
+    if (loadedOnce) {
+      refreshStores();
+      var fresh = liveNotIn(deals, before);
+      if (fresh) toast(plural(fresh, "new deal") + " just dropped");
+    } else {
+      populateStores();
+      renderTabs();
+      sinceLastVisit(deals);
+      loadedOnce = true;
+    }
+    rememberSeen(deals);
+    renderMeta();
+    render();
+    scheduleDrop();
+  }
   function loadData() {
     // cache-bust: the runner redeploys every few minutes; an open tab
     // should show new deals without anyone pressing refresh.
@@ -695,24 +1099,26 @@ footer .meta{font-size:11.5px}
         var deals = (data && data.deals) || [];
         var key = dataKey(meta);
         if (loadedOnce && key && key === state.dataKey) return;  // same publish
-        var before = keySet(state.deals);
-        state.meta = meta;
-        state.deals = deals;
-        state.dataKey = key;
-        if (loadedOnce) {
-          refreshStores();
-          var fresh = liveNotIn(deals, before);
-          if (fresh) toast(plural(fresh, "new deal") + " just dropped");
-        } else {
-          populateStores();
-          renderTabs();
-          sinceLastVisit(deals);
-          loadedOnce = true;
+        state.teaser = deals;
+        if (loadedOnce && isMember()) {
+          // A member's refresh: keep the current list up until the Worker
+          // answers, so cards never blur and unblur between publishes.
+          memberDeals(false).then(function (full) {
+            auth.checking = false;
+            applyPublish(meta, (full && token()) ? full : deals, key);
+          });
+          return;
         }
-        rememberSeen(deals);
-        renderMeta();
-        render();
-        scheduleDrop();
+        // Signed in: the teaser goes up now (CTA held back) and the full
+        // payload replaces it once the Worker answers; a failure keeps
+        // the teaser, silently.
+        auth.checking = !!(apiUrl(meta) && token());
+        applyPublish(meta, deals, key);
+        if (auth.checking) {
+          memberDeals(false).then(function (full) {
+            if (state.dataKey === key) showDeals(full);
+          });
+        }
       })
       .catch(function () {
         if (!loadedOnce) {
