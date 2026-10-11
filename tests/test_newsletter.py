@@ -476,7 +476,10 @@ class TestListAndConfig:
     def test_repo_config_has_the_newsletter_block(self):
         cfg = load_config()
         assert cfg.newsletter_enabled is True
-        assert cfg.newsletter_worker_url == ""   # pasted in after the deploy
+        # The Worker URL is an operator value (pasted in after the deploy);
+        # only its shape is asserted here.
+        assert cfg.newsletter_worker_url == "" or cfg.newsletter_worker_url.startswith("https://")
+        assert not cfg.newsletter_worker_url.endswith("/")
         assert cfg.newsletter_hour_local == 8
         assert cfg.newsletter_timezone == "America/New_York"
         assert cfg.newsletter_max_per_run == 200

@@ -110,7 +110,7 @@ paywall:
   enabled: false   # OFF until the page and the Worker are live; then true
   teaser_count: 8          # unlocked deals for visitors
   trial_days: 7
-  api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
+  api_url: "https://wowpriced-subscribe.wowpriced.workers.dev"              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty
 
 newsletter:
@@ -119,7 +119,7 @@ newsletter:
   # pipeline reads them through the Worker (NEWSLETTER_SECRET secret) and
   # sends one email per subscriber per day over the same SMTP_* secrets.
   enabled: true
-  worker_url: ""             # printed by the "deploy subscribe worker" workflow; paste it here
+  worker_url: "https://wowpriced-subscribe.wowpriced.workers.dev"             # printed by the "deploy subscribe worker" workflow; paste it here
   hour_local: 8              # first run at/after 08:00 local sends the day's email
   timezone: "America/New_York"
   max_per_run: 200           # messages per run; a longer list continues next run
