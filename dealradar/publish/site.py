@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import hashlib
 import logging
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -231,9 +232,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         json.dumps(health_doc, indent=2), encoding="utf-8"
     )
 
-    for name in ("index.html", "health.html", "welcome.html", "about.html",
-                 "careers.html", "contact.html", "how-it-works.html", "hacks.html",
-                 "subscribe.html"):
+    pages = ("index.html", "health.html", "welcome.html", "about.html",
+             "careers.html", "contact.html", "how-it-works.html", "hacks.html",
+             "subscribe.html")
+    for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
@@ -241,16 +243,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     (out / "index.html").write_text(index.replace("__SITE_VERSION__", site_version, 1),
                                     encoding="utf-8")
 
-    # The contact page carries the operator's email only once it is really
+    # Every page carries the operator's email (the contact line, and "or
+    # email ..." wherever cancelling is explained) only once it is really
     # configured; the unset placeholder must never reach the public site
-    # (the page hides its email line when the token resolves to "").
+    # (the pages drop their email wording when the token resolves to "").
+    # It lands in HTML attributes and script strings, so only a plain
+    # address is used.
     email = getattr(cfg, "contact_email", "") or ""
-    if email == "set-me@example.com":
+    if email == "set-me@example.com" or not re.fullmatch(r"[^\s@\"'<>\\&]+@[^\s@\"'<>\\&]+", email):
         email = ""
-    contact = (out / "contact.html").read_text(encoding="utf-8")
-    (out / "contact.html").write_text(
-        contact.replace("{{CONTACT_EMAIL}}", email), encoding="utf-8"
-    )
+    for name in pages:
+        html = (out / name).read_text(encoding="utf-8")
+        if "{{CONTACT_EMAIL}}" in html:
+            (out / name).write_text(html.replace("{{CONTACT_EMAIL}}", email),
+                                    encoding="utf-8")
 
     # GitHub Pages keeps a custom domain only while the deployed site
     # carries this file; every run redeploys, so every run writes it.

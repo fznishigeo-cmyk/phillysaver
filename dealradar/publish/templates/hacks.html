@@ -194,21 +194,22 @@ footer p{margin:0 0 8px}
     <a href="careers.html">Work with us</a>
     <a href="contact.html">Contact</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" rel="noopener" style="display:none">Get every deal by email — $9.99/mo</a></p>
+  <p><a id="subscribe" class="getdeal" style="display:none">Get every deal by email — $9.99/mo</a></p>
   <p>Every deal links to the seller and credits the source that found it. Some outbound
      links are the source's affiliate links. <a href="health.html">source health</a></p>
 </footer>
 </div>
 <script>
 "use strict";
-// The Subscribe button appears only once deals.json carries a subscribe link.
+// Membership starts on the home page: a free account, then the card-up-
+// front trial (docs/paywall.md). The button appears once deals.json names
+// the account service; the Payment Link is never linked from here.
 fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
-    var url = d && d.meta && d.meta.subscribe_url;
-    if (url) {
+    if (d && d.meta && d.meta.api_url) {
       var sub = document.getElementById("subscribe");
-      sub.href = url;
+      sub.href = "./#signup";
       sub.style.display = "";
     }
   }).catch(function () {});

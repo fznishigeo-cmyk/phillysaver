@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0e7569">
-<meta name="description" content="How to use the wowpriced deal wall: tabs, the Used and Open-Box pillar, search, sorting, badges, the floors, the Next drop countdown, the Just missed strip, and membership.">
+<meta name="description" content="How to use the wowpriced deal wall: tabs, the Used and Open-Box pillar, search, sorting, badges, the floors, the Next shuffle countdown, the Just missed strip, and membership.">
 <title>How to use wowpriced</title>
 <style>
 :root{
@@ -108,7 +108,7 @@ footer p{margin:0 0 8px}
       source, so far.</li>
   <li><strong>Know the floors.</strong> New items need 40% off or better to make the
       wall. Used and open-box items need 50% off or better.</li>
-  <li><strong>Watch the "Next drop" clock.</strong> The engine runs on a 10-minute
+  <li><strong>Watch the "Next shuffle" clock.</strong> The engine runs on a 10-minute
       cycle. When the countdown in the header reaches zero the wall reshuffles, and
       new deals land on top with a NEW tag as soon as they are published. An open
       tab refreshes itself, so there is nothing to press.</li>
@@ -126,9 +126,9 @@ footer p{margin:0 0 8px}
      month: it unlocks every deal on the wall, and we email you every verified deal
      the hour it is found. Emails are bundled, at most one per hour, and only when
      there is something new. New members start with a 7-day free trial; a card is
-     required up front, and the membership renews monthly until you cancel. Cancel
-     anytime online with "Manage or cancel" in the account menu, or reply to your
-     Stripe receipt or use the <a href="contact.html">contact page</a>.</p>
+     required up front, then $9.99/month, renews monthly until you cancel. Cancel
+     anytime online with "Manage or cancel" in the account menu<span class="mailalt">,
+     or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></span>.</p>
 </div>
 
 <h2>FAQ</h2>
@@ -168,24 +168,30 @@ footer p{margin:0 0 8px}
     <a href="careers.html">Work with us</a>
     <a href="contact.html">Contact</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" rel="noopener" style="display:none">Get every deal by email — $9.99/mo</a></p>
+  <p><a id="subscribe" class="getdeal" style="display:none">Get every deal by email — $9.99/mo</a></p>
   <p>Every deal links to the seller and credits the source that found it. Some outbound
      links are the source's affiliate links. <a href="health.html">source health</a></p>
 </footer>
 </div>
 <script>
 "use strict";
-// The Subscribe button appears only once deals.json carries a subscribe link.
+// Membership starts on the home page: a free account, then the card-up-
+// front trial (docs/paywall.md). The button appears once deals.json names
+// the account service; the Payment Link is never linked from here.
 fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
-    var url = d && d.meta && d.meta.subscribe_url;
-    if (url) {
+    if (d && d.meta && d.meta.api_url) {
       var sub = document.getElementById("subscribe");
-      sub.href = url;
+      sub.href = "./#signup";
       sub.style.display = "";
     }
   }).catch(function () {});
+// No configured contact email: the publisher leaves the address empty,
+// so the "or email" wording goes with it.
+document.querySelectorAll(".mailalt").forEach(function (el) {
+  if (!el.querySelector("a").textContent.trim()) el.hidden = true;
+});
 </script>
 </body>
 </html>

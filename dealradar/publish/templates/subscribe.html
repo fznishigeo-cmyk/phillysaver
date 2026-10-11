@@ -78,8 +78,8 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
       <h2>Membership</h2>
       <div class="price">$9.99/mo</div>
       <p class="muted">Every deal on the wall unlocked, plus every verified deal
-         emailed the hour it's found, bundled at most once an hour. 7-day free trial
-         (card required), then renews monthly; cancel anytime online.</p>
+         emailed the hour it's found, bundled at most once an hour.</p>
+      <p class="muted" id="memberterms" hidden></p>
       <a id="member" class="btn alt" rel="noopener" style="display:none">Become a member</a>
     </div>
   </div>
@@ -96,6 +96,10 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
   // ?unsubscribed=1.
   var q = location.search;
   var notice = document.getElementById("notice");
+  // The operator's contact email (config contact_email, filled in by the
+  // publisher; "" when unset): the other way to cancel.
+  var CONTACT_EMAIL = "{{CONTACT_EMAIL}}";
+  var EMAIL = /^[^\s@"<>]+@[^\s@"<>]+$/.test(CONTACT_EMAIL) ? CONTACT_EMAIL : "";
   function show(cls, text) {
     notice.className = "notice " + cls;
     notice.textContent = text;
@@ -128,13 +132,20 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
       } else {
         document.getElementById("pending").style.display = "";
       }
-      // With accounts (api_url), membership starts on the home page: a free
-      // account, then the card-up-front trial; else the Payment Link.
-      var join = m.api_url ? "./#signup" : (m.subscribe_url || "");
-      if (join) {
+      // Membership starts on the home page: a free account, then the
+      // card-up-front trial (never the Payment Link from here), with its
+      // terms right beside the button (trial_days 0: no trial at all).
+      if (m.api_url) {
         var btn = document.getElementById("member");
-        btn.href = join;
+        btn.href = "./#signup";
         btn.style.display = "";
+        var days = m.trial_days == null || isNaN(Number(m.trial_days)) ? 7 : Number(m.trial_days);
+        var terms = document.getElementById("memberterms");
+        terms.textContent = (days > 0
+          ? "Card required. Free for " + days + " days, then $9.99/month, renews monthly until you cancel. "
+          : "Subscribe — $9.99/month, renews monthly until you cancel. ") +
+          "Cancel anytime online" + (EMAIL ? " or email " + EMAIL : "") + ".";
+        terms.hidden = false;
       }
     })
     .catch(function () {

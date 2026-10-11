@@ -77,13 +77,13 @@ footer p{margin:0 0 8px}
 </div>
 
 <h2>Membership and billing</h2>
-<p>Billing runs through Stripe. The fastest route for anything about a charge, a
-   refund, a card change or a cancellation is to reply to your Stripe receipt
-   email; it reaches us directly.</p>
+<p>Billing runs through Stripe. Cancel anytime online with "Manage or cancel" in the
+   account menu on the home page; it also changes your card and shows your
+   invoices.<span class="mailalt"> Or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> about anything
+   billing, a cancellation included, and we will sort it out for you.</span></p>
 <p id="portalline" style="display:none">Manage or cancel your membership:
    <a id="portallink" rel="noopener">billing portal</a>.</p>
-<p>Cancel anytime online with "Manage or cancel" in the account menu on the home
-   page. Today's top 8 deals on the wall stay free whether or not you are a member.</p>
+<p>Today's top 8 deals on the wall stay free whether or not you are a member.</p>
 
 <h2>Deal sources and retailers</h2>
 <p>If we credit your site or link to your store, thank you; you are the reason the
@@ -118,7 +118,7 @@ footer p{margin:0 0 8px}
     <a href="careers.html">Work with us</a>
     <a href="contact.html">Contact</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" rel="noopener" style="display:none">Get every deal by email — $9.99/mo</a></p>
+  <p><a id="subscribe" class="getdeal" style="display:none">Get every deal by email — $9.99/mo</a></p>
   <p>Every deal links to the seller and credits the source that found it. Some outbound
      links are the source's affiliate links. <a href="health.html">source health</a></p>
 </footer>
@@ -133,15 +133,21 @@ footer p{margin:0 0 8px}
     document.getElementById("emailline").style.display = "none";
   }
 })();
-// Subscribe button and billing-portal link come from deals.json meta; both
-// stay hidden when the operator has not configured them.
+// No configured contact email: the publisher leaves the address empty,
+// so the "or email" wording goes with it.
+document.querySelectorAll(".mailalt").forEach(function (el) {
+  if (!el.querySelector("a").textContent.trim()) el.hidden = true;
+});
+// The membership button (into the home page's sign-up and card-up-front
+// trial, never the Payment Link) and the billing-portal link come from
+// deals.json meta; both stay hidden when the operator has not set them.
 fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
     var m = (d && d.meta) || {};
-    if (m.subscribe_url) {
+    if (m.api_url) {
       var sub = document.getElementById("subscribe");
-      sub.href = m.subscribe_url;
+      sub.href = "./#signup";
       sub.style.display = "";
     }
     if (m.portal_url) {

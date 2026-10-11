@@ -208,7 +208,9 @@ def test_membership_links_reach_page_meta_and_welcome_page(db, cfg, tmp_path):
     assert doc["meta"]["subscribe_url"] == "https://buy.stripe.com/test_123"
     assert doc["meta"]["portal_url"] == "https://billing.stripe.com/p/login/x"
     html = (out / "index.html").read_text(encoding="utf-8")
-    assert 'id="subscribe"' in html and "m.subscribe_url" in html
+    # The header button leads into sign-up and the trial; the Payment Link
+    # only reaches the page as checkout's fallback (me.subscribe_url).
+    assert 'id="subscribe"' in html and "m.subscribe_url" not in html
     welcome = (out / "welcome.html").read_text(encoding="utf-8")
     assert welcome.startswith("<!doctype html>")
     assert "<script src=" not in welcome and "<link" not in welcome
@@ -235,7 +237,7 @@ def test_out_dir_defaults_to_cfg_site_dir(db, cfg):
 
 class TestLiveHomePage:
     """Meta fields and template hooks behind the rotating, counting-down
-    home page (fresh-drops sort, "Next drop in" countdown, floor-derived
+    home page (fresh-drops sort, "Next shuffle in" countdown, floor-derived
     tagline)."""
 
     @staticmethod
@@ -264,7 +266,7 @@ class TestLiveHomePage:
 
     def test_index_has_countdown_driven_by_meta(self, html):
         assert 'id="countdown"' in html
-        assert "Next drop in" in html and "Dropping…" in html
+        assert "Next shuffle in" in html and "Shuffling…" in html
         # The old open-ended wait is gone: a drop never sits for minutes.
         assert "Loading new drops" not in html
         # Publish time and cadence come from deals.json meta, not the clock alone.
@@ -327,7 +329,10 @@ class TestContentPages:
                 assert f'href="{other}"' in html, (name, other)
             assert 'href="./"' in html, name
             assert "Get every deal by email" in html, name
-            assert "subscribe_url" in html, name
+            # Membership starts in the home page's sign-up and trial flow;
+            # no content page links the Payment Link.
+            assert '"./#signup"' in html and "api_url" in html, name
+            assert "subscribe_url" not in html, name
 
     def test_contact_email_substituted_when_configured(self, db, cfg, tmp_path):
         cfg.contact_email = "hello@wowpriced.example"
@@ -465,7 +470,8 @@ class TestNewsletterSite:
         assert 'name="email"' in html and 'method="post"' in html
         assert "Email signup is being set up" in html
         assert "ok=1" in html and "unsubscribed=1" in html
-        assert "$9.99/mo" in html and "subscribe_url" in html
+        assert "$9.99/mo" in html and '"./#signup"' in html
+        assert "subscribe_url" not in html
         assert 'href="./"' in html  # back home
         assert "prefers-color-scheme" in html
         assert "<script src=" not in html and "<link" not in html
@@ -515,7 +521,8 @@ class TestPaywallPage:
                       "authsubmit", "authswitch", "authclose", "gsibtn",
                       "authstep1", "authstep2", "cobtn", "codisc", "coerr", "cofb",
                       "conotnow", "paywall", "pwsignup", "pwlogin", "pwbuy", "pwcheck",
-                      "pwplain", "pwnote", "pwerr", "pwfb",
+                      "pwclaim", "pwmanage", "pwnote", "pwerr", "pwfb", "pwfbnote",
+                      "authdisc", "cofbnote",
                       "account", "loginlink", "logout", "billing", "trialnote"):
             assert f'id="{el_id}"' in html, el_id
         assert 'role="dialog"' in html and 'aria-modal="true"' in html
@@ -549,10 +556,11 @@ class TestPaywallPage:
         assert "d.locked === true" in html
         assert "Sign up free" in html and "Log in" in html
         assert "Unlock all " in html and "I just subscribed" in html
-        assert "-day free trial. Card required, then $9.99/month." in html
+        assert '" with a " + o.days + "-day free trial"' in html
         # The card-less trial and its copy are gone.
         assert "Your free week ended" not in html and "No card needed" not in html
-        assert "Free trial — " in html and "Manage or cancel" in html
+        assert '"Free trial" + (day ? " — ends " + day : "")' in html
+        assert "Manage or cancel" in html
         # Stub cards never carry a product link or title text.
         start = html.index("function lockedHtml")
         body = html[start:html.index("function cardHtml")]
@@ -668,7 +676,7 @@ class TestCardRequiredTrial:
     def test_signup_dialog_is_a_free_account_then_step_two(self, html):
         assert "Create your free account" in html
         assert "Free account: today's top " in html
-        assert "-day free trial, card required." in html
+        assert '"-day free trial."' in html
         assert "Step 2 of 2 — start your free trial" in html
         assert '"Start " + days + "-day free trial"' in html
         assert "Not now" in html
@@ -679,20 +687,23 @@ class TestCardRequiredTrial:
 
     def test_disclosure_sits_next_to_every_trial_button(self, html):
         disclosure = ('"Card required. Free for " + days + " days, then $9.99/month, '
-                      'renews monthly " +\n      "until you cancel. Cancel anytime online."')
+                      'renews monthly " +\n      "until you cancel. " + cancelLine()')
         assert disclosure in html
+        assert ('"Cancel anytime online" + (contactEmail() ? " or email " + '
+                'contactEmail() : "") + "."') in html
         # Both trial buttons (panel and dialog) get the line written right
         # beside them, as visible text (never a title= tooltip).
         assert 'id="pwbuy"' in html and 'id="pwnote" class="disc"' in html
         assert 'id="cobtn"' in html and 'id="codisc" class="disc"' in html
         assert "pn.textContent = note" in html
-        assert 'getElementById("codisc").textContent = o.note' in html
+        assert "disc.textContent = o.note" in html
         assert "title=" not in html[html.index('id="pwbuy"'):html.index('id="pwfb"')]
 
     def test_used_trial_and_lapsed_get_no_trial_wording(self, html):
         assert "me.trial_available !== false" in html
         assert '"Subscribe — $9.99/month"' in html
-        assert "Your membership ended. Restart for $9.99/month." in html
+        assert "Your membership ended" not in html  # never stated as fact
+        assert "No active membership on this account right now." in html
         assert "You're signed in. Start your " in html
         assert "You're signed in. Subscribe to unlock all " in html
 
@@ -701,21 +712,21 @@ class TestCardRequiredTrial:
         start = html.index("function checkout(")
         body = html[start:html.index("function portal(")]
         assert "location.assign" in body
-        assert '"already_member"' in body and "409" in body
+        assert "res.status === 409" in body and "memberDeals(true)" in body
         assert "Free-trial checkout is unavailable right now." in body
         assert "fallback_url" in body
         assert "Subscribe now &mdash; $9.99/month" in html  # the fallback link
 
-    def test_portal_call_falls_back_then_hides(self, html):
+    def test_portal_call_falls_back_then_points_at_email(self, html):
         assert '"/api/portal"' in html
         start = html.index("function portal(")
         body = html[start:html.index("function showErr(")]
         assert "location.assign" in body and "portal_url" in body
-        assert "btn.hidden = true" in body
+        assert "say(noPortalText())" in body and "btn.hidden" not in body
         assert 'id="billing"' in html and ">Manage or cancel<" in html
 
     def test_trial_member_note_and_cancel_toast(self, html):
-        assert '" $9.99/month unless you cancel."' in html
+        assert '" Then $9.99/month, renews monthly until you cancel. "' in html
         assert "checkout=cancel" in html
         assert "Checkout cancelled — no charge." in html
         start = html.index("function checkoutCancelled()")
@@ -757,9 +768,9 @@ class TestDropClock:
         start = html.index("function drop(")
         body = html[start:html.index("function loadData(")]
         assert "withTimeout(got, DROP_FETCH_MS)" in body
-        assert "markIndex(last" in body and "reorganize(true)" in body
-        assert '"Deals reshuffled" + checkedAgo()' in body
-        assert '" · prices checked "' in html and '" min ago"' in html
+        assert "markIndex(last" in body and "reorganize(true, added > 0)" in body
+        assert '"Fresh shuffle" + updatedAgo()' in body
+        assert '" · updated "' in html and '" min ago"' in html
         # One ticking interval for the whole page, plus the 5-minute fallback.
         assert html.count("setInterval(") == 2
         assert "setInterval(tick, 1000)" in html
@@ -799,7 +810,7 @@ class TestWelcomeTrialClaim:
     def test_wrong_account_copy(self, html):
         assert "wrong_account:" in html
         assert ("This payment belongs to a different wowpriced account. "
-                "Log in with the email you used at checkout.") in html
+                "Log in with the email you used at checkout, ") in html
 
 
 class TestMembershipCopyIsTrue:
@@ -827,4 +838,265 @@ class TestMembershipCopyIsTrue:
     def test_subscribe_page_joins_through_the_trial_flow(self, db, cfg, tmp_path):
         html = _render_pages(db, cfg, tmp_path / "site")["subscribe.html"]
         assert '"./#signup"' in html and "m.api_url" in html
-        assert "7-day free trial" in html and "card required" in html
+        assert '"Card required. Free for " + days + " days, then $9.99/month' in html
+        assert 'id="memberterms"' in html
+
+
+def _between(html, start, end):
+    i = html.index(start)
+    return html[i:html.index(end, i)]
+
+
+class TestTrialCtasAreHonest:
+    """Every membership CTA goes through sign-up and POST /api/checkout (the
+    card-up-front trial); the Payment Link appears only as checkout's
+    fallback, with its own terms. Every trial button sits next to the full
+    terms, cancelling is online or by email, and 0 trial days means no
+    trial wording at all."""
+
+    @pytest.fixture()
+    def pages(self, db, cfg, tmp_path):
+        cfg.contact_email = "hello@wowpriced.com"
+        return _render_pages(db, cfg, tmp_path / "site")
+
+    def test_ctas_never_link_the_payment_link(self, pages):
+        html = pages["index.html"]
+        # The Payment Link reaches the page only inside checkout's fallback.
+        assert html.count("subscribe_url") == 1
+        assert "subscribe_url" in _between(html, "function checkout(", "function noPortalText(")
+        assert 'id="pwplain"' not in html
+        assert '<a id="subscribe" class="getdeal" href="#signup"' in html
+        assert '<a id="subbar" class="subbar" href="#signup"' in html
+        start = html.index('["subscribe", "subbar"].forEach')
+        assert "nextStep()" in html[start:start + 250]
+        for name, page in pages.items():
+            assert "subscribe_url" not in page or name == "index.html", name
+
+    def test_fallback_replaces_the_trial_button_and_its_terms(self, pages):
+        html = pages["index.html"]
+        assert ">Subscribe now &mdash; $9.99/month</a>" in html
+        assert '"$9.99 charged today, renews monthly until you cancel. " + cancelLine()' in html
+        assert "btn.hidden = disc.hidden = !!fb || !!blk" in _between(html, "function paintStep2(", "function setMode(")
+        panel = _between(html, "function updatePaywall(", "function repaintPanel(")
+        assert "pwbuy: buy && !fb && !blk" in panel and "pn.hidden = !note || !!fb" in panel
+        # A lapsed account (maybe only a failed card) is never sold a second
+        # subscription through the Payment Link.
+        assert "o.lapsed) fb = \"\"" in _between(html, "function checkout(", "function noPortalText(")
+
+    def test_every_trial_offer_carries_every_term(self, pages):
+        html = pages["index.html"]
+        assert 'renews monthly " +\n      "until you cancel. " + cancelLine()' in html
+        assert '"Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine()' in html
+        panel = _between(html, "function updatePaywall(", "function repaintPanel(")
+        assert 'var note = (mode === "out" || buy) && !blk ? o.note : ""' in panel
+        mode = _between(html, "function setMode(", "function openAuth(")
+        assert 'disc.textContent = up ? o.note : ""' in mode   # the sign-up step
+        assert 'id="authdisc" class="disc"' in html
+        assert 'getElementById("footterms").textContent' in html   # the footer
+
+    def test_zero_trial_days_mean_no_trial(self, pages):
+        html = pages["index.html"]
+        days = _between(html, "function trialDays(", "function teaserCount(")
+        assert "d == null" in days and "|| 7" not in days
+        assert "n == null ? 8 : n" in _between(html, "function teaserCount(", "function dealTotal(")
+        assert "&& days > 0" in _between(html, "function offer(", "function lockLabel(")
+        assert "num((state.meta || {}).teaser_count) || 8" not in html
+        sub = pages["subscribe.html"]
+        assert "days > 0" in sub
+        assert '"Subscribe — $9.99/month, renews monthly until you cancel. "' in sub
+
+    def test_cancel_by_email_everywhere_from_config(self, pages):
+        assert 'var CONTACT_EMAIL = "hello@wowpriced.com"' in pages["index.html"]
+        assert ('"Cancel anytime online" + (contactEmail() ? " or email " + '
+                'contactEmail() : "") + "."') in pages["index.html"]
+        for name in ("about.html", "how-it-works.html", "contact.html"):
+            assert 'mailto:hello@wowpriced.com">hello@wowpriced.com</a>' in pages[name], name
+            assert 'class="mailalt"' in pages[name], name
+        assert 'var CONTACT_EMAIL = "hello@wowpriced.com"' in pages["welcome.html"]
+        assert 'var CONTACT_EMAIL = "hello@wowpriced.com"' in pages["subscribe.html"]
+        for name, page in pages.items():
+            assert "{{CONTACT_EMAIL}}" not in page, name
+
+    def test_unset_contact_email_never_reaches_the_site(self, db, cfg, tmp_path):
+        assert cfg.contact_email == "set-me@example.com"
+        for name, page in _render_pages(db, cfg, tmp_path / "site").items():
+            assert "set-me@example.com" not in page, name
+            assert "{{CONTACT_EMAIL}}" not in page, name
+
+    def test_contact_email_that_could_break_a_page_is_left_out(self, db, cfg, tmp_path):
+        # It lands inside script strings and attributes: a quote must not.
+        cfg.contact_email = 'x"+alert(1)+"@wowpriced.com'
+        for name, page in _render_pages(db, cfg, tmp_path / "site").items():
+            assert "alert(1)" not in page, name
+            assert "{{CONTACT_EMAIL}}" not in page, name
+        assert 'var CONTACT_EMAIL = ""' in _render_pages(db, cfg, tmp_path / "s2")["index.html"]
+
+    def test_no_portal_means_email_never_a_receipt(self, pages):
+        html = pages["index.html"]
+        body = _between(html, "function noPortalText(", "function portal(")
+        assert '"Email " + contactEmail() + " and we\'ll cancel or change your membership."' in body
+        for name, page in pages.items():
+            assert "reply to your stripe receipt" not in " ".join(page.lower().split()), name
+        welcome = pages["welcome.html"]
+        assert 'getElementById("managenote").innerHTML = " " + NO_PORTAL' in welcome
+        assert "btn.hidden = true" not in welcome
+
+    def test_billing_reaches_lapsed_accounts(self, pages):
+        html = pages["index.html"]
+        assert 'getElementById("billing").hidden = !(on && hasBilling())' in html
+        body = _between(html, "function hasBilling(", "function pendingClaim(")
+        assert 'me.member || me.claimed || me.reason === "lapsed"' in body
+        panel = _between(html, "function updatePaywall(", "function repaintPanel(")
+        assert 'pwmanage: blk ? blk === "payment_issue" : mode === "lapsed"' in panel
+        assert '<button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage or cancel</button>' in html
+        assert '["billing", "pwmanage", "comanage"].forEach' in html
+        assert "Manage billing" not in html
+        assert "Your membership ended" not in html
+
+    def test_unknown_membership_offers_a_retry_not_a_purchase(self, pages):
+        html = pages["index.html"]
+        panel = _between(html, "function updatePaywall(", "function repaintPanel(")
+        assert '(unknownMembership() ? "unknown"' in panel
+        assert "Couldn't check your membership right now" in panel
+        assert 'mode === "retry" || mode === "unknown"' in panel
+        assert 'me.reason !== "unknown"' in _between(html, "function signedIn(", "function authPost(")
+
+    def test_checkout_409_rereads_me_and_never_sells_twice(self, pages):
+        body = _between(pages["index.html"], "function checkout(", "function noPortalText(")
+        assert "res.status === 409" in body and "memberDeals(true)" in body
+        assert 'refuse("found", ui, had)' in body
+        assert ('found: "We found a subscription for this email. Open the link in your Stripe receipt, or " +'
+                in pages["index.html"])
+        start = body.index("res.status === 409")
+        assert "return;" in body[start:body.index("res.status === 401")]
+
+    def test_pending_payment_link_claim_comes_first(self, pages):
+        html = pages["index.html"]
+        assert 'CLAIM_KEY = "wp.claim"' in html
+        signed = _between(html, "function signedIn(", "function authPost(")
+        assert signed.index('location.assign("welcome.html")') < signed.index('openAuth("checkout")')
+        step = _between(html, "function nextStep(", "function checkoutCancelled(")
+        assert 'pendingClaim()) location.assign("welcome.html")' in step
+        assert "claim: \"Your payment on this device isn't attached to this account yet.\"" in html
+        assert '<a id="pwclaim" class="pwbtn" href="welcome.html"' in html
+        welcome = pages["welcome.html"]
+        assert "then come back to this page: your payment is remembered on this device." in welcome
+        assert "already_claimed:" in welcome
+        assert "This payment is already attached to another wowpriced account. " in welcome
+
+    def test_back_from_stripe_reenables_buttons(self, pages):
+        html = pages["index.html"]
+        start = html.index('window.addEventListener("pageshow"')
+        body = html[start:start + 300]
+        assert "e.persisted" in body
+        for el_id in ("cobtn", "pwbuy", "billing", "pwmanage"):
+            assert f'"{el_id}"' in body, el_id
+        welcome = pages["welcome.html"]
+        assert 'window.addEventListener("pageshow"' in welcome and "e.persisted" in welcome
+
+    def test_old_worker_trial_gets_no_billing_terms(self, pages):
+        assert '"trial_available" in me ? " Then $9.99/month' in pages["index.html"]
+        assert 'me.reason === "trial" && "trial_available" in me' in pages["welcome.html"]
+        # ...and no "Manage or cancel" for a card-less trial: nothing to manage.
+        body = _between(pages["index.html"], "function hasBilling(", "function pendingClaim(")
+        assert ('me.member && me.reason === "trial" && !("trial_available" in me) && !me.claimed'
+                in body)
+
+    def test_checkout_refusals_offer_the_way_on_never_a_purchase(self, pages):
+        html = pages["index.html"]
+        texts = _between(html, "function blockText(", "function offer(")
+        assert ('payment_issue: "There\'s a problem with your last payment. '
+                'Update your card in Manage or cancel."') in texts
+        assert ('contact_support: (mail ? "Email " + mail : "Use the contact page") + '
+                '" and we\'ll sort it out."') in texts
+        body = _between(html, "function checkout(", "function noPortalText(")
+        assert 'j.error === "payment_issue" || j.error === "contact_support"' in body
+        assert "if (j.me) state.me = j.me;" in body
+        refuse = _between(html, "function refuse(", "function noPortalText(")
+        assert "auth.block = code;" in refuse and 'auth.fb = "";' in refuse
+        # The step-2 dialog and the panel trade the buy button for the way on:
+        # Manage or cancel for a payment issue.
+        step2 = _between(html, "function paintStep2(", "function setMode(")
+        assert 'getElementById("comanage").hidden = blk ? blk !== "payment_issue" : !o.lapsed' in step2
+        assert "err.textContent = blockText(blk)" in step2
+        assert '<button type="button" id="comanage" class="pwbtn alt" hidden>Manage or cancel</button>' in html
+        panel = _between(html, "function updatePaywall(", "function repaintPanel(")
+        assert '.textContent = blk ? blockText(blk) : {' in panel
+        assert 'var fb = buy && !o.lapsed && !blk ? auth.fb : ""' in panel
+        # The refusal ends with the account: a new sign-in or a log-out.
+        assert 'auth.block = "";' in _between(html, "function dropSession(", "function isMember(")
+        assert 'auth.block = "";' in _between(html, "function signedIn(", "function authPost(")
+        # A payment issue reaches the billing portal from the header too.
+        assert 'auth.block === "payment_issue"' in _between(html, "function hasBilling(",
+                                                             "function pendingClaim(")
+
+    def test_checkout_busy_never_offers_the_payment_link(self, pages):
+        body = _between(pages["index.html"], "function checkout(", "function refuse(")
+        # 503 checkout_unavailable: only the Worker's fallback_url (empty when
+        # Stripe could not be asked); me.subscribe_url only for an older
+        # Worker without the route.
+        assert ('var fb = res.status === 404 ? https((state.me || {}).subscribe_url) '
+                ': https(j.fallback_url);') in body
+        assert 'if (res.status === 429 || o.lapsed) fb = "";' in body
+        assert '(!fb ? "Checkout is busy — try again in a minute."' in body
+
+    def test_already_claimed_receipt_is_dropped_on_this_device(self, pages):
+        welcome = pages["welcome.html"]
+        assert ('code === "bad_session" || code === "unknown_session" || '
+                'code === "already_claimed") ssDel(CLAIM_KEY)') in welcome
+        assert "Amazon prices\n     re-checked live" in welcome
+
+
+class TestHonestShuffleAndPage:
+    """The 10-minute reshuffle stays, honestly labelled; the page's account
+    row, focus and member lookup hold up."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_no_page_claims_prices_were_checked(self, db, cfg, tmp_path):
+        pages = _render_pages(db, cfg, tmp_path / "site")
+        for name, page in pages.items():
+            assert "prices checked" not in page.lower(), name
+        body = _between(pages["index.html"], "function updatedAgo(", "function drop(")
+        assert '" · updated "' in body and "publishTime(" in body
+
+    def test_toast_only_for_real_news_or_a_visible_shuffle(self, html):
+        body = _between(html, "function drop(", "function loadData(")
+        assert 'if (added) toast(plural(added, "new deal") + " just landed");' in body
+        assert ('else if (moved && state.sortKey === "fresh") '
+                'toast("Fresh shuffle" + updatedAgo());') in body
+        assert "Deals reshuffled" not in html
+        reorg = _between(html, "function reorganize(", "// ---- paywall")
+        assert "var changed = cardOrder() !== was;" in reorg and "return changed;" in reorg
+
+    def test_clock_names_the_shuffle_and_sweeps_only_with_news(self, html):
+        assert '<span class="droplbl">Next shuffle in</span>' in html
+        assert '"Shuffling…"' in html and "Dropping…" not in html
+        reorg = _between(html, "function reorganize(", "// ---- paywall")
+        assert 'if (sweep) el.classList.add("moved");' in reorg
+        assert "reorganize(true, added > 0)" in html
+
+    def test_account_row_wraps_on_phones(self, html):
+        mobile = _between(html, "@media (max-width:640px)", "@media (max-width:520px)")
+        assert (".acct,.acct .in{flex-wrap:wrap;white-space:normal;"
+                "justify-content:center") in mobile
+        assert ".acct .email{max-width:100%}" in mobile
+
+    def test_member_lookup_always_ends_the_check(self, html):
+        # A drop that changed the publish while /api/me was slow must not
+        # leave the CTA panel hidden for good.
+        assert html.count("memberDeals(false).then(showDeals)") == 2
+        assert "state.dataKey === pub.key) showDeals" not in html
+        assert "state.dataKey === key) showDeals" not in html
+
+    def test_closing_the_dialog_never_drops_focus(self, html):
+        body = _between(html, "function closeAuth(", "function signedIn(")
+        assert "auth.opener" in body and 'panel.querySelector("#pwbuy")' in body
+        assert "el.offsetParent !== null" in body and "document.body.contains(el)" in body
+        # Disabling a focused button drops its focus; checkout gives it back.
+        chk = _between(html, "function checkout(", "function noPortalText(")
+        assert "had = document.activeElement === ui.btn" in chk and "ui.fb.focus()" in chk

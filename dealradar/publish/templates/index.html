@@ -39,8 +39,8 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
-/* The drop clock: "Next drop in m:ss" over a bar that fills across the
-   cycle; the pulse says the page is live. */
+/* The drop clock: "Next shuffle in m:ss" over a bar that fills across
+   the cycle; the pulse says the page is live. */
 .drop{margin-left:auto;position:relative;display:inline-flex;align-items:center;gap:8px;
       white-space:nowrap;background:var(--chip);border:1px solid var(--line);border-radius:12px;
       padding:5px 14px 9px;overflow:hidden}
@@ -194,7 +194,7 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .mcard .pwbtn{width:100%;margin-top:2px;white-space:normal;text-align:center}
 #authstep2{margin-top:14px}
 #authstep2 .autherr{margin-top:10px}
-#cofb{margin-top:8px}
+#cofb,#comanage{margin-top:8px}
 .autherr{margin:0;color:var(--dead);font-size:13px;font-weight:600}
 .switch{margin:12px 0 0;text-align:center}
 
@@ -231,6 +231,8 @@ footer .meta{font-size:11.5px}
   #controls label{flex:1 1 45%;justify-content:center}
   .wrap{padding:0 12px 84px}
   .acct{order:4;flex-basis:100%;justify-content:center;font-size:12.5px;margin-top:2px}
+  .acct,.acct .in{flex-wrap:wrap;white-space:normal;justify-content:center;row-gap:2px}
+  .acct .email{max-width:100%}
   .paywall{bottom:8px;padding:10px 12px;gap:6px 10px}
   .pwtext{flex-basis:100%;font-size:14px}
   .pwtext .meta{font-size:12.5px}
@@ -264,7 +266,7 @@ footer .meta{font-size:11.5px}
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span id="tagline" class="tag">verified deals</span>
     <div id="drop" class="drop" role="timer" aria-live="off">
-      <span class="droplbl">Next drop in</span>
+      <span class="droplbl">Next shuffle in</span>
       <span id="countdown" class="dropt">-:--</span>
       <span class="dropbar" aria-hidden="true"><span id="dropfill" class="dropfill"></span></span>
     </div>
@@ -274,7 +276,7 @@ footer .meta{font-size:11.5px}
         <button type="button" id="billing" class="linkbtn" hidden>Manage or cancel</button>
         <button type="button" id="logout" class="linkbtn">Log out</button></span>
     </span>
-    <a id="subscribe" class="getdeal" rel="noopener" style="display:none">
+    <a id="subscribe" class="getdeal" href="#signup" style="display:none">
       Get every deal by email — $9.99/mo</a>
   </div>
   <p id="sincevisit" class="since" hidden></p>
@@ -302,18 +304,21 @@ footer .meta{font-size:11.5px}
     <button type="button" id="pwsignup" class="pwbtn" data-auth="signup">Sign up free</button>
     <button type="button" id="pwlogin" class="pwbtn alt" data-auth="login">Log in</button>
     <button type="button" id="pwbuy" class="pwbtn" hidden>Start free trial</button>
+    <a id="pwclaim" class="pwbtn" href="welcome.html" hidden>Finish attaching your payment</a>
+    <button type="button" id="pwmanage" class="pwbtn alt" hidden>Manage or cancel</button>
     <button type="button" id="pwcheck" class="pwbtn alt" hidden>I just subscribed</button>
-    <a id="pwplain" class="pwbtn" rel="noopener" hidden>Get every deal by email &mdash; $9.99/mo</a>
   </div>
   <p id="pwnote" class="disc" hidden></p>
   <p id="pwerr" class="autherr" role="alert" hidden></p>
   <a id="pwfb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
+  <p id="pwfbnote" class="disc" hidden></p>
 </div>
 <footer>
   <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus every verified
-     deal emailed to you the hour it's found, bundled at most once an hour. New members
-     start with a 7-day free trial (card required); cancel anytime online. Today's top
-     deals stay free for everyone.</p>
+     deal emailed to you the hour it's found, bundled at most once an hour.
+     <span id="footterms">7-day free trial for new members. Card required. Free for 7 days,
+     then $9.99/month, renews monthly until you cancel. Cancel anytime online.</span>
+     Today's top deals stay free for everyone.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live. <a href="health.html">source health</a></p>
@@ -331,14 +336,15 @@ footer .meta{font-size:11.5px}
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
-<a id="subbar" class="subbar" rel="noopener">Get every deal by email &mdash; $9.99/mo</a>
+<a id="subbar" class="subbar" href="#signup">Get every deal by email &mdash; $9.99/mo</a>
 </div>
 <div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
   <div class="mcard">
     <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
     <h2 id="authtitle">Create your free account</h2>
-    <p id="authsub" class="meta">Free account: today's top 8 deals. Every deal: 7-day free trial, card required.</p>
+    <p id="authsub" class="meta">Free account: today's top 8 deals. Every deal: 7-day free trial.</p>
     <div id="authstep1">
+      <p id="authdisc" class="disc"></p>
       <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
       <form id="authform">
         <label>Email <input id="authemail" type="email" autocomplete="email" required></label>
@@ -354,7 +360,9 @@ footer .meta{font-size:11.5px}
       <button type="button" id="cobtn" class="pwbtn">Start free trial</button>
       <p id="codisc" class="disc"></p>
       <p id="coerr" class="autherr" role="alert" hidden></p>
+      <button type="button" id="comanage" class="pwbtn alt" hidden>Manage or cancel</button>
       <a id="cofb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
+      <p id="cofbnote" class="disc" hidden></p>
       <p class="meta switch"><button type="button" id="conotnow" class="linkbtn">Not now</button></p>
     </div>
   </div>
@@ -374,7 +382,7 @@ footer .meta{font-size:11.5px}
   // The fast lane redeploys the site every 10 minutes even between hourly
   // sweeps, so the next drop is never further off than that.
   var FAST_LANE_MIN = 10;
-  // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
+  // A drop waits at most DROP_FETCH_MS for deals.json and says "Shuffling…"
   // for at most DROP_MAX_MS; a publish that missed its mark is polled for
   // quietly every POLL_MS until LATE_MS after the mark.
   var DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000;
@@ -496,34 +504,34 @@ footer .meta{font-size:11.5px}
     document.getElementById("metaline").textContent =
       "Last run: " + (isNaN(when) ? t : new Date(when).toLocaleString()) +
       " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
-    // Membership: the Subscribe button exists only once the operator has a
-    // Stripe Payment Link in config (it arrives here via deals.json meta).
-    var sub = document.getElementById("subscribe");
-    var bar = document.getElementById("subbar");
-    if (m.subscribe_url) {
-      sub.href = m.subscribe_url;
-      sub.style.display = "";
-      bar.href = m.subscribe_url;
-      bar.classList.add("ready");
-    }
     // Account menu (docs/paywall.md): only once a Worker is configured.
     var me = state.me, on = !!apiUrl(m);
     document.getElementById("account").hidden = !on;
     document.getElementById("loginlink").hidden = !!me;
     document.getElementById("acctin").hidden = !me;
     if (me) document.getElementById("acctemail").textContent = me.email || "";
-    // "Manage or cancel" (Stripe's billing portal): members only, and gone
-    // for good once neither a portal session nor a portal link exists.
-    document.getElementById("billing").hidden = !(on && isMember()) || auth.noPortal;
+    // Membership CTAs (header, mobile bar) take the next step toward the
+    // card-up-front trial (nextStep): only with an account service, never
+    // for a member, nor after checkout refused (the panel says what to do
+    // instead). The Payment Link is only ever checkout's fallback.
+    var join = on && !isMember() && !auth.checking && !unknownMembership() && !auth.block;
+    document.getElementById("subscribe").style.display = join ? "" : "none";
+    document.getElementById("subbar").classList.toggle("ready", join);
+    // "Manage or cancel" (Stripe's billing portal): members, and any account
+    // with a Stripe customer (a lapsed or past-due one fixes its card here).
+    document.getElementById("billing").hidden = !(on && hasBilling());
     var trial = document.getElementById("trialnote");
     trial.hidden = !(on && isMember() && me.reason === "trial");
     if (!trial.hidden) {
+      // A me without trial_available comes from a Worker that predates the
+      // card-up-front trial: nothing will be charged, so no billing terms.
       var day = fmtDay(me.trial_ends_at);
-      trial.textContent = "Free trial — " + (day ? "ends " + day + ". Then" : "then") +
-        " $9.99/month unless you cancel.";
+      trial.textContent = "Free trial" + (day ? " — ends " + day : "") + "." +
+        ("trial_available" in me ? " Then $9.99/month, renews monthly until you cancel. " +
+          cancelLine() : "");
     }
-    // A member is never pointed back at the Payment Link.
-    if (isMember()) sub.style.display = "none";
+    document.getElementById("footterms").textContent =
+      (offer().trial ? trialDays() + "-day free trial for new members. " : "") + offer().note;
     syncSubbar();
   }
 
@@ -534,7 +542,7 @@ footer .meta{font-size:11.5px}
   // deals.json (waiting at most 2.5 s), re-deals the wall seeded by the
   // mark's index, animates the move and counts to the next mark at once.
   // A publish that has not landed by its mark is polled for quietly and
-  // merged in place when it does; "Dropping…" never sits for more than 3 s.
+  // merged in place when it does; "Shuffling…" never sits for more than 3 s.
   var clock = { target: 0, step: FAST_LANE_MIN * 60 * 1000, phase: 0,
                 dropping: 0, lateUntil: 0, lastPoll: 0, lastSeed: null };
   function publishTime(m) {
@@ -576,7 +584,7 @@ footer .meta{font-size:11.5px}
     box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
     var left = clock.target - now;
-    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
+    document.getElementById("countdown").textContent = clock.dropping ? "Shuffling…" : mmss(left);
     var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
     document.getElementById("dropfill").style.transform = "scaleX(" + f.toFixed(4) + ")";
   }
@@ -923,6 +931,9 @@ footer .meta{font-size:11.5px}
     catch (e) { return false; }
   }
   function cardEls() { return document.querySelectorAll("#content .card[data-key]"); }
+  function cardOrder() {
+    return Array.prototype.map.call(cardEls(), function (el) { return el.getAttribute("data-key"); }).join(",");
+  }
   function headKeys() {
     var els = cardEls(), out = [];
     for (var i = 0; i < els.length && i < 12; i++) out.push(els[i].getAttribute("data-key"));
@@ -950,17 +961,19 @@ footer .meta{font-size:11.5px}
     }
   }
   // FLIP: record each card's position by key, re-render, then slide every
-  // card that moved from where it was to where it is over FLIP_MS with a
-  // brief highlight sweep; new arrivals fade in at the top. Instant under
+  // card that moved from where it was to where it is over FLIP_MS; new
+  // arrivals fade in at the top. sweep: moved cards also get a brief
+  // highlight, only when new deals came with the move. Instant under
   // prefers-reduced-motion. reshuffle: a drop must look different, so a
-  // deal that came out the same (tiny lists) is dealt again.
-  function reorganize(reshuffle) {
+  // deal that came out the same (tiny lists) is dealt again. Returns
+  // whether the order on screen changed.
+  function reorganize(reshuffle, sweep) {
     var animate = !reduceMotion() && !document.hidden;
     var before = {};
     if (animate) {
       cardEls().forEach(function (el) { before[el.getAttribute("data-key")] = el.getBoundingClientRect(); });
     }
-    var head = headKeys(), focus = rememberFocus();
+    var head = headKeys(), was = cardOrder(), focus = rememberFocus();
     render();
     for (var n = 0; reshuffle && state.sortKey === "fresh" && n < 3 &&
          head.indexOf(",") !== -1 && headKeys() === head; n++) {
@@ -968,7 +981,8 @@ footer .meta{font-size:11.5px}
       render();
     }
     restoreFocus(focus);
-    if (!animate) return;
+    var changed = cardOrder() !== was;
+    if (!animate) return changed;
     var vh = window.innerHeight, moved = [];
     cardEls().forEach(function (el) {
       var was = before[el.getAttribute("data-key")];
@@ -981,16 +995,17 @@ footer .meta{font-size:11.5px}
       el.style.transform = "translate(" + dx + "px," + dy + "px)";
       moved.push(el);
     });
-    if (!moved.length) return;
+    if (!moved.length) return changed;
     void document.body.offsetWidth;  // commit the old positions before sliding
     moved.forEach(function (el) {
       el.style.transition = "transform " + FLIP_MS + "ms cubic-bezier(.2,.7,.2,1)";
       el.style.transform = "";
-      el.classList.add("moved");
+      if (sweep) el.classList.add("moved");
     });
     setTimeout(function () {
       moved.forEach(function (el) { el.style.transition = ""; el.classList.remove("moved"); });
     }, FLIP_MS + 400);
+    return changed;
   }
 
   // ---- paywall (docs/paywall.md, "Page behavior") ----
@@ -1002,6 +1017,12 @@ footer .meta{font-size:11.5px}
   // looked up once per page; members get the full payload from the Worker
   // through the same renderer. With meta.api_url empty none of this exists.
   var SESSION_KEY = "wp.session";
+  // welcome.html parks a Payment Link receipt here until it is claimed.
+  var CLAIM_KEY = "wp.claim";
+  // The operator's contact email (config contact_email, filled in by the
+  // publisher like the contact page's; "" when unset): the other way to
+  // cancel, next to every "Cancel anytime online".
+  var CONTACT_EMAIL = "{{CONTACT_EMAIL}}";
   var GIS_SRC = "https://accounts.google.com/gsi/client";
   var AUTH_ERR = {
     exists: "An account with this email already exists — log in instead.",
@@ -1014,9 +1035,12 @@ footer .meta{font-size:11.5px}
   };
   // token: in-memory copy so a blocked localStorage still signs in for the
   // page's lifetime; checking: a member lookup is in flight (CTA waits);
-  // noPortal: no billing portal of any kind, so "Manage or cancel" hides.
+  // fb: the Payment Link offered because checkout itself is unavailable;
+  // block: a 409 from checkout that no purchase here can fix ("found": a
+  // subscription exists for this email, "payment_issue": a renewal
+  // payment failed, "contact_support"), shown in place of the buy button.
   var auth = { mode: "signup", token: "", opener: null, gis: false, checking: false,
-               noPortal: false };
+               fb: "", block: "" };
   var panel = document.getElementById("paywall");
   var modal = document.getElementById("authmodal");
 
@@ -1024,38 +1048,83 @@ footer .meta{font-size:11.5px}
   function apiUrl(m) { return String((m || state.meta || {}).api_url || "").replace(/\/+$/, ""); }
   function token() { return auth.token || lsGet(SESSION_KEY) || ""; }
   function setToken(t) { auth.token = t; lsSet(SESSION_KEY, t); }
-  function dropSession() { auth.token = ""; lsDel(SESSION_KEY); state.me = null; }
+  function dropSession() {
+    auth.token = ""; lsDel(SESSION_KEY); state.me = null; auth.fb = ""; auth.block = "";
+  }
   function isMember() { return !!(state.me && state.me.member); }
+  // The Worker could not reach Stripe: neither member nor lapsed is known.
+  function unknownMembership() { return !!(state.me && !state.me.member && state.me.reason === "unknown"); }
+  // A Stripe customer to manage: members and lapsed (or past-due) accounts.
+  // A trial from a Worker that predates the card-up-front trial (no
+  // trial_available, nothing claimed) has no card and nothing to manage.
+  function hasBilling() {
+    var me = state.me;
+    if (!me) return false;
+    if (me.member && me.reason === "trial" && !("trial_available" in me) && !me.claimed) return false;
+    return !!(me.member || me.claimed || me.reason === "lapsed" || auth.block === "payment_issue");
+  }
+  function pendingClaim() { try { return sessionStorage.getItem(CLAIM_KEY) || ""; } catch (e) { return ""; } }
+  function contactEmail() { return /^[^\s@"<>]+@[^\s@"<>]+$/.test(CONTACT_EMAIL) ? CONTACT_EMAIL : ""; }
   function isLocked(d) { return d.locked === true; }
   function https(u) { return /^https:\/\//.test(String(u || "")) ? String(u) : ""; }
   function fmtDay(s) {
     var t = Date.parse(s || "");
     return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
+  // me.trial_days (the Worker's real trial) beats meta.trial_days; 0 means
+  // no trial at all, so a missing value is told apart from a zero.
   function trialDays() {
-    return num((state.me || {}).trial_days) || num((state.meta || {}).trial_days) || 7;
+    var d = num((state.me || {}).trial_days);
+    if (d == null) d = num((state.meta || {}).trial_days);
+    return d == null ? 7 : Math.max(0, d);
+  }
+  function teaserCount() {
+    var n = num((state.meta || {}).teaser_count);
+    return n == null ? 8 : n;
   }
   function dealTotal() {
     var unlocked = state.deals.filter(function (d) { return !isLocked(d) && d.status !== "dead"; }).length;
     return (num((state.meta || {}).locked_count) || 0) + unlocked;
   }
+  // The ways to cancel: online (Stripe's portal) or by email.
+  function cancelLine() {
+    return "Cancel anytime online" + (contactEmail() ? " or email " + contactEmail() : "") + ".";
+  }
   // The terms that sit next to every free-trial button, in one line.
   function trialDisclosure(days) {
     return "Card required. Free for " + days + " days, then $9.99/month, renews monthly " +
-      "until you cancel. Cancel anytime online.";
+      "until you cancel. " + cancelLine();
   }
-  // What a signed-in non-member can start: Stripe's card-up-front trial,
-  // once per account, else a plain monthly subscription.
+  function plainDisclosure() {
+    return "Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine();
+  }
+  // The Payment Link has no trial: its own terms, never the trial's.
+  function fallbackTerms() {
+    return "$9.99 charged today, renews monthly until you cancel. " + cancelLine();
+  }
+  // What to do instead when checkout refuses (auth.block).
+  function blockText(code) {
+    var mail = contactEmail();
+    return {
+      found: "We found a subscription for this email. Open the link in your Stripe receipt, or " +
+        (mail ? "email " + mail + "." : "use the contact page."),
+      payment_issue: "There's a problem with your last payment. Update your card in Manage or cancel.",
+      contact_support: (mail ? "Email " + mail : "Use the contact page") + " and we'll sort it out."
+    }[code] || "";
+  }
+  // What a non-member can start: Stripe's card-up-front trial, once per
+  // account and only while the trial is longer than 0 days, else a plain
+  // monthly subscription.
   function offer() {
     var me = state.me || {}, days = trialDays();
-    var trial = me.trial_available !== false && me.reason !== "lapsed";
+    var trial = me.trial_available !== false && me.reason !== "lapsed" && days > 0;
     return { trial: trial, lapsed: me.reason === "lapsed", days: days,
              btn: trial ? "Start " + days + "-day free trial" : "Subscribe — $9.99/month",
-             note: trial ? trialDisclosure(days)
-               : "$9.99/month, renews monthly until you cancel. Cancel anytime online." };
+             note: trial ? trialDisclosure(days) : plainDisclosure() };
   }
   function lockLabel() {
-    return !apiUrl() ? "" : (!state.me ? "Sign up free" : (isMember() ? "" : "Unlock"));
+    return !apiUrl() ? "" : (!state.me ? "Sign up free"
+      : (isMember() || unknownMembership() ? "" : "Unlock"));
   }
 
   function api(path, body, method) {
@@ -1121,57 +1190,87 @@ footer .meta{font-size:11.5px}
     if (!panel.hidden) {
       var total = dealTotal(), locked = num(m.locked_count) || 0, o = offer();
       var mode = !apiUrl() ? "plain" : (!me ? "out" : (me.member ? "retry"
-        : (o.lapsed ? "lapsed" : (o.trial ? "trial" : "sub"))));
+        : (unknownMembership() ? "unknown" : (pendingClaim() ? "claim"
+        : (o.lapsed ? "lapsed" : (o.trial ? "trial" : "sub"))))));
       var buy = mode === "trial" || mode === "sub" || mode === "lapsed";
-      panel.querySelector(".pwtext").textContent = {
+      // Checkout refused (auth.block): what to do instead takes the buy
+      // button's place. Checkout unavailable: the Payment Link (and its own
+      // terms) stands in for the buy button and its disclosure; never for
+      // a lapsed account, whose subscription may only need a new card.
+      var blk = buy ? auth.block : "";
+      var fb = buy && !o.lapsed && !blk ? auth.fb : "";
+      panel.querySelector(".pwtext").textContent = blk ? blockText(blk) : {
         plain: plural(locked, "more deal") + " for members",
-        out: "Unlock all " + total + " deals",
+        out: "Unlock all " + total + " deals" +
+          (o.trial ? " with a " + o.days + "-day free trial" : ""),
         trial: "You're signed in. Start your " + o.days + "-day free trial to unlock all " +
           total + " deals.",
         sub: "You're signed in. Subscribe to unlock all " + total + " deals.",
-        lapsed: "Your membership ended. Restart for $9.99/month.",
+        lapsed: "No active membership on this account right now. If a payment failed, " +
+          "update your card with Manage or cancel.",
+        claim: "Your payment on this device isn't attached to this account yet.",
+        unknown: "Couldn't check your membership right now",
         retry: "Couldn't load your deals right now"
       }[mode];
-      var note = mode === "out"
-        ? "Unlock every deal with a " + o.days + "-day free trial. Card required, then $9.99/month."
-        : (buy ? o.note : "");
-      var show = { pwsignup: mode === "out", pwlogin: mode === "out", pwbuy: buy,
-                   pwcheck: buy || mode === "retry",
-                   pwplain: mode === "plain" && !!m.subscribe_url };
+      var note = (mode === "out" || buy) && !blk ? o.note : "";
+      var show = { pwsignup: mode === "out", pwlogin: mode === "out", pwbuy: buy && !fb && !blk,
+                   pwclaim: mode === "claim",
+                   pwmanage: blk ? blk === "payment_issue" : mode === "lapsed",
+                   pwcheck: buy || mode === "retry" || mode === "unknown" };
       Object.keys(show).forEach(function (id) { panel.querySelector("#" + id).hidden = !show[id]; });
       panel.querySelector("#pwbuy").textContent = o.btn;
       var pn = panel.querySelector("#pwnote");
       pn.textContent = note;
-      pn.hidden = !note;
-      panel.querySelector("#pwplain").href = m.subscribe_url || "";
-      panel.querySelector("#pwcheck").textContent = mode === "retry" ? "Retry" : "I just subscribed";
-      if (panel.getAttribute("data-mode") !== mode) {
-        panel.setAttribute("data-mode", mode);
+      pn.hidden = !note || !!fb;
+      var pf = panel.querySelector("#pwfb"), pfn = panel.querySelector("#pwfbnote");
+      pf.hidden = pfn.hidden = !fb;
+      if (fb) pf.href = fb;
+      pfn.textContent = fb ? fallbackTerms() : "";
+      panel.querySelector("#pwcheck").textContent =
+        mode === "retry" || mode === "unknown" || (blk && blk !== "found") ? "Retry" : "I just subscribed";
+      var key = mode + (blk ? ":" + blk : "");
+      if (panel.getAttribute("data-mode") !== key) {
+        panel.setAttribute("data-mode", key);
         panel.querySelector("#pwerr").hidden = true;
-        panel.querySelector("#pwfb").hidden = true;
       }
     }
     syncSubbar();
   }
+  function repaintPanel() { if (!panel.hidden) updatePaywall(true); }
 
   // ---- checkout and billing portal (docs/paywall.md, "Worker API") ----
   // POST /api/checkout → a Stripe Checkout Session (card up front; the
   // free trial while the account still has one) and the browser goes
-  // there. 409: already a member; 503 (or no such route yet): the Payment
-  // Link, when there is one, is offered instead.
-  function checkout(btn, errEl, fbEl) {
-    var o = offer();
-    btn.disabled = true;
-    errEl.hidden = true;
-    fbEl.hidden = true;
+  // there. 409: nothing is sold here (refuse): already_member means Stripe
+  // already has a live subscription for this account (maybe an unclaimed
+  // Payment Link purchase under its email), so me is read again past the
+  // cache; payment_issue (a renewal payment failed) points at the billing
+  // portal; contact_support at the email. 503 checkout_unavailable: the
+  // Payment Link in fallback_url, when there is one, takes the button's
+  // place with its own terms (it charges today); an empty fallback_url
+  // means Stripe could not be asked, so only "try again in a minute".
+  // ui: {btn, err, fb, manage, alt} of the dialog's step 2 or the panel.
+  function checkout(ui) {
+    var o = offer(), had = document.activeElement === ui.btn;
+    ui.btn.disabled = true;
+    ui.err.hidden = true;
     apiPost("/api/checkout").then(function (res) {
       var j = res.json;
       if (res.ok && https(j.url)) { location.assign(https(j.url)); return; }
-      btn.disabled = false;
-      if (res.status === 409 && j.error === "already_member") {
+      ui.btn.disabled = false;
+      // Disabling the button dropped its focus: give it back (below, to
+      // what takes the button's place).
+      if (had) ui.btn.focus();
+      if (res.status === 409) {
         if (j.me) state.me = j.me;
-        closeAuth();
-        memberDeals(!j.me).then(showDeals);
+        if (j.error === "payment_issue" || j.error === "contact_support") {
+          refuse(j.error, ui, had);
+          return;
+        }
+        memberDeals(true).then(function (full) {
+          if (isMember()) { closeAuth(); showDeals(full); return; }
+          refuse("found", ui, had);
+        });
         return;
       }
       if (res.status === 401) {
@@ -1181,35 +1280,73 @@ footer .meta{font-size:11.5px}
         toast("Please log in again");
         return;
       }
-      errEl.textContent = res.status === 429 ? AUTH_ERR.http_429
-        : (o.trial ? "Free-trial checkout is unavailable right now." : "Checkout is unavailable right now.");
-      errEl.hidden = false;
-      var fb = https(j.fallback_url) || https((state.me || {}).subscribe_url);
-      if (fb && res.status !== 429) { fbEl.href = fb; fbEl.hidden = false; }
+      // An older Worker without the route (404): the Payment Link from me.
+      var fb = res.status === 404 ? https((state.me || {}).subscribe_url) : https(j.fallback_url);
+      if (res.status === 429 || o.lapsed) fb = "";
+      ui.err.textContent = res.status === 429 ? AUTH_ERR.http_429
+        : (!fb ? "Checkout is busy — try again in a minute."
+          : (o.trial ? "Free-trial checkout is unavailable right now." : "Checkout is unavailable right now."));
+      ui.err.hidden = false;
+      if (fb) {
+        auth.fb = fb;
+        paintStep2();
+        repaintPanel();
+        if (had) ui.fb.focus();
+      }
     }).catch(function () {
-      btn.disabled = false;
-      errEl.textContent = AUTH_ERR.network;
-      errEl.hidden = false;
+      ui.btn.disabled = false;
+      if (had) ui.btn.focus();
+      ui.err.textContent = AUTH_ERR.network;
+      ui.err.hidden = false;
     });
+  }
+  // Checkout refused with a reason: the dialog and the panel trade the
+  // buy button for what to do instead (Manage or cancel for a payment
+  // issue), for as long as this account stays signed in on the page.
+  function refuse(code, ui, had) {
+    auth.block = code;
+    auth.fb = "";
+    renderMeta();
+    if (!modal.hidden && auth.mode === "checkout") setMode("checkout"); else paintStep2();
+    repaintPanel();
+    if (had) (code === "payment_issue" ? ui.manage : ui.alt).focus();
+  }
+  // Without the billing portal, cancelling is one email away.
+  function noPortalText() {
+    return "Online billing is unavailable right now. " + (contactEmail()
+      ? "Email " + contactEmail() + " and we'll cancel or change your membership."
+      : "Use the contact page and we'll cancel or change your membership.");
   }
   // "Manage or cancel": POST /api/portal → a Stripe billing-portal session
   // for the account's customer. 404/503 (or no such route yet): the portal
-  // link (me.portal_url) when there is one, else the link hides itself.
+  // link (me.portal_url) when there is one, else the email route; the
+  // button stays, so the portal is tried again on the next click.
   function portal(btn) {
+    var had = document.activeElement === btn;
+    // Inside the dialog the answer goes under its button (a toast would
+    // sit behind the dialog's backdrop).
+    function say(msg) {
+      if (!modal.contains(btn)) { toast(msg); return; }
+      var el = document.getElementById("coerr");
+      el.textContent = msg;
+      el.hidden = false;
+    }
     btn.disabled = true;
     apiPost("/api/portal").then(function (res) {
       var j = res.json;
       if (res.ok && https(j.url)) { location.assign(https(j.url)); return; }
       btn.disabled = false;
-      if (res.status === 401) { dropSession(); showDeals(null); toast("Please log in again"); return; }
+      if (had) btn.focus();
+      if (res.status === 401) {
+        dropSession(); closeAuth(); showDeals(null); toast("Please log in again"); return;
+      }
       var fb = https(j.fallback_url) || https((state.me || {}).portal_url);
       if (fb) { location.assign(fb); return; }
-      auth.noPortal = true;
-      btn.hidden = true;
-      toast("Billing management is unavailable right now — reply to your Stripe receipt to cancel.");
+      say(noPortalText());
     }).catch(function () {
       btn.disabled = false;
-      toast(AUTH_ERR.network);
+      if (had) btn.focus();
+      say(AUTH_ERR.network);
     });
   }
 
@@ -1219,27 +1356,51 @@ footer .meta{font-size:11.5px}
     el.hidden = !code;
     el.textContent = code ? (AUTH_ERR[code] || "Something went wrong (" + code + ") — try again.") : "";
   }
+  // Step 2's button and its terms, or (checkout unavailable) the Payment
+  // Link with its own terms in their place.
+  // A refusal (auth.block) puts its message there instead, with Manage or
+  // cancel for a payment issue (and for a lapsed account beside its
+  // button: the subscription may only need a new card).
+  function paintStep2() {
+    var o = offer(), blk = auth.block, fb = o.lapsed || blk ? "" : auth.fb;
+    var btn = document.getElementById("cobtn"), disc = document.getElementById("codisc");
+    var link = document.getElementById("cofb"), terms = document.getElementById("cofbnote");
+    var err = document.getElementById("coerr");
+    btn.textContent = o.btn;
+    disc.textContent = o.note;
+    btn.hidden = disc.hidden = !!fb || !!blk;
+    link.hidden = terms.hidden = !fb;
+    if (fb) link.href = fb;
+    terms.textContent = fb ? fallbackTerms() : "";
+    document.getElementById("comanage").hidden = blk ? blk !== "payment_issue" : !o.lapsed;
+    if (blk) { err.textContent = blockText(blk); err.hidden = false; }
+  }
   function setMode(mode) {
     auth.mode = mode;
     var up = mode === "signup", co = mode === "checkout";
-    var days = trialDays(), top = num((state.meta || {}).teaser_count) || 8;
+    var o = offer(), top = teaserCount();
     var title = up ? "Create your free account" : "Log in";
-    var sub = up ? "Free account: today's top " + top + " deals. Every deal: " + days +
-      "-day free trial, card required." : "Welcome back.";
+    var sub = up ? "Free account: today's top " + top + " deals. Every deal: " +
+      (o.trial ? o.days + "-day free trial." : "$9.99/month.") : "Welcome back.";
+    // The sign-up step carries the full terms of what comes after it.
+    var disc = document.getElementById("authdisc");
+    disc.textContent = up ? o.note : "";
+    disc.hidden = !up;
     document.getElementById("authstep1").hidden = co;
     document.getElementById("authstep2").hidden = !co;
     if (co) {
-      var o = offer();
-      title = o.lapsed ? "Your membership ended"
-        : (o.trial ? "Step 2 of 2 — start your free trial" : "Step 2 of 2 — subscribe");
-      sub = o.lapsed ? "Restart for $9.99/month."
-        : (o.trial ? "Your free account is ready. Start your " + days + "-day free trial to unlock all " +
+      title = auth.block ? "Checkout didn't start" : (o.lapsed ? "No active membership right now"
+        : (o.trial ? "Step 2 of 2 — start your free trial" : "Step 2 of 2 — subscribe"));
+      sub = auth.block ? "" : (o.lapsed ? "If a payment failed, update your card with Manage or cancel. " +
+                       "Or restart for $9.99/month."
+        : (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial to unlock all " +
                      dealTotal() + " deals."
-                   : "Your free account is ready. Subscribe to unlock all " + dealTotal() + " deals.");
-      document.getElementById("cobtn").textContent = o.btn;
-      document.getElementById("codisc").textContent = o.note;
+                   : "Your free account is ready. Subscribe to unlock all " + dealTotal() + " deals."));
+      // Opening step 2 is a fresh try at checkout (a refusal stays).
+      auth.fb = "";
       document.getElementById("coerr").hidden = true;
-      document.getElementById("cofb").hidden = true;
+      paintStep2();
+      repaintPanel();
     } else {
       document.getElementById("authsubmit").textContent = up ? "Sign up free" : "Log in";
       document.getElementById("authswitchtxt").textContent = up ? "Already have an account?" : "New here?";
@@ -1257,7 +1418,14 @@ footer .meta{font-size:11.5px}
     setMode(mode);
     modal.hidden = false;
     document.body.style.overflow = "hidden";
-    if (mode === "checkout") { document.getElementById("cobtn").focus(); return; }
+    if (mode === "checkout") {
+      // The trial button, or what stands in its place.
+      var first = ["cobtn", "cofb", "comanage", "conotnow"].map(function (id) {
+        return document.getElementById(id);
+      }).filter(function (el) { return !el.hidden; })[0];
+      first.focus();
+      return;
+    }
     loadGis();
     document.getElementById("authemail").focus();
   }
@@ -1265,20 +1433,36 @@ footer .meta{font-size:11.5px}
     if (modal.hidden) return;
     modal.hidden = true;
     document.body.style.overflow = "";
-    if (auth.opener && auth.opener.focus) auth.opener.focus();
+    // Focus goes back to whatever opened the dialog; when that control is
+    // gone (signing in changed the panel under it), to the panel's next
+    // step instead, never to <body>.
+    var back = [auth.opener, panel.querySelector("#pwbuy"), panel.querySelector("#pwfb"),
+                panel.querySelector("#pwclaim"), panel.querySelector("#pwmanage"),
+                panel.querySelector("#pwcheck"),
+                document.getElementById("subscribe")];
+    for (var i = 0; i < back.length; i++) {
+      var el = back[i];
+      if (el && el.focus && document.body.contains(el) && el.offsetParent !== null) { el.focus(); break; }
+    }
     auth.opener = null;
   }
   // A new account (or a Google sign-in) without a membership moves on to
-  // step 2 in the same dialog; a password log-in just closes it.
+  // step 2 in the same dialog; a password log-in just closes it. A Payment
+  // Link receipt waiting on this device goes to welcome.html to be claimed
+  // first: that payer is never offered a second subscription.
   function signedIn(tok, me, path) {
     setToken(tok);
     state.me = me || null;
-    if (me && !me.member && path !== "/api/login") openAuth("checkout");
+    auth.fb = "";
+    auth.block = "";
+    if (pendingClaim()) { location.assign("welcome.html"); return; }
+    if (me && !me.member && me.reason !== "unknown" && path !== "/api/login") openAuth("checkout");
     else closeAuth();
     auth.checking = true;
     render();
-    var key = state.dataKey;
-    memberDeals(false).then(function (full) { if (state.dataKey === key) showDeals(full); });
+    // Whatever publish is up when the Worker answers (a drop may have
+    // brought a newer one), the lookup always ends the check.
+    memberDeals(false).then(showDeals);
   }
   // POST to the Worker: a 200 {token, me} signs the visitor in; anything
   // else lands as an inline error.
@@ -1329,9 +1513,23 @@ footer .meta{font-size:11.5px}
     if (!(state.meta && state.meta.api_url) || auth.checking) return;
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* fine */ }
     if (h === "#login") openAuth("login");
-    else if (!isMember()) openAuth(state.me ? "checkout" : "signup");
+    else if (!isMember()) nextStep();
   }
   window.addEventListener("hashchange", openFromHash);
+  // The one next step toward membership, behind every CTA that offers it
+  // (locked cards, the header and mobile-bar buttons, /#signup): sign up
+  // when signed out; claim a Payment Link receipt waiting on this device
+  // (welcome.html); a retry when the membership is known or unknown;
+  // else step 2, the card-up-front trial. While the member lookup is in
+  // flight the step waits as #signup and runs once it answers.
+  function nextStep() {
+    if (!apiUrl()) return;
+    if (auth.checking) { location.hash = "#signup"; return; }
+    if (!state.me) openAuth("signup");
+    else if (pendingClaim()) location.assign("welcome.html");
+    else if (isMember() || unknownMembership()) panel.querySelector("#pwcheck").click();
+    else openAuth("checkout");
+  }
   // Stripe Checkout's cancel button comes back here with ?checkout=cancel.
   (function checkoutCancelled() {
     if (!/[?&]checkout=cancel(&|$)/.test(location.search)) return;
@@ -1373,12 +1571,30 @@ footer .meta{font-size:11.5px}
     });
   });
   document.getElementById("cobtn").addEventListener("click", function () {
-    checkout(this, document.getElementById("coerr"), document.getElementById("cofb"));
+    checkout({ btn: this, err: document.getElementById("coerr"), fb: document.getElementById("cofb"),
+               manage: document.getElementById("comanage"), alt: document.getElementById("conotnow") });
   });
   panel.querySelector("#pwbuy").addEventListener("click", function () {
-    checkout(this, panel.querySelector("#pwerr"), panel.querySelector("#pwfb"));
+    checkout({ btn: this, err: panel.querySelector("#pwerr"), fb: panel.querySelector("#pwfb"),
+               manage: panel.querySelector("#pwmanage"), alt: panel.querySelector("#pwcheck") });
   });
-  document.getElementById("billing").addEventListener("click", function () { portal(this); });
+  ["billing", "pwmanage", "comanage"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function () { portal(this); });
+  });
+  ["subscribe", "subbar"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function (e) {
+      e.preventDefault();
+      nextStep();
+    });
+  });
+  // Back from Stripe restores this page from the back/forward cache with
+  // the button that went there still disabled.
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    ["cobtn", "pwbuy", "billing", "pwmanage", "comanage"].forEach(function (id) {
+      document.getElementById(id).disabled = false;
+    });
+  });
   document.getElementById("logout").addEventListener("click", function () {
     if (token()) api("/api/logout", null, "POST").catch(function () { /* token dropped anyway */ });
     dropSession();
@@ -1399,10 +1615,7 @@ footer .meta{font-size:11.5px}
   // the trial (step 2) for a free account, a retry for a member.
   document.getElementById("content").addEventListener("click", function (e) {
     var card = e.target.closest ? e.target.closest(".card.locked") : null;
-    if (!card || !apiUrl()) return;
-    if (!state.me) openAuth("signup");
-    else if (!isMember()) openAuth("checkout");
-    else panel.querySelector("#pwcheck").click();
+    if (card) nextStep();
   });
 
   ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
@@ -1516,11 +1729,14 @@ footer .meta{font-size:11.5px}
     return dealsFor(pub).then(function (deals) { landed(pub, deals); });
   }
   function poll() { fetchPublish().then(merge).catch(noop); }
-  function checkedAgo() {
+  // How old the list on the wall is: minutes since this publish was built
+  // (meta.published_at). Building it checks no price, so it says
+  // "updated", never that prices were checked.
+  function updatedAgo() {
     var t = publishTime(state.meta || {});
     if (t == null) return "";
     var k = Math.floor((Date.now() - t) / 60000);
-    return " · prices checked " + (k < 1 ? "just now" : k + " min ago");
+    return " · updated " + (k < 1 ? "just now" : k + " min ago");
   }
   // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS),
   // re-deal the wall seeded by the mark's index (new arrivals first),
@@ -1551,10 +1767,14 @@ footer .meta{font-size:11.5px}
       state.seed = clock.lastSeed =
         clock.lastSeed == null ? seed : Math.max(seed, clock.lastSeed + 1);
       clock.dropping = 0;
-      reorganize(true);
+      var moved = reorganize(true, added > 0);
       syncClock();
       if (!fresh) { clock.lateUntil = last + LATE_MS; clock.lastPoll = Date.now(); }
-      toast(added ? plural(added, "new deal") + " just landed" : "Deals reshuffled" + checkedAgo());
+      // Only real new keys are announced as new; a mark that just re-dealt
+      // the fresh sort says so with the list's age; a sort or filter that
+      // nothing moved in gets no toast at all.
+      if (added) toast(plural(added, "new deal") + " just landed");
+      else if (moved && state.sortKey === "fresh") toast("Fresh shuffle" + updatedAgo());
     }
     got.catch(noop);
     withTimeout(got, DROP_FETCH_MS).then(function (pub) {
@@ -1577,11 +1797,9 @@ footer .meta{font-size:11.5px}
       auth.checking = !!(apiUrl(pub.meta) && token());
       applyPublish(pub, pub.deals);
       render();
-      if (auth.checking) {
-        memberDeals(false).then(function (full) {
-          if (state.dataKey === pub.key) showDeals(full);
-        });
-      }
+      // The answer always ends the check, whatever publish is up by then
+      // (a drop at the next mark may have brought a newer one).
+      if (auth.checking) memberDeals(false).then(showDeals);
     }).catch(function () {
       if (!loadedOnce) {
         document.getElementById("content").innerHTML =

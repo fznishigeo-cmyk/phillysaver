@@ -37,7 +37,7 @@ p{margin:0 0 14px}
   <p class="brand">wowpriced<span class="dot">●</span></p>
   <h1>You're in 🎉</h1>
   <div class="claim" id="claim" hidden></div>
-  <p>Every new verified deal — up to 90% off, fake "list prices" removed, prices
+  <p>Every new verified deal — up to 90% off, fake "list prices" removed, Amazon prices
      re-checked live — lands in your inbox as one bundled email, at most once an
      hour, only when there is something new.</p>
   <p>Your first email arrives within the hour. Add the sender to your contacts
@@ -64,6 +64,16 @@ p{margin:0 0 14px}
   function show(html, isErr) { box.innerHTML = html; box.className = "claim" + (isErr ? " err" : ""); box.hidden = false; }
   function text(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 
+  // The operator's contact email (config contact_email, filled in by the
+  // publisher; "" when unset): the other way to cancel.
+  var CONTACT_EMAIL = "{{CONTACT_EMAIL}}";
+  var EMAIL = /^[^\s@"<>]+@[^\s@"<>]+$/.test(CONTACT_EMAIL) ? CONTACT_EMAIL : "";
+  var MAILTO = EMAIL ? "<a href=\"mailto:" + EMAIL + "\">" + EMAIL + "</a>" : "";
+  var CANCEL = "Cancel anytime online" + (EMAIL ? " or email " + MAILTO : "") + ".";
+  var NO_PORTAL = "Online billing is unavailable right now. " + (EMAIL
+    ? "Email " + MAILTO + " and we'll cancel or change your membership."
+    : "Use the <a href=\"contact.html\">contact page</a> and we'll cancel or change your membership.");
+
   var fromUrl = new URLSearchParams(location.search).get("session_id") || "";
   if (fromUrl) ssSet(CLAIM_KEY, fromUrl);
   var sid = fromUrl || ssGet(CLAIM_KEY) || "";
@@ -76,7 +86,11 @@ p{margin:0 0 14px}
     signin_unavailable: "Sign-in is being set up on our side. Reload this page in a few minutes.",
     rate_limited: "Too many attempts from your network. Try again in an hour.",
     unauthorized: "Your sign-in expired. Log in again on the home page, then come back here.",
-    wrong_account: "This payment belongs to a different wowpriced account. Log in with the email you used at checkout. <a href=\"./#login\">Log in</a>"
+    wrong_account: "This payment belongs to a different wowpriced account. Log in with the email you used at checkout, " +
+      "then come back to this page: your payment is remembered on this device. <a href=\"./#login\">Log in</a>",
+    already_claimed: "This payment is already attached to another wowpriced account. " +
+      "<a href=\"./#login\">Log in</a> with that account, or " +
+      (EMAIL ? "email " + MAILTO + "." : "use the <a href=\"contact.html\">contact page</a>.")
   };
   var portalLink = "";
   function fmtDay(s) {
@@ -85,7 +99,7 @@ p{margin:0 0 14px}
   }
   // "Manage or cancel": POST /api/portal opens Stripe's billing portal for
   // this account; without one (404/503, or no such route yet) the portal
-  // link from me or deals.json meta, else the button hides itself.
+  // link from me or deals.json meta, else the email route beside it.
   function manage(apiUrl, me) {
     var btn = document.getElementById("manage");
     if (!btn) return;
@@ -101,11 +115,18 @@ p{margin:0 0 14px}
           var url = res.ok && /^https:\/\//.test(res.json.url || "") ? res.json.url
             : (/^https:\/\//.test(res.json.fallback_url || "") ? res.json.fallback_url : fallback);
           if (url) { location.assign(url); return; }
-          btn.hidden = true;
+          btn.disabled = false;
+          document.getElementById("managenote").innerHTML = " " + NO_PORTAL;
         })
         .catch(function () { btn.disabled = false; });
     });
   }
+  // Back from Stripe's portal restores this page from the back/forward
+  // cache with the button still disabled.
+  window.addEventListener("pageshow", function (e) {
+    var btn = document.getElementById("manage");
+    if (e.persisted && btn) btn.disabled = false;
+  });
 
   function claim(apiUrl) {
     show("Attaching your membership to <b>this account</b>…");
@@ -118,8 +139,12 @@ p{margin:0 0 14px}
         if (res.status === 200 && res.json.me) {
           ssDel(CLAIM_KEY);
           var me = res.json.me, day = fmtDay(me.trial_ends_at);
-          var manageBtn = " <button type=\"button\" id=\"manage\" class=\"linkbtn\">Manage or cancel</button>";
-          if (me.reason === "trial") {
+          var manageBtn = " " + CANCEL + " <button type=\"button\" id=\"manage\" class=\"linkbtn\">" +
+            "Manage or cancel</button><span id=\"managenote\"></span>";
+          // A me without trial_available comes from a Worker that predates
+          // the card-up-front trial (a card-less trial charges nothing), so
+          // the trial's billing terms are shown only with the new shape.
+          if (me.reason === "trial" && "trial_available" in me) {
             show("<b>Your free trial has started.</b> You won't be charged until " +
                  (day ? text(day) : "the trial ends") + ". Then $9.99/month, renews monthly " +
                  "until you cancel." + manageBtn);
@@ -135,7 +160,10 @@ p{margin:0 0 14px}
         }
         if (res.status === 401) { try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* blocked */ } }
         var code = res.json.error || ("http_" + res.status);
-        if (code === "bad_session" || code === "unknown_session") ssDel(CLAIM_KEY);
+        // A payment already attached to another account is done with on
+        // this device (that account has it); wrong_account keeps it for
+        // the right account to claim.
+        if (code === "bad_session" || code === "unknown_session" || code === "already_claimed") ssDel(CLAIM_KEY);
         show("<b>Couldn't attach this membership.</b> " + (ERRORS[code] || ("Error: " + text(code) + ".")), true);
       })
       .catch(function () { show("<b>Couldn't attach this membership.</b> " + ERRORS.stripe_unavailable, true); });

@@ -124,8 +124,9 @@ footer p{margin:0 0 8px}
 <p>Today's top 8 deals on the wall are free for everyone. The $9.99 a month membership
    unlocks every deal on the wall and emails you every verified deal the hour it is
    found, bundled at most once an hour. It starts with a 7-day free trial (card
-   required), renews monthly, and you can cancel anytime online. That is the whole
-   business. No ads dressed up as deals, no pop-ups, no spin.</p>
+   required), then $9.99/month, renews monthly until you cancel. Cancel anytime
+   online<span class="mailalt"> or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></span>. That is the
+   whole business. No ads dressed up as deals, no pop-ups, no spin.</p>
 <p>We spent a long time helping stores make prices look good. We would rather help
    you find the ones that actually are.</p>
 </main>
@@ -138,24 +139,30 @@ footer p{margin:0 0 8px}
     <a href="careers.html">Work with us</a>
     <a href="contact.html">Contact</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" rel="noopener" style="display:none">Get every deal by email — $9.99/mo</a></p>
+  <p><a id="subscribe" class="getdeal" style="display:none">Get every deal by email — $9.99/mo</a></p>
   <p>Every deal links to the seller and credits the source that found it. Some outbound
      links are the source's affiliate links. <a href="health.html">source health</a></p>
 </footer>
 </div>
 <script>
 "use strict";
-// The Subscribe button appears only once deals.json carries a subscribe link.
+// Membership starts on the home page: a free account, then the card-up-
+// front trial (docs/paywall.md). The button appears once deals.json names
+// the account service; the Payment Link is never linked from here.
 fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
-    var url = d && d.meta && d.meta.subscribe_url;
-    if (url) {
+    if (d && d.meta && d.meta.api_url) {
       var sub = document.getElementById("subscribe");
-      sub.href = url;
+      sub.href = "./#signup";
       sub.style.display = "";
     }
   }).catch(function () {});
+// No configured contact email: the publisher leaves the address empty,
+// so the "or email" wording goes with it.
+document.querySelectorAll(".mailalt").forEach(function (el) {
+  if (!el.querySelector("a").textContent.trim()) el.hidden = true;
+});
 </script>
 </body>
 </html>
