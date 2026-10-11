@@ -290,27 +290,40 @@ def due_list_path(site_dir: str | Path) -> Path:
     return Path(site_dir).resolve().parent / INDEXNOW_FILE
 
 
+def _listed_at(prev: Any) -> datetime | None:
+    return parse_iso(str(prev[1])) if isinstance(prev, list) and len(prev) == 2 else None
+
+
 def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
     """The URLs whose content (what a crawler sees) changed since they were
     last listed, once seo.indexnow_min_hours have passed since that listing;
     a new URL is due at once. One meta key holds each URL's listed hash and
-    time; URLs no longer published drop out of it."""
+    time. The listing is recorded before the POST (state.db is committed
+    before the deploys), so an unchanged URL is listed again after
+    seo.indexnow_resubmit_days: a failed POST is not lost for good."""
     try:
         sent = json.loads(db.meta_get(_INDEXNOW_META) or "{}")
     except ValueError:
         sent = {}
+    sent = sent if isinstance(sent, dict) else {}
     wait = timedelta(hours=float(getattr(cfg, "seo_indexnow_min_hours", 6.0)))
+    redo = timedelta(days=float(getattr(cfg, "seo_indexnow_resubmit_days", 7.0)))
     due, keep = [], {}
     for url, content in pages.items():
         h = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-        prev = sent.get(url) if isinstance(sent, dict) else None
-        ok = isinstance(prev, list) and len(prev) == 2
-        last = parse_iso(str(prev[1])) if ok else None
-        if ok and (prev[0] == h or (last is not None and now - last < wait)):
+        prev, last = sent.get(url), _listed_at(sent.get(url))
+        if last is not None and (now - last < wait
+                                 or (prev[0] == h and not (redo and now - last >= redo))):
             keep[url] = prev
         else:
             due.append(url)
             keep[url] = [h, iso(now)]
+    # A URL out of the list for now (a hub dipping under its floor) keeps its
+    # entry through its interval, so coming back does not make it new.
+    for url, prev in sent.items():
+        last = _listed_at(prev)
+        if url not in keep and last is not None and now - last < wait:
+            keep[url] = prev
     db.meta_set(_INDEXNOW_META, json.dumps(keep, sort_keys=True))
     return due
 

@@ -109,6 +109,7 @@ class AppConfig:
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
+    seo_indexnow_resubmit_days: float = 7.0  # unchanged URLs listed again (0 = never)
     tier_boost: dict[str, float] = field(default_factory=dict)
     abs_savings_weight: float = 0.1
     condition_penalty: float = 2.0
@@ -238,6 +239,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))
+    cfg.seo_indexnow_resubmit_days = max(0.0, float(g("seo", "indexnow_resubmit_days",
+                                                      default=cfg.seo_indexnow_resubmit_days)))
 
     cfg.tier_boost = g("ranking", "tier_boost", default={}) or {}
     cfg.abs_savings_weight = float(g("ranking", "abs_savings_weight", default=cfg.abs_savings_weight))

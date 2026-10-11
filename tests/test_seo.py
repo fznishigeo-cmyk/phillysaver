@@ -215,6 +215,30 @@ def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
     assert set(sent) == set(first)
 
 
+def test_indexnow_hub_dipping_under_its_floor_keeps_its_interval(db, cfg):
+    hub = "https://wowpriced.com/deals/pets/"
+    due = lambda minutes, pages: seo.indexnow_due(db, cfg, NOW + timedelta(minutes=minutes), pages)
+    assert due(0, {hub: "3 deals"}) == [hub]
+    assert due(10, {}) == []                 # noindex: out of the list for a while
+    assert due(20, {hub: "4 deals"}) == []   # back with new content, inside the 6 h
+    assert due(7 * 60, {hub: "4 deals"}) == [hub]
+    assert due(14 * 60, {}) == []
+    assert hub not in json.loads(db.meta_get("indexnow_sent"))  # gone past its interval
+
+
+def test_indexnow_relists_an_unchanged_url_after_the_resubmit_days(db, cfg):
+    # The listing is recorded at publish time, before the POST; if that POST
+    # fails, a page that never changes must still come back.
+    about = "https://wowpriced.com/about.html"
+    cfg.seo_indexnow_resubmit_days = 7
+    due = lambda hours: seo.indexnow_due(db, cfg, NOW + timedelta(hours=hours), {about: "same"})
+    assert due(0) == [about]
+    assert due(7) == [] and due(30) == [] and due(144) == []
+    assert due(7 * 24) == [about]
+    cfg.seo_indexnow_resubmit_days = 0  # off: unchanged URLs are never listed again
+    assert due(60 * 24) == []
+
+
 def test_hubs_and_indexnow_add_no_rows(db, cfg, tmp_path):
     _seed_week(db, 3)
     count = lambda: {t: db.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
