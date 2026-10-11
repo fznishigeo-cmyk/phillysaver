@@ -1305,3 +1305,96 @@ def test_search_engines_get_a_sitemap_robots_and_canonical_urls(db, cfg, tmp_pat
     robots = (out / "robots.txt").read_text(encoding="utf-8")
     assert "Sitemap: https://wowpriced.com/sitemap.xml" in robots
     assert "Disallow: /welcome.html" in robots
+
+
+class TestOpenAccess:
+    """Operator, 2026-10-11: every visitor sees every deal in full, nothing
+    blurred (config.yaml paywall.open_access). Sign-up stays as it is; no
+    page calls a deal members-only or says membership unlocks it."""
+
+    @staticmethod
+    def _open(cfg, on=True):
+        cfg.paywall_enabled = True
+        cfg.paywall_open_access = on
+        cfg.paywall_teaser_count = 3
+        cfg.paywall_api_url = "https://api.example.workers.dev"
+        return cfg
+
+    @staticmethod
+    def _deals(n):
+        return [make_deal(dedupe_key=f"walmart|open-{i}", item=f"OPEN-ITEM-{i}",
+                          canonical_url=f"https://www.walmart.com/ip/open{i}",
+                          score=100.0 - i) for i in range(n)]
+
+    def test_every_deal_is_full_and_the_rotation_pauses(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        db.meta_set("teaser_recent", '["k-before"]')
+        render_site(db, self._open(cfg), NOW, out_dir=out, deals=self._deals(6))
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert len(doc["deals"]) == 6
+        assert not any(d.get("locked") for d in doc["deals"])
+        assert all(d["url"] and d["item"].startswith("OPEN-ITEM-") for d in doc["deals"])
+        assert doc["meta"]["open_access"] is True and doc["meta"]["locked_count"] == 0
+        # Sign-up is unchanged: the Worker and the trial stay in meta.
+        assert doc["meta"]["api_url"] == "https://api.example.workers.dev"
+        assert doc["meta"]["trial_days"] == 7
+        # The free-8 memory is left as it was, to resume when it closes.
+        assert db.meta_get("teaser_recent") == '["k-before"]'
+
+    def test_closing_it_again_brings_the_locks_back(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, self._open(cfg, on=False), NOW, out_dir=out, deals=self._deals(6))
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert doc["meta"]["open_access"] is False and doc["meta"]["locked_count"] == 3
+        assert sum(1 for d in doc["deals"] if d.get("locked")) == 3
+
+    def test_no_page_calls_a_deal_members_only(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, self._open(cfg), NOW, out_dir=out, deals=self._deals(6))
+        pages = {p.relative_to(out).as_posix(): p.read_text(encoding="utf-8")
+                 for p in out.rglob("*.html")}
+        for name, html in pages.items():
+            # What a visitor reads: the page's script draws locked cards only
+            # for locked stubs, and there are none.
+            text = " ".join(re.sub(r"<script\b.*?</script>", "", html, flags=re.S).split())
+            assert "<!--paywall-->" not in html and "<!--open-->" not in html, name
+            for claim in ("Eight deals stay free", "Eight top deals", "a new eight",
+                          "unlocks every deal", "Every deal, unlocked", "members only",
+                          "Members-only deals", "new set of free deals",
+                          "the membership below fixes it", "Free right now"):
+                assert claim not in text, (name, claim)
+            for stale in ("free and always will be", "the site stays free",
+                          "the wall stays free"):
+                assert stale not in text.lower(), (name, stale)
+        home = " ".join(pages["index.html"].split())
+        assert "Every deal on the wall is open to everyone right now" in home
+        assert "Membership — $9.99/month." in home and 'id="footterms"' in home
+        assert "OPEN-ITEM-5" in home  # the static wall carries every deal
+        assert "<h1>Membership</h1>" in pages["subscribe.html"]
+        assert "Start 7-day free trial" in pages["subscribe.html"]
+        # The sign-up dialog drops "unlock" while open (meta.open_access).
+        assert "function openAccess()" in pages["index.html"]
+        assert '"Free account first, then "' in pages["index.html"]
+
+    def test_paywall_wording_when_closed(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, self._open(cfg, on=False), NOW, out_dir=out, deals=self._deals(6))
+        for p in out.rglob("*.html"):
+            html = p.read_text(encoding="utf-8")
+            assert "<!--paywall-->" not in html and "<!--open-->" not in html, p.name
+            assert "open to everyone right now" not in html, p.name
+        home = " ".join((out / "index.html").read_text(encoding="utf-8").split())
+        assert "Eight deals stay free for everyone, new at every drop." in home
+
+    def test_static_pages_cap_the_cards(self, db, cfg, tmp_path):
+        from dealradar.publish import seo
+
+        out = tmp_path / "site"
+        n = seo._STATIC_WALL_MAX + 5
+        render_site(db, self._open(cfg), NOW, out_dir=out, deals=self._deals(n))
+        home = (out / "index.html").read_text(encoding="utf-8")
+        wall = home.split('<div id="content">', 1)[1].split('<div id="paywall"', 1)[0]
+        assert wall.count('<article class="card') == seo._STATIC_WALL_MAX
+        assert "5 more deals on the live wall" in wall
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        assert len(doc["deals"]) == n  # the live wall still has every one

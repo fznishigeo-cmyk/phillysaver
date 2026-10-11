@@ -55,6 +55,11 @@ CATGROUPS: tuple[tuple[str, Any, str], ...] = (
 
 #: The page's badge labels (index.html TIER_LABEL); no badge = single source.
 _TIER_LABEL = {"corroborated": "✓ 2+ sources", "history-checked": "✓ price history"}
+#: Open deals drawn as static HTML on the home page and on each hub (open
+#: access puts every deal in the teaser: hundreds of cards would make the
+#: page heavy before its script draws the live wall).
+_STATIC_WALL_MAX = 48
+_HUB_MAX = 60
 
 # Cloudflare Pages only (GitHub Pages serves it as a plain file): the
 # pages.dev copies of the site are never indexed, nor is the data file.
@@ -175,15 +180,19 @@ def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
     return f"{n} more deal{'' if n == 1 else 's'} {where}{rng}, members only"
 
 
-def static_wall(teaser: list[dict[str, Any]]) -> str:
+def static_wall(teaser: list[dict[str, Any]], open_access: bool = False) -> str:
     """index.html's #content as plain HTML at publish time (the page's
-    script replaces it with the live wall): the free deals, one line per
-    store for the locked ones, and the dead deals deals.json carries."""
+    script replaces it with the live wall): the free deals (the top
+    _STATIC_WALL_MAX), one line per store for the locked ones, and the dead
+    deals deals.json carries."""
     free = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
+    more = max(0, len(free) - _STATIC_WALL_MAX)
+    free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked")]
     dead = sorted((d for d in teaser if d.get("status") != "alive" and not d.get("locked")),
                   key=lambda d: str(d.get("died_at") or ""), reverse=True)
-    html = ('<noscript><p class="meta">JavaScript is off: these are the free deals as of '
+    html = ('<noscript><p class="meta">JavaScript is off: these are the '
+            + ("top" if open_access else "free") + " deals as of "
             "the last update. Turn it on for live drops, search and sorting, or browse the "
             "categories above.</p></noscript>")
     if not (free or stubs or dead):
@@ -191,6 +200,9 @@ def static_wall(teaser: list[dict[str, Any]]) -> str:
     html += '<h2 class="secth">Verified deals right now</h2>'
     if free:
         html += '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>"
+    if more:
+        html += (f'<p class="meta">{more} more deal{"" if more == 1 else "s"} on the live '
+                 "wall and in the categories above.</p>")
     if stubs:
         by_store: dict[str, list[dict[str, Any]]] = {}
         for s in stubs:
@@ -263,20 +275,31 @@ def _hub_copy(cfg) -> dict[str, dict[str, str]]:
 
 def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               rows: list[dict[str, Any]], stats: dict[str, Any], indexable: bool,
-              site_url: str) -> str:
-    """One hub: its copy, our 7-day numbers, the category's free deals and
-    its locked count and % range."""
+              site_url: str, open_access: bool = False) -> str:
+    """One hub: its copy, our 7-day numbers, the category's free deals (the
+    top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
+    more = max(0, len(free) - _HUB_MAX)
+    free = free[:_HUB_MAX]
     stubs = [d for d in rows if d.get("locked")]
     n = stats["count"]
     line = (f"<strong>Last 7 days:</strong> {n} new deal{'' if n == 1 else 's'} in this category "
             f"passed our checks, median {stats['median_pct']}% off, "
             f"{stats['corroborated']} confirmed by 2+ independent sources."
             if n else "No deal in this category passed our checks in the last 7 days.")
-    deals = "<h2>Free right now</h2>" + (
-        '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>" if free else
-        '<p class="muted">No free deal in this category right now; the free deals change '
-        'at every drop on <a href="/">the live wall</a>.</p>')
+    if open_access:
+        deals = "<h2>Deals right now</h2>" + (
+            '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>" if free else
+            '<p class="muted">No deal in this category right now; new deals land at every '
+            'drop on <a href="/">the live wall</a>.</p>')
+    else:
+        deals = "<h2>Free right now</h2>" + (
+            '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>" if free else
+            '<p class="muted">No free deal in this category right now; the free deals change '
+            'at every drop on <a href="/">the live wall</a>.</p>')
+    if more:
+        deals += (f'<p class="muted">{more} more in this category on '
+                  '<a href="/">the live wall</a>.</p>')
     if stubs:
         deals += f'<p class="muted">{escape(_locked_line(stubs, f"in {label}"))}.</p>'
     return _fill(template, TITLE=escape(copy["title"]), DESCRIPTION=escape(copy["description"]),
@@ -340,7 +363,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     """The search-engine side of a publish, into out: the static wall and
     tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
     sitemap.xml and the IndexNow due-list (beside out, never in it)."""
-    wall = static_wall(teaser)
+    from .paywall import is_open
+
+    open_access = is_open(cfg)
+    wall = static_wall(teaser, open_access)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
@@ -356,7 +382,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     for label, group, slug in CATGROUPS[1:]:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
         indexable = stats[slug]["count"] >= floor
-        html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable, site_url)
+        html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
+                         site_url, open_access)
         (out / "deals" / slug).mkdir(parents=True, exist_ok=True)
         (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
         if indexable:

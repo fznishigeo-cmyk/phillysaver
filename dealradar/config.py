@@ -154,6 +154,7 @@ class AppConfig:
 
     # -- paywall: visitors see the top N deals, members the full payload --
     paywall_enabled: bool = True
+    paywall_open_access: bool = False  # every deal in full for everyone; sign-up unchanged
     paywall_teaser_count: int = 8      # unlocked deals on the public site
     paywall_teaser_pool: int = 0       # each drop unlocks a new teaser_count of the top N (0 = every live deal)
     paywall_trial_days: int = 7
@@ -306,6 +307,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                                    default=cfg.members_max_deals_per_email)))
 
     cfg.paywall_enabled = bool(g("paywall", "enabled", default=cfg.paywall_enabled))
+    cfg.paywall_open_access = bool(g("paywall", "open_access", default=cfg.paywall_open_access))
     cfg.paywall_teaser_count = max(0, int(g("paywall", "teaser_count",
                                             default=cfg.paywall_teaser_count)))
     pool = int(g("paywall", "teaser_pool", default=cfg.paywall_teaser_pool) or 0)

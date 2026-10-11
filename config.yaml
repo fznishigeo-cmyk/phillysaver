@@ -190,6 +190,11 @@ paywall:
   # and served to members only: a Stripe subscription, trialing or active,
   # card on file (no card-less trial). See docs/paywall.md.
   enabled: true    # teaser deals.json + full payload uploaded to the Worker
+  # Open access (operator, 2026-10-11): every visitor sees every deal in
+  # full, nothing blurred. Sign-up, the trial button and "$0 today" stay;
+  # copy that calls deals members-only switches to its open wording. The
+  # free-8 rotation pauses and resumes where it was when this goes false.
+  open_access: true
   teaser_count: 8          # unlocked deals for visitors
   teaser_pool: 0           # 0 = every live deal: a drop unlocks the best 8 not yet free; none
                            # is free again until every live deal had a turn (state.db meta)

@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from ..config import redact_secrets
 from ..util import iso, parse_iso
 from . import seo
-from .paywall import split_teaser, teaser_memory
+from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name
 from .tracking import apply_tracking
 
@@ -149,6 +149,18 @@ _CONDITION_HOW = {
     "ymmv": "Price may vary by account", "multi_buy": "Multi-buy price",
     "in_store_only": "In store only", "clearance_aisle": "In-store clearance",
 }
+
+
+#: A page's two wordings: <!--paywall-->...<!--/paywall--> while deals are
+#: locked, <!--open-->...<!--/open--> while every deal is open. The other
+#: one never reaches the published page (nor a crawler).
+_VARIANT_RE = re.compile(r"<!--(paywall|open)-->(.*?)<!--/\1-->", re.S)
+
+
+def copy_variant(html: str, open_access: bool) -> str:
+    """html with the wording for the current access mode only."""
+    keep = "open" if open_access else "paywall"
+    return _VARIANT_RE.sub(lambda m: m.group(2) if m.group(1) == keep else "", html)
 
 
 def _how(deal: dict[str, Any]) -> list[str]:
@@ -288,7 +300,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     except (TypeError, ValueError):
         recent = []
     teaser, locked_count = split_teaser(serialized, cfg, recent)
-    if getattr(cfg, "paywall_enabled", False):
+    open_access = is_open(cfg)
+    if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
     site_version = site_template_version()
     meta = {
@@ -325,6 +338,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "google_client_id": getattr(cfg, "paywall_google_client_id", "") or "",
         "teaser_count": int(getattr(cfg, "paywall_teaser_count", 8)),
         "locked_count": locked_count,
+        # Every deal in full for everyone: the page's sign-up copy drops
+        # "unlock" (nothing is locked).
+        "open_access": open_access,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "source_sites": _source_sites(serialized),
     }
@@ -346,6 +362,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
              "subscribe.html", "privacy.html")
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
+        html = (out / name).read_text(encoding="utf-8")
+        (out / name).write_text(copy_variant(html, open_access), encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
     index = (out / "index.html").read_text(encoding="utf-8")

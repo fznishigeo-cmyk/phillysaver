@@ -49,6 +49,7 @@ payload to the Cloudflare Worker, which serves it only to members.
 ```yaml
 paywall:
   enabled: true
+  open_access: false       # true = every deal in full for everyone; sign-up unchanged
   teaser_count: 8          # unlocked deals for visitors and free accounts
   teaser_pool: 0           # 0 = every live deal; N = rotate the top N only
   trial_days: 7            # page copy only; keep it equal to the Worker's TRIAL_DAYS
@@ -56,8 +57,16 @@ paywall:
   google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
 ```
 
+**Open access** (`open_access: true`): `deals.json` carries every deal in
+full (no locked stubs, `locked_count` 0, `open_access: true` in meta), the
+free-8 rotation memory (`teaser_recent`) is left untouched so it resumes
+when the switch goes back to false, and every page publishes its
+`<!--open-->` wording instead of its `<!--paywall-->` wording (site.py
+`copy_variant`): nothing calls a deal members-only while none is. The Worker
+upload, accounts, the trial and checkout are unchanged.
+
 `deals.json` meta carries: `api_url`, `google_client_id`, `teaser_count`,
-`locked_count`, `trial_days`, plus the existing `subscribe_url`,
+`locked_count`, `open_access`, `trial_days`, plus the existing `subscribe_url`,
 `portal_url`, `newsletter_url`, `floors`, `last_run`, `generated_at`,
 `cadence_minutes` (the drop clock's step, `publish.drop_minutes`), `disclosure`, `count`. A signed-in page prefers
 `me.trial_days` (the Worker's real trial length) over `meta.trial_days`.

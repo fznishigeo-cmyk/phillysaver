@@ -30,6 +30,13 @@ def _stub(deal: dict[str, Any]) -> dict[str, Any]:
     return {"locked": True, **{k: deal.get(k) for k in STUB_KEYS}}
 
 
+def is_open(cfg) -> bool:
+    """True when every visitor gets every deal in full: the paywall off, or
+    open access (config.yaml paywall.open_access)."""
+    return not getattr(cfg, "paywall_enabled", False) \
+        or bool(getattr(cfg, "paywall_open_access", False))
+
+
 def split_teaser(deals: list[dict[str, Any]], cfg,
                  recent: list[str] | tuple[str, ...] = ()) -> tuple[list[dict[str, Any]], int]:
     """(teaser, locked_count) for serialized deals in site order: teaser_count
@@ -38,8 +45,8 @@ def split_teaser(deals: list[dict[str, Any]], cfg,
     before (recent: the keys past drops unlocked, oldest first), among every
     live deal, or the top teaser_pool when that is set. A deal is free again
     only when no unshown one is left, least recently shown first.
-    Passthrough with the paywall off."""
-    if not getattr(cfg, "paywall_enabled", False):
+    Passthrough with the paywall off or open (is_open)."""
+    if is_open(cfg):
         return deals, 0
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
     pool = int(getattr(cfg, "paywall_teaser_pool", 0) or 0)

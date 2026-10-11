@@ -50,7 +50,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   way, all merged).
 
 ## Operator decisions (standing rules; do not undo)
-- **Free 8:** every drop unlocks 8 completely new deals; none is free twice
+- **Open access (2026-10-11, for "a month or two"):** every visitor sees
+  every deal in full, nothing blurred (`config.yaml paywall.open_access:
+  true`). Sign-up, the trial button, "$0 today" and Log in are unchanged.
+  Pages show their open wording (no "members only", no "unlock"); never
+  add copy saying the trial is support. To bring the paywall back, set
+  `open_access: false`: the free-8 rotation resumes where it paused.
+- **Free 8** (while the paywall is closed): every drop unlocks 8 completely new deals; none is free twice
   until every live deal has had a turn (state.db meta `teaser_recent`). A
   drop is a new publish on a `publish.drop_minutes` (15) clock: one that
   lands early waits for its mark; when the mark comes first, the clock says
