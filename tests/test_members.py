@@ -95,6 +95,24 @@ class TestStripeMemberList:
         client = httpx.Client(transport=httpx.MockTransport(handler))
         assert M.fetch_member_emails(client) == ["a@x.com", "b@x.com"]
 
+    def test_trialing_subscriber_alone_is_a_member(self, monkeypatch):
+        """The free trial is Stripe's (card up front): a subscription still
+        in status "trialing" gets the member emails like an active one."""
+        monkeypatch.setenv("STRIPE_SECRET_KEY", "rk_test_readonly")
+        assert M.MEMBER_STATUSES == ("active", "trialing")
+        asked: list[str] = []
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            status = req.url.params["status"]
+            asked.append(status)
+            data = ([{"id": "sub_t", "customer": {"email": "Trial@X.com"}}]
+                    if status == "trialing" else [])
+            return httpx.Response(200, json={"data": data, "has_more": False})
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        assert M.fetch_member_emails(client) == ["trial@x.com"]
+        assert asked == ["active", "trialing"]
+
     def test_unconfigured_or_failing_stripe_keeps_the_cache(self, db, monkeypatch):
         assert M.fetch_member_emails() is None          # no key at all
         db.meta_set(M.META_MEMBERS, json.dumps(["c@x.com"]))

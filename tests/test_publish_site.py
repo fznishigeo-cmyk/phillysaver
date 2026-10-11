@@ -264,13 +264,16 @@ class TestLiveHomePage:
 
     def test_index_has_countdown_driven_by_meta(self, html):
         assert 'id="countdown"' in html
-        assert "Next drop in" in html and "Loading new drops" in html
+        assert "Next drop in" in html and "Dropping…" in html
+        # The old open-ended wait is gone: a drop never sits for minutes.
+        assert "Loading new drops" not in html
         # Publish time and cadence come from deals.json meta, not the clock alone.
-        assert "m.generated_at" in html and "m.cadence_minutes" in html
+        assert "m.published_at" in html and "m.generated_at" in html
+        assert "m.cadence_minutes" in html
         assert "run_key" in html  # fallback publish time
-        # Polling: 30 s while a drop is loading, 5-minute fallback kept.
+        # Quiet 30 s poll after a missed mark, 5-minute fallback kept.
         assert "30 * 1000" in html and "5 * 60 * 1000" in html
-        assert "just dropped" in html  # toast after a new publish
+        assert "just landed" in html  # true-count toast after a new publish
 
     def test_index_defaults_to_fresh_drops_sort(self, html):
         start = html.index('id="sortsel"')
@@ -510,7 +513,9 @@ class TestPaywallPage:
     def test_auth_dialog_and_panel_markup(self, html):
         for el_id in ("authmodal", "authform", "authemail", "authpass", "autherr",
                       "authsubmit", "authswitch", "authclose", "gsibtn",
-                      "paywall", "pwsignup", "pwlogin", "pwsub", "pwcheck", "pwplain",
+                      "authstep1", "authstep2", "cobtn", "codisc", "coerr", "cofb",
+                      "conotnow", "paywall", "pwsignup", "pwlogin", "pwbuy", "pwcheck",
+                      "pwplain", "pwnote", "pwerr", "pwfb",
                       "account", "loginlink", "logout", "billing", "trialnote"):
             assert f'id="{el_id}"' in html, el_id
         assert 'role="dialog"' in html and 'aria-modal="true"' in html
@@ -543,9 +548,11 @@ class TestPaywallPage:
         assert "blur(8px)" in html
         assert "d.locked === true" in html
         assert "Sign up free" in html and "Log in" in html
-        assert "Unlock all " in html and "then $9.99/mo" in html
-        assert "Your free week ended" in html and "I just subscribed" in html
-        assert "Free trial: ends" in html and "Manage billing" in html
+        assert "Unlock all " in html and "I just subscribed" in html
+        assert "-day free trial. Card required, then $9.99/month." in html
+        # The card-less trial and its copy are gone.
+        assert "Your free week ended" not in html and "No card needed" not in html
+        assert "Free trial — " in html and "Manage or cancel" in html
         # Stub cards never carry a product link or title text.
         start = html.index("function lockedHtml")
         body = html[start:html.index("function cardHtml")]
@@ -639,3 +646,185 @@ class TestWelcomeClaim:
         for code in ("bad_session", "unknown_session", "stripe_unavailable",
                      "signin_unavailable", "rate_limited", "unauthorized"):
             assert f"{code}:" in html, code
+
+
+def _render_pages(db, cfg, out):
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    return {p.name: p.read_text(encoding="utf-8") for p in out.glob("*.html")}
+
+
+class TestCardRequiredTrial:
+    """A free account sees the same top-8 teaser; every other deal unlocks
+    only with a Stripe subscription (card up front: Stripe's 7-day trial,
+    then $9.99/month). The page builds to the Worker API in docs/paywall.md:
+    POST /api/checkout, POST /api/portal, me.trial_available/trial_days."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_signup_dialog_is_a_free_account_then_step_two(self, html):
+        assert "Create your free account" in html
+        assert "Free account: today's top " in html
+        assert "-day free trial, card required." in html
+        assert "Step 2 of 2 — start your free trial" in html
+        assert '"Start " + days + "-day free trial"' in html
+        assert "Not now" in html
+        # Step 2 follows a sign-up or a Google sign-in, never a password log-in.
+        start = html.index("function signedIn(")
+        body = html[start:html.index("function authPost(")]
+        assert 'path !== "/api/login"' in body and 'openAuth("checkout")' in body
+
+    def test_disclosure_sits_next_to_every_trial_button(self, html):
+        disclosure = ('"Card required. Free for " + days + " days, then $9.99/month, '
+                      'renews monthly " +\n      "until you cancel. Cancel anytime online."')
+        assert disclosure in html
+        # Both trial buttons (panel and dialog) get the line written right
+        # beside them, as visible text (never a title= tooltip).
+        assert 'id="pwbuy"' in html and 'id="pwnote" class="disc"' in html
+        assert 'id="cobtn"' in html and 'id="codisc" class="disc"' in html
+        assert "pn.textContent = note" in html
+        assert 'getElementById("codisc").textContent = o.note' in html
+        assert "title=" not in html[html.index('id="pwbuy"'):html.index('id="pwfb"')]
+
+    def test_used_trial_and_lapsed_get_no_trial_wording(self, html):
+        assert "me.trial_available !== false" in html
+        assert '"Subscribe — $9.99/month"' in html
+        assert "Your membership ended. Restart for $9.99/month." in html
+        assert "You're signed in. Start your " in html
+        assert "You're signed in. Subscribe to unlock all " in html
+
+    def test_checkout_call_and_its_answers(self, html):
+        assert '"/api/checkout"' in html
+        start = html.index("function checkout(")
+        body = html[start:html.index("function portal(")]
+        assert "location.assign" in body
+        assert '"already_member"' in body and "409" in body
+        assert "Free-trial checkout is unavailable right now." in body
+        assert "fallback_url" in body
+        assert "Subscribe now &mdash; $9.99/month" in html  # the fallback link
+
+    def test_portal_call_falls_back_then_hides(self, html):
+        assert '"/api/portal"' in html
+        start = html.index("function portal(")
+        body = html[start:html.index("function showErr(")]
+        assert "location.assign" in body and "portal_url" in body
+        assert "btn.hidden = true" in body
+        assert 'id="billing"' in html and ">Manage or cancel<" in html
+
+    def test_trial_member_note_and_cancel_toast(self, html):
+        assert '" $9.99/month unless you cancel."' in html
+        assert "checkout=cancel" in html
+        assert "Checkout cancelled — no charge." in html
+        start = html.index("function checkoutCancelled()")
+        assert "history.replaceState" in html[start:start + 600]
+
+
+class TestDropClock:
+    """The countdown is a prominent element with a progress bar; marks sit
+    on fixed wall-clock instants derived from published_at and cadence; a
+    drop fetches with a 2.5 s cap, re-deals the wall seeded by the mark
+    index and animates it (FLIP) unless the viewer prefers reduced motion."""
+
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_big_countdown_with_progress_bar_and_no_live_region(self, html):
+        assert 'id="drop" class="drop" role="timer" aria-live="off"' in html
+        assert 'id="dropfill"' in html and ".dropbar{" in html
+        css = html[html.index(".dropt{"):html.index("}", html.index(".dropt{"))]
+        assert "font-size:22px" in css and "font-weight:800" in css
+        assert "tabular-nums" in css
+        mobile = html[html.index("@media (max-width:640px)"):]
+        assert ".dropt{font-size:20px}" in mobile  # still >= 18px on phones
+
+    def test_mark_math(self, html):
+        for name in ("function dropPhase(", "function nextMarkAfter(",
+                     "function markIndex("):
+            assert name in html, name
+        assert "((pub % step) + step) % step" in html
+        assert "Math.floor((t - phase) / step) + 1) * step" in html
+        assert "Math.floor((t - phase) / step)" in html
+
+    def test_drop_contract(self, html):
+        assert "DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000" in html
+        assert "LATE_MS = 6 * 60 * 1000" in html
+        start = html.index("function drop(")
+        body = html[start:html.index("function loadData(")]
+        assert "withTimeout(got, DROP_FETCH_MS)" in body
+        assert "markIndex(last" in body and "reorganize(true)" in body
+        assert '"Deals reshuffled" + checkedAgo()' in body
+        assert '" · prices checked "' in html and '" min ago"' in html
+        # One ticking interval for the whole page, plus the 5-minute fallback.
+        assert html.count("setInterval(") == 2
+        assert "setInterval(tick, 1000)" in html
+
+    def test_flip_and_reduced_motion(self, html):
+        start = html.index("function reorganize(")
+        body = html[start:html.index("// ---- paywall")]
+        assert "getBoundingClientRect" in body and "FLIP_MS" in body
+        assert "reduceMotion()" in body
+        assert "prefers-reduced-motion: reduce" in html
+        assert "@media (prefers-reduced-motion: reduce)" in html
+        # Focus is put back where it was, never moved by a drop.
+        assert "rememberFocus()" in body and "restoreFocus(focus)" in body
+        assert "preventScroll: true" in html
+        # New arrivals lead with a visible tag.
+        assert '<span class="newtag">NEW</span>' in html
+
+    def test_images_send_no_referrer(self, html):
+        # Some image hosts refuse requests that name another site.
+        assert 'referrerpolicy="no-referrer"' in html
+
+
+class TestWelcomeTrialClaim:
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "welcome.html").read_text(encoding="utf-8")
+
+    def test_trial_and_paid_outcomes(self, html):
+        assert "Your free trial has started." in html
+        assert "You won't be charged until " in html
+        assert "Then $9.99/month, renews monthly " in html
+        assert "Membership activated" in html
+        assert "/api/portal" in html and "Manage or cancel" in html
+
+    def test_wrong_account_copy(self, html):
+        assert "wrong_account:" in html
+        assert ("This payment belongs to a different wowpriced account. "
+                "Log in with the email you used at checkout.") in html
+
+
+class TestMembershipCopyIsTrue:
+    """Every page tells the same story: the top deals are free for everyone;
+    membership ($9.99/month, 7-day free trial with a card) unlocks every
+    deal on the wall plus the hourly emails."""
+
+    def test_no_page_promises_a_free_wall_or_a_cardless_trial(self, db, cfg, tmp_path):
+        pages = _render_pages(db, cfg, tmp_path / "site")
+        for name, html in pages.items():
+            low = html.lower()
+            for stale in ("no card needed", "free and always will be",
+                          "the site stays free", "the wall here stays free",
+                          "the wall stays free", "your free week ended"):
+                assert stale not in low, (name, stale)
+
+    def test_content_pages_explain_the_card_trial(self, db, cfg, tmp_path):
+        pages = _render_pages(db, cfg, tmp_path / "site")
+        for name in ("about.html", "how-it-works.html"):
+            text = " ".join(pages[name].split())
+            assert "top 8 deals" in text and "free for everyone" in text, name
+            assert "7-day free trial" in text and "card" in text, name
+            assert "every deal on the wall" in text, name
+
+    def test_subscribe_page_joins_through_the_trial_flow(self, db, cfg, tmp_path):
+        html = _render_pages(db, cfg, tmp_path / "site")["subscribe.html"]
+        assert '"./#signup"' in html and "m.api_url" in html
+        assert "7-day free trial" in html and "card required" in html

@@ -27,6 +27,9 @@ p{margin:0 0 14px}
 .claim{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;
        padding:12px 14px;margin:0 0 16px}
 .claim.err{border-left-color:var(--warn)}
+.linkbtn{background:none;border:0;padding:0;margin:0;color:var(--link);font:inherit;
+         font-weight:700;cursor:pointer}
+.linkbtn:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -46,7 +49,8 @@ p{margin:0 0 14px}
 </div></div>
 <script>
 "use strict";
-// Stripe's Payment Link sends the payer here with ?session_id={CHECKOUT_SESSION_ID}
+// Stripe Checkout (the Worker's free-trial checkout and the Payment Link)
+// sends the payer here with ?session_id={CHECKOUT_SESSION_ID}
 // (docs/paywall.md). Signed in: POST /api/claim binds that payment to the
 // account. Signed out: the id waits in sessionStorage until they sign in on
 // the home page and come back, so the receipt is never lost.
@@ -71,8 +75,37 @@ p{margin:0 0 14px}
     stripe_unavailable: "Stripe could not be reached just now. Reload this page in a minute to try again.",
     signin_unavailable: "Sign-in is being set up on our side. Reload this page in a few minutes.",
     rate_limited: "Too many attempts from your network. Try again in an hour.",
-    unauthorized: "Your sign-in expired. Log in again on the home page, then come back here."
+    unauthorized: "Your sign-in expired. Log in again on the home page, then come back here.",
+    wrong_account: "This payment belongs to a different wowpriced account. Log in with the email you used at checkout. <a href=\"./#login\">Log in</a>"
   };
+  var portalLink = "";
+  function fmtDay(s) {
+    var t = Date.parse(s || "");
+    return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "long", day: "numeric" });
+  }
+  // "Manage or cancel": POST /api/portal opens Stripe's billing portal for
+  // this account; without one (404/503, or no such route yet) the portal
+  // link from me or deals.json meta, else the button hides itself.
+  function manage(apiUrl, me) {
+    var btn = document.getElementById("manage");
+    if (!btn) return;
+    var fallback = /^https:\/\//.test(me.portal_url || portalLink) ? (me.portal_url || portalLink) : "";
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      fetch(apiUrl + "/api/portal", {
+        method: "POST", cache: "no-store",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+        body: "{}"
+      }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, json: j || {} }; }); })
+        .then(function (res) {
+          var url = res.ok && /^https:\/\//.test(res.json.url || "") ? res.json.url
+            : (/^https:\/\//.test(res.json.fallback_url || "") ? res.json.fallback_url : fallback);
+          if (url) { location.assign(url); return; }
+          btn.hidden = true;
+        })
+        .catch(function () { btn.disabled = false; });
+    });
+  }
 
   function claim(apiUrl) {
     show("Attaching your membership to <b>this account</b>…");
@@ -84,8 +117,20 @@ p{margin:0 0 14px}
       .then(function (res) {
         if (res.status === 200 && res.json.me) {
           ssDel(CLAIM_KEY);
-          show("<b>Membership activated</b> for " + text(res.json.me.email) +
-               ". Every deal on the wall is yours now. <a href=\"./\">Open the deal wall</a>.");
+          var me = res.json.me, day = fmtDay(me.trial_ends_at);
+          var manageBtn = " <button type=\"button\" id=\"manage\" class=\"linkbtn\">Manage or cancel</button>";
+          if (me.reason === "trial") {
+            show("<b>Your free trial has started.</b> You won't be charged until " +
+                 (day ? text(day) : "the trial ends") + ". Then $9.99/month, renews monthly " +
+                 "until you cancel." + manageBtn);
+          } else if (me.member) {
+            show("<b>Membership activated</b> for " + text(me.email) +
+                 ". Every deal on the wall is yours now. <a href=\"./\">Open the deal wall</a>." + manageBtn);
+          } else {
+            show("<b>Payment attached</b> to " + text(me.email) + ". Stripe hasn't confirmed " +
+                 "the subscription yet: reload this page in a minute.");
+          }
+          manage(apiUrl, me);
           return;
         }
         if (res.status === 401) { try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* blocked */ } }
@@ -101,6 +146,7 @@ p{margin:0 0 14px}
     .then(function (d) {
       var meta = (d && d.meta) || {};
       if (meta.portal_url) {
+        portalLink = meta.portal_url;
         document.getElementById("portallink").href = meta.portal_url;
         document.getElementById("portal").style.display = "";
       }

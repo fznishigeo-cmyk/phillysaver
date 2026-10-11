@@ -12,6 +12,7 @@
   --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
   --flag:#d9480f; --flag-fg:#ffffff; --cond:#b7791f; --cond-fg:#ffffff;
   --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280; --dead:#b42318;
+  --sweep:rgba(14,117,105,.16);
   --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
 }
 @media (prefers-color-scheme: dark){
@@ -19,6 +20,7 @@
          --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
          --flag:#ff6b3d; --flag-fg:#2b0e02; --cond:#f2b544; --cond-fg:#3a2503;
          --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b;
+         --sweep:rgba(47,179,164,.2);
          --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
 }
 *{box-sizing:border-box}
@@ -37,16 +39,23 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
-/* "Next drop in m:ss" pill: the pulse says the page is live. */
-.count{margin-left:auto;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
-       background:var(--chip);border:1px solid var(--line);border-radius:999px;
-       padding:4px 11px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
-.count::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);
-       animation:pulse 1.6s ease-in-out infinite}
-.count.loading{color:var(--accent)}
-.count.loading::before{animation-duration:.7s}
+/* The drop clock: "Next drop in m:ss" over a bar that fills across the
+   cycle; the pulse says the page is live. */
+.drop{margin-left:auto;position:relative;display:inline-flex;align-items:center;gap:8px;
+      white-space:nowrap;background:var(--chip);border:1px solid var(--line);border-radius:12px;
+      padding:5px 14px 9px;overflow:hidden}
+.drop::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--accent);
+      flex:0 0 auto;animation:pulse 1.6s ease-in-out infinite}
+.droplbl{font-size:13px;font-weight:700;color:var(--muted)}
+.dropt{font-size:22px;line-height:1.15;font-weight:800;font-variant-numeric:tabular-nums;
+       color:var(--fg);min-width:3.1em}
+.drop.dropping .droplbl{display:none}
+.drop.dropping .dropt{color:var(--accent);min-width:0}
+.drop.dropping::before{animation-duration:.6s}
+.dropbar{position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--line)}
+.dropfill{display:block;height:100%;background:var(--accent);transform-origin:left center;
+          transform:scaleX(0)}
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
-@media (prefers-reduced-motion: reduce){.count::before{animation:none}}
 .since{max-width:1200px;margin:0 auto;padding:0 16px 2px;font-size:12.5px;
        color:var(--good);font-weight:700}
 .meta{color:var(--muted);font-size:12.5px;margin:0}
@@ -76,11 +85,21 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 /* ---- card grid ---- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));
       gap:14px;margin:14px 0 6px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+.card{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;
       box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;
       transition:transform .12s ease,box-shadow .12s ease}
 .card:hover{transform:translateY(-2px);
             box-shadow:0 2px 4px rgba(15,23,32,.08),0 10px 24px rgba(15,23,32,.12)}
+/* A drop: new arrivals lead with a NEW tag; moved cards get a sweep. */
+.card.isnew{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
+.newtag{position:absolute;left:8px;bottom:8px;background:var(--accent);color:var(--accent-fg);
+        font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
+.card.moved::after{content:"";position:absolute;inset:0;pointer-events:none;
+        background:linear-gradient(105deg,transparent 30%,var(--sweep) 50%,transparent 70%);
+        transform:translateX(-100%);animation:sweep .9s ease-out forwards}
+.card.enter{animation:enter .6s ease-out}
+@keyframes sweep{to{transform:translateX(100%)}}
+@keyframes enter{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
 .media{position:relative;height:150px;background:#fff;border-bottom:1px solid var(--line);
        display:flex;align-items:center;justify-content:center}
 .media img{max-width:88%;max-height:88%;object-fit:contain}
@@ -122,13 +141,15 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .credit a{color:var(--muted);text-decoration:underline}
 
 /* ---- paywall: locked stubs, CTA panel, account menu, auth dialog ---- */
+.card.locked{cursor:pointer}
 .card.locked .media{overflow:hidden}
 .card.locked .media img,.card.locked .ph{filter:blur(8px);transform:scale(1.12)}
 .card.locked .body{pointer-events:none}
 .card.locked:hover{transform:none;box-shadow:var(--shadow)}
-.lock{position:absolute;left:calc(50% - 19px);top:calc(50% - 19px);width:38px;height:38px;
-      border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:flex;
-      align-items:center;justify-content:center;font-size:17px}
+.lock{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;
+      align-items:center;gap:6px;min-width:38px;min-height:38px;justify-content:center;
+      padding:6px 12px;border-radius:999px;background:var(--card);color:var(--fg);
+      box-shadow:var(--shadow);font-size:13px;font-weight:800;white-space:nowrap}
 .sk{display:block;height:11px;border-radius:6px;background:var(--chip)}
 .sk.price{height:20px;width:55%}
 .sk.t2{width:70%;margin-top:6px}
@@ -138,13 +159,16 @@ header{background:var(--card);border-bottom:1px solid var(--line);
          gap:8px 16px;align-items:center}
 .pwtext{margin:0;flex:1 1 240px;min-width:0;font-size:16px;font-weight:800}
 .pwtext .meta{font-size:14px;font-weight:600}
-.pwbtns{display:flex;gap:8px;flex:0 0 auto}
+.pwbtns{display:flex;flex-wrap:wrap;gap:8px;flex:0 1 auto}
 .pwbtn{font:inherit;font-weight:800;font-size:14px;padding:9px 16px;border-radius:10px;
        border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg)!important;
        cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-block}
 .pwbtn.alt{background:var(--chip);border-color:var(--line);color:var(--fg)!important}
 .pwbtn:hover{text-decoration:none;filter:brightness(1.06)}
 .pwbtn:disabled{opacity:.6;cursor:wait}
+/* The one-line terms next to every trial button: visible, never a tooltip. */
+.disc{margin:8px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted)}
+.paywall .disc,.paywall .autherr{flex:1 1 100%;margin:0}
 .acct,.acct .in{display:inline-flex;align-items:center;gap:10px;font-size:13px;white-space:nowrap}
 .acct .email{color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .linkbtn{background:none;border:0;padding:0;margin:0;color:var(--link);font:inherit;
@@ -167,7 +191,10 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .mcard input{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);
              border-radius:8px;padding:9px 10px;font:inherit}
 .mcard input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
-.mcard .pwbtn{width:100%;margin-top:2px}
+.mcard .pwbtn{width:100%;margin-top:2px;white-space:normal;text-align:center}
+#authstep2{margin-top:14px}
+#authstep2 .autherr{margin-top:10px}
+#cofb{margin-top:8px}
 .autherr{margin:0;color:var(--dead);font-size:13px;font-weight:600}
 .switch{margin:12px 0 0;text-align:center}
 
@@ -191,7 +218,9 @@ footer .meta{font-size:11.5px}
   header{position:static}
   .hrow{padding:8px 12px 2px;gap:2px 10px}
   .brand{font-size:20px}
-  .count{order:1;font-size:12.5px;padding:3px 9px}
+  .drop{order:1;padding:4px 11px 8px;gap:7px}
+  .droplbl{font-size:12.5px}
+  .dropt{font-size:20px}
   .tag{order:2;flex-basis:100%;font-size:12px}
   #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
   .since{padding:0 12px 2px;font-size:12px}
@@ -206,7 +235,8 @@ footer .meta{font-size:11.5px}
   .pwtext{flex-basis:100%;font-size:14px}
   .pwtext .meta{font-size:12.5px}
   .pwbtns{flex:1 1 100%}
-  .pwbtn{flex:1;text-align:center;padding:10px 8px}
+  .pwbtn{flex:1 1 auto;text-align:center;padding:10px 8px;white-space:normal}
+  .paywall .disc{font-size:12px}
   .subbar.ready{display:flex;position:fixed;left:12px;right:12px;bottom:12px;z-index:30;
     justify-content:center;align-items:center;min-height:48px;border-radius:12px;
     background:var(--accent);color:var(--accent-fg);font-weight:800;font-size:15px;
@@ -219,6 +249,12 @@ footer .meta{font-size:11.5px}
   .ph span{font-size:17px}
   .getdeal{padding:9px 11px;font-size:12.5px}
   .title{font-size:13.5px}
+  .lock{font-size:12px;padding:5px 10px}
+}
+/* Reduced motion: no pulse, no sweep, no slide; a drop reorders instantly. */
+@media (prefers-reduced-motion: reduce){
+  .drop::before,.card.moved::after,.card.enter{animation:none}
+  .card{transition:none}
 }
 </style>
 </head>
@@ -227,11 +263,15 @@ footer .meta{font-size:11.5px}
   <div class="hrow">
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span id="tagline" class="tag">verified deals</span>
-    <span id="countdown" class="count">Next drop soon</span>
+    <div id="drop" class="drop" role="timer" aria-live="off">
+      <span class="droplbl">Next drop in</span>
+      <span id="countdown" class="dropt">-:--</span>
+      <span class="dropbar" aria-hidden="true"><span id="dropfill" class="dropfill"></span></span>
+    </div>
     <span id="account" class="acct" hidden>
       <button type="button" id="loginlink" class="linkbtn" data-auth="login">Log in</button>
       <span id="acctin" class="in" hidden><span id="acctemail" class="email"></span>
-        <a id="billing" target="_blank" rel="noopener" hidden>Manage billing</a>
+        <button type="button" id="billing" class="linkbtn" hidden>Manage or cancel</button>
         <button type="button" id="logout" class="linkbtn">Log out</button></span>
     </span>
     <a id="subscribe" class="getdeal" rel="noopener" style="display:none">
@@ -261,14 +301,19 @@ footer .meta{font-size:11.5px}
   <div class="pwbtns">
     <button type="button" id="pwsignup" class="pwbtn" data-auth="signup">Sign up free</button>
     <button type="button" id="pwlogin" class="pwbtn alt" data-auth="login">Log in</button>
-    <a id="pwsub" class="pwbtn" target="_blank" rel="noopener" hidden>Subscribe</a>
+    <button type="button" id="pwbuy" class="pwbtn" hidden>Start free trial</button>
     <button type="button" id="pwcheck" class="pwbtn alt" hidden>I just subscribed</button>
     <a id="pwplain" class="pwbtn" rel="noopener" hidden>Get every deal by email &mdash; $9.99/mo</a>
   </div>
+  <p id="pwnote" class="disc" hidden></p>
+  <p id="pwerr" class="autherr" role="alert" hidden></p>
+  <a id="pwfb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
 </div>
 <footer>
-  <p><strong>Membership — $9.99/month:</strong> every verified deal emailed to you the hour
-     it's found, bundled at most once an hour, cancel anytime. The wall here stays free.</p>
+  <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus every verified
+     deal emailed to you the hour it's found, bundled at most once an hour. New members
+     start with a 7-day free trial (card required); cancel anytime online. Today's top
+     deals stay free for everyone.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live. <a href="health.html">source health</a></p>
@@ -291,18 +336,27 @@ footer .meta{font-size:11.5px}
 <div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
   <div class="mcard">
     <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
-    <h2 id="authtitle">Start your free trial</h2>
-    <p id="authsub" class="meta">7 days of every deal, free. No card needed.</p>
-    <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
-    <form id="authform">
-      <label>Email <input id="authemail" type="email" autocomplete="email" required></label>
-      <label>Password <input id="authpass" type="password" autocomplete="new-password"
-                             minlength="8" required></label>
-      <p id="autherr" class="autherr" role="alert" hidden></p>
-      <button type="submit" id="authsubmit" class="pwbtn">Sign up free</button>
-    </form>
-    <p class="meta switch"><span id="authswitchtxt">Already have an account?</span>
-      <button type="button" id="authswitch" class="linkbtn">Log in</button></p>
+    <h2 id="authtitle">Create your free account</h2>
+    <p id="authsub" class="meta">Free account: today's top 8 deals. Every deal: 7-day free trial, card required.</p>
+    <div id="authstep1">
+      <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
+      <form id="authform">
+        <label>Email <input id="authemail" type="email" autocomplete="email" required></label>
+        <label>Password <input id="authpass" type="password" autocomplete="new-password"
+                               minlength="8" required></label>
+        <p id="autherr" class="autherr" role="alert" hidden></p>
+        <button type="submit" id="authsubmit" class="pwbtn">Sign up free</button>
+      </form>
+      <p class="meta switch"><span id="authswitchtxt">Already have an account?</span>
+        <button type="button" id="authswitch" class="linkbtn">Log in</button></p>
+    </div>
+    <div id="authstep2" hidden>
+      <button type="button" id="cobtn" class="pwbtn">Start free trial</button>
+      <p id="codisc" class="disc"></p>
+      <p id="coerr" class="autherr" role="alert" hidden></p>
+      <a id="cofb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
+      <p class="meta switch"><button type="button" id="conotnow" class="linkbtn">Not now</button></p>
+    </div>
   </div>
 </div>
 <div id="toast" class="toast" role="status" hidden></div>
@@ -311,14 +365,24 @@ footer .meta{font-size:11.5px}
 (function () {
   // deals: the list on screen (teaser, or a member's full payload);
   // teaser: what deals.json carried; me: the Worker's account record.
+  // seed: the drop mark the fresh-drops order is dealt from; newKeys: live
+  // deals that arrived since the last drop (they lead, tagged NEW);
+  // dropKeys: what was on the wall at the last drop.
   var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "",
-                sortKey: "fresh", sortDir: -1, catTab: 0 };
+                sortKey: "fresh", sortDir: -1, catTab: 0,
+                seed: 0, newKeys: {}, dropKeys: {} };
   // The fast lane redeploys the site every 10 minutes even between hourly
   // sweeps, so the next drop is never further off than that.
   var FAST_LANE_MIN = 10;
-  // After a drop mark passes, how long "Loading new drops" polls for the new
-  // file before the countdown aims at the next wall-clock mark instead.
-  var GRACE_MS = 6 * 60 * 1000;
+  // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
+  // for at most DROP_MAX_MS; a publish that missed its mark is polled for
+  // quietly every POLL_MS until LATE_MS after the mark.
+  var DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000;
+  var POLL_MS = 30 * 1000, LATE_MS = 6 * 60 * 1000;
+  // Fresh drops mix up to JITTER_H hours of seeded jitter into the arrival
+  // order: every drop re-deals the wall while recent arrivals still lead.
+  var JITTER_H = 3;
+  var FLIP_MS = 600;
   // localStorage keys: per-viewer conveniences only, never required.
   var SORT_KEY = "wp.sort", SEEN_KEY = "wp.seen";
   // Amazon-style department tabs over the internal category vocabulary.
@@ -367,6 +431,7 @@ footer .meta{font-size:11.5px}
     });
   }
   function num(v) { var n = Number(v); return (v == null || isNaN(n)) ? null : n; }
+  function noop() {}
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
   function sortVal(d, key) {
@@ -387,14 +452,15 @@ footer .meta{font-size:11.5px}
     var key = (lr.run_key || "") + "|" + ((m && m.generated_at) || "");
     return key === "|" ? "" : key;
   }
+  function dealKey(d) { return d.key || d.dedupe_key || ""; }
   function keySet(deals) {
     var set = {};
-    deals.forEach(function (d) { var k = d.key || d.dedupe_key; if (k) set[k] = true; });
+    deals.forEach(function (d) { var k = dealKey(d); if (k) set[k] = true; });
     return set;
   }
   function liveNotIn(deals, set) {
     return deals.filter(function (d) {
-      return d.status !== "dead" && !set[d.key || d.dedupe_key];
+      return d.status !== "dead" && !set[dealKey(d)];
     }).length;
   }
   function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
@@ -445,28 +511,32 @@ footer .meta{font-size:11.5px}
     document.getElementById("account").hidden = !on;
     document.getElementById("loginlink").hidden = !!me;
     document.getElementById("acctin").hidden = !me;
-    if (me) {
-      document.getElementById("acctemail").textContent = me.email || "";
-      var bill = document.getElementById("billing");
-      bill.hidden = !me.portal_url;
-      bill.href = me.portal_url || "";
-    }
+    if (me) document.getElementById("acctemail").textContent = me.email || "";
+    // "Manage or cancel" (Stripe's billing portal): members only, and gone
+    // for good once neither a portal session nor a portal link exists.
+    document.getElementById("billing").hidden = !(on && isMember()) || auth.noPortal;
     var trial = document.getElementById("trialnote");
     trial.hidden = !(on && isMember() && me.reason === "trial");
-    if (!trial.hidden) trial.textContent = "Free trial: ends " + fmtDay(me.trial_ends_at);
-    // A paying member is never pointed back at the Payment Link.
-    if (isMember() && me.reason === "subscribed") sub.style.display = "none";
+    if (!trial.hidden) {
+      var day = fmtDay(me.trial_ends_at);
+      trial.textContent = "Free trial — " + (day ? "ends " + day + ". Then" : "then") +
+        " $9.99/month unless you cancel.";
+    }
+    // A member is never pointed back at the Payment Link.
+    if (isMember()) sub.style.display = "none";
     syncSubbar();
   }
 
-  // ---- "Next drop in m:ss" ----
-  // Publishes land on a fixed cadence (meta.cadence_minutes, capped at the
-  // fast lane's 10) after the run that produced this file started
-  // (meta.generated_at; the run key is the fallback). The countdown aims at
-  // the next mark after that; past the mark it shows "Loading new drops"
-  // and polls every 30 s until the file changes. Cycles can land late, so
-  // no exact second is ever promised.
-  var clock = { target: 0, poll: null };
+  // ---- the drop clock ----
+  // Drops sit on fixed wall-clock marks: every step (meta.cadence_minutes,
+  // capped at the fast lane's 10) at the phase where publishes land
+  // (meta.published_at mod step). At each mark the page drops: it fetches
+  // deals.json (waiting at most 2.5 s), re-deals the wall seeded by the
+  // mark's index, animates the move and counts to the next mark at once.
+  // A publish that has not landed by its mark is polled for quietly and
+  // merged in place when it does; "Dropping…" never sits for more than 3 s.
+  var clock = { target: 0, step: FAST_LANE_MIN * 60 * 1000, phase: 0,
+                dropping: 0, lateUntil: 0, lastPoll: 0, lastSeed: null };
   function publishTime(m) {
     // published_at is the moment the file was built; generated_at is the
     // run's start (a long run publishes minutes later).
@@ -483,43 +553,44 @@ footer .meta{font-size:11.5px}
     var c = num(m.cadence_minutes);
     return Math.min(c > 0 ? c : FAST_LANE_MIN, FAST_LANE_MIN) * 60 * 1000;
   }
-  function nextMark(after, step) { return Math.floor(after / step) * step + step; }
+  // Mark math: marks are the instants t with (t - phase) mod step == 0.
+  function dropPhase(m, step) {
+    var pub = publishTime(m);
+    return pub == null ? 0 : ((pub % step) + step) % step;
+  }
+  function nextMarkAfter(t, phase, step) { return phase + (Math.floor((t - phase) / step) + 1) * step; }
+  function markIndex(t, phase, step) { return Math.floor((t - phase) / step); }
   function mmss(ms) {
     var s = Math.max(0, Math.ceil(ms / 1000));
     return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
   }
-  function setPolling(on) {
-    if (on && !clock.poll) clock.poll = setInterval(loadData, 30 * 1000);
-    if (!on && clock.poll) { clearInterval(clock.poll); clock.poll = null; }
-  }
-  function scheduleDrop() {
+  function syncClock() {
     var m = state.meta || {};
-    var step = dropStepMs(m), pub = publishTime(m), now = Date.now();
-    var target = pub != null ? nextMark(pub, step) : 0;
-    // Publish too old to be waiting on (late cycle, or the page was opened
-    // much later): count to the next wall-clock mark instead.
-    if (target + GRACE_MS <= now) target = nextMark(now, step);
-    clock.target = target;
-    tick();
+    clock.step = dropStepMs(m);
+    clock.phase = dropPhase(m, clock.step);
+    if (!clock.dropping) clock.target = nextMarkAfter(Date.now(), clock.phase, clock.step);
+    paintClock(Date.now());
   }
-  function tick() {
+  function paintClock(now) {
+    var box = document.getElementById("drop");
+    box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
-    var el = document.getElementById("countdown");
-    var now = Date.now(), left = clock.target - now;
-    if (left > 0) {
-      setPolling(false);
-      el.classList.remove("loading");
-      el.textContent = "Next drop in " + mmss(left);
-    } else if (left > -GRACE_MS) {
-      el.classList.add("loading");
-      el.textContent = "Loading new drops…";
-      setPolling(true);
-    } else {
-      // This cycle landed late (or not at all): aim at the next wall-clock
-      // mark; the 5-minute fallback poll still picks it up whenever it lands.
-      clock.target = nextMark(now, dropStepMs(state.meta || {}));
-      tick();
+    var left = clock.target - now;
+    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
+    var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
+    document.getElementById("dropfill").style.transform = "scaleX(" + f.toFixed(4) + ")";
+  }
+  // The page's one ticking interval: paints the clock, fires the drop at
+  // each mark and runs the quiet late poll.
+  function tick() {
+    var now = Date.now();
+    if (!clock.dropping && loadedOnce && clock.target && now >= clock.target) {
+      drop(now);
+    } else if (!clock.dropping && clock.lateUntil) {
+      if (now >= clock.lateUntil) clock.lateUntil = 0;
+      else if (now - clock.lastPoll >= POLL_MS) { clock.lastPoll = now; poll(); }
     }
+    paintClock(now);
   }
   setInterval(tick, 1000);
 
@@ -627,40 +698,45 @@ footer .meta{font-size:11.5px}
     for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; }
     return h;
   }
-  function hourBucket(d) {
-    var t = Date.parse(d.first_seen_at || "");
-    return isNaN(t) ? -1 : Math.floor(t / 3600000);   // unknown arrival: last
+  // A well-mixed 32-bit finalizer: hashStr alone is linear, so consecutive
+  // seeds would shift every deal's jitter by the same amount.
+  function mix(h) {
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+    return h >>> 0;
   }
-  function freshOrder(rows) {
-    // "Fresh drops" (default): newest hour of arrival first; inside an hour
-    // biggest % off first, but the start of each hour's list is rotated by
-    // a hash of this publish, so every cycle visibly re-deals the top rows
-    // while nothing is ever hidden.
-    var seed = state.dataKey;
-    var buckets = {}, hours = [];
-    rows.forEach(function (d) {
-      var h = hourBucket(d);
-      if (!buckets[h]) { buckets[h] = []; hours.push(h); }
-      buckets[h].push(d);
-    });
-    hours.sort(function (a, b) { return b - a; });
-    var out = [];
-    hours.forEach(function (h) {
-      var arr = buckets[h].sort(function (x, y) {
-        return (num(y.pct_at_checkout) || 0) - (num(x.pct_at_checkout) || 0);
-      });
-      var off = hashStr(seed + "|" + h) % arr.length;
-      out = out.concat(arr.slice(off), arr.slice(0, off));
-    });
-    return out;
+  function jitter(seed, key) { return mix(hashStr(String(key)) ^ mix(seed | 0)) / 4294967296; }
+  function freshOrder(rows, shuffleOnly) {
+    // "Fresh drops" (default): arrival order (newest first; a bigger % off
+    // counts as a little newer) plus up to JITTER_H hours of jitter seeded
+    // by the drop mark, so every drop visibly re-deals the wall and nothing
+    // is ever hidden. Deals that arrived since the last drop lead.
+    // shuffleOnly: the teaser's few open cards are simply re-dealt.
+    var now = Date.now(), seed = state.seed;
+    return rows.map(function (d) {
+      var k = dealKey(d), s = jitter(seed, k);
+      if (!shuffleOnly) {
+        var t = Date.parse(d.first_seen_at || "");
+        s = s * JITTER_H + (isNaN(t) ? 1e6 : (now - t) / 3600000) -
+          (num(d.pct_at_checkout) || 0) / 50;
+      }
+      return { d: d, s: (state.newKeys[k] ? -1e9 : 0) + s };
+    }).sort(function (a, b) { return a.s - b.s; }).map(function (x) { return x.d; });
   }
   function ordered(rows) {
-    var sorted = state.sortKey === "fresh" ? freshOrder(rows) : rows.sort(cmp);
     // The teaser's unlocked deals (the top picks) always lead; the blurred
-    // stubs follow in the same order, whatever the sort.
+    // stubs follow, each group dealt within itself, whatever the sort.
+    var fresh = state.sortKey === "fresh";
     var open = [], locked = [];
-    sorted.forEach(function (d) { (d.locked === true ? locked : open).push(d); });
-    return locked.length ? open.concat(locked) : sorted;
+    (fresh ? rows : rows.slice().sort(cmp)).forEach(function (d) {
+      (isLocked(d) ? locked : open).push(d);
+    });
+    if (fresh) {
+      open = freshOrder(open, locked.length > 0);
+      locked = freshOrder(locked, false);
+    }
+    return open.concat(locked);
   }
 
   function storeHue(s) {
@@ -681,16 +757,19 @@ footer .meta{font-size:11.5px}
     return conds.indexOf("open_box") !== -1 ? "OPEN BOX"
       : (conds.indexOf("used") !== -1 ? "USED" : "");
   }
+  function isNew(d) { return d.status !== "dead" && !!state.newKeys[dealKey(d)]; }
 
   function mediaHtml(d) {
     // Media: retailer's own public product image; without one (or on a
     // broken link) a store-colored tile keeps the card looking intentional.
+    // No referrer: an image host that refuses other sites' pages still
+    // serves a request that names none.
     var phStyle = "background:hsl(" + storeHue(d.store) + ",42%,62%)" +
       (d.image_url ? ";display:none" : "");
     var media = "";
     if (d.image_url) {
-      media += '<img loading="lazy" src="' + esc(d.image_url) + '" alt="' +
-        esc(d.item) + '" onerror="this.style.display=\'none\';' +
+      media += '<img loading="lazy" referrerpolicy="no-referrer" src="' + esc(d.image_url) +
+        '" alt="' + esc(d.item) + '" onerror="this.style.display=\'none\';' +
         "this.nextElementSibling.style.display='flex'\">";
     }
     media += '<div class="ph" style="' + phStyle + '" aria-hidden="true"><span>' +
@@ -701,6 +780,7 @@ footer .meta{font-size:11.5px}
     }
     if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
     if (d.status === "dead") media += '<span class="gonetag">GONE</span>';
+    if (isNew(d)) media += '<span class="newtag">NEW</span>';
     return media;
   }
 
@@ -708,12 +788,16 @@ footer .meta{font-size:11.5px}
     // Locked stub (docs/paywall.md): the same frame with the photo (or
     // tile) blurred, the percent and store, and skeleton bars where the
     // name and price would be. No link; nothing the stub does not carry.
-    var pct = num(d.pct_at_checkout);
-    return '<article class="card locked" aria-label="Locked deal: ' +
+    // A click opens the next step (sign up, or the trial); keyboard and
+    // screen-reader users have the same step in the CTA panel.
+    var pct = num(d.pct_at_checkout), lbl = lockLabel();
+    return '<article class="card locked' + (isNew(d) ? " isnew" : "") + '" data-key="' +
+      esc(dealKey(d)) + '" aria-label="Locked deal: ' +
       (pct != null ? Math.round(pct) + "% off at " : "") + esc(d.store || "") +
       ', members only">' +
       '<div class="media">' + mediaHtml(d) +
-      '<span class="lock" aria-hidden="true">&#128274;</span></div>' +
+      '<span class="lock" aria-hidden="true">&#128274;' + (lbl ? " " + esc(lbl) : "") +
+      "</span></div>" +
       '<div class="body">' +
       '<div class="pricerow" aria-hidden="true"><span class="sk price"></span></div>' +
       '<h3 class="title" aria-hidden="true"><span class="sk t1"></span>' +
@@ -762,7 +846,8 @@ footer .meta{font-size:11.5px}
       ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener">Get deal</a>'
       : "") + '<span class="credit">' + credits + "</span>";
 
-    return '<article class="card' + (dead ? " gone" : "") + '">' +
+    return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
+      '" data-key="' + esc(dealKey(d)) + '">' +
       '<div class="media">' + media + "</div>" +
       '<div class="body">' +
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
@@ -832,12 +917,90 @@ footer .meta{font-size:11.5px}
     if (miss) content.insertBefore(panel, miss); else content.appendChild(panel);
   }
 
+  // ---- reorganizing the wall (drops and late landings) ----
+  function reduceMotion() {
+    try { return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }
+    catch (e) { return false; }
+  }
+  function cardEls() { return document.querySelectorAll("#content .card[data-key]"); }
+  function headKeys() {
+    var els = cardEls(), out = [];
+    for (var i = 0; i < els.length && i < 12; i++) out.push(els[i].getAttribute("data-key"));
+    return out.join(",");
+  }
+  // A drop never moves focus: the focused control (a card's link, by the
+  // card's key, or the CTA panel's button) is focused again after the
+  // grid is rebuilt, without scrolling.
+  function rememberFocus() {
+    var a = document.activeElement;
+    if (!a || !document.getElementById("content").contains(a)) return null;
+    var card = a.closest ? a.closest(".card[data-key]") : null;
+    if (!card) return { el: a };
+    return { key: card.getAttribute("data-key"),
+             i: Array.prototype.indexOf.call(card.querySelectorAll("a[href],button"), a) };
+  }
+  function restoreFocus(f) {
+    if (!f) return;
+    var el = f.el || null, els = cardEls();
+    for (var i = 0; !el && i < els.length; i++) {
+      if (els[i].getAttribute("data-key") === f.key) el = els[i].querySelectorAll("a[href],button")[f.i];
+    }
+    if (el && el !== document.activeElement && document.body.contains(el)) {
+      try { el.focus({ preventScroll: true }); } catch (e) { /* fine */ }
+    }
+  }
+  // FLIP: record each card's position by key, re-render, then slide every
+  // card that moved from where it was to where it is over FLIP_MS with a
+  // brief highlight sweep; new arrivals fade in at the top. Instant under
+  // prefers-reduced-motion. reshuffle: a drop must look different, so a
+  // deal that came out the same (tiny lists) is dealt again.
+  function reorganize(reshuffle) {
+    var animate = !reduceMotion() && !document.hidden;
+    var before = {};
+    if (animate) {
+      cardEls().forEach(function (el) { before[el.getAttribute("data-key")] = el.getBoundingClientRect(); });
+    }
+    var head = headKeys(), focus = rememberFocus();
+    render();
+    for (var n = 0; reshuffle && state.sortKey === "fresh" && n < 3 &&
+         head.indexOf(",") !== -1 && headKeys() === head; n++) {
+      state.seed = clock.lastSeed = state.seed + 1;
+      render();
+    }
+    restoreFocus(focus);
+    if (!animate) return;
+    var vh = window.innerHeight, moved = [];
+    cardEls().forEach(function (el) {
+      var was = before[el.getAttribute("data-key")];
+      if (!was) { if (el.classList.contains("isnew")) el.classList.add("enter"); return; }
+      var now = el.getBoundingClientRect();
+      var dx = was.left - now.left, dy = was.top - now.top;
+      if (!dx && !dy) return;
+      if (Math.min(was.top, now.top) > vh + 200 || Math.max(was.bottom, now.bottom) < -200) return;
+      el.style.transition = "none";
+      el.style.transform = "translate(" + dx + "px," + dy + "px)";
+      moved.push(el);
+    });
+    if (!moved.length) return;
+    void document.body.offsetWidth;  // commit the old positions before sliding
+    moved.forEach(function (el) {
+      el.style.transition = "transform " + FLIP_MS + "ms cubic-bezier(.2,.7,.2,1)";
+      el.style.transform = "";
+      el.classList.add("moved");
+    });
+    setTimeout(function () {
+      moved.forEach(function (el) { el.style.transition = ""; el.classList.remove("moved"); });
+    }, FLIP_MS + 400);
+  }
+
   // ---- paywall (docs/paywall.md, "Page behavior") ----
   // The static site only ever holds the teaser: the top deals in full and
-  // every other live deal as a locked stub. A visitor holding a session
-  // token (from the Worker at meta.api_url, kept in localStorage) is looked
-  // up once per page; members get the full payload from the Worker through
-  // the same renderer. With meta.api_url empty none of this UI exists.
+  // every other live deal as a locked stub. A free account sees the same
+  // teaser; every deal unlocks only with a Stripe subscription (a card on
+  // file: Stripe's own free trial, or paid). A visitor holding a session
+  // token (from the Worker at meta.api_url, kept in local storage) is
+  // looked up once per page; members get the full payload from the Worker
+  // through the same renderer. With meta.api_url empty none of this exists.
   var SESSION_KEY = "wp.session";
   var GIS_SRC = "https://accounts.google.com/gsi/client";
   var AUTH_ERR = {
@@ -850,8 +1013,10 @@ footer .meta{font-size:11.5px}
     network: "Couldn't reach the server — check your connection and try again."
   };
   // token: in-memory copy so a blocked localStorage still signs in for the
-  // page's lifetime; checking: a member lookup is in flight (CTA waits).
-  var auth = { mode: "signup", token: "", opener: null, gis: false, checking: false };
+  // page's lifetime; checking: a member lookup is in flight (CTA waits);
+  // noPortal: no billing portal of any kind, so "Manage or cancel" hides.
+  var auth = { mode: "signup", token: "", opener: null, gis: false, checking: false,
+               noPortal: false };
   var panel = document.getElementById("paywall");
   var modal = document.getElementById("authmodal");
 
@@ -862,9 +1027,35 @@ footer .meta{font-size:11.5px}
   function dropSession() { auth.token = ""; lsDel(SESSION_KEY); state.me = null; }
   function isMember() { return !!(state.me && state.me.member); }
   function isLocked(d) { return d.locked === true; }
+  function https(u) { return /^https:\/\//.test(String(u || "")) ? String(u) : ""; }
   function fmtDay(s) {
     var t = Date.parse(s || "");
     return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  function trialDays() {
+    return num((state.me || {}).trial_days) || num((state.meta || {}).trial_days) || 7;
+  }
+  function dealTotal() {
+    var unlocked = state.deals.filter(function (d) { return !isLocked(d) && d.status !== "dead"; }).length;
+    return (num((state.meta || {}).locked_count) || 0) + unlocked;
+  }
+  // The terms that sit next to every free-trial button, in one line.
+  function trialDisclosure(days) {
+    return "Card required. Free for " + days + " days, then $9.99/month, renews monthly " +
+      "until you cancel. Cancel anytime online.";
+  }
+  // What a signed-in non-member can start: Stripe's card-up-front trial,
+  // once per account, else a plain monthly subscription.
+  function offer() {
+    var me = state.me || {}, days = trialDays();
+    var trial = me.trial_available !== false && me.reason !== "lapsed";
+    return { trial: trial, lapsed: me.reason === "lapsed", days: days,
+             btn: trial ? "Start " + days + "-day free trial" : "Subscribe — $9.99/month",
+             note: trial ? trialDisclosure(days)
+               : "$9.99/month, renews monthly until you cancel. Cancel anytime online." };
+  }
+  function lockLabel() {
+    return !apiUrl() ? "" : (!state.me ? "Sign up free" : (isMember() ? "" : "Unlock"));
   }
 
   function api(path, body, method) {
@@ -874,6 +1065,14 @@ footer .meta{font-size:11.5px}
     return fetch(apiUrl() + path, {
       method: method || (body ? "POST" : "GET"), headers: headers,
       body: body ? JSON.stringify(body) : undefined, cache: "no-store"
+    });
+  }
+  // A JSON POST answered as {status, json}; a body that is not JSON is {}.
+  function apiPost(path) {
+    return api(path, {}).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        return { status: r.status, ok: r.ok, json: j || {} };
+      });
     });
   }
   // GET /api/me → me, or null when signed out (a 401 clears the token).
@@ -908,6 +1107,7 @@ footer .meta{font-size:11.5px}
     refreshStores();
     renderMeta();
     render();
+    openFromHash();
   }
 
   function syncSubbar() {
@@ -919,32 +1119,101 @@ footer .meta{font-size:11.5px}
     var m = state.meta || {}, me = state.me;
     panel.hidden = !hasLocked || auth.checking;
     if (!panel.hidden) {
-      var unlocked = state.deals.filter(function (d) {
-        return !isLocked(d) && d.status !== "dead";
-      }).length;
-      var locked = num(m.locked_count) || 0;
-      var mode = !apiUrl() ? "plain" : (!me ? "out" : (me.member ? "retry" : "expired"));
-      panel.querySelector(".pwtext").innerHTML = {
+      var total = dealTotal(), locked = num(m.locked_count) || 0, o = offer();
+      var mode = !apiUrl() ? "plain" : (!me ? "out" : (me.member ? "retry"
+        : (o.lapsed ? "lapsed" : (o.trial ? "trial" : "sub"))));
+      var buy = mode === "trial" || mode === "sub" || mode === "lapsed";
+      panel.querySelector(".pwtext").textContent = {
         plain: plural(locked, "more deal") + " for members",
-        out: "Unlock all " + (locked + unlocked) + ' deals <span class="meta">— ' +
-          (num(m.trial_days) || 7) + " days free, then $9.99/mo</span>",
-        expired: 'Your free week ended <span class="meta">— keep every deal for $9.99/mo</span>',
+        out: "Unlock all " + total + " deals",
+        trial: "You're signed in. Start your " + o.days + "-day free trial to unlock all " +
+          total + " deals.",
+        sub: "You're signed in. Subscribe to unlock all " + total + " deals.",
+        lapsed: "Your membership ended. Restart for $9.99/month.",
         retry: "Couldn't load your deals right now"
       }[mode];
-      var sUrl = (me && me.subscribe_url) || m.subscribe_url || "";
-      var show = { pwsignup: mode === "out", pwlogin: mode === "out",
-                   pwsub: mode === "expired" && !!sUrl,
-                   pwcheck: mode === "expired" || mode === "retry",
+      var note = mode === "out"
+        ? "Unlock every deal with a " + o.days + "-day free trial. Card required, then $9.99/month."
+        : (buy ? o.note : "");
+      var show = { pwsignup: mode === "out", pwlogin: mode === "out", pwbuy: buy,
+                   pwcheck: buy || mode === "retry",
                    pwplain: mode === "plain" && !!m.subscribe_url };
       Object.keys(show).forEach(function (id) { panel.querySelector("#" + id).hidden = !show[id]; });
-      panel.querySelector("#pwsub").href = sUrl;
+      panel.querySelector("#pwbuy").textContent = o.btn;
+      var pn = panel.querySelector("#pwnote");
+      pn.textContent = note;
+      pn.hidden = !note;
       panel.querySelector("#pwplain").href = m.subscribe_url || "";
       panel.querySelector("#pwcheck").textContent = mode === "retry" ? "Retry" : "I just subscribed";
+      if (panel.getAttribute("data-mode") !== mode) {
+        panel.setAttribute("data-mode", mode);
+        panel.querySelector("#pwerr").hidden = true;
+        panel.querySelector("#pwfb").hidden = true;
+      }
     }
     syncSubbar();
   }
 
-  // ---- auth dialog ----
+  // ---- checkout and billing portal (docs/paywall.md, "Worker API") ----
+  // POST /api/checkout → a Stripe Checkout Session (card up front; the
+  // free trial while the account still has one) and the browser goes
+  // there. 409: already a member; 503 (or no such route yet): the Payment
+  // Link, when there is one, is offered instead.
+  function checkout(btn, errEl, fbEl) {
+    var o = offer();
+    btn.disabled = true;
+    errEl.hidden = true;
+    fbEl.hidden = true;
+    apiPost("/api/checkout").then(function (res) {
+      var j = res.json;
+      if (res.ok && https(j.url)) { location.assign(https(j.url)); return; }
+      btn.disabled = false;
+      if (res.status === 409 && j.error === "already_member") {
+        if (j.me) state.me = j.me;
+        closeAuth();
+        memberDeals(!j.me).then(showDeals);
+        return;
+      }
+      if (res.status === 401) {
+        dropSession();
+        closeAuth();
+        showDeals(null);
+        toast("Please log in again");
+        return;
+      }
+      errEl.textContent = res.status === 429 ? AUTH_ERR.http_429
+        : (o.trial ? "Free-trial checkout is unavailable right now." : "Checkout is unavailable right now.");
+      errEl.hidden = false;
+      var fb = https(j.fallback_url) || https((state.me || {}).subscribe_url);
+      if (fb && res.status !== 429) { fbEl.href = fb; fbEl.hidden = false; }
+    }).catch(function () {
+      btn.disabled = false;
+      errEl.textContent = AUTH_ERR.network;
+      errEl.hidden = false;
+    });
+  }
+  // "Manage or cancel": POST /api/portal → a Stripe billing-portal session
+  // for the account's customer. 404/503 (or no such route yet): the portal
+  // link (me.portal_url) when there is one, else the link hides itself.
+  function portal(btn) {
+    btn.disabled = true;
+    apiPost("/api/portal").then(function (res) {
+      var j = res.json;
+      if (res.ok && https(j.url)) { location.assign(https(j.url)); return; }
+      btn.disabled = false;
+      if (res.status === 401) { dropSession(); showDeals(null); toast("Please log in again"); return; }
+      var fb = https(j.fallback_url) || https((state.me || {}).portal_url);
+      if (fb) { location.assign(fb); return; }
+      auth.noPortal = true;
+      btn.hidden = true;
+      toast("Billing management is unavailable right now — reply to your Stripe receipt to cancel.");
+    }).catch(function () {
+      btn.disabled = false;
+      toast(AUTH_ERR.network);
+    });
+  }
+
+  // ---- auth dialog: step 1 (sign up / log in), step 2 (start the trial) ----
   function showErr(code) {
     var el = document.getElementById("autherr");
     el.hidden = !code;
@@ -952,23 +1221,43 @@ footer .meta{font-size:11.5px}
   }
   function setMode(mode) {
     auth.mode = mode;
-    var up = mode === "signup", days = num((state.meta || {}).trial_days) || 7;
-    document.getElementById("authtitle").textContent = up ? "Start your free trial" : "Log in";
-    document.getElementById("authsub").textContent = up
-      ? days + " days of every deal, free. No card needed." : "Welcome back.";
-    document.getElementById("authsubmit").textContent = up ? "Sign up free" : "Log in";
-    document.getElementById("authswitchtxt").textContent = up ? "Already have an account?" : "New here?";
-    document.getElementById("authswitch").textContent = up ? "Log in" : "Sign up free";
-    var pass = document.getElementById("authpass");
-    pass.autocomplete = up ? "new-password" : "current-password";
-    pass.minLength = up ? 8 : 1;
-    showErr("");
+    var up = mode === "signup", co = mode === "checkout";
+    var days = trialDays(), top = num((state.meta || {}).teaser_count) || 8;
+    var title = up ? "Create your free account" : "Log in";
+    var sub = up ? "Free account: today's top " + top + " deals. Every deal: " + days +
+      "-day free trial, card required." : "Welcome back.";
+    document.getElementById("authstep1").hidden = co;
+    document.getElementById("authstep2").hidden = !co;
+    if (co) {
+      var o = offer();
+      title = o.lapsed ? "Your membership ended"
+        : (o.trial ? "Step 2 of 2 — start your free trial" : "Step 2 of 2 — subscribe");
+      sub = o.lapsed ? "Restart for $9.99/month."
+        : (o.trial ? "Your free account is ready. Start your " + days + "-day free trial to unlock all " +
+                     dealTotal() + " deals."
+                   : "Your free account is ready. Subscribe to unlock all " + dealTotal() + " deals.");
+      document.getElementById("cobtn").textContent = o.btn;
+      document.getElementById("codisc").textContent = o.note;
+      document.getElementById("coerr").hidden = true;
+      document.getElementById("cofb").hidden = true;
+    } else {
+      document.getElementById("authsubmit").textContent = up ? "Sign up free" : "Log in";
+      document.getElementById("authswitchtxt").textContent = up ? "Already have an account?" : "New here?";
+      document.getElementById("authswitch").textContent = up ? "Log in" : "Sign up free";
+      var pass = document.getElementById("authpass");
+      pass.autocomplete = up ? "new-password" : "current-password";
+      pass.minLength = up ? 8 : 1;
+      showErr("");
+    }
+    document.getElementById("authtitle").textContent = title;
+    document.getElementById("authsub").textContent = sub;
   }
   function openAuth(mode) {
-    auth.opener = document.activeElement;
+    if (modal.hidden) auth.opener = document.activeElement;
     setMode(mode);
     modal.hidden = false;
     document.body.style.overflow = "hidden";
+    if (mode === "checkout") { document.getElementById("cobtn").focus(); return; }
     loadGis();
     document.getElementById("authemail").focus();
   }
@@ -979,10 +1268,13 @@ footer .meta{font-size:11.5px}
     if (auth.opener && auth.opener.focus) auth.opener.focus();
     auth.opener = null;
   }
-  function signedIn(tok, me) {
+  // A new account (or a Google sign-in) without a membership moves on to
+  // step 2 in the same dialog; a password log-in just closes it.
+  function signedIn(tok, me, path) {
     setToken(tok);
     state.me = me || null;
-    closeAuth();
+    if (me && !me.member && path !== "/api/login") openAuth("checkout");
+    else closeAuth();
     auth.checking = true;
     render();
     var key = state.dataKey;
@@ -996,7 +1288,7 @@ footer .meta{font-size:11.5px}
     showErr("");
     api(path, body).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (r.ok && j.token) signedIn(j.token, j.me);
+        if (r.ok && j.token) signedIn(j.token, j.me, path);
         else showErr(j.error || ("http_" + r.status));
       });
     }).catch(function () { showErr("network"); })
@@ -1026,21 +1318,35 @@ footer .meta{font-size:11.5px}
     document.head.appendChild(s);
   }
 
-  // Deep links from other pages (welcome.html after checkout): /#login or
-  // /#signup opens the dialog once the publish is loaded and the account
-  // service exists; the hash is cleared so a reload does not reopen it.
+  // Deep links from other pages (welcome.html, subscribe.html): /#login or
+  // /#signup opens the dialog once the publish is loaded, the account
+  // service exists and any member lookup has answered (a signed-in
+  // non-member's #signup is step 2); the hash is cleared so a reload does
+  // not reopen it.
   function openFromHash() {
     var h = (location.hash || "").toLowerCase();
     if (h !== "#login" && h !== "#signup") return;
-    if (!(state.meta && state.meta.api_url)) return;
+    if (!(state.meta && state.meta.api_url) || auth.checking) return;
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* fine */ }
-    openAuth(h === "#signup" ? "signup" : "login");
+    if (h === "#login") openAuth("login");
+    else if (!isMember()) openAuth(state.me ? "checkout" : "signup");
   }
   window.addEventListener("hashchange", openFromHash);
+  // Stripe Checkout's cancel button comes back here with ?checkout=cancel.
+  (function checkoutCancelled() {
+    if (!/[?&]checkout=cancel(&|$)/.test(location.search)) return;
+    var q = new URLSearchParams(location.search);
+    q.delete("checkout");
+    var rest = q.toString();
+    try { history.replaceState(null, "", location.pathname + (rest ? "?" + rest : "") + location.hash); }
+    catch (e) { /* fine */ }
+    toast("Checkout cancelled — no charge.");
+  })();
   document.querySelectorAll("[data-auth]").forEach(function (b) {
     b.addEventListener("click", function () { openAuth(b.getAttribute("data-auth")); });
   });
   document.getElementById("authclose").addEventListener("click", closeAuth);
+  document.getElementById("conotnow").addEventListener("click", closeAuth);
   modal.addEventListener("click", function (e) { if (e.target === modal) closeAuth(); });
   document.getElementById("authswitch").addEventListener("click", function () {
     setMode(auth.mode === "signup" ? "login" : "signup");
@@ -1066,6 +1372,13 @@ footer .meta{font-size:11.5px}
       password: document.getElementById("authpass").value
     });
   });
+  document.getElementById("cobtn").addEventListener("click", function () {
+    checkout(this, document.getElementById("coerr"), document.getElementById("cofb"));
+  });
+  panel.querySelector("#pwbuy").addEventListener("click", function () {
+    checkout(this, panel.querySelector("#pwerr"), panel.querySelector("#pwfb"));
+  });
+  document.getElementById("billing").addEventListener("click", function () { portal(this); });
   document.getElementById("logout").addEventListener("click", function () {
     if (token()) api("/api/logout", null, "POST").catch(function () { /* token dropped anyway */ });
     dropSession();
@@ -1081,6 +1394,15 @@ footer .meta{font-size:11.5px}
       if (!full) toast(token() ? "No active subscription found yet — try again in a minute"
                                : "Please log in again");
     });
+  });
+  // A click on a locked card takes the next step: sign up when signed out,
+  // the trial (step 2) for a free account, a retry for a member.
+  document.getElementById("content").addEventListener("click", function (e) {
+    var card = e.target.closest ? e.target.closest(".card.locked") : null;
+    if (!card || !apiUrl()) return;
+    if (!state.me) openAuth("signup");
+    else if (!isMember()) openAuth("checkout");
+    else panel.querySelector("#pwcheck").click();
   });
 
   ["q", "storesel", "minpct", "hideunv"].forEach(function (id) {
@@ -1122,66 +1444,150 @@ footer .meta{font-size:11.5px}
     if (sel.selectedIndex === -1) sel.selectedIndex = 0;
   }
 
-  var loadedOnce = false;
-  function applyPublish(meta, deals, key) {
-    var before = keySet(state.deals);
-    state.meta = meta;
-    state.deals = deals;
-    state.dataKey = key;
-    if (loadedOnce) {
-      refreshStores();
-      var fresh = liveNotIn(deals, before);
-      if (fresh) toast(plural(fresh, "new deal") + " just dropped");
-    } else {
-      populateStores();
-      renderTabs();
-      sinceLastVisit(deals);
-      loadedOnce = true;
-      setTimeout(openFromHash, 0);
-    }
-    rememberSeen(deals);
-    renderMeta();
-    render();
-    scheduleDrop();
+  // ---- publishes: first load, drops at the marks, late landings ----
+  var TIMEOUT = {};
+  function withTimeout(p, ms) {
+    return Promise.race([p, new Promise(function (res) { setTimeout(function () { res(TIMEOUT); }, ms); })]);
   }
-  function loadData() {
-    // cache-bust: the runner redeploys every few minutes; an open tab
-    // should show new deals without anyone pressing refresh.
-    fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
+  // deals.json, cache-busted: the runner redeploys every few minutes and an
+  // open tab should see it without anyone pressing refresh.
+  function fetchPublish() {
+    return fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var meta = (data && data.meta) || {};
-        var deals = (data && data.deals) || [];
         maybeReloadForNewVersion(meta);
-        var key = dataKey(meta);
-        if (loadedOnce && key && key === state.dataKey) return;  // same publish
-        state.teaser = deals;
-        if (loadedOnce && isMember()) {
-          // A member's refresh: keep the current list up until the Worker
-          // answers, so cards never blur and unblur between publishes.
-          memberDeals(false).then(function (full) {
-            auth.checking = false;
-            applyPublish(meta, (full && token()) ? full : deals, key);
-          });
-          return;
-        }
-        // Signed in: the teaser goes up now (CTA held back) and the full
-        // payload replaces it once the Worker answers; a failure keeps
-        // the teaser, silently.
-        auth.checking = !!(apiUrl(meta) && token());
-        applyPublish(meta, deals, key);
-        if (auth.checking) {
-          memberDeals(false).then(function (full) {
-            if (state.dataKey === key) showDeals(full);
-          });
-        }
-      })
-      .catch(function () {
-        if (!loadedOnce) {
-          document.getElementById("content").innerHTML =
-            '<p class="empty">Could not load deals.json</p>';
-        } // a failed background refresh keeps showing the last good data
+        return { meta: meta, deals: (data && data.deals) || [], key: dataKey(meta) };
       });
+  }
+  function isNewPublish(pub) { return !!pub && !(pub.key && pub.key === state.dataKey); }
+  // What a publish shows this viewer: a member keeps the current list up
+  // until the Worker answers (cards never blur and unblur between
+  // publishes); everyone else gets the teaser.
+  function dealsFor(pub) {
+    if (!(isMember() && token())) return Promise.resolve(pub.deals);
+    return memberDeals(false).then(function (full) {
+      auth.checking = false;
+      return (full && token()) ? full : pub.deals;
+    });
+  }
+
+  var loadedOnce = false;
+  // A publish goes up: meta, list, clock. Returns how many live deals it
+  // brought that were not on the wall before (tagged NEW).
+  function applyPublish(pub, deals) {
+    var before = keySet(state.deals), first = !loadedOnce, added = 0;
+    state.teaser = pub.deals;
+    state.meta = pub.meta;
+    state.deals = deals;
+    state.dataKey = pub.key;
+    syncClock();
+    if (first) {
+      loadedOnce = true;
+      populateStores();
+      renderTabs();
+      sinceLastVisit(deals);
+      state.dropKeys = keySet(deals);
+      state.seed = clock.lastSeed = markIndex(Date.now(), clock.phase, clock.step);
+      setTimeout(openFromHash, 0);
+    } else {
+      refreshStores();
+      deals.forEach(function (d) {
+        var k = dealKey(d);
+        if (k && d.status !== "dead" && !before[k]) { state.newKeys[k] = true; added++; }
+      });
+    }
+    rememberSeen(deals);
+    renderMeta();
+    return added;
+  }
+  // A publish landing between marks (late, or caught by the 5-minute
+  // fallback): its new deals enter at the top, tagged NEW, everything else
+  // stays where it is, and the toast gives the true count.
+  function landed(pub, deals) {
+    if (!isNewPublish(pub)) return;  // a drop got there first
+    var added = applyPublish(pub, deals);
+    clock.lateUntil = 0;
+    reorganize(false);
+    if (added) toast(plural(added, "new deal") + " just landed");
+  }
+  function merge(pub) {
+    if (!isNewPublish(pub)) return Promise.resolve();
+    return dealsFor(pub).then(function (deals) { landed(pub, deals); });
+  }
+  function poll() { fetchPublish().then(merge).catch(noop); }
+  function checkedAgo() {
+    var t = publishTime(state.meta || {});
+    if (t == null) return "";
+    var k = Math.floor((Date.now() - t) / 60000);
+    return " · prices checked " + (k < 1 ? "just now" : k + " min ago");
+  }
+  // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS),
+  // re-deal the wall seeded by the mark's index (new arrivals first),
+  // animate it, count to the next mark. Everything happens inside
+  // DROP_MAX_MS; whatever answers later lands in place.
+  function drop(now) {
+    var last = nextMarkAfter(now, clock.phase, clock.step) - clock.step;  // a sleeping tab may have missed several
+    var seed = markIndex(last, clock.phase, clock.step);
+    var done = false, got = fetchPublish();
+    clock.dropping = now;
+    clock.lateUntil = 0;
+    clock.target = nextMarkAfter(now, clock.phase, clock.step);
+    paintClock(now);
+    var guard = setTimeout(function () { finish(null, null); }, DROP_MAX_MS - 250);
+    function finish(pub, deals) {
+      if (done) { if (pub) landed(pub, deals); return; }
+      done = true;
+      clearTimeout(guard);
+      var added = pub && isNewPublish(pub) ? applyPublish(pub, deals) : 0;
+      var fresh = !!pub || publishTime(state.meta || {}) >= last - clock.step / 2;
+      // What arrived since the last drop leads, tagged NEW.
+      state.newKeys = {};
+      state.deals.forEach(function (d) {
+        var k = dealKey(d);
+        if (k && d.status !== "dead" && !state.dropKeys[k]) state.newKeys[k] = true;
+      });
+      state.dropKeys = keySet(state.deals);
+      state.seed = clock.lastSeed =
+        clock.lastSeed == null ? seed : Math.max(seed, clock.lastSeed + 1);
+      clock.dropping = 0;
+      reorganize(true);
+      syncClock();
+      if (!fresh) { clock.lateUntil = last + LATE_MS; clock.lastPoll = Date.now(); }
+      toast(added ? plural(added, "new deal") + " just landed" : "Deals reshuffled" + checkedAgo());
+    }
+    got.catch(noop);
+    withTimeout(got, DROP_FETCH_MS).then(function (pub) {
+      if (pub === TIMEOUT) { got.then(merge).catch(noop); finish(null, null); return; }
+      if (!isNewPublish(pub)) { finish(null, null); return; }
+      var deals = dealsFor(pub);
+      withTimeout(deals, Math.max(0, DROP_MAX_MS - 250 - (Date.now() - now))).then(function (d) {
+        if (d === TIMEOUT) { deals.then(function (dd) { landed(pub, dd); }); finish(null, null); }
+        else finish(pub, d);
+      });
+    }, function () { finish(null, null); });
+  }
+
+  function loadData() {
+    fetchPublish().then(function (pub) {
+      if (loadedOnce) return merge(pub);  // the 5-minute fallback
+      // Signed in: the teaser goes up now (CTA held back) and the full
+      // payload replaces it once the Worker answers; a failure keeps
+      // the teaser, silently.
+      auth.checking = !!(apiUrl(pub.meta) && token());
+      applyPublish(pub, pub.deals);
+      render();
+      if (auth.checking) {
+        memberDeals(false).then(function (full) {
+          if (state.dataKey === pub.key) showDeals(full);
+        });
+      }
+    }).catch(function () {
+      if (!loadedOnce) {
+        document.getElementById("content").innerHTML =
+          '<p class="empty">Could not load deals.json</p>';
+      } // a failed background refresh keeps showing the last good data
+    });
   }
 
   loadData();

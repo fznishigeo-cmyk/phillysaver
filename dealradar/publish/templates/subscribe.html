@@ -77,8 +77,9 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
     <div class="plan">
       <h2>Membership</h2>
       <div class="price">$9.99/mo</div>
-      <p class="muted">Every verified deal emailed the hour it's found, bundled at
-         most once an hour, cancel anytime.</p>
+      <p class="muted">Every deal on the wall unlocked, plus every verified deal
+         emailed the hour it's found, bundled at most once an hour. 7-day free trial
+         (card required), then renews monthly; cancel anytime online.</p>
       <a id="member" class="btn alt" rel="noopener" style="display:none">Become a member</a>
     </div>
   </div>
@@ -127,9 +128,12 @@ input[type=email]{flex:1 1 220px;min-width:0;background:var(--bg);color:var(--fg
       } else {
         document.getElementById("pending").style.display = "";
       }
-      if (m.subscribe_url) {
+      // With accounts (api_url), membership starts on the home page: a free
+      // account, then the card-up-front trial; else the Payment Link.
+      var join = m.api_url ? "./#signup" : (m.subscribe_url || "");
+      if (join) {
         var btn = document.getElementById("member");
-        btn.href = m.subscribe_url;
+        btn.href = join;
         btn.style.display = "";
       }
     })
