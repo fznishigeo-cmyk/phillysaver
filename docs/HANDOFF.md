@@ -39,15 +39,17 @@ Keep this file current: whoever stops working updates it in their last commit.
 - **Source health is private to the operator's view:** it is in each run's
   Actions summary, never on the site (note: Actions pages of a public repo
   are viewable by anyone who looks).
-- **Codex (second agent):** Claude writes a task brief to
-  `docs/codex-tasks/NNN-*.md` on a branch `codex/task-NNN`, opens a draft PR
-  and tags @codex. Codex runs in the cloud environment `phillysaver-cloud`
-  (network allowlist: the source hosts it reads) and pushes to that branch;
-  Claude reviews and merges. Codex never pushes to the live branch.
-  Today the @codex tag on GitHub is answered with "create an environment"
-  (the app's environment isn't seen by the GitHub connector yet), so the
-  operator pastes a one-line task message into Codex (tasks 001-003 ran that
-  way, all merged).
+- **Codex (second agent):** since 2026-10-11 Claude runs Codex itself from
+  its cloud session: the Codex CLI signed in with the operator's ChatGPT
+  plan (device-code sign-in, approved by the operator; the token stays in
+  the session's ~/.codex, never in the repo). The session's network allows
+  chatgpt.com, auth.openai.com and api.openai.com. Claude writes the brief
+  to `docs/codex-tasks/NNN-*.md`, runs `codex exec` on a `codex/task-NNN`
+  worktree, reviews the diff, runs the suite and merges. A new container
+  needs a new sign-in (`codex login --device-auth`, the operator enters
+  the code). Fallback: the operator pastes the one-line task into Codex
+  cloud (environment `phillysaver-cloud`); the @codex tag on GitHub
+  still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
 - **Open access (2026-10-11, for "a month or two"):** every visitor sees
