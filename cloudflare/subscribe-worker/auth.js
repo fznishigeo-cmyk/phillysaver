@@ -2,12 +2,15 @@
  * Accounts, sessions and Google sign-in for the paywall (docs/paywall.md).
  *
  *   acct:<email>  {email, scheme, iterations, salt, hash, created_at, trial_ends_at,
- *                  google_sub, email_verified, stripe_customer, claimed_at}
+ *                  google_sub, email_verified, stripe_customer, claimed_at,
+ *                  session_version}
  *                 scheme/iterations/salt/hash are null for a Google-only account
  *   jwks:google   Google's signing keys, cached one hour (also in memory)
  *
  * A session is a stateless token base64url(json).base64url(hmac-sha256) of
- * {email, exp} (30 days) signed with SESSION_SECRET; nothing is stored.
+ * {email, sv, exp} (30 days) signed with SESSION_SECRET; nothing is stored.
+ * sv is the account's session_version at signing: a takeover bumps the
+ * account's version, so every token minted before it (the squatter's) dies.
  *
  * Passwords, scheme 2: HMAC-SHA256(SESSION_SECRET, password) (a server-side
  * pepper, so KV hashes alone cannot be brute-forced), then PBKDF2-SHA256 over
@@ -19,9 +22,10 @@
  * invalidates every scheme-2 password as well as every session.
  *
  * email_verified is true for an account created or taken over by Google
- * sign-in, or whose Stripe claim carried the same email; false for a password
- * sign-up (anyone can type an address). Membership by Stripe email lookup is
- * only granted to verified accounts (membership.js).
+ * sign-in; false for a password sign-up (anyone can type an address, and the
+ * payer email on a Stripe Checkout is typed too, so a claim never verifies).
+ * Membership by Stripe email lookup is only granted to verified accounts
+ * (membership.js).
  */
 
 import { EMAIL_RE, b64url, unb64url, safeEqual } from "./util.js";
@@ -50,12 +54,12 @@ async function hmac(secret, text) {
   return b64url(await crypto.subtle.sign("HMAC", await hmacKey(secret), enc.encode(text)));
 }
 
-export async function signSession(env, email, exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400) {
-  const body = b64url(enc.encode(JSON.stringify({ email, exp })));
+export async function signSession(env, email, exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400, version = 0) {
+  const body = b64url(enc.encode(JSON.stringify({ email, sv: version, exp })));
   return `${body}.${await hmac(env.SESSION_SECRET, body)}`;
 }
 
-// The {email, exp} claims of a valid, unexpired token; null otherwise.
+// The {email, sv, exp} claims of a valid, unexpired token; null otherwise.
 export async function verifySession(env, token) {
   if (!env.SESSION_SECRET || typeof token !== "string") return null;
   const parts = token.split(".");
@@ -64,7 +68,13 @@ export async function verifySession(env, token) {
   let claims;
   try { claims = JSON.parse(dec.decode(unb64url(parts[0]))); } catch (e) { return null; }
   if (!claims || typeof claims.email !== "string" || !(claims.exp > Date.now() / 1000)) return null;
+  if (typeof claims.sv !== "number") claims.sv = 0; // tokens from before session_version
   return claims;
+}
+
+// A token minted before the account's last takeover no longer opens it.
+export function sessionCurrent(acct, claims) {
+  return (acct.session_version || 0) === claims.sv;
 }
 
 export async function sessionFromRequest(request, env) {
@@ -139,7 +149,8 @@ export function newAccount(env, email, { googleSub } = {}) {
   return { email, scheme: null, iterations: null, salt: null, hash: null,
            created_at: new Date(now).toISOString(),
            trial_ends_at: new Date(now + trialDays(env) * 86400000).toISOString(),
-           google_sub: googleSub || null, email_verified: !!googleSub, stripe_customer: null, claimed_at: null };
+           google_sub: googleSub || null, email_verified: !!googleSub, stripe_customer: null, claimed_at: null,
+           session_version: 0 };
 }
 
 // Accounts written before email_verified existed count as verified only when
@@ -150,9 +161,12 @@ export function isVerified(acct) {
 }
 
 // A verified Google sign-in takes over an unverified (password) account on the
-// same address: whoever typed that address at sign-up does not own it.
+// same address: whoever typed that address at sign-up does not own it. Their
+// password goes and their sessions die (the version bump); a Stripe customer
+// bound by a claim stays, since the payer holds that receipt.
 export function takeOver(acct, googleSub) {
-  Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null });
+  Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null,
+                        session_version: (acct.session_version || 0) + 1 });
 }
 
 // --------------------------------------------------------------- google

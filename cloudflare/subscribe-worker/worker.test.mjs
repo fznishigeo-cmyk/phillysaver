@@ -190,8 +190,9 @@ describe("signup and login", () => {
     const raw = await env.SUBS.get("acct:new@example.com");
     const acct = JSON.parse(raw);
     assert.deepEqual(Object.keys(acct).sort(), ["claimed_at", "created_at", "email", "email_verified", "google_sub", "hash",
-                                                "iterations", "salt", "scheme", "stripe_customer", "trial_ends_at"]);
-    assert.deepEqual([acct.google_sub, acct.email_verified, acct.stripe_customer, acct.claimed_at], [null, false, null, null]);
+                                                "iterations", "salt", "scheme", "session_version", "stripe_customer", "trial_ends_at"]);
+    assert.deepEqual([acct.google_sub, acct.email_verified, acct.stripe_customer, acct.claimed_at, acct.session_version],
+                     [null, false, null, null, 0]);
     assert.deepEqual([acct.scheme, acct.iterations], [2, 20000]);
     assert.match(acct.salt, /^[A-Za-z0-9_-]{22}$/, "16 random bytes, base64url");
     assert.match(acct.hash, /^[A-Za-z0-9_-]{43}$/, "32-byte PBKDF2 output, base64url");
@@ -334,7 +335,7 @@ describe("session tokens", () => {
     const { json: { token } } = await signup(env, "tok@example.com");
     assert.match(token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     const claims = JSON.parse(Buffer.from(token.split(".")[0], "base64url").toString());
-    assert.equal(claims.email, "tok@example.com");
+    assert.deepEqual([claims.email, claims.sv], ["tok@example.com", 0]);
     const ttl = claims.exp - Math.floor(Date.now() / 1000);
     assert.ok(ttl > 30 * 86400 - 5 && ttl <= 30 * 86400, "30 days");
     let r = await me(env, token);
@@ -391,33 +392,73 @@ describe("membership and ownership", () => {
     r = await google(env, idToken({ email: "paying@example.com", sub: "owner" }));
     assert.deepEqual([r.status, r.json.me.member, r.json.me.reason, r.json.me.email_verified], [200, true, "subscribed", true]);
     assert.ok(stripe.calls > 0);
+    const owner = r.json.token;
     const acct = await account(env, "paying@example.com");
-    assert.deepEqual([acct.google_sub, acct.email_verified, acct.scheme, acct.iterations, acct.salt, acct.hash],
-                     ["owner", true, null, null, null, null]);
+    assert.deepEqual([acct.google_sub, acct.email_verified, acct.scheme, acct.iterations, acct.salt, acct.hash, acct.session_version],
+                     ["owner", true, null, null, null, null, 1]);
     r = await login(env, "paying@example.com");
     assert.deepEqual([r.status, r.json], [401, { error: "bad_credentials" }], "the squatter's password is gone");
-    assert.equal((await me(env, token)).json.reason, "subscribed", "the old session now belongs to the verified owner");
+    // ...and so is the squatter's session, however long its token has left; the owner's works.
+    for (const path of ["/api/me", "/api/deals"]) {
+      r = await call(env, "GET", path, { token });
+      assert.deepEqual([r.status, r.json], [401, { error: "unauthorized" }], `squatter ${path}`);
+    }
+    assert.deepEqual([(await call(env, "POST", "/api/logout", { token })).status, (await claim(env, token, "cs_test_x")).status], [401, 401]);
+    assert.equal((await me(env, owner)).json.reason, "subscribed");
+    travel(20 * DAY);
+    assert.equal((await me(env, token)).status, 401, "still dead later");
+    assert.equal((await me(env, owner)).status, 200);
   });
 
-  test("Google takeover keeps the trial clock; a verified password account is only linked", async () => {
+  test("a squatter who pays with the victim's address gets only what they paid for, then is evicted", async () => {
+    const env = newEnv();
+    subscribed("victim@example.com", ["active"], "cus_victim");
+    const { json: { token } } = await signup(env, "victim@example.com");
+    travel(8 * DAY);
+    // The squatter buys a subscription on the Payment Link typing victim@ as the payer email.
+    stripe.sessions.cs_test_squat1 = { ...COMPLETE, customer: "cus_squatter", customer_details: { email: "victim@example.com" } };
+    stripe.subs.cus_squatter = ["active"];
+    let r = await claim(env, token, "cs_test_squat1");
+    assert.deepEqual([r.status, r.json.me.reason, r.json.me.claimed, r.json.me.email_verified], [200, "subscribed", true, false],
+                     "a typed payer email verifies nothing");
+    assert.ok(stripe.urls.every((u) => !u.includes("expand[]")), "the victim's subscription is never looked up by email");
+    // They cancel: membership ends with their own customer, nothing is inherited from the victim.
+    stripe.subs.cus_squatter = ["canceled"];
+    travel(6 * MIN);
+    assert.deepEqual([(await me(env, token)).json.reason, (await call(env, "GET", "/api/deals", { token })).status], ["expired", 402]);
+    assert.ok(stripe.urls.every((u) => !u.includes("expand[]")));
+    // The owner's Google sign-in still takes the address over: password gone, session dead.
+    r = await google(env, idToken({ email: "victim@example.com", sub: "owner" }));
+    assert.deepEqual([r.status, r.json.me.reason, r.json.me.email_verified], [200, "subscribed", true]);
+    assert.equal((await account(env, "victim@example.com")).hash, null);
+    assert.equal((await login(env, "victim@example.com")).status, 401);
+    assert.equal((await me(env, token)).status, 401);
+  });
+
+  test("Google takeover keeps the trial clock and the claimed customer; a verified account is only linked", async () => {
     const env = newEnv();
     const first = (await signup(env, "p@example.com")).json.me.trial_ends_at;
     travel(DAY);
     let r = await google(env, idToken({ email: "p@example.com", sub: "g-p" }));
     assert.equal(r.json.me.trial_ends_at, first, "no new trial");
     assert.equal((await account(env, "p@example.com")).hash, null);
-    // Verified through a claim whose payer email matches: Google links, the password stays.
+    // The owner's own password account with a claimed payment: Google takes it over, the payment stays theirs.
     const { json: { token } } = await signup(env, "buyer@example.com");
     stripe.sessions.cs_test_ok123456 = COMPLETE;
     stripe.subs.cus_9 = ["active"];
-    assert.equal((await claim(env, token, "cs_test_ok123456")).json.me.email_verified, true);
+    assert.equal((await claim(env, token, "cs_test_ok123456")).json.me.email_verified, false);
     r = await google(env, idToken({ email: "buyer@example.com", sub: "g-b" }));
-    assert.equal(r.status, 200);
-    const acct = await account(env, "buyer@example.com");
-    assert.equal(acct.google_sub, "g-b");
-    assert.ok(acct.hash);
-    assert.equal((await login(env, "buyer@example.com")).status, 200);
-    assert.equal(acct.stripe_customer, "cus_9");
+    assert.deepEqual([r.status, r.json.me.reason, r.json.me.claimed], [200, "subscribed", true]);
+    let acct = await account(env, "buyer@example.com");
+    assert.deepEqual([acct.google_sub, acct.hash, acct.stripe_customer, acct.session_version], ["g-b", null, "cus_9", 1]);
+    assert.equal((await me(env, token)).status, 401, "the pre-takeover session is gone");
+    assert.equal((await me(env, r.json.token)).json.reason, "subscribed");
+    // An already verified account (one Google made) with a later Google sign-in: linked, nothing bumped.
+    r = await google(env, idToken({ email: "buyer@example.com", sub: "g-b2" }));
+    const owner = r.json.token;
+    acct = await account(env, "buyer@example.com");
+    assert.deepEqual([acct.google_sub, acct.session_version], ["g-b2", 1]);
+    assert.equal((await me(env, owner)).status, 200);
   });
 
   test("trial, then expired, then subscribed through Stripe by (verified) email", async () => {
@@ -521,7 +562,7 @@ describe("membership and ownership", () => {
 });
 
 describe("claim", () => {
-  test("binds the Checkout Session's customer to the account; a matching payer email verifies it", async () => {
+  test("binds the Checkout Session's customer to the account; the payer email verifies nothing", async () => {
     const env = newEnv();
     const { json: { token } } = await signup(env, "buyer@example.com");
     travel(8 * DAY);
@@ -531,21 +572,20 @@ describe("claim", () => {
     let r = await claim(env, token, "cs_test_a1b2c3");
     assert.equal(r.status, 200);
     assert.deepEqual(Object.keys(r.json), ["me"]);
-    assert.deepEqual([r.json.me.member, r.json.me.reason, r.json.me.claimed, r.json.me.email_verified], [true, "subscribed", true, true]);
+    assert.deepEqual([r.json.me.member, r.json.me.reason, r.json.me.claimed, r.json.me.email_verified], [true, "subscribed", true, false]);
     assert.match(stripe.urls[0], /^\/v1\/checkout\/sessions\/cs_test_a1b2c3$/);
     assert.match(stripe.urls[1], /^\/v1\/subscriptions\?customer=cus_9&status=all/);
     const acct = await account(env, "buyer@example.com");
     assert.equal(acct.stripe_customer, "cus_9");
     assert.ok(Date.now() - Date.parse(acct.claimed_at) < 5000);
     assert.equal((await call(env, "GET", "/api/deals", { token })).status, 404, "member (nothing published yet)");
-    // The bound customer is what counts: cancel it and membership ends.
+    // The bound customer is what counts: cancel it and membership ends, even
+    // when a customer with the same (unverified) email has a live subscription.
     stripe.subs.cus_9 = ["canceled"];
-    travel(6 * MIN);
-    assert.equal((await me(env, token)).json.reason, "expired");
-    // ...unless the (now verified) email has another live subscription.
     subscribed("buyer@example.com", ["active"], "cus_other");
     travel(6 * MIN);
-    assert.equal((await me(env, token)).json.reason, "subscribed");
+    assert.equal((await me(env, token)).json.reason, "expired");
+    assert.ok(stripe.urls.every((u) => !u.includes("expand[]")), "no lookup by email for an unverified address");
   });
 
   test("a different payer email still binds (the payer holds the receipt) but does not verify", async () => {

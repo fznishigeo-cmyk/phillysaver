@@ -4,8 +4,8 @@
  * active or trialing Stripe subscription one of two ways:
  *   (a) the Stripe customer bound to the account by POST /api/claim, or
  *   (b) a customer with the account's email, only when the address is
- *       verified (Google sign-in or a claim whose payer email matched), so a
- *       password sign-up with someone else's address inherits nothing.
+ *       verified (Google sign-in), so a password sign-up with someone else's
+ *       address inherits nothing, whatever a Checkout payer typed.
  *
  * Stripe's answer is cached 5 minutes in isolate memory (member:<email>), and
  * ?fresh=1 bypasses it at most once a minute per account (fresh:<email>). A

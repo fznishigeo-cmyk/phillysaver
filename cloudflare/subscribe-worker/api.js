@@ -23,7 +23,7 @@
 
 import { EMAIL_RE, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
 import { getAccount, newAccount, saveAccount, setPassword, checkPassword, needsRehash, isVerified,
-         takeOver, signSession, sessionFromRequest, verifyGoogleToken } from "./auth.js";
+         takeOver, signSession, sessionCurrent, sessionFromRequest, verifyGoogleToken } from "./auth.js";
 import { meFor, stripeGet, forgetMembership } from "./membership.js";
 
 const LIMITS_PER_IP_PER_HOUR = { signup: 10, login: 20, google: 20, claim: 10 };
@@ -37,7 +37,7 @@ const str = (v) => (typeof v === "string" ? v : "");
 // The session is signed before a new or changed account is saved, so a
 // signing failure leaves no half-created account behind.
 async function signedIn(env, acct, headers, save = false) {
-  const token = await signSession(env, acct.email);
+  const token = await signSession(env, acct.email, undefined, acct.session_version || 0);
   if (save) await saveAccount(env, acct);
   return json({ token, me: await meFor(env, acct) }, 200, headers);
 }
@@ -69,22 +69,26 @@ async function google(request, env, headers) {
   let acct = await getAccount(env, id.email);
   let save = true;
   if (!acct) acct = newAccount(env, id.email, { googleSub: id.sub }); // trial starts now
-  else if (!isVerified(acct)) takeOver(acct, id.sub); // a password squat on a verified address
-  else if (acct.google_sub !== id.sub) acct.google_sub = id.sub;
+  else if (!isVerified(acct)) { // a password squat on a verified address
+    takeOver(acct, id.sub);
+    forgetMembership(acct.email); // the owner's email lookup must not see the squatter's cached "no"
+  } else if (acct.google_sub !== id.sub) acct.google_sub = id.sub;
   else save = false;
   return signedIn(env, acct, headers, save);
 }
 
-// The account behind a valid session token, else null (-> 401).
+// The account behind a valid session token minted since its last takeover,
+// else null (-> 401).
 async function requireAccount(request, env) {
   const session = await sessionFromRequest(request, env);
-  return session ? getAccount(env, session.email) : null;
+  const acct = session ? await getAccount(env, session.email) : null;
+  return acct && sessionCurrent(acct, session) ? acct : null;
 }
 
 // Binds the Stripe customer of a completed subscription Checkout Session to
 // the account: the payer holds the receipt (the session id from the Payment
 // Link's redirect), so the bound customer's subscription is theirs whatever
-// email they typed. A matching payer email also verifies the address.
+// email they typed. The payer email is typed too, so it verifies nothing.
 async function claim(request, env, headers) {
   const acct = await requireAccount(request, env);
   if (!acct) return json({ error: "unauthorized" }, 401, headers);
@@ -105,7 +109,6 @@ async function claim(request, env, headers) {
   }
   acct.stripe_customer = customer;
   acct.claimed_at = new Date(Date.now()).toISOString();
-  if (cleanEmail(session.customer_details && session.customer_details.email) === acct.email) acct.email_verified = true;
   await saveAccount(env, acct);
   forgetMembership(acct.email); // the next answer must see the new customer
   return json({ me: await meFor(env, acct) }, 200, headers);
@@ -128,7 +131,7 @@ async function deals(request, env, headers) {
 }
 
 async function logout(request, env, headers) {
-  if (!(await sessionFromRequest(request, env))) return json({ error: "unauthorized" }, 401, headers);
+  if (!(await requireAccount(request, env))) return json({ error: "unauthorized" }, 401, headers);
   return new Response(null, { status: 204, headers });
 }
 

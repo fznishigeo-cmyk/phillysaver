@@ -57,8 +57,8 @@ and `portal_url` is `STRIPE_PORTAL_LINK` or "".
 |---|---|---|---|
 | `POST /api/signup` | none | `{email, password}` | `200 {token, me}`; `400 invalid_email` / `weak_password` (under 8 chars); `409 exists`. The address is unverified: anyone can type it |
 | `POST /api/login` | none | `{email, password}` | `200 {token, me}`; `401 bad_credentials` (unknown address, wrong password and Google-only account all cost one PBKDF2 run). A hash made with an older scheme or round count is re-made after a good login |
-| `POST /api/google` | none | `{credential}` (Google ID token) | `200 {token, me}`; `401 bad_token`. `aud == GOOGLE_CLIENT_ID`, `iss`, `exp` and `email_verified` are checked before any network call, then RS256 against Google's JWKS (cached an hour; an unknown `kid` forces a refetch at most once a minute). Finds or creates the account (verified; the trial starts on first sign-in). A verified sign-in **takes over** an unverified password account on the same address (password cleared) |
-| `POST /api/claim` | `Bearer <session>` | `{session_id}` from the Payment Link's `welcome.html?session_id={CHECKOUT_SESSION_ID}` redirect | `GET /v1/checkout/sessions/<id>`; needs `status: complete`, `mode: subscription` and a customer; binds `acct.stripe_customer` (+ `email_verified` when the payer email matches). `200 {me}`; `400 bad_session`; `404 unknown_session`; `502 stripe_unavailable`; `401`. 10 per IP per hour |
+| `POST /api/google` | none | `{credential}` (Google ID token) | `200 {token, me}`; `401 bad_token`. `aud == GOOGLE_CLIENT_ID`, `iss`, `exp` and `email_verified` are checked before any network call, then RS256 against Google's JWKS (cached an hour; an unknown `kid` forces a refetch at most once a minute). Finds or creates the account (verified; the trial starts on first sign-in). A verified sign-in **takes over** an unverified password account on the same address (password cleared, every earlier session of that account invalidated) |
+| `POST /api/claim` | `Bearer <session>` | `{session_id}` from the Payment Link's `welcome.html?session_id={CHECKOUT_SESSION_ID}` redirect | `GET /v1/checkout/sessions/<id>`; needs `status: complete`, `mode: subscription` and a customer; binds `acct.stripe_customer` (the typed payer email never verifies the address). `200 {me}`; `400 bad_session`; `404 unknown_session`; `502 stripe_unavailable`; `401`. 10 per IP per hour |
 | `GET /api/me` | `Bearer <session>` | — | `200 me`; `401`. `?fresh=1` skips the 5-minute Stripe cache, at most once a minute per account |
 | `GET /api/deals` | `Bearer <session>` | — | `200` the full payload (as published) when `me.member`; `402 me` when not; `401` without a session; `404 no_payload` before the first publish |
 | `POST /api/logout` | `Bearer <session>` | — | `204`; `401` |
@@ -100,7 +100,7 @@ scheme-2 password as well as every session.
 | Key | Value |
 |---|---|
 | `sub:<email>` | `{ts, token, confirmed, confirm_sent_at}` (also in metadata); no `confirmed` key = confirmed (pre double opt-in) |
-| `acct:<email>` | `{email, scheme, iterations, salt, hash, created_at, trial_ends_at, google_sub, email_verified, stripe_customer, claimed_at}`; `scheme|iterations|salt|hash` null for a Google-only account |
+| `acct:<email>` | `{email, scheme, iterations, salt, hash, created_at, trial_ends_at, google_sub, email_verified, stripe_customer, claimed_at, session_version}`; `scheme|iterations|salt|hash` null for a Google-only account; a session token carries the version it was signed under and dies when a takeover bumps it |
 | `deals:full` | the full payload exactly as the pipeline posted it |
 | `jwks:google` | Google's signing keys, one hour |
 

@@ -79,10 +79,13 @@ Base URL = `meta.api_url`. JSON in and out. CORS for
 `GET, POST, OPTIONS`, headers `Authorization, Content-Type`.
 
 Session: a stateless token `base64url(json).base64url(hmac-sha256)` of
-`{"email": "...", "exp": <unix seconds, 30 days>}` signed with the Worker
-secret `SESSION_SECRET`. The page stores it in `localStorage["wp.session"]`
-and sends `Authorization: Bearer <token>`. No cookies (the Worker may live
-on another origin).
+`{"email": "...", "sv": <account session_version>, "exp": <unix seconds,
+30 days>}` signed with the Worker secret `SESSION_SECRET`. The page stores
+it in `localStorage["wp.session"]` and sends `Authorization: Bearer
+<token>`. No cookies (the Worker may live on another origin). Every session
+route also requires `sv` to equal the account's current `session_version`
+(a takeover bumps it, below), else `401`; tokens from before the field
+count as `sv: 0`.
 
 | Route | Auth | Body | Response |
 |---|---|---|---|
@@ -128,20 +131,24 @@ cached 5 minutes **in isolate memory**, not KV; a Stripe failure counts as
 "not subscribed" for that request only and is not cached. `reason` reports
 which rule granted access.
 
-`email_verified` is true for an account created by Google sign-in, taken
-over by Google sign-in (below), or whose claim's `customer_details.email`
-(lowercased) equals the account email; false for a password sign-up. An
-account written before this field existed counts as verified only when
-Google alone could have created it (`google_sub` set, no password hash).
+`email_verified` is true for an account created by Google sign-in or taken
+over by Google sign-in (below); false for a password sign-up, and a claim
+never sets it (the payer email on a Checkout is typed by the payer, so a
+squatter paying once with the owner's address must not inherit the owner's
+subscription afterwards). An account written before this field existed
+counts as verified only when Google alone could have created it
+(`google_sub` set, no password hash).
 
 **Recovery of a squatted address.** When Google sign-in verifies an email
 whose existing account is *not* `email_verified`, the verified sign-in
 takes the account over: the password hash and salt are cleared, `google_sub`
-and `email_verified: true` are set, the trial clock is kept. Whoever typed
-that address at sign-up loses the password login (they never owned the
-address); an existing session on the account now belongs to the owner.
-Google sign-in on a *verified* account only links `google_sub` and keeps
-any password.
+and `email_verified: true` are set, `session_version` is incremented and the
+cached membership answer is dropped; the trial clock and any claimed
+`stripe_customer` are kept. Whoever typed that address at sign-up loses the
+password login and every session they hold (their tokens carry the old
+`sv`); the owner's sign-in response carries the only valid token. Google
+sign-in on a *verified* account only links `google_sub` and keeps any
+password and session.
 
 ### Claiming a payment
 
@@ -163,18 +170,18 @@ The Worker (`POST /api/claim`) fetches
 `GET https://api.stripe.com/v1/checkout/sessions/<id>` (basic auth
 `STRIPE_SECRET_KEY`), requires `status == "complete"`, `mode ==
 "subscription"` and a customer id (string or expanded object), then stores
-`acct.stripe_customer`, `acct.claimed_at`, and `acct.email_verified = true`
-when the payer email matches the account email (a different payer email
-still binds: the payer holds the receipt, which is the session id from
-their own redirect). The membership cache for that email is dropped so the
-`200 {me}` already says `subscribed`. Rate limit 10 per hour per IP.
+`acct.stripe_customer` and `acct.claimed_at`, whatever payer email the
+session carries (the payer holds the receipt, which is the session id from
+their own redirect; the typed email proves nothing and never verifies the
+account). The membership cache for that email is dropped so the `200 {me}`
+already says `subscribed`. Rate limit 10 per hour per IP.
 
 ### Accounts
 
 KV `acct:<lowercased email>` = `{email, scheme, iterations, salt, hash,
 created_at, trial_ends_at, google_sub, email_verified, stripe_customer,
-claimed_at}`; `scheme|iterations|salt|hash` are null for a Google-only
-account.
+claimed_at, session_version}`; `scheme|iterations|salt|hash` are null for
+a Google-only account; `session_version` starts at 0 (missing = 0).
 
 Passwords, **scheme 2**: `HMAC-SHA256(SESSION_SECRET, password)` (a
 server-side pepper, so leaked KV hashes alone cannot be brute-forced), then
