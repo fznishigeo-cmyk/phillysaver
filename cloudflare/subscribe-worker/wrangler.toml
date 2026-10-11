@@ -13,9 +13,11 @@ workers_dev = true
 # Browser origins allowed to call the Worker cross-origin (comma list).
 ALLOWED_ORIGINS = "https://wowpriced.com,https://www.wowpriced.com,https://fznishigeo-cmyk.github.io"
 # Public paywall settings. The deploy workflow's inputs override these on the
-# deployed copy for that run; commit real values here to make them stick.
-GOOGLE_CLIENT_ID = ""       # OAuth Web client ID; Google sign-in is off when empty
-STRIPE_PAYMENT_LINK = ""    # the $9.99/mo Payment Link; me.subscribe_url is "" when empty, and
+# deployed copy for that run; the committed values are what a plain deploy
+# ships (2026-10-11: a deploy without inputs blanked the Payment Link and
+# checkout failed, so the live values live here now).
+GOOGLE_CLIENT_ID = "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"  # OAuth Web client ID (public); Google sign-in is off when empty
+STRIPE_PAYMENT_LINK = "https://buy.stripe.com/14A5kE5LjgC01PN3zZeIw01"  # the $9.99/mo Payment Link (live); me.subscribe_url is "" when empty, and
                             # POST /api/checkout bills its price unless STRIPE_PRICE_ID is set
 STRIPE_PRICE_ID = ""        # the $9.99/mo recurring price (price_...); "" = the Payment Link's price
 STRIPE_PORTAL_LINK = ""     # customer-portal link; me.portal_url is "" when empty
