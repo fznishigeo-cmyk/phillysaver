@@ -84,7 +84,7 @@ class FakeParser:
         self.raise_cap_at = raise_cap_at
         self.calls: list[tuple[str, dict]] = []
 
-    def extract(self, text: str, meta: dict) -> list[LLMDeal]:
+    def extract(self, text: str, meta: dict, *, kind="extract") -> list[LLMDeal]:
         if self.raise_cap_at is not None and len(self.calls) >= self.raise_cap_at:
             raise SpendCapReached("cap hit")
         self.calls.append((text, meta))

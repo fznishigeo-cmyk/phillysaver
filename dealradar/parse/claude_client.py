@@ -133,6 +133,11 @@ class ClaudeParser:
             client = anthropic.Anthropic(api_key=api_key)
         self.client = client
         self.spend_usd: float = 0.0
+        self.spend_by_kind: dict[str, dict] = {
+            kind: {"calls": 0, "usd": 0.0}
+            for kind in ("extract", "second_opinion", "critic", "newsletter_pick", "other")
+        }
+        self.extract_by_source: dict[str, dict] = {}
         self._spend_lock = threading.Lock()
         # The extraction schema (LLMDeals) is rejected by the structured
         # messages.parse endpoint as "Schema is too complex" — and that
@@ -196,7 +201,9 @@ class ClaudeParser:
                 f"LLM spend ${self.spend_usd:.4f} >= cap ${cap:.4f} for this run"
             )
 
-    def _account(self, resp: Any, model: str | None = None) -> None:
+    def _account(self, resp: Any, model: str | None = None, *,
+                 kind: str = "other", source_name: str = "") -> None:
+        """Count each response with usage, including paid JSON re-asks."""
         usage = getattr(resp, "usage", None)
         if usage is None:
             return
@@ -208,6 +215,14 @@ class ClaudeParser:
         cost = (usage.input_tokens * in_rate + usage.output_tokens * out_rate) / 1e6
         with self._spend_lock:  # extraction may run on several threads
             self.spend_usd += cost
+            bucket = self.spend_by_kind[kind]
+            bucket["calls"] += 1
+            bucket["usd"] += cost
+            if kind == "extract":
+                source = self.extract_by_source.setdefault(
+                    source_name or "unknown", {"calls": 0, "usd": 0.0})
+                source["calls"] += 1
+                source["usd"] += cost
 
     # -------------------------------------------------------------- requests
 
@@ -247,7 +262,7 @@ class ClaudeParser:
     # -------------------------------------------------------------- extract
 
     def extract(self, text: str, meta: dict,
-                model: str | None = None) -> list[LLMDeal]:
+                model: str | None = None, *, kind: str = "extract") -> list[LLMDeal]:
         """Extract deals from one cleaned post text. Never crashes the run:
         API failures are logged and yield []; only SpendCapReached propagates.
         ``model`` overrides the default (the second-opinion pass re-reads
@@ -256,7 +271,9 @@ class ClaudeParser:
         used_model = model or self.model
         user_prompt = build_user_prompt(text, meta)
         if self._parse_unsupported:
-            return self._extract_via_create(user_prompt, used_model)
+            return self._extract_via_create(
+                user_prompt, used_model, kind=kind,
+                source_name=meta.get("source_name", ""))
         try:
             resp = self._request(lambda: self.client.messages.parse(
                 model=used_model,
@@ -267,24 +284,31 @@ class ClaudeParser:
             ))
         except AttributeError:
             log.info("messages.parse unavailable; using JSON fallback path")
-            return self._extract_via_create(user_prompt, used_model)
+            return self._extract_via_create(
+                user_prompt, used_model, kind=kind,
+                source_name=meta.get("source_name", ""))
         except anthropic.BadRequestError as e:
             if "schema" in str(e).lower():
                 # Schema rejection is per-schema, not per-post, and the API
                 # takes minutes to return it: never pay for it twice a run.
                 self._parse_unsupported = True
             log.info("messages.parse rejected (%s); using JSON fallback path", e)
-            return self._extract_via_create(user_prompt, used_model)
+            return self._extract_via_create(
+                user_prompt, used_model, kind=kind,
+                source_name=meta.get("source_name", ""))
         except (ValidationError, ValueError) as e:
             # Invalid JSON on the structured path must get its configured
             # retries (via the bounded fallback), never crash the whole run.
             log.warning("messages.parse output failed validation (%s); "
                         "retrying via JSON fallback path", e)
-            return self._extract_via_create(user_prompt, used_model)
+            return self._extract_via_create(
+                user_prompt, used_model, kind=kind,
+                source_name=meta.get("source_name", ""))
 
         if resp is None:
             return []
-        self._account(resp, used_model)
+        self._account(resp, used_model, kind=kind,
+                      source_name=meta.get("source_name", ""))
         stop = getattr(resp, "stop_reason", None)
         if stop == "refusal":
             log.warning("model refused extraction for %s; zero deals",
@@ -302,7 +326,8 @@ class ClaudeParser:
         return list(parsed.deals)
 
     def _extract_via_create(self, user_prompt: str,
-                            model: str | None = None) -> list[LLMDeal]:
+                            model: str | None = None, *, kind: str = "extract",
+                            source_name: str = "") -> list[LLMDeal]:
         """JSON-only fallback via messages.create with bounded re-asks.
 
         Invalid JSON / schema validation failures are retried up to
@@ -324,7 +349,8 @@ class ClaudeParser:
                 return []
             if resp is None:
                 return []
-            self._account(resp, model or self.model)
+            self._account(resp, model or self.model, kind=kind,
+                          source_name=source_name)
             stop = getattr(resp, "stop_reason", None)
             if stop == "refusal":
                 log.warning("model refused extraction (fallback path); zero deals")
@@ -406,7 +432,7 @@ def critique_deal(parser: "ClaudeParser", deal: dict) -> dict | None:
         return None
     if resp is None:
         return None
-    parser._account(resp, cfg.critic_model)
+    parser._account(resp, cfg.critic_model, kind="critic")
     if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
         return None
     verdict = getattr(resp, "parsed_output", None)
