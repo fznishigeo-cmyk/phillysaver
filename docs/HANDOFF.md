@@ -102,20 +102,10 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
-- **Codex task 009 (implemented on `codex/task-009`, uncommitted):** the
-  shared parser now tracks calls and USD by explicit call kind (`extract`,
-  `second_opinion`, `critic`, `newsletter_pick`, `other`) and extraction
-  calls/USD by source. Counters cover responses with usage, including paid
-  JSON re-asks; transport failures without usage add no cost or count.
-  `pipeline.run` returns `spend_usd`, `spend_by_kind` and `extract_by_source`
-  after the newsletter pick and appends aggregate-only tables to the Actions
-  step summary. Existing total accounting, run/daily caps and public site
-  payloads are unchanged. Validation: `.venv/bin/python -m pytest -q` —
-  1154 passed, 1 deselected; final targeted accounting/quality/newsletter/e2e
-  checks — 150 passed. Nothing committed or pushed; review/merge remains,
-  and the separate task to reduce daily spend to $6 is still open.
-- **GitHub Pages retirement:** remove the Pages deploy steps from fast.yml
-  and hourly.yml, then the operator unpublishes it (Settings -> Pages).
+- **LLM spend breakdown** (Codex task 009, merged 2026-10-11): each run's
+  summary and Actions step summary show calls and USD per kind (extract,
+  second_opinion, critic, newsletter_pick, other) and extraction spend per
+  source. Use it to bring daily spend to $6 (open task 1).
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
   waives robots.txt only; a site's firewall still decides.
   - **Firewall blocks GitHub's servers.** The owner must allowlist our
@@ -147,6 +137,8 @@ Keep this file current: whoever stops working updates it in their last commit.
     Google service-account loading now accepts whitespace and a leading BOM
     and reports invalid JSON or missing key fields using shape only; growth
     logs show that safe diagnostic and keep other exception messages private.
+- **Page copy:** the drop cadence on every page comes from
+  `publish.drop_minutes` through the `{{DROP_MINUTES}}` token (Codex task 008).
 - **Photos:** Codex task 005 (merged 2026-10-11) decodes the Deals of
   America tracker destination offline for the ASIN at ingest and for the
   retailer-photo pass; a one-time repair gave existing deals their ASIN and
@@ -178,24 +170,11 @@ Keep this file current: whoever stops working updates it in their last commit.
    2026-10-11 (G-MHLJXK2WHF, property 558475393); Meta Pixel done
    (1634493648070496; automatic advanced matching and automatic events off);
    TikTok, Pinterest, Google Ads and the secrets still to come.
-7. Codex task 010 implemented locally (uncommitted): `/api/google` now
-   returns `new_account` and the page fires `sign_up` with method `google`
-   only when it is true. Worker tests cover new and returning accounts
-   and existing-account takeover; the template test checks the event hook.
-   API contract updated in docs/paywall.md. Validation: `.venv/bin/python
-   -m pytest -q` (1153 passed, 1 deselected) and the Worker's `npm test`
-   both passed. Claude still needs to review
-   and merge, then run the Worker deploy workflow and publish the site.
+7. Done (Codex task 010, 2026-10-11): `/api/google` returns `new_account`
+   and the page fires `sign_up` {method: google} only then. Live after the
+   `deploy subscribe worker` workflow runs.
 8. Open legal question from the SEO review: six subreddits come through
    Reddit's Data API into a paid product; Reddit's terms want a separate
    agreement for commercial use. Operator decision.
 9. IndexNow records a URL as sent at publish time, before the POST; a failed
    POST is retried within a week (`seo.indexnow_resubmit_days`).
-
-## Codex task 008 (2026-10-11, changes uncommitted)
-- All template cadence copy now uses `{{DROP_MINUTES}}`, filled from
-  `publish.drop_minutes` on regular pages, category hubs and the 404 page.
-- Regression coverage checks every published HTML page with 15- and
-  12-minute settings, in both open-access and paywall modes.
-- Validation: `.venv/bin/python -m pytest -q` — 1157 passed, 1 deselected.
-- No commit or push requested; no implementation work remains.
