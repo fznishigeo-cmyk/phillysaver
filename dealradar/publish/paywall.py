@@ -41,20 +41,24 @@ def split_teaser(deals: list[dict[str, Any]], cfg,
     pool = max(n, int(getattr(cfg, "paywall_teaser_pool", 48)))
     alive = [d for d in deals if d.get("status") == "alive"]
     dead = [d for d in deals if d.get("status") != "alive"]
-    picked = _pick_teaser(_rotate(alive[:pool], recent), n)
+    fresh, stale = _rotate(alive[:pool], recent)
+    # Fresh deals first (store variety among them), and a recently shown
+    # deal only once the fresh ones run out: every drop really is new.
+    picked = _pick_teaser(fresh, n)
+    picked += stale[:n - len(picked)]
     chosen = {id(d) for d in picked}
     teaser = picked + [_stub(d) for d in alive if id(d) not in chosen] + dead
     return teaser, max(0, len(alive) - len(picked))
 
 
-def _rotate(pool: list[dict[str, Any]], recent) -> list[dict[str, Any]]:
-    """The pool with the deals unlocked in recent drops moved to the back,
-    least recently shown first: a visitor who stays or comes back sees new
-    free deals at every drop."""
+def _rotate(pool: list[dict[str, Any]], recent) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(fresh, stale): the pool's deals not unlocked in recent drops, in
+    site order, and the recently unlocked ones, least recently shown first:
+    a visitor who stays or comes back sees new free deals at every drop."""
     last = {k: i for i, k in enumerate(recent)}
     fresh = [d for d in pool if d.get("key") not in last]
     stale = sorted((d for d in pool if d.get("key") in last), key=lambda d: last[d.get("key")])
-    return fresh + stale
+    return fresh, stale
 
 
 def teaser_memory(teaser: list[dict[str, Any]], recent, cfg) -> list[str]:

@@ -1,4 +1,5 @@
-"""Static site publisher: writes deals.json / health.json and copies templates.
+"""Static site publisher: writes deals.json and copies templates (source health
+goes to the operator's run summary, never to the public site).
 
 Storage policy: only extracted facts, a product link, and credit to the source
 are written — never full post text or images.
@@ -179,10 +180,40 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
     }
 
 
+def source_health(db, now: datetime, last_run: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Per-source health (state, last success, failures, trip time, last
+    error) for the operator: errors are scrubbed of secrets again here."""
+    sources = []
+    for row in db.all_source_health():
+        entry = dict(row)
+        entry["last_error"] = redact_secrets(entry.get("last_error") or "")
+        until = parse_iso(row.get("tripped_until") or "")
+        entry["tripped"] = until is not None and now < until
+        sources.append(entry)
+    return {"generated_at": iso(now), "sources": sources, "last_run": last_run or {}}
+
+
+def health_markdown(doc: dict[str, Any]) -> str:
+    """The health table as GitHub-flavoured markdown (the run summary)."""
+    rows = sorted(doc.get("sources") or [], key=lambda r: (not r.get("tripped"), r.get("source_name", "")))
+    tripped = sum(1 for r in rows if r.get("tripped"))
+    cell = lambda v: str(v if v not in (None, "") else "—").replace("|", "\\|").replace("\n", " ")[:160]
+    lines = [f"## Source health ({len(rows)} sources, {tripped} tripped)", "",
+             "| Source | State | Last success | Items | Failures | Tripped until | Last error |",
+             "|---|---|---|---|---|---|---|"]
+    for r in rows:
+        lines.append("| " + " | ".join(cell(v) for v in (
+            r.get("source_name"), "tripped" if r.get("tripped") else "ok",
+            r.get("last_success_at"), r.get("items_last_run"), r.get("consecutive_failures"),
+            r.get("tripped_until"), r.get("last_error"))) + " |")
+    return "\n".join(lines) + "\n"
+
+
 def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 deals: list[dict[str, Any]] | None = None,
                 last_run: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Write deals.json, health.json and the two HTML templates to out_dir."""
+    """Write deals.json and the HTML pages to out_dir; return the counts,
+    the members' full payload and the operator's source health."""
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
 
@@ -246,25 +277,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         json.dumps({"meta": meta, "deals": teaser}, indent=2), encoding="utf-8"
     )
 
-    sources = []
-    for row in db.all_source_health():
-        entry = dict(row)
-        # Defense in depth: last_error was already scrubbed when recorded, but
-        # health.json is PUBLIC, so scrub again at the publishing boundary.
-        entry["last_error"] = redact_secrets(entry.get("last_error") or "")
-        until = parse_iso(row.get("tripped_until") or "")
-        entry["tripped"] = until is not None and now < until
-        sources.append(entry)
-    health_doc = {
-        "generated_at": iso(now),
-        "sources": sources,
-        "last_run": last_run or {},
-    }
-    (out / "health.json").write_text(
-        json.dumps(health_doc, indent=2), encoding="utf-8"
-    )
+    # Source health is the operator's, never the public site's (operator
+    # call, 2026-10-11): it goes back to the caller for the run's GitHub
+    # Actions summary, and no health page or file is published. A stale
+    # health.html/health.json from an older publish is removed.
+    health_doc = source_health(db, now, last_run)
+    for stale in ("health.json", "health.html"):
+        (out / stale).unlink(missing_ok=True)
 
-    pages = ("index.html", "health.html", "welcome.html", "about.html",
+    pages = ("index.html", "welcome.html", "about.html",
              "careers.html", "contact.html", "how-it-works.html", "hacks.html",
              "subscribe.html")
     for name in pages:
@@ -298,4 +319,4 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 len(serialized), locked_count, out)
     return {"published": len(serialized), "out_dir": str(out),
-            "full_payload": full_doc}
+            "full_payload": full_doc, "health": health_doc}

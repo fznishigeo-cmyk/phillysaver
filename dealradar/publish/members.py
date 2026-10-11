@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -94,9 +95,15 @@ def _brand(cfg) -> str:
     return domain.split(".")[0] if domain else "dealradar"
 
 
+def _cap(cfg) -> int:
+    return max(1, int(getattr(cfg, "members_max_deals_per_email", MAX_DEALS_PER_EMAIL)))
+
+
 def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]:
-    """(subject, text_body, html_body) for one bundle of new deals."""
-    deals = deals[:MAX_DEALS_PER_EMAIL]
+    """(subject, text_body, html_body) for one bundle of new deals: the best
+    _cap(cfg) of them, and a line saying how many more are on the wall."""
+    more = max(0, len(deals) - _cap(cfg))
+    deals = deals[:_cap(cfg)]
     top = max((float(d.get("pct_at_checkout") or 0.0) for d in deals),
               default=0.0)
     n = len(deals)
@@ -105,7 +112,10 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     lines = [format_message(d) for d in deals]
     footer = []
     domain = getattr(cfg, "custom_domain", "") or ""
-    if domain:
+    if more:
+        footer.append(f"+{more} more new deal{'s' if more != 1 else ''} on the live wall"
+                      + (f": https://{domain}/" if domain else "."))
+    elif domain:
         footer.append(f"Live wall: https://{domain}/")
     portal = getattr(cfg, "portal_url", "") or ""
     if portal:
@@ -123,7 +133,9 @@ def send_member_alerts(db, cfg, now: datetime, *,
                        smtp_factory: Any = None,
                        http_client: Any = None) -> dict[str, Any]:
     """Email members every new verified deal, bundled, at most once per
-    cfg.members_email_every_minutes. Returns {members, deals, sent, skipped}."""
+    cfg.members_email_every_minutes (a day or more: once per local day from
+    cfg.members_email_hour_local, carrying what arrived since the last one).
+    Returns {members, deals, sent, skipped}."""
     stats: dict[str, Any] = {"members": 0, "deals": 0, "sent": 0, "skipped": ""}
     members = member_list(db, http_client)
     stats["members"] = len(members)
@@ -138,13 +150,30 @@ def send_member_alerts(db, cfg, now: datetime, *,
         from dealradar import rank  # lazy: sibling module, avoid import at load
 
         deals = rank.published_deals(db, cfg, now)
+    last = parse_iso(db.meta_get(META_LAST_EMAIL) or "")
+    window = timedelta(minutes=int(getattr(cfg, "members_email_every_minutes", 60)))
+    daily = window >= timedelta(days=1)
     fresh = [d for d in deals if not db.alert_exists(CHANNEL, d["dedupe_key"])]
+    if daily:
+        # The day's email carries the day's deals: what arrived since the
+        # last one (the last 24 h before the first), never an old backlog.
+        since = last or now - timedelta(days=1)
+        fresh = [d for d in fresh
+                 if (parse_iso(d.get("first_seen_at") or "") or now) >= since]
     stats["deals"] = len(fresh)
     if not fresh:
         return stats
-    last = parse_iso(db.meta_get(META_LAST_EMAIL) or "")
-    window = timedelta(minutes=int(getattr(cfg, "members_email_every_minutes", 60)))
-    if last is not None and now - last < window:
+    if daily:
+        # At most one email per local day (members_email_timezone), on the
+        # first run at or after members_email_hour_local: anchored to the
+        # clock, so late runs never push it a little later every day.
+        tz = ZoneInfo(getattr(cfg, "members_email_timezone", "America/New_York"))
+        local = now.astimezone(tz)
+        if ((last is not None and last.astimezone(tz).date() >= local.date())
+                or local.hour < int(getattr(cfg, "members_email_hour_local", 0))):
+            stats["skipped"] = "within email window"  # they ride the next one
+            return stats
+    elif last is not None and now - last < window:
         stats["skipped"] = "within email window"  # they ride the next one
         return stats
 
@@ -171,7 +200,7 @@ def send_member_alerts(db, cfg, now: datetime, *,
         stats["skipped"] = "send failed"
         return stats
 
-    sent_deals = fresh[:MAX_DEALS_PER_EMAIL]
+    sent_deals = fresh[:_cap(cfg)]
     for d in sent_deals:
         db.record_alert(deal_key=d["dedupe_key"], channel=CHANNEL,
                         dedup_token=d["dedupe_key"], now=now,

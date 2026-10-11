@@ -171,7 +171,9 @@ def _run(env):
     )
 
 
-def test_offline_end_to_end(env, capsys):
+def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
+    step_summary = tmp_path / "step_summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     summary = _run(env)
 
     assert summary["items_fetched"] == 5
@@ -210,9 +212,12 @@ def test_offline_end_to_end(env, capsys):
     assert headphones["pct_at_checkout"] == pytest.approx(70.0, abs=0.1)
 
     assert (env["site"] / "index.html").exists()
-    assert (env["site"] / "health.html").exists()
-    health = json.loads((env["site"] / "health.json").read_text())
-    assert {s["source_name"] for s in health["sources"]} == {"blogone", "feedtwo"}
+    # Source health is the operator's: the run summary, never the site.
+    assert not (env["site"] / "health.html").exists()
+    assert not (env["site"] / "health.json").exists()
+    md = step_summary.read_text()
+    assert "## Source health (2 sources, 0 tripped)" in md
+    assert "| blogone | ok |" in md and "| feedtwo | ok |" in md
 
 
 def test_rerun_is_idempotent(env, capsys):

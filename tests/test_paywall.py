@@ -286,6 +286,22 @@ class TestTeaserRotation:
             stores = [next(d["store"] for d in deals if d["key"] == k) for k in drop]
             assert stores.count("Amazon") <= 2
 
+    def test_store_variety_never_brings_back_last_drops_deals(self):
+        """Review finding on live data: a pool of 25 Amazon, 21 Woot and 2
+        Walmart deals brought the same 2 Walmart deals back every drop,
+        because the store cap reached into the recently shown ones."""
+        cfg = self._cfg()
+        stores = ["Amazon"] * 25 + ["Woot"] * 21 + ["Walmart"] * 2
+        deals = []
+        for i, store in enumerate(stores):
+            d = _deal(i)
+            d["store"] = store
+            deals.append(d)
+        drops = self._drops(deals, cfg, 6)
+        for a, b in zip(drops, drops[1:]):
+            assert not set(a) & set(b)
+        assert set().union(*drops) == {d["key"] for d in deals}  # the whole pool, once
+
     def test_memory_is_bounded_and_off_with_a_pool_of_n(self):
         cfg = self._cfg(n=8, pool=48)
         teaser, _ = P.split_teaser([_deal(i) for i in range(60)], cfg)

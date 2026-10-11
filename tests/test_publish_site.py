@@ -96,8 +96,10 @@ def test_render_site_writes_all_four_files(db, cfg, tmp_path):
     result = render_site(db, cfg, NOW, out_dir=out, deals=deals,
                          last_run={"finished_at": iso(NOW)})
     assert result["published"] == 2 and result["out_dir"] == str(out)
-    for name in ("deals.json", "health.json", "index.html", "health.html"):
+    for name in ("deals.json", "index.html"):
         assert (out / name).exists(), name
+    for name in ("health.json", "health.html"):  # operator-only, never published
+        assert not (out / name).exists(), name
 
 
 def test_deals_json_has_disclosure_credit_badge_age(db, cfg, tmp_path):
@@ -146,10 +148,9 @@ def test_zero_deals_still_writes_valid_json_and_templates(db, cfg, tmp_path):
     assert doc["deals"] == []
     assert doc["meta"]["count"] == 0
     assert doc["meta"]["last_run"] == {}
-    health = json.loads((out / "health.json").read_text(encoding="utf-8"))
-    assert health["sources"] == []
+    assert result["health"]["sources"] == []
     assert (out / "index.html").read_text(encoding="utf-8").startswith("<!doctype html>")
-    assert (out / "health.html").exists()
+    assert not (out / "health.html").exists()
 
 
 def test_health_json_tripped_flag(db, cfg, tmp_path):
@@ -157,8 +158,7 @@ def test_health_json_tripped_flag(db, cfg, tmp_path):
     db.record_source_result("good_src", ok=True, error="", items=12, now=NOW)
     db.record_source_result("bad_src", ok=False, error="boom", items=0, now=NOW,
                             trip_threshold=1, cooldown_h=6.0)
-    render_site(db, cfg, NOW, out_dir=out, deals=[])
-    health = json.loads((out / "health.json").read_text(encoding="utf-8"))
+    health = render_site(db, cfg, NOW, out_dir=out, deals=[])["health"]
     rows = {r["source_name"]: r for r in health["sources"]}
     assert rows["good_src"]["tripped"] is False
     assert rows["good_src"]["items_last_run"] == 12
@@ -176,9 +176,9 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     assert "m.disclosure" in html or "meta.disclosure" in html
     assert DISCLOSURE not in html
     # Required UI affordances live in the template.
-    assert "No qualifying deals this hour" in html
+    assert "No qualifying deals right now" in html
     assert 'rel="sponsored noopener"' in html
-    assert "health.html" in html
+    assert "health.html" not in html  # source health is never public
     assert "prefers-color-scheme" in html
     # Self-contained: no external scripts/stylesheets.
     assert "<script src=" not in html
@@ -216,14 +216,24 @@ def test_membership_links_reach_page_meta_and_welcome_page(db, cfg, tmp_path):
     assert "<script src=" not in welcome and "<link" not in welcome
 
 
-def test_health_template_is_self_contained(db, cfg, tmp_path):
+def test_source_health_is_private_and_reaches_the_run_summary(db, cfg, tmp_path):
+    """Operator call: source health is never on the public site; a stale
+    copy from an older publish is removed; the run summary gets the table."""
+    from dealradar.publish.site import health_markdown
+
     out = tmp_path / "site"
-    render_site(db, cfg, NOW, out_dir=out, deals=[])
-    html = (out / "health.html").read_text(encoding="utf-8")
-    assert "health.json" in html
-    assert "prefers-color-scheme" in html
-    assert "<script src=" not in html
-    assert "<link" not in html
+    out.mkdir()
+    (out / "health.json").write_text("{}")
+    (out / "health.html").write_text("old")
+    db.record_source_result("bad|src", ok=False, error="http_403\nnext", items=0, now=NOW,
+                            trip_threshold=1, cooldown_h=6.0)
+    res = render_site(db, cfg, NOW, out_dir=out, deals=[])
+    assert not (out / "health.json").exists() and not (out / "health.html").exists()
+    for page in out.glob("*.html"):
+        assert "health.html" not in page.read_text(encoding="utf-8"), page.name
+    md = health_markdown(res["health"])
+    assert md.startswith("## Source health (1 sources, 1 tripped)")
+    assert "| bad\\|src | tripped |" in md and "http_403 next" in md
 
 
 def test_out_dir_defaults_to_cfg_site_dir(db, cfg):
@@ -328,7 +338,7 @@ class TestContentPages:
             for other in self.PAGES:
                 assert f'href="{other}"' in html, (name, other)
             assert 'href="./"' in html, name
-            assert "Get every deal by email" in html, name
+            assert "Start 7-day free trial" in html, name
             # Membership starts in the home page's sign-up and trial flow;
             # no content page links the Payment Link.
             assert '"./#signup"' in html and "api_url" in html, name
@@ -435,9 +445,8 @@ class TestPaywallTeaser:
         assert [d["item"] for d in full["deals"]] == (
             [f"ZZSECRET-ITEM-{i}" for i in range(5)] + ["ZZSECRET-MUG"])
         assert all("locked" not in d and d["url"] for d in full["deals"])
-        # health.json is untouched by the paywall.
-        health = json.loads((out / "health.json").read_text(encoding="utf-8"))
-        assert set(health) == {"generated_at", "sources", "last_run"}
+        # Source health (operator-only) is untouched by the paywall.
+        assert set(res["health"]) == {"generated_at", "sources", "last_run"}
 
     def test_disabled_writes_the_full_payload(self, db, cfg, tmp_path):
         out = tmp_path / "site"
@@ -677,7 +686,7 @@ class TestCardRequiredTrial:
 
     def test_signup_dialog_is_a_free_account_then_step_two(self, html):
         assert "Create your free account" in html
-        assert "Free account: today's top " in html
+        assert '"Free account: " + top + " free deals, new at every drop. Every deal: "' in html
         assert '"-day free trial."' in html
         assert "Step 2 of 2 — start your free trial" in html
         assert '"Start " + days + "-day free trial"' in html
@@ -843,7 +852,8 @@ class TestMembershipCopyIsTrue:
         pages = _render_pages(db, cfg, tmp_path / "site")
         for name in ("about.html", "how-it-works.html"):
             text = " ".join(pages[name].split())
-            assert "top 8 deals" in text and "free for everyone" in text, name
+            assert "free for everyone, a new eight at every drop" in text, name
+            assert "one email every morning" in text and "once an hour" not in text, name
             assert "7-day free trial" in text and "card" in text, name
             assert "every deal on the wall" in text, name
 
@@ -1171,6 +1181,21 @@ class TestEyeCatchers:
         assert "banded || !canJoin()" in grid
         assert 'closest(".card.locked, [data-cta]")' in html
         assert "!isMember() && !auth.checking" in _between(html, "function canJoin(", "function trialBand(")
+
+    def test_hairline_runs_on_the_free_picks_and_under_the_pointer(self, html):
+        assert 'pathLength="1"' in html and 'traceSvg(d) + "</article>"' in html
+        assert '(dead ? "" : traceSvg(d))' in html      # gone cards never trace
+        assert "hashStr(String(dealKey(d))) % 5000" in html  # staggered, not lockstep
+        free = _between(html, "function isFreePick(", "function lit(")
+        assert "traceFree && !isMember() && !auth.checking && !unknownMembership() &&" in free
+        assert "isFreePick(d) || (isMember() && isNew(d))" in html
+        assert "traceFree = state.deals.some(isLocked);" in html
+        assert ".card.lit .trace rect{opacity:1" in html
+        hover = html[html.index("@media (hover:hover){"):]
+        assert ".card:not(.gone):hover .trace rect" in hover[:200]
+        reduced = html[html.index("@media (prefers-reduced-motion: reduce){"):]
+        assert ".trace rect{animation:none}" in reduced
+        assert '<div class="freetag"><i></i>free this drop</div>' in html
 
     def test_sources_wall_in_the_footer(self, html):
         foot = html[html.index("<footer>"):html.index("</footer>")]

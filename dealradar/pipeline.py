@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import logging
+import os
 import re
 import time
 from datetime import datetime, timedelta
@@ -996,7 +997,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.members import send_member_alerts
     from .publish.paywall import publish_full
     from .publish.newsletter import send_confirmations, send_daily_newsletter
-    from .publish.site import render_site
+    from .publish.site import health_markdown, render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
     from .verify import mark_expired_dead, refresh_tiers, text_marks_dead
@@ -1143,6 +1144,15 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "parser_model": pstats.get("parser", ""),
         })
         summary["published"] = site_res.get("published", 0)
+        # Source health is the operator's only: the run's GitHub Actions
+        # summary (private to the repository), never the public site.
+        step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if step_summary and site_res.get("health"):
+            try:
+                with open(step_summary, "a", encoding="utf-8") as fh:
+                    fh.write(health_markdown(site_res["health"]))
+            except OSError as e:
+                log.warning("source health summary not written: %s", e)
         # The site got the teaser; members get the full payload through the
         # Worker. A failed upload is a warning, never a failed run.
         try:

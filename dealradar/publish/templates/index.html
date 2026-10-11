@@ -118,6 +118,27 @@ header{background:var(--card);border-bottom:1px solid var(--line);
         background:linear-gradient(105deg,transparent 30%,var(--sweep) 50%,transparent 70%);
         transform:translateX(-100%);animation:sweep .9s ease-out forwards}
 .card.enter{animation:enter .6s ease-out}
+/* The hairline: one faint dash runs each card's frame. It runs all the
+   time on the cards that matter right now (a visitor's free deals this
+   drop, a member's new arrivals) and only under the pointer elsewhere;
+   still when motion is reduced. */
+.trace{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
+.trace rect{fill:none;stroke:color-mix(in srgb,var(--fg) 40%,transparent);stroke-width:2.4;
+            stroke-dasharray:.18 .82;stroke-dashoffset:1;opacity:0;transition:opacity .4s;
+            animation:trace 5s linear infinite;animation-play-state:paused}
+.card.lit .trace rect{opacity:1;stroke:var(--accent);animation-play-state:running}
+/* A member's new arrivals run three laps, then rest: no endless repaint. */
+.card.isnew.lit .trace rect{animation-iteration-count:3}
+@media (hover:hover){
+  .card:not(.gone):hover .trace rect{opacity:1;animation-play-state:running}
+}
+@keyframes trace{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+.freetag{display:flex;align-items:center;gap:7px;font:600 10.5px/1 ui-monospace,Menlo,Consolas,monospace;
+         letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.freetag i{width:7px;height:7px;border-radius:999px;background:var(--accent);flex:none;
+           animation:beat 2.8s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes beat{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,.35);opacity:1}
+                50%{box-shadow:0 0 0 5px rgba(14,117,105,0);opacity:.55}}
 @keyframes sweep{to{transform:translateX(100%)}}
 @keyframes enter{from{opacity:0;transform:translateY(-10px) scale(.97)}to{opacity:1;transform:none}}
 .media{position:relative;height:150px;background:#fff;border-bottom:1px solid var(--line);
@@ -373,6 +394,9 @@ footer .meta{font-size:11.5px}
 /* Reduced motion: no pulse, no sweep, no slide; a drop reorders instantly. */
 @media (prefers-reduced-motion: reduce){
   .card.moved::after,.card.enter{animation:none}
+  .trace rect{animation:none}
+  .card.lit .trace rect{stroke-dasharray:none}
+  .freetag i{animation:none}
   .dtag,.dtick,.dtick path{transition:none}
   .card{transition:none}
 }
@@ -446,14 +470,14 @@ footer .meta{font-size:11.5px}
   <p id="pwfbnote" class="disc" hidden></p>
 </div>
 <footer>
-  <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus every verified
-     deal emailed to you the hour it's found, bundled at most once an hour.
+  <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus the best of
+     each day's new deals in one email every morning.
      <span id="footterms">7-day free trial for new members. $0 today. Card required, then
      $9.99/month, renews monthly.</span>
-     Today's top deals stay free for everyone.</p>
+     Eight deals stay free for everyone, new at every drop.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
-     prices are re-checked live. <a href="health.html">source health</a></p>
+     prices are re-checked live.</p>
   <form id="nlform" class="nlform" method="post" action="subscribe.html" hidden>
     <label for="nlemail"><strong>Free daily email:</strong> the day's best verified deals
       every morning. Unsubscribe any time.</label>
@@ -483,7 +507,7 @@ footer .meta{font-size:11.5px}
   <div class="mcard">
     <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
     <h2 id="authtitle">Create your free account</h2>
-    <p id="authsub" class="meta">Free account: today's top 8 deals. Every deal: 7-day free trial.</p>
+    <p id="authsub" class="meta">Free account: 8 free deals, new at every drop. Every deal: 7-day free trial.</p>
     <div id="authstep1">
       <p id="authdisc" class="disc"></p>
       <div id="gsiwrap" hidden><div id="gsibtn" class="gsi"></div><div class="or">or</div></div>
@@ -923,6 +947,26 @@ footer .meta{font-size:11.5px}
       : (conds.indexOf("used") !== -1 ? "USED" : "");
   }
   function isNew(d) { return d.status !== "dead" && !!state.newKeys[dealKey(d)]; }
+  // The hairline (see .trace): every live card carries it; "lit" ones run
+  // it all the time: a visitor's free deals while locked ones are on the
+  // wall (traceFree, set by render), else a member's new arrivals.
+  var traceFree = false;
+  // Each card's dash sits at its own point of the lap (seeded by its key)
+  // so the lit cards never run in lockstep, and the phase follows the wall
+  // clock so a re-render (a keystroke in search) never snaps it back.
+  function traceSvg(d) {
+    var lag = (Date.now() / 1000 + (hashStr(String(dealKey(d))) % 5000) / 1000) % 5;
+    return '<svg class="trace" aria-hidden="true" focusable="false">' +
+      '<rect x="0" y="0" width="100%" height="100%" rx="13" ry="13" pathLength="1" ' +
+      'style="animation-delay:-' + lag.toFixed(2) + 's"/></svg>';
+  }
+  // Never while a signed-in account's membership is still being checked or
+  // came back unknown (it may be a member): the same gate as the trial CTA.
+  function isFreePick(d) {
+    return traceFree && !isMember() && !auth.checking && !unknownMembership() &&
+      !isLocked(d) && d.status !== "dead";
+  }
+  function lit(d) { return isFreePick(d) || (isMember() && isNew(d)); }
 
   function mediaHtml(d) {
     // Media: retailer's own public product image; without one (or on a
@@ -968,7 +1012,7 @@ footer .meta{font-size:11.5px}
       '<h3 class="title" aria-hidden="true"><span class="sk t1"></span>' +
       '<span class="sk t2"></span></h3>' +
       '<div class="metarow"><span class="chip">' + esc(d.store || "") + "</span></div>" +
-      "</div></article>";
+      "</div>" + traceSvg(d) + "</article>";
   }
 
   function cardHtml(d) {
@@ -1012,15 +1056,16 @@ footer .meta{font-size:11.5px}
       : "") + '<span class="credit">' + credits + "</span>";
 
     return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
-      '" data-key="' + esc(dealKey(d)) + '">' +
+      (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '">' +
       '<div class="media">' + media + "</div>" +
       '<div class="body">' +
+      (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
       '<h3 class="title">' + title + "</h3>" +
       (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
-      "</div></article>";
+      "</div>" + (dead ? "" : traceSvg(d)) + "</article>";
   }
 
   // ---- the sources wall (footer) ----
@@ -1129,9 +1174,10 @@ footer .meta{font-size:11.5px}
     paintSources();
     var content = document.getElementById("content");
     var rows = state.deals.length ? ordered(filtered()) : [];
+    traceFree = state.deals.some(isLocked);
     updatePaywall(rows.some(isLocked));
     if (!state.deals.length) {
-      content.innerHTML = '<p class="empty">No qualifying deals this hour</p>';
+      content.innerHTML = '<p class="empty">No qualifying deals right now</p>';
       return;
     }
     if (!rows.length) {
@@ -1408,7 +1454,7 @@ footer .meta{font-size:11.5px}
     var o = offer(), locked = num((state.meta || {}).locked_count) || 0;
     return '<div class="trialband"><p class="tbtext"><strong>&#128275; Unlock ' +
       esc(plural(locked, "more deal")) + "</strong>" +
-      (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every hour.") +
+      (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every drop.") +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
       '</button><p class="disc">' + esc(shortNote(o)) + "</p></div>";
   }
@@ -1670,7 +1716,7 @@ footer .meta{font-size:11.5px}
     var up = mode === "signup", co = mode === "checkout";
     var o = offer(), top = teaserCount();
     var title = up ? "Create your free account" : "Log in";
-    var sub = up ? "Free account: today's top " + top + " deals. Every deal: " +
+    var sub = up ? "Free account: " + top + " free deals, new at every drop. Every deal: " +
       (o.trial ? o.days + "-day free trial." : "$9.99/month.") : "Welcome back.";
     // The sign-up step carries the full terms of what comes after it.
     var disc = document.getElementById("authdisc");

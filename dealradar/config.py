@@ -130,6 +130,9 @@ class AppConfig:
     subscribe_url: str = ""            # Stripe Payment Link (site Subscribe button)
     portal_url: str = ""               # Stripe customer portal (manage / cancel)
     members_email_every_minutes: int = 60  # one bundled email per window, max
+    members_email_hour_local: int = 7      # daily window: first run at/after this local hour
+    members_email_timezone: str = "America/New_York"
+    members_max_deals_per_email: int = 40  # the best N; the email says how many more
 
     # -- paywall: visitors see the top N deals, members the full payload --
     paywall_enabled: bool = True
@@ -251,6 +254,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.portal_url = str(g("members", "portal_url", default="") or "").strip()
     cfg.members_email_every_minutes = max(10, int(g("members", "email_every_minutes",
                                                      default=cfg.members_email_every_minutes)))
+    cfg.members_email_hour_local = min(23, max(0, int(g("members", "email_hour_local",
+                                                         default=cfg.members_email_hour_local))))
+    cfg.members_email_timezone = str(g("members", "timezone", default=cfg.members_email_timezone))
+    cfg.members_max_deals_per_email = max(1, int(g("members", "max_deals_per_email",
+                                                   default=cfg.members_max_deals_per_email)))
 
     cfg.paywall_enabled = bool(g("paywall", "enabled", default=cfg.paywall_enabled))
     cfg.paywall_teaser_count = max(0, int(g("paywall", "teaser_count",

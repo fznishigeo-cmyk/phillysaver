@@ -14,6 +14,7 @@ import pytest
 from dealradar.config import AppConfig
 from dealradar.db import DB
 from dealradar.publish import members as M
+from dealradar.util import iso
 
 NOW = datetime(2026, 10, 10, 23, 0, 0, tzinfo=timezone.utc)
 
@@ -170,6 +171,68 @@ class TestMemberEmail:
                                   deals=later, smtp_factory=factory)
         assert s4["deals"] == 1 and s4["sent"] == 2
         assert "1 new verified deal (up to 75% off)" in factory.servers[1].messages[0]["Subject"]
+
+    def test_daily_email_is_one_per_local_morning_with_that_days_deals(self, db, monkeypatch):
+        """Operator call: at most one member email a day, at 7 am Eastern
+        (ahead of the free 8 am list), never drifting later day by day, and
+        carrying what arrived since the last one, best first, with a line for
+        the rest (review: a 40-deal cap and a growing backlog made "the
+        day's deals" false)."""
+        monkeypatch.setenv("SMTP_HOST", "smtp.example")
+        db.meta_set(M.META_MEMBERS, json.dumps(["a@x.com"]))
+        cfg = self._cfg()
+        cfg.members_email_every_minutes = 1440
+        cfg.members_email_hour_local = 7
+        cfg.members_email_timezone = "America/New_York"
+        cfg.members_max_deals_per_email = 2
+        factory = Factory()
+        # 2026-10-12 07:00 EDT == 11:00 UTC.
+        day = datetime(2026, 10, 12, 11, 0, tzinfo=timezone.utc)
+        db.meta_set(M.META_LAST_EMAIL, iso(day - timedelta(hours=20)))  # yesterday 11:00 EDT
+
+        def deal(key, pct, seen):
+            d = _deal(key, pct)
+            d["first_seen_at"] = iso(seen)
+            return d
+        old = deal("old", 99.0, day - timedelta(hours=30))   # before the last email: backlog
+        today = [deal(f"n{i}", 90.0 - i, day - timedelta(hours=3 + i)) for i in range(5)]
+        deals = [old] + today
+
+        early = M.send_member_alerts(db, cfg, day - timedelta(minutes=5),
+                                     deals=deals, smtp_factory=factory)
+        assert early["skipped"] == "within email window" and not factory.servers
+        first = M.send_member_alerts(db, cfg, day + timedelta(minutes=7),
+                                     deals=deals, smtp_factory=factory)
+        assert first["sent"] == 1 and first["deals"] == 2
+        text = factory.servers[0].messages[0].get_payload()[0].get_payload(decode=True).decode()
+        assert "Item n0" in text and "Item n1" in text and "Item old" not in text
+        assert "+3 more new deals on the live wall: https://wowpriced.com/" in text
+        # The same local day, more deals: nothing until tomorrow morning.
+        later = deals + [deal("n9", 95.0, day + timedelta(hours=2))]
+        for h in (1, 6, 12):
+            s = M.send_member_alerts(db, cfg, day + timedelta(hours=h),
+                                     deals=later, smtp_factory=factory)
+            assert s["skipped"] == "within email window"
+        assert len(factory.servers) == 1
+        # Tomorrow at 7 am: one email with what arrived since, not the
+        # three of today's that did not fit (they are on the wall).
+        nxt = day + timedelta(days=1, minutes=3)
+        s = M.send_member_alerts(db, cfg, nxt, deals=later, smtp_factory=factory)
+        assert s["sent"] == 1 and s["deals"] == 1 and len(factory.servers) == 2
+        assert "Item n9" in factory.servers[1].messages[0].get_payload()[0].get_payload(
+            decode=True).decode()
+        # Winter (EST): 7 am local is 12:00 UTC, still the first run after it.
+        assert M.send_member_alerts(db, cfg, datetime(2026, 12, 2, 11, 50, tzinfo=timezone.utc),
+                                    deals=[deal("w", 80.0, datetime(2026, 12, 2, 1, 0, tzinfo=timezone.utc))],
+                                    smtp_factory=factory)["skipped"] == "within email window"
+
+    def test_shipped_config_emails_members_once_a_day(self):
+        from dealradar.config import load_config
+        cfg = load_config()
+        assert cfg.members_email_every_minutes == 1440
+        assert cfg.members_email_hour_local == 7 < cfg.newsletter_hour_local
+        assert cfg.members_email_timezone == "America/New_York"
+        assert cfg.members_max_deals_per_email == 40
 
     def test_nothing_goes_out_without_members_or_smtp(self, db, monkeypatch):
         cfg = self._cfg()

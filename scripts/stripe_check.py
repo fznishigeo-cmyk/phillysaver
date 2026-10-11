@@ -96,6 +96,13 @@ def main() -> int:
                         f"every {rec.get('interval_count', '?')} {rec.get('interval', 'ONE-TIME')}, "
                         f"active={p.get('active')}") if isinstance(p, dict) else price
                 lines.append(f"OK price on the link: {desc}")
+                prod = p.get("product") if isinstance(p, dict) else None
+                prod_id = prod if isinstance(prod, str) else (prod or {}).get("id", "")
+                if prod_id:
+                    okp, pr = call("GET", f"/products/{prod_id}")
+                    lines.append(f"OK product {prod_id}: name={pr.get('name')!r} "
+                                 f"description={pr.get('description')!r}" if okp
+                                 else f"WARN reading the product: {err(pr)}")
                 if isinstance(p, dict) and not rec:
                     lines.append("FAIL the price is one-time; a subscription checkout needs a recurring price")
 
