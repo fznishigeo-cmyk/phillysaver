@@ -1105,9 +1105,15 @@ footer .meta{font-size:11.5px}
   // What to do instead when checkout refuses (auth.block).
   function blockText(code) {
     var mail = contactEmail();
+    // A Payment Link purchase on this address that was never attached to
+    // the account: Google sign-in with the same address unlocks it at once
+    // (a verified address counts its subscriptions); else the operator
+    // attaches it by hand. There is no receipt link to send them to.
+    var google = !!(state.meta || {}).google_client_id;
     return {
-      found: "We found a subscription for this email. Open the link in your Stripe receipt, or " +
-        (mail ? "email " + mail + "." : "use the contact page."),
+      found: "We found a subscription for this email. " +
+        (google ? "If it's yours, log out and continue with Google using this address (it unlocks at once), or " : "") +
+        (mail ? "email " + mail + " and we'll attach it." : "use the contact page and we'll attach it."),
       payment_issue: "There's a problem with your last payment. Update your card in Manage or cancel.",
       contact_support: (mail ? "Email " + mail : "Use the contact page") + " and we'll sort it out."
     }[code] || "";
@@ -1607,8 +1613,9 @@ footer .meta{font-size:11.5px}
     memberDeals(true).then(function (full) {
       b.disabled = false;
       showDeals(full);
-      if (!full) toast(token() ? "No active subscription found yet — try again in a minute"
-                               : "Please log in again");
+      if (!full) toast(!token() ? "Please log in again"
+                       : auth.block === "found" ? blockText("found")
+                       : "No active subscription found yet — try again in a minute");
     });
   });
   // A click on a locked card takes the next step: sign up when signed out,

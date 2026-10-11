@@ -965,8 +965,11 @@ class TestTrialCtasAreHonest:
         body = _between(pages["index.html"], "function checkout(", "function noPortalText(")
         assert "res.status === 409" in body and "memberDeals(true)" in body
         assert 'refuse("found", ui, had)' in body
-        assert ('found: "We found a subscription for this email. Open the link in your Stripe receipt, or " +'
-                in pages["index.html"])
+        html = pages["index.html"]
+        assert "Stripe receipt" not in html  # there is no receipt link to open
+        found = _between(html, "function blockText(", "function offer(")
+        assert "continue with Google using this address" in found
+        assert "google_client_id" in found and "we'll attach it" in found
         start = body.index("res.status === 409")
         assert "return;" in body[start:body.index("res.status === 401")]
 
