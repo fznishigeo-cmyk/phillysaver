@@ -331,8 +331,7 @@ Worker:
 |---|---|
 | `mode` | `subscription` |
 | `line_items[0][price]`, `line_items[0][quantity]` | the price, `1` |
-| `payment_method_types[0]` | `card`: named explicitly, as `scripts/stripe_setup.py` does for the Payment Link (this Stripe account has rejected the dashboard's default payment methods before) |
-| `payment_method_collection` | `always` (the card up front, trial or not) |
+| `payment_method_collection` | `always` (the card up front, trial or not). No `payment_method_types`: Stripe refuses it on Checkout Sessions for this account ("no longer supported"), so the methods are the dashboard's, as on the Payment Link |
 | `client_reference_id` | the account reference |
 | `customer` / `customer_email` | the bound `acct.stripe_customer` when there is one and Stripe has not said it is gone, else the account email |
 | `subscription_data[trial_period_days]` | `TRIAL_DAYS`, only when `trial_available`, the history shows no subscription, and `TRIAL_DAYS > 0` |

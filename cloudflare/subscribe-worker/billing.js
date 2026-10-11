@@ -174,8 +174,9 @@ async function reuseOrExpire(env, ref, hash) {
 // A subscription Checkout Session for the account. A bound customer is
 // reused (Stripe keeps one customer per payer) unless Stripe says it is gone
 // for this key; otherwise Checkout creates one from the account email. The
-// card is the only payment method (named, as the Payment Link does: this
-// account has refused the dashboard's defaults). The trial rides along only
+// payment methods are the dashboard's (Stripe refuses payment_method_types on
+// Checkout Sessions for this account), and one is always collected up front,
+// trial or not. The trial rides along only
 // while me.trial_available. One open session per account: the last one is
 // reused while open with the same params, else expired before a new one, and
 // every new one expires after 31 to 41 minutes. The Idempotency-Key (ref +
@@ -192,7 +193,6 @@ export async function checkoutUrl(env, acct, me, gone = false) {
     ["mode", "subscription"],
     ["line_items[0][price]", price],
     ["line_items[0][quantity]", "1"],
-    ["payment_method_types[0]", "card"],
     ["payment_method_collection", "always"],
     ["client_reference_id", ref],
     acct.stripe_customer && !gone ? ["customer", acct.stripe_customer] : ["customer_email", acct.email],

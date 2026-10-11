@@ -104,7 +104,6 @@ def main() -> int:
         params = [
             ("mode", "subscription"),
             ("line_items[0][price]", price), ("line_items[0][quantity]", "1"),
-            ("payment_method_types[0]", "card"),
             ("payment_method_collection", "always"),
             ("client_reference_id", "wowpriced-stripe-check"),
             ("customer_email", "stripe-check@wowpriced.com"),
@@ -116,7 +115,9 @@ def main() -> int:
         ]
         ok, sess = call("POST", "/checkout/sessions", params)
         if ok:
-            lines.append(f"OK trial checkout session created ({sess.get('id')}); expiring it now")
+            lines.append(f"OK trial checkout session created ({sess.get('id')}), payment methods "
+                         f"{sess.get('payment_method_types')}, collection "
+                         f"{sess.get('payment_method_collection')}; expiring it now")
             ok2, exp = call("POST", f"/checkout/sessions/{sess['id']}/expire", [])
             lines.append("OK session expired" if ok2 else f"WARN could not expire it: {err(exp)}")
         else:

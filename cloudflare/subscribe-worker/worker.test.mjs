@@ -908,7 +908,6 @@ describe("checkout", () => {
       ["mode", "subscription"],
       ["line_items[0][price]", "price_999"],
       ["line_items[0][quantity]", "1"],
-      ["payment_method_types[0]", "card"],
       ["payment_method_collection", "always"],
       ["client_reference_id", REF],
       ["customer_email", "new@example.com"],
