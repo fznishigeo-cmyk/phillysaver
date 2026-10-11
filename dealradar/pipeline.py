@@ -238,7 +238,9 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
 #: Hours between live price re-checks of the same Amazon deal.
 _RECHECK_EVERY_H = 6.0
 #: Early (in-window) Keepa calls per run made only to fetch a missing photo
-#: (1 token each; a 429 just defers the deal to the next run).
+#: (1 token each). The shared token budget (keepa_budget) is the real
+#: brake: these run only while the bucket holds MIN_FOR_IMAGE_BACKFILL,
+#: so they can never starve the deal lane again (the live incident).
 _IMAGE_BACKFILL_PER_RUN = 40
 #: Article fetches per run that backfill photos for existing deals whose
 #: source granted image display: one polite fetch per deal (the fetcher
@@ -321,16 +323,23 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     from . import rank
     from .dedupe import _DEAL_FIELDS
+    from .keepa_budget import (MIN_FOR_IMAGE_BACKFILL, MIN_FOR_RECHECK,
+                               KeepaBudget)
     from .verify import recheck_amazon_price
 
-    stats = {"checked": 0, "dead": 0, "image_backfill": 0}
+    stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0}
     if not cfg.feature_flags.get("keepa"):
         return stats
+    # Token budget carried over from the last Keepa response of any run;
+    # each product call below updates it, and it is persisted at the end.
+    budget = KeepaBudget.load(db)
     for deal in db.all_deals(status="alive"):
         if not deal.get("asin"):
             continue
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
-        if last is not None and now - last < timedelta(hours=_RECHECK_EVERY_H):
+        in_window = (last is not None
+                     and now - last < timedelta(hours=_RECHECK_EVERY_H))
+        if in_window:
             # Inside the window only a photo-less deal earns an early call:
             # the same product response carries its image (the harvest
             # landed after many deals' first recheck). Capped per run so the
@@ -338,11 +347,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             if not image_backfill or deal.get("image_url") or \
                     stats["image_backfill"] >= _IMAGE_BACKFILL_PER_RUN:
                 continue
-            stats["image_backfill"] += 1
         ok, _reason = rank.is_publishable(deal, cfg)
         if not ok:
             continue  # only spend tokens on deals that would publish
-        verdict = recheck_amazon_price(deal, cfg)
+        # Photo-only calls yield first (a nice-to-have), due rechecks next;
+        # the deal lane's /deal queries keep the last tokens.
+        need = MIN_FOR_IMAGE_BACKFILL if in_window else MIN_FOR_RECHECK
+        if not budget.allows(need, now):
+            stats["tokens_short"] += 1
+            continue
+        if in_window:
+            stats["image_backfill"] += 1
+        verdict = recheck_amazon_price(deal, cfg, budget=budget)
         if verdict is None:
             continue  # API had no opinion; try again next pass
         stats["checked"] += 1
@@ -360,6 +376,10 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
         log.info("price recheck: %s is over (live price moved); marked dead",
                  deal.get("dedupe_key"))
+    budget.save(db)
+    if stats["tokens_short"]:
+        log.info("price recheck: %d call(s) held back, Keepa tokens ~%.0f",
+                 stats["tokens_short"], budget.available(now) or 0.0)
     return stats
 
 

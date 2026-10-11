@@ -176,7 +176,7 @@ class TestRunCritic:
         db.close()
 
     def test_unpublishable_deals_never_cost_a_critic_call(self, tmp_path):
-        db = self._db_with_deal(tmp_path, pct_at_checkout=40.0)  # below floor
+        db = self._db_with_deal(tmp_path, pct_at_checkout=30.0)  # below floor
         cfg = _cfg()
         msgs = _CriticMessages()
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
@@ -711,13 +711,14 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deal, _cfg):
+        def fake_recheck(deal, _cfg, budget=None):
             calls.append(deal["asin"])
             return False
 
         monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
-        assert stats == {"checked": 1, "dead": 1, "image_backfill": 0}
+        assert stats == {"checked": 1, "dead": 1, "image_backfill": 0,
+                         "tokens_short": 0}
         row = db.get_deal(d["dedupe_key"])
         assert row["status"] == "dead"
         assert "price_moved" in row["flags"]
@@ -725,7 +726,7 @@ class TestPriceRecheck:
         # Within the 6-hour window nothing is re-checked (and dead deals
         # are out of the alive set anyway).
         assert pipeline._recheck_prices(db, cfg, NOW) == {
-            "checked": 0, "dead": 0, "image_backfill": 0}
+            "checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0}
         assert len(calls) == 1
         db.close()
 
@@ -755,7 +756,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deal, _cfg):
+        def fake_recheck(deal, _cfg, budget=None):
             calls.append(deal["dedupe_key"])
             deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
             return True
@@ -763,8 +764,69 @@ class TestPriceRecheck:
         monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|a"]                      # photo'd deal untouched
-        assert stats == {"checked": 1, "dead": 0, "image_backfill": 1}
+        assert stats == {"checked": 1, "dead": 0, "image_backfill": 1,
+                         "tokens_short": 0}
         assert db.get_deal("url|a")["image_url"].endswith("new.jpg")
+        db.close()
+
+    def test_token_budget_holds_back_photo_calls_before_rechecks(
+            self, tmp_path, monkeypatch):
+        """Live incident: in-window photo calls plus rechecks drained the
+        Keepa bucket and the deal lane 429'd into the breaker. With the
+        shared budget low, photo-only calls (need 60) wait while a due
+        recheck (need 15) still runs; lower still nothing spends, so the
+        deal lane keeps the last tokens; refill brings everything back."""
+        import json
+        from datetime import timedelta
+
+        from dealradar import verify
+        from dealradar.keepa_budget import META_KEY
+        db = DB(tmp_path / "state.db")
+        recent = (NOW - timedelta(hours=1)).isoformat()
+        for key, last in (("url|photo", recent), ("url|due", "")):
+            d = _deal_dict(dedupe_key=key, item=key)
+            d["asin"] = "B0" + key[-1].upper() * 8
+            d["image_url"] = ""
+            d["price_rechecked_at"] = last
+            db.insert_deal(dedupe_key=key, store=d["store"], item=d["item"],
+                           normalized_item=key, canonical_url="", payload=d,
+                           final_price=d["final_price"],
+                           pct_at_checkout=d["pct_at_checkout"],
+                           abs_savings=d["abs_savings"], online_only="true",
+                           expires_at="", now=NOW)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        calls = []
+
+        def fake_recheck(deal, _cfg, budget=None):
+            calls.append(deal["dedupe_key"])
+            budget.note({"tokensLeft": 20, "refillRate": 5}, NOW)
+            return True
+
+        monkeypatch.setattr(verify, "recheck_amazon_price", fake_recheck)
+
+        def reading(tokens):
+            db.meta_set(META_KEY, json.dumps({
+                "tokens_left": tokens, "refill_rate": 5,
+                "seen_at": NOW.isoformat()}))
+
+        # 30 tokens: the photo-only call waits, the due recheck runs.
+        reading(30)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert calls == ["url|due"]
+        assert stats == {"checked": 1, "dead": 0, "image_backfill": 0,
+                         "tokens_short": 1}
+        # The response's reading is persisted for the adapter / next run.
+        assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 20
+        # 5 tokens: nothing spends (both deals are now in-window photo calls).
+        reading(5)
+        calls.clear()
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert calls == [] and stats["tokens_short"] == 2
+        # Half an hour of refill at 5/min: the bucket is back, both run.
+        stats = pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=30))
+        assert sorted(calls) == ["url|due", "url|photo"]
+        assert stats["image_backfill"] == 2 and stats["tokens_short"] == 0
         db.close()
 
 
@@ -819,7 +881,10 @@ class TestConfigFields:
 
     def test_quality_trio_config_loads(self):
         cfg = load_config()
-        assert cfg.used_min_pct == pytest.approx(60.0)
+        # Floors: used/open-box at 50, everything else at 40 (site tier too).
+        assert cfg.min_pct == pytest.approx(40.0)
+        assert cfg.used_min_pct == pytest.approx(50.0)
+        assert cfg.site_show_from_pct == pytest.approx(40.0)
         # Tiered models: Haiku reads everything, Sonnet double-checks and judges.
         assert cfg.parse_model == "claude-haiku-5-5"
         assert cfg.second_opinion_model == "claude-sonnet-5-5"

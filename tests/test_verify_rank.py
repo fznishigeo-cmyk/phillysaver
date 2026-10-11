@@ -219,6 +219,68 @@ def test_keepa_check_stub(tmp_path, monkeypatch) -> None:
     assert verify.keepa_check(deal, cfg) is None   # stub: never a verdict
 
 
+def test_keepa_cross_check_waits_for_tokens(tmp_path, monkeypatch) -> None:
+    """assign_tier's Keepa cross-check spends from the shared token budget:
+    held back (deal stays unverified, retried later) while the estimate is
+    under a recheck's worth, and its response updates the budget."""
+    import json
+
+    import httpx
+
+    from dealradar.keepa_budget import META_KEY
+
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    cfg.feature_flags = {"keepa": True}
+    monkeypatch.setenv("KEEPA_KEY", "k-test")
+    res = upsert(db, cfg, source="hip2save", uid="a", now=NOW,
+                 url="https://www.amazon.com/dp/B0TESTASN1", final=25.0)
+    deal = db.get_deal(res["dedupe_key"])
+    assert deal["asin"] == "B0TESTASN1"
+    calls = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(params["asin"])
+        return httpx.Response(
+            200, json={"products": [{"stats": {"avg90": [14999]}}],
+                       "tokensLeft": 41, "refillRate": 5},
+            request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    db.meta_set(META_KEY, json.dumps({
+        "tokens_left": 5, "refill_rate": 5, "seen_at": util.iso(NOW)}))
+    assert verify.assign_tier(db, deal, cfg, NOW) == "unverified"
+    assert calls == []                                    # held back
+    assert not db.get_deal(res["dedupe_key"]).get("keepa_checked")
+    # Two minutes of refill later (15 tokens) the check runs once.
+    later = NOW + timedelta(minutes=2)
+    assert verify.assign_tier(db, deal, cfg, later) == "history-checked"
+    assert calls == ["B0TESTASN1"]
+    assert db.get_deal(res["dedupe_key"])["keepa_checked"] is True
+    assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 41
+    db.close()
+
+
+def test_configured_floors_used_50_everything_else_40() -> None:
+    """The owner's floors: used/open-box publish at >= 50% off, everything
+    else at >= 40%, the site's second tier starts at 40 too."""
+    from dealradar.config import load_config
+
+    cfg = load_config()
+    assert (cfg.min_pct, cfg.used_min_pct, cfg.site_show_from_pct) == \
+        (40.0, 50.0, 40.0)
+    assert rank.is_publishable(base_deal(pct_at_checkout=40.0), cfg)[0]
+    ok, reason = rank.is_publishable(base_deal(pct_at_checkout=39.9), cfg)
+    assert not ok and reason.startswith("pct_at_checkout")
+    used = dict(conditions=["open_box"])
+    assert rank.is_publishable(base_deal(pct_at_checkout=50.0, **used), cfg)[0]
+    ok, reason = rank.is_publishable(base_deal(pct_at_checkout=49.9, **used),
+                                     cfg)
+    assert not ok and "used_min_pct 50" in reason
+    # The verification ratio follows min_pct: "well below typical" = 60%.
+    assert verify._history_ratio(cfg) == pytest.approx(0.60)
+
+
 # ---------------------------------------------------------------- rank
 
 

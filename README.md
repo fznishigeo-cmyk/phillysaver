@@ -11,7 +11,7 @@ dedupe/verify/rank → site/Telegram/email.
 
 - The savings math is deterministic code, not the LLM — rules in
   [SAVINGS_RULES.md](SAVINGS_RULES.md). Publish floors (config.yaml):
-  `min_pct: 50` percent off at checkout **and** `min_abs_savings: 5` dollars.
+  `min_pct: 40` percent off at checkout **and** `min_abs_savings: 5` dollars (used/open-box: `used_min_pct: 50`).
 - Source quality is measured, not assumed: `python -m dealradar
   validate-sources` live-checks every source and writes
   [sources_report.md](sources_report.md) (committed to the `data` branch after
@@ -71,7 +71,7 @@ source is reported as `needs_key`, it never crashes the run.
 | `TELEGRAM_ADMIN_CHAT_ID` | Separate chat for low-volume admin warnings. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Provider-agnostic SMTP for the daily digest; the single recipient lives in config (`digest.recipient`). |
 | `WOOT_API_KEY`, `MEH_API_KEY` | Optional official store APIs. |
-| `KEEPA_KEY` | Optional. Unlocks BOTH the `keepa_amazon_drops` discovery source (Amazon products freshly >=60% below their average — the official, legal alternative to scraping Amazon) and the Keepa price-history cross-check that can award the history-checked badge. Get it at keepa.com -> Data -> API (flat-fee subscription, token-throttled: it can never overbill). |
+| `KEEPA_KEY` | Optional. Unlocks BOTH the `keepa_amazon_drops` discovery source (Amazon products freshly >=35% below their average plus Amazon Warehouse open-box offers >=45% under the live new price — the official, legal alternative to scraping Amazon) and the Keepa price-history cross-check that can award the history-checked badge. Get it at keepa.com -> Data -> API (flat-fee subscription, token-throttled: it can never overbill). |
 | `THREADS_TOKEN` | Optional, behind `feature_flags.threads` — off until app review passes. |
 
 On GitHub Actions, set these as repository secrets; the workflows map each one

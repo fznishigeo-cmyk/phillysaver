@@ -51,13 +51,17 @@ parse:
     claude-sonnet-5-5: { input: 2.00, output: 10.00 }
 
 publish:
-  min_pct: 50                  # floor: pct_at_checkout (alerts + headline tier)
-  used_min_pct: 60             # HIGHER absolute floor for used/open-box deals
+  min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
+                               # Verification thresholds (history-checked, the
+                               # Keepa cross-check) derive from this one knob.
+  used_min_pct: 50             # HIGHER absolute floor for used/open-box deals
                                # (warehouse supply is plentiful; below this the
-                               # page floods with mediocre used offers)
+                               # page floods with mediocre used offers). The
+                               # Keepa warehouse pass ingests from 5 points under.
   min_abs_savings: 5.0         # floor: absolute $ savings
-  site_show_from_pct: 50       # site-only second tier: "strong deals" below the
-                               # alert bar still render on the page (never alerted)
+  site_show_from_pct: 40       # site-only second tier: "strong deals" below the
+                               # alert bar still render on the page (never
+                               # alerted). Equal to min_pct = the tier is off.
   show_dead_hours: 48          # dead deals stay this long in the "Just
                                # missed" section at the page bottom (FOMO:
                                # gone before you got here)

@@ -25,6 +25,8 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from .config import get_secret
+from .keepa_budget import (MIN_FOR_RECHECK, KeepaBudget, describe_429,
+                           response_payload)
 from .util import iso, parse_iso
 
 log = logging.getLogger("dealradar.verify")
@@ -54,10 +56,16 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
 
     # Keepa cross-check (paid, flag + key gated): only for deals that would
     # otherwise publish unverified, at most once per deal (keepa_checked flag
-    # in the payload keeps hourly re-tiering from burning tokens).
+    # in the payload keeps hourly re-tiering from burning tokens), and only
+    # while the shared token budget has a recheck's worth to spare — the
+    # deal lane's /deal queries come first.
     if (deal.get("asin") and not deal.get("keepa_checked")
             and (deal.get("pct_at_checkout") or 0) >= cfg.min_pct):
-        verdict = keepa_check(deal, cfg)
+        budget = KeepaBudget.load(db)
+        if not budget.allows(MIN_FOR_RECHECK, now):
+            return "unverified"  # retried on a later re-tiering
+        verdict = keepa_check(deal, cfg, budget=budget)
+        budget.save(db)
         if verdict is not None:
             deal["keepa_checked"] = True
             payload = {k: v for k, v in deal.items() if k != "id"}
@@ -133,17 +141,46 @@ def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
                for step in (deal.get("stack_steps") or []))
 
 
-def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
+def _keepa_product(key: str, asin: str, stats: int,
+                   budget: KeepaBudget | None) -> dict[str, Any] | None:
+    """One Keepa /product call: the product dict, or None on a 429 (the
+    token bucket is empty — it refills by the minute and costs nothing, so
+    that is "no opinion", never a verdict). Every response body, the 429
+    included, feeds the shared token budget when one is given."""
+    import httpx
+
+    resp = httpx.get(
+        "https://api.keepa.com/product",
+        params={"key": key, "domain": 1, "asin": asin, "stats": stats},
+        timeout=20,
+    )
+    payload = response_payload(resp)
+    if budget is not None:
+        budget.note(payload)
+    if resp.status_code == 429:
+        log.warning("keepa product %s: 429 Too Many Requests (%s); no "
+                    "opinion until the bucket refills", asin,
+                    describe_429(payload))
+        return None
+    resp.raise_for_status()
+    products = (payload.get("products") if isinstance(payload, dict)
+                else None) or []
+    return (products[0] or {}) if products else {}
+
+
+def recheck_amazon_price(deal: dict[str, Any], cfg,
+                         budget: KeepaBudget | None = None) -> bool | None:
     """Is this Amazon deal's price still live? (The legal equivalent of
     clicking the product page before publishing: Keepa's licensed API
     mirrors it.) True = a current offer still matches the deal's final
     price within 10% (or, for a deal whose discount only shows at checkout
     — coupon, code, Subscribe & Save — the quoted regular price); False =
     the price moved (deal is over); None = no opinion (flag/key off, no
-    ASIN/price, or the API failed).
+    ASIN/price, tokens exhausted, or the API failed).
 
     A used/open-box deal is checked against the Warehouse price; anything
-    else against Amazon's own price or the lowest new offer.
+    else against Amazon's own price or the lowest new offer. ``budget``
+    (the caller's shared KeepaBudget) learns the response's token state.
     """
     if not cfg.feature_flags.get("keepa"):
         return None
@@ -155,17 +192,9 @@ def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
         return None
     is_used = bool({"used", "open_box"} & set(deal.get("conditions") or []))
     try:
-        import httpx
-
-        resp = httpx.get(
-            "https://api.keepa.com/product",
-            params={"key": get_secret("KEEPA_KEY"), "domain": 1,
-                    "asin": asin, "stats": 1},
-            timeout=20,
-        )
-        resp.raise_for_status()
-        products = resp.json().get("products") or []
-        product = (products[0] or {}) if products else {}
+        product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget)
+        if product is None:
+            return None  # 429: the bucket is empty, try a later pass
         # Each 6-hourly recheck also backfills a missing thumbnail for free.
         _harvest_image(deal, product)
         stats = product.get("stats")
@@ -201,14 +230,16 @@ def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
         return None
 
 
-def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
+def keepa_check(deal: dict[str, Any], cfg,
+                budget: KeepaBudget | None = None) -> bool | None:
     """Optional Keepa price-history cross-check (feature-flagged).
 
     Returns None (no opinion) unless cfg.feature_flags['keepa'] is on AND the
     KEEPA_KEY secret is set. When enabled it calls the official paid Keepa API
     with the deal's ASIN and compares the final price against Keepa's 90-day
     average Amazon price: True when the deal clears the publish floor against
-    that average, False when it doesn't, None on any failure.
+    that average, False when it doesn't, None on any failure (a 429 — empty
+    token bucket — included). ``budget`` learns the response's token state.
 
     Policy, non-negotiable:
     - Keepa is a PAID, official API; we only ever use it with a key.
@@ -226,16 +257,9 @@ def keepa_check(deal: dict[str, Any], cfg) -> bool | None:
     if not asin or final is None:
         return None
     try:
-        import httpx
-
-        resp = httpx.get(
-            "https://api.keepa.com/product",
-            params={"key": key, "domain": 1, "asin": asin, "stats": 90},
-            timeout=20,
-        )
-        resp.raise_for_status()
-        products = resp.json().get("products") or []
-        product = (products[0] or {}) if products else {}
+        product = _keepa_product(key, asin, 90, budget)
+        if product is None:
+            return None  # 429: the bucket is empty, no opinion
         _harvest_image(deal, product)
         stats = product.get("stats")
         avg = None

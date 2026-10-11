@@ -30,6 +30,8 @@ from .. import util
 from ..config import AppConfig, get_secret
 from ..db import DB
 from ..errors import AdapterNotConfigured, DeadlineExceeded
+from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
+                            response_payload)
 from ..models import RawPost, SourceConfig
 from .base import SourceAdapter
 
@@ -43,15 +45,19 @@ DOMAIN_US = 1
 #: Cap on products mapped per run: bounds both Keepa tokens and LLM spend.
 MAX_DEALS_PER_RUN = 20
 
+#: The warehouse pass is the site's ONLY used/open-box supply, so it maps
+#: twice as many rows per pull (the LLM spend caps still bound the run).
+WAREHOUSE_MAX_DEALS_PER_RUN = 40
+
 #: Ask Keepa for drops at/above this percent-off-average. Slightly below our
-#: publish floor (publish.min_pct, 50) so near-misses still enter the DB
+#: publish floor (publish.min_pct, 40) so near-misses still enter the DB
 #: and price history.
-MIN_DROP_PCT = 45
+MIN_DROP_PCT = 35
 
 #: Warehouse/used offers are plentiful, so they carry a HIGHER bar: ingest
 #: only used prices this far below the LIVE new price (publish floor for
-#: used deals is higher still — config publish.used_min_pct, 60).
-WAREHOUSE_MIN_DROP_PCT = 55
+#: used deals is higher still — config publish.used_min_pct, 50).
+WAREHOUSE_MIN_DROP_PCT = 45
 
 #: Warehouse junk filter: open-box $5 phone cases and ball joints are not
 #: deals anyone subscribes for. The item's NEW-condition value must be at
@@ -154,6 +160,11 @@ def _check_deadline(deadline: float | None) -> None:
         raise DeadlineExceeded("keepa: per-source deadline crossed")
 
 
+class _TokensShort(Exception):
+    """The token bucket cannot cover the next query (budget says so, or
+    Keepa answered 429). Internal: the pull ends early with what it has."""
+
+
 class KeepaDealsAdapter(SourceAdapter):
     def __init__(
         self,
@@ -205,46 +216,66 @@ class KeepaDealsAdapter(SourceAdapter):
                          MIN_INTERVAL_MINUTES)
                 return []
 
+        # The shared token budget (fed by every Keepa response, product
+        # calls included) decides whether each query may spend; a pull cut
+        # short by it, or by a 429, leaves keepa_last_fetch_at alone so the
+        # next lane tick retries as soon as the bucket refills.
+        budget = KeepaBudget.load(db)
+        posts: list[RawPost] = []
+        rows: list = []
+        wh_rows: list = []
+        n_amazon = 0
+        complete = False
         with self._client(cfg) as client:
-            # Pass 1: Amazon's own NEW price dropped >= MIN_DROP_PCT below
-            # its 90-day average.
-            _check_deadline(deadline)
-            rows = self._query_rows(client, key, PRICE_TYPE_AMAZON,
-                                    [MIN_DROP_PCT, 100], source.name,
-                                    sort_type=4)  # biggest %-drop first
-            posts: list[RawPost] = []
-            for row in rows[:MAX_DEALS_PER_RUN]:
-                if not isinstance(row, dict):
-                    continue
-                post = self._map_row(row, source, now)
-                if post is not None:
-                    posts.append(post)
-            n_amazon = len(posts)
+            try:
+                # Pass 1: Amazon's own NEW price dropped >= MIN_DROP_PCT
+                # below its 90-day average.
+                _check_deadline(deadline)
+                rows = self._query_rows(client, key, PRICE_TYPE_AMAZON,
+                                        [MIN_DROP_PCT, 100], source.name,
+                                        budget, now,
+                                        sort_type=4)  # biggest %-drop first
+                for row in rows[:MAX_DEALS_PER_RUN]:
+                    if not isinstance(row, dict):
+                        continue
+                    post = self._map_row(row, source, now)
+                    if post is not None:
+                        posts.append(post)
+                n_amazon = len(posts)
 
-            # Pass 2: Amazon Warehouse (Amazon Resale) open-box/used offers.
-            # Keepa's server-side delta is vs the warehouse's OWN average, so
-            # ask loosely and apply the honest gate client-side: the used
-            # price must clear MIN_DROP_PCT against the LIVE new price.
-            _check_deadline(deadline)
-            # Sorted by ABSOLUTE drop: percent-sorting surfaces $5 junk;
-            # dollar-sorting surfaces the big-ticket open-box finds.
-            # Warehouse gets a much wider popularity net: mispriced
-            # open-box hides on mid-rank items, and the $25 new-value
-            # floor plus the 55%-off-new gate already screen the junk.
-            wh_rows = self._query_rows(client, key, PRICE_TYPE_WAREHOUSE,
-                                       [30, 100], source.name + "/warehouse",
-                                       sort_type=2, max_rank=200000)
-            for row in wh_rows[:MAX_DEALS_PER_RUN]:
-                if not isinstance(row, dict):
-                    continue
-                post = self._map_warehouse_row(row, source, now)
-                if post is not None:
-                    posts.append(post)
+                # Pass 2: Amazon Warehouse (Amazon Resale) open-box/used
+                # offers. Keepa's server-side delta is vs the warehouse's
+                # OWN average, so ask loosely and apply the honest gate
+                # client-side: the used price must clear
+                # WAREHOUSE_MIN_DROP_PCT against the LIVE new price.
+                _check_deadline(deadline)
+                # Sorted by ABSOLUTE drop: percent-sorting surfaces $5 junk;
+                # dollar-sorting surfaces the big-ticket open-box finds.
+                # Warehouse gets a much wider popularity net: mispriced
+                # open-box hides on mid-rank items, and the $25 new-value
+                # floor plus the 45%-off-new gate already screen the junk.
+                wh_rows = self._query_rows(client, key, PRICE_TYPE_WAREHOUSE,
+                                           [30, 100],
+                                           source.name + "/warehouse",
+                                           budget, now,
+                                           sort_type=2, max_rank=200000)
+                for row in wh_rows[:WAREHOUSE_MAX_DEALS_PER_RUN]:
+                    if not isinstance(row, dict):
+                        continue
+                    post = self._map_warehouse_row(row, source, now)
+                    if post is not None:
+                        posts.append(post)
+                complete = True
+            except _TokensShort:
+                pass  # logged where it happened; keep what was mapped
+            finally:
+                budget.save(db)
 
-        if db is not None:
+        if db is not None and complete:
             db.meta_set("keepa_last_fetch_at", util.iso(now))
-        log.info("keepa %s: mapped %d amazon-price + %d warehouse posts",
-                 source.name, n_amazon, len(posts) - n_amazon)
+        log.info("keepa %s: mapped %d amazon-price + %d warehouse posts%s",
+                 source.name, n_amazon, len(posts) - n_amazon,
+                 "" if complete else " (pull cut short: tokens; retry next tick)")
         if (rows or wh_rows) and not posts:
             sample = next((r for r in (rows + wh_rows) if isinstance(r, dict)),
                           {})
@@ -257,7 +288,15 @@ class KeepaDealsAdapter(SourceAdapter):
 
     def _query_rows(self, client: httpx.Client, key: str, price_type: int,
                     delta_pct_range: list[int], label: str,
+                    budget: KeepaBudget, now: datetime,
                     sort_type: int = 4, max_rank: int = 30000) -> list:
+        """One /deal query. Raises :class:`_TokensShort` when the budget
+        says the bucket is too low to spend, or when Keepa answers 429."""
+        if not budget.allows(MIN_FOR_DEAL_QUERY, now):
+            log.info("keepa %s: ~%.0f tokens left (< %.0f needed); skipping "
+                     "the query until the bucket refills", label,
+                     budget.available(now), MIN_FOR_DEAL_QUERY)
+            raise _TokensShort
         selection = {
             "page": 0,
             "domainId": DOMAIN_US,
@@ -280,8 +319,16 @@ class KeepaDealsAdapter(SourceAdapter):
         resp = client.get(DEALS_URL, params={
             "key": key, "selection": json.dumps(selection),
         })
+        payload = response_payload(resp)
+        budget.note(payload, now)  # a 429 body carries the token fields too
+        if resp.status_code == 429:
+            # Empty token bucket: it refills by the minute and costs nothing,
+            # so this is a deferral, never a source failure for the breaker.
+            log.warning("keepa %s: 429 Too Many Requests (%s); token bucket "
+                        "empty, retrying next tick", label,
+                        describe_429(payload))
+            raise _TokensShort
         resp.raise_for_status()
-        payload = resp.json()
         if isinstance(payload, dict) and payload.get("error"):
             # Keepa reports some failures in-body on a 200: surface them as a
             # source failure instead of silently "mapping 0 posts".
