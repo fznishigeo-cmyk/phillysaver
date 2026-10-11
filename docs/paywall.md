@@ -171,7 +171,10 @@ or `trialing` (Stripe's trial: a card is on file) reached one of three ways:
   `GET /v1/subscriptions?status=active&expand[]=data.customer` and the same
   with `status=trialing`, and compare `customer.email` **lowercased** to the
   account email (Stripe's `customers?email=` filter is exact-case and is
-  not used here).
+  not used here). When neither is found and (a) and (c) have nothing that
+  has not ended, the same with `status=past_due`, `unpaid`, `incomplete`,
+  then `paused`: such a match makes no member, it only names the customer
+  whose card to fix (below).
 
 (a) is tried first, then (c), then (b); the first live subscription wins,
 and within each **active beats trialing**. Only `active` and `trialing`
@@ -180,11 +183,12 @@ they have not ended (Stripe may still collect them), so checkout refuses
 to sell beside them (`409 payment_issue`). The answer is `{sub, had,
 customer}`: the best live subscription (`{status, trial_end}`) or none;
 whether any subscription of the account was seen (a live one anywhere, any
-one of the bound customer's or of its own checkouts, or a gone bound
-customer), which ends `trial_available`; and the customer its billing
-portal opens on: the live subscription's (whichever way it was found),
-else that of a not-ended one of (a) or (c) (a card to fix), else the bound
-customer (not a gone one), else none.
+one of the bound customer's or of its own checkouts, a not-ended one found
+by (b), or a gone bound customer), which ends `trial_available`; and the
+customer its billing portal opens on: the live subscription's (whichever
+way it was found), else that of a not-ended one of (a) or (c) (a card to
+fix), else that of a not-ended one found by (b) (the same, verified
+accounts only), else the bound customer (not a gone one), else none.
 Every account is asked at least (c); only a verified one is looked up by
 email. Stripe's answer is cached 5 minutes **in isolate memory**, not KV; a
 Stripe failure counts as "not a member" for that request only and is not
@@ -409,7 +413,9 @@ whichever way it was found (the bound customer (a), the account's own
 checkout (c) even when it was never claimed, or a customer on the account's
 **verified** email (b)), else that of a not-ended subscription of (a) or (c)
 (`past_due` and the like: the card is fixed here, which is where the page
-sends `409 payment_issue`), else the bound customer (not a gone one). Then
+sends `409 payment_issue`), else that of a not-ended one on the verified
+email (b) (the same; the account is still no member), else the bound
+customer (not a gone one). Then
 `POST /v1/billing_portal/sessions` with `customer=<that customer>`,
 `configuration=<bpc_...>` and `return_url=<SITE_URL>/` → `200 {url}`
 (Stripe's hosted portal: cancel, update the card, invoices). An unverified

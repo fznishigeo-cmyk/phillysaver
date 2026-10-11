@@ -199,7 +199,7 @@ globalThis.fetch = async (input, init = {}) => {
     if (url.pathname === "/v1/subscriptions") {
       assert.equal(url.searchParams.get("expand[]"), "data.customer");
       const status = url.searchParams.get("status");
-      assert.ok(status === "active" || status === "trialing", status);
+      assert.ok(["active", "trialing", "past_due", "unpaid", "incomplete", "paused"].includes(status), status);
       return jsonResponse(listPage(everySubscription().filter((s) => s.status === status), url));
     }
     let m = url.pathname.match(/^\/v1\/checkout\/sessions\/([^/]+)$/);
@@ -1152,7 +1152,7 @@ describe("one subscription, one trial, one account per payment", () => {
     stripe.subs.cus_em = [{ status: "canceled", trial_end: end }];
     travel(6 * MIN);
     r = await me(env, token);
-    assert.deepEqual([r.json.member, r.json.trial_available], [false, true], "the email lookup sees live subscriptions only");
+    assert.deepEqual([r.json.member, r.json.trial_available], [false, true], "the email lookup never sees an ended subscription");
     assert.equal((await checkout(env, token)).status, 200);
     assert.ok(!("subscription_data[trial_period_days]" in postedMap()), lastPost().body);
     assert.equal((await account(env, "em@example.com")).trial_used, true, "recorded on the account");
@@ -1478,6 +1478,63 @@ describe("never billed twice, every member can cancel online", () => {
     r = await portal(env, t3);
     assert.deepEqual([r.status, r.json], [404, { error: "no_customer" }]);
     assert.notEqual(postedMap().customer, "cus_ver2");
+  });
+
+  test("a verified account whose subscription on its email stops paying fixes the card in the portal, never a member; an unverified one opens nobody's", async () => {
+    const env = newEnv({ STRIPE_PORTAL_LINK: "" });
+    midSlot();
+    const portalCustomers = () => stripe.posts.filter((p) => p.path === "/v1/billing_portal/sessions")
+      .map((p) => new URLSearchParams(p.body).get("customer"));
+    // (b) only: paid on the Payment Link under its Google address, never claimed.
+    subscribed("h1@example.com", ["active"], "cus_h1");
+    const token = await googleAccount(env, "h1@example.com");
+    assert.equal((await portal(env, token)).status, 200);
+    for (const [i, status] of ["past_due", "unpaid", "incomplete", "paused"].entries()) {
+      stripe.subs.cus_h1 = [status]; // the renewal failed: Stripe may still collect it
+      travel(DAY);
+      let r = await me(env, token);
+      assert.deepEqual([r.json.member, r.json.reason, r.json.trial_available, r.json.claimed], [false, "none", false, false], status);
+      r = await checkout(env, token, { ip: `7.7.7.${i}` });
+      assert.deepEqual([r.status, r.json.error, r.json.me.member], [409, "payment_issue", false], status);
+      r = await portal(env, token);
+      assert.deepEqual([r.status, r.json.url], [200, "https://billing.stripe.com/p/session/test_cus_h1"], status);
+    }
+    assert.deepEqual(checkoutPosts(), [], "never a second subscription");
+    // Compared lowercased, like (b); once it has ended, there is nothing to fix.
+    stripe.customers = { "H1@Example.COM": ["cus_h1"] };
+    travel(6 * MIN);
+    assert.equal((await portal(env, token)).json.url, "https://billing.stripe.com/p/session/test_cus_h1");
+    stripe.subs.cus_h1 = ["canceled"];
+    travel(6 * MIN);
+    assert.deepEqual([(await portal(env, token)).status, (await me(env, token)).json.reason], [404, "none"]);
+    // The owner's own checkout, claimed under a password, then a Google sign-in: the takeover
+    // releases its customer and retires its reference, so only (b) still reaches it.
+    midSlot();
+    const { json: { token: pw } } = await signup(env, "h1b@example.com", PASSWORD, { ip: "2.2.2.2" });
+    assert.equal((await checkout(env, pw, { ip: "2.2.2.2" })).status, 200);
+    const paid = payLastCheckout();
+    assert.equal((await claim(env, pw, paid.id, { ip: "2.2.2.2" })).status, 200);
+    const owner = (await google(env, idToken({ email: "h1b@example.com", sub: "h1b" }), { ip: "2.2.2.2" })).json.token;
+    assert.equal((await account(env, "h1b@example.com")).released_customer, paid.customer);
+    stripe.subs[paid.customer][0].status = "past_due";
+    travel(6 * MIN);
+    let r = await me(env, owner);
+    assert.deepEqual([r.json.member, r.json.reason], [false, "none"]);
+    r = await checkout(env, owner, { ip: "2.2.2.2" });
+    assert.deepEqual([r.status, r.json.error], [409, "payment_issue"]);
+    r = await portal(env, owner);
+    assert.deepEqual([r.status, r.json.url], [200, `https://billing.stripe.com/p/session/test_${paid.customer}`]);
+    assert.equal(stripe.created, 1);
+    // An unverified account typing an address whose customer stopped paying: no sale, and nobody's portal.
+    const { json: { token: t3 } } = await signup(env, "pw7@example.com", PASSWORD, { ip: "3.3.3.3" });
+    subscribed("pw7@example.com", ["past_due"], "cus_pw7");
+    const lookups = emailLookups().length;
+    r = await checkout(env, t3, { ip: "3.3.3.3" });
+    assert.deepEqual([r.status, r.json.error, r.json.me.member], [409, "payment_issue", false]);
+    r = await portal(env, t3);
+    assert.deepEqual([r.status, r.json], [404, { error: "no_customer" }]);
+    assert.equal(emailLookups().length, lookups, "an unverified address is never looked up");
+    assert.ok(!portalCustomers().includes("cus_pw7"), portalCustomers().join());
   });
 
   test("a portal configuration Stripe refuses is dropped from both caches, looked up again once, then left out", async () => {

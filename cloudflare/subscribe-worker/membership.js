@@ -37,6 +37,7 @@ const LIVE = ["active", "trialing"];
 // Statuses after which Stripe bills nothing more; every other one (active,
 // trialing, past_due, unpaid, incomplete, paused) may still bill.
 const ENDED = ["canceled", "incomplete_expired"];
+const NOT_ENDED = [...LIVE, "past_due", "unpaid", "incomplete", "paused"];
 
 const enc = new TextEncoder();
 const stripeAuth = (env) => `Basic ${btoa(`${env.STRIPE_SECRET_KEY}:`)}`;
@@ -166,12 +167,13 @@ export async function checkoutHistory(env, acct) {
   return { open: bestOpen(subs), released: !!bestOpen(released), had: bound === null || subs.length > 0, gone: bound === null };
 }
 
-// As dealradar/publish/members.py does: page the active, then the trialing
-// subscriptions with their customers expanded and compare emails lowercased
-// (Stripe's customers?email= filter is exact-case). Active is asked first, so
-// it beats trialing. The subscription found, or null.
-async function emailSubscription(env, email) {
-  for (const status of LIVE) {
+// As dealradar/publish/members.py does: page the subscriptions of each of
+// statuses in turn (LIVE: the active, then the trialing) with their customers
+// expanded and compare emails lowercased (Stripe's customers?email= filter is
+// exact-case). An earlier status beats a later one, so active beats trialing.
+// The subscription found, or null.
+async function emailSubscription(env, email, statuses) {
+  for (const status of statuses) {
     let after = "";
     for (let page = 0; page < MAX_PAGES; page++) {
       const body = await stripeGet(env, `/subscriptions?status=${status}&limit=100&expand[]=data.customer${after}`);
@@ -191,8 +193,10 @@ async function emailSubscription(env, email) {
 // subscription wins; undefined when Stripe could not be asked. customer is
 // the one the account's billing portal opens on: the live subscription's
 // (whichever way it was found), else that of one of (a) or (c) that has not
-// ended (a payment to fix), else the bound customer, else null. A bound
-// customer gone for this key counts as history and opens nothing.
+// ended (a payment to fix), else, for a verified account, that of one on its
+// email that has not ended (the same; never a membership), else the bound
+// customer, else null. A bound customer gone for this key counts as history
+// and opens nothing.
 async function stripeAnswer(env, acct) {
   if (!env.STRIPE_SECRET_KEY) {
     console.warn("stripe check skipped: STRIPE_SECRET_KEY unset");
@@ -204,10 +208,12 @@ async function stripeAnswer(env, acct) {
     const own = bestLive(mine) ? [] : await refSubscriptions(env, acct);
     const open = bestOpen([...mine, ...own]);
     let live = open && LIVE.includes(open.status) ? open : null;
-    if (!live && isVerified(acct)) live = await emailSubscription(env, acct.email);
+    // (b): a live one, else, when (a) and (c) have nothing open, one that may still bill
+    const mail = !live && isVerified(acct) ? await emailSubscription(env, acct.email, open ? LIVE : NOT_ENDED) : null;
+    if (mail && LIVE.includes(mail.status)) live = mail;
     const sub = live ? { status: live.status, trial_end: live.trial_end || null } : null;
-    const customer = customerOf(live || open || {}) || (bound && acct.stripe_customer) || null;
-    return { sub, had: !!sub || bound === null || mine.length > 0 || own.length > 0, customer };
+    const customer = customerOf(live || open || mail || {}) || (bound && acct.stripe_customer) || null;
+    return { sub, had: !!sub || !!mail || bound === null || mine.length > 0 || own.length > 0, customer };
   } catch (e) {
     console.warn("stripe check failed:", e && e.message);
     return undefined;
