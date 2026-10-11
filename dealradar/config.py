@@ -143,12 +143,17 @@ class AppConfig:
     keepa_amazon_pages_per_pull: int = 6
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
-    keepa_amazon_max_posts_per_pull: int = 60
-    keepa_warehouse_max_posts_per_pull: int = 150
+    # NEW (not yet content-hashed) posts per pull: the first-run burst bound
+    keepa_amazon_max_new_posts_per_pull: int = 10
+    keepa_warehouse_max_new_posts_per_pull: int = 20
     keepa_warehouse_min_drop_pct: float = 45.0  # used price vs honest new price
     keepa_warehouse_min_new_price: float = 25.0
+    keepa_sweep_enabled: bool = True          # warehouse sweep on idle tokens
+    keepa_sweep_asins_per_pull: int = 100
+    keepa_sweep_reserve_tokens: float = 400.0  # kept on top of reserve_tokens
     # -- woot --
     woot_max_items_per_run: int = 300
+    woot_max_new_items_per_run: int = 20      # unseen posts per run
 
     # -- retention / flags --
     posts_seen_days: int = 30
@@ -257,17 +262,26 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "warehouse_pages_per_pull", default=cfg.keepa_warehouse_pages_per_pull)))
     cfg.keepa_reserve_tokens = max(0.0, float(g(
         "keepa", "reserve_tokens", default=cfg.keepa_reserve_tokens)))
-    cfg.keepa_amazon_max_posts_per_pull = max(0, int(g(
-        "keepa", "amazon_max_posts_per_pull", default=cfg.keepa_amazon_max_posts_per_pull)))
-    cfg.keepa_warehouse_max_posts_per_pull = max(0, int(g(
-        "keepa", "warehouse_max_posts_per_pull",
-        default=cfg.keepa_warehouse_max_posts_per_pull)))
+    cfg.keepa_amazon_max_new_posts_per_pull = max(0, int(g(
+        "keepa", "amazon_max_new_posts_per_pull",
+        default=cfg.keepa_amazon_max_new_posts_per_pull)))
+    cfg.keepa_warehouse_max_new_posts_per_pull = max(0, int(g(
+        "keepa", "warehouse_max_new_posts_per_pull",
+        default=cfg.keepa_warehouse_max_new_posts_per_pull)))
     cfg.keepa_warehouse_min_drop_pct = float(g(
         "keepa", "warehouse_min_drop_pct", default=cfg.keepa_warehouse_min_drop_pct))
     cfg.keepa_warehouse_min_new_price = float(g(
         "keepa", "warehouse_min_new_price", default=cfg.keepa_warehouse_min_new_price))
+    cfg.keepa_sweep_enabled = bool(g(
+        "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
+    cfg.keepa_sweep_asins_per_pull = max(1, int(g(
+        "keepa", "sweep_asins_per_pull", default=cfg.keepa_sweep_asins_per_pull)))
+    cfg.keepa_sweep_reserve_tokens = max(0.0, float(g(
+        "keepa", "sweep_reserve_tokens", default=cfg.keepa_sweep_reserve_tokens)))
     cfg.woot_max_items_per_run = max(0, int(g(
         "woot", "max_items_per_run", default=cfg.woot_max_items_per_run)))
+    cfg.woot_max_new_items_per_run = max(0, int(g(
+        "woot", "max_new_items_per_run", default=cfg.woot_max_new_items_per_run)))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))

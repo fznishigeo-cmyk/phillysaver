@@ -10,7 +10,8 @@ import httpx
 import pytest
 
 from dealradar.config import AppConfig, load_config
-from dealradar.fetch.woot import WootAdapter
+from dealradar.db import DB
+from dealradar.fetch.woot import USED_MARKER, WootAdapter
 from dealradar.models import SourceConfig
 
 NOW = datetime(2026, 10, 11, 4, 0, 0, tzinfo=timezone.utc)
@@ -54,6 +55,14 @@ MIXED = [
            IsSoldOut=True),                                     # skip
     _offer("refurb-ended", 9.99, 199.99, "Refurbished",
            EndDate="2026-10-10T04:59:59Z"),                     # skip
+    # Between the two cut-offs (new 35, used 45): a refurb at 40% is held
+    # to the used floor although "new-mid" at the same 40% maps.
+    _offer("refurb-mid", 59.99, 99.99, "Refurbished"),          # skip
+    # Near the used cut-off, the conservative ends of ranges decide: the
+    # HIGH sale end ($56: 44%) and the LOW list end ($100: 44%).
+    _offer("refurb-sale-range", {"Minimum": 53, "Maximum": 56}, 100,
+           "Refurbished"),                                      # skip
+    _offer("refurb-list-range", 56, [100, 108], "Refurbished"),  # skip
     _offer("new-mid", 59.99, 99.99),                            # 40% new
     _offer("new-deep", 24.99, 99.99, "Brand New"),              # 75% new
     _offer("used-grade", [30.0, 31.0], [100, 100],
@@ -84,8 +93,8 @@ def test_deep_used_discounts_map_first_and_junk_never(cfg, caplog):
         "openbox-deeper", "refurb-deep", "used-grade",   # used, deepest first
         "new-deep", "new-mid",                           # then new
     ]
-    assert ("woot: 14 raw offers -> 5 scored (3 used, 2 new) -> 5 mapped"
-            in caplog.text)
+    assert ("woot: 17 raw offers -> 5 scored (3 used, 2 new) -> 5 mapped "
+            "(5 unseen, 0 more held for later runs)" in caplog.text)
     # Prices stay verbatim for the evidence check, whatever their shape.
     openbox = posts[0]
     assert "Sale price: $20.00 - $21.00" in openbox.text
@@ -152,8 +161,57 @@ def test_unchanged_offer_hashes_identically_across_runs(cfg):
     assert again["refurb-deep"] == first["refurb-deep"]
 
 
+def test_unseen_posts_are_capped_per_run_and_the_rest_arrive_later(
+        cfg, tmp_path):
+    """The first-run burst bound: at most max_new_items_per_run unseen
+    posts per run, deepest first; posts the pipeline already handled ride
+    free, and the rest of the selection arrives over the next runs."""
+    assert cfg.woot_max_new_items_per_run == 20
+    db = DB(tmp_path / "state.db")
+    feed = [_offer(f"refurb-{i:02d}", 20.0 + i, 199.99, "Refurbished")
+            for i in range(50)]
+    adapter = _adapter({"Items": feed})
+    sizes, unseen = [], []
+    for n in range(4):
+        posts = adapter.fetch_posts(SRC, None, db, cfg,
+                                    NOW + timedelta(minutes=10 * n), None)
+        new = [p for p in posts if not db.post_is_known(p.content_hash)]
+        sizes.append(len(posts))
+        unseen.append([p.uid for p in new])
+        for p in new:  # what the pipeline records once it parsed them
+            db.record_post(p, NOW)
+    assert sizes == [20, 40, 50, 50]
+    assert unseen == [[f"refurb-{i:02d}" for i in range(a, b)]
+                      for a, b in ((0, 20), (20, 40), (40, 50), (50, 50))]
+    db.close()
+
+
+def test_used_posts_say_so_in_words_the_extractor_tags(cfg):
+    """Woot's own labels ("Grade B", "New - Floor Model", none at all) may
+    not read as used to the extractor; an untagged post would publish
+    against the lower new floor."""
+    feed = [_offer("grade-b", 54.0, 100.0, "Grade B"),
+            _offer("unlabeled", 40.0, 100.0, ""),
+            _offer("floor-model", 40.0, 100.0, "New - Floor Model"),
+            _offer("plain-new", 40.0, 100.0, "New")]
+    posts = {p.uid: p for p in _adapter({"Items": feed}).fetch_posts(
+        SRC, None, None, cfg, NOW, None)}
+    assert set(posts) == {"grade-b", "unlabeled", "floor-model", "plain-new"}
+    assert "Condition: Grade B." in posts["grade-b"].text
+    for uid in ("grade-b", "unlabeled", "floor-model"):
+        assert USED_MARKER in posts[uid].text
+    assert "used" in USED_MARKER and "refurbished" in USED_MARKER
+    assert USED_MARKER not in posts["plain-new"].text
+    # The unlabeled offer was selected against the used floor (45).
+    cheap = _offer("unlabeled-42", 58.0, 100.0, "")
+    assert _adapter({"Items": [cheap]}).fetch_posts(
+        SRC, None, None, cfg, NOW, None) == []
+
+
 @pytest.mark.parametrize("condition,used", [
-    ("New", False), ("Brand New", False), ("", False),
+    ("New", False), ("Brand New", False), ("", True),
+    ("New - Floor Model", True), ("New (Display Model)", True),
+    ("New - Damaged Box", True),
     ("Refurbished", True), ("Manufacturer Reconditioned", True),
     ("Renewed", True), ("Used - Like New", True), ("Open Box", True),
     ("New (Open Box)", True), ("Pre-Owned", True), ("Grade A", True),

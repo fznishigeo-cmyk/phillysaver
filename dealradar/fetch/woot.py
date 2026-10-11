@@ -13,6 +13,9 @@ offer is scored from its structured prices before mapping: only offers whose
 discount off their own list price comes within 5 points of their publish
 floor are mapped, used/refurb/open-box first, deepest first (a selection
 prefilter only: savings for publishing are still computed in savings.py).
+At most ``woot.max_new_items_per_run`` of them are posts the pipeline has
+not seen yet (each costs an LLM parse and a critic call); the rest of the
+selection arrives over the next runs.
 """
 
 from __future__ import annotations
@@ -48,18 +51,23 @@ MAX_RANGE_RATIO = 1.10
 
 #: Condition words that make an offer used for the floor (Woot's own labels:
 #: "Refurbished", "Manufacturer Refurbished", "Used - Like New", "Open Box",
-#: "Grade A", ...). Anything not plainly "New" counts as used as well.
+#: "Grade A", "New - Floor Model", "New - Damaged Box", ...). Anything not
+#: plainly "New" counts as used as well, an unlabeled offer included.
 _USED_RE = re.compile(
     r"refurb|recondition|renewed|\bused\b|open[\s-]*box|pre[\s-]*owned|"
-    r"\bgrade\b|like[\s-]*new", re.I)
+    r"\bgrade\b|like[\s-]*new|floor[\s-]*model|display|damaged", re.I)
 _NEW_RE = re.compile(r"(brand[\s-]+)?new\b", re.I)
+
+#: Said in every used post, in the words the extractor tags as used: Woot's
+#: own labels ("Grade B", "New - Floor Model", none at all) may not read so,
+#: and an untagged post would publish against the lower new floor.
+USED_MARKER = ("Counted as used/refurbished: Woot does not list it as "
+               "plainly new.")
 
 
 def _is_used(condition: str) -> bool:
     c = condition.strip()
-    if not c:
-        return False  # unlabeled: the post carries no used signal either
-    return bool(_USED_RE.search(c)) or not _NEW_RE.match(c)
+    return not c or bool(_USED_RE.search(c)) or not _NEW_RE.match(c)
 
 
 def _num(v: Any) -> float | None:
@@ -170,7 +178,8 @@ class WootAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher/db unused: this adapter manages its own authenticated client.
+        # fetcher unused: this adapter manages its own authenticated client.
+        # db (when given) tells which posts the pipeline has already seen.
         key = get_secret("WOOT_API_KEY")
         if not key:
             raise AdapterNotConfigured("woot api key missing")
@@ -192,8 +201,10 @@ class WootAdapter(SourceAdapter):
         else:
             items = []
 
-        # Score every live offer, then map used before new, deepest first
-        # (feed order breaks ties), up to the per-run cap.
+        # Score every live offer, then select used before new, deepest
+        # first (feed order breaks ties), up to the per-run cap. Posts the
+        # pipeline has seen ride free; at most max_new_items_per_run unseen
+        # ones go out per run, the rest of the selection on later runs.
         scored: list[tuple[bool, float, int, dict]] = []
         for idx, item in enumerate(items):
             if not isinstance(item, dict) or item.get("IsSoldOut"):
@@ -209,15 +220,24 @@ class WootAdapter(SourceAdapter):
         n_used = sum(1 for s in scored if not s[0])
 
         posts: list[RawPost] = []
+        selected = unseen = held = 0
         for _new, _pct, _idx, item in scored:
-            if len(posts) >= cfg.woot_max_items_per_run:
+            if selected >= cfg.woot_max_items_per_run:
                 break
             post = self._map_item(item, source, now)
-            if post is not None:
-                posts.append(post)
+            if post is None:
+                continue
+            selected += 1
+            if db is None or not db.post_is_known(post.content_hash):
+                if unseen >= cfg.woot_max_new_items_per_run:
+                    held += 1
+                    continue
+                unseen += 1
+            posts.append(post)
         log.info("woot: %d raw offers -> %d scored (%d used, %d new) -> "
-                 "%d mapped", len(items), len(scored), n_used,
-                 len(scored) - n_used, len(posts))
+                 "%d mapped (%d unseen, %d more held for later runs)",
+                 len(items), len(scored), n_used, len(scored) - n_used,
+                 len(posts), unseen, held)
         return posts
 
     @staticmethod
@@ -241,6 +261,8 @@ class WootAdapter(SourceAdapter):
         if condition:
             # Quoted so the extractor tags refurb/used honestly.
             lines.append(f"Condition: {condition}.")
+        if _is_used(condition):
+            lines.append(USED_MARKER)
         end_date = str(item.get("EndDate") or "")
         if end_date:
             lines.append(f"Ends: {end_date}")

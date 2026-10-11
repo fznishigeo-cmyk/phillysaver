@@ -11,8 +11,13 @@ Each pull pages through three /deal queries (150 rows a page): Amazon's own
 price far under its 90-day average; FRESH Amazon Warehouse deals (newest
 first); and the DEEP 90-day warehouse list, whose page window rotates across
 pulls so successive pulls walk the whole list instead of re-reading page 0.
-Pages beyond each query's first run only while the shared token budget keeps
-a reserve for the product calls (config.yaml ``keepa:``).
+Pages beyond the Amazon and FRESH first pages run only while the shared token
+budget keeps a reserve for the product calls (config.yaml ``keepa:``). Last,
+on idle tokens only, a WAREHOUSE SWEEP (Keepa's product finder plus one
+batched /product check) finds open-box items /deal never lists. Each lane
+emits at most its cap of NEW posts (not yet content-hashed) per pull, so a
+backlog (the first pulls after a deploy) arrives over several runs instead
+of one run its job timeout cannot finish.
 
 Requires the ``KEEPA_KEY`` secret (reported as ``needs_key`` until set).
 Cost model: Keepa bills a flat subscription with a token-per-minute allowance;
@@ -24,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import Callable, Iterator
@@ -41,11 +47,14 @@ from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
                             response_payload)
 from ..models import RawPost, SourceConfig
+from ..verify import _keepa_image_name
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.fetch.keepa")
 
 DEALS_URL = "https://api.keepa.com/deal"
+QUERY_URL = "https://api.keepa.com/query"      # product finder
+PRODUCT_URL = "https://api.keepa.com/product"
 
 #: Keepa domainId for amazon.com (US).
 DOMAIN_US = 1
@@ -55,10 +64,13 @@ DOMAIN_US = 1
 #: and price history.
 MIN_DROP_PCT = 35
 
-#: Warehouse queries ask loosely: Keepa's server-side delta is vs the
-#: warehouse price's OWN average, so the honest gate (used price vs the new
-#: price, config keepa.warehouse_min_drop_pct) runs client-side.
-WAREHOUSE_DELTA_PCT = (30, 100)
+#: Warehouse queries ask as loosely as Keepa allows (10% is its documented
+#: minimum): a warehouse /deal row only appears when the WAREHOUSE price
+#: itself moved by this much within dateRange, so a tighter floor hides
+#: open-box items far under the NEW price that never dropped against their
+#: own warehouse history. The honest gate (used price vs the new price,
+#: config keepa.warehouse_min_drop_pct) runs client-side.
+WAREHOUSE_DELTA_PCT = (10, 100)
 
 #: Popularity nets (Amazon sales rank). The new-price lane stays strict:
 #: obscure SKUs have sparse histories whose "averages" fabricate drops. The
@@ -68,12 +80,24 @@ WAREHOUSE_DELTA_PCT = (30, 100)
 AMAZON_MAX_RANK = 30000
 WAREHOUSE_MAX_RANK = 200000
 
+#: Books & Kindle: algorithmic publisher pricing ($995 print-on-demand
+#: reports "dropping" 60%) dominates the drop list and is noise, never a
+#: deal a person wants.
+EXCLUDED_CATEGORIES = [283155, 133140011]
+
+#: Only products people actually buy: obscure OEM parts and zero-review
+#: SKUs produce sparse price histories whose "averages" fabricate 95%+
+#: drops. Rating is in tenths of stars (20 = 2.0 stars).
+MIN_RATING = 20
+
 #: Keepa price-type indexes: 0 = Amazon's own NEW price, 1 = lowest NEW
 #: offer, 9 = Amazon Warehouse / Amazon Resale (open-box & used, sold by
 #: Amazon). Third-party used sellers are deliberately NOT tracked.
 PRICE_TYPE_AMAZON = 0
 PRICE_TYPE_NEW = 1
 PRICE_TYPE_WAREHOUSE = 9
+#: ... and 11 = the count of NEW offers (a count, not a price).
+COUNT_NEW = 11
 
 #: Keepa dateRange: 0 = the last 24 hours; 3 = drop measured against the
 #: 90-day average — the honest "typical price" basis (day/week windows miss
@@ -97,6 +121,22 @@ DEAL_PAGE_COST = 5.0
 #: db meta key: the page the rotating DEEP warehouse window starts at on
 #: the next pull (wraps to 0 when a page comes back short).
 DEEP_PAGE_META = "keepa_deep_page"
+
+#: db meta key: the product-finder page the warehouse sweep reads next.
+SWEEP_PAGE_META = "keepa_sweep_page"
+
+#: Product finder page size bounds: Keepa's minimum perPage is 50, and one
+#: /product call checks at most 100 ASINs (1 token each with stats).
+SWEEP_MIN_PER_PAGE = 50
+SWEEP_MAX_PER_PAGE = 100
+
+
+def _finder_cost(per_page: int) -> float:
+    """Estimated tokens for one product-finder page: 10 + 1 per 100 ASINs.
+    Only the sweep's gate uses it: the budget learns the real tokensLeft
+    from every response."""
+    return 10.0 + math.ceil(per_page / 100)
+
 
 #: Self-throttle: one pull per fast-lane cycle (every 10 minutes). The
 #: operator's Keepa plan refills 20 tokens/min (~200 per cycle); a pull's
@@ -193,22 +233,39 @@ def _avg90_price(avg: Any, price_type: int) -> float | None:
     return None
 
 
+def _count_at(arr: Any, idx: int) -> int | None:
+    """A count from Keepa's ``current`` array (-1 or junk = no data)."""
+    if isinstance(arr, (list, tuple)) and len(arr) > idx:
+        v = arr[idx]
+        if isinstance(v, int) and not isinstance(v, bool) and v >= 0:
+            return v
+    return None
+
+
 def _new_price_basis(row: dict[str, Any]) -> tuple[float, str] | None:
     """What a shopper really pays NEW for a warehouse row, and its label.
 
-    Amazon's own current price when Amazon sells the item; otherwise the
-    LOWER of the lowest current new offer and the 90-day average new price.
-    A lone third-party new offer with no dense 90-day history is no honest
-    basis (live wart: a $58.95 marketplace "new" price made a $5.70 open-box
-    phone case look 90% off; the critic flagged it suspect_msrp) -> None.
+    When Amazon sells the item, the LOWER of Amazon's own price and the
+    lowest current new offer (Amazon is often the high-priced seller on a
+    listing others undercut). Otherwise the LOWER of the lowest current new
+    offer and the 90-day average new price. A lone third-party new offer is
+    no honest basis, whatever its history (live wart: a $58.95 marketplace
+    "new" price made a $5.70 open-box phone case look 90% off; the critic
+    flagged it suspect_msrp), nor is one without a dense 90-day history ->
+    None.
     """
     current = row.get("current")
     amazon = _price_at(current, PRICE_TYPE_AMAZON)
-    if amazon is not None and amazon > 0:
-        return amazon, "Amazon's own new price"
     offer = _price_at(current, PRICE_TYPE_NEW)
+    if amazon is not None and amazon > 0:
+        if offer is not None and 0 < offer < amazon:
+            return offer, "lowest new price (current offer)"
+        return amazon, "Amazon's own new price"
     if offer is None or offer <= 0:
         return None  # nothing sells new right now
+    offers = _count_at(current, COUNT_NEW)
+    if offers is not None and offers <= 1:
+        return None  # one marketplace seller sets its own "new" price
     avg_raw = row.get("avg") or row.get("avg90")
     avg90 = (_avg90_price(avg_raw, PRICE_TYPE_NEW)
              if _dense_history(avg_raw, PRICE_TYPE_NEW) else None)
@@ -219,13 +276,37 @@ def _new_price_basis(row: dict[str, Any]) -> tuple[float, str] | None:
     return offer, "lowest new price (current offer)"
 
 
-def _deep_start(db: DB | None) -> int:
-    """Start page of the rotating DEEP warehouse window (0 when unset)."""
-    raw = db.meta_get(DEEP_PAGE_META) if db is not None else None
+def _cursor(db: DB | None, key: str) -> int:
+    """Start page of a rotating window (DEEP, sweep): 0 when unset."""
+    raw = db.meta_get(key) if db is not None else None
     try:
         return max(0, int(raw or 0))
     except ValueError:
         return 0
+
+
+def _pct_key(pct: float, floors: tuple[float, ...]) -> str:
+    """The discount as the content hash sees it: the whole percent rounded
+    DOWN, plus how many publish floors it clears. Keepa's averages drift by
+    cents every update, so only a real move may re-parse; but a drift
+    across a floor must (a stored 40.3% may not stay published at the 40%
+    floor once the honest figure is 39.8%)."""
+    pct = round(pct, 6)  # float noise never flips a bucket
+    key = f"{math.floor(pct)}%"
+    if floors:
+        key += f" (clears {sum(1 for f in floors if pct >= f)}/{len(floors)})"
+    return key
+
+
+def _product_row(product: dict[str, Any]) -> dict[str, Any]:
+    """A /product record (stats) in /deal row shape for the warehouse
+    mapper: ``stats.current`` uses the same price-type indexes, and
+    ``stats.avg90`` (flat, by price type) is the 90-day basis."""
+    stats = product.get("stats")
+    stats = stats if isinstance(stats, dict) else {}
+    return {"asin": product.get("asin"), "title": product.get("title"),
+            "current": stats.get("current"), "avg90": stats.get("avg90"),
+            "image": _keepa_image_name(product)}
 
 
 def _selection(price_type: int, delta_pct: tuple[int, int], date_range: int,
@@ -240,16 +321,9 @@ def _selection(price_type: int, delta_pct: tuple[int, int], date_range: int,
         "dateRange": date_range,
         "isRangeEnabled": True,
         "sortType": sort_type,
-        # Books & Kindle: algorithmic publisher pricing ($995 print-on-
-        # demand reports "dropping" 60%) dominates the drop list and is
-        # noise, never a deal a person wants.
-        "excludeCategories": [283155, 133140011],
-        # Only products people actually buy: obscure OEM parts and
-        # zero-review SKUs produce sparse price histories whose
-        # "averages" fabricate 95%+ drops. Rank is Amazon sales rank;
-        # rating is in tenths of stars (20 = 2.0 stars).
+        "excludeCategories": list(EXCLUDED_CATEGORIES),
         "salesRankRange": [1, max_rank],
-        "minRating": 20,
+        "minRating": MIN_RATING,
     }
 
 
@@ -277,9 +351,38 @@ class _Pull:
     interval_s: float       # politeness gap between requests to Keepa
     margin_s: float         # a page may take this long: stop before the deadline
     sleep: Callable[[float], None]
-    requests: int = 0
+    requests: int = 0       # every Keepa request (the politeness gap)
+    pages: int = 0          # /deal pages
     raw_rows: int = 0
     sample: dict[str, Any] | None = None  # first raw row, for drift warnings
+
+
+@dataclass
+class _Lane:
+    """One lane's NEW-post allowance for a pull. A new post (content hash
+    not yet in posts_seen) costs an LLM parse, a critic call and a Keepa
+    check downstream; a post the pipeline already handled rides free. A new
+    post past the cap is held back: Amazon and FRESH pages are re-read every
+    pull, and a rotating window stays on the page it was held from, so it
+    arrives on a later pull."""
+
+    cap: int
+    db: DB | None
+    new: int = 0
+    held: int = 0
+
+    @property
+    def full(self) -> bool:
+        return self.new >= self.cap
+
+    def admit(self, post: RawPost) -> bool:
+        if self.db is not None and self.db.post_is_known(post.content_hash):
+            return True
+        if self.full:
+            self.held += 1
+            return False
+        self.new += 1
+        return True
 
 
 class KeepaDealsAdapter(SourceAdapter):
@@ -334,28 +437,34 @@ class KeepaDealsAdapter(SourceAdapter):
                 return []
 
         # The shared token budget (fed by every Keepa response, product
-        # calls included) decides whether each page may spend. A query's
-        # first page needs only MIN_FOR_DEAL_QUERY (the supply goes last);
-        # a pull cut short there, or by a 429, leaves keepa_last_fetch_at
-        # alone so the next lane tick retries as soon as the bucket refills.
-        # Every further page must leave cfg.keepa_reserve_tokens untouched.
+        # calls included) decides whether each page may spend. The Amazon
+        # and FRESH first pages need only MIN_FOR_DEAL_QUERY (the supply
+        # goes last); a pull cut short there, or by a 429, leaves
+        # keepa_last_fetch_at alone so the next lane tick retries as soon
+        # as the bucket refills. Every further page (DEEP's first included)
+        # must leave cfg.keepa_reserve_tokens untouched.
         budget = KeepaBudget.load(db)
         amazon: list[RawPost] = []
-        warehouse: list[RawPost] = []
+        fresh: list[RawPost] = []
+        deep: list[RawPost] = []
+        sweep: list[RawPost] = []
         amazon_seen: set[str] = set()
-        wh_seen: set[str] = set()  # one ASIN, one post across both shapes
-        amazon_cap = cfg.keepa_amazon_max_posts_per_pull
-        wh_cap = cfg.keepa_warehouse_max_posts_per_pull
+        wh_seen: set[str] = set()  # one ASIN, one post across every shape
+        amazon_lane = _Lane(cfg.keepa_amazon_max_new_posts_per_pull, db)
+        wh_lane = _Lane(cfg.keepa_warehouse_max_new_posts_per_pull, db)
         wh_pages = cfg.keepa_warehouse_pages_per_pull
+        floors = tuple(sorted({float(cfg.min_pct), float(cfg.used_min_pct),
+                               float(cfg.site_show_from_pct)}))
 
         def map_amazon(row: dict[str, Any]) -> RawPost | None:
-            return self._map_row(row, source, now)
+            return self._map_row(row, source, now, floors=floors)
 
         def map_warehouse(row: dict[str, Any]) -> RawPost | None:
             return self._map_warehouse_row(
                 row, source, now,
                 min_drop_pct=cfg.keepa_warehouse_min_drop_pct,
-                min_new_price=cfg.keepa_warehouse_min_new_price)
+                min_new_price=cfg.keepa_warehouse_min_new_price,
+                floors=floors)
 
         amazon_sel = _selection(PRICE_TYPE_AMAZON, (MIN_DROP_PCT, 100),
                                 DATE_RANGE_90D, SORT_PCT_DROP, AMAZON_MAX_RANK)
@@ -380,44 +489,53 @@ class KeepaDealsAdapter(SourceAdapter):
                 # >= MIN_DROP_PCT below its 90-day average.
                 _, amazon_next = self._run_pass(
                     pull, amazon_sel, 0, 1, source.name, amazon_seen,
-                    map_amazon, amazon, amazon_cap)
+                    map_amazon, amazon, amazon_lane)
                 # Pass 2: warehouse, a third of the pages FRESH and the rest
-                # (plus any FRESH left unused) DEEP.
+                # (plus any FRESH left unused) DEEP. Only the Amazon and
+                # FRESH first pages may run under the reserve.
                 fresh_used, _ = self._run_pass(
                     pull, fresh_sel, 0, max(1, wh_pages // 3),
                     source.name + "/warehouse-fresh", wh_seen,
-                    map_warehouse, warehouse, wh_cap)
+                    map_warehouse, fresh, wh_lane)
                 self._run_pass(
-                    pull, deep_sel, _deep_start(db),
+                    pull, deep_sel, _cursor(db, DEEP_PAGE_META),
                     max(1, wh_pages - fresh_used),
                     source.name + "/warehouse-deep", wh_seen,
-                    map_warehouse, warehouse, wh_cap,
-                    cursor_key=DEEP_PAGE_META)
+                    map_warehouse, deep, wh_lane,
+                    first_is_extra=True, cursor_key=DEEP_PAGE_META)
                 # Pass 1, further pages (all of them reserve-gated).
                 if amazon_next is not None:
                     self._run_pass(
                         pull, amazon_sel, amazon_next,
                         cfg.keepa_amazon_pages_per_pull - 1, source.name,
-                        amazon_seen, map_amazon, amazon, amazon_cap,
+                        amazon_seen, map_amazon, amazon, amazon_lane,
                         first_is_extra=True)
+                # Last and lowest: the warehouse sweep, on idle tokens only.
+                self._run_sweep(pull, cfg, wh_seen, map_warehouse, sweep,
+                                wh_lane)
                 complete = True
             except _TokensShort:
                 pass  # logged where it happened; keep what was mapped
             finally:
                 budget.save(db)
 
-        # Warehouse first: if a heavy run's parse stops early, the posts
-        # left over should be the ones re-read next pull (Amazon pages are),
-        # not a DEEP page the window will not revisit until it wraps.
-        posts = warehouse + amazon
+        # The rotating windows lead: if a run's parse stops early, the posts
+        # left over should be ones re-read next pull (FRESH and Amazon pages
+        # are), not DEEP or sweep pages the windows have moved past.
+        posts = deep + sweep + fresh + amazon
         if db is not None and complete:
             db.meta_set("keepa_last_fetch_at", util.iso(now))
         log.info("keepa %s: %d /deal pages (~%.0f tokens), %d raw rows -> "
-                 "mapped %d amazon-price + %d warehouse posts%s",
-                 source.name, pull.requests, pull.requests * DEAL_PAGE_COST,
-                 pull.raw_rows, len(amazon), len(warehouse),
+                 "mapped %d amazon-price + %d warehouse posts (%d deep, "
+                 "%d sweep, %d fresh); new posts %d amazon + %d warehouse, "
+                 "%d held for later pulls%s",
+                 source.name, pull.pages, pull.pages * DEAL_PAGE_COST,
+                 pull.raw_rows, len(amazon), len(deep) + len(sweep) + len(fresh),
+                 len(deep), len(sweep), len(fresh), amazon_lane.new,
+                 wh_lane.new, amazon_lane.held + wh_lane.held,
                  "" if complete else " (pull cut short: tokens; retry next tick)")
-        if pull.raw_rows and not posts:
+        if pull.raw_rows and not posts and not (amazon_lane.held
+                                                or wh_lane.held):
             sample = pull.sample or {}
             log.warning(
                 "keepa %s: raw deals present but none mapped — schema drift? "
@@ -429,11 +547,11 @@ class KeepaDealsAdapter(SourceAdapter):
     def _run_pass(self, pull: _Pull, selection: dict[str, Any], start: int,
                   max_pages: int, label: str, seen: set[str],
                   mapper: Callable[[dict[str, Any]], RawPost | None],
-                  out: list[RawPost], cap: int, *,
+                  out: list[RawPost], lane: _Lane, *,
                   first_is_extra: bool = False,
                   cursor_key: str | None = None) -> tuple[int, int | None]:
         """Page through one query from page ``start``, mapping rows whose
-        ASIN is not yet in ``seen`` into ``out`` until ``cap`` posts.
+        ASIN is not yet in ``seen`` into ``out`` until ``lane`` is full.
 
         Returns (pages fetched, next page — None once a short page ended
         the list). The first page needs only MIN_FOR_DEAL_QUERY (else
@@ -441,11 +559,12 @@ class KeepaDealsAdapter(SourceAdapter):
         first, with ``first_is_extra``) also keeps the token reserve and
         the time margin, and is a clean stop when it can't. With
         ``cursor_key`` the next start page is saved in db meta after every
-        page, wrapping to 0 at the end of the list.
+        page, wrapping to 0 at the end of the list — or staying on a page
+        whose new posts the lane held back, so the next pull maps the rest.
         """
         fetched = 0
         page = start
-        while fetched < max_pages and len(out) < cap:
+        while fetched < max_pages and not lane.full:
             if not self._may_fetch(pull, label, extra=fetched > 0 or first_is_extra):
                 break
             try:
@@ -467,9 +586,8 @@ class KeepaDealsAdapter(SourceAdapter):
                     break
                 rows = []
             fetched += 1
+            held = lane.held
             for row in rows:
-                if len(out) >= cap:
-                    break
                 if not isinstance(row, dict):
                     continue
                 asin = str(row.get("asin") or "").strip().upper()
@@ -477,24 +595,36 @@ class KeepaDealsAdapter(SourceAdapter):
                     continue  # a row seen on an earlier page/shape this pull
                 seen.add(asin)
                 post = mapper(row)
-                if post is not None:
+                if post is not None and lane.admit(post):
                     out.append(post)
             ended = len(rows) < DEAL_PAGE_SIZE
-            page = 0 if ended else page + 1
+            if lane.held > held:
+                nxt = page  # new posts held back: this page again next pull
+            else:
+                nxt = 0 if ended else page + 1
             if cursor_key and pull.db is not None:
-                pull.db.meta_set(cursor_key, str(page))
+                pull.db.meta_set(cursor_key, str(nxt))
             if ended:
                 return fetched, None
+            page = nxt
         return fetched, page
 
     @staticmethod
-    def _may_fetch(pull: _Pull, label: str, *, extra: bool) -> bool:
-        """Clean stops: the time budget (after the pull's first request) and,
-        for an extra page, the token reserve kept for product calls."""
+    def _time_left(pull: _Pull, label: str) -> bool:
+        """False once the time budget is nearly spent (never before the
+        pull's first request): a request may take margin_s."""
         if (pull.requests and pull.deadline is not None
                 and time.monotonic() > pull.deadline - pull.margin_s):
             log.info("keepa %s: per-source time budget nearly spent; "
                      "paging stops", label)
+            return False
+        return True
+
+    @classmethod
+    def _may_fetch(cls, pull: _Pull, label: str, *, extra: bool) -> bool:
+        """Clean stops: the time budget (after the pull's first request) and,
+        for an extra page, the token reserve kept for product calls."""
+        if not cls._time_left(pull, label):
             return False
         if extra:
             avail = pull.budget.available(pull.now)
@@ -504,6 +634,32 @@ class KeepaDealsAdapter(SourceAdapter):
                          avail, pull.reserve)
                 return False
         return True
+
+    def _get(self, pull: _Pull, url: str, params: dict[str, Any],
+             label: str) -> Any:
+        """One Keepa GET, a polite second after the pull's previous one,
+        its token fields fed to the budget (a 429 body carries them too).
+        Raises :class:`_TokensShort` on a 429 (an empty bucket refills by
+        the minute and costs nothing: a deferral, never a source failure
+        for the breaker), RuntimeError on an in-body error, and httpx
+        errors as they come."""
+        if pull.requests:
+            pull.sleep(pull.interval_s)  # <= 1 request/second/host
+        pull.requests += 1
+        resp = pull.client.get(url, params=params)
+        payload = response_payload(resp)
+        pull.budget.note(payload, pull.now)
+        if resp.status_code == 429:
+            log.warning("keepa %s: 429 Too Many Requests (%s); token bucket "
+                        "empty, retrying next tick", label,
+                        describe_429(payload))
+            raise _TokensShort
+        resp.raise_for_status()
+        if isinstance(payload, dict) and payload.get("error"):
+            # Keepa reports some failures in-body on a 200: surface them as a
+            # source failure instead of silently "mapping 0 posts".
+            raise RuntimeError(f"keepa api error: {payload['error']}")
+        return payload
 
     def _query_rows(self, pull: _Pull, selection: dict[str, Any],
                     label: str) -> list:
@@ -515,26 +671,10 @@ class KeepaDealsAdapter(SourceAdapter):
                      "the query until the bucket refills", label,
                      budget.available(now), MIN_FOR_DEAL_QUERY)
             raise _TokensShort
-        if pull.requests:
-            pull.sleep(pull.interval_s)  # <= 1 request/second/host
-        pull.requests += 1
-        resp = pull.client.get(DEALS_URL, params={
+        pull.pages += 1
+        payload = self._get(pull, DEALS_URL, {
             "key": pull.key, "selection": json.dumps(selection),
-        })
-        payload = response_payload(resp)
-        budget.note(payload, now)  # a 429 body carries the token fields too
-        if resp.status_code == 429:
-            # Empty token bucket: it refills by the minute and costs nothing,
-            # so this is a deferral, never a source failure for the breaker.
-            log.warning("keepa %s: 429 Too Many Requests (%s); token bucket "
-                        "empty, retrying next tick", label,
-                        describe_429(payload))
-            raise _TokensShort
-        resp.raise_for_status()
-        if isinstance(payload, dict) and payload.get("error"):
-            # Keepa reports some failures in-body on a 200: surface them as a
-            # source failure instead of silently "mapping 0 posts".
-            raise RuntimeError(f"keepa api error: {payload['error']}")
+        }, label)
         deals_obj = payload.get("deals") if isinstance(payload, dict) else None
         rows = (deals_obj or {}).get("dr") if isinstance(deals_obj, dict) else None
         rows = list(rows or [])
@@ -547,9 +687,130 @@ class KeepaDealsAdapter(SourceAdapter):
                  label, len(rows), tokens_left)
         return rows
 
+    def _sweep_affordable(self, pull: _Pull, cost: float, keep: float,
+                          what: str) -> bool:
+        """The sweep spends idle tokens only: the time budget must allow a
+        request and the bucket must still hold ``keep`` after ``cost``. An
+        unknown bucket is not idle."""
+        if not self._time_left(pull, "sweep"):
+            return False
+        avail = pull.budget.available(pull.now)
+        if avail is None or avail - cost < keep:
+            log.info("keepa sweep: ~%s tokens; the %s (~%.0f) must leave "
+                     "%.0f for rechecks and the deal pages; skipped",
+                     "?" if avail is None else f"{avail:.0f}", what, cost,
+                     keep)
+            return False
+        return True
+
+    def _run_sweep(self, pull: _Pull, cfg: AppConfig, seen: set[str],
+                   mapper: Callable[[dict[str, Any]], RawPost | None],
+                   out: list[RawPost], lane: _Lane) -> None:
+        """WAREHOUSE SWEEP, the pull's lowest-priority spend. A warehouse
+        /deal row only exists when the warehouse price itself moved, so an
+        open-box item far under the NEW price that never dropped against
+        its own warehouse history is invisible there. Keepa's product
+        finder lists products that currently HAVE a warehouse offer (new
+        price >= the value floor, sales rank <= WAREHOUSE_MAX_RANK, best
+        sellers first); one batched /product call (stats) checks the ASINs
+        this pull has not seen through the same honest warehouse logic as
+        a /deal row. Its page window rotates across pulls (db meta
+        keepa_sweep_page, wrapping on a short page); a page whose check was
+        deferred (429, time, tokens, a hiccup) or whose new posts the lane
+        held back is read again next pull."""
+        if not cfg.keepa_sweep_enabled:
+            return
+        if lane.full:
+            log.info("keepa sweep: the warehouse new-post cap is full; "
+                     "skipped this pull")
+            return
+        per_page = max(SWEEP_MIN_PER_PAGE,
+                       min(SWEEP_MAX_PER_PAGE, cfg.keepa_sweep_asins_per_pull))
+        keep = pull.reserve + cfg.keepa_sweep_reserve_tokens
+        if not self._sweep_affordable(pull, _finder_cost(per_page) + per_page,
+                                      keep, "finder + product check"):
+            return
+        page = _cursor(pull.db, SWEEP_PAGE_META)
+        selection = {
+            "current_WAREHOUSE_gte": 1,      # has a warehouse offer now
+            # The honest basis never exceeds the lowest new offer, so this
+            # is a safe prefilter for keepa.warehouse_min_new_price.
+            "current_NEW_gte": int(round(cfg.keepa_warehouse_min_new_price * 100)),
+            "current_SALES_gte": 1,
+            "current_SALES_lte": WAREHOUSE_MAX_RANK,
+            "current_RATING_gte": MIN_RATING,
+            "categories_exclude": list(EXCLUDED_CATEGORIES),
+            "sort": [["current_SALES", "asc"]],
+            "perPage": per_page,
+            "page": page,
+        }
+        label = f"sweep p{page}"
+        try:
+            found = self._get(pull, QUERY_URL, {
+                "key": pull.key, "domain": DOMAIN_US,
+                "selection": json.dumps(selection)}, label)
+        except _TokensShort:
+            return  # the same page next pull
+        except (RuntimeError, httpx.HTTPError) as e:
+            # A refused later page (in-body error, 4xx) is past the end of
+            # a shrunken list: wrap. A hiccup retries this page next pull.
+            refused = isinstance(e, RuntimeError) or (
+                isinstance(e, httpx.HTTPStatusError)
+                and e.response.status_code < 500)
+            log.warning("keepa %s: %s; %s", label, e,
+                        "wrapping to page 0" if refused and page
+                        else "retried next pull")
+            if refused and page and pull.db is not None:
+                pull.db.meta_set(SWEEP_PAGE_META, "0")
+            return
+        listed = (found.get("asinList") if isinstance(found, dict) else None) or []
+        ended = len(listed) < per_page
+        asins = [a for a in dict.fromkeys(
+            str(x or "").strip().upper() for x in listed)
+            if a and a not in seen][:SWEEP_MAX_PER_PAGE]
+        tokens_left = found.get("tokensLeft") if isinstance(found, dict) else None
+        mapped = 0
+        held = lane.held
+        if asins:
+            # Re-checked against the reading the finder just returned.
+            if not self._sweep_affordable(pull, float(len(asins)), keep,
+                                          "product check"):
+                return
+            try:
+                body = self._get(pull, PRODUCT_URL, {
+                    "key": pull.key, "domain": DOMAIN_US,
+                    "asin": ",".join(asins), "stats": 1}, label + " products")
+            except _TokensShort:
+                return
+            except (RuntimeError, httpx.HTTPError) as e:
+                log.warning("keepa %s: product check failed (%s); retried "
+                            "next pull", label, e)
+                return
+            tokens_left = (body.get("tokensLeft") if isinstance(body, dict)
+                           else None)
+            wanted = set(asins)
+            products = (body.get("products") if isinstance(body, dict)
+                        else None) or []
+            for product in products:
+                if not isinstance(product, dict):
+                    continue
+                asin = str(product.get("asin") or "").strip().upper()
+                if asin not in wanted or asin in seen:
+                    continue
+                seen.add(asin)
+                post = mapper(_product_row(product))
+                if post is not None and lane.admit(post):
+                    out.append(post)
+                    mapped += 1
+        nxt = page if lane.held > held else (0 if ended else page + 1)
+        if pull.db is not None:
+            pull.db.meta_set(SWEEP_PAGE_META, str(nxt))
+        log.info("keepa sweep: page %d, %d asins -> %d mapped (tokensLeft=%s)",
+                 page, len(asins), mapped, tokens_left)
+
     @staticmethod
-    def _map_row(row: dict[str, Any], source: SourceConfig,
-                 now: datetime) -> RawPost | None:
+    def _map_row(row: dict[str, Any], source: SourceConfig, now: datetime,
+                 *, floors: tuple[float, ...] = ()) -> RawPost | None:
         asin = str(row.get("asin") or "").strip().upper()
         title = str(row.get("title") or "").strip()
         if not asin or not title:
@@ -579,8 +840,9 @@ class KeepaDealsAdapter(SourceAdapter):
         # Keepa's averages are time-weighted and move by cents on every
         # update: hashing them verbatim re-parsed every unchanged deal on
         # every pull (live: one ASIN 18 times in a day). The hash keeps the
-        # price and the WHOLE-percent discount, so only a real move parses.
-        pct = round(100.0 * (1.0 - current / avg))
+        # price and the discount bucket (_pct_key: the whole percent and
+        # the publish floors it clears), so only a real move parses.
+        pct = _pct_key(100.0 * (1.0 - current / avg), floors)
         return RawPost(
             source_name=source.name,
             uid=f"{asin}:{current:.2f}",  # a further drop is a new post
@@ -590,13 +852,14 @@ class KeepaDealsAdapter(SourceAdapter):
             published_at=None,  # first_seen governs freshness
             fetched_at=now,
             image_url=_image_url(row),
-            hash_text=f"{title}\n${current:,.2f}, {pct}% under the 90-day average",
+            hash_text=f"{title}\n${current:,.2f}, {pct} under the 90-day average",
         )
 
     @staticmethod
     def _map_warehouse_row(row: dict[str, Any], source: SourceConfig,
                            now: datetime, *, min_drop_pct: float = 45.0,
-                           min_new_price: float = 25.0) -> RawPost | None:
+                           min_new_price: float = 25.0,
+                           floors: tuple[float, ...] = ()) -> RawPost | None:
         """Amazon Warehouse (Amazon Resale) open-box/used offer, compared
         honestly against what the item really costs NEW (see
         :func:`_new_price_basis`) — the "$12.07 used vs $81.55 new = -85%"
@@ -627,8 +890,8 @@ class KeepaDealsAdapter(SourceAdapter):
             f"Product link: https://www.amazon.com/dp/{asin}",
         ]
         # Same hash rule as the Amazon-price pass: a 90-day-average basis
-        # drifts by cents, so only the whole-percent discount is hashed.
-        pct = round(100.0 * (1.0 - used / new_p))
+        # drifts by cents, so only the discount bucket is hashed.
+        pct = _pct_key(100.0 * (1.0 - used / new_p), floors)
         return RawPost(
             source_name=source.name,
             uid=f"{asin}:wh:{used:.2f}",  # a further drop is a new post
@@ -638,5 +901,5 @@ class KeepaDealsAdapter(SourceAdapter):
             published_at=None,
             fetched_at=now,
             image_url=_image_url(row),
-            hash_text=f"{title}\n${used:,.2f} used, {pct}% under the {label}",
+            hash_text=f"{title}\n${used:,.2f} used, {pct} under the {label}",
         )
