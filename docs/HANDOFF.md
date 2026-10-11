@@ -127,6 +127,14 @@ Keep this file current: whoever stops working updates it in their last commit.
     feeds' failures; a source whose method, adapter or URL changes now
     starts with a fresh breaker (fetch/base.py), so they retry at once.
   - **inspiring_savings:** their server returns 500; it retries on its own.
+  - **Codex task 007 (merged 2026-10-11):** corrected spoofee to
+    `/rss.php` and saving_our_way to `/blog-feed.xml`; paused
+    southernsavers_amazon (redundant), slickdeals_blog (feed gone), sidedeal
+    (page only), and stl_mommy (invalid host TLS certificate), with the probe
+    reasons inline. No other source changed; dealgenius remains as documented.
+    Google service-account loading now accepts whitespace and a leading BOM
+    and reports invalid JSON or missing key fields using shape only; growth
+    logs show that safe diagnostic and keep other exception messages private.
 - **Photos:** Codex task 005 (merged 2026-10-11) decodes the Deals of
   America tracker destination offline for the ASIN at ingest and for the
   retailer-photo pass; a one-time repair gave existing deals their ASIN and

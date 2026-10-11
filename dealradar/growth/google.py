@@ -56,8 +56,26 @@ def build_jwt(sa: dict, now: int) -> str:
                                                      sa["private_key"]))
 
 
+class ServiceAccountError(ValueError):
+    """Invalid service-account JSON; the message contains only its shape."""
+
+
+def load_service_account(sa_json: str) -> dict:
+    text = sa_json.strip().removeprefix("\ufeff").strip()
+    message = ("GOOGLE_SA_JSON must be a JSON object with client_email and private_key "
+               f"(character count: {len(text)}, starts with {{: {text.startswith('{')}, "
+               f"ends with .json: {text.endswith('.json')})")
+    try:
+        sa = json.loads(text)
+    except json.JSONDecodeError:
+        raise ServiceAccountError(message) from None
+    if not isinstance(sa, dict) or "client_email" not in sa or "private_key" not in sa:
+        raise ServiceAccountError(message)
+    return sa
+
+
 def access_token(client: Any, sa_json: str) -> str:
-    jwt = build_jwt(json.loads(sa_json), int(time.time()))
+    jwt = build_jwt(load_service_account(sa_json), int(time.time()))
     resp = client.post(TOKEN_URL, data={
         "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
         "assertion": jwt})
