@@ -101,10 +101,15 @@ class AppConfig:
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 6.0      # dead deals linger on the site this long
     site_dir: str = "site"
-    # Custom domain for GitHub Pages: written as the CNAME file into the
-    # site output so every deploy keeps the domain attached.
+    # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions
+    # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)
     custom_domain: str = ""
     ftc_disclosure: str = ""
+    # -- seo: category hubs and IndexNow (config.yaml seo:) --
+    seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
+    seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
+    seo_indexnow_min_hours: float = 6.0
+    seo_indexnow_resubmit_days: float = 7.0  # unchanged URLs listed again (0 = never)
     tier_boost: dict[str, float] = field(default_factory=dict)
     abs_savings_weight: float = 0.1
     condition_penalty: float = 2.0
@@ -230,6 +235,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
+    cfg.seo_hub_min_items = max(0, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
+    cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
+    cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
+                                                  default=cfg.seo_indexnow_min_hours)))
+    cfg.seo_indexnow_resubmit_days = max(0.0, float(g("seo", "indexnow_resubmit_days",
+                                                      default=cfg.seo_indexnow_resubmit_days)))
 
     cfg.tier_boost = g("ranking", "tier_boost", default={}) or {}
     cfg.abs_savings_weight = float(g("ranking", "abs_savings_weight", default=cfg.abs_savings_weight))

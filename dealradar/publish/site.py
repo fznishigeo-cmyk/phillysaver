@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from ..config import redact_secrets
 from ..util import iso, parse_iso
+from . import seo
 from .paywall import split_teaser, teaser_memory
 from .credits import source_display_name
 
@@ -331,20 +332,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
     public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
               "contact.html", "careers.html"]
-    if site_url:
-        day = now.strftime("%Y-%m-%d")
-        urls = "".join(f"  <url><loc>{site_url}/{p}</loc><lastmod>{day}</lastmod></url>\n"
-                       for p in public)
-        (out / "sitemap.xml").write_text(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-            f"{urls}</urlset>\n", encoding="utf-8")
+    # The server-rendered wall, category hubs, 404.html, _headers, the
+    # sitemap and the IndexNow due-list, all from this publish's teaser.
+    seo.publish(db, cfg, now, out, teaser, site_url, public)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
 
-    # GitHub Pages keeps a custom domain only while the deployed site
-    # carries this file; every run redeploys, so every run writes it.
+    # Harmless and kept for a branch-based host: GitHub Pages deploys made by
+    # Actions ignore CNAME (the domain is set in Settings -> Pages).
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
 

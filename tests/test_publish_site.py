@@ -186,8 +186,8 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
 
 
 def test_custom_domain_writes_cname_every_render(db, cfg, tmp_path):
-    """GitHub Pages drops a custom domain unless the deployed artifact
-    carries CNAME; the pipeline redeploys every run, so render writes it."""
+    """CNAME is written on every render (Actions-based Pages deploys ignore
+    it; the domain lives in Settings -> Pages), never without a domain."""
     out = tmp_path / "site"
     cfg.custom_domain = "wowpriced.com"
     render_site(db, cfg, NOW, out_dir=out, deals=[])
@@ -398,6 +398,7 @@ class TestPaywallTeaser:
         # Distinctive names, prices and URLs so a leak is unmistakable.
         return [make_deal(dedupe_key=f"walmart|zz-{i}", item=f"ZZSECRET-ITEM-{i}",
                           canonical_url=f"https://www.walmart.com/ip/zz{i}",
+                          image_url=f"https://i5.walmartimages.com/zzimg{i}.jpg",
                           final_price=1000.0 + i, regular_price=5000.0 + i,
                           score=100.0 - i)
                 for i in range(n)]
@@ -421,6 +422,21 @@ class TestPaywallTeaser:
             assert f"100{i}.0" not in text and f"1,00{i}.00" not in text
             assert f"500{i}.0" not in text
         assert "ZZSECRET-MUG" in text  # just-missed deals stay public
+
+        # Every HTML page written (the static wall, the category hubs, 404)
+        # holds the free deals at most: never a locked deal's name, price,
+        # link or photo, and no photo at all. (deals.json's stubs carry
+        # image_url by contract; the HTML never does.)
+        pages = list(out.rglob("*.html"))
+        assert out / "index.html" in pages and out / "deals" / "other" / "index.html" in pages
+        for page in pages:
+            html = page.read_text(encoding="utf-8")
+            for i in (3, 4):
+                assert f"ZZSECRET-ITEM-{i}" not in html, page
+                assert f"walmart.com/ip/zz{i}" not in html, page
+                assert f"100{i}.0" not in html and f"500{i}.0" not in html, page
+            assert "zzimg" not in html, page
+        assert "ZZSECRET-ITEM-0" in (out / "index.html").read_text(encoding="utf-8")
 
         doc = json.loads(text)
         meta = doc["meta"]
@@ -579,8 +595,9 @@ class TestSelfReloadAndPetsTab:
         from dealradar.publish.site import render_site
         render_site(db, cfg, NOW, out_dir=tmp_path)
         html = (tmp_path / "index.html").read_text(encoding="utf-8")
-        assert '["Pets", ["pets"]]' in html
-        assert '["Other", ["office", "books_media", "other"]]' in html
+        # [label, categories, hub slug], injected from publish/seo.py CATGROUPS
+        assert '["Pets", ["pets"], "pets"]' in html
+        assert '["Other", ["office", "books_media", "other"], "other"]' in html
 
 
 class TestLoginDeepLink:
@@ -1224,6 +1241,8 @@ def test_search_engines_get_a_sitemap_robots_and_canonical_urls(db, cfg, tmp_pat
     assert '<meta name="robots" content="noindex">' in (out / "welcome.html").read_text(encoding="utf-8")
     sitemap = (out / "sitemap.xml").read_text(encoding="utf-8")
     assert "<loc>https://wowpriced.com/</loc>" in sitemap and "welcome.html" not in sitemap
+    # No "today" stamp: fixed pages carry no lastmod (hubs: tests/test_seo.py).
+    assert "<lastmod>" not in sitemap and "404.html" not in sitemap
     robots = (out / "robots.txt").read_text(encoding="utf-8")
     assert "Sitemap: https://wowpriced.com/sitemap.xml" in robots
     assert "Disallow: /welcome.html" in robots

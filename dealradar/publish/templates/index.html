@@ -8,6 +8,8 @@
 <title>wowpriced — verified deals</title>
 <meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every 10 minutes.">
 <link rel="canonical" href="{{SITE_URL}}/">
+<!-- Locked cards show a blurred product photo: never in image search. -->
+<meta name="robots" content="noimageindex">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="wowpriced">
 <meta property="og:title" content="wowpriced — verified deals, up to 90% off">
@@ -122,7 +124,7 @@ header .drop,header .dhole{background:#18252c}
 .cattab{flex:0 0 auto;background:var(--chip);color:var(--fg);border:1px solid var(--line);
         border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer;
         white-space:nowrap}
-.cattab:hover{border-color:var(--accent)}
+.cattab:hover{border-color:var(--accent);text-decoration:none}
 .cattab.active{background:var(--accent);border-color:var(--accent);
                color:var(--accent-fg);font-weight:700}
 .toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:40;
@@ -282,6 +284,7 @@ header .drop,header .dhole{background:#18252c}
 .secth{font-size:17px;margin:28px 0 2px;padding-top:18px;border-top:1px solid var(--line)}
 .secth .meta{font-weight:400;display:inline}
 .empty{color:var(--muted);padding:34px 0;text-align:center}
+.lockedlist{color:var(--muted);margin:10px 0;padding-left:20px}
 footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
        padding-top:14px}
 footer p{margin:0 0 8px}
@@ -499,7 +502,7 @@ footer .meta{font-size:11.5px}
       Start 7-day free trial</a>
   </div>
   <p id="sincevisit" class="since" hidden></p>
-  <nav id="cattabs" aria-label="category tabs"></nav>
+  <nav id="cattabs" aria-label="category tabs">{{CAT_TABS}}</nav>
 </header>
 <div class="wrap">
 <div id="controls">
@@ -515,7 +518,7 @@ footer .meta{font-size:11.5px}
   <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
   <select id="srcsel" aria-label="source filter"><option value="">all sources</option><option value="@2">&#10003; confirmed by 2+ sources</option></select>
 </div>
-<div id="content"><p class="empty">Loading&hellip;</p></div>
+<div id="content">{{STATIC_WALL}}</div>
 <div id="paywall" class="paywall" hidden>
   <p class="pwtext"></p>
   <div class="pwbtns">
@@ -614,25 +617,10 @@ footer .meta{font-size:11.5px}
   var FLIP_MS = 600;
   // localStorage keys: per-viewer conveniences only, never required.
   var SORT_KEY = "wp.sort", SEEN_KEY = "wp.seen";
-  // Amazon-style department tabs over the internal category vocabulary.
-  var CATGROUPS = [
-    ["All", null],
-    // Sentinel tab: filters on the used/open_box CONDITIONS, not category —
-    // the Amazon Warehouse giveaway-priced finds get their own front door.
-    ["Used & Open-Box", "USED"],
-    ["Home & Kitchen", ["home", "kitchen"]],
-    ["Beauty & Personal Care", ["beauty"]],
-    ["Clothing, Shoes & Jewelry", ["fashion"]],
-    ["Electronics", ["electronics", "computers", "gaming"]],
-    ["Sports & Outdoors", ["sports", "outdoors"]],
-    ["Health & Household", ["health", "grocery"]],
-    ["Toys & Games", ["toys_games", "kids_baby"]],
-    // Own tab by operator call: 85%-off rotors are the "WOW that's cheap"
-    // screenshot material — they get buried in a grab-bag Other tab.
-    ["Automotive", ["auto"]],
-    ["Pets", ["pets"]],
-    ["Other", ["office", "books_media", "other"]]
-  ];
+  // Amazon-style department tabs over the internal category vocabulary:
+  // [label, categories ("USED": the used/open_box conditions), hub slug].
+  // publish/seo.py CATGROUPS is the one source; the hubs use it too.
+  var CATGROUPS = {{CATGROUPS}};
   // The version of this page as published (site.py fills it in). A newer
   // publish carries a different meta.site_version: the page then reloads
   // itself once, so a browser's cached copy never shows yesterday's layout
@@ -900,13 +888,17 @@ footer .meta{font-size:11.5px}
 
   function renderTabs() {
     var nav = document.getElementById("cattabs");
+    // Real links to the category hubs (crawlable); a plain click filters
+    // the wall in place, a modified one opens the hub.
     nav.innerHTML = CATGROUPS.map(function (g, i) {
-      return '<button type="button" class="cattab' +
-        (i === state.catTab ? " active" : "") + '" data-i="' + i + '">' +
-        esc(g[0]) + "</button>";
+      return '<a class="cattab' + (i === state.catTab ? " active" : "") + '" href="' +
+        esc(g[2] ? "/deals/" + g[2] + "/" : "/") + '" data-i="' + i + '">' +
+        esc(g[0]) + "</a>";
     }).join("");
     nav.querySelectorAll(".cattab").forEach(function (b) {
-      b.addEventListener("click", function () {
+      b.addEventListener("click", function (e) {
+        if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
         state.catTab = Number(b.getAttribute("data-i")) || 0;
         renderTabs();
         render();

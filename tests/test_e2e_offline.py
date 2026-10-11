@@ -196,6 +196,9 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
 
     deals_json = json.loads((env["site"] / "deals.json").read_text())
     assert deals_json["meta"]["disclosure"]
+    # Spend and model are the operator's: never in the public file.
+    last_run = deals_json["meta"]["last_run"]
+    assert last_run["run_key"] and "spend_usd" not in last_run and "parser_model" not in last_run
     assert len(deals_json["deals"]) == 2
     by_item = {d["item"]: d for d in deals_json["deals"]}
     assert not any("Knife" in i for i in by_item)  # critic-flagged, never shipped
@@ -264,3 +267,5 @@ def test_rerun_is_idempotent(env, capsys):
     assert n_deals == 4
     assert n_sight == 5
     assert n_hist == 5
+    # The re-run lists nothing new for IndexNow (inside seo.indexnow_min_hours).
+    assert json.loads((env["site"].parent / "indexnow_urls.json").read_text()) == []

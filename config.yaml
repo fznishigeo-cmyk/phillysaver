@@ -71,12 +71,27 @@ publish:
                                # missed" section at the page bottom (FOMO:
                                # gone before you got here)
   site_dir: "site"
-  custom_domain: "wowpriced.com"   # GitHub Pages custom domain (CNAME file in every deploy)
+  custom_domain: "wowpriced.com"   # the site's one public address (canonical URLs, sitemap, IndexNow)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-
     Disclosure: some outbound links credit the deal source and may be affiliate links
     that earn the source (or, in the future, this site) a commission. Prices change
     fast and are not guaranteed.
+
+seo:
+  # Category hubs (/deals/<slug>/): a hub is indexable and in the sitemap
+  # only while its category had at least this many deals pass our checks in
+  # the last 7 days (a stable count: never the rotating free deals or the
+  # locked count). Below it the hub is noindex and left out of the sitemap.
+  hub_min_items: 10
+  # IndexNow (Bing, Yahoo, DuckDuckGo, Yandex). The key is public by design:
+  # the site serves it at /<key>.txt to prove the domain is ours.
+  indexnow_key: "89b51421654dec4627eb3ed0290d59b2"
+  indexnow_min_hours: 6        # a changed URL is resubmitted at most this often
+  # A URL counts as submitted once a publish lists it (before the POST runs),
+  # so an unchanged URL is listed again after this many days: a failed POST
+  # heals within a week instead of never. 0 = never relist unchanged URLs.
+  indexnow_resubmit_days: 7
 
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
