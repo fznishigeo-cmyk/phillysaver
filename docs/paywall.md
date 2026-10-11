@@ -50,7 +50,7 @@ payload to the Cloudflare Worker, which serves it only to members.
 paywall:
   enabled: true
   teaser_count: 8          # unlocked deals for visitors and free accounts
-  teaser_pool: 48          # every drop unlocks a new teaser_count of the top teaser_pool
+  teaser_pool: 0           # 0 = every live deal; N = rotate the top N only
   trial_days: 7            # page copy only; keep it equal to the Worker's TRIAL_DAYS
   api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
@@ -59,7 +59,7 @@ paywall:
 `deals.json` meta carries: `api_url`, `google_client_id`, `teaser_count`,
 `locked_count`, `trial_days`, plus the existing `subscribe_url`,
 `portal_url`, `newsletter_url`, `floors`, `last_run`, `generated_at`,
-`cadence_minutes`, `disclosure`, `count`. A signed-in page prefers
+`cadence_minutes` (the drop clock's step, `publish.drop_minutes`), `disclosure`, `count`. A signed-in page prefers
 `me.trial_days` (the Worker's real trial length) over `meta.trial_days`.
 
 ## Teaser `deals.json`
@@ -67,13 +67,16 @@ paywall:
 `deals` = `teaser_count` **alive** published deals as full objects: the
 best (site score order) not unlocked before, at most 2 per store while
 others remain. Each publish unlocks a completely different set: the keys
-past drops unlocked are kept in state.db `meta` (`teaser_recent`, the last
-`teaser_memory` keys, 2000), so no deal is free twice until every live deal
-has had its turn (then the least recently shown go first), while a new best
-deal is unlocked at once. `teaser_pool: N > 0` limits the rotation to the
-top N (a lap of N / teaser_count drops). On the page a drop is a new
-publish: a mark that comes before it says "Next drop soon" and polls; the
-same deals are never re-dealt as a drop. They
+past drops unlocked are kept in state.db `meta` (`teaser_recent`: every
+live deal's key once it was free, at its latest showing; a dead deal's key
+leaves), so no deal is free twice until every live deal has had its turn
+(then strictly the least recently shown go first), while a new best deal is
+unlocked at once. `teaser_pool: N > 0` limits the rotation to the top N (a
+lap of N / teaser_count drops). On the page a drop is a new publish, on a
+clock of `publish.drop_minutes` (15, the real gap between publishes): a
+publish that lands early waits for its mark; a mark that comes before its
+publish says "Next drop soon" and polls; the same deals are never re-dealt
+as a drop. They
 are followed by every other alive deal as a locked stub, then by the dead "Just missed" deals unchanged (they are
 gone; FOMO is the point):
 

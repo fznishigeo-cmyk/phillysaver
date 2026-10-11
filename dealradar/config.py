@@ -100,6 +100,7 @@ class AppConfig:
     min_abs_savings: float = 5.0
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 6.0      # dead deals linger on the site this long
+    drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     site_dir: str = "site"
     # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions
     # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)
@@ -155,7 +156,6 @@ class AppConfig:
     paywall_enabled: bool = True
     paywall_teaser_count: int = 8      # unlocked deals on the public site
     paywall_teaser_pool: int = 0       # each drop unlocks a new teaser_count of the top N (0 = every live deal)
-    paywall_teaser_memory: int = 2000  # keys of past free deals kept (pool 0): no repeat within a lap
     paywall_trial_days: int = 7
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
@@ -246,6 +246,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                      default=cfg.min_pct))
     cfg.show_dead_hours = float(g("publish", "show_dead_hours",
                                   default=cfg.show_dead_hours))
+    cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
+                                    default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
@@ -308,8 +310,6 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                             default=cfg.paywall_teaser_count)))
     pool = int(g("paywall", "teaser_pool", default=cfg.paywall_teaser_pool) or 0)
     cfg.paywall_teaser_pool = 0 if pool <= 0 else max(cfg.paywall_teaser_count, pool)
-    cfg.paywall_teaser_memory = max(0, int(g("paywall", "teaser_memory",
-                                             default=cfg.paywall_teaser_memory)))
     cfg.paywall_trial_days = max(0, int(g("paywall", "trial_days",
                                           default=cfg.paywall_trial_days)))
     cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")

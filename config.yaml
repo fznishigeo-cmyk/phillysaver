@@ -70,6 +70,10 @@ publish:
   show_dead_hours: 48          # dead deals stay this long in the "Just
                                # missed" section at the page bottom (FOMO:
                                # gone before you got here)
+  drop_minutes: 15             # the page's drop clock: minutes between drops.
+                               # Set it to the real gap between publishes (the
+                               # */10 cron lands every 11-15 min); a publish later
+                               # than this shows "Next drop soon" until it lands.
   site_dir: "site"
   custom_domain: "wowpriced.com"   # the site's one public address (canonical URLs, sitemap, IndexNow)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
@@ -187,8 +191,8 @@ paywall:
   # card on file (no card-less trial). See docs/paywall.md.
   enabled: true    # teaser deals.json + full payload uploaded to the Worker
   teaser_count: 8          # unlocked deals for visitors
-  teaser_pool: 0           # 0 = every live deal: a drop unlocks the best 8 not yet free this lap
-  teaser_memory: 2000      # past free deals remembered: none repeats until every live deal had a turn
+  teaser_pool: 0           # 0 = every live deal: a drop unlocks the best 8 not yet free; none
+                           # is free again until every live deal had a turn (state.db meta)
   trial_days: 7            # page copy only; the Stripe trial is the Worker's TRIAL_DAYS: keep them equal
   api_url: "https://wowpriced-subscribe.wowpriced.workers.dev"              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty

@@ -47,10 +47,11 @@ def split_teaser(deals: list[dict[str, Any]], cfg,
     dead = [d for d in deals if d.get("status") != "alive"]
     fresh, stale = _rotate(alive[:max(n, pool)] if pool > 0 else alive, recent)
     # Fresh deals first (store variety among them), and a shown deal only
-    # once the fresh ones run out: every drop really is new.
+    # once the fresh ones run out, strictly least recently shown first: a
+    # store cap here would skip to the last drop's deals while older ones
+    # wait, so every drop really is new.
     picked = _pick_teaser(fresh, n)
-    if len(picked) < n:
-        picked += _pick_teaser(stale, n - len(picked))
+    picked += stale[:n - len(picked)]
     chosen = {id(d) for d in picked}
     teaser = picked + [_stub(d) for d in alive if id(d) not in chosen] + dead
     return teaser, max(0, len(alive) - len(picked))
@@ -68,20 +69,25 @@ def _rotate(pool: list[dict[str, Any]], recent) -> tuple[list[dict[str, Any]], l
 
 def teaser_memory(teaser: list[dict[str, Any]], recent, cfg) -> list[str]:
     """recent with this drop's unlocked keys appended (a key once, at its
-    latest showing), keeping the last teaser_memory keys, or teaser_pool -
-    teaser_count when a pool is set: a deal comes back only after the rest
-    have had their turn."""
+    latest showing), keeping only live deals' keys (locked stubs carry
+    theirs): a dead deal's key leaves, a live one stays until every other
+    live deal has had its turn. With teaser_pool set, the last
+    teaser_pool - teaser_count of them."""
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
     pool = int(getattr(cfg, "paywall_teaser_pool", 0) or 0)
-    keep = max(0, pool - n) if pool > 0 else max(0, int(getattr(cfg, "paywall_teaser_memory", 2000)))
+    live = {d.get("key") for d in teaser if d.get("status") == "alive" and d.get("key")}
     shown = [d.get("key") for d in teaser
              if d.get("status") == "alive" and not d.get("locked") and d.get("key")]
     out, seen = [], set()
     for k in reversed(list(recent) + shown):
-        if k not in seen:
+        if k in live and k not in seen:
             seen.add(k)
             out.append(k)
-    return out[::-1][-keep:] if keep else []
+    out.reverse()
+    if pool <= 0:
+        return out
+    keep = max(0, pool - n)
+    return out[-keep:] if keep else []
 
 
 #: Unlocked picks per store in the first pass: eight $5 phone cases from one
