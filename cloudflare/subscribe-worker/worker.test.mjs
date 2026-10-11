@@ -568,6 +568,7 @@ describe("membership and ownership", () => {
     assert.deepEqual(emailLookups(), []);
     // The real owner signs in with Google: the squatted account is theirs now.
     r = await google(env, idToken({ email: "paying@example.com", sub: "owner" }));
+    assert.equal(r.json.new_account, false, "taking over an existing account is not a signup");
     assert.deepEqual([r.status, r.json.me.member, r.json.me.reason, r.json.me.email_verified], [200, true, "subscribed", true]);
     assert.ok(stripe.calls > 0);
     const owner = r.json.token;
@@ -1767,6 +1768,8 @@ describe("Google sign-in", () => {
     travel(30 * DAY); // whatever an earlier test cached is stale now
     let r = await google(env, idToken());
     assert.equal(r.status, 200);
+    assert.equal(r.json.new_account, true);
+    assert.deepEqual(Object.keys(r.json).sort(), ["me", "new_account", "token"]);
     assert.equal(typeof r.json.token, "string");
     assert.deepEqual([r.json.me.email, r.json.me.member, r.json.me.reason, r.json.me.email_verified, r.json.me.trial_available],
                      ["g.user@example.com", false, "none", true, true]);
@@ -1781,6 +1784,7 @@ describe("Google sign-in", () => {
     r = await google(env, idToken());
     assert.equal(r.status, 200);
     assert.deepEqual(await account(env, "g.user@example.com"), acct, "the same account on the next sign-in");
+    assert.equal(r.json.new_account, false);
     assert.equal(jwks.calls, fetched, "JWKS served from the in-memory cache");
     assert.equal(env.SUBS.writes, writes, "an unchanged account is not re-written");
     travel(31 * MIN); // the hour is up: fetched again, and written to KV too

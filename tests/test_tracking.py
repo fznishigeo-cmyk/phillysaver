@@ -367,6 +367,8 @@ def test_event_hooks_at_sign_up_checkout_deal_click_and_welcome(db, cfg, tmp_pat
     post = _between(html, "function authPost(", "function loadGis(")
     assert post.index('if (path === "/api/signup") track("sign_up", { method: "email" });') \
         < post.index("signedIn(j.token, j.me, path)")
+    assert post.index('if (path === "/api/google" && j.new_account === true) track("sign_up", { method: "google" });') \
+        < post.index("signedIn(j.token, j.me, path)")
     body = _between(html, "function checkout(", "function refuse(")
     assert body.index('track("begin_checkout");') < body.index("location.assign(https(j.url));")
     assert '["pwfb", "cofb"].forEach' in html and 'addEventListener("click", function () { track("begin_checkout"); })' in html

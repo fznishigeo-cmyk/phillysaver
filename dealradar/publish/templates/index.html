@@ -1953,9 +1953,9 @@ footer .meta{font-size:11.5px}
     api(path, body).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (r.ok && j.token) {
-          // A 200 from /api/signup is a new free account (a Google
-          // sign-in doesn't say whether its account is new).
+          // Count only sign-ins that created a new free account.
           if (path === "/api/signup") track("sign_up", { method: "email" });
+          if (path === "/api/google" && j.new_account === true) track("sign_up", { method: "google" });
           signedIn(j.token, j.me, path);
         } else showErr(j.error || ("http_" + r.status));
       });
