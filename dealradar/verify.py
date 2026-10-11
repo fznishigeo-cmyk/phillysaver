@@ -42,7 +42,15 @@ def _history_ratio(cfg) -> float:
     return max(0.0, 1.0 - float(cfg.min_pct) / 100.0)
 
 
-def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
+#: Keepa cross-checks per refresh_tiers pass: the pass has no deadline of
+#: its own and runs before the critic and the price recheck, so it is
+#: bounded (live review finding: hundreds of new open-box deals would each
+#: cost a /product call and ~1.5 s per run).
+KEEPA_CHECKS_PER_PASS = 25
+
+
+def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
+                keepa_calls: dict[str, int] | None = None) -> str:
     """Compute the verification tier for one deal row dict."""
     since = now - timedelta(hours=cfg.corroborate_window_h)
     if db.distinct_sources_within(deal["id"], since) >= 2:
@@ -60,14 +68,25 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
     # in the payload keeps hourly re-tiering from burning tokens), and only
     # while the shared token budget has a recheck's worth to spare — the
     # deal lane's /deal queries come first.
+    # Used/open-box deals are measured against the NEW price, not Amazon's
+    # own 90-day average, so the cross-check has nothing to say about them
+    # (live review finding: it never settled and re-asked Keepa every run).
     if (deal.get("asin") and not deal.get("keepa_checked")
+            and not is_used_deal(deal)
             and (deal.get("pct_at_checkout") or 0) >= cfg.min_pct):
+        if keepa_calls is not None:
+            if keepa_calls.get("n", 0) >= KEEPA_CHECKS_PER_PASS:
+                return "unverified"  # the rest wait for the next pass
+            keepa_calls["n"] = keepa_calls.get("n", 0) + 1
         budget = KeepaBudget.load(db)
         if not budget.allows(MIN_FOR_RECHECK, now):
             return "unverified"  # retried on a later re-tiering
-        verdict = keepa_check(deal, cfg, budget=budget)
+        answered: dict[str, bool] = {}
+        verdict = keepa_check(deal, cfg, budget=budget, answered=answered)
         budget.save(db)
-        if verdict is not None:
+        if verdict is not None or answered.get("yes"):
+            # Settled: a verdict, or Keepa answered with no Amazon average
+            # to compare against (asking again would answer the same).
             deal["keepa_checked"] = True
             payload = {k: v for k, v in deal.items() if k != "id"}
             db.update_deal(deal["dedupe_key"], payload=payload)
@@ -79,8 +98,9 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime) -> str:
 
 def refresh_tiers(db, cfg, now: datetime) -> None:
     """Recompute and persist verify_tier for every alive deal."""
+    keepa_calls: dict[str, int] = {}
     for deal in db.all_deals(status="alive"):
-        tier = assign_tier(db, deal, cfg, now)
+        tier = assign_tier(db, deal, cfg, now, keepa_calls=keepa_calls)
         if tier != deal.get("verify_tier"):
             log.info("deal %s tier %s -> %s", deal["dedupe_key"],
                      deal.get("verify_tier"), tier)
@@ -491,7 +511,8 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
 
 
 def keepa_check(deal: dict[str, Any], cfg,
-                budget: KeepaBudget | None = None) -> bool | None:
+                budget: KeepaBudget | None = None,
+                answered: dict[str, bool] | None = None) -> bool | None:
     """Optional Keepa price-history cross-check (feature-flagged).
 
     Returns None (no opinion) unless cfg.feature_flags['keepa'] is on AND the
@@ -520,6 +541,8 @@ def keepa_check(deal: dict[str, Any], cfg,
         product = _keepa_product(key, asin, 90, budget)
         if product is None:
             return None  # 429: the bucket is empty, no opinion
+        if answered is not None:
+            answered["yes"] = True  # Keepa answered (even if inconclusive)
         _harvest_image(deal, product)
         stats = product.get("stats")
         avg = None

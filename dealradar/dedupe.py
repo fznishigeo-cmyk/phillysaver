@@ -304,7 +304,15 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # mark_expired_dead).
         backed = new_final is not None and (
             price_improved or new_final <= float(old_final) * 1.10 + 0.01)
-        revived = fresh and existing.get("status") == "dead" and backed
+        # Only a recheck kill is undone, and only by a post written after
+        # the death (live review finding: an older article, merged in the
+        # same batch, revived a deal a source had just declared sold out).
+        died = util.parse_iso(existing.get("died_at") or "")
+        after_death = (post.published_at is None or died is None
+                       or post.published_at > died)
+        revived = (fresh and existing.get("status") == "dead" and backed
+                   and "price_moved" in (existing.get("flags") or [])
+                   and after_death)
         if revived:
             payload["status"] = "alive"
             payload["died_at"] = ""

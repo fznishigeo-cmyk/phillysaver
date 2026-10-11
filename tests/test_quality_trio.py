@@ -1358,7 +1358,7 @@ class TestCarefulDeath:
             left = budget.available(NOW) - 13 * len(deals)
             floor.append(left)
             budget.note({"tokensLeft": left, "refillRate": 0}, NOW)
-            return {d["dedupe_key"]: None for d in deals}  # stay due
+            return {}  # no answer (a miss): every deal stays due
 
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
 
@@ -1611,9 +1611,10 @@ class TestCarefulDeath:
         assert row["status"] == "dead" and row["price_rechecked_at"] == ""
         assert self._published(db, cfg, NOW) == (set(), set(), 0)
 
-        # Fresh scan: one unit is live at the price, the other is gone.
+        # Fresh scan once the inconclusive answer's 6 h retry window has
+        # passed: one unit is live at the price, the other is gone.
         sent.clear()
-        later = NOW + timedelta(minutes=10)
+        later = NOW + timedelta(hours=6, minutes=10)
         answers["B0BKQSDF5C"] = {
             "offers": [_offer(1, 99999), _offer(2, 44951)],
             "liveOffersOrder": [0, 1], "stats": {"lastOffersUpdate": _km(later)}}
@@ -1664,7 +1665,7 @@ class TestCarefulDeath:
             post = _post(source_name="keepa_amazon_drops",
                          uid=f"B0BKQSDF5C:wh:{final:.2f}",
                          url="https://keepa.com/#!product/1-B0BKQSDF5C",
-                         text=f"Open-box binoculars yours for ${final:.2f}")
+                         text=f"Open-box binoculars yours for ${final:.2f}", published_at=at)
             return upsert_extracted(db, ext, sav, post, cfg, at)
 
         answer = {}
@@ -1722,7 +1723,7 @@ class TestCarefulDeath:
                                 abs_savings=550.48, basis="quoted_regular")
             post = _post(source_name=source, uid=f"{source}:B0BKQSDF5C",
                          url=f"https://example.com/{source}",
-                         text="Open-box binoculars $449.51")
+                         text="Open-box binoculars $449.51", published_at=at)
             return upsert_extracted(db, ext, sav, post, cfg, at)
 
         t1 = NOW + timedelta(minutes=83)

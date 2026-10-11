@@ -244,6 +244,9 @@ _RECHECK_EVERY_H = 3.0
 #: (up to verify.USED_RECHECK_TOKENS per ASIN instead of 1), so it comes
 #: round half as often.
 _RECHECK_EVERY_USED_H = 6.0
+#: Retry window for a new-condition deal whose recheck answered without a
+#: verdict (Keepa data older than the deal's price): 1 token, so hourly.
+_RETRY_NEW_H = 1.0
 #: Early (in-window) Keepa calls per run made only to fetch a missing photo
 #: (1 token each). The shared token budget (keepa_budget) is the real
 #: brake: these run only while the bucket holds MIN_FOR_IMAGE_BACKFILL,
@@ -624,6 +627,15 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     _revive_used_price_moved(db, now)
     stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
              "used_checked": 0}
+
+    def tried_recently(deal: dict[str, Any], used: bool) -> bool:
+        # An answered-but-inconclusive recheck waits its retry window: live
+        # review finding, a used deal whose offers scan kept saying "no
+        # opinion" was re-scanned (13 tokens) on every 10-minute run.
+        tried = util.parse_iso(deal.get("recheck_tried_at") or "")
+        wait = _RECHECK_EVERY_USED_H if used else _RETRY_NEW_H
+        return tried is not None and now - tried < timedelta(hours=wait)
+
     if not cfg.feature_flags.get("keepa"):
         return stats
     # Token budget carried over from the last Keepa response of any run;
@@ -642,6 +654,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         if in_window and (used or not image_backfill or deal.get("image_url")
                           or len(photo) >= _IMAGE_BACKFILL_PER_RUN):
             continue
+        if tried_recently(deal, used):
+            continue
         ok, _reason = rank.is_publishable(deal, cfg)
         if not ok:
             continue  # only spend tokens on deals that would publish
@@ -649,19 +663,28 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     # Re-opened by the repair: dead until a fresh offers scan says alive.
     for deal in db.all_deals(status="dead"):
         if deal.get("asin") and not deal.get("price_rechecked_at") \
-                and _revivable(deal, now) \
+                and _revivable(deal, now) and not tried_recently(deal, True) \
                 and rank.is_publishable(dict(deal, status="alive"), cfg)[0]:
             due_used.append(deal)
+    # Longest-unchecked first (never-checked leading): when demand outgrows
+    # the token plan the shortfall spreads across every deal instead of the
+    # newest rows never being rechecked at all (live review finding).
+    due.sort(key=lambda d: d.get("price_rechecked_at") or "")
+    due_used.sort(key=lambda d: d.get("price_rechecked_at") or "")
 
     def apply(deal: dict[str, Any], verdict: bool | None,
-              had_photo: bool = True) -> None:
+              had_photo: bool = True, answered: bool = False) -> None:
         if verdict is None:
             # No price opinion, but a photo the record carried is still
-            # kept (live wart: photo-only answers were thrown away).
-            if not had_photo and deal.get("image_url"):
+            # kept (live wart: photo-only answers were thrown away). Keepa
+            # answered yet could not decide: wait the retry window. A 429 or
+            # transport miss (no answer) retries on the next pass.
+            if answered or (not had_photo and deal.get("image_url")):
                 payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+                if answered:
+                    payload["recheck_tried_at"] = util.iso(now)
                 db.update_deal(deal["dedupe_key"], payload=payload)
-            return  # API had no opinion; try again next pass
+            return
         stats["checked"] += 1
         if is_used_deal(deal):
             stats["used_checked"] += 1
@@ -726,7 +749,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 stats["image_backfill"] += len(batch)
             for deal in batch:
                 apply(deal, verdicts.get(deal["dedupe_key"]),
-                      had_photo=deal["dedupe_key"] not in photo_less)
+                      had_photo=deal["dedupe_key"] not in photo_less,
+                      answered=deal["dedupe_key"] in verdicts)
             found = sum(1 for d in batch
                         if d["dedupe_key"] in photo_less and d.get("image_url"))
             if photo_less:

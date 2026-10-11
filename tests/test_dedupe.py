@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from datetime import datetime, timedelta, timezone
 
 from dealradar import dedupe, util
@@ -306,7 +308,9 @@ def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
 
     kill()
     later = NOW + timedelta(minutes=15)
-    other = make_post("slickdeals_frontpage", "sd1", "Steiner binoculars $744.50")
+    other = dataclasses.replace(
+        make_post("slickdeals_frontpage", "sd1", "Steiner binoculars $744.50"),
+        published_at=later)  # written after the death
     res2 = dedupe.upsert_extracted(db, ext, sav, other, cfg, later)
     assert res2["revived"] is True and res2["price_improved"] is False
     row = db.get_deal(key)
@@ -345,16 +349,18 @@ def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
     kill()
     later = NOW + timedelta(hours=1)
     dear = make_savings(final=180.0, regular=200.0, pct=10.0, abs_s=20.0)
-    res = dedupe.upsert_extracted(db, ext, dear, make_post("b", "b1"), cfg,
-                                  later)
+    res = dedupe.upsert_extracted(
+        db, ext, dear, dataclasses.replace(make_post("b", "b1"), published_at=later),
+        cfg, later)
     assert res["revived"] is False
     row = db.get_deal(key)
     assert row["status"] == "dead" and row["final_price"] == 50.0
     assert "price_moved" in row["flags"] and row["price_rechecked_at"]
     assert len(row["sightings"]) == 2
     near = make_savings(final=54.99, regular=200.0, pct=72.5, abs_s=145.01)
-    res = dedupe.upsert_extracted(db, ext, near, make_post("c", "c1"), cfg,
-                                  later)
+    res = dedupe.upsert_extracted(
+        db, ext, near, dataclasses.replace(make_post("c", "c1"), published_at=later),
+        cfg, later)
     assert res["revived"] is True
     row = db.get_deal(key)
     assert row["status"] == "alive" and row["final_price"] == 50.0

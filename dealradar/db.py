@@ -446,8 +446,12 @@ class DB:
                    posts_new: int, deals_parsed: int, published: int,
                    spend_usd: float) -> None:
         self.conn.execute(
+            # spend ADDS: two runs can share a quarter-hour key (10-minute
+            # cron), and real money spent must never vanish from the daily
+            # cap's ledger (live review finding).
             "UPDATE run_stats SET finished_at=?, items_fetched=?, posts_new=?,"
-            " deals_parsed=?, published=?, spend_usd=? WHERE run_key=?",
+            " deals_parsed=?, published=?,"
+            " spend_usd=COALESCE(spend_usd, 0) + ? WHERE run_key=?",
             (iso(now), items_fetched, posts_new, deals_parsed, published,
              spend_usd, run_key),
         )

@@ -178,6 +178,10 @@ class Deal:
     # ISO UTC of a later price drop or revival; the recheck kills a deal
     # only on Keepa data newer than this and first_seen_at.
     price_since: str = ""
+    # ISO UTC of the last Keepa recheck that ANSWERED without a verdict
+    # (inconclusive offers scan, stale data): the deal waits a retry window
+    # instead of being re-asked, and paid for, on every run.
+    recheck_tried_at: str = ""
     first_seen_at: str = ""               # ISO UTC
     last_seen_at: str = ""
     confidence: float = 0.0
