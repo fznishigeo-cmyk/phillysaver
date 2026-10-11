@@ -196,7 +196,7 @@ alerting:
 
 retention:
   posts_seen_days: 30
-  deals_days: 14
+  deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
 
 feature_flags:
   threads: false               # off until app review passes

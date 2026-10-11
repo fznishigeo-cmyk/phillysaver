@@ -498,8 +498,14 @@ class DB:
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),
         )
+        # Only DEAD deals are pruned, deals_days after they died. A live deal
+        # is never removed for its age (operator call, 2026-10-11): Amazon
+        # "used - like new" offers stay up until someone buys them, so a
+        # deal leaves the wall only when it is genuinely over (its expiry
+        # passed, its post says so, or a live price check found it gone).
         self.conn.execute(
-            "DELETE FROM deals WHERE last_seen_at < ?",
+            "DELETE FROM deals WHERE status = 'dead' AND"
+            " COALESCE(NULLIF(json_extract(payload, '$.died_at'), ''), last_seen_at) < ?",
             (iso(now - timedelta(days=deals_days)),),
         )
         self.conn.commit()

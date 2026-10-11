@@ -25,6 +25,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   membership" sits in the footer only. The full auto-renewal terms stay in
   the checkout dialog, on Stripe's page, on the welcome page and on the help
   pages (legal requirement).
+- **Deals stay until genuinely over.** A live deal is never removed for its
+  age (Amazon "used - like new" offers last until someone buys them). A
+  deal dies only when:
+  - its stated expiry passes;
+  - its source post says it ended or sold out;
+  - a live price check (Keepa offers, the Woot API) finds it gone.
+  Dead deals are deleted 14 days after they die.
 - **No trial reminder emails.** Members cancel by emailing
   hello@wowpriced.com or through Stripe's portal.
 - **LLM spend:**

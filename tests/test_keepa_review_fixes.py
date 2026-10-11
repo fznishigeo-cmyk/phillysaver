@@ -263,3 +263,30 @@ def test_pipeline_parses_with_the_boosted_cap(tmp_path, monkeypatch):
     later = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
     assert daily_spend_cap(cfg, later) - db.spend_usd_for_day(later) > 7.9
     db.close()
+
+
+def test_prune_never_removes_a_live_deal_for_its_age(tmp_path):
+    """Operator call: Amazon "used - like new" offers stay up until someone
+    buys them, so retention deletes only DEAD deals, deals_days after they
+    died, and never a live deal however long ago it was last sighted."""
+    from dealradar.util import iso
+
+    db = DB(tmp_path / "state.db")
+    long_ago = NOW - timedelta(days=30)
+
+    def add(key, status, died_at=None):
+        db.insert_deal(dedupe_key=key, store="Amazon", item=key, normalized_item=key,
+                       canonical_url="", payload={"died_at": died_at or ""},
+                       final_price=5.0, pct_at_checkout=80.0, abs_savings=20.0,
+                       online_only="true", expires_at="", now=long_ago)
+        if status == "dead":
+            db.update_deal(key, payload={"died_at": died_at or ""}, status="dead")
+
+    add("live_old", "alive")                                    # last seen 30 days ago
+    add("dead_long_ago", "dead", iso(NOW - timedelta(days=20)))
+    add("dead_recently", "dead", iso(NOW - timedelta(days=2)))  # last seen 30 d ago
+    add("dead_no_stamp", "dead")                                # falls back to last_seen
+    db.prune(NOW, deals_days=14)
+    left = {d["dedupe_key"] for d in db.all_deals()}
+    assert left == {"live_old", "dead_recently"}
+    db.close()

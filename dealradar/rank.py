@@ -124,7 +124,8 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
     dead (dead ones shown marked dead; the spec wants them visible on the
     page, never alerted). Deals between the site floor and cfg.min_pct are
     the page's "strong deals" tier — on the page, never alerted. Retention
-    prunes dead rows after cfg.deals_days."""
+    prunes dead rows cfg.deals_days after they died; a live deal is never
+    removed for its age."""
     from datetime import timedelta
 
     site_floor = min(cfg.min_pct,

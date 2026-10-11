@@ -134,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     common(sp)
     sp.set_defaults(fn=cmd_digest)
 
-    sp = sub.add_parser("prune", help="apply retention (posts 30 d, deals 14 d)")
+    sp = sub.add_parser("prune", help="apply retention (posts 30 d, dead deals 14 d after they died)")
     common(sp)
     sp.set_defaults(fn=cmd_prune)
 
