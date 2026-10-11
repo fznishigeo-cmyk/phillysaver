@@ -138,3 +138,12 @@ Keep this file current: whoever stops working updates it in their last commit.
    agreement for commercial use. Operator decision.
 9. IndexNow records a URL as sent at publish time, before the POST; a failed
    POST is retried within a week (`seo.indexnow_resubmit_days`).
+
+## Codex task 004 — completed 2026-10-11
+- Updated README section 5 from all ten workflow YAML files: schedules,
+  manual operations, fast-lane site deploys, and shared state concurrency.
+- Encrypted data-branch state and Cloudflare-only hosting remain documented.
+- Validation: `python -m pytest -q` — 1106 passed, 1 slow network test
+  deselected by the repository default; workflow rows and schedules checked.
+- No workflow or application changes; nothing left for task 004 beyond
+  review in PR #5.

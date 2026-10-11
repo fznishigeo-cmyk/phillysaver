@@ -134,17 +134,26 @@ above is the minimum for collection.
 
 ## 5. Scheduling & state
 
-Three workflows in `.github/workflows/`:
+All ten workflows in `.github/workflows/` (cron schedules are UTC; each also
+supports manual dispatch):
 
-| Workflow | Cron | Does |
+| Workflow | Schedule (UTC) | Does |
 |---|---|---|
-| `hourly.yml` | `0 * * * *` | Full run + commit state + deploy the site to Cloudflare Pages. |
-| `fast.yml` | `*/15 * * * *` | `run --fast-lane` (fast-lane sources only) + commit state. No Pages deploy — the hourly deploy refreshes the site; a 15-min site lag is fine, the Telegram alerts are the fast path. |
-| `squash-data.yml` | `17 3 1 * *` | Monthly: squashes the `data` branch to one commit. |
+| `hourly.yml` | `0 * * * *` | Runs the full pipeline, commits state, deploys the site to Cloudflare Pages, and submits changed URLs to IndexNow. |
+| `fast.yml` | `*/10 * * * *` | Runs `run --fast-lane` for fast-lane sources, commits state, deploys the site to Cloudflare Pages, and submits changed URLs to IndexNow. |
+| `squash-data.yml` | `17 3 1 * *` | Squashes the `data` branch to one commit on the first of each month. |
+| `growth-report.yml` | `23 12 * * *` | Collects growth metrics and submits the sitemap, then sends a private report to the operator by email and/or the Telegram admin chat without touching state. |
+| `deploy-subscribe-worker.yml` | manual | Deploys the subscribe and membership API Worker to Cloudflare, creates its KV namespace if needed, and installs its secrets and supplied settings. |
+| `source-probe.yml` | manual | Probes selected sources with the pipeline's polite fetcher and reports failures and advertised feed URLs. |
+| `site-probe.yml` | manual | Reports DNS answers and response headers for the site's hosts, copies, and sitemap. |
+| `image-probe.yml` | manual | Fetches supplied photo URLs once each with the project User-Agent and no Referer to check whether image hosts refuse hotlinking. |
+| `stripe-check.yml` | manual | Checks trial checkout against Stripe by creating and immediately expiring a Checkout Session, inspecting subscriptions and portal settings, and charging nothing. |
+| `stripe-setup.yml` | manual | Idempotently creates the membership product, monthly price, Payment Link, and customer-portal configuration in Stripe. |
 
-- Both run workflows share the concurrency group `dealradar` with
-  `cancel-in-progress: false`, so fast and hourly runs queue and never overlap
-  (SQLite state stays consistent).
+- Hourly, fast-lane, and monthly squash workflows share the concurrency group
+  `dealradar` with `cancel-in-progress: false`, so they queue and never overlap
+  (state commits and maintenance cannot race); the growth report uses its
+  own `growth-report` group.
 - `state.db` (and `sources_report.md`) live on the **`data` branch** — committed
   after every run by `scripts/commit_state.sh`, squashed monthly, **never on
   main**. The commit messages carry `[skip ci]`. The repository is public, so
