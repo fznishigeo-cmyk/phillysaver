@@ -149,6 +149,8 @@ class AppConfig:
     newsletter_timezone: str = "America/New_York"
     newsletter_max_per_run: int = 200  # messages per run; the rest ride the next run
     newsletter_top_n: int = 10         # deals per email, picked once a day by the parse model
+    # -- tracking: public analytics/ad tag IDs, validated in publish/tracking.py --
+    tracking: dict[str, str] = field(default_factory=dict)
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -279,6 +281,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.newsletter_max_per_run = max(1, int(g("newsletter", "max_per_run",
                                               default=cfg.newsletter_max_per_run)))
     cfg.newsletter_top_n = max(1, int(g("newsletter", "top_n", default=cfg.newsletter_top_n)))
+    tracking = g("tracking", default={})
+    cfg.tracking = {str(k): str(v).strip() for k, v in tracking.items()
+                    if v not in (None, "")} if isinstance(tracking, dict) else {}
 
     cfg.keepa_amazon_pages_per_pull = max(1, int(g(
         "keepa", "amazon_pages_per_pull", default=cfg.keepa_amazon_pages_per_pull)))

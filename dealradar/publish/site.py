@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from ..config import redact_secrets
 from ..util import iso, parse_iso
 from .paywall import split_teaser, teaser_memory
+from .tracking import apply_tracking
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -288,7 +289,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     pages = ("index.html", "welcome.html", "about.html",
              "careers.html", "contact.html", "how-it-works.html", "hacks.html",
-             "subscribe.html")
+             "subscribe.html", "privacy.html")
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
     # The home page learns its own version so a cached copy reloads itself
@@ -322,7 +323,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if "{{SITE_URL}}" in html:
             (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
     public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
-              "contact.html", "careers.html"]
+              "contact.html", "careers.html", "privacy.html"]
     if site_url:
         day = now.strftime("%Y-%m-%d")
         urls = "".join(f"  <url><loc>{site_url}/{p}</loc><lastmod>{day}</lastmod></url>\n"
@@ -339,6 +340,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # carries this file; every run redeploys, so every run writes it.
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
+
+    # Last: the operator's analytics and ad tags (config.yaml tracking:) go
+    # into every page written above or by another pass, nested ones included.
+    apply_tracking(out, cfg)
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 len(serialized), locked_count, out)

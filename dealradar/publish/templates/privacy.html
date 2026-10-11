@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0e7569">
+<meta name="description" content="What wowpriced stores about you, what our analytics and ad partners see, how to switch the ad partners off, and how to have your data deleted.">
+<title>Privacy at wowpriced</title>
+<link rel="canonical" href="{{SITE_URL}}/privacy.html">
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+header{background:var(--card);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
+      gap:4px 14px;align-items:baseline}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
+.brand a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
+.mark{width:32px;height:32px;flex:none;transform:rotate(-8deg)}
+.word{font-weight:900;letter-spacing:-.8px}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:var(--accent)}
+.tag{color:var(--muted);font-size:13px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px 48px}
+h1{font-size:30px;line-height:1.2;margin:32px 0 6px}
+.lede{color:var(--muted);font-size:17px;margin:0 0 24px}
+h2{font-size:20px;margin:30px 0 8px}
+p{margin:0 0 14px}
+ul{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+      box-shadow:var(--shadow);padding:18px 20px;margin:0 0 16px}
+.card p:last-child{margin-bottom:0}
+.choice{display:inline-block;background:var(--accent);color:var(--accent-fg);border:0;
+        font:inherit;font-weight:700;font-size:14px;padding:9px 15px;border-radius:9px;cursor:pointer}
+.choice:hover{filter:brightness(1.08)}
+.state{font-weight:700}
+.muted{color:var(--muted);font-size:14px}
+footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
+       padding-top:14px}
+footer p{margin:0 0 8px}
+.fnav{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 12px;font-size:13.5px}
+@media (max-width:640px){
+  .hrow{padding:10px 16px 8px}
+  .tag{display:none}
+  h1{font-size:26px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <p class="brand"><a href="/" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
+    <span class="tag">verified deals · refreshed every 10 minutes</span>
+  </div>
+</header>
+<div class="wrap">
+<main>
+<h1>Privacy</h1>
+<p class="lede">What we keep, what our partners see, and how to switch the ad partners off.</p>
+
+<h2>The short version</h2>
+<div class="card">
+  <p>We keep what it takes to run your account: your email address and, once you
+     subscribe, the link to your Stripe customer record. We never see your card number.</p>
+  <p>When we switch on analytics and ad partners, you can turn the ad partners off
+     below, and they stay off if your browser sends Global Privacy Control.</p>
+</div>
+
+<h2>Your account</h2>
+<ul>
+  <li><strong>Email and password.</strong> We store your email address and a salted,
+      scrambled form of your password (a hash). Never the password itself.</li>
+  <li><strong>Continue with Google.</strong> We store your email address and the ID
+      Google gives your account. Google does not share your Google password with us.</li>
+  <li>Either way, the account record also holds when it was created, whether you
+      have used the free trial, and your Stripe customer ID once you subscribe.</li>
+</ul>
+<p>Before we stopped sending email, visitors could join a free email list. We no longer
+   send to it, and any address on it is deleted when you ask.</p>
+
+<h2>Payments</h2>
+<p>Stripe runs checkout and billing. You type your card into Stripe's page, not ours,
+   so we never see or store your card number. Stripe tells us whether your membership
+   is active or in its trial. Stripe's own privacy policy covers what Stripe keeps.</p>
+
+<h2>What your browser stores</h2>
+<p>We set no cookies of our own. The site keeps a few small notes in your browser's
+   storage:</p>
+<ul>
+  <li>your sign-in token, while you are logged in;</li>
+  <li>your sort choice, and which deals you have already seen (so new ones stand out);</li>
+  <li>a checkout receipt waiting to be attached to your account, until it is;</li>
+  <li>your ad-partner choice from this page, and a note that a trial start was already counted.</li>
+</ul>
+<p>Clearing this site's data in your browser removes all of it and logs you out. If you
+   choose "Continue with Google", Google's sign-in button loads from Google. The hosts
+   that serve our pages (GitHub Pages and Cloudflare) see your IP address and browser
+   type, as any web host does.</p>
+
+<h2>Analytics and ad partners</h2>
+<p>When we switch them on, these partners load on our pages and set their own cookies.
+   They help us see which pages people use and show our ads to people likely to want
+   them.</p>
+<ul>
+  <li><strong>Google Analytics</strong> counts visits and which pages are used. It runs
+      for everyone, with its ad features (Google signals and ad personalization) off
+      when you opt out below or your browser sends Global Privacy Control.</li>
+  <li><strong>Google Ads, Meta (Facebook and Instagram), TikTok, Pinterest and Microsoft
+      Advertising (Bing)</strong> learn that a visitor came from one of our ads, and
+      whether they signed up, started checkout, started a trial or clicked a deal.
+      They do not load at all when you opt out below or your browser sends Global
+      Privacy Control.</li>
+</ul>
+<p>Besides what they see of the page itself, we tell them only those events, plus the
+   store and category of a deal you click. Never your email address, and never which
+   item or price.</p>
+
+<h2 id="choices">Your privacy choices</h2>
+<div class="card">
+  <p>Ad partners in this browser: <span id="adsstate" class="state" aria-live="polite">on</span></p>
+  <p><button type="button" id="adsbtn" class="choice" aria-pressed="false">Turn off ad partners</button></p>
+  <p id="gpcline" hidden>Your browser sends Global Privacy Control, so the ad partners
+     stay off here whatever this button says.</p>
+  <p id="adsblocked" hidden>Your browser blocks this site's storage, so we can't remember
+     this choice. Global Privacy Control works instead.</p>
+  <p class="muted">Your choice applies to this browser and takes effect on the next page
+     you open.</p>
+</div>
+<p>Global Privacy Control is a setting in some browsers and extensions that tells every
+   site you visit not to sell or share your data. We treat it as an opt-out.</p>
+
+<h2>Deleting your data</h2>
+<p id="delmail">Email <a id="dellink" href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>
+   from the address on your account and ask us to delete it.</p>
+<p id="delcontact" hidden>Write to us through the <a href="/contact.html">contact page</a>
+   from the address on your account and ask us to delete it.</p>
+<p>We delete your account record and any address on the old email list. If you are a
+   member, say so and we end your membership too. Stripe keeps its own payment records.</p>
+
+<p class="muted">Last updated October 11, 2026. If this page changes, so does this date.</p>
+</main>
+<footer>
+  <nav class="fnav" aria-label="site pages">
+    <a href="/">Home</a>
+    <a href="/about.html">About</a>
+    <a href="/how-it-works.html">How it works</a>
+    <a href="/hacks.html">Deal hacks</a>
+    <a href="/careers.html">Work with us</a>
+    <a href="/contact.html">Contact</a>
+    <a href="/privacy.html">Privacy</a>
+  </nav>
+  <p>Every deal links to the seller and credits the source that found it. Some outbound
+     links are the source's affiliate links.</p>
+</footer>
+</div>
+<script>
+"use strict";
+// No configured contact email: the publisher leaves the address empty, so
+// the contact page takes the email line's place.
+if (!document.getElementById("dellink").textContent.trim()) {
+  document.getElementById("delmail").hidden = true;
+  document.getElementById("delcontact").hidden = false;
+}
+// The ad-partner switch: localStorage wp.adsOptOut = "1" keeps the ad
+// pixels off (tracking.py reads it before loading any), as does Global
+// Privacy Control.
+(function () {
+  var KEY = "wp.adsOptOut";
+  var btn = document.getElementById("adsbtn");
+  var gpc = navigator.globalPrivacyControl === true;
+  function optedOut() { try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; } }
+  function paint() {
+    var out = optedOut();
+    document.getElementById("adsstate").textContent = out || gpc ? "off" : "on";
+    btn.textContent = out ? "Turn ad partners back on" : "Turn off ad partners";
+    btn.setAttribute("aria-pressed", out ? "true" : "false");
+  }
+  document.getElementById("gpcline").hidden = !gpc;
+  btn.addEventListener("click", function () {
+    var want = !optedOut();
+    try {
+      if (want) localStorage.setItem(KEY, "1"); else localStorage.removeItem(KEY);
+    } catch (e) { /* storage blocked: said below */ }
+    document.getElementById("adsblocked").hidden = optedOut() === want;
+    paint();
+  });
+  paint();
+})();
+</script>
+</body>
+</html>

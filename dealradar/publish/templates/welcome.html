@@ -81,6 +81,19 @@ p{margin:0 0 14px}
   var sid = fromUrl || ssGet(CLAIM_KEY) || "";
   var token = lsGet(SESSION_KEY) || "";
 
+  // start_trial for the operator's analytics and ad tags (window.wpTrack,
+  // only when the publisher put them in the head): Stripe sends only a
+  // completed checkout here, and each checkout session counts once. The
+  // marker is written before the event goes out: a browser that blocks
+  // storage is not counted, rather than counted on every reload.
+  if (/^cs_[A-Za-z0-9_]{8,200}$/.test(fromUrl) && typeof window.wpTrack === "function") {
+    var TRIAL_KEY = "wp.trial." + fromUrl;
+    if (!lsGet(TRIAL_KEY)) {
+      try { localStorage.setItem(TRIAL_KEY, "1"); } catch (e) { /* blocked */ }
+      if (lsGet(TRIAL_KEY)) { try { window.wpTrack("start_trial"); } catch (e) { /* never in the way */ } }
+    }
+  }
+
   var ERRORS = {
     bad_session: "That payment isn't a completed membership checkout, so there is nothing to attach.",
     unknown_session: "Stripe doesn't recognise that payment. Open this page from the link Stripe sent you after paying.",

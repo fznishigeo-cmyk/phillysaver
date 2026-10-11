@@ -538,7 +538,8 @@ footer .meta{font-size:11.5px}
   <nav class="footnav" aria-label="site pages">
     <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
     <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
-    <a href="contact.html">Contact</a> · <a href="subscribe.html">Membership</a>
+    <a href="contact.html">Contact</a> · <a href="subscribe.html">Membership</a> ·
+    <a href="/privacy.html">Privacy</a>
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
@@ -650,6 +651,12 @@ footer .meta{font-size:11.5px}
   function noop() {}
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* blocked */ } }
+  // The operator's analytics and ad tags: window.wpTrack exists only when
+  // the publisher put them in the page head (publish/tracking.py).
+  function track(name, params) {
+    try { if (typeof window.wpTrack === "function") window.wpTrack(name, params); }
+    catch (e) { /* never in the way */ }
+  }
   function sortVal(d, key) {
     switch (key) {
       case "pct":   return num(d.pct_at_checkout);
@@ -1633,7 +1640,11 @@ footer .meta{font-size:11.5px}
     ui.err.hidden = true;
     apiPost("/api/checkout").then(function (res) {
       var j = res.json;
-      if (res.ok && https(j.url)) { location.assign(https(j.url)); return; }
+      if (res.ok && https(j.url)) {
+        track("begin_checkout");
+        location.assign(https(j.url));
+        return;
+      }
       ui.btn.disabled = false;
       // Disabling the button dropped its focus: give it back (below, to
       // what takes the button's place).
@@ -1849,8 +1860,12 @@ footer .meta{font-size:11.5px}
     showErr("");
     api(path, body).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
-        if (r.ok && j.token) signedIn(j.token, j.me, path);
-        else showErr(j.error || ("http_" + r.status));
+        if (r.ok && j.token) {
+          // A 200 from /api/signup is a new free account (a Google
+          // sign-in doesn't say whether its account is new).
+          if (path === "/api/signup") track("sign_up", { method: "email" });
+          signedIn(j.token, j.me, path);
+        } else showErr(j.error || ("http_" + r.status));
       });
     }).catch(function () { showErr("network"); })
       .then(function () { btn.disabled = false; });
@@ -1958,6 +1973,10 @@ footer .meta{font-size:11.5px}
   ["billing", "pwmanage", "comanage"].forEach(function (id) {
     document.getElementById(id).addEventListener("click", function () { portal(this); });
   });
+  // The Payment Link (checkout's fallback) starts a Stripe checkout too.
+  ["pwfb", "cofb"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function () { track("begin_checkout"); });
+  });
   ["subscribe", "subbar"].forEach(function (id) {
     document.getElementById(id).addEventListener("click", function (e) {
       e.preventDefault();
@@ -1991,7 +2010,15 @@ footer .meta{font-size:11.5px}
   });
   // A click on a locked card takes the next step: sign up when signed out,
   // the trial (step 2) for a free account, a retry for a member.
+  // An outbound deal link tells the tags only the deal's store and category
+  // (never the item or a price: member deals stay with members).
   document.getElementById("content").addEventListener("click", function (e) {
+    var go = e.target.closest ? e.target.closest('.card a[rel~="sponsored"]') : null;
+    if (go) {
+      var k = go.closest(".card").getAttribute("data-key");
+      var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });
+    }
     var card = e.target.closest ? e.target.closest(".card.locked, [data-cta]") : null;
     if (card) nextStep();
   });
