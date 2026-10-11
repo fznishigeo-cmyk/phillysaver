@@ -1131,7 +1131,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
 
-        # Total LLM spend this run: extraction + second opinions + critic.
+        # Total LLM spend this run: extraction + second opinions + critic
+        # (+ the newsletter pick, added after it below).
         spend_total = (float(getattr(parser, "spend_usd", 0.0))
                        if parser is not None
                        else pstats.get("spend_usd", 0.0))
@@ -1171,8 +1172,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # (small and capped, so it goes before the day's big send).
         summary["confirmations"] = send_confirmations(db, cfg, now,
                                                       deadline=deadline)
+        # The free list's daily top: picked once a day by the parse model on
+        # the shared parser (same caps); its spend joins this run's total.
         summary["newsletter"] = send_daily_newsletter(db, cfg, now,
-                                                      deadline=deadline)
+                                                      deadline=deadline,
+                                                      parser=parser)
+        if parser is not None:
+            spend_total = float(getattr(parser, "spend_usd", 0.0))
         summary["admin_warnings"] = check_and_alert(db, cfg, now,
                                                     items_fetched=len(posts),
                                                     kind=kind)

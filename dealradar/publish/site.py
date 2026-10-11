@@ -253,7 +253,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # config.yaml); the page hides the Subscribe button when empty.
         "subscribe_url": getattr(cfg, "subscribe_url", "") or "",
         "portal_url": getattr(cfg, "portal_url", "") or "",
-        # Free daily email list: the subscribe Worker's URL (the forms
+        # Daily email list (the day's top 10): the subscribe Worker's URL (the forms
         # POST to it); empty until the Worker is deployed and pasted in.
         "newsletter_url": getattr(cfg, "newsletter_worker_url", "") or "",
         "floors": {

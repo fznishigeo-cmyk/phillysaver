@@ -1,12 +1,23 @@
-"""Free daily newsletter: the day's best verified deals, one email per
-subscriber per local day, with no server of our own.
+"""Daily email for the free sign-up list: the day's top
+cfg.newsletter_top_n deals, one email per subscriber per local day, with no
+server of our own. Members get every deal (members.py); this email ends
+with the trial link.
 
 The list lives in a Cloudflare Worker + KV (cloudflare/subscribe-worker):
 the site's form POSTs to it, and each run at/after cfg.newsletter_hour_local
 this module reads the list through the Worker's GET /list (bearer
-NEWSLETTER_SECRET), builds ONE body from the top published deals and sends
-it to every address over the same SMTP transport as the digest, at most
+NEWSLETTER_SECRET), builds ONE body from the day's top deals and sends it to
+every address over the same SMTP transport as the digest, at most
 cfg.newsletter_max_per_run messages per run.
+
+The day's top: the parse model, through the run's shared ClaudeParser (the
+same per-run and per-day spend caps, priced by the model used), chooses
+newsletter_top_n of the best PICK_CANDIDATES published deals by rank. It
+returns ids only: every fact in the email comes from the stored deal. No
+parser, no spend left, an API failure or an unreadable answer: rank order.
+The pick (deal keys) is stored in meta pick_key(<local date>) before the
+first send, so a rerun or a retried send never asks the model again and
+sends the same deals.
 
 Idempotency: meta "newsletter:<local date>" holds the JSON list of
 fingerprints (hashes, never addresses: state.db lives on a git branch) of
@@ -34,7 +45,7 @@ import json
 import logging
 import smtplib
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
@@ -49,8 +60,22 @@ from .site import rewrite_affiliate
 
 log = logging.getLogger("dealradar.publish.newsletter")
 
-#: Top deals per email, best score first (rank.published_deals order).
-MAX_DEALS = 25
+#: The model picks the day's top newsletter_top_n among this many deals,
+#: best rank first (rank.published_deals order).
+PICK_CANDIDATES = 40
+#: Output cap for the pick: a short JSON list, with room to think first.
+PICK_MAX_TOKENS = 4096
+#: Seconds per pick request: past it, the day's email goes out in rank order.
+PICK_TIMEOUT_S = 30.0
+PICK_SYSTEM_PROMPT = (
+    "You choose the best deals for a free daily deals email. Each line is one "
+    "deal: id, item, store, price facts, verification tier. Pick the {n} a "
+    "typical US shopper would most want today: real savings on things people "
+    "buy, broad appeal, a mix of stores and kinds of product, never the same "
+    "product twice. Use only ids from the list. Respond with ONLY a JSON "
+    'object, no prose and no markdown fences: {{"ids": [<{n} ids, best '
+    "first>]}}"
+)
 #: Stands in for the per-subscriber unsubscribe link in the shared bodies.
 UNSUB_PLACEHOLDER = "{{unsubscribe_url}}"
 #: Confirmation links per run: the pass rides every run and must stay quick.
@@ -66,6 +91,11 @@ def meta_key(day: str) -> str:
     return f"newsletter:{day}"
 
 
+def pick_key(day: str) -> str:
+    """meta key holding the day's picked deal keys (and who picked them)."""
+    return f"newsletter:pick:{day}"
+
+
 def fingerprint(email: str) -> str:
     """What the progress list records instead of the address."""
     return hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
@@ -74,6 +104,10 @@ def fingerprint(email: str) -> str:
 def _brand(cfg) -> str:
     domain = getattr(cfg, "custom_domain", "") or ""
     return domain.split(".")[0] if domain else "dealradar"
+
+
+def _top_n(cfg) -> int:
+    return max(1, int(getattr(cfg, "newsletter_top_n", 10)))
 
 
 def _mask(email: str) -> str:
@@ -176,19 +210,21 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
     """(subject, text_body, html_body) for the day's email, built ONCE for
     everyone: both bodies carry UNSUB_PLACEHOLDER, swapped per subscriber at
     send time. Facts, links and credit only."""
-    deals = deals[:MAX_DEALS]
+    deals = deals[:_top_n(cfg)]
     brand = _brand(cfg)
     domain = getattr(cfg, "custom_domain", "") or ""
     site = f"https://{domain}/" if domain else ""
     local = now.astimezone(ZoneInfo(cfg.newsletter_timezone))
     n = len(deals)
-    top = max((float(d.get("pct_at_checkout") or 0.0) for d in deals),
-              default=0.0)
-    subject = (f"{brand}: {n} verified deal{'s' if n != 1 else ''}, "
-               f"up to {top:.0f}% off")
-    heading = f"The day's best verified deals — {local.strftime('%A, %b %d')}"
+    top = f"top {n} deal{'s' if n != 1 else ''}"
+    subject = f"{brand}: Today's {top}"
+    heading = f"The day's {top} — {local.strftime('%A, %b %d')}"
     because = f"You get this because you subscribed at {domain or brand}."
     disclosure = getattr(cfg, "ftc_disclosure", "") or ""
+    # Members get every deal: the free list's email ends with the trial.
+    days = int(getattr(cfg, "paywall_trial_days", 7) or 0)
+    join = f"Start the {days}-day free trial" if days > 0 else "Become a member"
+    cta = f"Members get every deal. {join}: {site}#signup" if site else ""
 
     lines = [f"{brand}: {heading}", ""]
     for i, d in enumerate(deals, 1):
@@ -210,6 +246,8 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
         if src_name:
             lines.append(f"   via {src_name}" + (f": {src_url}" if src_url else ""))
         lines.append("")
+    if cta:
+        lines += [cta, ""]
     if site:
         lines.append(f"Live wall: {site}")
     lines.append(f"{because} Unsubscribe any time: {UNSUB_PLACEHOLDER}")
@@ -234,6 +272,11 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
         f'<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
         f"{rows}</table></td></tr>"
         "<tr><td>"
+        + ('<p style="margin:16px 0 0;font-weight:700">Members get every deal.</p>'
+           f'<p style="margin:8px 0 0"><a href="{esc(site)}#signup" style="display:'
+           'inline-block;background:#0e7569;color:#ffffff;font-weight:700;'
+           'padding:10px 16px;border-radius:8px;text-decoration:none">'
+           f"{esc(join)}</a></p>" if cta else "")
         + (f'<p style="{muted}"><a href="{esc(site)}" style="color:#0b63c4">'
            f"Open the live deal wall</a></p>" if site else "")
         + f'<p style="{muted}">{esc(because)} '
@@ -248,12 +291,14 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
                           deals: list[dict[str, Any]] | None = None,
                           smtp_factory: Any = None,
                           http_client: Any = None,
-                          deadline: float | None = None) -> dict[str, Any]:
+                          deadline: float | None = None,
+                          parser: Any = None) -> dict[str, Any]:
     """The day's email to every subscriber not yet sent today, at most
     cfg.newsletter_max_per_run per run and never past ``deadline`` (a
     time.monotonic() value: the run's budget; a job killed by its timeout
-    would lose the state.db commit and re-send). Returns {sent, skipped,
-    day}; the `skipped` reason is "" whenever messages went out."""
+    would lose the state.db commit and re-send). ``parser`` is the run's
+    shared ClaudeParser for todays_top (None: rank order). Returns {sent,
+    skipped, day}; the `skipped` reason is "" whenever messages went out."""
     local = now.astimezone(ZoneInfo(cfg.newsletter_timezone))
     day = local.date().isoformat()
     stats: dict[str, Any] = {"sent": 0, "skipped": "", "day": day}
@@ -305,6 +350,11 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         deals = rank.published_deals(db, cfg, now)
     if not deals:
         return skip("no published deals yet today")  # tried again next run
+    if deadline is not None and time.monotonic() > deadline:
+        return skip("run deadline reached")  # the pick and the sends ride the next run
+    deals = todays_top(db, cfg, deals, local.date(), parser)
+    if not deals:
+        return skip("today's picks are no longer live")
 
     subject, text_body, html_body = build_newsletter(deals, cfg, now)
     port = int(get_secret("SMTP_PORT") or "587")
@@ -354,9 +404,110 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         except Exception:  # pragma: no cover - best-effort cleanup
             pass
     log.info("newsletter %s: %d sent this run (%d deals), %d of %d subscribers done",
-             day, stats["sent"], min(len(deals), MAX_DEALS), len(done),
+             day, stats["sent"], len(deals), len(done),
              len(subscribers))
     return stats
+
+
+# ---------------------------------------------------------------- the day's top
+
+
+def _ask_model(candidates: list[dict[str, Any]], n: int, parser) -> list[Any] | None:
+    """The parse model's ids (1-based, best first) for the day's top ``n`` of
+    ``candidates``, or None when it gave no usable answer: spend cap reached
+    (the parser's own gate raises before any call), API failure or timeout,
+    refusal, cut-off or unreadable JSON. Spend is accounted on the shared
+    parser at the model's own price."""
+    from ..parse.claude_client import _strip_fences  # lazy: the anthropic SDK
+
+    lines = []
+    for i, d in enumerate(candidates, 1):
+        final, reg = d.get("final_price"), d.get("regular_price")
+        pct = d.get("pct_at_checkout")
+        facts = ((f"${final:,.2f}" if final is not None else "price ?")
+                 + (f", was ${reg:,.2f}" if reg else "")
+                 + (f", {pct:.0f}% off" if pct is not None else ""))
+        conds = ", ".join(d.get("conditions") or [])
+        lines.append(f"{i}. {d.get('item') or ''} | {d.get('store') or ''} | {facts}"
+                     f" | {d.get('verify_tier') or 'unverified'}"
+                     + (f" | {conds}" if conds else ""))
+    prompt = f"Pick the {n} best of these {len(candidates)} deals:\n" + "\n".join(lines)
+    try:
+        resp = parser._request(lambda: parser.client.messages.create(
+            model=parser.model,
+            max_tokens=PICK_MAX_TOKENS,
+            system=PICK_SYSTEM_PROMPT.format(n=n),
+            messages=[{"role": "user", "content": prompt}],
+            timeout=PICK_TIMEOUT_S,
+        ))
+    except Exception as e:  # spend cap, rejected request: rank order today
+        log.warning("newsletter pick: no model answer (%s: %s); rank order",
+                    type(e).__name__, e)
+        return None
+    if resp is None:
+        return None  # API failure or timeout, logged by the parser
+    parser._account(resp, parser.model)
+    if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
+        log.warning("newsletter pick: model stopped (%s); rank order",
+                    resp.stop_reason)
+        return None
+    raw = "".join(getattr(b, "text", "") for b in getattr(resp, "content", []) or []
+                  if getattr(b, "type", "") == "text")
+    try:
+        data = json.loads(_strip_fences(raw))
+    except ValueError:
+        log.warning("newsletter pick: unreadable answer; rank order")
+        return None
+    ids = data.get("ids") if isinstance(data, dict) else data
+    return ids if isinstance(ids, list) else None
+
+
+def pick_top(deals: list[dict[str, Any]], cfg,
+             parser: Any = None) -> tuple[list[dict[str, Any]], str]:
+    """(the day's top newsletter_top_n of ``deals``, who picked them).
+    ``deals`` is in rank order, best first. "model": the parse model chose
+    among the best PICK_CANDIDATES; unknown ids and repeats are dropped and
+    the list is padded from rank order. "rank": no parser, nothing to choose
+    between, or no usable answer."""
+    n = _top_n(cfg)
+    candidates = deals[:PICK_CANDIDATES]
+    if parser is None or len(candidates) <= n:
+        return candidates[:n], "rank"
+    chosen: list[int] = []
+    for i in _ask_model(candidates, n, parser) or []:
+        if (isinstance(i, int) and not isinstance(i, bool)
+                and 1 <= i <= len(candidates) and i - 1 not in chosen):
+            chosen.append(i - 1)
+    chosen = chosen[:n]
+    how = "model" if chosen else "rank"
+    chosen += [i for i in range(len(candidates)) if i not in chosen][:n - len(chosen)]
+    return [candidates[i] for i in chosen], how
+
+
+def todays_top(db, cfg, deals: list[dict[str, Any]], day: date,
+               parser: Any = None) -> list[dict[str, Any]]:
+    """The day's top deals, with current facts from ``deals``. The first
+    call of a local day picks (pick_top) and stores the deal keys before
+    anything is sent; every later call that day reuses them, so a rerun or
+    a retried send never asks the model again. A picked deal that is no
+    longer published drops out rather than being replaced."""
+    key = pick_key(day.isoformat())
+    try:
+        stored = json.loads(db.meta_get(key) or "null")
+    except ValueError:
+        stored = None
+    if isinstance(stored, dict) and isinstance(stored.get("keys"), list):
+        live = {d.get("dedupe_key"): d for d in deals}
+        return [live[k] for k in stored["keys"] if k in live]
+    picked, how = pick_top(deals, cfg, parser)
+    db.meta_set(key, json.dumps({"keys": [d.get("dedupe_key") for d in picked],
+                                 "by": how}))
+    # Yesterday's pick has done its job: it shrinks rather than piling up.
+    prev = pick_key((day - timedelta(days=1)).isoformat())
+    if db.meta_get(prev):
+        db.meta_set(prev, "")
+    log.info("newsletter %s: top %d picked by %s", day.isoformat(), len(picked), how)
+    return picked
 
 
 # ---------------------------------------------------------------- double opt-in
@@ -409,7 +560,7 @@ def build_confirmation(cfg, confirm_url: str) -> tuple[str, str, str]:
     brand = _brand(cfg)
     subject = f"Confirm your {brand} email"
     lead = ("Click the link below to start getting the daily email: "
-            "the day's best verified deals, once a day.")
+            f"the day's top {_top_n(cfg)} deals, once a day.")
     ignore = "If you didn't sign up, ignore this and you won't hear from us."
     text_body = f"{subject}\n\n{lead}\n{confirm_url}\n\n{ignore}\n"
     esc = html_lib.escape

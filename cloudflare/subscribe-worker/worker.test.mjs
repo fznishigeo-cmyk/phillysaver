@@ -1910,6 +1910,9 @@ describe("newsletter routes", () => {
     assert.equal(r.status, 200);
     assert.equal(r.headers.get("Content-Type"), "text/html; charset=utf-8");
     assert.match(r.text, /You're confirmed/);
+    // The free list gets the day's top 10 (members get every deal).
+    assert.ok(r.text.includes("The day's top 10 deals now land in your inbox every morning."));
+    assert.ok(!r.text.includes("Every new verified deal"));
     assert.ok(r.text.includes('href="https://wowpriced.com/subscribe.html?confirmed=1"'));
     const confirmed = JSON.parse(await env.SUBS.get("sub:you@example.com"));
     assert.deepEqual(confirmed, { ...stamped, confirmed: true });

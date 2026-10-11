@@ -175,15 +175,20 @@ paywall:
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty
 
 newsletter:
-  # The FREE daily email list, with no server of our own: a Cloudflare
+  # The free sign-up list, with no server of our own: a Cloudflare
   # Worker + KV (cloudflare/subscribe-worker) holds the addresses, the
   # pipeline reads them through the Worker (NEWSLETTER_SECRET secret) and
   # sends one email per subscriber per day over the same SMTP_* secrets.
+  # Operator call (2026-10-11): that email is the day's top_n deals, picked
+  # once a day by the parse model (parse.model) from the best 40 by rank,
+  # under the same spend caps (rank order when it can't run). Members get
+  # every deal. The site copy says "top 10": keep them equal.
   enabled: true
   worker_url: "https://wowpriced-subscribe.wowpriced.workers.dev"             # printed by the "deploy subscribe worker" workflow; paste it here
   hour_local: 8              # first run at/after 08:00 local sends the day's email
   timezone: "America/New_York"
   max_per_run: 200           # messages per run; a longer list continues next run
+  top_n: 10                  # deals per email (the page copy says "top 10")
 
 digest:
   hour_local: 8                # 08:00 America/New_York

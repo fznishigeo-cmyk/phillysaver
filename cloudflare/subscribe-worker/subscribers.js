@@ -69,7 +69,7 @@ export async function confirm(url, env) {
   const hit = await fromLink(env, url);
   if (!hit || !hit.rec) return badLink(site);
   if (!isConfirmed(hit.rec)) await putSub(env, hit.email, { ...hit.rec, confirmed: true });
-  return page("You're confirmed", "Every new verified deal now lands in your inbox as one daily email. Welcome aboard.",
+  return page("You're confirmed", "The day's top 10 deals now land in your inbox every morning. Welcome aboard.",
               { href: `${site}/subscribe.html?confirmed=1`, text: "Back to wowpriced" });
 }
 

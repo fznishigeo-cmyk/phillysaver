@@ -479,8 +479,8 @@ footer .meta{font-size:11.5px}
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live.</p>
   <form id="nlform" class="nlform" method="post" action="subscribe.html" hidden>
-    <label for="nlemail"><strong>Free daily email:</strong> the day's best verified deals
-      every morning. Unsubscribe any time.</label>
+    <label for="nlemail"><strong>Daily email:</strong> the day's top 10 deals every morning.
+      Members get the full list.</label>
     <input id="nlemail" type="email" name="email" placeholder="you@example.com" required
            autocomplete="email" aria-label="your email address">
     <button type="submit" class="getdeal">Get deals in your inbox</button>
@@ -497,7 +497,7 @@ footer .meta{font-size:11.5px}
   <nav class="footnav" aria-label="site pages">
     <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
     <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
-    <a href="contact.html">Contact</a> · <a href="subscribe.html">Free daily email</a>
+    <a href="contact.html">Contact</a> · <a href="subscribe.html">Daily top 10</a>
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
@@ -652,7 +652,7 @@ footer .meta{font-size:11.5px}
   function renderMeta() {
     var m = state.meta || {};
     var lr = m.last_run || {};
-    // Free daily email list: the form posts to the subscribe Worker whose
+    // Daily email list (the day's top 10): the form posts to the subscribe Worker whose
     // URL arrives in meta (empty until it is deployed; the footer link to
     // subscribe.html explains the list meanwhile).
     var nl = document.getElementById("nlform");

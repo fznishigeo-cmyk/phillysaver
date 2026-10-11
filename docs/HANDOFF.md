@@ -21,6 +21,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   on hover. There is a deal ticker at the top and a sources wall at the bottom.
 - **Member email:** at most ONE a day, 7 am New York time. It carries the
   best 200 of what arrived since the last one, plus a "+N more" line.
+- **Free sign-up list:** one email a day, 8 am New York time, with the day's
+  top 10 (`newsletter.top_n`). The parse model (Haiku) picks them once a day
+  from the best 40 by rank, under the same spend caps; rank order when it
+  can't run. The pick is stored per day (meta `newsletter:pick:<date>`).
+  The email ends with the trial link; members get every deal. The site
+  never says "Free daily email".
 - **Cancel wording:** no "cancel" reminders on the main screen. "Manage
   membership" sits in the footer only. The full auto-renewal terms stay in
   the checkout dialog, on Stripe's page, on the welcome page and on the help

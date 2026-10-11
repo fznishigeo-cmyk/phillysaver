@@ -220,6 +220,31 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert "| blogone | ok |" in md and "| feedtwo | ok |" in md
 
 
+def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, monkeypatch):
+    """The free list's daily pick gets the run's one parser (same caps), and
+    whatever it spends is in the run's recorded total (the daily cap reads it)."""
+    from dealradar.publish import newsletter
+
+    seen = {}
+
+    def fake_send(db, cfg, now, *, deadline=None, parser=None, **kw):
+        seen["parser"] = parser
+        parser._account(_FakeResponse(None), parser.model)  # one pick's worth
+        return {"sent": 0, "skipped": "test", "day": ""}
+
+    monkeypatch.setattr(newsletter, "send_daily_newsletter", fake_send)
+    summary = _run(env)
+    parser = seen["parser"]
+    assert parser is not None and parser.model == "claude-haiku-5-5"
+    assert parser.spend_usd > summary["parse"]["spend_usd"] > 0
+
+    import sqlite3
+    conn = sqlite3.connect(env["db"])
+    (recorded,) = conn.execute("SELECT spend_usd FROM run_stats").fetchone()
+    conn.close()
+    assert recorded == pytest.approx(parser.spend_usd)
+
+
 def test_rerun_is_idempotent(env, capsys):
     first = _run(env)
     assert first["telegram"]["sent"] == 2

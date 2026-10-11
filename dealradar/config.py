@@ -141,12 +141,13 @@ class AppConfig:
     paywall_trial_days: int = 7
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
-    # -- newsletter: the free daily email list (Cloudflare Worker + KV) --
+    # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
     newsletter_enabled: bool = True
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
     newsletter_hour_local: int = 8
     newsletter_timezone: str = "America/New_York"
     newsletter_max_per_run: int = 200  # messages per run; the rest ride the next run
+    newsletter_top_n: int = 10         # deals per email, picked once a day by the parse model
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -275,6 +276,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.newsletter_timezone = g("newsletter", "timezone", default=cfg.newsletter_timezone)
     cfg.newsletter_max_per_run = max(1, int(g("newsletter", "max_per_run",
                                               default=cfg.newsletter_max_per_run)))
+    cfg.newsletter_top_n = max(1, int(g("newsletter", "top_n", default=cfg.newsletter_top_n)))
 
     cfg.keepa_amazon_pages_per_pull = max(1, int(g(
         "keepa", "amazon_pages_per_pull", default=cfg.keepa_amazon_pages_per_pull)))

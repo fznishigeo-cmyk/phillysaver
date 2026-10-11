@@ -7,13 +7,17 @@ import json
 import smtplib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
+import anthropic
 import httpx
+import httpx2
 import pytest
 import yaml
 
 from dealradar.config import SECRET_NAMES, AppConfig, load_config
 from dealradar.db import DB
+from dealradar.parse.claude_client import ClaudeParser
 from dealradar.publish import email_digest
 from dealradar.publish import newsletter as N
 
@@ -275,7 +279,7 @@ class TestSending:
         assert [m["To"] for m in server.messages] == ["a@x.com", "b@x.com"]
         for m in server.messages:
             assert m["From"] == "deals@wowpriced.com"
-            assert m["Subject"] == "wowpriced: 2 verified deals, up to 91% off"
+            assert m["Subject"] == "wowpriced: Today's top 2 deals"
             assert "," not in m["To"]
 
         a, b = server.messages
@@ -286,6 +290,11 @@ class TestSending:
         assert "Get deal: https://www.walmart.com/ip/12345" in text
         assert "via Slickdeals: https://slickdeals.net/f/1" in text
         assert "Live wall: https://wowpriced.com/" in text
+        # The free list's email ends with the membership pitch.
+        assert ("Members get every deal. Start the 7-day free trial: "
+                "https://wowpriced.com/#signup") in text
+        assert 'href="https://wowpriced.com/#signup"' in html
+        assert "Members get every deal." in html and "Start the 7-day free trial" in html
         assert DISCLOSURE in text and DISCLOSURE in html
         assert "You get this because you subscribed at wowpriced.com" in text
         assert "You get this because you subscribed at wowpriced.com" in html
@@ -400,10 +409,12 @@ class TestSending:
         worker, factory = FakeWorker([("a@x.com", "t1")]), Factory()
         assert send(db, cfg, AFTER_8_LOCAL, worker, factory, deals=deals)["sent"] == 1
         (msg,) = factory.messages
-        assert msg["Subject"] == "wowpriced: 25 verified deals, up to 89% off"
+        assert msg["Subject"] == "wowpriced: Today's top 10 deals"
         text, html = bodies(msg)["plain"], bodies(msg)["html"]
-        assert "Item 24" in text and "Item 25" not in text  # top 25 by rank order
-        assert "Item 24" in html and "Item 25" not in html
+        # No model this run: the top 10 in rank order.
+        assert "Item 09" in text and "Item 10" not in text
+        assert "Item 09" in html and "Item 10" not in html
+        assert text.count("Get deal: ") == 10 and html.count(">Get deal</a>") == 10
         for body in (text, html):
             assert "VERBATIM QUOTE" not in body
             assert "evidence" not in body
@@ -446,6 +457,283 @@ class TestSending:
         assert refusing.quit_called
 
 
+# ---------------------------------------------------------------- the day's top
+
+HAIKU = "claude-haiku-5-5"
+_REQ = httpx2.Request("POST", "https://api.example.test/v1/messages")
+
+
+class Answer:
+    """A messages.create response: an (empty) thinking block, then text."""
+
+    def __init__(self, text: str, stop_reason: str = "end_turn",
+                 input_tokens: int = 2000, output_tokens: int = 400):
+        self.content = [SimpleNamespace(type="thinking", thinking=""),
+                        SimpleNamespace(type="text", text=text)]
+        self.usage = SimpleNamespace(input_tokens=input_tokens,
+                                     output_tokens=output_tokens)
+        self.stop_reason = stop_reason
+
+
+def ids_answer(*ids) -> Answer:
+    return Answer(json.dumps({"ids": list(ids)}))
+
+
+#: (2000 in x $0.10 + 400 out x $0.50) / 1e6 at claude-haiku-5-5's price.
+PICK_COST = 0.0004
+
+
+class FakePickMessages:
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        a = self.answers.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return a
+
+
+def make_parser(cfg, *answers, run_cap_usd=None):
+    """The real ClaudeParser (spend gate, accounting) over a fake client."""
+    cfg.parse_model = HAIKU
+    cfg.model_pricing_per_mtok = {"default": {"input": 1.0, "output": 5.0},
+                                  HAIKU: {"input": 0.10, "output": 0.50}}
+    messages = FakePickMessages(answers)
+    parser = ClaudeParser(cfg, client=SimpleNamespace(messages=messages),
+                          sleep=lambda s: None, run_cap_usd=run_cap_usd)
+    return parser, messages
+
+
+def ranked(n: int) -> list[dict]:
+    """``n`` published deals in rank order: id k in the prompt is Item k."""
+    return [make_deal(dedupe_key=f"store|item{i:02d}", item=f"Item {i:02d}",
+                      pct_at_checkout=90.0 - i * 0.5) for i in range(1, n + 1)]
+
+
+def items(deals) -> list[str]:
+    return [d["item"] for d in deals]
+
+
+RANK_TOP10 = [f"Item {i:02d}" for i in range(1, 11)]
+
+
+class TestPick:
+    def test_model_chooses_the_ten_in_its_order_and_spend_is_recorded(self, cfg):
+        parser, messages = make_parser(cfg, ids_answer(5, 3, 1, 30, 12, 7, 8, 9, 10, 11))
+        picked, how = N.pick_top(ranked(45), cfg, parser)
+        assert how == "model"
+        assert items(picked) == ["Item 05", "Item 03", "Item 01", "Item 30", "Item 12",
+                                 "Item 07", "Item 08", "Item 09", "Item 10", "Item 11"]
+        (call,) = messages.calls
+        assert call["model"] == HAIKU and call["timeout"] == N.PICK_TIMEOUT_S
+        assert call["max_tokens"] == N.PICK_MAX_TOKENS
+        assert '{"ids"' in call["system"] and "10" in call["system"]
+        prompt = call["messages"][0]["content"]
+        # The best 40 by rank are the candidates, as numbered facts only.
+        assert "\n40. Item 40 | Walmart | $10.00, was $50.00, 70% off | corroborated" in prompt
+        assert "Item 41" not in prompt
+        assert "VERBATIM QUOTE" not in prompt and "slickdeals" not in prompt.lower()
+        # Priced by the model actually used, on the run's shared parser.
+        assert parser.spend_usd == pytest.approx(PICK_COST)
+
+    def test_unknown_ids_and_repeats_dropped_then_padded_from_rank(self, cfg):
+        parser, _ = make_parser(cfg, Answer(
+            '```json\n{"ids": [0, 99, "3", 3, 3, true, 2.5, -1, 41, 5]}\n```'))
+        picked, how = N.pick_top(ranked(45), cfg, parser)
+        assert how == "model"
+        assert items(picked) == ["Item 03", "Item 05", "Item 01", "Item 02", "Item 04",
+                                 "Item 06", "Item 07", "Item 08", "Item 09", "Item 10"]
+        # Too many ids: the first ten count.
+        parser, _ = make_parser(cfg, ids_answer(*range(20, 0, -1)))
+        picked, _how = N.pick_top(ranked(45), cfg, parser)
+        assert items(picked) == [f"Item {i:02d}" for i in range(20, 10, -1)]
+
+    @pytest.mark.parametrize("answers", [
+        [Answer("Here are my picks: 1, 2, 3")],                 # not JSON
+        [Answer('{"ids": "1,2,3"}')],                            # not a list
+        [Answer('{"picks": [1, 2]}')],                           # wrong shape
+        [ids_answer(0, 41, 99)],                                 # no valid id
+        [Answer('{"ids": [1, 2]}', stop_reason="refusal")],
+        [Answer('{"ids": [1, 2', stop_reason="max_tokens")],
+        [anthropic.APITimeoutError(request=_REQ)] * 2,           # timeout, retried once
+        [anthropic.APIConnectionError(request=_REQ)] * 2,
+        [anthropic.InternalServerError(
+            "down", response=httpx2.Response(500, request=_REQ), body=None)] * 2,
+        [anthropic.BadRequestError(
+            "bad", response=httpx2.Response(400, request=_REQ), body=None)],
+    ])
+    def test_any_failure_falls_back_to_rank_order(self, cfg, answers):
+        parser, messages = make_parser(cfg, *answers)
+        picked, how = N.pick_top(ranked(45), cfg, parser)
+        assert how == "rank" and items(picked) == RANK_TOP10
+        assert messages.answers == []  # every queued answer was consumed
+
+    def test_no_parser_or_nothing_to_choose_means_no_call(self, cfg):
+        picked, how = N.pick_top(ranked(45), cfg, None)  # no key / daily cap spent
+        assert how == "rank" and items(picked) == RANK_TOP10
+        parser, messages = make_parser(cfg, ids_answer(1))
+        picked, how = N.pick_top(ranked(10), cfg, parser)
+        assert how == "rank" and items(picked) == RANK_TOP10
+        assert messages.calls == [] and parser.spend_usd == 0.0
+
+    def test_exhausted_cap_means_no_call(self, cfg):
+        parser, messages = make_parser(cfg, ids_answer(5, 4, 3), run_cap_usd=0.0)
+        picked, how = N.pick_top(ranked(45), cfg, parser)
+        assert how == "rank" and items(picked) == RANK_TOP10
+        assert messages.calls == [] and parser.spend_usd == 0.0
+
+    def test_spend_counts_toward_the_same_cap(self, cfg):
+        # The pick's cost lands on the shared parser, so the next call that
+        # would pass the run's remaining cap is never made.
+        parser, messages = make_parser(cfg, ids_answer(5), ids_answer(6),
+                                       run_cap_usd=PICK_COST / 2)
+        assert N.pick_top(ranked(45), cfg, parser)[1] == "model"
+        assert parser.spend_usd == pytest.approx(PICK_COST)
+        picked, how = N.pick_top(ranked(45), cfg, parser)
+        assert how == "rank" and items(picked) == RANK_TOP10
+        assert len(messages.calls) == 1
+
+
+class TestDailyTop:
+    def test_pick_is_stored_and_reused_by_retries_and_reruns(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker = FakeWorker([("a@x.com", "t1")])
+        parser, messages = make_parser(cfg, ids_answer(7, 2, 9, 4, 1, 3, 5, 6, 8, 10),
+                                       ids_answer(1, 2))
+
+        def boom(host, port):
+            raise OSError("smtp down")
+
+        # First run: picked and stored before the send, which fails.
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL, deals=ranked(45),
+                                        smtp_factory=boom, http_client=worker.client(),
+                                        parser=parser)
+        assert stats["skipped"].startswith("smtp connect failed")
+        assert len(messages.calls) == 1
+        stored = json.loads(db.meta_get(N.pick_key(LOCAL_DAY)))
+        assert stored["by"] == "model" and len(stored["keys"]) == 10
+        assert stored["keys"][:2] == ["store|item07", "store|item02"]
+
+        # The retry sends that same pick without asking the model again,
+        # current facts from today's deals, in the model's order.
+        factory = Factory()
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10),
+                                        deals=ranked(45), smtp_factory=factory,
+                                        http_client=worker.client(), parser=parser)
+        assert stats["sent"] == 1 and len(messages.calls) == 1
+        text = bodies(factory.messages[0])["plain"]
+        assert factory.messages[0]["Subject"] == "wowpriced: Today's top 10 deals"
+        assert text.index("1. Item 07") < text.index("2. Item 02") < text.index("10. Item 10")
+        assert "Item 11" not in text
+
+        # A rerun of the same day: nothing sent, no model call.
+        again = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(hours=2),
+                                        deals=ranked(45), smtp_factory=factory,
+                                        http_client=worker.client(), parser=parser)
+        assert again["skipped"] == "everyone already sent today"
+        assert len(messages.calls) == 1 and len(factory.messages) == 1
+
+        # The next local day is a fresh pick; yesterday's shrinks to nothing.
+        tomorrow = AFTER_8_LOCAL + timedelta(days=1)
+        stats = N.send_daily_newsletter(db, cfg, tomorrow, deals=ranked(45),
+                                        smtp_factory=factory,
+                                        http_client=worker.client(), parser=parser)
+        assert stats["sent"] == 1 and len(messages.calls) == 2
+        assert db.meta_get(N.pick_key(LOCAL_DAY)) == ""
+        assert json.loads(db.meta_get(N.pick_key("2026-10-10")))["keys"][:2] == [
+            "store|item01", "store|item02"]
+
+    def test_capped_batch_sends_everyone_the_same_ten(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        cfg.newsletter_max_per_run = 1
+        worker, factory = FakeWorker([("a@x.com", "ta"), ("b@x.com", "tb")]), Factory()
+        parser, messages = make_parser(cfg, ids_answer(30, 29, 28))
+        for i in range(2):
+            stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10 * i),
+                                            deals=ranked(45), smtp_factory=factory,
+                                            http_client=worker.client(), parser=parser)
+            assert stats["sent"] == 1
+        assert len(messages.calls) == 1
+        a, b = factory.messages
+        unsub_a = f"{WORKER}/unsubscribe?e=a%40x.com&t=ta"
+        unsub_b = f"{WORKER}/unsubscribe?e=b%40x.com&t=tb"
+        assert bodies(a)["plain"].replace(unsub_a, "") == bodies(b)["plain"].replace(unsub_b, "")
+        assert "1. Item 30" in bodies(b)["plain"]
+
+    def test_a_picked_deal_that_died_drops_out(self, db, cfg, monkeypatch):
+        configure(monkeypatch)
+        worker = FakeWorker([("a@x.com", "t1"), ("b@x.com", "t2")])
+        cfg.newsletter_max_per_run = 1
+        parser, messages = make_parser(cfg, ids_answer(3, 2, 1))
+        send(db, cfg, AFTER_8_LOCAL, worker, Factory(), deals=ranked(45))  # no parser
+        later = Factory()
+        alive = [d for d in ranked(45) if d["item"] != "Item 02"]
+        N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10),
+                                deals=alive, smtp_factory=later,
+                                http_client=worker.client(), parser=parser)
+        (msg,) = later.messages
+        assert msg["Subject"] == "wowpriced: Today's top 9 deals"
+        text = bodies(msg)["plain"]
+        assert "Item 02" not in text and "9. Item 10" in text and "Item 11" not in text
+        assert messages.calls == []  # the day's pick was rank order, kept all day
+
+    def test_past_the_run_deadline_nothing_is_picked(self, db, cfg, monkeypatch):
+        import time as _time
+        configure(monkeypatch)
+        parser, messages = make_parser(cfg, ids_answer(1))
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL, deals=ranked(45),
+                                        smtp_factory=Factory(),
+                                        http_client=FakeWorker([("a@x.com", "t1")]).client(),
+                                        deadline=_time.monotonic() - 1, parser=parser)
+        assert stats == {"sent": 0, "skipped": "run deadline reached", "day": LOCAL_DAY}
+        assert messages.calls == [] and db.meta_get(N.pick_key(LOCAL_DAY)) is None
+
+
+class TestTopEmail:
+    def test_ten_lines_cta_and_unsubscribe(self, cfg):
+        subject, text, html = N.build_newsletter(ranked(12), cfg, AFTER_8_LOCAL)
+        assert subject == "wowpriced: Today's top 10 deals"
+        numbered = [ln for ln in text.splitlines() if ln[:1].isdigit()]
+        assert len(numbered) == 10 and numbered[-1].startswith("10. Item 10 — $10.00")
+        assert "Item 11" not in text and "Item 11" not in html
+        assert html.count(">Get deal</a>") == 10
+        cta = "Members get every deal. Start the 7-day free trial: https://wowpriced.com/#signup"
+        assert cta in text
+        assert 'href="https://wowpriced.com/#signup"' in html
+        # Unsubscribe mechanics unchanged: the placeholder in both bodies.
+        assert f"Unsubscribe any time: {N.UNSUB_PLACEHOLDER}" in text
+        assert f'<a href="{N.UNSUB_PLACEHOLDER}"' in html
+        # The CTA follows the trial knob, and needs a site to link to.
+        cfg.paywall_trial_days = 0
+        _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
+        assert "Members get every deal. Become a member: https://wowpriced.com/#signup" in text
+        assert "free trial" not in text and "free trial" not in html
+        cfg.custom_domain = ""
+        _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
+        assert "#signup" not in text and "#signup" not in html
+
+
+class TestSiteCopy:
+    TEMPLATES = Path(N.__file__).resolve().parent / "templates"
+
+    def test_no_free_daily_email_and_the_number_matches_config(self):
+        for page in self.TEMPLATES.glob("*.html"):
+            assert "free daily email" not in page.read_text(encoding="utf-8").lower(), page.name
+        n = load_config().newsletter_top_n
+        index = (self.TEMPLATES / "index.html").read_text(encoding="utf-8")
+        assert (f"<strong>Daily email:</strong> the day's top {n} deals every morning."
+                in index) and "Members get the full list." in index
+        subscribe = (self.TEMPLATES / "subscribe.html").read_text(encoding="utf-8")
+        assert f"the day's top {n} verified deals" in subscribe
+        assert f"The day's top {n} deals, once a day." in subscribe  # the plan card
+        assert "top 25" not in subscribe
+        _subject, text, _html = N.build_confirmation(load_config(), "https://w/confirm")
+        assert f"the day's top {n} deals, once a day" in text
+
+
 # ---------------------------------------------------------------- list + config
 
 
@@ -483,22 +771,24 @@ class TestListAndConfig:
         assert cfg.newsletter_hour_local == 8
         assert cfg.newsletter_timezone == "America/New_York"
         assert cfg.newsletter_max_per_run == 200
+        assert cfg.newsletter_top_n == 10  # the page copy says "top 10"
         assert "NEWSLETTER_SECRET" in SECRET_NAMES
 
     def test_worker_url_is_trimmed(self, tmp_path):
         p = tmp_path / "config.yaml"
         p.write_text(yaml.safe_dump({"newsletter": {
             "worker_url": "  https://w.example.workers.dev/  ",
-            "max_per_run": 0, "enabled": False}}))
+            "max_per_run": 0, "top_n": 0, "enabled": False}}))
         cfg = load_config(p)
         assert cfg.newsletter_worker_url == "https://w.example.workers.dev"
         assert cfg.newsletter_max_per_run == 1   # never zero: the list must move
+        assert cfg.newsletter_top_n == 1         # never an empty email
         assert cfg.newsletter_enabled is False
 
     def test_template_and_defaults_exist(self):
         template = Path(N.__file__).resolve().parent / "templates" / "subscribe.html"
         assert template.is_file()
-        assert N.MAX_DEALS == 25
+        assert AppConfig().newsletter_top_n == 10 and N.PICK_CANDIDATES == 40
 
     def test_fingerprint_is_stable_normalised_and_opaque(self):
         fp = N.fingerprint("A@X.com ")
