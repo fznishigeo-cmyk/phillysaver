@@ -1335,6 +1335,19 @@ class TestEyeCatchers:
         assert ".srctrack{animation:none}" in html
 
 
+def test_hover_never_moves_what_the_pointer_rests_on(db, cfg, tmp_path):
+    """Operator report (2026-10-11): the page "moves up every few seconds".
+    A card that lifts on :hover slides out from under a resting pointer,
+    loses :hover, drops back and bobs on its own; the hovered element may
+    restyle, never move (a child may: the logo mark grows in place)."""
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    for page in out.glob("*.html"):
+        css = page.read_text(encoding="utf-8")
+        for rule in re.findall(r":hover\s*\{[^}]*\}", css):
+            assert "transform" not in rule and "translate" not in rule, (page.name, rule)
+
+
 def test_source_sites_meta_folds_subdomains_and_ranks(db, cfg, tmp_path):
     deals = []
     for i, url in enumerate(["https://home.woot.com/a", "https://electronics.woot.com/b",

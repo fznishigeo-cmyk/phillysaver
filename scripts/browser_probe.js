@@ -56,6 +56,25 @@ const BLOCK = /googletagmanager|google-analytics|facebook\.net|facebook\.com\/tr
     if (!r.shifts.length) console.log("  none");
     console.log("DOM changes (count, kind):");
     for (const [k, v] of Object.entries(r.muts).sort((a, b) => b[1] - a[1]).slice(0, 15)) console.log(`  ${v}  ${k}`);
+    // A card under a resting pointer must sit still (a :hover lift made it
+    // bob on its own): park the mouse 1px inside a card's bottom edge.
+    if (!vp.mobile) {
+      const box = await page.evaluate(() => {
+        const c = document.querySelectorAll("#content .card[data-key]")[9];
+        if (!c) return null;
+        c.scrollIntoView({ block: "center" }); c.id = "probecard";
+        const r = c.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.bottom - 1 };
+      });
+      if (box) {
+        await page.mouse.move(box.x, box.y);
+        const moves = await page.evaluate(() => new Promise((done) => {
+          const c = document.getElementById("probecard"); let last = null, n = 0;
+          const t = setInterval(() => { const k = getComputedStyle(c).transform; if (k !== last) { n++; last = k; } }, 50);
+          setTimeout(() => { clearInterval(t); done(n - 1); }, 5000);
+        }));
+        console.log(`card under a resting mouse moved ${moves} times in 5s (0 = steady)`);
+      }
+    }
     await page.close();
   }
   await browser.close();
