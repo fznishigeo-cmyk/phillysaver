@@ -6,6 +6,9 @@ STRIPE_SECRET_KEY from the repository secrets; the sandbox this project is
 developed in cannot reach api.stripe.com, the runner can. Re-running finds
 the objects it created before (metadata app=wowpriced) instead of
 duplicating them, so it is safe to run again in live mode with a live key.
+The Payment Link redirects after payment to
+welcome.html?session_id={CHECKOUT_SESSION_ID} (the page claims the payment
+by that id); a link found with another redirect is updated to it.
 """
 
 from __future__ import annotations
@@ -23,6 +26,9 @@ APP_TAG = {"metadata[app]": "wowpriced"}
 PRODUCT_NAME = os.environ.get("WOWPRICED_PRODUCT_NAME", "WowPriced Alerts")
 PRICE_CENTS = int(os.environ.get("WOWPRICED_PRICE_CENTS", "999"))
 SITE = os.environ.get("WOWPRICED_SITE", "https://wowpriced.com").rstrip("/")
+# After payment: welcome.html claims the payment by its Checkout Session id,
+# which Stripe fills into the placeholder (docs/paywall.md "Claiming a payment").
+WELCOME_URL = SITE + "/welcome.html?session_id={CHECKOUT_SESSION_ID}"
 
 
 def _key() -> str:
@@ -96,13 +102,20 @@ def main() -> None:
             # yet and rejects the link outright without this.
             "payment_method_types[0]": "card",
             "after_completion[type]": "redirect",
-            "after_completion[redirect][url]": SITE + "/welcome.html",
+            "after_completion[redirect][url]": WELCOME_URL,
             "allow_promotion_codes": "true",
             **APP_TAG,
         })
         print(f"created payment link {link['id']}")
     else:
         print(f"found payment link {link['id']}")
+        redirect = ((link.get("after_completion") or {}).get("redirect") or {}).get("url")
+        if redirect != WELCOME_URL:  # e.g. a link made before the claim needed the session id
+            link = call("POST", f"/payment_links/{link['id']}", {
+                "after_completion[type]": "redirect",
+                "after_completion[redirect][url]": WELCOME_URL,
+            })
+            print(f"updated payment link {link['id']}: after payment it redirects to {WELCOME_URL}")
 
     portal = find("/billing_portal/configurations?active=true",
                   lambda c: (c.get("metadata") or {}).get("app") == "wowpriced")

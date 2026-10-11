@@ -58,22 +58,30 @@ function idToken(claims = {}, { key = privateKey, kid = "kid-1" } = {}) {
 // Stripe stand-in. customers: the email as Stripe holds it (any case) ->
 // customer ids; subs: customer id -> subscriptions, each a status or
 // {status, trial_end, metadata, unindexed} (ids sub_<customer>_<index>;
-// unindexed: not yet visible to the Search API, which lags); sessions:
-// Checkout Session id -> object (its subscription id is expanded on request);
-// links: the Payment Links, linkPrices: link id -> price id; portalConfigs:
-// the billing-portal configurations. POSTs are captured in posts ({path,
-// body, headers}); an Idempotency-Key replays the first answer and a reuse
-// with other params is a 400, as Stripe does. Lists page like Stripe (limit,
-// has_more, starting_after), with pageSize to force paging in a test. fail
-// breaks every call, failPost the POSTs only, failGet(url) -> a status breaks
-// the GETs it picks.
-const STRIPE_RESET = () => ({ customers: {}, subs: {}, sessions: {}, links: [{ id: "plink_1", url: PAYMENT_LINK }],
+// unindexed: not yet visible to the Search API, which lags); gone: customer
+// ids this key cannot see (400 resource_missing, as Stripe answers for a
+// deleted or other-mode customer); sessions: Checkout Session id -> object
+// (its subscription id is expanded on request; the Worker's own are recorded
+// open with their form, expire at expires_at or on POST .../expire, and
+// lastSession is the newest); links: the Payment Links, linkPrices: link id
+// -> price id; portalConfigs: the billing-portal configurations ({id,
+// metadata, active}; a session under one that is not active is a 400). POSTs
+// are captured in posts ({path, body, headers}); an Idempotency-Key replays
+// the first answer and a reuse with other params is a 400, as Stripe does.
+// Lists page like Stripe (limit, has_more, starting_after), with pageSize to
+// force paging in a test. fail breaks every call, failPost the POSTs only,
+// failGet(url) -> a status (or {status, code}) breaks the GETs it picks.
+const STRIPE_RESET = () => ({ customers: {}, subs: {}, gone: [], sessions: {}, lastSession: null,
+                              links: [{ id: "plink_1", url: PAYMENT_LINK }],
                               linkPrices: { plink_1: "price_999" }, portalConfigs: [], fail: false, failPost: false,
                               failGet: null, calls: 0, pageSize: 100, urls: [], posts: [], idem: {}, created: 0, paid: 0 });
 const stripe = STRIPE_RESET();
 const jwks = { calls: 0 };
 const jsonResponse = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+const missing = (what, param) => jsonResponse({ error: { type: "invalid_request_error", code: "resource_missing", param,
+                                                           message: `No such ${what}` } }, 400);
+const nowS = () => Math.floor(Date.now() / 1000);
 
 const subObject = (customer, s, i) => ({ id: `sub_${customer}_${i}`, trial_end: null, metadata: {},
                                           ...(typeof s === "string" ? { status: s } : s) });
@@ -111,12 +119,32 @@ function stripePost(url, init) {
       : jsonResponse({ error: { type: "idempotency_error", message: "Keys for idempotent requests..." } }, 400);
   }
   let answer;
+  const form = Object.fromEntries(new URLSearchParams(init.body));
+  const expire = url.pathname.match(/^\/v1\/checkout\/sessions\/([^/]+)\/expire$/);
   if (url.pathname === "/v1/checkout/sessions") {
+    if (form.expires_at && Number(form.expires_at) < nowS() + 1800) {
+      return jsonResponse({ error: { type: "invalid_request_error", param: "expires_at", message: "too soon" } }, 400);
+    }
     stripe.created += 1;
     const id = `cs_test_new${stripe.created}`;
     answer = { id, object: "checkout.session", url: `https://checkout.stripe.com/c/pay/${id}` };
+    stripe.sessions[id] = { status: "open", mode: "subscription", url: answer.url, expires_at: Number(form.expires_at) || null,
+                            client_reference_id: form.client_reference_id || null, customer: form.customer || null, form };
+    stripe.lastSession = id;
+  } else if (expire) {
+    const session = stripe.sessions[expire[1]];
+    if (!session) return missing("checkout.session", "session");
+    if (session.status !== "open") {
+      return jsonResponse({ error: { type: "invalid_request_error", message: "Only open sessions can be expired" } }, 400);
+    }
+    Object.assign(session, { status: "expired", url: null });
+    answer = { id: expire[1], ...session };
   } else if (url.pathname === "/v1/billing_portal/sessions") {
-    const customer = new URLSearchParams(init.body).get("customer");
+    const customer = form.customer;
+    if (stripe.gone.includes(customer)) return missing("customer", "customer");
+    if (form.configuration && !stripe.portalConfigs.some((c) => c.id === form.configuration && c.active !== false)) {
+      return missing("configuration", "configuration");
+    }
     answer = { id: "bps_1", object: "billing_portal.session", url: `https://billing.stripe.com/p/session/test_${customer}` };
   } else {
     throw new Error(`unexpected Stripe POST ${url.pathname}`);
@@ -138,7 +166,10 @@ globalThis.fetch = async (input, init = {}) => {
     if (stripe.fail) return jsonResponse({ error: { message: "boom" } }, 500);
     if (init.method === "POST") return stripePost(url, init);
     const broken = stripe.failGet && stripe.failGet(url);
-    if (broken) return jsonResponse({ error: { message: "boom" } }, broken);
+    if (broken) {
+      return typeof broken === "object" ? jsonResponse({ error: { message: "boom", code: broken.code } }, broken.status)
+        : jsonResponse({ error: { message: "boom" } }, broken);
+    }
     if (url.pathname === "/v1/subscriptions/search") {
       const m = /^metadata\['wowpriced_ref'\]:'([0-9a-f]{32})'$/.exec(url.searchParams.get("query"));
       assert.ok(m, url.searchParams.get("query"));
@@ -157,11 +188,12 @@ globalThis.fetch = async (input, init = {}) => {
     }
     if (url.pathname === "/v1/billing_portal/configurations") {
       assert.equal(url.searchParams.get("active"), "true");
-      return jsonResponse(listPage(stripe.portalConfigs, url));
+      return jsonResponse(listPage(stripe.portalConfigs.filter((c) => c.active !== false), url));
     }
     if (url.pathname === "/v1/subscriptions" && url.searchParams.get("customer")) {
       assert.equal(url.searchParams.get("status"), "all");
       const id = url.searchParams.get("customer");
+      if (stripe.gone.includes(id)) return missing("customer", "customer");
       return jsonResponse({ data: (stripe.subs[id] || []).map((s, i) => ({ ...subObject(id, s, i), customer: id })) });
     }
     if (url.pathname === "/v1/subscriptions") {
@@ -172,9 +204,13 @@ globalThis.fetch = async (input, init = {}) => {
     }
     let m = url.pathname.match(/^\/v1\/checkout\/sessions\/([^/]+)$/);
     if (m) {
-      assert.equal(url.searchParams.get("expand[]"), "subscription");
+      const expand = url.searchParams.get("expand[]");
+      if (expand) assert.equal(expand, "subscription");
       const session = stripe.sessions[m[1]];
       if (!session) return jsonResponse({ error: { type: "invalid_request_error", message: "No such checkout.session" } }, 404);
+      if (session.status === "open" && session.expires_at && nowS() >= session.expires_at) {
+        Object.assign(session, { status: "expired", url: null });
+      }
       const sub = typeof session.subscription === "string" ? subscriptionById(session.subscription) : null;
       return jsonResponse({ id: m[1], ...session, ...(sub ? { subscription: sub } : {}) });
     }
@@ -250,8 +286,10 @@ function subscribed(email, statuses = ["active"], id = "cus_1") {
   stripe.subs[id] = statuses;
 }
 
-// The account's client_reference_id, computed independently of the Worker.
-const ref = (email) => createHash("sha256").update(`wowpriced-acct:${email}`).digest("hex").slice(0, 32);
+// The account's client_reference_id, computed independently of the Worker:
+// unchanged for session_version 0, bound to the version after a takeover.
+const ref = (email, version = 0) =>
+  createHash("sha256").update(version ? `wowpriced-acct:${email}:${version}` : `wowpriced-acct:${email}`).digest("hex").slice(0, 32);
 // The last Stripe POST, and its form decoded the way Stripe decodes it.
 const lastPost = () => stripe.posts[stripe.posts.length - 1];
 const posted = () => [...new URLSearchParams(lastPost().body)];
@@ -269,8 +307,10 @@ const checkoutPosts = () => stripe.posts.filter((p) => p.path === "/v1/checkout/
 // carried, else active) and the session itself, complete. indexed: false
 // keeps the subscription out of Search for now (Search lags about a minute).
 function payLastCheckout({ indexed = true } = {}) {
-  assert.equal(lastPost().path, "/v1/checkout/sessions");
-  const form = postedMap();
+  const id = stripe.lastSession;
+  const session = stripe.sessions[id];
+  assert.ok(session && session.status === "open", `no open session to pay (${id})`);
+  const form = session.form;
   const n = ++stripe.paid;
   const customer = form.customer || `cus_paid${n}`;
   if (!form.customer) (stripe.customers[form.customer_email] ||= []).push(customer);
@@ -279,9 +319,7 @@ function payLastCheckout({ indexed = true } = {}) {
                 metadata: { wowpriced_ref: form["subscription_data[metadata][wowpriced_ref]"] }, unindexed: !indexed };
   const list = (stripe.subs[customer] ||= []);
   list.push(sub);
-  const id = `cs_test_paid${n}abcdef`;
-  stripe.sessions[id] = { status: "complete", mode: "subscription", customer, subscription: `sub_${customer}_${list.length - 1}`,
-                          client_reference_id: form.client_reference_id };
+  Object.assign(session, { status: "complete", url: null, customer, subscription: `sub_${customer}_${list.length - 1}` });
   return { id, customer, sub };
 }
 
@@ -665,8 +703,8 @@ describe("membership and ownership", () => {
     travel(6 * MIN);
     subscribed("c@example.com");
     assert.equal((await me(env, token)).json.reason, "subscribed");
-    assert.deepEqual(memGet("member:c@example.com"), { sub: { status: "active", trial_end: null }, had: true },
-                     "the summary, not a boolean");
+    assert.deepEqual(memGet("member:c@example.com"), { sub: { status: "active", trial_end: null }, had: true, customer: "cus_1" },
+                     "the summary, not a boolean, with the customer its portal opens on");
     assert.ok(![...env.SUBS.m.keys()].some((k) => k.startsWith("member:")), "never a KV write");
     const calls = stripe.calls;
     stripe.subs.cus_1 = ["canceled"];
@@ -674,7 +712,7 @@ describe("membership and ownership", () => {
     assert.equal(stripe.calls, calls);
     assert.equal((await me(env, token, "?fresh=1")).json.reason, "none", "fresh re-asks Stripe");
     assert.ok(stripe.calls > calls);
-    assert.deepEqual(memGet("member:c@example.com"), { sub: null, had: false }, "no live subscription is cached too");
+    assert.deepEqual(memGet("member:c@example.com"), { sub: null, had: false, customer: null }, "no live subscription is cached too");
     const calls2 = stripe.calls;
     stripe.subs.cus_1 = ["active"];
     assert.equal((await me(env, token, "?fresh=1")).json.reason, "none", "second fresh within a minute: cache");
@@ -878,14 +916,22 @@ describe("checkout", () => {
       ["subscription_data[metadata][wowpriced_ref]", REF],
       ["success_url", "https://wowpriced.com/welcome.html?session_id={CHECKOUT_SESSION_ID}"],
       ["cancel_url", "https://wowpriced.com/?checkout=cancel"],
+      ["expires_at", String((Math.floor(Date.now() / (10 * MIN)) + 1) * 600 + 31 * 60)],
     ]);
+    const open = Number(postedMap().expires_at) - Date.now() / 1000;
+    assert.ok(open >= 31 * 60 && open <= 41 * 60, `open 31 to 41 minutes (Stripe's minimum is 30), not 24 h: ${open}`);
     assert.ok(post.body.includes("session_id%3D%7BCHECKOUT_SESSION_ID%7D"), "the braces are form-encoded exactly once");
     assert.ok(!post.body.includes("%257B"), "never double-encoded");
-    assert.equal(post.headers["Idempotency-Key"], `${REF}-${Math.floor(Date.now() / (10 * MIN))}`);
+    const slot = Math.floor(Date.now() / (10 * MIN));
+    const hash = createHash("sha256").update(new URLSearchParams(posted().slice(0, -1)).toString()).digest("hex").slice(0, 16);
+    assert.equal(post.headers["Idempotency-Key"], `${REF}-${slot}-${hash}`, "ref, slot and a hash of the params (expires_at aside)");
+    assert.deepEqual(JSON.parse(env.SUBS.m.get(`checkout:${REF}`).value),
+                     { id: "cs_test_new1", url: r.json.url, trial: true, params: hash }, "the account's last session");
+    assert.equal(env.SUBS.m.get(`checkout:${REF}`).ttl, 3600);
     // A double click: the same session; Stripe made one.
     const again = await checkout(env, token);
     assert.deepEqual([again.status, again.json.url, stripe.created], [200, r.json.url, 1]);
-    // Checkout writes nothing: no trial is used up until a claim sees one.
+    // Checkout writes nothing on the account: no trial is used up until a claim sees one.
     assert.deepEqual([(await account(env, "new@example.com")).trial_used, (await me(env, token)).json.trial_available], [false, true]);
   });
 
@@ -1162,12 +1208,16 @@ describe("one subscription, one trial, one account per payment", () => {
     assert.equal((await claim(env, own, "cs_test_squat999")).status, 200);
     assert.equal(await env.SUBS.get("claim:cus_S"), "squatter@evil.com");
     // A squatter's Worker checkout carried the owner's address, so Stripe has a
-    // subscription for that address: the owner's account gets no trial on it.
+    // subscription for that address: the owner's checkout carries no trial on
+    // it (the squatter-era reference is retired, so me cannot tell beforehand).
     const { json: { token: s2 } } = await signup(env, "own2@example.com");
     assert.equal((await checkout(env, s2, { ip: "2.2.2.2" })).status, 200);
     stripe.subs[payLastCheckout().customer][0].status = "canceled";
     r = await google(env, idToken({ email: "own2@example.com", sub: "own2" }));
-    assert.deepEqual([r.json.me.claimed, r.json.me.trial_available], [false, false]);
+    assert.deepEqual([r.json.me.claimed, r.json.me.trial_available], [false, true]);
+    assert.equal((await checkout(env, r.json.token, { ip: "2.2.2.2" })).status, 200);
+    assert.deepEqual([postedMap().client_reference_id, postedMap()["subscription_data[trial_period_days]"]], [ref("own2@example.com", 1), undefined]);
+    assert.equal((await account(env, "own2@example.com")).trial_used, true);
   });
 
   test("a failed email lookup during checkout's membership check is 503 with no fallback, never a session", async () => {
@@ -1247,8 +1297,308 @@ describe("one subscription, one trial, one account per payment", () => {
     assert.equal((await portal(newEnv({ SUBS: env.SUBS, STRIPE_SECRET_KEY: "sk_live_123" }), token)).status, 200);
     assert.equal(configCalls().length, 2, "looked up again");
     stripe.urls = [];
+    stripe.portalConfigs.push({ id: "bpc_env", metadata: {} });
     assert.equal((await portal(newEnv({ SUBS: env.SUBS, STRIPE_PORTAL_CONFIG: "bpc_env" }), token)).status, 200);
     assert.deepEqual([configCalls(), postedMap().configuration], [[], "bpc_env"]);
+  });
+});
+
+describe("never billed twice, every member can cancel online", () => {
+  test("a subscription that has not ended blocks checkout by any path: past_due/unpaid/incomplete/paused are 409 payment_issue", async () => {
+    const env = newEnv();
+    midSlot();
+    // (a) A bound member's renewal failed: Stripe still retries the old card.
+    const { json: { token } } = await signup(env, "pd@example.com");
+    stripe.sessions.cs_test_pd123456 = { ...COMPLETE, customer: "cus_pd", subscription: "sub_cus_pd_0" };
+    stripe.subs.cus_pd = ["active"];
+    assert.equal((await claim(env, token, "cs_test_pd123456")).status, 200);
+    stripe.subs.cus_pd = ["past_due"];
+    travel(6 * MIN);
+    let r = await me(env, token);
+    assert.deepEqual([r.json.member, r.json.reason], [false, "lapsed"], "not a member while it is unpaid");
+    r = await checkout(env, token);
+    assert.deepEqual([r.status, r.json.error], [409, "payment_issue"]);
+    assert.deepEqual([r.json.me.email, r.json.me.member, r.json.me.trial_available], ["pd@example.com", false, false]);
+    assert.deepEqual(checkoutPosts(), [], "never a second subscription");
+    r = await portal(env, token);
+    assert.deepEqual([r.status, r.json.url], [200, "https://billing.stripe.com/p/session/test_cus_pd"], "the card is fixed in the portal");
+    // (c) A password account's unclaimed Worker checkout goes past_due.
+    const { json: { token: t2 } } = await signup(env, "pw5@example.com", PASSWORD, { ip: "2.2.2.2" });
+    assert.equal((await checkout(env, t2, { ip: "2.2.2.2" })).status, 200);
+    const { customer } = payLastCheckout();
+    stripe.subs[customer][0].status = "past_due";
+    travel(11 * MIN);
+    r = await checkout(env, t2, { ip: "2.2.2.2" });
+    assert.deepEqual([r.status, r.json.error, r.json.me.member], [409, "payment_issue", false]);
+    r = await portal(env, t2);
+    assert.deepEqual([r.status, r.json.url], [200, `https://billing.stripe.com/p/session/test_${customer}`], "its own checkout's customer");
+    assert.equal(stripe.created, 1);
+    // The email's customers: every status that may still bill blocks; ended ones are history (no trial).
+    for (const [i, [status, want]] of [["unpaid", 409], ["incomplete", 409], ["paused", 409],
+                                        ["incomplete_expired", 200], ["canceled", 200]].entries()) {
+      const email = `st${i}@example.com`;
+      const s = await signup(env, email, PASSWORD, { ip: `3.3.3.${i}` });
+      subscribed(email, [status], `cus_st${i}`);
+      r = await checkout(env, s.json.token, { ip: `3.3.3.${i}` });
+      assert.equal(r.status, want, status);
+      if (want === 409) assert.equal(r.json.error, "payment_issue", status);
+      else assert.ok(!("subscription_data[trial_period_days]" in postedMap()), status);
+    }
+  });
+
+  test("a bound customer Stripe says is gone for this key is history, not an outage: checkout bills the email, without a trial", async () => {
+    const env = newEnv();
+    midSlot();
+    const { json: { token } } = await signup(env, "tm@example.com");
+    stripe.sessions.cs_test_tm123456 = { ...COMPLETE, customer: "cus_TESTMODE", subscription: "sub_cus_TESTMODE_0" };
+    stripe.subs.cus_TESTMODE = ["active"];
+    assert.equal((await claim(env, token, "cs_test_tm123456")).json.me.reason, "subscribed");
+    stripe.gone.push("cus_TESTMODE"); // the Worker now runs on the live key: 400 resource_missing, every time
+    for (let day = 0; day < 3; day++) {
+      travel(DAY);
+      const m = await me(env, token);
+      assert.deepEqual([m.json.member, m.json.reason, m.json.trial_available], [false, "lapsed", false]);
+      const p = await portal(env, token, { ip: `4.4.4.${day}` });
+      assert.deepEqual([p.status, p.json], [404, { error: "no_customer" }], "no portal on a customer that does not exist");
+    }
+    let r = await checkout(env, token);
+    assert.equal(r.status, 200, "never locked out");
+    const form = postedMap();
+    assert.deepEqual([form.customer, form.customer_email, form["subscription_data[trial_period_days]"]],
+                     [undefined, "tm@example.com", undefined]);
+    // Paid and claimed from welcome.html: bound to the new customer.
+    const paid = payLastCheckout();
+    r = await claim(env, token, paid.id);
+    assert.deepEqual([r.status, r.json.me.member, r.json.me.reason], [200, true, "subscribed"]);
+    assert.equal((await account(env, "tm@example.com")).stripe_customer, paid.customer);
+    // Only resource_missing (400 or 404) means gone: anything else on the bound read is still 503 with no fallback.
+    for (const [i, [fail, want]] of [[{ status: 404, code: "resource_missing" }, 200], [{ status: 400, code: "parameter_invalid" }, 503],
+                                      [{ status: 429 }, 503], [500, 503]].entries()) {
+      const email = `g${i}@example.com`;
+      const s = await signup(env, email, PASSWORD, { ip: `5.5.5.${i}` });
+      stripe.sessions[`cs_test_gone${i}abc`] = { ...COMPLETE, customer: `cus_g${i}`, subscription: `sub_cus_g${i}_0` };
+      stripe.subs[`cus_g${i}`] = ["canceled"];
+      assert.equal((await claim(env, s.json.token, `cs_test_gone${i}abc`, { ip: `5.5.5.${i}` })).status, 200);
+      stripe.failGet = (url) => (url.searchParams.get("customer") === `cus_g${i}` ? fail : 0);
+      r = await checkout(env, s.json.token, { ip: `5.5.5.${i}` });
+      stripe.failGet = null;
+      assert.equal(r.status, want, JSON.stringify(fail));
+      if (want === 503) assert.deepEqual(r.json, { error: "checkout_unavailable", fallback_url: "" });
+      else assert.equal(postedMap().customer_email, email);
+    }
+  });
+
+  test("checkout re-reads the bound customer uncached: a cached 'lapsed' never sells a second subscription", async () => {
+    const env = newEnv({ STRIPE_PRICE_ID: "price_fixed" });
+    midSlot();
+    const { json: { token } } = await signup(env, "n3@example.com");
+    stripe.sessions.cs_test_n3123456 = { ...COMPLETE, customer: "cus_P3", subscription: "sub_cus_P3_0",
+                                         customer_details: { email: "payer@other.com" } };
+    stripe.customers["payer@other.com"] = ["cus_P3"];
+    stripe.subs.cus_P3 = ["canceled"];
+    assert.equal((await claim(env, token, "cs_test_n3123456")).json.me.reason, "lapsed");
+    assert.equal((await checkout(env, token)).status, 200);
+    assert.equal(postedMap().customer, "cus_P3");
+    payLastCheckout({ indexed: false }); // paid: cus_P3 is active again; Search has not caught up
+    travel(40 * 1000);
+    let r = await me(env, token);
+    assert.deepEqual([r.json.member, r.json.reason], [false, "lapsed"], "the 5-minute cache still says lapsed");
+    r = await checkout(env, token); // ?fresh=1 is spent for this minute, and cus_P3's email is not the account's
+    assert.deepEqual([r.status, r.json.error], [409, "already_member"]);
+    assert.equal(checkoutPosts().length, 1);
+  });
+
+  test("one open Checkout Session per account: reused while open, expired before a new one, never two trials", async () => {
+    const env = newEnv();
+    midSlot();
+    const { json: { token } } = await signup(env, "os@example.com");
+    let r = await checkout(env, token);
+    const first = r.json.url;
+    assert.equal(postedMap()["subscription_data[trial_period_days]"], "7");
+    travel(11 * MIN); // the next idempotency slot: a second trial session used to be made here
+    r = await checkout(env, token);
+    assert.deepEqual([r.status, r.json.url, stripe.created], [200, first, 1], "the session still open, not a new one");
+    // The params change (here: the trial is used up): the open one is expired before the new one is made.
+    await env.SUBS.put("acct:os@example.com", JSON.stringify({ ...(await account(env, "os@example.com")), trial_used: true }));
+    r = await checkout(env, token);
+    assert.equal(r.status, 200);
+    assert.notEqual(r.json.url, first);
+    assert.deepEqual([stripe.sessions.cs_test_new1.status, stripe.sessions.cs_test_new2.status], ["expired", "open"]);
+    assert.ok(!("subscription_data[trial_period_days]" in postedMap()));
+    assert.deepEqual(stripe.posts.map((p) => p.path), ["/v1/checkout/sessions", "/v1/checkout/sessions/cs_test_new1/expire",
+                                                       "/v1/checkout/sessions"]);
+    // Stripe ends it by itself after expires_at: a new one, nothing to expire.
+    travel(42 * MIN);
+    r = await checkout(env, token);
+    assert.deepEqual([r.status, stripe.created, stripe.sessions.cs_test_new2.status], [200, 3, "expired"]);
+    assert.equal(stripe.posts.filter((p) => p.path.endsWith("/expire")).length, 1);
+    // Stripe failing to expire one: no session and no Payment Link (it may still be open).
+    await env.SUBS.put("acct:os@example.com", JSON.stringify({ ...(await account(env, "os@example.com")), trial_used: false }));
+    stripe.failPost = true;
+    r = await checkout(env, token, { ip: "6.6.6.6" });
+    stripe.failPost = false;
+    assert.deepEqual([r.status, r.json], [503, { error: "checkout_unavailable", fallback_url: "" }]);
+    assert.equal(stripe.sessions.cs_test_new3.status, "open");
+  });
+
+  test("a change of params inside one idempotency slot makes a new session instead of Stripe's 400", async () => {
+    const env = newEnv({ STRIPE_PRICE_ID: "price_a" });
+    midSlot();
+    const { json: { token } } = await signup(env, "ik@example.com");
+    assert.equal((await checkout(env, token)).status, 200);
+    const r = await checkout(newEnv({ SUBS: env.SUBS, STRIPE_PRICE_ID: "price_b" }), token);
+    assert.equal(r.status, 200);
+    assert.equal(postedMap()["line_items[0][price]"], "price_b");
+    assert.deepEqual([stripe.created, stripe.sessions.cs_test_new1.status], [2, "expired"]);
+    const keys = checkoutPosts().map((p) => p.headers["Idempotency-Key"]);
+    assert.notEqual(keys[0], keys[1]);
+    assert.equal(keys[0].replace(/-[0-9a-f]{16}$/, ""), keys[1].replace(/-[0-9a-f]{16}$/, ""), "the same account and slot");
+  });
+
+  test("every member can open the portal: found by its own checkout (never claimed) or by its verified email", async () => {
+    const env = newEnv({ STRIPE_PORTAL_LINK: "" });
+    midSlot();
+    const { json: { token } } = await signup(env, "pc4@example.com");
+    assert.equal((await checkout(env, token)).status, 200);
+    const { customer } = payLastCheckout(); // welcome.html's claim never landed
+    travel(11 * MIN);
+    let r = await me(env, token);
+    assert.deepEqual([r.json.member, r.json.reason, r.json.claimed, r.json.portal_url], [true, "trial", false, ""]);
+    r = await portal(env, token);
+    assert.deepEqual([r.status, r.json.url], [200, `https://billing.stripe.com/p/session/test_${customer}`]);
+    // (b) A verified account trialing on the Payment Link under its address.
+    subscribed("Ver@Example.com", [{ status: "trialing", trial_end: Math.floor(Date.now() / 1000) + DAY / 1000 }], "cus_ver");
+    const t2 = await googleAccount(env, "ver@example.com");
+    r = await portal(env, t2);
+    assert.deepEqual([r.status, postedMap().customer], [200, "cus_ver"]);
+    // An unverified account typing that address opens nobody's portal.
+    const { json: { token: t3 } } = await signup(env, "ver2@example.com");
+    subscribed("ver2@example.com", ["active"], "cus_ver2");
+    travel(6 * MIN);
+    r = await portal(env, t3);
+    assert.deepEqual([r.status, r.json], [404, { error: "no_customer" }]);
+    assert.notEqual(postedMap().customer, "cus_ver2");
+  });
+
+  test("a portal configuration Stripe refuses is dropped from both caches, looked up again once, then left out", async () => {
+    const env = newEnv();
+    stripe.portalConfigs = [{ id: "bpc_old", metadata: { app: "wowpriced" } }];
+    const { json: { token } } = await signup(env, "cfg@example.com");
+    stripe.sessions.cs_test_cfg12345 = { ...COMPLETE, customer: "cus_cfg", subscription: "sub_cus_cfg_0" };
+    stripe.subs.cus_cfg = ["active"];
+    assert.equal((await claim(env, token, "cs_test_cfg12345")).status, 200);
+    assert.equal((await portal(env, token)).status, 200);
+    const sent = () => stripe.posts.filter((p) => p.path === "/v1/billing_portal/sessions")
+      .map((p) => new URLSearchParams(p.body).get("configuration"));
+    assert.deepEqual(sent(), ["bpc_old"]);
+    // The operator deactivates it and the setup makes another; memory still holds bpc_old.
+    stripe.portalConfigs = [{ id: "bpc_old", metadata: { app: "wowpriced" }, active: false },
+                            { id: "bpc_new", metadata: { app: "wowpriced" } }];
+    let r = await portal(env, token);
+    assert.deepEqual([r.status, sent().slice(1)], [200, ["bpc_old", "bpc_new"]]);
+    assert.deepEqual(JSON.parse(env.SUBS.m.get("stripe:portal").value), { mode: "test", config: "bpc_new" });
+    // A cold isolate reading a stale id from KV: the same, once.
+    memClear();
+    await env.SUBS.put("stripe:portal", JSON.stringify({ mode: "test", config: "bpc_old" }));
+    r = await portal(env, token);
+    assert.deepEqual([r.status, sent().slice(3)], [200, ["bpc_old", "bpc_new"]]);
+    assert.equal((await portal(env, token)).status, 200);
+    assert.deepEqual(sent().slice(5), ["bpc_new"], "cached again");
+    // No wowpriced configuration left: the dashboard default, nothing cached.
+    stripe.portalConfigs = [];
+    r = await portal(env, token);
+    assert.deepEqual([r.status, sent().slice(6)], [200, ["bpc_new", null]]);
+    assert.equal(env.SUBS.m.has("stripe:portal"), false);
+    // Stripe unavailable (5xx) is not a refusal: the cached id stays, 503 with the portal link.
+    stripe.portalConfigs = [{ id: "bpc_new", metadata: { app: "wowpriced" } }];
+    assert.equal((await portal(env, token)).status, 200);
+    stripe.failPost = true;
+    r = await portal(env, token);
+    assert.deepEqual([r.status, r.json.error], [503, "portal_unavailable"]);
+    assert.deepEqual(JSON.parse(env.SUBS.m.get("stripe:portal").value), { mode: "test", config: "bpc_new" });
+    stripe.failPost = false;
+    // An operator-set STRIPE_PORTAL_CONFIG is never dropped or second-guessed.
+    const posts = stripe.posts.length;
+    r = await portal(newEnv({ SUBS: env.SUBS, STRIPE_PORTAL_CONFIG: "bpc_gone" }), token);
+    assert.deepEqual([r.status, stripe.posts.length - posts], [503, 1]);
+  });
+
+  test("a takeover keeps the unbound customer: while it still bills, checkout is 409 contact_support; claiming it back binds it", async () => {
+    const env = newEnv();
+    midSlot();
+    // The owner signs up with a password, pays on the Payment Link typing a work address, and claims it.
+    const { json: { token: pw } } = await signup(env, "own@example.com");
+    stripe.sessions.cs_test_own12345 = { ...COMPLETE, customer: "cus_W", subscription: "sub_cus_W_0",
+                                         customer_details: { email: "own@work.com" } };
+    stripe.customers["own@work.com"] = ["cus_W"];
+    stripe.subs.cus_W = ["active"];
+    assert.equal((await claim(env, pw, "cs_test_own12345")).json.me.reason, "subscribed");
+    // Later they sign in with Google: the binding goes, the customer is remembered.
+    let r = await google(env, idToken({ email: "own@example.com", sub: "own" }));
+    const owner = r.json.token;
+    assert.deepEqual([r.json.me.member, r.json.me.claimed], [false, false]);
+    const acct = await account(env, "own@example.com");
+    assert.deepEqual([acct.stripe_customer, acct.released_customer, acct.session_version], [null, "cus_W", 1]);
+    r = await checkout(env, owner);
+    assert.deepEqual([r.status, r.json.error, r.json.me.email, r.json.me.member], [409, "contact_support", "own@example.com", false]);
+    assert.deepEqual(checkoutPosts(), [], "never a second subscription beside the live one");
+    // Their receipt binds it again (a Payment Link session carries no reference).
+    r = await claim(env, owner, "cs_test_own12345");
+    assert.deepEqual([r.status, r.json.me.reason], [200, "subscribed"]);
+    assert.equal((await checkout(env, owner)).json.error, "already_member");
+    // Once the released customer's subscription has ended, nothing blocks.
+    const { json: { token: t2 } } = await signup(env, "rel@example.com", PASSWORD, { ip: "2.2.2.2" });
+    stripe.sessions.cs_test_rel12345 = { ...COMPLETE, customer: "cus_R", subscription: "sub_cus_R_0" };
+    stripe.subs.cus_R = ["canceled"];
+    assert.equal((await claim(env, t2, "cs_test_rel12345", { ip: "2.2.2.2" })).status, 200);
+    r = await google(env, idToken({ email: "rel@example.com", sub: "rel" }), { ip: "2.2.2.2" });
+    assert.equal((await account(env, "rel@example.com")).released_customer, "cus_R");
+    assert.equal((await checkout(env, r.json.token, { ip: "2.2.2.2" })).status, 200);
+  });
+
+  test("a takeover retires the squatter-era reference: their checkouts are not the owner's, nor claimable by the owner", async () => {
+    const env = newEnv();
+    midSlot();
+    // A squatter binds their own Payment Link customer on the owner's address, then checks out through the Worker on it.
+    const { json: { token: squat } } = await signup(env, "n5@example.com");
+    stripe.sessions.cs_test_sq123456 = { ...COMPLETE, customer: "cus_S", subscription: "sub_cus_S_0",
+                                         customer_details: { email: "squatter@evil.com" } };
+    stripe.customers["squatter@evil.com"] = ["cus_S"];
+    stripe.subs.cus_S = ["canceled"];
+    assert.equal((await claim(env, squat, "cs_test_sq123456")).status, 200);
+    assert.equal((await checkout(env, squat)).status, 200);
+    assert.equal(postedMap().client_reference_id, ref("n5@example.com"), "session_version 0: the reference is unchanged");
+    const paid = payLastCheckout(); // on cus_S, the squatter's card
+    travel(11 * MIN);
+    assert.equal((await me(env, squat)).json.reason, "subscribed");
+    // The owner signs in with Google.
+    let r = await google(env, idToken({ email: "n5@example.com", sub: "owner" }));
+    const owner = r.json.token;
+    assert.deepEqual([r.json.me.member, r.json.me.reason], [false, "none"], "the squatter's subscription is not the owner's membership");
+    r = await claim(env, owner, paid.id);
+    assert.deepEqual([r.status, r.json], [403, { error: "wrong_account" }], "nor is its receipt");
+    assert.deepEqual([(await portal(env, owner)).status], [404]);
+    r = await checkout(env, owner);
+    assert.deepEqual([r.status, r.json.error], [409, "contact_support"], "the released customer still bills: sorted out by email");
+    // The squatter claims their receipt into an account of their own: the owner may buy their own.
+    const { json: { token: own } } = await signup(env, "squatter@evil.com");
+    assert.equal((await claim(env, own, "cs_test_sq123456")).status, 200);
+    r = await checkout(env, owner);
+    assert.equal(r.status, 200);
+    assert.deepEqual([postedMap().client_reference_id, postedMap().customer_email], [ref("n5@example.com", 1), "n5@example.com"]);
+  });
+
+  test("an on-address payment still counts for the verified owner (b), who can then cancel it in the portal", async () => {
+    const env = newEnv({ STRIPE_PORTAL_LINK: "" });
+    midSlot();
+    const { json: { token: squat } } = await signup(env, "n6@example.com");
+    assert.equal((await checkout(env, squat)).status, 200); // customer_email: the owner's address
+    const { customer } = payLastCheckout();
+    travel(11 * MIN);
+    const r = await google(env, idToken({ email: "n6@example.com", sub: "owner" }));
+    assert.deepEqual([r.json.me.member, r.json.me.reason], [true, "trial"], "by the verified email, not by the retired reference");
+    const p = await portal(env, r.json.token);
+    assert.deepEqual([p.status, p.json.url], [200, `https://billing.stripe.com/p/session/test_${customer}`]);
   });
 });
 

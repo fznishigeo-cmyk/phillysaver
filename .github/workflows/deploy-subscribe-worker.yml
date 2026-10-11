@@ -11,8 +11,8 @@
 # inputs, substituted into the deployed copy of wrangler.toml: re-run with new
 # inputs to change them (an empty input keeps wrangler.toml's value; SITE_URL
 # is set in wrangler.toml only). It also reports whether the Stripe key and the
-# Payment Link are live or test mode, and warns when they differ. Secret values
-# are never printed.
+# Payment Link are live or test mode, warns when they differ, and warns while
+# STRIPE_PORTAL_LINK is empty. Secret values are never printed.
 name: deploy subscribe worker
 
 on:
@@ -178,6 +178,12 @@ jobs:
           esac
           if [ -n "$key_mode" ] && [ -n "$link_mode" ] && [ "$key_mode" != "$link_mode" ]; then
             echo "::warning::Stripe key mode ($key_mode) and Payment Link mode ($link_mode) differ: checkouts and claims fail until both are the same mode (live for real customers)"
+          fi
+          # The portal login link as deployed: the page's fallback "Manage or
+          # cancel" link when /api/portal finds no customer or Stripe fails.
+          portal="$(sed -n 's/^STRIPE_PORTAL_LINK = "\([^"]*\)".*/\1/p' wrangler.deploy.toml)"
+          if [ -z "$portal" ]; then
+            echo "::warning::STRIPE_PORTAL_LINK is empty: members without a bound customer will rely on /api/portal discovery"
           fi
 
       - name: Write the job summary

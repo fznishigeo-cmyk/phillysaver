@@ -237,6 +237,23 @@ def test_deploy_subscribe_worker_reports_stripe_mode(tmp_path: Path, key: str, l
     assert "FAKEKEY" not in res.stdout + res.stderr
 
 
+@pytest.mark.parametrize("portal, warned", [("", True), ("https://billing.stripe.com/p/login/abc123", False)])
+def test_deploy_subscribe_worker_warns_without_portal_link(tmp_path: Path, portal: str, warned: bool) -> None:
+    """An empty STRIPE_PORTAL_LINK after substitution is a warning: members
+    whose customer the Worker cannot find have no other online way in."""
+    _, mode = _stripe_mode_step()
+    toml = (WORKER_DIR / "wrangler.toml").read_text()
+    if portal:  # what the deploy step writes for a non-empty input
+        toml = re.sub(r"^STRIPE_PORTAL_LINK = .*$", "STRIPE_PORTAL_LINK = " + json.dumps(portal), toml, flags=re.M)
+    (tmp_path / "wrangler.deploy.toml").write_text(toml)
+    res = subprocess.run(["bash", "-c", mode["run"]], cwd=tmp_path, capture_output=True, text=True, timeout=30,
+                         env={"PATH": os.environ["PATH"], "STRIPE_SECRET_KEY": "sk_live_FAKEKEY"})
+    assert res.returncode == 0, res.stderr
+    want = ("::warning::STRIPE_PORTAL_LINK is empty: members without a bound customer "
+            "will rely on /api/portal discovery")
+    assert (want in res.stdout.splitlines()) is warned, res.stdout
+
+
 # ------------------------------------------------------------------- safety
 
 

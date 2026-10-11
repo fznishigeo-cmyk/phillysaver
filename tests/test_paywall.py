@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 import httpx
 import pytest
@@ -219,3 +220,22 @@ class TestStubOpacity:
         text = str(stub)
         assert "dedupe_key" not in stub and "walmart.com" not in text
         assert "Secret Widget" not in text and "url" not in stub
+
+
+class TestContractDoc:
+    """docs/paywall.md states what the Worker enforces (worker.test.mjs proves it)."""
+
+    TEXT = (Path(__file__).resolve().parent.parent / "docs" / "paywall.md").read_text()
+
+    def test_trial_is_per_account_and_email_address_not_per_person(self):
+        """Review finding: no card fingerprint is checked, so the contract
+        cannot promise one trial per person."""
+        assert "One trial per account and email address" in self.TEXT
+        assert "One Stripe trial per account and email address" in self.TEXT
+        assert "One trial per person" not in self.TEXT and "One Stripe trial per person" not in self.TEXT
+
+    def test_checkout_409s_and_portal_paths_are_documented(self):
+        for needle in ('409 {error:"payment_issue", me}', '409 {error:"contact_support", me}',
+                       "released_customer", "checkout:<ref>", "expires_at", "resource_missing",
+                       "its verified email (b)"):
+            assert needle in self.TEXT, needle

@@ -3,7 +3,8 @@
  *
  *   acct:<email>  {email, scheme, iterations, salt, hash, created_at, google_sub,
  *                  email_verified, stripe_customer, claimed_at, trial_used,
- *                  session_version}
+ *                  session_version}, plus released_customer once a takeover
+ *                 unbound a customer;
  *                 scheme/iterations/salt/hash are null for a Google-only account;
  *                 records from before the Stripe trial may still carry a
  *                 trial_ends_at, which nothing reads any more
@@ -28,7 +29,7 @@
  * payer email on a Stripe Checkout is typed too, so a claim never verifies).
  * Membership by Stripe email lookup is only granted to verified accounts
  * (membership.js). A takeover (below) also unbinds the squatter's Stripe
- * customer.
+ * customer and retires the account's checkout reference.
  */
 
 import { EMAIL_RE, b64url, unb64url, safeEqual } from "./util.js";
@@ -159,16 +160,20 @@ export function isVerified(acct) {
 
 // A verified Google sign-in takes over an unverified (password) account on the
 // same address: whoever typed that address at sign-up does not own it. Their
-// password goes and their sessions die (the version bump), and so does their
+// password goes and their sessions die (the version bump, which also gives
+// the account a new reference, membership.js accountRef), and so does their
 // Stripe binding: the customer a claim bound (with claimed_at and trial_used)
-// is the squatter's, so the owner never bills onto it or inherits it; the
-// owner's trial then depends on Stripe's history for the address (api.js
-// checkout). Returns the customer id it unbound, or null.
+// is the squatter's, so the owner never bills onto it or inherits it; it is
+// kept as released_customer, and while it still has a subscription checkout
+// sells nothing (api.js: contact_support). The owner's trial then depends on
+// Stripe's history for the address (api.js checkout). Returns the customer
+// id it unbound, or null.
 export function takeOver(acct, googleSub) {
   const unbound = acct.stripe_customer || null;
   Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null,
                         stripe_customer: null, claimed_at: null, trial_used: false,
                         session_version: (acct.session_version || 0) + 1 });
+  if (unbound) acct.released_customer = unbound;
   return unbound;
 }
 
