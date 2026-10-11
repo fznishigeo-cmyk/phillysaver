@@ -179,6 +179,11 @@ footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid 
        padding-top:14px}
 footer p{margin:0 0 8px}
 footer .meta{font-size:11.5px}
+.nlform{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
+.nlform label{flex-basis:100%;color:var(--fg)}
+.nlform input{flex:1 1 200px;min-width:0;background:var(--card);color:var(--fg);
+  border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit}
+.nlform button{border:0;cursor:pointer;font:inherit}
 .footnav{margin:0 0 10px;font-size:13px;font-weight:600}
 .footnav a{color:var(--fg)}
 .subbar{display:none}
@@ -267,10 +272,17 @@ footer .meta{font-size:11.5px}
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live. <a href="health.html">source health</a></p>
+  <form id="nlform" class="nlform" method="post" action="subscribe.html" hidden>
+    <label for="nlemail"><strong>Free daily email:</strong> the day's best verified deals
+      every morning. Unsubscribe any time.</label>
+    <input id="nlemail" type="email" name="email" placeholder="you@example.com" required
+           autocomplete="email" aria-label="your email address">
+    <button type="submit" class="getdeal">Get deals in your inbox</button>
+  </form>
   <nav class="footnav" aria-label="site pages">
     <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
     <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
-    <a href="contact.html">Contact</a>
+    <a href="contact.html">Contact</a> · <a href="subscribe.html">Free daily email</a>
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
@@ -376,6 +388,16 @@ footer .meta{font-size:11.5px}
   function renderMeta() {
     var m = state.meta || {};
     var lr = m.last_run || {};
+    // Free daily email list: the form posts to the subscribe Worker whose
+    // URL arrives in meta (empty until it is deployed; the footer link to
+    // subscribe.html explains the list meanwhile).
+    var nl = document.getElementById("nlform");
+    if (m.newsletter_url) {
+      nl.action = String(m.newsletter_url).replace(/\/+$/, "") + "/subscribe";
+      nl.hidden = false;
+    } else {
+      nl.hidden = true;
+    }
     // Consumer header: brand, one tagline derived from the configured alert
     // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
     var floor = num((m.floors || {}).min_pct);
@@ -617,7 +639,12 @@ footer .meta{font-size:11.5px}
     return out;
   }
   function ordered(rows) {
-    return state.sortKey === "fresh" ? freshOrder(rows) : rows.sort(cmp);
+    var sorted = state.sortKey === "fresh" ? freshOrder(rows) : rows.sort(cmp);
+    // The teaser's unlocked deals (the top picks) always lead; the blurred
+    // stubs follow in the same order, whatever the sort.
+    var open = [], locked = [];
+    sorted.forEach(function (d) { (d.locked === true ? locked : open).push(d); });
+    return locked.length ? open.concat(locked) : sorted;
   }
 
   function storeHue(s) {

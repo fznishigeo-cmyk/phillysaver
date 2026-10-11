@@ -36,8 +36,35 @@ def split_teaser(deals: list[dict[str, Any]], cfg) -> tuple[list[dict[str, Any]]
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
     alive = [d for d in deals if d.get("status") == "alive"]
     dead = [d for d in deals if d.get("status") != "alive"]
-    teaser = alive[:n] + [_stub(d) for d in alive[n:]] + dead
-    return teaser, max(0, len(alive) - n)
+    picked = _pick_teaser(alive, n)
+    chosen = {id(d) for d in picked}
+    teaser = picked + [_stub(d) for d in alive if id(d) not in chosen] + dead
+    return teaser, max(0, len(alive) - len(picked))
+
+
+#: Unlocked picks per store in the first pass: eight $5 phone cases from one
+#: seller are not "the eight most amazing deals"; variety is the tease.
+_TEASER_PER_STORE = 2
+
+
+def _pick_teaser(alive: list[dict[str, Any]], n: int) -> list[dict[str, Any]]:
+    """The first n alive deals in site order (best first), but at most
+    _TEASER_PER_STORE from any one store while other stores remain; the
+    leftover slots take the next best regardless of store."""
+    picked: list[dict[str, Any]] = []
+    per_store: dict[str, int] = {}
+    for d in alive:
+        if len(picked) >= n:
+            break
+        store = str(d.get("store") or "").lower()
+        if per_store.get(store, 0) >= _TEASER_PER_STORE:
+            continue
+        per_store[store] = per_store.get(store, 0) + 1
+        picked.append(d)
+    if len(picked) < n:
+        chosen = {id(d) for d in picked}
+        picked += [d for d in alive if id(d) not in chosen][:n - len(picked)]
+    return picked
 
 
 def publish_full(payload: dict[str, Any], cfg, http_client: Any = None) -> bool:

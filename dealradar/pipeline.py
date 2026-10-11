@@ -269,7 +269,24 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     done = 0
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
     now = util.now_utc()
-    for deal in db.all_deals():
+    deals = db.all_deals()
+    # A roundup article ("10 deals at Walmart today") has ONE share image,
+    # a collage that belongs to none of its deals. Live wart: the same
+    # collage sat on four cards, and three jigsaw puzzles from one post
+    # shared one puzzle's photo. An article credited by two or more deals
+    # is never used as a photo source, and an image already on another
+    # card is never copied onto a second one.
+    article_deals: dict[str, int] = {}
+    images_in_use: set[str] = set()
+    for d in deals:
+        if d.get("image_url"):
+            images_in_use.add(d["image_url"])
+        for sgt in db.sightings_for(d["id"]):
+            if sgt["source_name"] in granted:
+                url = str(sgt.get("source_url", ""))
+                article_deals[url] = article_deals.get(url, 0) + 1
+    done += _clear_shared_article_images(db, deals, article_deals)
+    for deal in deals:
         if deal.get("image_url") or \
                 "image_backfill_tried" in (deal.get("flags") or []):
             continue
@@ -285,6 +302,14 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
                         None)
         if sighting is None:
             continue
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        if article_deals.get(str(sighting["source_url"]), 0) > 1:
+            # Roundup: its share image is a collage, not this deal's photo.
+            flags = list(payload.get("flags") or [])
+            flags.append("image_backfill_tried")
+            payload["flags"] = flags
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            continue
         if deadline is not None and time.monotonic() > deadline:
             break
         src = granted[sighting["source_name"]]
@@ -298,9 +323,11 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if res.status == 200 and res.body and not res.blocked_by_robots:
             html = res.body.decode("utf-8", errors="replace")
             image = _og_image(html) or _first_image(html)
-        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        if image and image in images_in_use:
+            image = ""  # already another card's photo: not this deal's
         if image:
             payload["image_url"] = image
+            images_in_use.add(image)
         else:
             flags = list(payload.get("flags") or [])
             flags.append("image_backfill_tried")
@@ -312,6 +339,40 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     if done:
         log.info("blog image backfill: %d deals fetched", done)
     return done
+
+
+def _clear_shared_article_images(db: DB, deals: list[dict[str, Any]],
+                                 article_deals: dict[str, int]) -> int:
+    """Drop a photo that two or more deals share when any of them was
+    credited to a roundup article (two or more deals from one page): that
+    image is the article's collage, not a product. Each loses the image and
+    is flagged so the backfill never re-attaches it."""
+    from .dedupe import _DEAL_FIELDS
+
+    by_image: dict[str, list[dict[str, Any]]] = {}
+    for d in deals:
+        if d.get("image_url"):
+            by_image.setdefault(d["image_url"], []).append(d)
+    cleared = 0
+    for image, group in by_image.items():
+        if len(group) < 2:
+            continue
+        from_roundup = any(
+            article_deals.get(str(sgt.get("source_url", "")), 0) > 1
+            for d in group for sgt in db.sightings_for(d["id"]))
+        if not from_roundup:
+            continue  # e.g. one retailer photo on two variant listings
+        for d in group:
+            payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+            payload["image_url"] = ""
+            flags = list(payload.get("flags") or [])
+            if "image_backfill_tried" not in flags:
+                flags.append("image_backfill_tried")
+            payload["flags"] = flags
+            db.update_deal(d["dedupe_key"], payload=payload)
+            cleared += 1
+        log.info("cleared a roundup collage shared by %d deals", len(group))
+    return cleared
 
 
 #: Retailer product pages fetched per run for a missing photo: one polite

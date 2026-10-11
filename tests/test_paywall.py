@@ -172,3 +172,30 @@ class TestConfig:
         assert cfg.paywall_trial_days == 7
         assert cfg.paywall_api_url == "https://api.example"  # trailing slash dropped
         assert cfg.paywall_google_client_id == ""
+
+
+class TestTeaserVariety:
+    def test_at_most_two_per_store_while_others_remain(self):
+        from dealradar.config import AppConfig
+        from dealradar.publish.paywall import split_teaser
+        cfg = AppConfig(paywall_enabled=True, paywall_teaser_count=4)
+        deals = [{"status": "alive", "item": f"case {i}", "store": "Woot",
+                  "dedupe_key": f"w{i}", "pct_at_checkout": 90 - i} for i in range(5)]
+        deals += [{"status": "alive", "item": "tv", "store": "Walmart", "dedupe_key": "wm",
+                   "pct_at_checkout": 60},
+                  {"status": "alive", "item": "shoes", "store": "Target", "dedupe_key": "tg",
+                   "pct_at_checkout": 55}]
+        teaser, locked = split_teaser(deals, cfg)
+        unlocked = [d for d in teaser if not d.get("locked")]
+        assert [d["item"] for d in unlocked] == ["case 0", "case 1", "tv", "shoes"]
+        assert locked == 3 and all(d.get("locked") for d in teaser[4:])
+
+    def test_leftover_slots_fill_from_the_same_store(self):
+        from dealradar.config import AppConfig
+        from dealradar.publish.paywall import split_teaser
+        cfg = AppConfig(paywall_enabled=True, paywall_teaser_count=3)
+        deals = [{"status": "alive", "item": f"case {i}", "store": "Woot",
+                  "dedupe_key": f"w{i}"} for i in range(4)]
+        teaser, locked = split_teaser(deals, cfg)
+        assert [d["item"] for d in teaser if not d.get("locked")] == ["case 0", "case 1", "case 2"]
+        assert locked == 1

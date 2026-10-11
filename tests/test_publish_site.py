@@ -530,3 +530,14 @@ class TestPaywallPage:
         start = html.index("function lockedHtml")
         body = html[start:html.index("function cardHtml")]
         assert "href" not in body and "d.item" not in body and "d.url" not in body
+
+
+class TestFooterNewsletterForm:
+    def test_form_present_and_wired_from_meta(self, db, cfg, tmp_path):
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert 'id="nlform"' in html and 'name="email"' in html
+        assert 'href="subscribe.html"' in html
+        assert "m.newsletter_url" in html          # action comes from meta, never hardcoded
+        assert "workers.dev" not in html

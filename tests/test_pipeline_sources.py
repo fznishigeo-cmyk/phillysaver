@@ -58,6 +58,57 @@ class TestBlogImageBackfill:
                         source_url=article_url, content_hash="h" + key,
                         seen_at=NOW, final_price=9.99)
 
+    def test_roundup_article_never_supplies_a_photo(self, tmp_path):
+        """Live wart: one collage on four cards. Two deals credited to the
+        same article are a roundup: no fetch, both flagged; a photo already
+        on another card is never copied onto a second deal."""
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "pants", "https://hip2save.com/deals/roundup/")
+        self._seed(db, "surge", "https://hip2save.com/deals/roundup/")
+        self._seed(db, "solo", "https://hip2save.com/deals/solo/")
+        self._seed(db, "owner", "https://hip2save.com/deals/owner/",
+                   image="https://hip2save.com/i/shared.jpg")
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({
+            "https://hip2save.com/deals/roundup/":
+                b"<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>",
+            "https://hip2save.com/deals/solo/":
+                b"<meta property='og:image' content='https://hip2save.com/i/shared.jpg'>",
+        })
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert fetcher.calls == ["https://hip2save.com/deals/solo/"]
+        for key in ("pants", "surge"):
+            d = db.get_deal(key)
+            assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
+        solo = db.get_deal("solo")
+        assert solo["image_url"] == "" and "image_backfill_tried" in solo["flags"]
+        assert db.get_deal("owner")["image_url"] == "https://hip2save.com/i/shared.jpg"
+        db.close()
+
+    def test_collage_already_attached_is_cleared(self, tmp_path):
+        """Three puzzles from one post carried one puzzle's photo: an image
+        shared by deals of a roundup is dropped from all of them, once."""
+        db = DB(tmp_path / "state.db")
+        for key in ("puzzle_a", "puzzle_b", "puzzle_c"):
+            self._seed(db, key, "https://hip2save.com/deals/puzzles/",
+                       image="https://hip2save.com/i/tunnel.jpg")
+        self._seed(db, "variant_x", "https://hip2save.com/deals/x/",
+                   image="https://cdn.example/same.jpg")
+        self._seed(db, "variant_y", "https://hip2save.com/deals/y/",
+                   image="https://cdn.example/same.jpg")
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        for key in ("puzzle_a", "puzzle_b", "puzzle_c"):
+            d = db.get_deal(key)
+            assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
+        # Two single-deal articles sharing one retailer photo are left alone.
+        assert db.get_deal("variant_x")["image_url"] == "https://cdn.example/same.jpg"
+        assert fetcher.calls == []
+        db.close()
+
     def test_fills_flags_and_never_refetches(self, tmp_path):
         db = DB(tmp_path / "state.db")
         self._seed(db, "with_pic", "https://hip2save.com/deals/a/")
