@@ -24,7 +24,7 @@ from ..config import get_secret
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
-from . import google, meta, stripe_stats
+from . import google, meta, site_health, stripe_stats
 
 log = logging.getLogger("dealradar.growth")
 
@@ -59,6 +59,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "site_health": ([("publish.custom_domain", cfg.custom_domain)],
+                        lambda: site_health.check(client, cfg, now)),
         "ga4": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
                 lambda: google.ga4(client, token(), cfg.growth_ga4_property_id, days)),
         "search_console": ([need_google, site], lambda: google.search_console(
@@ -93,7 +95,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
             log.info("%s: ok", name)
         except Exception as e:  # one section never stops the others
             status[name] = "error"
-            detail = str(e) if isinstance(e, google.ServiceAccountError) else _error(e)
+            detail = (type(e).__name__ if name == "site_health" else
+                      str(e) if isinstance(e, google.ServiceAccountError) else _error(e))
             log.warning("%s: error %s", name, detail)
     return data, status
 
@@ -132,6 +135,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         if trials:
             lines.append("Cost per trial: " + " / ".join(
                 _usd(s / t) if t else "n/a" for s, t in zip(spend, trials)))
+
+    if "site_health" in data:
+        lines += site_health.lines(data["site_health"])
 
     if ga:
         y, w = ga["yesterday"], ga["window"]

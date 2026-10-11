@@ -102,6 +102,18 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Codex task 012 (2026-10-11):** added a secret-free
+  `site_health` section to the private growth report. It reads the public
+  deals JSON and home page, reports live photo coverage, the top ten stores
+  and source sites missing photos, publish age/staleness and locked count.
+  It checks up to 60 photos (at most six per store), with HEAD and ranged
+  GET fallback, six-second timeouts, robots checks on GETs, per-host rate
+  limits and safe redirect handling. Warnings flag low coverage, broken
+  photos, stale publishes and home-page failures; Actions logs contain only
+  section status/error class. Added offline MockTransport coverage and
+  updated growth-report integration fixtures. Full suite passed:
+  `.venv/bin/python -m pytest -q` — 1,176 passed, 1 deselected.
+  No commit or push; deployment remains for the reviewing agent.
 - **Codex task 011 (merged 2026-10-11
   deal objects through their shared serializer from 40 to 26 fields; removed
   only fields with no serialized-data reader. `flags` and `alive` remain
