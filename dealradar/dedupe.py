@@ -164,6 +164,7 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
         "item": extracted.item,
         "brand": extracted.brand,
         "canonical_url": extracted.product_url,
+        "link_as_posted": extracted.link_as_posted,
         "asin": asin,
         "image_url": "",
         "link_shared": extracted.link_shared,
@@ -354,10 +355,14 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # Once several products shared the row's link, no post names it.
         payload["link_shared"] = bool(existing.get("link_shared")) \
             or extracted.link_shared
-        # The incoming deal's photo only when it IS this row's product: a
-        # fuzzy item match can merge a variant (review finding: the Series 9
+        # The incoming deal's photo (and its link as posted, which the photo
+        # backfill matches on) only when it IS this row's product: a fuzzy
+        # item match can merge a variant (review finding: the Series 9
         # photo landed on the Series 8 row, the 65-inch TV's on the 55-inch).
-        if not payload.get("image_url") and _same_product(existing, extracted):
+        same = _same_product(existing, extracted)
+        if not payload.get("link_as_posted") and extracted.link_as_posted and same:
+            payload["link_as_posted"] = extracted.link_as_posted
+        if not payload.get("image_url") and same:
             image = _post_image(extracted, post, shared=payload["link_shared"])
             if image:
                 payload["image_url"] = image

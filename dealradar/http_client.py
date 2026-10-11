@@ -18,6 +18,7 @@ Politeness contract (config.yaml -> fetch):
 
 from __future__ import annotations
 
+import base64
 import logging
 import random
 import re
@@ -25,7 +26,7 @@ import time
 import urllib.robotparser
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -108,6 +109,63 @@ def canonicalize_url(url: str) -> str:
     return urlunsplit(
         (parts.scheme, parts.netloc.lower(), parts.path, urlencode(kept), "")
     )
+
+
+#: PerimeterX captcha pages, on any host.
+_PX_CAPTCHA_RE = re.compile(r"px-captcha|perimeterx|/_?px/captcha", re.I)
+
+
+def is_challenge_url(url: str) -> bool:
+    """True for a retailer's bot wall: Walmart's /blocked, eBay's
+    /splashui/challenge, a PerimeterX captcha page. Never followed nor
+    fetched: a store answers a crawler's product request by redirecting
+    there (live: 72 Walmart and 8 eBay cards linked shoppers to the wall)."""
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    path = parts.path.lower()
+    if (host == "walmart.com" or host.endswith(".walmart.com")) \
+            and path.rstrip("/") == "/blocked":
+        return True
+    if path.startswith("/splashui/challenge"):
+        return True
+    return bool(_PX_CAPTCHA_RE.search(host + path))
+
+
+def challenge_target(url: str) -> str:
+    """The product URL a bot wall names (the page the store refused us),
+    or '' when ``url`` is no wall or its parameter is malformed: Walmart's
+    ``url`` param is the base64 path+query on www.walmart.com, eBay's
+    ``ru`` the URL itself (an eBay URL only)."""
+    if not is_challenge_url(url):
+        return ""
+    parts = urlsplit(url)
+    # unquote, not parse_qsl: a '+' of base64 is no space.
+    params = {k: unquote(v) for k, _eq, v in
+              (p.partition("=") for p in parts.query.split("&"))}
+    target = ""
+    if "walmart.com" in (parts.hostname or "").lower():
+        raw = params.get("url", "")
+        try:
+            path = base64.b64decode(raw + "=" * (-len(raw) % 4),
+                                    validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return ""
+        if path.startswith("/") and not path.startswith("//"):
+            target = "https://www.walmart.com" + path
+    else:
+        ru = params.get("ru", "")
+        try:
+            host = (urlsplit(ru).hostname or "").lower()
+        except ValueError:  # "https://[bad": never a crashed run
+            return ""
+        if ru.startswith("https://") and (host == "ebay.com"
+                                          or host.endswith(".ebay.com")):
+            target = ru
+    if not target or "\\" in target \
+            or any(ord(c) <= 0x20 or ord(c) == 0x7f for c in target) \
+            or is_challenge_url(target):
+        return ""
+    return target
 
 
 #: Per-request timeout for a redirect-resolution hop (best effort).
@@ -334,9 +392,11 @@ class PoliteFetcher:
         With ``follow_redirects`` true, 3xx responses are followed MANUALLY up
         to REDIRECT_HOP_CAP hops: each GET hop target is checked against its
         own host's robots.txt and every hop passes through the per-host rate
-        limit (httpx's internal following would bypass both). Conditional
-        validators are keyed on — and stored for — the ORIGINAL url; If-*
-        headers are not resent past the first hop.
+        limit (httpx's internal following would bypass both). A redirect
+        to a bot wall (:func:`is_challenge_url`) is never followed: status
+        0, error 'challenge_page'. Conditional validators are keyed on —
+        and stored for — the ORIGINAL url; If-* headers are not resent past
+        the first hop.
         """
         current = url
         hdrs = dict(headers)
@@ -351,6 +411,11 @@ class PoliteFetcher:
             if (follow_redirects and 300 <= status < 400 and location
                     and hop < hop_cap):
                 nxt = urljoin(current, location)
+                if is_challenge_url(nxt):
+                    logger.info("%s redirects to a bot wall; not followed", current)
+                    return (FetchResult(url=url, final_url=nxt, status=0,
+                                        body=None, error="challenge_page"),
+                            resp_headers)
                 if (method == "GET"
                         and not self._host_overridden(nxt, robots_override_host)
                         and not self._robots_allowed(nxt)):
@@ -505,8 +570,10 @@ def resolve_redirects(
     (a robots-blocked GET ends the loop). Relative Location headers are
     resolved against the current URL. The loop stops at the first non-3xx
     response, when an ASIN is already extractable from the current URL (no
-    need to fetch retailer pages we can already canonicalize), or after
-    ``max_hops`` hops (call sites pass ``cfg.redirect_max_hops``).
+    need to fetch retailer pages we can already canonicalize), before a
+    bot wall (:func:`is_challenge_url`: the URL redirected from, the
+    product the store itself named, is kept and the wall never fetched),
+    or after ``max_hops`` hops (call sites pass ``cfg.redirect_max_hops``).
 
     Rate limits and the optional ``deadline`` apply to every hop; crossing the
     deadline raises :class:`DeadlineExceeded`. Any other error returns
@@ -522,7 +589,12 @@ def resolve_redirects(
                 break
             if not (300 <= result.status < 400) or not location:
                 break
-            current = urljoin(current, location)
+            nxt = urljoin(current, location)
+            if is_challenge_url(nxt):
+                logger.info("%s redirects to a bot wall; kept as the product URL",
+                            current)
+                break
+            current = nxt
     except DeadlineExceeded:
         raise
     except Exception:

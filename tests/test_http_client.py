@@ -13,7 +13,9 @@ from dealradar.http_client import (
     MAX_BODY_BYTES,
     PoliteFetcher,
     canonicalize_url,
+    challenge_target,
     extract_asin,
+    is_challenge_url,
     resolve_redirects,
 )
 
@@ -619,3 +621,77 @@ def test_resolve_redirects_gives_a_rate_limited_store_one_quick_try(tmp_path):
     fetcher.get("https://slowstore.example/feed", conditional=False)
     assert router.count("GET", "https://slowstore.example/feed") == 3
     fetcher.close()
+
+
+# ------------------------------------------------------------------ bot walls
+
+WM_ITEM = "https://www.walmart.com/ip/Glue-Gun/1949719114?irgwc=1&clickid=c1"
+EBAY_ITEM = "https://www.ebay.com/itm/158273640669?mkcid=1"
+# The live shapes: Walmart's PerimeterX wall carries the refused path+query
+# as base64, eBay's challenge the refused URL itself; a per-request uuid
+# made one product several dedupe keys.
+WM_WALL = ("https://www.walmart.com/blocked?url=L2lwL0dsdWUtR3VuLzE5NDk3MTkxMTQ"
+           "%2FaXJnd2M9MSZjbGlja2lkPWMx&uuid=4f1e&vid=&g=b")
+EBAY_WALL = ("https://www.ebay.com/splashui/challenge?ap=1&appName=orch&ru="
+             "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669%3Fmkcid%3D1&iid=e2")
+PX_WALL = "https://www.zillow.com/captchaPerimeterX/?url=%2Fhomedetails%2F1&uuid=9"
+
+
+@pytest.mark.parametrize("product,wall", [
+    (WM_ITEM, WM_WALL), (EBAY_ITEM, EBAY_WALL),
+    ("https://www.zillow.com/homedetails/1", PX_WALL),
+    ("https://shop.example.com/p/kettle", "/px-captcha?uuid=1"),  # relative
+])
+def test_resolve_redirects_stops_before_a_bot_wall(tmp_path, product, wall):
+    """Live wart: Walmart and eBay answer a crawler's product request by
+    redirecting to their bot wall; the wall became the deal's link (and,
+    with its per-request uuid, several cards for one product). The loop
+    keeps the URL the store redirected FROM and never requests the wall."""
+    clock, router = FakeClock(), Router()
+    router.add("HEAD", "https://short.ly/w",
+               lambda r: httpx.Response(302, headers={"Location": product}))
+    router.add("HEAD", product,
+               lambda r: httpx.Response(307, headers={"Location": wall}))
+    fetcher, _, _ = make_fetcher(tmp_path, router, clock, min_host_interval_s=0.0)
+    out = resolve_redirects(fetcher, "https://short.ly/w")
+    assert out == canonicalize_url(product)
+    assert len(router.requests) == 2  # the short link and the product only
+    fetcher.close()
+
+
+def test_get_never_follows_into_a_bot_wall(tmp_path):
+    clock, router = FakeClock(), Router()
+    router.add("GET", WM_ITEM,
+               lambda r: httpx.Response(307, headers={"Location": WM_WALL}))
+    fetcher, _, _ = make_fetcher(tmp_path, router, clock, min_host_interval_s=0.0)
+    res = fetcher.get(WM_ITEM, conditional=False)
+    assert (res.status, res.body, res.error) == (0, None, "challenge_page")
+    assert router.count("GET", WM_ITEM) == 1
+    assert router.count("GET", "https://www.walmart.com/blocked") == 0
+    fetcher.close()
+
+
+def test_challenge_target_decodes_the_refused_product():
+    assert is_challenge_url(WM_WALL) and is_challenge_url(EBAY_WALL)
+    assert is_challenge_url(PX_WALL)
+    assert challenge_target(WM_WALL) == WM_ITEM
+    assert challenge_target(EBAY_WALL) == EBAY_ITEM
+    # A '+' of base64 is no space (Walmart may not percent-encode it).
+    plus = "https://www.walmart.com/blocked?url=L2lwLz8+&uuid=1"
+    assert challenge_target(plus) == "https://www.walmart.com/ip/?>"
+
+
+@pytest.mark.parametrize("url", [
+    WM_ITEM, EBAY_ITEM, "https://example.com/blocked?url=L2lwLzE",  # no wall
+    "https://www.walmart.com/blocked?uuid=1",                  # no url param
+    "https://www.walmart.com/blocked?url=%%%&uuid=1",          # not base64
+    "https://www.walmart.com/blocked?url=Ly9ldmlsLmNvbS94",    # "//evil.com/x"
+    "https://www.walmart.com/blocked?url=aXAvMQ",              # "ip/1": no "/"
+    "https://www.walmart.com/blocked?url=L2lwLyAx",            # "/ip/ 1": a space
+    "https://www.ebay.com/splashui/challenge?ap=1",            # no ru
+    "https://www.ebay.com/splashui/challenge?ru=https%3A%2F%2Fevil.com%2Fitm%2F1",
+    "https://www.ebay.com/splashui/challenge?ru=%2Fitm%2F1",   # not absolute
+    "https://www.ebay.com/splashui/challenge?ru=https%3A%2F%2F%5Bbad",  # unparsable
+])
+def test_challenge_target_leaves_anything_else_alone(url):
+    assert challenge_target(url) == ""

@@ -516,6 +516,28 @@ class TestBlogImageBackfill:
             assert d["image_url"] == "" and "image_backfill_tried" not in d["flags"]
         db.close()
 
+    def test_photo_inside_the_link_as_posted(self, tmp_path):
+        """The article's photos are keyed by its links as posted (often an
+        affiliate short link); a deal's canonical is the resolved retailer
+        URL. The backfill matches both, as ingest does."""
+        db = DB(tmp_path / "state.db")
+        posted = "https://howl.me/rack123"
+        self._seed(db, "rack", self.ROUNDUP, item="Drying Rack",
+                   canonical="https://www.walmart.com/ip/drying-rack/999")
+        db.update_deal("rack", payload=dict(db.get_deal("rack"), link_as_posted=posted))
+        page = ("<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>"
+                "<p><img src='https://hip2save.com/i/collage.jpg'></p>"
+                f"<p><a href='{posted}'><img src='https://hip2save.com/i/rack.jpg'></a></p>"
+                f"<p>Drying Rack $19.99 <a href='{posted}'>Buy</a></p>"
+                "<p><a href='https://www.target.com/p/lamp/-/A-444'>"
+                "<img src='https://hip2save.com/i/lamp.jpg'></a> Lamp $9</p>").encode()
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({self.ROUNDUP: page})
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        db.close()
+
     def _run(self, tmp_path, pages, seeds):
         """One backfill pass over ``pages`` (article -> html) for deals seeded
         as (key, article, canonical, item); returns key -> card photo."""
@@ -1003,6 +1025,37 @@ class TestProductImageBackfill:
         assert db.get_deal("old_dead")["flags"] == []
         db.close()
 
+    def test_listings_and_bot_walls_are_never_fetched(self, tmp_path):
+        """A category, search or sale page shows no one product: its share
+        image is a banner (live: a Target Circle banner, and one litter box
+        for Walmart's whole "top 100", landed on cards). A bot wall is
+        never fetched (live: 71 fetches of Walmart's wall, no photo). Both
+        stay unflagged, so a repaired link is tried. Best Buy's and
+        Costco's current product pages are products."""
+        db = DB(tmp_path / "state.db")
+        skipped = {
+            "wm_wall": "https://www.walmart.com/blocked?url=L2lwLzE5NDk3MTkxMTQ&uuid=1",
+            "ebay_wall": ("https://www.ebay.com/splashui/challenge?ap=1&ru="
+                          "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669"),
+            "circle": "https://www.target.com/l/target-circle/-/N-pzno9",
+            "top100": "https://www.walmart.com/shop/deals/pets/pets-top-100",
+            "search": "https://www.walmart.com/search?q=candle",
+        }
+        for key, link in skipped.items():
+            self._seed(db, key, link)
+        bby = "https://www.bestbuy.com/product/govee-table-lamp/J3GWQH2VS2/sku/6685669"
+        costco = "https://www.costco.com/p/-/tp-link-tapo-camera-4-pack/4000444860/?CID=PZ"
+        self._seed(db, "bby", bby)
+        self._seed(db, "costco", costco)
+        fetcher = self._Fetcher({costco: (b"<meta property='og:image' "
+                                          b"content='https://gdx.costco.com/4000444860-847'>")})
+        assert pipeline._backfill_product_images(db, fetcher, None) == 1
+        assert sorted(fetcher.calls) == sorted([bby, costco])
+        for key in skipped:
+            assert db.get_deal(key)["flags"] == []
+        assert db.get_deal("costco")["image_url"] == "https://gdx.costco.com/4000444860-847"
+        db.close()
+
     def test_run_wires_it_on_the_fast_lane_only(self, tmp_path, monkeypatch):
         """run() calls the backfill only on the fast lane (through the real
         PoliteFetcher: robots.txt first) and reports the count as
@@ -1067,3 +1120,93 @@ def test_link_resolution_stops_at_its_budget(monkeypatch):
                                    time.monotonic() + 600)
     assert calls == []
     assert [d.product_url for d in deals] == [f"https://short.ly/{i}" for i in range(3)]
+
+
+class TestBotWallRepair:
+    """Redirect resolution followed Walmart and eBay into their bot walls
+    and stored the wall as the deal's link (live: 72 + 8 cards). A one-time
+    repair gives each the product URL its wall names, lifts its photo
+    'tried' flags, and never touches a dedupe key."""
+
+    # base64 of "/ip/Glue-Gun/1949719114?irgwc=1&clickid=c1"
+    WM_WALL = ("https://www.walmart.com/blocked?url=L2lwL0dsdWUtR3VuLzE5NDk3MTkxMTQ"
+               "%2FaXJnd2M9MSZjbGlja2lkPWMx&uuid=4f1e&vid=&g=b")
+    EBAY_WALL = ("https://www.ebay.com/splashui/challenge?ap=1&appName=orch&ru="
+                 "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669%3Fmkcid%3D1&iid=e2")
+    WM_BAD = "https://www.walmart.com/blocked?url=%%%&uuid=7"        # not base64
+    EBAY_BAD = "https://www.ebay.com/splashui/challenge?ap=1&iid=e3"  # no ru
+    PLAIN = "https://www.target.com/p/lamp/-/A-444"
+    TRIED = ["product_image_tried", "unknown_shipping", "image_backfill_tried"]
+
+    @staticmethod
+    def _seed(db, link, flags):
+        key = "url|" + link
+        payload = {"dedupe_key": key, "store": "Walmart", "item": link[-12:],
+                   "canonical_url": link, "flags": list(flags),
+                   "image_url": "", "conditions": []}
+        db.insert_deal(dedupe_key=key, store="Walmart", item=link[-12:],
+                       normalized_item=link[-12:], canonical_url=link,
+                       payload=payload, final_price=9.09, pct_at_checkout=68.8,
+                       abs_savings=20.0, online_only="true", expires_at="",
+                       now=NOW)
+        return key
+
+    @staticmethod
+    def _rows(db):
+        return [tuple(r) for r in db.conn.execute("SELECT * FROM deals ORDER BY id")]
+
+    def test_repair_decodes_walls_once_and_keeps_the_keys(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        keys = {link: self._seed(db, link, self.TRIED) for link in
+                (self.WM_WALL, self.EBAY_WALL, self.WM_BAD, self.EBAY_BAD, self.PLAIN)}
+        untouched = {link: db.get_deal(keys[link])
+                     for link in (self.WM_BAD, self.EBAY_BAD, self.PLAIN)}
+        assert pipeline._repair_botwall_urls(db) == 2
+        wm, ebay = db.get_deal(keys[self.WM_WALL]), db.get_deal(keys[self.EBAY_WALL])
+        # canonicalize_url drops the click id, as a fresh resolution would.
+        assert wm["canonical_url"] == "https://www.walmart.com/ip/Glue-Gun/1949719114?irgwc=1"
+        assert ebay["canonical_url"] == "https://www.ebay.com/itm/158273640669?mkcid=1"
+        for deal, link in ((wm, self.WM_WALL), (ebay, self.EBAY_WALL)):
+            assert deal["dedupe_key"] == "url|" + link      # identity kept
+            assert deal["flags"] == ["unknown_shipping"]    # photo passes retry
+            # The column too: a later sighting of the product finds this row.
+            assert db.deal_by_canonical_url(deal["canonical_url"])["id"] == deal["id"]
+        for link, before in untouched.items():
+            assert db.get_deal(keys[link]) == before
+        assert db.meta_get(pipeline._BOTWALL_REPAIR_KEY)
+        # Safe to run twice: keyed once, and a second pass would change
+        # nothing even without the key.
+        rows = self._rows(db)
+        assert pipeline._repair_botwall_urls(db) == 0
+        db.conn.execute("DELETE FROM meta WHERE k=?", (pipeline._BOTWALL_REPAIR_KEY,))
+        assert pipeline._repair_botwall_urls(db) == 0
+        assert self._rows(db) == rows
+        db.close()
+
+    def test_run_repairs_on_the_hourly_lane_without_a_request(self, tmp_path, monkeypatch):
+        for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
+                    "DEALS_CLAUDE_API_KEY"):
+            monkeypatch.delenv(var, raising=False)
+        root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
+        cfg_path = tmp_path / "config.yaml"
+        cfg_path.write_text(root_cfg.read_text().replace(
+            'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
+        db_path = tmp_path / "state.db"
+        db = DB(db_path)
+        key = self._seed(db, self.WM_WALL, self.TRIED)
+        db.close()
+        requests = []
+
+        def handler(request):
+            requests.append(str(request.url))
+            return httpx.Response(404)
+
+        pipeline.run(fast_lane=False, db_path=str(db_path),
+                     config_path=str(cfg_path), dry_run_telegram=True,
+                     transport=httpx.MockTransport(handler), sources_override=[],
+                     skip_validation=True, now=NOW)
+        assert requests == []
+        db = DB(db_path)
+        assert db.get_deal(key)["canonical_url"] == \
+            "https://www.walmart.com/ip/Glue-Gun/1949719114?irgwc=1"
+        db.close()

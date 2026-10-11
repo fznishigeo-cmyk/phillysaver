@@ -41,11 +41,11 @@ _AMAZON_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
 _RETAILER_IDS = (
     ("target.com", re.compile(r"/-/A-(\d+)", re.I)),
     ("walmart.com", re.compile(r"/ip/(?:.*/)?(\d+)")),
-    ("bestbuy.com", re.compile(r"[?&]skuId=(\d+)|/(\d{7})\.p", re.I)),
+    ("bestbuy.com", re.compile(r"[?&]skuId=(\d+)|/(\d{7})\.p|/sku/(\d+)", re.I)),
     ("homedepot.com", re.compile(r"/p/.*/(\d{9})(?:[/?#]|$)")),
     ("lowes.com", re.compile(r"/pd/.*/(\d+)(?:[/?#]|$)")),
     ("kohls.com", re.compile(r"/prd-(\d+)")),
-    ("costco.com", re.compile(r"\.product\.(\d+)")),
+    ("costco.com", re.compile(r"\.product\.(\d+)|^/p/[^?#]*?/(\d+)(?:[/?#]|$)")),
     ("wayfair.com", re.compile(r"[?&]((?:piid|sku)=[^&#]+)", re.I)),
     ("woot.com", re.compile(r"/offers/([^/?#]+)", re.I)),
 )

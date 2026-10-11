@@ -393,7 +393,10 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             # A store, search or category page names no product either.
             no_product = canonical.lower().startswith(("http://", "https://")) \
                 and _names_no_product(canonical)
-            image = pick_photo([canonical], str(deal.get("item") or ""),
+            # Both of its links, as ingest: the page's photos are keyed by
+            # the link as posted (an affiliate redirect, often).
+            links = [str(deal.get("link_as_posted") or ""), canonical]
+            image = pick_photo(links, str(deal.get("item") or ""),
                                article_names.get(article, []), photos[article],
                                in_link=not (shared or no_product))
             if image == "" and not (shared or no_product) \
@@ -532,6 +535,44 @@ def _clear_shared_article_images(db: DB, deals: list[dict[str, Any]],
     return cleared
 
 
+_BOTWALL_REPAIR_KEY = "botwall_urls_2026_10_11"
+
+
+def _repair_botwall_urls(db: DB) -> int:
+    """One-time repair (db meta keyed): redirect resolution followed
+    Walmart and eBay into their bot walls and stored the wall as the
+    product link (live: 72 Walmart /blocked, 8 eBay /splashui/challenge
+    cards). Each such deal gets the product URL the wall names
+    (http_client.challenge_target) as its canonical_url, and its photo
+    'tried' flags lifted so both photo passes try again under the normal
+    evidence rules. The dedupe_key is identity and is never changed; a
+    malformed wall parameter leaves the row untouched."""
+    from .dedupe import _DEAL_FIELDS
+    from .http_client import canonicalize_url, challenge_target, is_challenge_url
+
+    if db.meta_get(_BOTWALL_REPAIR_KEY):
+        return 0
+    fixed = 0
+    for d in db.all_deals():
+        wall = str(d.get("canonical_url") or "")
+        if not is_challenge_url(wall):
+            continue
+        target = challenge_target(wall)
+        if not target:
+            continue
+        url = canonicalize_url(target)
+        payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+        payload["canonical_url"] = url
+        payload["flags"] = [f for f in d.get("flags") or []
+                            if f not in ("product_image_tried", "image_backfill_tried")]
+        db.update_deal(d["dedupe_key"], payload=payload, canonical_url=url)
+        fixed += 1
+    db.meta_set(_BOTWALL_REPAIR_KEY, util.iso(util.now_utc()))
+    if fixed:
+        log.info("bot-wall repair: %d deal(s) link their product again", fixed)
+    return fixed
+
+
 #: Retailer product pages fetched per run for a missing photo: one polite
 #: GET each (the fetcher still holds 1 req/s per host), never repeated,
 #: time-boxed by the run.
@@ -600,11 +641,15 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     GET. A robots block, 403, 404, 5xx or timeout simply flags the deal as
     tried and moves on, quietly. One attempt per deal ever
     ("product_image_tried"), at most _PRODUCT_IMAGE_PER_RUN per run, inside
-    the run deadline; run() keeps it on the fast lane.
+    the run deadline; run() keeps it on the fast lane. A listing (category,
+    search, sale page) or a bot wall is never fetched (live: 71 fetches of
+    Walmart's wall, no photo).
     """
     from html import unescape
 
     from .dedupe import _DEAL_FIELDS
+    from .http_client import is_challenge_url
+    from .product_images import _names_no_product
 
     found = tried = 0
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
@@ -628,6 +673,10 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
                 or labels[-2] not in _PRODUCT_IMAGE_RETAILERS \
                 or any(t in host for t in _PRODUCT_IMAGE_SKIP_HOSTS):
             continue  # not the seller's own page: left alone, never fetched
+        if _names_no_product(link) or is_challenge_url(link):
+            # A category, search or sale page shows no one product (its
+            # share image is a banner); a bot wall is never fetched.
+            continue
         if deadline is not None and time.monotonic() > deadline:
             break
         try:
@@ -984,8 +1033,8 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
 
     The source's original link stays on the sighting for credit; only
     product_url is canonicalized. The product link as the post gave it is
-    kept on link_as_posted (in memory only): the post's photos are keyed
-    by it (RawPost.photos.in_link).
+    kept on link_as_posted (stored on the deal too): the post's photos are
+    keyed by it (RawPost.photos.in_link).
     """
     from .http_client import canonicalize_url, resolve_redirects
 
@@ -1130,6 +1179,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- verify tiers + dead marking ----
         refresh_tiers(db, cfg, now)
         summary["marked_dead"] = mark_expired_dead(db, cfg, now)
+
+        # One-time: product links stored as a retailer's bot wall (the
+        # card's link on every lane; the photo passes retry them).
+        _repair_botwall_urls(db)
 
         # ---- photos for existing deals from image-granted sources ----
         # Fast lane only: after its small fetch and parse it has minutes to

@@ -219,12 +219,13 @@ class DB:
                     verify_tier: str | None = None,
                     status: str | None = None,
                     expires_at: str | None = None,
-                    last_seen_at: datetime | None = None) -> None:
+                    last_seen_at: datetime | None = None,
+                    canonical_url: str | None = None) -> None:
         sets, vals = [], []
         for col, v in [("final_price", final_price), ("pct_at_checkout", pct_at_checkout),
                        ("abs_savings", abs_savings), ("online_only", online_only),
                        ("verify_tier", verify_tier), ("status", status),
-                       ("expires_at", expires_at)]:
+                       ("expires_at", expires_at), ("canonical_url", canonical_url)]:
             if v is not None:
                 sets.append(f"{col}=?")
                 vals.append(v)

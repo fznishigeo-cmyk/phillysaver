@@ -622,6 +622,37 @@ def test_a_later_post_fills_a_photo_less_deal_but_never_replaces_a_photo(tmp_pat
     db.close()
 
 
+def test_link_as_posted_is_stored_and_filled_on_merge(tmp_path) -> None:
+    """A post's photos are keyed by its links as posted, and the photo
+    backfill matches on them later: a new deal stores its link as posted;
+    a row stored without one takes it from a sighting of the same product
+    (never from a variant merged by name), and keeps it."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    ip = "https://www.walmart.com/ip/Glue-Gun/123"
+    goto = "https://goto.walmart.com/c/1/2/3?u=https%3A%2F%2Fwww.walmart.com%2Fip%2F123"
+    ext = make_extracted(item="WORKPRO Cordless Glue Gun", store="Walmart",
+                         product_url=ip, link_as_posted=goto)
+    key = dedupe.upsert_extracted(db, ext, make_savings(), make_post(uid="a"),
+                                  cfg, NOW)["dedupe_key"]
+    assert db.get_deal(key)["link_as_posted"] == goto
+    old = db.get_deal(key)
+    del old["link_as_posted"]                    # a row stored before the field
+    db.update_deal(key, payload=old)
+    variant = make_extracted(item="WORKPRO Cordless Glue Gun", store="Walmart",
+                             product_url="https://www.walmart.com/ip/Glue-Gun-Pink/456",
+                             link_as_posted="https://goto.walmart.com/c/4/5/6")
+    assert dedupe.upsert_extracted(db, variant, make_savings(), make_post(uid="b"),
+                                   cfg, NOW)["dedupe_key"] == key
+    assert not db.get_deal(key).get("link_as_posted")
+    again = dataclasses.replace(ext, link_as_posted="https://goto.walmart.com/c/7/8/9")
+    dedupe.upsert_extracted(db, again, make_savings(), make_post(uid="c"), cfg, NOW)
+    assert db.get_deal(key)["link_as_posted"] == "https://goto.walmart.com/c/7/8/9"
+    dedupe.upsert_extracted(db, ext, make_savings(), make_post(uid="d"), cfg, NOW)
+    assert db.get_deal(key)["link_as_posted"] == "https://goto.walmart.com/c/7/8/9"
+    db.close()
+
+
 def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
     """Review finding: "home sale, shop it here" over a list of items the
     LLM all gives the one sale-page link. The photo inside that link is

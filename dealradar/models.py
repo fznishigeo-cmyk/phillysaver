@@ -183,6 +183,9 @@ class Deal:
     item: str
     brand: str = ""
     canonical_url: str = ""
+    # The product link as the post gave it (often an affiliate redirect):
+    # the post's photos are keyed by it (photo backfill, in-link evidence).
+    link_as_posted: str = ""
     asin: str = ""
     image_url: str = ""                   # retailer's public product image URL
     final_price: float | None = None

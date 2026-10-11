@@ -81,6 +81,12 @@ def test_unwrap_two_levels_and_double_encoding():
      "https://www.kohls.com/product/prd-5678901/blender-red.jsp?skuId=1"),
     ("https://www.costco.com/blender.product.100123456.html",
      "https://www.costco.com/vitamix-blender.product.100123456.html"),
+    # Best Buy's and Costco's current product pages (live: read as listings,
+    # so no in-link photo and no retailer og:image)
+    ("https://www.bestbuy.com/product/govee-lamp/J3GWQH2VS2/sku/6685669?loc=x",
+     "https://www.bestbuy.com/site/govee-table-lamp/6685669.p?skuId=6685669"),
+    ("https://www.costco.com/p/-/tp-link-tapo-camera-4-pack/4000444860/?CID=PZ",
+     "https://www.costco.com/p/-/tapo-camera/4000444860"),
     ("https://www.wayfair.com/furniture/pdp/x-w001.html?piid=555",
      "https://www.wayfair.com/furniture/pdp/x-renamed.html?piid=555"),
     ("https://www.wayfair.com/a/pdp/y.html?sku=ABC123",
