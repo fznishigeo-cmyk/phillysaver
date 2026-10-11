@@ -8,26 +8,31 @@
  *   POST /api/login    {email, password} -> 200 {token, me} | 401 bad_credentials
  *   POST /api/google   {credential}      -> 200 {token, me} | 401 bad_token
  *   POST /api/claim    Bearer <session>, {session_id} -> 200 {me} | 400 bad_session
- *                      | 404 unknown_session | 502 stripe_unavailable | 401
+ *                      | 403 wrong_account | 404 unknown_session | 502 stripe_unavailable | 401
+ *   POST /api/checkout Bearer <session>  -> 200 {url} (Stripe Checkout) | 409 already_member
+ *                      | 503 checkout_unavailable {fallback_url} | 401
+ *   POST /api/portal   Bearer <session>  -> 200 {url} (Stripe billing portal) | 404 no_customer
+ *                      | 503 portal_unavailable {fallback_url} | 401
  *   GET  /api/me       Bearer <session>  -> 200 me | 401 (?fresh=1 re-asks Stripe)
  *   GET  /api/deals    Bearer <session>  -> 200 full payload | 402 me | 401
  *   POST /api/logout   Bearer <session>  -> 204 | 401
  *   POST /api/publish  Bearer NEWSLETTER_SECRET, full payload -> 204 | 400 | 401
  *
- * The four routes that mint or bind an account answer 503 signin_unavailable
+ * The routes that mint, bind or bill an account answer 503 signin_unavailable
  * while SESSION_SECRET is unset, before any KV write. Abuse counters per
  * client IP per hour live in isolate memory: signup 10, login 20, google 20,
- * claim 10. KV holds acct:<email> and deals:full (the full payload, stored
- * verbatim by /api/publish).
+ * claim 10, checkout 10. KV holds acct:<email>, deals:full (the full payload,
+ * stored verbatim by /api/publish) and stripe:price (billing.js).
  */
 
 import { EMAIL_RE, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
 import { getAccount, newAccount, saveAccount, setPassword, checkPassword, needsRehash, isVerified,
          takeOver, signSession, sessionCurrent, sessionFromRequest, verifyGoogleToken } from "./auth.js";
 import { meFor, stripeGet, forgetMembership } from "./membership.js";
+import { accountRef, checkoutUrl, portalUrl } from "./billing.js";
 
-const LIMITS_PER_IP_PER_HOUR = { signup: 10, login: 20, google: 20, claim: 10 };
-const NEEDS_SIGNING = ["/api/signup", "/api/login", "/api/google", "/api/claim"];
+const LIMITS_PER_IP_PER_HOUR = { signup: 10, login: 20, google: 20, claim: 10, checkout: 10 };
+const NEEDS_SIGNING = ["/api/signup", "/api/login", "/api/google", "/api/claim", "/api/checkout"];
 const MIN_PASSWORD = 8;
 const CHECKOUT_SESSION_RE = /^cs_[A-Za-z0-9_]{8,200}$/;
 
@@ -48,7 +53,7 @@ async function signup(request, env, headers) {
   if (!EMAIL_RE.test(email) || email.length > 254) return json({ error: "invalid_email" }, 400, headers);
   if (str(body.password).length < MIN_PASSWORD) return json({ error: "weak_password" }, 400, headers);
   if (await getAccount(env, email)) return json({ error: "exists" }, 409, headers);
-  const acct = newAccount(env, email);
+  const acct = newAccount(email);
   await setPassword(env, acct, body.password);
   return signedIn(env, acct, headers, true);
 }
@@ -68,7 +73,7 @@ async function google(request, env, headers) {
   if (!id) return json({ error: "bad_token" }, 401, headers);
   let acct = await getAccount(env, id.email);
   let save = true;
-  if (!acct) acct = newAccount(env, id.email, { googleSub: id.sub }); // trial starts now
+  if (!acct) acct = newAccount(id.email, { googleSub: id.sub }); // free: no access until a Stripe subscription
   else if (!isVerified(acct)) { // a password squat on a verified address
     takeOver(acct, id.sub);
     forgetMembership(acct.email); // the owner's email lookup must not see the squatter's cached "no"
@@ -86,9 +91,12 @@ async function requireAccount(request, env) {
 }
 
 // Binds the Stripe customer of a completed subscription Checkout Session to
-// the account: the payer holds the receipt (the session id from the Payment
-// Link's redirect), so the bound customer's subscription is theirs whatever
-// email they typed. The payer email is typed too, so it verifies nothing.
+// the account: the payer holds the receipt (the session id from the success
+// redirect of our Checkout or the Payment Link), so the bound customer's
+// subscription is theirs whatever email they typed. The payer email is typed
+// too, so it verifies nothing. A session our checkout made for another
+// account (client_reference_id) is refused; a claimed subscription that is
+// or was trialing uses up the account's one trial.
 async function claim(request, env, headers) {
   const acct = await requireAccount(request, env);
   if (!acct) return json({ error: "unauthorized" }, 401, headers);
@@ -97,7 +105,7 @@ async function claim(request, env, headers) {
   if (!env.STRIPE_SECRET_KEY) return json({ error: "stripe_unavailable" }, 502, headers);
   let session;
   try {
-    session = await stripeGet(env, `/checkout/sessions/${id}`);
+    session = await stripeGet(env, `/checkout/sessions/${id}?expand[]=subscription`);
   } catch (e) {
     if (e.status === 404) return json({ error: "unknown_session" }, 404, headers);
     console.warn("claim failed:", e && e.message);
@@ -107,11 +115,45 @@ async function claim(request, env, headers) {
   if (session.status !== "complete" || session.mode !== "subscription" || !customer || typeof customer !== "string") {
     return json({ error: "bad_session" }, 400, headers);
   }
+  if (session.client_reference_id && session.client_reference_id !== (await accountRef(acct.email))) {
+    return json({ error: "wrong_account" }, 403, headers);
+  }
+  const sub = session.subscription && typeof session.subscription === "object" ? session.subscription : null;
+  if (sub && (sub.status === "trialing" || sub.trial_end)) acct.trial_used = true;
   acct.stripe_customer = customer;
   acct.claimed_at = new Date(Date.now()).toISOString();
   await saveAccount(env, acct);
   forgetMembership(acct.email); // the next answer must see the new customer
   return json({ me: await meFor(env, acct) }, 200, headers);
+}
+
+// A Stripe Checkout Session URL for the signed-in account (card up front;
+// the Stripe trial only while the account has never had one). Membership is
+// re-asked (?fresh=1 rules) so a member is never sold a second subscription.
+async function checkout(request, env, headers) {
+  const acct = await requireAccount(request, env);
+  if (!acct) return json({ error: "unauthorized" }, 401, headers);
+  const status = await meFor(env, acct, true);
+  if (status.member) return json({ error: "already_member", me: status }, 409, headers);
+  try {
+    return json({ url: await checkoutUrl(env, acct, status) }, 200, headers);
+  } catch (e) {
+    console.warn("checkout unavailable:", e && e.message); // status + path, never Stripe's text
+    return json({ error: "checkout_unavailable", fallback_url: status.subscribe_url }, 503, headers);
+  }
+}
+
+// A Stripe billing portal session (cancel, card, invoices) for the bound customer.
+async function portal(request, env, headers) {
+  const acct = await requireAccount(request, env);
+  if (!acct) return json({ error: "unauthorized" }, 401, headers);
+  if (!acct.stripe_customer) return json({ error: "no_customer" }, 404, headers);
+  try {
+    return json({ url: await portalUrl(env, acct) }, 200, headers);
+  } catch (e) {
+    console.warn("portal unavailable:", e && e.message);
+    return json({ error: "portal_unavailable", fallback_url: env.STRIPE_PORTAL_LINK || "" }, 503, headers);
+  }
 }
 
 async function me(request, env, headers, url) {
@@ -150,7 +192,7 @@ async function publish(request, env) {
 }
 
 const POSTS = { "/api/signup": signup, "/api/login": login, "/api/google": google, "/api/claim": claim,
-                "/api/logout": logout };
+                "/api/checkout": checkout, "/api/portal": portal, "/api/logout": logout };
 const GETS = { "/api/me": me, "/api/deals": deals };
 
 export async function handleApi(request, env, url) {
@@ -161,7 +203,7 @@ export async function handleApi(request, env, url) {
     const route = request.method === "POST" ? POSTS[path] : request.method === "GET" ? GETS[path] : null;
     if (!route) return json({ error: "not_found" }, 404, headers);
     if (NEEDS_SIGNING.includes(path) && !env.SESSION_SECRET) return json({ error: "signin_unavailable" }, 503, headers);
-    const bucket = path.slice(5); // "signup" | "login" | "google" | "claim" | ...
+    const bucket = path.slice(5); // "signup" | "login" | "google" | "claim" | "checkout" | ...
     if (LIMITS_PER_IP_PER_HOUR[bucket] && overLimit(request, bucket, LIMITS_PER_IP_PER_HOUR[bucket])) {
       return json({ error: "rate_limited" }, 429, headers);
     }

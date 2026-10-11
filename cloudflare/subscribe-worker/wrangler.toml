@@ -15,9 +15,12 @@ ALLOWED_ORIGINS = "https://wowpriced.com,https://www.wowpriced.com,https://fznis
 # Public paywall settings. The deploy workflow's inputs override these on the
 # deployed copy for that run; commit real values here to make them stick.
 GOOGLE_CLIENT_ID = ""       # OAuth Web client ID; Google sign-in is off when empty
-STRIPE_PAYMENT_LINK = ""    # the $9.99/mo Payment Link; me.subscribe_url is "" when empty
+STRIPE_PAYMENT_LINK = ""    # the $9.99/mo Payment Link; me.subscribe_url is "" when empty, and
+                            # POST /api/checkout bills its price unless STRIPE_PRICE_ID is set
+STRIPE_PRICE_ID = ""        # the $9.99/mo recurring price (price_...); "" = the Payment Link's price
 STRIPE_PORTAL_LINK = ""     # customer-portal link; me.portal_url is "" when empty
-TRIAL_DAYS = "7"            # free full access after sign-up, in days
+TRIAL_DAYS = "7"            # Stripe trial on a first checkout, card up front (0 = no trial)
+SITE_URL = "https://wowpriced.com"  # Checkout success/cancel and portal return pages live here
 # PBKDF2 rounds for new password hashes (auth.js scheme 2). 20,000 is ~3 ms of
 # CPU, inside the Free plan's 10 ms per request; raise it on Workers Paid.
 # Older hashes are re-made with the current count at the next login.

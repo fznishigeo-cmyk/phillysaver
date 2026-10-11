@@ -148,13 +148,14 @@ members:
   email_every_minutes: 60    # at most one member email per hour; new deals queue for the next one
 
 paywall:
-  # Visitors see the top teaser_count deals in full; every other live deal
-  # is a locked stub on the public site. The full payload is POSTed to the
-  # Worker at api_url each render (NEWSLETTER_SECRET secret) and served to
-  # members only. See docs/paywall.md.
+  # Visitors and free accounts see the top teaser_count deals in full; every
+  # other live deal is a locked stub on the public site. The full payload is
+  # POSTed to the Worker at api_url each render (NEWSLETTER_SECRET secret)
+  # and served to members only: a Stripe subscription, trialing or active,
+  # card on file (no card-less trial). See docs/paywall.md.
   enabled: true    # teaser deals.json + full payload uploaded to the Worker
   teaser_count: 8          # unlocked deals for visitors
-  trial_days: 7
+  trial_days: 7            # page copy only; the Stripe trial is the Worker's TRIAL_DAYS: keep them equal
   api_url: "https://wowpriced-subscribe.wowpriced.workers.dev"              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty
 

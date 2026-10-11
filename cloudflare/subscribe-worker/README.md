@@ -4,8 +4,8 @@ The only moving part of wowpriced that lives outside GitHub: one Cloudflare
 Worker + KV namespace. It holds the newsletter's subscriber list (the site's
 forms POST to it, people unsubscribe through it, the pipeline reads the list
 through it) and, since the paywall (`docs/paywall.md`), the member accounts,
-their sessions, the Stripe membership check and the members-only full deals
-payload. It never sends mail; `dealradar/publish/newsletter.py` does that over
+their sessions, the Stripe membership check, Stripe Checkout (the card-up-front
+trial) and the billing portal, and the members-only full deals payload. It never sends mail; `dealradar/publish/newsletter.py` does that over
 the SMTP secrets, once per subscriber per day.
 
 ```
@@ -17,14 +17,17 @@ subscriber ──GET /unsubscribe?e=&t=──▶ page with a button ──POST�
 
 GitHub Actions ──POST /api/publish (Bearer NEWSLETTER_SECRET)──▶ Worker ──▶ KV deals:full
 browser ──POST /api/signup|login|google──▶ Worker ──▶ KV acct:<email>, session token back
+browser ──POST /api/checkout──▶ Worker ──▶ Stripe Checkout Session ──▶ {url}: card + trial on Stripe's page
 welcome.html ──POST /api/claim {session_id}──▶ Worker ──▶ Stripe Checkout Session ──▶ acct.stripe_customer
-browser ──GET /api/deals (Bearer <session>)──▶ Worker ──▶ Stripe? trial? ──▶ the full payload
+browser ──GET /api/deals (Bearer <session>)──▶ Worker ──▶ Stripe: trialing/active? ──▶ the full payload
+browser ──POST /api/portal──▶ Worker ──▶ Stripe billing portal session ──▶ {url}: cancel, card, invoices
 ```
 
 Files: `worker.js` (the router, `/subscribe`, `/list`, `/list/confirm-sent`),
 `subscribers.js` (the subscriber record, the `/confirm` and `/unsubscribe`
 pages), `api.js` (the `/api/*` handlers), `auth.js` (accounts, password
-hashing, sessions, Google ID tokens), `membership.js` (Stripe + trial),
+hashing, sessions, Google ID tokens), `membership.js` (the Stripe membership
+check and `me`), `billing.js` (Checkout, the price, the billing portal),
 `util.js` (CORS, JSON, isolate memory, rate limits, base64url). wrangler
 bundles the ES modules; `main` in wrangler.toml is `worker.js`.
 
@@ -47,43 +50,54 @@ bundles the ES modules; `main` in wrangler.toml is `worker.js`.
 
 JSON in and out; every error is `{"error": "<code>"}` with the status below,
 never a stack trace. `me` is `{email, member, reason, trial_ends_at,
-email_verified, claimed, subscribe_url, portal_url}` where `reason` is
-`subscribed` (Stripe), `trial` or `expired`, `claimed` says a Stripe customer
-is bound to the account, `subscribe_url` is
-`STRIPE_PAYMENT_LINK?prefilled_email=<email>` (empty when the var is empty)
-and `portal_url` is `STRIPE_PORTAL_LINK` or "".
+trial_days, trial_available, email_verified, claimed, subscribe_url,
+portal_url}`: `member` only with a Stripe subscription that is `active` or
+`trialing` (no card-less trial); `reason` is `subscribed` (active), `trial`
+(Stripe trialing; `trial_ends_at` is its `trial_end`, else null), `lapsed` (a
+bound customer, nothing live) or `none`; `trial_days` is `TRIAL_DAYS`;
+`trial_available` is true until the account's one trial is used (no
+`trial_used`, no bound customer); `claimed` says a Stripe customer is bound;
+`subscribe_url` is `STRIPE_PAYMENT_LINK?prefilled_email=<email>` (empty when
+the var is empty) and `portal_url` is `STRIPE_PORTAL_LINK` or "".
 
 | Route | Auth | Body | Response |
 |---|---|---|---|
 | `POST /api/signup` | none | `{email, password}` | `200 {token, me}`; `400 invalid_email` / `weak_password` (under 8 chars); `409 exists`. The address is unverified: anyone can type it |
 | `POST /api/login` | none | `{email, password}` | `200 {token, me}`; `401 bad_credentials` (unknown address, wrong password and Google-only account all cost one PBKDF2 run). A hash made with an older scheme or round count is re-made after a good login |
-| `POST /api/google` | none | `{credential}` (Google ID token) | `200 {token, me}`; `401 bad_token`. `aud == GOOGLE_CLIENT_ID`, `iss`, `exp` and `email_verified` are checked before any network call, then RS256 against Google's JWKS (cached an hour; an unknown `kid` forces a refetch at most once a minute). Finds or creates the account (verified; the trial starts on first sign-in). A verified sign-in **takes over** an unverified password account on the same address (password cleared, every earlier session of that account invalidated) |
-| `POST /api/claim` | `Bearer <session>` | `{session_id}` from the Payment Link's `welcome.html?session_id={CHECKOUT_SESSION_ID}` redirect | `GET /v1/checkout/sessions/<id>`; needs `status: complete`, `mode: subscription` and a customer; binds `acct.stripe_customer` (the typed payer email never verifies the address). `200 {me}`; `400 bad_session`; `404 unknown_session`; `502 stripe_unavailable`; `401`. 10 per IP per hour |
+| `POST /api/google` | none | `{credential}` (Google ID token) | `200 {token, me}`; `401 bad_token`. `aud == GOOGLE_CLIENT_ID`, `iss`, `exp` and `email_verified` are checked before any network call, then RS256 against Google's JWKS (cached an hour; an unknown `kid` forces a refetch at most once a minute). Finds or creates the account (verified, free). A verified sign-in **takes over** an unverified password account on the same address (password cleared, every earlier session of that account invalidated) |
+| `POST /api/checkout` | `Bearer <session>` | `{}` or empty | `200 {url}`: a subscription Checkout Session (the card always collected, `TRIAL_DAYS` of trial while the account has never had one, `client_reference_id` = the account reference, success `<SITE_URL>/welcome.html?session_id={CHECKOUT_SESSION_ID}`, cancel `<SITE_URL>/?checkout=cancel`, an `Idempotency-Key` per account per 10 minutes); `409 already_member` (with `me`); `503 checkout_unavailable` with `fallback_url` (the Payment Link) on any Stripe error or without a price; `401`. 10 per IP per hour |
+| `POST /api/portal` | `Bearer <session>` | `{}` or empty | `200 {url}`: a billing portal session for the bound customer, returning to `<SITE_URL>/`; `404 no_customer`; `503 portal_unavailable` with `fallback_url` (`STRIPE_PORTAL_LINK` or ""); `401` |
+| `POST /api/claim` | `Bearer <session>` | `{session_id}` from the `welcome.html?session_id={CHECKOUT_SESSION_ID}` redirect (our checkout or the Payment Link) | `GET /v1/checkout/sessions/<id>?expand[]=subscription`; needs `status: complete`, `mode: subscription` and a customer; `403 wrong_account` when its `client_reference_id` is another account's; binds `acct.stripe_customer` (the typed payer email never verifies the address) and sets `trial_used` when the subscription is or was trialing. `200 {me}`; `400 bad_session`; `404 unknown_session`; `502 stripe_unavailable`; `401`. 10 per IP per hour |
 | `GET /api/me` | `Bearer <session>` | — | `200 me`; `401`. `?fresh=1` skips the 5-minute Stripe cache, at most once a minute per account |
 | `GET /api/deals` | `Bearer <session>` | — | `200` the full payload (as published) when `me.member`; `402 me` when not; `401` without a session; `404 no_payload` before the first publish |
 | `POST /api/logout` | `Bearer <session>` | — | `204`; `401` |
 | `POST /api/publish` | `Bearer <NEWSLETTER_SECRET>` | the full payload (JSON with a `deals` array) | `204`; `400 bad_payload`; `401` |
 | any other `/api/*` | | | `404 not_found` |
 
-`signup`, `login`, `google` and `claim` answer `503 signin_unavailable` while
-`SESSION_SECRET` is unset, before touching KV; a new account is written only
-after its session token signed.
+`signup`, `login`, `google`, `claim` and `checkout` answer `503
+signin_unavailable` while `SESSION_SECRET` is unset, before touching KV or
+Stripe; a new account is written only after its session token signed.
 
-Sessions are stateless: `base64url({"email", "exp"}).base64url(hmac-sha256)`
+Sessions are stateless: `base64url({"email", "sv", "exp"}).base64url(hmac-sha256)`
 signed with `SESSION_SECRET`, 30 days, compared in constant time.
 
-Membership: `member` while `now < trial_ends_at` (`TRIAL_DAYS` after
-sign-up), or when Stripe has an `active` or `trialing` subscription for
+Membership: no card-less trial. `member` only when Stripe has an `active` or
+`trialing` subscription (the trial is Stripe's, card on file) for
 (a) the customer bound by `/api/claim` (`/v1/subscriptions?customer=&status=all`)
 or (b) the account's email, **only when `email_verified`**: the Worker pages
 `/v1/subscriptions?status=active|trialing&expand[]=data.customer` and compares
 `customer.email` lowercased, as `dealradar/publish/members.py` does (the
 `customers?email=` filter is exact-case). An account that is neither bound nor
 verified is never looked up, so a password sign-up with someone else's
-address inherits nothing. Stripe's answer is cached 5 minutes in isolate
-memory; a Stripe error counts as "not subscribed" for that request only
-(logged, never cached). Abuse control per client IP per hour, in memory:
-10 signups, 20 logins, 20 Google posts, 10 claims -> `429 rate_limited`.
+address inherits nothing. Active beats trialing. Stripe's answer (the best
+live subscription, `{status, trial_end}`, or none) is cached 5 minutes in
+isolate memory; a Stripe error counts as "not a member" for that request
+only (logged, never cached). Checkout's price is `STRIPE_PRICE_ID`, else the
+price of the active Payment Link whose URL is `STRIPE_PAYMENT_LINK` (looked
+up once, cached 6 hours in memory and a day in KV `stripe:price`). Stripe's
+error text never reaches a client: the Worker logs status and path only.
+Abuse control per client IP per hour, in memory: 10 signups, 20 logins,
+20 Google posts, 10 claims, 10 checkouts -> `429 rate_limited`.
 Passwords, tokens and secrets are never logged.
 
 Passwords (scheme 2): `HMAC-SHA256(SESSION_SECRET, password)` as a
@@ -100,16 +114,18 @@ scheme-2 password as well as every session.
 | Key | Value |
 |---|---|
 | `sub:<email>` | `{ts, token, confirmed, confirm_sent_at}` (also in metadata); no `confirmed` key = confirmed (pre double opt-in) |
-| `acct:<email>` | `{email, scheme, iterations, salt, hash, created_at, trial_ends_at, google_sub, email_verified, stripe_customer, claimed_at, session_version}`; `scheme|iterations|salt|hash` null for a Google-only account; a session token carries the version it was signed under and dies when a takeover bumps it |
+| `acct:<email>` | `{email, scheme, iterations, salt, hash, created_at, google_sub, email_verified, stripe_customer, claimed_at, trial_used, session_version}`; `scheme|iterations|salt|hash` null for a Google-only account; a session token carries the version it was signed under and dies when a takeover bumps it; older records may still carry an unused `trial_ends_at` |
 | `deals:full` | the full payload exactly as the pipeline posted it |
 | `jwks:google` | Google's signing keys, one hour |
+| `stripe:price` | `{link, price}`: the Payment Link's price for checkout, one day |
 
 Nothing else: no post text, no card data. Abuse counters (`rl:*`), the
 5-minute membership cache (`member:<email>`) and the `?fresh=1` throttle live
 in isolate memory (best effort; an isolate restart only means a fresh counter
 or one more Stripe call), which keeps KV writes to what the Free plan allows
 (1,000 a day): one per sign-up, one per subscriber per step
-(subscribe, confirm-sent, confirm), one per claim, one per re-hash.
+(subscribe, confirm-sent, confirm), one per claim, one per re-hash, one per
+price lookup (at most daily).
 
 ## Deploy (once, then whenever the code changes)
 
@@ -122,23 +138,33 @@ Run the **deploy subscribe worker** workflow from the repository's Actions tab
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard -> Workers & Pages -> Overview, right-hand column "Account ID". |
 | `NEWSLETTER_SECRET` (required) | Any long random string (e.g. `openssl rand -hex 32`). The same secret lets the pipeline call `/list` and `/api/publish`. |
 | `SESSION_SECRET` | Another long random string; signs session tokens. Skipped with a notice when empty (nobody can sign in until it is set and the workflow re-run). Changing it signs everyone out **and invalidates every password** (it peppers the hashes); set it once. |
-| `STRIPE_SECRET_KEY` | The live Stripe secret key the pipeline already uses. Skipped with a notice when empty (only trials count as members until then). |
+| `STRIPE_SECRET_KEY` | The live Stripe secret key the pipeline already uses. Skipped with a notice when empty (nobody is a member and checkout is off until then). The workflow reports its mode (live or test, from the prefix; never the key) and warns when it differs from the Payment Link's. A restricted key (`rk_`) needs write on Checkout Sessions and Customer portal, read on Subscriptions, Customers, Payment Links and Prices. |
 
 Workflow inputs (all optional) set the public vars on the deployed copy of
 `wrangler.toml` for that run: `google_client_id` (`GOOGLE_CLIENT_ID`, the
 OAuth Web client ID; the Google button stays off while empty),
-`stripe_payment_link` (`STRIPE_PAYMENT_LINK`), `stripe_portal_link`
-(`STRIPE_PORTAL_LINK`), `trial_days` (`TRIAL_DAYS`, default 7). Re-run the
-workflow with the inputs filled in to change them; an empty input keeps the
-value in `wrangler.toml`, so commit real values there to make them stick
-across deploys (none of them is secret). `PBKDF2_ITERATIONS` is set in
-`wrangler.toml` only.
+`stripe_payment_link` (`STRIPE_PAYMENT_LINK`), `stripe_price_id`
+(`STRIPE_PRICE_ID`; empty = the Payment Link's price), `stripe_portal_link`
+(`STRIPE_PORTAL_LINK`), `trial_days` (`TRIAL_DAYS`, the Stripe trial, default
+7; 0 = none). Re-run the workflow with the inputs filled in to change them; an
+empty input keeps the value in `wrangler.toml`, so commit real values there
+to make them stick across deploys (none of them is secret).
+`PBKDF2_ITERATIONS` and `SITE_URL` (default `https://wowpriced.com`, where
+Checkout and the portal send people back) are set in `wrangler.toml` only.
 
-In the Stripe dashboard, set the Payment Link's after-payment behaviour to
-redirect to `https://wowpriced.com/welcome.html?session_id={CHECKOUT_SESSION_ID}`:
-that page claims the payment for the signed-in account (`POST /api/claim`).
-Without the redirect, only a verified (Google) address reaches its
-subscription.
+In the Stripe dashboard (same mode as the key: live for real customers):
+
+- set the Payment Link's after-payment behaviour to redirect to
+  `https://wowpriced.com/welcome.html?session_id={CHECKOUT_SESSION_ID}`: that
+  page claims the payment for the signed-in account (`POST /api/claim`), for
+  the Worker's checkout and the Payment Link alike. Without the redirect, only
+  a verified (Google) address reaches a Payment Link subscription;
+- activate the **customer portal** (Settings -> Billing -> Customer portal)
+  with **cancellation allowed** and payment-method updates on, and put its
+  login link in `STRIPE_PORTAL_LINK`; `POST /api/portal` is 503 until the
+  portal is active;
+- turn on the email to customers **before a free trial ends** (Settings ->
+  Billing -> Subscriptions and emails), with receipts.
 
 The workflow creates the KV namespace `wowpriced_subs` if it is missing,
 substitutes its id (and the inputs) into a copy of `wrangler.toml`, runs
@@ -198,7 +224,8 @@ curl -s -X POST "$W/unsubscribe?e=you@example.com&t=<token>"  # what the button 
 
 curl -s -X POST -H 'Content-Type: application/json' -d '{"email":"you@example.com","password":"long enough"}' $W/api/signup
 T=<token from that reply>
-curl -s -H "Authorization: Bearer $T" "$W/api/me?fresh=1"
+curl -s -H "Authorization: Bearer $T" "$W/api/me?fresh=1"     # member:false, reason:none, trial_available:true
+curl -s -X POST -H "Authorization: Bearer $T" $W/api/checkout  # {url}: Stripe Checkout, card required
 curl -s -H "Authorization: Bearer $T" $W/api/deals | head -c 300
 ```
 

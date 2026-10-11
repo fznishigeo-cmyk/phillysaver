@@ -7,10 +7,12 @@
 # repository secret is empty) on the Worker, and prints the Worker URL in the
 # job summary (paste it into config.yaml newsletter.worker_url and
 # paywall.api_url). The public vars GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
-# STRIPE_PORTAL_LINK and TRIAL_DAYS come from the dispatch inputs, substituted
-# into the deployed copy of wrangler.toml: re-run with new inputs to change
-# them (an empty input keeps wrangler.toml's value). Secret values are never
-# printed.
+# STRIPE_PRICE_ID, STRIPE_PORTAL_LINK and TRIAL_DAYS come from the dispatch
+# inputs, substituted into the deployed copy of wrangler.toml: re-run with new
+# inputs to change them (an empty input keeps wrangler.toml's value; SITE_URL
+# is set in wrangler.toml only). It also reports whether the Stripe key and the
+# Payment Link are live or test mode, and warns when they differ. Secret values
+# are never printed.
 name: deploy subscribe worker
 
 on:
@@ -24,12 +26,16 @@ on:
         description: "STRIPE_PAYMENT_LINK: the $9.99/mo Payment Link, e.g. https://buy.stripe.com/... (empty keeps wrangler.toml's value)"
         required: false
         default: ""
+      stripe_price_id:
+        description: "STRIPE_PRICE_ID: the $9.99/mo recurring price (price_...) the Worker's checkout bills (empty keeps wrangler.toml's value; empty there = the Payment Link's price)"
+        required: false
+        default: ""
       stripe_portal_link:
         description: "STRIPE_PORTAL_LINK: customer-portal link, e.g. https://billing.stripe.com/p/login/... (empty keeps wrangler.toml's value)"
         required: false
         default: ""
       trial_days:
-        description: "TRIAL_DAYS: free full access after sign-up, in days (empty keeps wrangler.toml's value)"
+        description: "TRIAL_DAYS: Stripe trial on a first checkout, card up front, in days; 0 = no trial (empty keeps wrangler.toml's value)"
         required: false
         default: ""
 
@@ -89,6 +95,7 @@ jobs:
           KV_ID: ${{ steps.kv.outputs.id }}
           GOOGLE_CLIENT_ID: ${{ inputs.google_client_id }}
           STRIPE_PAYMENT_LINK: ${{ inputs.stripe_payment_link }}
+          STRIPE_PRICE_ID: ${{ inputs.stripe_price_id }}
           STRIPE_PORTAL_LINK: ${{ inputs.stripe_portal_link }}
           TRIAL_DAYS: ${{ inputs.trial_days }}
         run: |
@@ -99,7 +106,7 @@ jobs:
           node -e '
             const fs = require("fs");
             let toml = fs.readFileSync("wrangler.deploy.toml", "utf8");
-            for (const name of ["GOOGLE_CLIENT_ID", "STRIPE_PAYMENT_LINK", "STRIPE_PORTAL_LINK", "TRIAL_DAYS"]) {
+            for (const name of ["GOOGLE_CLIENT_ID", "STRIPE_PAYMENT_LINK", "STRIPE_PRICE_ID", "STRIPE_PORTAL_LINK", "TRIAL_DAYS"]) {
               const value = (process.env[name] || "").trim();
               if (!value) continue;
               if (name === "TRIAL_DAYS" && !/^\d+$/.test(value)) throw new Error("trial_days must be a whole number");
@@ -140,10 +147,38 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$STRIPE_SECRET_KEY" ]; then
-            echo "::notice::STRIPE_SECRET_KEY repository secret is not set; skipped (only trials count as members until it is set and this workflow is re-run)"
+            echo "::notice::STRIPE_SECRET_KEY repository secret is not set; skipped (nobody is a member and checkout is off until it is set and this workflow is re-run)"
             exit 0
           fi
           printf '%s' "$STRIPE_SECRET_KEY" | wrangler secret put STRIPE_SECRET_KEY --config wrangler.deploy.toml
+
+      # Live vs test mode, from the key's prefix and the link's path only (a
+      # test Payment Link is https://buy.stripe.com/test_...): the key itself is
+      # never printed. A test key cannot see live checkouts, and the reverse.
+      - name: Report the Stripe key mode
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          key_mode=""
+          case "$STRIPE_SECRET_KEY" in
+            "") echo "::notice::Stripe key mode: not set" ;;
+            sk_live_*|rk_live_*) key_mode=live; echo "::notice::Stripe key mode: live" ;;
+            sk_test_*|rk_test_*) key_mode=test; echo "::warning::Stripe key is a TEST key: live checkouts cannot be verified" ;;
+            *) echo "::warning::Stripe key mode: unrecognized (expected an sk_live_/rk_live_ or sk_test_/rk_test_ key)" ;;
+          esac
+          # The Payment Link as deployed: the input, else wrangler.toml's value.
+          link="$(sed -n 's/^STRIPE_PAYMENT_LINK = "\([^"]*\)".*/\1/p' wrangler.deploy.toml)"
+          link_mode=""
+          case "$link" in
+            "") echo "::notice::Payment Link mode: not set" ;;
+            */test_*) link_mode=test; echo "::warning::Payment Link is a TEST link: real cards cannot pay it" ;;
+            https://*) link_mode=live; echo "::notice::Payment Link mode: live" ;;
+            *) echo "::warning::Payment Link mode: unrecognized (expected https://buy.stripe.com/...)" ;;
+          esac
+          if [ -n "$key_mode" ] && [ -n "$link_mode" ] && [ "$key_mode" != "$link_mode" ]; then
+            echo "::warning::Stripe key mode ($key_mode) and Payment Link mode ($link_mode) differ: checkouts and claims fail until both are the same mode (live for real customers)"
+          fi
 
       - name: Write the job summary
         env:
@@ -164,5 +199,5 @@ jobs:
             echo '    paywall:'
             echo '      api_url: "<the URL above>"'
             echo
-            echo "Re-run this workflow with the inputs filled in to change GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK, STRIPE_PORTAL_LINK or TRIAL_DAYS on the Worker."
+            echo "Re-run this workflow with the inputs filled in to change GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK, STRIPE_PRICE_ID, STRIPE_PORTAL_LINK or TRIAL_DAYS on the Worker."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -183,6 +183,60 @@ def test_deploy_subscribe_worker_shape() -> None:
     assert put["env"] == {"NEWSLETTER_SECRET": "${{ secrets.NEWSLETTER_SECRET }}"}
 
 
+def _stripe_mode_step() -> tuple[list[dict], dict]:
+    steps = single_job(load_workflow(DEPLOY_WORKER))["steps"]
+    return steps, next(s for s in steps if s.get("name") == "Report the Stripe key mode")
+
+
+def test_deploy_subscribe_worker_stripe_settings() -> None:
+    """STRIPE_PRICE_ID is a dispatch input substituted like the other vars
+    (SITE_URL stays in wrangler.toml); the key-mode report reads the secret
+    through its step env only, after the deploy wrote wrangler.deploy.toml."""
+    inputs = workflow_on(load_workflow(DEPLOY_WORKER))["workflow_dispatch"]["inputs"]
+    assert inputs["stripe_price_id"]["required"] is False
+    assert inputs["stripe_price_id"]["default"] == ""
+    steps, mode = _stripe_mode_step()
+    deploy = next(s for s in steps if s.get("id") == "deploy")
+    assert deploy["env"]["STRIPE_PRICE_ID"] == "${{ inputs.stripe_price_id }}"
+    assert '"STRIPE_PRICE_ID"' in deploy["run"]
+    assert "SITE_URL" not in deploy["env"]
+    assert mode["env"] == {"STRIPE_SECRET_KEY": "${{ secrets.STRIPE_SECRET_KEY }}"}
+    assert steps.index(mode) > steps.index(deploy)
+    assert "wrangler.deploy.toml" in mode["run"]
+
+
+@pytest.mark.parametrize("key, link, want", [
+    ("sk_live_FAKEKEY", "https://buy.stripe.com/abc123",
+     ["::notice::Stripe key mode: live", "::notice::Payment Link mode: live"]),
+    ("rk_live_FAKEKEY", "https://buy.stripe.com/test_abc123",
+     ["::notice::Stripe key mode: live", "::warning::Payment Link is a TEST link", "::warning::Stripe key mode (live) and Payment Link mode (test) differ"]),
+    ("sk_test_FAKEKEY", "https://buy.stripe.com/abc123",
+     ["::warning::Stripe key is a TEST key: live checkouts cannot be verified", "::notice::Payment Link mode: live",
+      "::warning::Stripe key mode (test) and Payment Link mode (live) differ"]),
+    ("rk_test_FAKEKEY", "https://buy.stripe.com/test_abc123",
+     ["::warning::Stripe key is a TEST key", "::warning::Payment Link is a TEST link"]),
+    ("whsec_FAKEKEY", "", ["::warning::Stripe key mode: unrecognized", "::notice::Payment Link mode: not set"]),
+    ("", "https://buy.stripe.com/abc123", ["::notice::Stripe key mode: not set", "::notice::Payment Link mode: live"]),
+])
+def test_deploy_subscribe_worker_reports_stripe_mode(tmp_path: Path, key: str, link: str, want: list[str]) -> None:
+    """The step's own script, run against a deployed-style wrangler.toml copy:
+    live/test from the key prefix and the link path, a warning when they
+    differ, and never the key itself in the output."""
+    _, mode = _stripe_mode_step()
+    toml = (WORKER_DIR / "wrangler.toml").read_text()
+    if link:  # what the deploy step writes for a non-empty input
+        toml = re.sub(r"^STRIPE_PAYMENT_LINK = .*$", "STRIPE_PAYMENT_LINK = " + json.dumps(link), toml, flags=re.M)
+    (tmp_path / "wrangler.deploy.toml").write_text(toml)
+    res = subprocess.run(["bash", "-c", mode["run"]], cwd=tmp_path, capture_output=True, text=True, timeout=30,
+                         env={"PATH": os.environ["PATH"], "STRIPE_SECRET_KEY": key})
+    assert res.returncode == 0, res.stderr
+    lines = res.stdout.splitlines()
+    for needle in want:
+        assert any(line.startswith(needle) for line in lines), (needle, lines)
+    assert sum("differ" in line for line in lines) == sum("differ" in w for w in want)
+    assert "FAKEKEY" not in res.stdout + res.stderr
+
+
 # ------------------------------------------------------------------- safety
 
 

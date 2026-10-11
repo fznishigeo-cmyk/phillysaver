@@ -1,10 +1,12 @@
 /**
  * Accounts, sessions and Google sign-in for the paywall (docs/paywall.md).
  *
- *   acct:<email>  {email, scheme, iterations, salt, hash, created_at, trial_ends_at,
- *                  google_sub, email_verified, stripe_customer, claimed_at,
+ *   acct:<email>  {email, scheme, iterations, salt, hash, created_at, google_sub,
+ *                  email_verified, stripe_customer, claimed_at, trial_used,
  *                  session_version}
- *                 scheme/iterations/salt/hash are null for a Google-only account
+ *                 scheme/iterations/salt/hash are null for a Google-only account;
+ *                 records from before the Stripe trial may still carry a
+ *                 trial_ends_at, which nothing reads any more
  *   jwks:google   Google's signing keys, cached one hour (also in memory)
  *
  * A session is a stateless token base64url(json).base64url(hmac-sha256) of
@@ -34,7 +36,6 @@ const SESSION_DAYS = 30;
 const SCHEME = 2;
 const DEFAULT_ITERATIONS = 20000;
 const LEGACY_ITERATIONS = 100000; // scheme 1
-const DEFAULT_TRIAL_DAYS = 7;
 const GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
 const GOOGLE_ISSUERS = ["accounts.google.com", "https://accounts.google.com"];
 const JWKS_TTL_MS = 3600 * 1000;
@@ -137,20 +138,15 @@ export async function saveAccount(env, acct) {
   await env.SUBS.put(`acct:${acct.email}`, JSON.stringify(acct));
 }
 
-function trialDays(env) {
-  const n = Number.parseInt(env.TRIAL_DAYS, 10);
-  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_TRIAL_DAYS;
-}
-
 // A fresh account, not yet saved (the caller signs the session first, so a
-// signing failure leaves nothing behind). The trial starts now either way.
-export function newAccount(env, email, { googleSub } = {}) {
-  const now = Date.now();
+// signing failure leaves nothing behind). Signing up is free and grants no
+// access by itself: deals beyond the teaser need a Stripe subscription
+// (trialing or active, card on file; membership.js).
+export function newAccount(email, { googleSub } = {}) {
   return { email, scheme: null, iterations: null, salt: null, hash: null,
-           created_at: new Date(now).toISOString(),
-           trial_ends_at: new Date(now + trialDays(env) * 86400000).toISOString(),
+           created_at: new Date(Date.now()).toISOString(),
            google_sub: googleSub || null, email_verified: !!googleSub, stripe_customer: null, claimed_at: null,
-           session_version: 0 };
+           trial_used: false, session_version: 0 };
 }
 
 // Accounts written before email_verified existed count as verified only when
@@ -163,7 +159,8 @@ export function isVerified(acct) {
 // A verified Google sign-in takes over an unverified (password) account on the
 // same address: whoever typed that address at sign-up does not own it. Their
 // password goes and their sessions die (the version bump); a Stripe customer
-// bound by a claim stays, since the payer holds that receipt.
+// bound by a claim stays, since the payer holds that receipt, and so does
+// trial_used (one Stripe trial per account).
 export function takeOver(acct, googleSub) {
   Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null,
                         session_version: (acct.session_version || 0) + 1 });

@@ -18,15 +18,17 @@
  *                                -> {emails:[{email, token}]} confirmed only, at most 10k;
  *                                ?pending=1 -> unconfirmed addresses not yet mailed a link
  *   POST /list/confirm-sent      same bearer, {emails:[...]} -> 204, stamps confirm_sent_at
- *   /api/*                       the paywall: accounts, sessions, membership and
- *                                the members-only deals (api.js, docs/paywall.md)
+ *   /api/*                       the paywall: accounts, sessions, membership, Stripe
+ *                                Checkout + billing portal and the members-only deals
+ *                                (api.js, billing.js, docs/paywall.md)
  *   OPTIONS *                    CORS preflight, allowed origins only; else 404
  *
  * Bindings: SUBS (KV); secrets NEWSLETTER_SECRET, SESSION_SECRET,
  * STRIPE_SECRET_KEY (wrangler secret put); vars ALLOWED_ORIGINS (comma list,
  * default https://wowpriced.com, https://www.wowpriced.com and
  * https://fznishigeo-cmyk.github.io), GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
- * STRIPE_PORTAL_LINK, TRIAL_DAYS, PBKDF2_ITERATIONS (wrangler.toml).
+ * STRIPE_PORTAL_LINK, STRIPE_PRICE_ID, SITE_URL, TRIAL_DAYS, PBKDF2_ITERATIONS
+ * (wrangler.toml).
  */
 
 import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
