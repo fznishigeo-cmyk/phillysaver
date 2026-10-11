@@ -1,0 +1,31 @@
+name: browser probe (read-only)
+
+# Opens the live site in a real browser (desktop and phone), scrolls, and
+# logs what moves the page: layout shifts with the elements that moved,
+# scroll position and DOM changes. Analytics and ad tags are blocked.
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "How long to watch after scrolling (seconds)"
+        required: false
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Probe the live site
+        env:
+          SECONDS: ${{ inputs.seconds }}
+        run: node scripts/browser_probe.js
