@@ -57,6 +57,10 @@ class RawPost:
                                   # to the PRE-enrichment text so a flaky article
                                   # fetch can't make the same post hash differently
                                   # between runs. Empty -> `text` is used.
+    # Product link as posted -> the photo next to it in the post (roundups:
+    # one photo per product). Image-granted sources only; transient like
+    # `text`, never persisted. Values are hotlinked, never copied or stored.
+    product_images: dict[str, str] = field(default_factory=dict)
 
     @property
     def content_hash(self) -> str:
@@ -115,6 +119,10 @@ class ExtractedDeal:
                                           # "free_after_rebate", "moneymaker", "penny"
     price_is_range: bool = False          # "as low as $X" / price ranges
     price_upper_bound: float | None = None
+    # The product link exactly as the post gave it, kept by the pipeline
+    # before product_url is resolved to the retailer URL; it is what the
+    # post's photos are keyed by (RawPost.product_images). Never persisted.
+    link_as_posted: str = ""
 
 
 @dataclass

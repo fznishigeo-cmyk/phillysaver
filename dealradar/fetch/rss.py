@@ -11,8 +11,10 @@ an autodiscovered feed URL.
 
 from __future__ import annotations
 
+import bisect
 import dataclasses
 import hashlib
+import html as html_lib
 import logging
 import re
 from datetime import datetime
@@ -73,6 +75,176 @@ def _first_image(body_html: str) -> str:
             continue
         return src
     return ""
+
+
+#: The tags product_images() reads: anchors and images, plus the block
+#: openers that separate one product of a roundup from the next.
+_PI_TAG = re.compile(
+    r"<(/?)(a|img|p|li|div|figure|h[1-6]|tr|section|article|table)\b([^>]*)>",
+    re.I)
+_PI_ATTR = re.compile(
+    r"""([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))""")
+#: A loose image pairs with an anchor at most this many characters away.
+_PI_MAX_GAP = 800
+#: Decoration, not a product: matched at word edges, so a silicone spatula
+#: or a throw blanket keeps its photo.
+_PI_JUNK_WORD = re.compile(
+    r"(?<![a-z])(?:logo|icon|badge|button|spinner|placeholder|blank|loading"
+    r"|share|sprite)s?(?![a-z])", re.I)
+#: Anchors that are never a product: social share/comment links.
+_PI_SOCIAL_HOSTS = ("facebook", "twitter", "pinterest", "whatsapp", "reddit",
+                    "linkedin")
+_PI_SOCIAL_EXACT = ("x.com", "t.me")
+_PI_NOT_PRODUCT = ("mailto", "/feed/", "/comments", "#respond")
+#: An anchor to an image file is a lightbox, not a product.
+_PI_LIGHTBOX = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+
+
+def _pi_attrs(raw: str) -> dict[str, str]:
+    return {m.group(1).lower(): html_lib.unescape(
+                m.group(2) if m.group(2) is not None
+                else m.group(3) if m.group(3) is not None
+                else m.group(4)).strip()
+            for m in _PI_ATTR.finditer(raw)}
+
+
+def _pi_anchor_kind(href: str, article_url: str) -> str:
+    """'product', 'lightbox' or 'ignore' for one <a href>."""
+    if not href.startswith(("http://", "https://")):
+        return "ignore"  # fragment, mailto:, javascript:, tel:, relative
+    low = href.lower()
+    parts = urlsplit(low)
+    host = parts.hostname or ""
+    if parts.path.endswith(_PI_LIGHTBOX):
+        return "lightbox"
+    if any(s in host for s in _PI_SOCIAL_HOSTS) \
+            or any(host == h or host.endswith("." + h) for h in _PI_SOCIAL_EXACT) \
+            or any(t in low for t in _PI_NOT_PRODUCT):
+        return "ignore"
+    if article_url:
+        art = urlsplit(article_url.lower())
+        if host == (art.hostname or "") \
+                and parts.path.rstrip("/") == art.path.rstrip("/"):
+            return "ignore"  # the post itself (?share=..., #comments)
+    return "product"
+
+
+def _pi_url_ok(url: str) -> bool:
+    low = url.lower()
+    return (low.startswith(("http://", "https://"))
+            and not any(t in low for t in _IMG_JUNK)
+            and not urlsplit(low).path.endswith(".svg")
+            and not _PI_JUNK_WORD.search(url))
+
+
+def _pi_image_url(attrs: dict[str, str]) -> str:
+    """The <img>'s product photo URL: src, else the lazy-load copies, else
+    the largest srcset candidate; '' for decoration. A lazy image's src is
+    a data: URI or a placeholder gif, so the first USABLE source wins."""
+    if _PI_JUNK_WORD.search(attrs.get("class", "") + " " + attrs.get("alt", "")):
+        return ""
+    for dim in ("width", "height"):
+        m = re.match(r"\d+", attrs.get(dim, ""))
+        if m and int(m.group(0)) <= 50:
+            return ""  # tracking pixel, avatar, icon
+    for name in ("src", "data-src", "data-lazy-src", "data-original"):
+        if _pi_url_ok(attrs.get(name, "")):
+            return attrs[name]
+    best, best_size = "", -1.0
+    for name in ("srcset", "data-srcset", "data-lazy-srcset"):
+        for cand in attrs.get(name, "").split(","):
+            bits = cand.split()
+            if not bits or not _pi_url_ok(bits[0]):
+                continue
+            desc = bits[1] if len(bits) > 1 else "1x"
+            try:
+                size = float(desc[:-1])
+            except ValueError:
+                size = 0.0
+            if size > best_size:
+                best, best_size = bits[0], size
+    return best
+
+
+def product_images(html: str, article_url: str = "") -> dict[str, str]:
+    """Each product link of a post -> the photo shown next to it.
+
+    Live wart: a roundup (one post, several products) put its FIRST image —
+    a collage or one product's photo — on every deal of the post (three
+    Southern Savers Target cards showed the store name instead). Deal blogs
+    are WordPress: each product has its own <img>, inside its link or in
+    the same paragraph/list item/figure as its link and text.
+
+    One sequential scan of <a>, </a> and <img> tags (positions kept), the
+    HTML split into blocks at <p|li|div|figure|h1-6|tr|section|article|
+    table> openers. Pairing, strongest first:
+      0. an <img> inside <a href=X>..</a> belongs to X;
+      1. else to the nearest product anchor in its own block;
+      2. else (its block has none) to the first anchor of the next block
+         that has one, then 3. the last anchor of the previous one —
+    always within _PI_MAX_GAP characters, never across a block holding
+    another anchor. Each image goes to one href, each href keeps its
+    first/nearest image. Share, comment, mailto and the post's own links
+    are not products (an image inside them is dropped); a lightbox link
+    (href to an image file) is not either, but its image is kept loose.
+
+    Only ever called for image-granted sources; the URLs are hotlinked,
+    never copied or stored, and no text of the post is kept.
+    """
+    anchors: list[tuple[str, int, int, int]] = []        # href, start, end, block
+    images: list[tuple[str, int, int, int, str]] = []    # url, start, end, block, owner
+    block = 0
+    open_kind, open_href = "", ""
+    for m in _PI_TAG.finditer(html or ""):
+        closing, tag = m.group(1), m.group(2).lower()
+        if tag == "a":
+            if closing:
+                open_kind, open_href = "", ""
+                continue
+            href = _pi_attrs(m.group(3)).get("href", "")
+            open_kind, open_href = _pi_anchor_kind(href, article_url), href
+            if open_kind == "product":
+                anchors.append((href, m.start(), m.end(), block))
+        elif tag == "img":
+            if closing or open_kind == "ignore":
+                continue
+            url = _pi_image_url(_pi_attrs(m.group(3)))
+            if url:
+                owner = open_href if open_kind == "product" else ""
+                images.append((url, m.start(), m.end(), block, owner))
+        elif not closing:
+            block += 1
+
+    by_block: dict[int, list[tuple[str, int, int, int]]] = {}
+    for a in anchors:
+        by_block.setdefault(a[3], []).append(a)
+    blocks = sorted(by_block)
+    cands: list[tuple[int, int, int, str]] = []          # rank, gap, image, href
+    for i, (_url, start, end, blk, owner) in enumerate(images):
+        if owner:
+            cands.append((0, 0, i, owner))
+            continue
+        if blk in by_block:
+            for href, a_start, a_end, _b in by_block[blk]:
+                gap = a_start - end if a_start >= end else start - a_end
+                cands.append((1, max(gap, 0), i, href))
+            continue
+        k = bisect.bisect_right(blocks, blk)
+        if k < len(blocks):
+            href, a_start, _e, _b = by_block[blocks[k]][0]
+            cands.append((2, a_start - end, i, href))
+        if k > 0:
+            href, _s, a_end, _b = by_block[blocks[k - 1]][-1]
+            cands.append((3, start - a_end, i, href))
+    out: dict[str, str] = {}
+    used: set[str] = set()
+    for _rank, gap, i, href in sorted(cands):
+        url = images[i][0]
+        if gap > _PI_MAX_GAP or href in out or url in used:
+            continue
+        out[href] = url
+        used.add(url)
+    return out
 
 
 def _entry_body(entry: Any) -> str:
@@ -184,6 +356,8 @@ class RssAdapter(SourceAdapter):
                 fetched_at=now,
                 image_url=(_first_image(body_html)
                            if source.image_permission else ""),
+                product_images=(product_images(body_html, url)
+                                if source.image_permission else {}),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
@@ -193,7 +367,8 @@ class RssAdapter(SourceAdapter):
                 if ((_needs_enrichment(body_html, body_text) or want_image)
                         and not db.post_is_known(post.content_hash)):
                     enriched = self._enrich(post, fetcher, deadline,
-                                            want_image=want_image)
+                                            want_image=want_image,
+                                            images=source.image_permission)
                     if enriched is not None:
                         post = enriched
             posts.append(post)
@@ -202,13 +377,15 @@ class RssAdapter(SourceAdapter):
 
     @staticmethod
     def _enrich(post: RawPost, fetcher: Any, deadline: Any,
-                want_image: bool = False) -> RawPost | None:
+                want_image: bool = False,
+                images: bool = False) -> RawPost | None:
         """Fetch the article behind a summary-only entry; None means keep the summary.
 
         The fetcher enforces robots.txt and rate limits; any blocked or failed
         fetch silently falls back to the summary text. With ``want_image``
         (image-granted source, no picture yet) the article's og:image is
-        taken as the post image.
+        taken as the post image. With ``images`` (image-granted source) the
+        article's per-product photos fill the gaps of the entry body's.
         """
         res = fetcher.get(post.url, conditional=False, deadline=deadline)
         if res.blocked_by_robots or res.status != 200 or not res.body:
@@ -219,11 +396,21 @@ class RssAdapter(SourceAdapter):
         image = post.image_url
         if want_image and not image:
             image = _og_image(html) or _first_image(html)
+        photos = post.product_images
+        if images:
+            # The entry body's pairs win; the article only fills gaps, and
+            # never with a photo the body already gave another link.
+            taken = set(post.product_images.values())
+            photos = {**{k: v for k, v in product_images(html, post.url).items()
+                         if v not in taken},
+                      **post.product_images}
         article_text = util.html_to_text(html)[:ARTICLE_TEXT_CAP]
         if not article_text:
             # Nothing readable to add — but a picture found is still kept.
-            if image and image != post.image_url:
-                return dataclasses.replace(post, image_url=image)
+            if (image and image != post.image_url) \
+                    or photos != post.product_images:
+                return dataclasses.replace(post, image_url=image,
+                                           product_images=photos)
             return None
         return RawPost(
             source_name=post.source_name,
@@ -234,6 +421,7 @@ class RssAdapter(SourceAdapter):
             published_at=post.published_at,
             fetched_at=post.fetched_at,
             image_url=image,  # enrichment must not drop (or may add) the image
+            product_images=photos,
             # Idempotency anchor stays the summary-level text: whether (or how)
             # enrichment succeeded must never change the content hash, or the
             # same unchanged entry would re-parse on the next run.

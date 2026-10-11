@@ -182,6 +182,23 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
     }
 
 
+def _post_image(extracted: models.ExtractedDeal, post: models.RawPost) -> str:
+    """The photo a post gives this deal: the one shown next to the deal's
+    own link, else the post's image — but never a roundup's. Live wart:
+    the first image of a roundup (a collage, or another product's photo)
+    went onto every deal of the post (three Target cards from one Southern
+    Savers post, then cleared to store-name tiles)."""
+    from .product_images import match_product_image
+
+    hit = match_product_image([extracted.link_as_posted, extracted.product_url],
+                              post.product_images)
+    if hit:
+        return hit
+    if len(set(post.product_images.values())) <= 1:
+        return post.image_url
+    return ""
+
+
 def upsert_extracted(db, extracted: models.ExtractedDeal,
                      savings: models.SavingsResult, post: models.RawPost,
                      cfg, now: datetime) -> dict[str, Any]:
@@ -212,8 +229,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
         payload = _new_payload(key, extracted, savings, asin, now)
-        if post.image_url:
-            payload["image_url"] = post.image_url
+        payload["image_url"] = _post_image(extracted, post)
         deal_id = db.insert_deal(
             dedupe_key=key,
             store=extracted.store,
@@ -283,8 +299,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["canonical_url"] = extracted.product_url
         if not payload.get("asin") and asin:
             payload["asin"] = asin
-        if not payload.get("image_url") and post.image_url:
-            payload["image_url"] = post.image_url
+        if not payload.get("image_url"):
+            image = _post_image(extracted, post)
+            if image:
+                payload["image_url"] = image
         payload["last_seen_at"] = util.iso(now)
 
         fresh = db.add_sighting(deal_id, source_name=post.source_name,

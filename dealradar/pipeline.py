@@ -253,9 +253,33 @@ _RETRY_NEW_H = 1.0
 #: so they can never starve the deal lane again (the live incident).
 _IMAGE_BACKFILL_PER_RUN = 300
 #: Article fetches per run that backfill photos for existing deals whose
-#: source granted image display: one polite fetch per deal (the fetcher
-#: still holds 1 req/s per host), never repeated, time-boxed by the run.
+#: source granted image display: one polite fetch per article per pass
+#: (the fetcher still holds 1 req/s per host), never repeated for a deal,
+#: time-boxed by the run.
 _BLOG_IMAGE_BACKFILL_PER_RUN = 60
+
+
+def _product_of(deal: dict[str, Any]) -> str:
+    """Which product a deal is: one product at two stores is one product."""
+    return str(deal.get("normalized_item") or deal.get("item") or deal["dedupe_key"])
+
+
+def _in_photo_window(deal: dict[str, Any], now: datetime,
+                     show_dead: timedelta) -> bool:
+    """Alive, or dead recently enough for the "Just missed" strip; older
+    dead rows are off the page and not worth a fetch."""
+    if deal.get("status") != "dead":
+        return True
+    died = util.parse_iso(deal.get("died_at") or "")
+    return died is not None and now - died <= show_dead
+
+
+def _credited_article(db: DB, deal: dict[str, Any],
+                      granted: dict) -> dict[str, Any] | None:
+    """The deal's first sighting on an image-granted source's article."""
+    return next((s for s in db.sightings_for(deal["id"])
+                 if s["source_name"] in granted
+                 and str(s.get("source_url", "")).startswith("http")), None)
 
 
 def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
@@ -265,11 +289,14 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     Deals created before a source's image grant (or from an excerpt-only
     feed entry) keep the credited article URL in their sightings; fetching
     that page once — politely, robots/permission-checked by the fetcher —
-    and taking its og:image fills the card. A deal whose article yields no
-    image is flagged so it is never fetched again.
+    fills the card with the photo the article shows next to the deal's own
+    product link, else (single-product article only) its og:image. A
+    roundup article is fetched once per pass for all of its deals. A deal
+    whose article yields no photo is flagged so it is never fetched again.
     """
     from .dedupe import _DEAL_FIELDS
-    from .fetch.rss import _first_image, _og_image, _permission_host
+    from .fetch.rss import _first_image, _og_image, _permission_host, product_images
+    from .product_images import match_product_image
 
     granted = {s.name: s for s in sources if s.image_permission}
     if not granted:
@@ -281,80 +308,81 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     # A roundup article ("10 deals at Walmart today") has ONE share image,
     # a collage that belongs to none of its deals. Live wart: the same
     # collage sat on four cards, and three jigsaw puzzles from one post
-    # shared one puzzle's photo. An article credited by two or more deals
-    # is never used as a photo source, and an image already on another
-    # card is never copied onto a second one.
+    # shared one puzzle's photo. A roundup's share image is never used;
+    # each of its deals gets only the photo shown next to its own link,
+    # and an image already on another product's card is never copied.
     # "Roundup" = an article credited by two or more DISTINCT products. One
     # product at two stores ("Bluey book at Amazon or Walmart") is one
     # product: its article photo is the product's. (A first cut counted
     # deals, not products, and dropped 173 good photos in one run.)
     article_items: dict[str, set[str]] = {}
-    images_in_use: set[str] = set()
+    images_in_use: dict[str, set[str]] = {}  # image -> products showing it
     for d in deals:
         if d.get("image_url"):
-            images_in_use.add(d["image_url"])
+            images_in_use.setdefault(d["image_url"], set()).add(_product_of(d))
         for sgt in db.sightings_for(d["id"]):
             if sgt["source_name"] in granted:
                 url = str(sgt.get("source_url", ""))
-                article_items.setdefault(url, set()).add(
-                    str(d.get("normalized_item") or d.get("item") or d["dedupe_key"]))
+                article_items.setdefault(url, set()).add(_product_of(d))
     article_deals = {url: len(items) for url, items in article_items.items()}
     deals = _repair_emptied_photos(db, deals, granted, article_deals)
+    deals = _lift_roundup_flags(db, deals, granted, article_deals, now, show_dead)
     done += _clear_shared_article_images(db, deals, article_deals)
+    pages: dict[str, str] = {}                 # article -> html ('' = no page)
+    photos: dict[str, dict[str, str]] = {}     # article -> product link -> photo
     for deal in deals:
         if deal.get("image_url") or \
                 "image_backfill_tried" in (deal.get("flags") or []):
             continue
-        if deal.get("status") == "dead":
-            # The "Just missed" strip shows recent deaths; older dead rows
-            # are off the page and not worth a fetch.
-            died = util.parse_iso(deal.get("died_at") or "")
-            if died is None or now - died > show_dead:
-                continue
-        sighting = next((s for s in db.sightings_for(deal["id"])
-                         if s["source_name"] in granted
-                         and str(s.get("source_url", "")).startswith("http")),
-                        None)
+        if not _in_photo_window(deal, now, show_dead):
+            continue
+        sighting = _credited_article(db, deal, granted)
         if sighting is None:
             continue
-        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
-        if article_deals.get(str(sighting["source_url"]), 0) > 1:
-            # Roundup: its share image is a collage, not this deal's photo.
-            flags = list(payload.get("flags") or [])
-            if "image_backfill_tried" not in flags:
-                flags.append("image_backfill_tried")
-            payload["flags"] = flags
-            db.update_deal(deal["dedupe_key"], payload=payload)
-            continue
-        if deadline is not None and time.monotonic() > deadline:
-            break
-        src = granted[sighting["source_name"]]
-        kw = {}
-        host = _permission_host(src)
-        if host:
-            kw["robots_override_host"] = host
-        res = fetcher.get(sighting["source_url"], conditional=False,
-                          deadline=deadline, **kw)
+        article = str(sighting["source_url"])
+        if article not in pages:
+            if done >= _BLOG_IMAGE_BACKFILL_PER_RUN or \
+                    (deadline is not None and time.monotonic() > deadline):
+                continue  # unflagged: the next pass fetches it
+            src = granted[sighting["source_name"]]
+            kw = {}
+            host = _permission_host(src)
+            if host:
+                kw["robots_override_host"] = host
+            try:
+                res = fetcher.get(article, conditional=False,
+                                  deadline=deadline, **kw)
+            except DeadlineExceeded:
+                break  # out of time mid-fetch: stays unflagged for the next pass
+            pages[article] = ""
+            if res.status == 200 and res.body and not res.blocked_by_robots:
+                pages[article] = res.body.decode("utf-8", errors="replace")
+            done += 1
+        html = pages[article]
         image = ""
-        if res.status == 200 and res.body and not res.blocked_by_robots:
-            html = res.body.decode("utf-8", errors="replace")
-            image = _og_image(html) or _first_image(html)
-        if image and image in images_in_use:
-            image = ""  # already another card's photo: not this deal's
+        if html:
+            if article not in photos:
+                photos[article] = product_images(html, article)
+            image = match_product_image([deal.get("canonical_url") or ""],
+                                        photos[article])
+            if not image and article_deals.get(article, 0) <= 1:
+                # Single-product article: its share image is the product's.
+                image = _og_image(html) or _first_image(html)
+        product = _product_of(deal)
+        if image and images_in_use.get(image, set()) - {product}:
+            image = ""  # already another product's photo: not this deal's
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         if image:
             payload["image_url"] = image
-            images_in_use.add(image)
+            images_in_use.setdefault(image, set()).add(product)
         else:
             flags = list(payload.get("flags") or [])
             if "image_backfill_tried" not in flags:
                 flags.append("image_backfill_tried")
             payload["flags"] = flags
         db.update_deal(deal["dedupe_key"], payload=payload)
-        done += 1
-        if done >= _BLOG_IMAGE_BACKFILL_PER_RUN:
-            break
     if done:
-        log.info("blog image backfill: %d deals fetched", done)
+        log.info("blog image backfill: %d article(s) fetched", done)
     return done
 
 
@@ -391,12 +419,49 @@ def _repair_emptied_photos(db: DB, deals: list[dict[str, Any]], granted: dict,
     return deals
 
 
+_ROUNDUP_LIFT_KEY = "roundup_images_2026_10_11"
+
+
+def _lift_roundup_flags(db: DB, deals: list[dict[str, Any]], granted: dict,
+                        article_deals: dict[str, int], now: datetime,
+                        show_dead: timedelta) -> list[dict[str, Any]]:
+    """One-time lift (db meta keyed): roundup articles used to be refused
+    outright — their deals were flagged 'tried' without a fetch (400 of the
+    720 photo-less live cards). Photo-less deals on the page (alive, or in
+    the "Just missed" window) credited to a roundup lose that flag once, so
+    the per-product pass tries each of them."""
+    from .dedupe import _DEAL_FIELDS
+
+    if db.meta_get(_ROUNDUP_LIFT_KEY):
+        return deals
+    lifted = 0
+    for d in deals:
+        flags = list(d.get("flags") or [])
+        if d.get("image_url") or "image_backfill_tried" not in flags \
+                or not _in_photo_window(d, now, show_dead):
+            continue
+        sighting = _credited_article(db, d, granted)
+        if sighting is None or article_deals.get(str(sighting["source_url"]), 0) <= 1:
+            continue
+        flags.remove("image_backfill_tried")
+        d["flags"] = flags
+        payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+        db.update_deal(d["dedupe_key"], payload=payload)
+        lifted += 1
+    db.meta_set(_ROUNDUP_LIFT_KEY, util.iso(util.now_utc()))
+    if lifted:
+        log.info("roundup lift: %d deal(s) may get their own photo", lifted)
+    return deals
+
+
 def _clear_shared_article_images(db: DB, deals: list[dict[str, Any]],
                                  article_deals: dict[str, int]) -> int:
-    """Drop a photo that two or more deals share when any of them was
-    credited to a roundup article (two or more DISTINCT products from one
-    page): that image is the article's collage, not a product. Each loses
-    the image and is flagged so the backfill never re-attaches it."""
+    """Drop a photo that two or more DIFFERENT products share when any of
+    their deals was credited to a roundup article (two or more DISTINCT
+    products from one page): that image is the article's collage, not a
+    product. Each loses the image and is flagged so the backfill never
+    re-attaches it. One product at two stores shares its photo by right,
+    roundup or not."""
     from .dedupe import _DEAL_FIELDS
 
     by_image: dict[str, list[dict[str, Any]]] = {}
@@ -405,8 +470,8 @@ def _clear_shared_article_images(db: DB, deals: list[dict[str, Any]],
             by_image.setdefault(d["image_url"], []).append(d)
     cleared = 0
     for image, group in by_image.items():
-        if len(group) < 2:
-            continue
+        if len({_product_of(d) for d in group}) < 2:
+            continue  # one deal, or one product listed twice
         from_roundup = any(
             article_deals.get(str(sgt.get("source_url", "")), 0) > 1
             for d in group for sgt in db.sightings_for(d["id"]))
@@ -826,7 +891,9 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     """Resolve redirect/affiliate chains to canonical retailer URLs (budget-aware).
 
     The source's original link stays on the sighting for credit; only
-    product_url is canonicalized.
+    product_url is canonicalized. The product link as the post gave it is
+    kept on link_as_posted (in memory only): the post's photos are keyed
+    by it (RawPost.product_images).
     """
     from .http_client import canonicalize_url, resolve_redirects
 
@@ -834,6 +901,8 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     # canonicalized as posted (live wart: three slow stores ate 5.5 min).
     stop_at = time.monotonic() + _RESOLVE_BUDGET_S
     for _post, extracted in pairs:
+        if not extracted.link_as_posted:
+            extracted.link_as_posted = extracted.product_url
         if not extracted.product_url:
             continue
         if time.monotonic() > min(deadline - 30, stop_at):

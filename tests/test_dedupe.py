@@ -366,3 +366,68 @@ def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
     assert row["status"] == "alive" and row["final_price"] == 50.0
     assert row["price_since"] == util.iso(later)
     db.close()
+
+
+GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
+SS = "https://www.southernsavers.com/wp-content/uploads/"
+
+
+def _roundup_post(uid: str, photos: dict[str, str]) -> RawPost:
+    post = make_post(source="southernsavers_online", uid=uid,
+                     url=f"https://www.southernsavers.com/{uid}/")
+    post.image_url = SS + "collage.jpg"   # the post's first image
+    post.product_images = photos
+    return post
+
+
+def test_roundup_post_gives_each_deal_its_own_photo(tmp_path) -> None:
+    """Live wart: three Target cards from one Southern Savers roundup all
+    got the post's first image (later cleared to store-name tiles). Each
+    deal now gets the photo shown next to its own link — by the link as
+    posted (a short link only the post knows), or by the resolved URL's
+    Target id — and a deal with no photo of its own gets none, never the
+    collage."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    post = _roundup_post("target-roundup", {
+        "https://howl.me/cShelf9": SS + "shelf.jpg",
+        GOTO + "rack%2F-%2FA-222": SS + "rack.jpg",
+    })
+    shelf = make_extracted(item="SONGMICS 5-Tier Shelf", store="Target",
+                           product_url="https://www.target.com/p/shelf/-/A-111",
+                           link_as_posted="https://howl.me/cShelf9")
+    rack = make_extracted(item="Laundry Drying Rack", store="Target",
+                          product_url="https://www.target.com/p/rack-x/-/A-222?preselect=1")
+    shoes = make_extracted(item="Shoe Rack 4-Tier", store="Target",
+                           product_url="https://www.target.com/p/shoes/-/A-333")
+    keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
+            for e in (shelf, rack, shoes)]
+    assert [db.get_deal(k)["image_url"] for k in keys] == [
+        SS + "shelf.jpg", SS + "rack.jpg", ""]
+
+    # A later roundup showing the shoe rack fills the photo-less deal...
+    later = _roundup_post("target-roundup-2", {
+        GOTO + "shoes%2F-%2FA-333": SS + "shoes.jpg", GOTO + "x%2F-%2FA-9": SS + "x.jpg"})
+    dedupe.upsert_extracted(db, shoes, make_savings(), later, cfg, NOW)
+    assert db.get_deal(keys[2])["image_url"] == SS + "shoes.jpg"
+    # ...and a photo once set is never replaced by another post's.
+    dedupe.upsert_extracted(db, shelf, make_savings(), later, cfg, NOW)
+    assert db.get_deal(keys[0])["image_url"] == SS + "shelf.jpg"
+    db.close()
+
+
+def test_single_product_post_still_lends_its_image(tmp_path) -> None:
+    """No per-product photo matched, but the post shows one product (one
+    distinct photo, or none paired): its image is the deal's, as before."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    one = _roundup_post("blender", {"https://www.target.com/p/b/-/A-5": SS + "blender.jpg"})
+    one.image_url = SS + "blender.jpg"
+    res = dedupe.upsert_extracted(
+        db, make_extracted(item="Ninja Blender", store="Target"), make_savings(), one, cfg, NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "blender.jpg"
+    bare = _roundup_post("kettle", {})
+    res = dedupe.upsert_extracted(
+        db, make_extracted(item="Steel Kettle", store="Target"), make_savings(), bare, cfg, NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
+    db.close()

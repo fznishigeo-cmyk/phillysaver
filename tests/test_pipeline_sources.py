@@ -46,44 +46,158 @@ class TestBlogImageBackfill:
                                body=body)
 
     @staticmethod
-    def _seed(db, key, article_url, image=""):
-        payload = {"dedupe_key": key, "store": "HSN", "item": key,
-                   "flags": [], "image_url": image, "conditions": []}
+    def _seed(db, key, article_url, image="", canonical="", flags=(), item=""):
+        item = item or key
+        payload = {"dedupe_key": key, "store": "HSN", "item": item,
+                   "flags": list(flags), "image_url": image, "conditions": []}
         deal_id = db.insert_deal(
-            dedupe_key=key, store="HSN", item=key, normalized_item=key,
-            canonical_url="", payload=payload, final_price=9.99,
+            dedupe_key=key, store="HSN", item=item, normalized_item=item,
+            canonical_url=canonical, payload=payload, final_price=9.99,
             pct_at_checkout=60.0, abs_savings=15.0, online_only="true",
             expires_at="", now=NOW)
         db.add_sighting(deal_id, source_name="hip2save",
                         source_url=article_url, content_hash="h" + key,
                         seen_at=NOW, final_price=9.99)
 
+    ROUNDUP = "https://hip2save.com/deals/roundup/"
+    SHELF = "https://www.target.com/p/songmics-shelf/-/A-111"
+    RACK = "https://www.walmart.com/ip/drying-rack/222"
+    GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
+    # Two products, each photo above its affiliate link (lazy-loaded), plus
+    # the post's collage as og:image and linked to the post itself.
+    ROUNDUP_PAGE = (
+        "<html><head><meta property='og:image' "
+        "content='https://hip2save.com/i/collage.jpg'></head><body>"
+        "<p><a href='https://hip2save.com/deals/roundup/'>"
+        "<img src='https://hip2save.com/i/collage.jpg'></a></p>"
+        "<p><img src='data:image/gif;base64,R0l' "
+        "data-src='https://hip2save.com/i/shelf.jpg'></p>"
+        "<p>SONGMICS Shelf $39.99 <a href='" + GOTO + "songmics-shelf%2F-%2FA-111'>"
+        "Buy</a></p>"
+        "<p><a href='https://www.walmart.com/ip/drying-rack/222?athbdg=L1'>"
+        "<img src='https://hip2save.com/i/rack.jpg'></a></p>"
+        "<p>Drying Rack $19.99 <a href='https://www.walmart.com/ip/drying-rack/222'>"
+        "Buy</a></p></body></html>").encode()
+
     def test_roundup_article_never_supplies_a_photo(self, tmp_path):
-        """Live wart: one collage on four cards. Two deals credited to the
-        same article are a roundup: no fetch, both flagged; a photo already
-        on another card is never copied onto a second deal."""
+        """Live wart: one collage on four cards. A roundup whose page shows
+        no per-product photo (only its og:image collage) is fetched ONCE for
+        both of its deals, which stay photo-less and flagged; a photo
+        already on another product's card is never copied onto a second."""
         db = DB(tmp_path / "state.db")
-        self._seed(db, "pants", "https://hip2save.com/deals/roundup/")
-        self._seed(db, "surge", "https://hip2save.com/deals/roundup/")
+        self._seed(db, "pants", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "surge", self.ROUNDUP, canonical=self.RACK)
         self._seed(db, "solo", "https://hip2save.com/deals/solo/")
         self._seed(db, "owner", "https://hip2save.com/deals/owner/",
                    image="https://hip2save.com/i/shared.jpg")
         src = make_source("hip2save", allowed_html=True, image_permission=True,
                           crawl_permission="written grant on file")
         fetcher = self._Fetcher({
-            "https://hip2save.com/deals/roundup/":
+            self.ROUNDUP:
                 b"<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>",
             "https://hip2save.com/deals/solo/":
                 b"<meta property='og:image' content='https://hip2save.com/i/shared.jpg'>",
         })
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
-        assert fetcher.calls == ["https://hip2save.com/deals/solo/"]
+        assert fetcher.calls == [self.ROUNDUP, "https://hip2save.com/deals/solo/"]
         for key in ("pants", "surge"):
             d = db.get_deal(key)
             assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
         solo = db.get_deal("solo")
         assert solo["image_url"] == "" and "image_backfill_tried" in solo["flags"]
         assert db.get_deal("owner")["image_url"] == "https://hip2save.com/i/shared.jpg"
+        db.close()
+
+    def test_roundup_page_gives_each_product_its_own_photo(self, tmp_path):
+        """Live: 400 photo-less cards came from roundups (three Target cards
+        from one Southern Savers post showed the store name). One fetch of
+        the page gives each deal the photo next to its own link — via the
+        affiliate redirect's Target id, or the Walmart item id — never the
+        collage; a deal without a product link gets nothing."""
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK)
+        self._seed(db, "nolink", self.ROUNDUP)
+        self._seed(db, "amazon_search", self.ROUNDUP,
+                   canonical="https://www.amazon.com/s?k=towels")
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE})
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        assert fetcher.calls == [self.ROUNDUP]
+        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/shelf.jpg"
+        assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        for key in ("nolink", "amazon_search"):
+            d = db.get_deal(key)
+            assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
+        # Idempotent: every deal is settled, a second pass fetches nothing.
+        fetcher.calls.clear()
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 0
+        assert fetcher.calls == []
+        db.close()
+
+    def test_roundup_photo_never_goes_to_a_different_product(self, tmp_path):
+        """The photo next to the shelf link is already another product's
+        card photo: the shelf deal does not get it. The same product listed
+        at a second store may share it."""
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK)
+        self._seed(db, "rack_other_store", "https://hip2save.com/deals/b/",
+                   image="https://hip2save.com/i/rack.jpg", item="rack")
+        self._seed(db, "lamp", "https://hip2save.com/deals/c/",
+                   image="https://hip2save.com/i/shelf.jpg")
+        src = make_source("hip2save", allowed_html=True, image_permission=True)
+        pipeline._backfill_blog_images(
+            db, self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE}), [src], deadline=None)
+        assert db.get_deal("shelf")["image_url"] == ""
+        assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        db.close()
+
+    def test_one_time_lift_retries_flagged_roundup_deals(self, tmp_path):
+        """The old rule flagged every roundup deal 'tried' without a fetch.
+        Once (meta-keyed), photo-less roundup deals on the page lose that
+        flag and get the per-product pass; dead-and-gone deals and later
+        flags are left alone."""
+        db = DB(tmp_path / "state.db")
+        tried = ("image_backfill_tried",)
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, flags=tried)
+        self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK, flags=tried)
+        self._seed(db, "gone", self.ROUNDUP, canonical=self.SHELF + "9", flags=tried)
+        db.update_deal("gone", status="dead")  # no died_at: off the page
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({self.ROUNDUP: self.ROUNDUP_PAGE})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert fetcher.calls == [self.ROUNDUP]
+        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/shelf.jpg"
+        assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
+        assert db.get_deal("gone")["flags"] == ["image_backfill_tried"]
+        assert db.meta_get("roundup_images_2026_10_11")
+        # Runs once: a roundup deal flagged after the lift stays flagged.
+        self._seed(db, "later", self.ROUNDUP, canonical=self.SHELF + "8", flags=tried)
+        fetcher.calls.clear()
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 0
+        assert fetcher.calls == []
+        assert db.get_deal("later")["flags"] == ["image_backfill_tried"]
+        db.close()
+
+    def test_one_product_at_two_stores_in_a_roundup_keeps_its_photo(self, tmp_path):
+        """A roundup listing the Bluey book at Amazon and Walmart next to a
+        puzzle: the book's photo on both of its deals is one product's
+        photo, not a collage, and stays."""
+        db = DB(tmp_path / "state.db")
+        pic = "https://hip2save.com/i/bluey.jpg"
+        self._seed(db, "bluey_amazon", self.ROUNDUP, image=pic, item="bluey boo book")
+        self._seed(db, "bluey_walmart", self.ROUNDUP, image=pic, item="bluey boo book")
+        self._seed(db, "puzzle", self.ROUNDUP, image="https://hip2save.com/i/puzzle.jpg")
+        src = make_source("hip2save", allowed_html=True, image_permission=True)
+        fetcher = self._Fetcher({})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert db.get_deal("bluey_amazon")["image_url"] == pic
+        assert db.get_deal("bluey_walmart")["image_url"] == pic
+        assert db.get_deal("puzzle")["image_url"] == "https://hip2save.com/i/puzzle.jpg"
+        assert fetcher.calls == []
         db.close()
 
     def test_one_product_at_two_stores_keeps_its_photo(self, tmp_path):
@@ -193,6 +307,39 @@ class TestBlogImageBackfill:
         plain = make_source("hip2save", allowed_html=True)
         assert pipeline._backfill_blog_images(db, fetcher, [plain], None) == 0
         db.close()
+
+
+def test_resolving_the_product_url_keeps_the_link_as_posted(monkeypatch):
+    """A roundup's photos are keyed by its links as posted; resolving a
+    deal's affiliate link to the retailer URL keeps the posted one (in
+    memory) on every path: resolved, out of time, resolver error."""
+    from dealradar import http_client
+    from dealradar.models import ExtractedDeal
+
+    posted = ("https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com"
+              "%2Fp%2Fx%2F-%2FA-1&utm_source=blog")
+    resolved = "https://www.target.com/p/x/-/A-1"
+
+    def deal():
+        return ExtractedDeal(item="Shelf", store="Target", source_url="s",
+                             source_name="n", product_url=posted)
+
+    monkeypatch.setattr(http_client, "resolve_redirects",
+                        lambda fetcher, url, hops, deadline=None: resolved)
+    cfg = AppConfig()
+    ok, late = deal(), deal()
+    pipeline._resolve_product_urls([(None, ok)], None, cfg, time.monotonic() + 600)
+    pipeline._resolve_product_urls([(None, late)], None, cfg, time.monotonic())
+    assert (ok.product_url, ok.link_as_posted) == (resolved, posted)
+    assert late.link_as_posted == posted and "utm_source" not in late.product_url
+
+    def boom(*a, **kw):
+        raise RuntimeError("redirect loop")
+
+    monkeypatch.setattr(http_client, "resolve_redirects", boom)
+    failed = deal()
+    pipeline._resolve_product_urls([(None, failed)], None, cfg, time.monotonic() + 600)
+    assert failed.link_as_posted == posted and "utm_source" not in failed.product_url
 
 
 def make_post(source: str, i: int) -> RawPost:
