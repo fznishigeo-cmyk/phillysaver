@@ -1037,6 +1037,7 @@ class TestProductImageBackfill:
             "wm_wall": "https://www.walmart.com/blocked?url=L2lwLzE5NDk3MTkxMTQ&uuid=1",
             "ebay_wall": ("https://www.ebay.com/splashui/challenge?ap=1&ru="
                           "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669"),
+            "sams_wall": "https://www.samsclub.com/are-you-human?url=L2lwLzE3MDY3&uuid=1",
             "circle": "https://www.target.com/l/target-circle/-/N-pzno9",
             "top100": "https://www.walmart.com/shop/deals/pets/pets-top-100",
             "search": "https://www.walmart.com/search?q=candle",
@@ -1133,6 +1134,11 @@ class TestBotWallRepair:
                "%2FaXJnd2M9MSZjbGlja2lkPWMx&uuid=4f1e&vid=&g=b")
     EBAY_WALL = ("https://www.ebay.com/splashui/challenge?ap=1&appName=orch&ru="
                  "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669%3Fmkcid%3D1&iid=e2")
+    # Live row 503's shape: base64 of
+    # "/ip/HP-Smart-Tank-5104/17067010453?classType=REGULAR&irgwc=1&clickid=c1"
+    SAMS_WALL = ("https://www.samsclub.com/are-you-human?url=L2lwL0hQLVNtYXJ0LVRh"
+                 "bmstNTEwNC8xNzA2NzAxMDQ1Mz9jbGFzc1R5cGU9UkVHVUxBUiZpcmd3Yz0xJmNs"
+                 "aWNraWQ9YzE&uuid=6fd63ab9-c4f8-11f1-b1f2-26a5e253ad17&vid=&g=b")
     WM_BAD = "https://www.walmart.com/blocked?url=%%%&uuid=7"        # not base64
     EBAY_BAD = "https://www.ebay.com/splashui/challenge?ap=1&iid=e3"  # no ru
     PLAIN = "https://www.target.com/p/lamp/-/A-444"
@@ -1158,15 +1164,20 @@ class TestBotWallRepair:
     def test_repair_decodes_walls_once_and_keeps_the_keys(self, tmp_path):
         db = DB(tmp_path / "state.db")
         keys = {link: self._seed(db, link, self.TRIED) for link in
-                (self.WM_WALL, self.EBAY_WALL, self.WM_BAD, self.EBAY_BAD, self.PLAIN)}
+                (self.WM_WALL, self.EBAY_WALL, self.SAMS_WALL, self.WM_BAD,
+                 self.EBAY_BAD, self.PLAIN)}
         untouched = {link: db.get_deal(keys[link])
                      for link in (self.WM_BAD, self.EBAY_BAD, self.PLAIN)}
-        assert pipeline._repair_botwall_urls(db) == 2
+        assert pipeline._repair_botwall_urls(db) == 3
         wm, ebay = db.get_deal(keys[self.WM_WALL]), db.get_deal(keys[self.EBAY_WALL])
+        sams = db.get_deal(keys[self.SAMS_WALL])
         # canonicalize_url drops the click id, as a fresh resolution would.
         assert wm["canonical_url"] == "https://www.walmart.com/ip/Glue-Gun/1949719114?irgwc=1"
         assert ebay["canonical_url"] == "https://www.ebay.com/itm/158273640669?mkcid=1"
-        for deal, link in ((wm, self.WM_WALL), (ebay, self.EBAY_WALL)):
+        assert sams["canonical_url"] == ("https://www.samsclub.com/ip/HP-Smart-Tank-5104/"
+                                         "17067010453?classType=REGULAR&irgwc=1")
+        for deal, link in ((wm, self.WM_WALL), (ebay, self.EBAY_WALL),
+                           (sams, self.SAMS_WALL)):
             assert deal["dedupe_key"] == "url|" + link      # identity kept
             assert deal["flags"] == ["unknown_shipping"]    # photo passes retry
             # The column too: a later sighting of the product finds this row.

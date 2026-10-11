@@ -113,18 +113,28 @@ def canonicalize_url(url: str) -> str:
 
 #: PerimeterX captcha pages, on any host.
 _PX_CAPTCHA_RE = re.compile(r"px-captcha|perimeterx|/_?px/captcha", re.I)
+#: The Walmart family's walls, by store: the refused path+query rides in
+#: their ``url`` param as base64 (live: Walmart /blocked, Sam's Club
+#: /are-you-human).
+_BASE64_WALLS = {"walmart.com": "/blocked", "samsclub.com": "/are-you-human"}
+
+
+def _base64_wall_store(host: str) -> str:
+    """The Walmart-family store ``host`` belongs to, or ''."""
+    return next((s for s in _BASE64_WALLS if host == s or host.endswith("." + s)), "")
 
 
 def is_challenge_url(url: str) -> bool:
-    """True for a retailer's bot wall: Walmart's /blocked, eBay's
-    /splashui/challenge, a PerimeterX captcha page. Never followed nor
-    fetched: a store answers a crawler's product request by redirecting
-    there (live: 72 Walmart and 8 eBay cards linked shoppers to the wall)."""
+    """True for a retailer's bot wall: Walmart's /blocked, Sam's Club's
+    /are-you-human, eBay's /splashui/challenge, a PerimeterX captcha page.
+    Never followed nor fetched: a store answers a crawler's product request
+    by redirecting there (live: 72 Walmart, 8 eBay and 1 Sam's Club cards
+    linked shoppers to the wall)."""
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
     path = parts.path.lower()
-    if (host == "walmart.com" or host.endswith(".walmart.com")) \
-            and path.rstrip("/") == "/blocked":
+    store = _base64_wall_store(host)
+    if store and path.rstrip("/") == _BASE64_WALLS[store]:
         return True
     if path.startswith("/splashui/challenge"):
         return True
@@ -134,8 +144,8 @@ def is_challenge_url(url: str) -> bool:
 def challenge_target(url: str) -> str:
     """The product URL a bot wall names (the page the store refused us),
     or '' when ``url`` is no wall or its parameter is malformed: Walmart's
-    ``url`` param is the base64 path+query on www.walmart.com, eBay's
-    ``ru`` the URL itself (an eBay URL only)."""
+    and Sam's Club's ``url`` param is the base64 path+query on the store's
+    own www host, eBay's ``ru`` the URL itself (an eBay URL only)."""
     if not is_challenge_url(url):
         return ""
     parts = urlsplit(url)
@@ -143,7 +153,8 @@ def challenge_target(url: str) -> str:
     params = {k: unquote(v) for k, _eq, v in
               (p.partition("=") for p in parts.query.split("&"))}
     target = ""
-    if "walmart.com" in (parts.hostname or "").lower():
+    store = _base64_wall_store((parts.hostname or "").lower())
+    if store:
         raw = params.get("url", "")
         try:
             path = base64.b64decode(raw + "=" * (-len(raw) % 4),
@@ -151,7 +162,7 @@ def challenge_target(url: str) -> str:
         except (ValueError, UnicodeDecodeError):
             return ""
         if path.startswith("/") and not path.startswith("//"):
-            target = "https://www.walmart.com" + path
+            target = f"https://www.{store}" + path
     else:
         ru = params.get("ru", "")
         try:

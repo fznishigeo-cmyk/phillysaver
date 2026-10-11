@@ -635,10 +635,16 @@ WM_WALL = ("https://www.walmart.com/blocked?url=L2lwL0dsdWUtR3VuLzE5NDk3MTkxMTQ"
 EBAY_WALL = ("https://www.ebay.com/splashui/challenge?ap=1&appName=orch&ru="
              "https%3A%2F%2Fwww.ebay.com%2Fitm%2F158273640669%3Fmkcid%3D1&iid=e2")
 PX_WALL = "https://www.zillow.com/captchaPerimeterX/?url=%2Fhomedetails%2F1&uuid=9"
+# Sam's Club's wall is Walmart's under another path (live: row 503).
+SAMS_ITEM = ("https://www.samsclub.com/ip/HP-Smart-Tank-5104/17067010453"
+             "?classType=REGULAR&irgwc=1&clickid=c1")
+SAMS_WALL = ("https://www.samsclub.com/are-you-human?url=L2lwL0hQLVNtYXJ0LVRhbmst"
+             "NTEwNC8xNzA2NzAxMDQ1Mz9jbGFzc1R5cGU9UkVHVUxBUiZpcmd3Yz0xJmNsaWNraWQ9YzE"
+             "&uuid=6fd63ab9-c4f8-11f1-b1f2-26a5e253ad17&vid=&g=b")
 
 
 @pytest.mark.parametrize("product,wall", [
-    (WM_ITEM, WM_WALL), (EBAY_ITEM, EBAY_WALL),
+    (WM_ITEM, WM_WALL), (EBAY_ITEM, EBAY_WALL), (SAMS_ITEM, SAMS_WALL),
     ("https://www.zillow.com/homedetails/1", PX_WALL),
     ("https://shop.example.com/p/kettle", "/px-captcha?uuid=1"),  # relative
 ])
@@ -673,9 +679,10 @@ def test_get_never_follows_into_a_bot_wall(tmp_path):
 
 def test_challenge_target_decodes_the_refused_product():
     assert is_challenge_url(WM_WALL) and is_challenge_url(EBAY_WALL)
-    assert is_challenge_url(PX_WALL)
+    assert is_challenge_url(PX_WALL) and is_challenge_url(SAMS_WALL)
     assert challenge_target(WM_WALL) == WM_ITEM
     assert challenge_target(EBAY_WALL) == EBAY_ITEM
+    assert challenge_target(SAMS_WALL) == SAMS_ITEM  # on Sam's own host
     # A '+' of base64 is no space (Walmart may not percent-encode it).
     plus = "https://www.walmart.com/blocked?url=L2lwLz8+&uuid=1"
     assert challenge_target(plus) == "https://www.walmart.com/ip/?>"
@@ -688,6 +695,7 @@ def test_challenge_target_decodes_the_refused_product():
     "https://www.walmart.com/blocked?url=Ly9ldmlsLmNvbS94",    # "//evil.com/x"
     "https://www.walmart.com/blocked?url=aXAvMQ",              # "ip/1": no "/"
     "https://www.walmart.com/blocked?url=L2lwLyAx",            # "/ip/ 1": a space
+    "https://www.samsclub.com/are-you-human?uuid=1",           # no url param
     "https://www.ebay.com/splashui/challenge?ap=1",            # no ru
     "https://www.ebay.com/splashui/challenge?ru=https%3A%2F%2Fevil.com%2Fitm%2F1",
     "https://www.ebay.com/splashui/challenge?ru=%2Fitm%2F1",   # not absolute

@@ -540,9 +540,10 @@ _BOTWALL_REPAIR_KEY = "botwall_urls_2026_10_11"
 
 def _repair_botwall_urls(db: DB) -> int:
     """One-time repair (db meta keyed): redirect resolution followed
-    Walmart and eBay into their bot walls and stored the wall as the
-    product link (live: 72 Walmart /blocked, 8 eBay /splashui/challenge
-    cards). Each such deal gets the product URL the wall names
+    Walmart, eBay and Sam's Club into their bot walls and stored the wall
+    as the product link (live: 72 Walmart /blocked, 8 eBay
+    /splashui/challenge, 1 Sam's Club /are-you-human cards). Each such
+    deal gets the product URL the wall names
     (http_client.challenge_target) as its canonical_url, and its photo
     'tried' flags lifted so both photo passes try again under the normal
     evidence rules. The dedupe_key is identity and is never changed; a
