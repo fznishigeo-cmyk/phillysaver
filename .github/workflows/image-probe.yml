@@ -1,0 +1,30 @@
+name: image probe (read-only)
+
+# One GET per photo URL, our User-Agent, no Referer (as the deal page asks),
+# to see whether an image host refuses hotlinked product photos.
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Space-separated image URLs"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dealradar
+        run: pip install -e .
+      - name: Probe the images
+        env:
+          IMAGE_URLS: ${{ inputs.urls }}
+        run: python scripts/image_probe.py
