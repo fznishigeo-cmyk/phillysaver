@@ -27,7 +27,8 @@
  * sign-in; false for a password sign-up (anyone can type an address, and the
  * payer email on a Stripe Checkout is typed too, so a claim never verifies).
  * Membership by Stripe email lookup is only granted to verified accounts
- * (membership.js).
+ * (membership.js). A takeover (below) also unbinds the squatter's Stripe
+ * customer.
  */
 
 import { EMAIL_RE, b64url, unb64url, safeEqual } from "./util.js";
@@ -158,12 +159,17 @@ export function isVerified(acct) {
 
 // A verified Google sign-in takes over an unverified (password) account on the
 // same address: whoever typed that address at sign-up does not own it. Their
-// password goes and their sessions die (the version bump); a Stripe customer
-// bound by a claim stays, since the payer holds that receipt, and so does
-// trial_used (one Stripe trial per account).
+// password goes and their sessions die (the version bump), and so does their
+// Stripe binding: the customer a claim bound (with claimed_at and trial_used)
+// is the squatter's, so the owner never bills onto it or inherits it; the
+// owner's trial then depends on Stripe's history for the address (api.js
+// checkout). Returns the customer id it unbound, or null.
 export function takeOver(acct, googleSub) {
+  const unbound = acct.stripe_customer || null;
   Object.assign(acct, { google_sub: googleSub, email_verified: true, scheme: null, iterations: null, salt: null, hash: null,
+                        stripe_customer: null, claimed_at: null, trial_used: false,
                         session_version: (acct.session_version || 0) + 1 });
+  return unbound;
 }
 
 // --------------------------------------------------------------- google

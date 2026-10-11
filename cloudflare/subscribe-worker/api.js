@@ -8,7 +8,8 @@
  *   POST /api/login    {email, password} -> 200 {token, me} | 401 bad_credentials
  *   POST /api/google   {credential}      -> 200 {token, me} | 401 bad_token
  *   POST /api/claim    Bearer <session>, {session_id} -> 200 {me} | 400 bad_session
- *                      | 403 wrong_account | 404 unknown_session | 502 stripe_unavailable | 401
+ *                      | 403 wrong_account | 404 unknown_session | 409 already_claimed
+ *                      | 502 stripe_unavailable | 401
  *   POST /api/checkout Bearer <session>  -> 200 {url} (Stripe Checkout) | 409 already_member
  *                      | 503 checkout_unavailable {fallback_url} | 401
  *   POST /api/portal   Bearer <session>  -> 200 {url} (Stripe billing portal) | 404 no_customer
@@ -21,15 +22,16 @@
  * The routes that mint, bind or bill an account answer 503 signin_unavailable
  * while SESSION_SECRET is unset, before any KV write. Abuse counters per
  * client IP per hour live in isolate memory: signup 10, login 20, google 20,
- * claim 10, checkout 10. KV holds acct:<email>, deals:full (the full payload,
- * stored verbatim by /api/publish) and stripe:price (billing.js).
+ * claim 10, checkout 10. KV holds acct:<email>, claim:<customer> (the one
+ * account a Stripe customer is bound to), deals:full (the full payload, stored
+ * verbatim by /api/publish), stripe:price and stripe:portal (billing.js).
  */
 
 import { EMAIL_RE, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
 import { getAccount, newAccount, saveAccount, setPassword, checkPassword, needsRehash, isVerified,
          takeOver, signSession, sessionCurrent, sessionFromRequest, verifyGoogleToken } from "./auth.js";
-import { meFor, stripeGet, forgetMembership } from "./membership.js";
-import { accountRef, checkoutUrl, portalUrl } from "./billing.js";
+import { meFor, stripeGet, forgetMembership, accountRef, emailHistory, trialAvailable } from "./membership.js";
+import { checkoutUrl, portalUrl } from "./billing.js";
 
 const LIMITS_PER_IP_PER_HOUR = { signup: 10, login: 20, google: 20, claim: 10, checkout: 10 };
 const NEEDS_SIGNING = ["/api/signup", "/api/login", "/api/google", "/api/claim", "/api/checkout"];
@@ -73,13 +75,24 @@ async function google(request, env, headers) {
   if (!id) return json({ error: "bad_token" }, 401, headers);
   let acct = await getAccount(env, id.email);
   let save = true;
+  let unbound = null;
   if (!acct) acct = newAccount(id.email, { googleSub: id.sub }); // free: no access until a Stripe subscription
   else if (!isVerified(acct)) { // a password squat on a verified address
-    takeOver(acct, id.sub);
+    unbound = takeOver(acct, id.sub);
     forgetMembership(acct.email); // the owner's email lookup must not see the squatter's cached "no"
   } else if (acct.google_sub !== id.sub) acct.google_sub = id.sub;
   else save = false;
-  return signedIn(env, acct, headers, save);
+  const res = await signedIn(env, acct, headers, save);
+  if (unbound) await releaseClaim(env, unbound, acct.email);
+  return res;
+}
+
+// After a takeover the squatter's customer is bound to nobody: their own
+// account may claim it. A failure here never fails the owner's sign-in.
+async function releaseClaim(env, customer, email) {
+  try {
+    if ((await env.SUBS.get(`claim:${customer}`)) === email) await env.SUBS.delete(`claim:${customer}`);
+  } catch (e) { console.warn("claim release failed"); }
 }
 
 // The account behind a valid session token minted since its last takeover,
@@ -95,8 +108,10 @@ async function requireAccount(request, env) {
 // redirect of our Checkout or the Payment Link), so the bound customer's
 // subscription is theirs whatever email they typed. The payer email is typed
 // too, so it verifies nothing. A session our checkout made for another
-// account (client_reference_id) is refused; a claimed subscription that is
-// or was trialing uses up the account's one trial.
+// account (client_reference_id) is refused, and so is a customer already
+// bound to another account (claim:<customer>, written by its first claim:
+// one payment, one account); a claimed subscription that is or was trialing
+// uses up the account's one trial.
 async function claim(request, env, headers) {
   const acct = await requireAccount(request, env);
   if (!acct) return json({ error: "unauthorized" }, 401, headers);
@@ -118,23 +133,43 @@ async function claim(request, env, headers) {
   if (session.client_reference_id && session.client_reference_id !== (await accountRef(acct.email))) {
     return json({ error: "wrong_account" }, 403, headers);
   }
+  const holder = await env.SUBS.get(`claim:${customer}`);
+  if (holder && holder !== acct.email) return json({ error: "already_claimed" }, 409, headers);
   const sub = session.subscription && typeof session.subscription === "object" ? session.subscription : null;
   if (sub && (sub.status === "trialing" || sub.trial_end)) acct.trial_used = true;
   acct.stripe_customer = customer;
   acct.claimed_at = new Date(Date.now()).toISOString();
+  if (holder !== acct.email) await env.SUBS.put(`claim:${customer}`, acct.email); // before the account: a retry finds it ours
   await saveAccount(env, acct);
   forgetMembership(acct.email); // the next answer must see the new customer
   return json({ me: await meFor(env, acct) }, 200, headers);
 }
 
 // A Stripe Checkout Session URL for the signed-in account (card up front;
-// the Stripe trial only while the account has never had one). Membership is
-// re-asked (?fresh=1 rules) so a member is never sold a second subscription.
+// the Stripe trial only while the account has never had a subscription).
+// Membership is re-asked strictly (?fresh=1 rules), then every subscription
+// of the customers with the account's email: a live one anywhere is 409 (never
+// a second subscription), any one at all means no trial (recorded as
+// trial_used, one KV write). A Stripe failure on either is 503 with no
+// fallback: never sell on a failed check.
 async function checkout(request, env, headers) {
   const acct = await requireAccount(request, env);
   if (!acct) return json({ error: "unauthorized" }, 401, headers);
-  const status = await meFor(env, acct, true);
-  if (status.member) return json({ error: "already_member", me: status }, 409, headers);
+  let status, history;
+  try {
+    status = await meFor(env, acct, true, true);
+    if (status.member) return json({ error: "already_member", me: status }, 409, headers);
+    history = await emailHistory(env, acct.email);
+  } catch (e) {
+    console.warn("checkout check failed:", e && e.message); // status + path, never Stripe's text
+    return json({ error: "checkout_unavailable", fallback_url: "" }, 503, headers);
+  }
+  if (history.had) status = { ...status, trial_available: false };
+  if (history.sub) return json({ error: "already_member", me: status }, 409, headers);
+  if (history.had && trialAvailable(acct)) {
+    acct.trial_used = true;
+    try { await saveAccount(env, acct); } catch (e) { console.warn("trial_used write failed"); } // the checkout still has no trial
+  }
   try {
     return json({ url: await checkoutUrl(env, acct, status) }, 200, headers);
   } catch (e) {

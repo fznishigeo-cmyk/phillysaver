@@ -11,14 +11,19 @@ whose status is `trialing` or `active`, i.e. a card on file. There is no
 card-less trial for anyone, existing accounts included. The trial is
 Stripe's: `TRIAL_DAYS` days (default 7), the card collected up front
 (`payment_method_collection=always`), then $9.99/month billed automatically
-every month until cancelled. One trial per account. Cancelling is online
-and self-serve in the Stripe customer portal.
+every month until cancelled. One trial per person, and never a second
+subscription. Members cancel either way: online in Stripe's customer portal
+(the "Manage or cancel" link), or by emailing hello@wowpriced.com
+(`config.yaml` `contact_email`), and the operator cancels the subscription
+for them in the Stripe dashboard.
 
 The account must prove a subscription is its own: the Checkout Session is
 **claimed** from the success page (`welcome.html?session_id=...`, the same
-page for the Worker's checkout and for the Payment Link), or the account's
-email is **verified** (Google sign-in) and Stripe has a subscription on it.
-Typing someone else's address at sign-up earns nothing.
+page for the Worker's checkout and for the Payment Link), or the Worker's
+own checkout made the subscription for this account (its reference in the
+subscription metadata), or the account's email is **verified** (Google
+sign-in) and Stripe has a subscription on it. Typing someone else's address
+at sign-up earns nothing.
 
 The static site (GitHub Pages) never holds the locked data. The pipeline
 publishes a **teaser** `deals.json` publicly and uploads the **full**
@@ -103,9 +108,9 @@ count as `sv: 0`.
 | `POST /api/signup` | none | `{email, password}` | `200 {token, me}`; `409 {error:"exists"}`; `400 {error:"invalid_email"|"weak_password"}` (min 8 chars). The account is **unverified** and free: `me.member` is false until a Stripe subscription |
 | `POST /api/login` | none | `{email, password}` | `200 {token, me}`; `401 {error:"bad_credentials"}` |
 | `POST /api/google` | none | `{credential}` (Google ID token) | checks `aud == GOOGLE_CLIENT_ID`, `iss` in {accounts.google.com, https://accounts.google.com}, `exp` and `email_verified` **before** any network call, then the RS256 signature against Google's JWKS; finds or creates the account by the token's email (**verified**); `200 {token, me}`; `401 {error:"bad_token"}` |
-| `POST /api/checkout` | session | `{}` or empty | `200 {url}`: a Stripe Checkout Session URL to send the browser to ("Starting the trial" below); `409 {error:"already_member", me}`; `503 {error:"checkout_unavailable", fallback_url}` when Stripe or the price is unavailable (`fallback_url` = `me.subscribe_url`, may be `""`); `401 {error:"unauthorized"}`. 10 per IP per hour |
+| `POST /api/checkout` | session | `{}` or empty | `200 {url}`: a Stripe Checkout Session URL to send the browser to ("Starting the trial" below); `409 {error:"already_member", me}` (also when a Stripe customer with the account's email has a live subscription the account has not proven is its own: `me.member` is then false); `503 {error:"checkout_unavailable", fallback_url}`: `fallback_url` is `""` when Stripe could not be asked whether the account already pays or had a trial (never sell on a failed check), else `me.subscribe_url` (may be `""`) when the session itself failed or there is no price; `401 {error:"unauthorized"}`. 10 per IP per hour |
 | `POST /api/portal` | session | `{}` or empty | `200 {url}`: a Stripe billing portal session for the bound customer (cancel, card, invoices; returns to the site home); `404 {error:"no_customer"}` (nothing bound); `503 {error:"portal_unavailable", fallback_url}` (`STRIPE_PORTAL_LINK` or `""`); `401` |
-| `POST /api/claim` | session | `{session_id}` (the Stripe Checkout Session id from the success redirect, Worker checkout or Payment Link) | binds the session's Stripe customer to the account; `200 {me}`; `400 {error:"bad_session"}` (malformed id, or the session is not `status: complete` + `mode: subscription` with a customer); `403 {error:"wrong_account"}` (the session carries a `client_reference_id` that is not this account's reference); `404 {error:"unknown_session"}` (Stripe does not know it); `502 {error:"stripe_unavailable"}` (Stripe down or `STRIPE_SECRET_KEY` unset); `401` |
+| `POST /api/claim` | session | `{session_id}` (the Stripe Checkout Session id from the success redirect, Worker checkout or Payment Link) | binds the session's Stripe customer to the account; `200 {me}`; `400 {error:"bad_session"}` (malformed id, or the session is not `status: complete` + `mode: subscription` with a customer); `403 {error:"wrong_account"}` (the session carries a `client_reference_id` that is not this account's reference); `404 {error:"unknown_session"}` (Stripe does not know it); `409 {error:"already_claimed"}` (that Stripe customer is already bound to another account: one payment, one account); `502 {error:"stripe_unavailable"}` (Stripe down or `STRIPE_SECRET_KEY` unset); `401` |
 | `GET /api/me` | session | — | `200 me`; `401`. `?fresh=1` bypasses the membership cache (at most once a minute per account) |
 | `GET /api/deals` | session | — | `200` full payload when `me.member`; `402 me` when not; `401` without a session |
 | `POST /api/logout` | session | — | `204` (client drops the token) |
@@ -130,7 +135,7 @@ account. (`/api/portal`, like `/api/me`, is just `401` then.)
 | `reason` | `"subscribed"` (active), `"trial"` (Stripe `trialing`), `"lapsed"` (a Stripe customer is bound to the account but has no live subscription: cancelled, unpaid, ...), `"none"` (never subscribed) |
 | `trial_ends_at` | when `reason` is `"trial"`: that subscription's `trial_end` as ISO; `null` otherwise |
 | `trial_days` | the Worker's `TRIAL_DAYS` (default 7) |
-| `trial_available` | `true` while the account has never had a trial: no `acct.trial_used` and no bound Stripe customer |
+| `trial_available` | `true` while the account has never had a subscription as far as the Worker knows: no `acct.trial_used`, no bound Stripe customer, and Stripe's membership answer saw none (any status for the account's own checkouts, live ones by verified email). Checkout also asks the customers with the account's email ("The trial rule"); what it finds there shows here from then on |
 | `email_verified` | below |
 | `claimed` | `true` once a Stripe customer is bound to the account |
 | `subscribe_url` | `<STRIPE_PAYMENT_LINK>?prefilled_email=<urlencoded email>`, or `""` without a Payment Link: the fallback when checkout is unavailable |
@@ -139,27 +144,38 @@ account. (`/api/portal`, like `/api/me`, is just `401` then.)
 ### Membership and ownership
 
 `member` is true only when Stripe has a subscription with status `active`
-or `trialing` (Stripe's trial: a card is on file) reached one of two ways:
+or `trialing` (Stripe's trial: a card is on file) reached one of three ways:
 
 - **(a) a bound customer**: `acct.stripe_customer` set by `POST /api/claim`
   → `GET /v1/subscriptions?customer=<id>&status=all`, any `active|trialing`;
+- **(c) the account's own checkouts**: every Worker checkout stamps
+  `subscription_data[metadata][wowpriced_ref] = <account reference>`, so
+  `GET /v1/subscriptions/search?query=metadata['wowpriced_ref']:'<ref>'`
+  (one call, any status) finds them, claimed or not. A password account's
+  own checkout therefore counts even when it never reached `welcome.html`.
+  Stripe's Search is eventually consistent (about a minute behind), which
+  is fine: `welcome.html` claims at once, and checkout's history check
+  (below) is not eventually consistent;
 - **(b) the account's email, only when `email_verified`**: as
   `dealradar/publish/members.py` does, page
   `GET /v1/subscriptions?status=active&expand[]=data.customer` and the same
   with `status=trialing`, and compare `customer.email` **lowercased** to the
   account email (Stripe's `customers?email=` filter is exact-case and is
-  not used).
+  not used here).
 
-(a) is tried first, then (b). Within each, **active beats trialing**: the
-answer is the best live subscription, `{status, trial_end}`, or none. An
-account that is neither bound nor verified is never looked up (no Stripe
-call, nothing cached). Stripe's answer (that summary, or "none") is cached
-5 minutes **in isolate memory**, not KV; a Stripe failure counts as "not a
-member" for that request only and is not cached. `reason` follows from the
-answer: `active` → `subscribed`, `trialing` → `trial`, none with a bound
-customer → `lapsed` (no extra Stripe call), none otherwise → `none`.
-Signing up grants nothing, and an account's `trial_ends_at` from the old
-card-less trial is ignored.
+(a) is tried first, then (c), then (b); the first live subscription wins,
+and within each **active beats trialing**. The answer is `{sub, had}`: the
+best live subscription (`{status, trial_end}`) or none, and whether any
+subscription of the account was seen (a live one anywhere, any one of the
+bound customer's or of its own checkouts), which ends `trial_available`.
+Every account is asked at least (c); only a verified one is looked up by
+email. Stripe's answer is cached 5 minutes **in isolate memory**, not KV; a
+Stripe failure counts as "not a member" for that request only and is not
+cached (`POST /api/checkout` asks strictly instead: a failure there is
+`503`). `reason` follows from the answer: `active` → `subscribed`,
+`trialing` → `trial`, none with a bound customer → `lapsed` (no extra
+Stripe call), none otherwise → `none`. Signing up grants nothing, and an
+account's `trial_ends_at` from the old card-less trial is ignored.
 
 `email_verified` is true for an account created by Google sign-in or taken
 over by Google sign-in (below); false for a password sign-up, and a claim
@@ -173,27 +189,45 @@ counts as verified only when Google alone could have created it
 whose existing account is *not* `email_verified`, the verified sign-in
 takes the account over: the password hash and salt are cleared, `google_sub`
 and `email_verified: true` are set, `session_version` is incremented and the
-cached membership answer is dropped; any claimed `stripe_customer` and
-`trial_used` are kept. Whoever typed that address at sign-up loses the
-password login and every session they hold (their tokens carry the old
-`sv`); the owner's sign-in response carries the only valid token. Google
-sign-in on a *verified* account only links `google_sub` and keeps any
-password and session.
+cached membership answer is dropped. The squatter's Stripe binding goes too:
+`stripe_customer`, `claimed_at` and `trial_used` are cleared, and KV
+`claim:<that customer>` is deleted when it names this account, so the owner
+never bills onto, opens the portal of, or inherits the squatter's customer
+(and the squatter may claim it into an account of their own). The owner
+keeps their own first trial unless Stripe shows a prior subscription for
+the address ("The trial rule": a squatter's Worker checkout carried the
+owner's address, so it does count). Whoever typed that address at sign-up
+loses the password login and every session they hold (their tokens carry
+the old `sv`); the owner's sign-in response carries the only valid token.
+An owner who had claimed their own payment before signing in with Google
+stays a member through (b) or (c) when it is on their address, and can
+claim the session again. Google sign-in on a *verified* account only links
+`google_sub` and keeps any password and session.
 
 ### The trial rule
 
-One Stripe trial per account. `trial_available` = no `acct.trial_used` and
-no bound `acct.stripe_customer` (a bound customer has subscribed before).
-`POST /api/checkout` adds `subscription_data[trial_period_days] =
-TRIAL_DAYS` only while `trial_available` and `TRIAL_DAYS > 0`; a returning
-(lapsed) account checks out with its bound customer and pays from day one.
-A claim of a subscription that is (or was) trialing sets
-`acct.trial_used = true`. The card is always collected up front, so the
-trial converts to $9.99/month automatically and renews every month until
-the subscriber cancels in the customer portal (Stripe ends it at the period
-end, or as configured in the portal settings). Accounts from the card-less
-era never gave a card and never had a Stripe trial, so `trial_available`
-is true for them.
+One Stripe trial per person: any earlier subscription (any status) tied to
+the account means no trial. Tied means the bound customer, the account's
+own checkouts (the reference search, (c) above), or a Stripe customer whose
+email is the account's lowercased email (`GET /v1/customers?email=`, which
+is exact-case: the Worker's own checkouts always send the lowercased
+address, a Payment Link payer who typed another case is missed).
+`trial_available` (in `me`) = no `acct.trial_used`, no bound
+`acct.stripe_customer`, and no subscription in the membership answer.
+`POST /api/checkout` then asks the email's customers too, and adds
+`subscription_data[trial_period_days] = TRIAL_DAYS` only when all of them
+say "never" and `TRIAL_DAYS > 0`; when only that last check finds a
+subscription, the checkout carries no trial and `acct.trial_used = true` is
+written (one KV write, once), so `me` says so from then on. A claim of a
+subscription that is (or was) trialing sets `acct.trial_used = true` too.
+A returning (lapsed) account checks out with its bound customer and pays
+from day one. The card is always collected up front, so the trial converts
+to $9.99/month automatically and renews every month until the member
+cancels, online in the customer portal or by emailing hello@wowpriced.com
+(Stripe ends it at the period end, or as configured in the portal
+settings). Accounts from the card-less era never gave a card and never had
+a Stripe trial, so `trial_available` is true for them unless Stripe shows
+otherwise.
 
 ### Starting the trial: `POST /api/checkout`
 
@@ -202,9 +236,18 @@ and sends the browser to the returned `url` (Stripe-hosted Checkout). The
 Worker:
 
 1. answers `409 already_member` (with `me`) when the account is a member,
-   asked under the `?fresh=1` rule so a member is never sold a second
-   subscription;
-2. finds the price: env `STRIPE_PRICE_ID` when set, else the Payment Link's
+   asked **strictly** under the `?fresh=1` rule so a member is never sold a
+   second subscription;
+2. asks the history of the account's email: `GET
+   /v1/customers?email=<lowercased email>&limit=100`, then each customer's
+   `GET /v1/subscriptions?customer=<id>&status=all`. A live (`active` or
+   `trialing`) one → `409 already_member` (with `me`, `trial_available`
+   false), never a second subscription; any one at all → no trial ("The
+   trial rule"). Any Stripe failure in step 1 or 2 (or no
+   `STRIPE_SECRET_KEY`) → `503 {error:"checkout_unavailable",
+   fallback_url: ""}` and no session: never sell on a failed check, not
+   even through the Payment Link;
+3. finds the price: env `STRIPE_PRICE_ID` when set, else the Payment Link's
    own price: `GET /v1/payment_links?active=true&limit=100` (paging with
    `starting_after`, up to 5 pages), the link whose `url` equals
    `STRIPE_PAYMENT_LINK` (origin + path, trailing slash ignored, path
@@ -213,7 +256,7 @@ Worker:
    day in KV `stripe:price` (`{link, price}`, ignored when the link
    changed), so a cold isolate costs at most one KV read; a miss is never
    cached;
-3. `POST /v1/checkout/sessions` (form-encoded, basic auth
+4. `POST /v1/checkout/sessions` (form-encoded, basic auth
    `STRIPE_SECRET_KEY`, header `Idempotency-Key: <ref>-<10-minute slot>` so
    a double click makes one session) with, in this order:
 
@@ -221,21 +264,23 @@ Worker:
 |---|---|
 | `mode` | `subscription` |
 | `line_items[0][price]`, `line_items[0][quantity]` | the price, `1` |
+| `payment_method_types[0]` | `card`: named explicitly, as `scripts/stripe_setup.py` does for the Payment Link (this Stripe account has rejected the dashboard's default payment methods before) |
 | `payment_method_collection` | `always` (the card up front, trial or not) |
 | `client_reference_id` | the account reference |
 | `customer` / `customer_email` | the bound `acct.stripe_customer` when there is one, else the account email |
-| `subscription_data[trial_period_days]` | `TRIAL_DAYS`, only when `trial_available` and `TRIAL_DAYS > 0` |
+| `subscription_data[trial_period_days]` | `TRIAL_DAYS`, only when `trial_available`, the email's history shows no subscription, and `TRIAL_DAYS > 0` |
 | `subscription_data[metadata][wowpriced_ref]` | the account reference |
 | `success_url` | `<SITE_URL>/welcome.html?session_id={CHECKOUT_SESSION_ID}` (the braces literal in the decoded value: Stripe fills them in) |
 | `cancel_url` | `<SITE_URL>/?checkout=cancel` |
 
 The **account reference** is the first 32 hex characters of
 SHA-256(`"wowpriced-acct:" + email`). `SITE_URL` is a Worker var, default
-`https://wowpriced.com`. Any failure (no Stripe key, no price, a Stripe
-error) is `503 {error:"checkout_unavailable", fallback_url:
-me.subscribe_url}`; Stripe's error text never reaches the client (the
-Worker logs status and path only). Checkout itself writes nothing: the trial
-counts as used once the claim sees it.
+`https://wowpriced.com`. Once steps 1 and 2 answered, any failure (no
+price, a Stripe error on the session) is `503 {error:"checkout_unavailable",
+fallback_url: me.subscribe_url}`; Stripe's error text never reaches the
+client (the Worker logs status and path only). Checkout writes nothing but
+`acct.trial_used`, and only when step 2 found an earlier subscription the
+account did not know about.
 
 ### Claiming a payment
 
@@ -253,7 +298,9 @@ the home page with `?checkout=cancel`. `welcome.html` then:
    link to `/#login`, and claims it on the next visit once signed in (the
    id in `sessionStorage` is used when the URL carries none). A `401` from
    the claim clears the stale session token; `bad_session`,
-   `wrong_account` and `unknown_session` clear the stored id.
+   `wrong_account`, `unknown_session` and `already_claimed` clear the
+   stored id (`already_claimed`: "This payment is already attached to
+   another account"; email hello@wowpriced.com if that is wrong).
 
 The Worker (`POST /api/claim`) fetches
 `GET https://api.stripe.com/v1/checkout/sessions/<id>?expand[]=subscription`
@@ -262,24 +309,49 @@ The Worker (`POST /api/claim`) fetches
 answers `403 wrong_account` when the session carries a
 `client_reference_id` that is not this account's reference (a session the
 Worker's checkout made for another account; a Payment Link session carries
-none); then stores `acct.stripe_customer` and `acct.claimed_at`, and
-`acct.trial_used = true` when the session's subscription is or was trialing
-(`status: trialing` or a `trial_end`), whatever payer email the session
-carries (the payer holds the receipt, which is the session id from their
-own redirect; the typed email proves nothing and never verifies the
-account). The membership cache for that email is dropped so the `200 {me}`
-already says `trial` or `subscribed`. Rate limit 10 per hour per IP.
+none); answers `409 already_claimed` when KV `claim:<customer>` names
+another account (one payment, one account: a shared or leaked success URL
+unlocks nothing more, and nobody else gets the payer's portal or bills onto
+their customer); then writes `claim:<customer> = <account email>` (first
+claim of that customer only) and stores `acct.stripe_customer` and
+`acct.claimed_at`, and `acct.trial_used = true` when the session's
+subscription is or was trialing (`status: trialing` or a `trial_end`),
+whatever payer email the session carries (the payer holds the receipt,
+which is the session id from their own redirect; the typed email proves
+nothing and never verifies the account). The membership cache for that
+email is dropped so the `200 {me}` already says `trial` or `subscribed`.
+Rate limit 10 per hour per IP. A Google takeover deletes the marker of the
+customer it unbinds ("Recovery of a squatted address"). Bindings made
+before the marker existed have none, so their customer can still be
+claimed once more, by whoever claims it first.
 
 ### Billing: `POST /api/portal`
 
 For an account with a bound customer: `POST /v1/billing_portal/sessions`
-with `customer=<acct.stripe_customer>` and `return_url=<SITE_URL>/` →
-`200 {url}` (Stripe's hosted portal: cancel, update the card, invoices).
+with `customer=<acct.stripe_customer>`, `configuration=<bpc_...>` and
+`return_url=<SITE_URL>/` → `200 {url}` (Stripe's hosted portal: cancel,
+update the card, invoices). The configuration is env `STRIPE_PORTAL_CONFIG`
+when set, else the active one `scripts/stripe_setup.py` created (`GET
+/v1/billing_portal/configurations?active=true&limit=100`, paged like the
+Payment Links, the one with `metadata.app == "wowpriced"`: cancel at period
+end, card update, invoices), cached like the price (6 hours in memory, a
+day in KV `stripe:portal` = `{mode, config}`, ignored when the key's mode,
+live or test, differs; a miss is never cached). Only when none is found is
+`configuration` left out, so Stripe uses the dashboard's default portal.
 No bound customer (a verified account that subscribed on the Payment Link
 and never claimed, say) → `404 no_customer`; any Stripe error or a missing
 key → `503 {error:"portal_unavailable", fallback_url: STRIPE_PORTAL_LINK or
 ""}`. The page follows `url`, else `fallback_url` / `me.portal_url` (the
 portal's own email login) when set.
+
+**Cancelling.** Members cancel either way: online through the "Manage or
+cancel" link (the portal session above, or `me.portal_url`, the portal's
+email login, for a member with no bound customer), or by emailing
+hello@wowpriced.com (`config.yaml` `contact_email`), and the operator
+cancels for them in the Stripe dashboard (Customers → the member's
+subscription → Cancel). Either way membership ends when Stripe says the
+subscription is no longer `trialing` or `active` (within the 5-minute
+cache).
 
 ### Accounts
 
@@ -311,34 +383,42 @@ passwords or tokens.
 Worker env: secrets `NEWSLETTER_SECRET`, `STRIPE_SECRET_KEY`,
 `SESSION_SECRET`; vars `GOOGLE_CLIENT_ID`, `STRIPE_PAYMENT_LINK`,
 `STRIPE_PRICE_ID` (optional; else the Payment Link's price),
-`STRIPE_PORTAL_LINK`, `SITE_URL` (default `https://wowpriced.com`),
+`STRIPE_PORTAL_LINK`, `STRIPE_PORTAL_CONFIG` (optional; else the
+wowpriced configuration), `SITE_URL` (default `https://wowpriced.com`),
 `ALLOWED_ORIGINS`, `TRIAL_DAYS`, `PBKDF2_ITERATIONS`. KV binding `SUBS`
-(existing) holds only `sub:`, `acct:`, `deals:full`, `jwks:google` and
-`stripe:price`; counters, the membership cache and the in-memory price live
-in memory.
+(existing) holds only `sub:`, `acct:`, `claim:`, `deals:full`,
+`jwks:google`, `stripe:price` and `stripe:portal`; counters, the membership
+cache and the in-memory price and portal configuration live in memory.
 
 ### Operator setup (Stripe dashboard)
 
-1. **Customer portal**: Settings → Billing → Customer portal: activate it,
+1. **Customer portal, cancellation allowed**: run the **stripe setup
+   (one-off)** workflow (`scripts/stripe_setup.py`) with the same key; it creates the
+   portal configuration the Worker uses (cancel at period end, card update,
+   invoices). Also in Settings → Billing → Customer portal: activate it,
    allow customers to **cancel subscriptions** (and to update payment
    methods), set the default redirect to `https://wowpriced.com/`, and copy
-   the portal's login link into `STRIPE_PORTAL_LINK` (the fallback). Without
-   an activated portal `POST /api/portal` is `503 portal_unavailable`.
-2. **Trial reminder**: Settings → Billing → Subscriptions and emails: turn
-   on Stripe's email to customers **before a free trial ends** (card
-   network rules expect a reminder before a trial converts to a paid
-   charge), along with receipts and failed-payment emails.
+   the portal's login link into `STRIPE_PORTAL_LINK` (the "Manage or
+   cancel" link for members with no bound customer, and the fallback). The
+   dashboard settings are also what `POST /api/portal` falls back to when
+   no wowpriced configuration exists.
+2. **Cancelling by email**: requests to hello@wowpriced.com are cancelled
+   by the operator in the dashboard (Customers → the member → the
+   subscription → Cancel). No reminder email before a trial ends is set up
+   (operator decision, 2026-10-11).
 3. **Payment Link**: its price is the $9.99/month recurring price the
    Worker's checkout bills (or set `STRIPE_PRICE_ID`), and its after-payment
    redirect is `https://wowpriced.com/welcome.html?session_id={CHECKOUT_SESSION_ID}`;
-   it stays the fallback whenever checkout is unavailable.
+   it stays the fallback whenever checkout is unavailable after its checks
+   passed.
 4. **Same mode**: the key must match the Payment Link's mode: a live key
    (`sk_live_`/`rk_live_`) with a live link (`https://buy.stripe.com/...`),
    or test with test (`.../test_...`); a test key cannot see live sessions,
    so every claim and checkout would fail. The deploy workflow reports both
    modes (never the key) and warns when they differ. A restricted key
-   (`rk_`) needs write access to Checkout Sessions and Customer portal, and
-   read access to Subscriptions, Customers, Payment Links and Prices.
+   (`rk_`) needs write access to Checkout Sessions and Customer portal
+   (sessions; the configurations are read), and read access to
+   Subscriptions (including Search), Customers, Payment Links and Prices.
 
 ## Newsletter: double opt-in and unsubscribe
 
@@ -415,11 +495,14 @@ and click the confirmation link, `?confirmed=1` says "You're confirmed",
    - `none` with `me.trial_available`: "Start your {me.trial_days}-day free
      trial" → `POST /api/checkout` → `location = url`; the fine print says
      a card is required, $9.99/mo after the trial, renews monthly, cancel
-     online anytime;
+     anytime online or by emailing hello@wowpriced.com;
    - `lapsed`, or no trial available: "Resubscribe — $9.99/mo" → the same
      `POST /api/checkout` (no trial is added);
    - `503 checkout_unavailable` → go to `fallback_url` when non-empty, else
-     show an error; `409 already_member` → re-render with the returned `me`;
+     show an error (try again in a minute); `409 already_member` →
+     re-render with the returned `me` (when its `member` is still false, a
+     subscription already exists for this email: say so, with "I just
+     subscribed", Google sign-in and hello@wowpriced.com as the ways on);
    - "I just subscribed" → `GET /api/me?fresh=1`.
 4. `?checkout=cancel` on the home page (Stripe's cancel_url): a short
    "Checkout cancelled, nothing was charged" note; nothing else changes.
