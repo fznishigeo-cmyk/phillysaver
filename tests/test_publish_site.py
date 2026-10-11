@@ -915,7 +915,8 @@ class TestTrialCtasAreHonest:
         # checkout keeps every term, and Stripe's page repeats them.
         assert 'var note = (mode === "out" || buy) && !blk ? shortNote(o) : ""' in panel
         short = _between(html, "function shortNote(", "function fallbackTerms(")
-        assert '"$0 today. Card required, then $9.99/month, renews monthly."' in short
+        assert '"$0 today, then $9.99/month, renews monthly."' in short
+        assert "card" not in short.lower()  # operator call: no "Card required" on the main screen
         assert "cancel" not in short.lower()
         assert 'disc.textContent = o.note;' in _between(html, "function paintStep2(", "function setMode(")
         mode = _between(html, "function setMode(", "function openAuth(")

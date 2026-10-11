@@ -472,8 +472,8 @@ footer .meta{font-size:11.5px}
 <footer>
   <p><strong>Membership — $9.99/month:</strong> every deal on the wall, plus the best of
      each day's new deals in one email every morning.
-     <span id="footterms">7-day free trial for new members. $0 today. Card required, then
-     $9.99/month, renews monthly.</span>
+     <span id="footterms">7-day free trial for new members. $0 today, then $9.99/month,
+     renews monthly.</span>
      Eight deals stay free for everyone, new at every drop.</p>
   <p>Every deal links to the seller and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
@@ -1413,7 +1413,7 @@ footer .meta{font-size:11.5px}
   // operator's call). The full terms sit in
   // the dialog next to the button that starts checkout, and on Stripe's.
   function shortNote(o) {
-    return o.trial ? "$0 today. Card required, then $9.99/month, renews monthly." : "$9.99/month, renews monthly.";
+    return o.trial ? "$0 today, then $9.99/month, renews monthly." : "$9.99/month, renews monthly.";
   }
   // The Payment Link has no trial: its own terms, never the trial's.
   function fallbackTerms() {
