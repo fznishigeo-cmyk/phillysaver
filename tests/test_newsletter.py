@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import smtplib
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,6 +54,7 @@ def cfg():
     cfg.newsletter_hour_local = 8
     cfg.newsletter_timezone = "America/New_York"
     cfg.newsletter_max_per_run = 200
+    cfg.paywall_api_url = "https://wowpriced-api.example.workers.dev"  # membership offered
     return cfg
 
 
@@ -483,6 +485,10 @@ def ids_answer(*ids) -> Answer:
 PICK_COST = 0.0004
 
 
+class Hang:
+    """A hung API: blocks for the request's whole timeout, then times out."""
+
+
 class FakePickMessages:
     def __init__(self, answers):
         self.answers = list(answers)
@@ -491,9 +497,24 @@ class FakePickMessages:
     def create(self, **kwargs):
         self.calls.append(kwargs)
         a = self.answers.pop(0)
+        if isinstance(a, Hang):
+            time.sleep(kwargs["timeout"])
+            raise anthropic.APITimeoutError(request=_REQ)
         if isinstance(a, Exception):
             raise a
         return a
+
+
+class FakeClient:
+    """messages, plus the SDK's with_options, which records what was asked."""
+
+    def __init__(self, messages):
+        self.messages = messages
+        self.options: list[dict] = []
+
+    def with_options(self, **kwargs):
+        self.options.append(kwargs)
+        return self
 
 
 def make_parser(cfg, *answers, run_cap_usd=None):
@@ -502,7 +523,7 @@ def make_parser(cfg, *answers, run_cap_usd=None):
     cfg.model_pricing_per_mtok = {"default": {"input": 1.0, "output": 5.0},
                                   HAIKU: {"input": 0.10, "output": 0.50}}
     messages = FakePickMessages(answers)
-    parser = ClaudeParser(cfg, client=SimpleNamespace(messages=messages),
+    parser = ClaudeParser(cfg, client=FakeClient(messages),
                           sleep=lambda s: None, run_cap_usd=run_cap_usd)
     return parser, messages
 
@@ -529,6 +550,7 @@ class TestPick:
                                  "Item 07", "Item 08", "Item 09", "Item 10", "Item 11"]
         (call,) = messages.calls
         assert call["model"] == HAIKU and call["timeout"] == N.PICK_TIMEOUT_S
+        assert parser.client.options == [{"max_retries": 0}]  # no SDK retries
         assert call["max_tokens"] == N.PICK_MAX_TOKENS
         assert '{"ids"' in call["system"] and "10" in call["system"]
         prompt = call["messages"][0]["content"]
@@ -558,10 +580,10 @@ class TestPick:
         [ids_answer(0, 41, 99)],                                 # no valid id
         [Answer('{"ids": [1, 2]}', stop_reason="refusal")],
         [Answer('{"ids": [1, 2', stop_reason="max_tokens")],
-        [anthropic.APITimeoutError(request=_REQ)] * 2,           # timeout, retried once
-        [anthropic.APIConnectionError(request=_REQ)] * 2,
+        [anthropic.APITimeoutError(request=_REQ)],               # one attempt, no retry
+        [anthropic.APIConnectionError(request=_REQ)],
         [anthropic.InternalServerError(
-            "down", response=httpx2.Response(500, request=_REQ), body=None)] * 2,
+            "down", response=httpx2.Response(500, request=_REQ), body=None)],
         [anthropic.BadRequestError(
             "bad", response=httpx2.Response(400, request=_REQ), body=None)],
     ])
@@ -570,6 +592,19 @@ class TestPick:
         picked, how = N.pick_top(ranked(45), cfg, parser)
         assert how == "rank" and items(picked) == RANK_TOP10
         assert messages.answers == []  # every queued answer was consumed
+
+    def test_a_hung_api_costs_one_attempt_inside_the_deadline(self, cfg):
+        # The SDK's own retries are off and the parser's retry is not used:
+        # one request, its timeout capped at the time left before the deadline.
+        parser, messages = make_parser(cfg, Hang(), Hang(), Hang())
+        started = time.monotonic()
+        picked, how = N.pick_top(ranked(45), cfg, parser, deadline=started + 0.2)
+        assert how == "rank" and items(picked) == RANK_TOP10
+        assert time.monotonic() - started < 1.0  # not 3 SDK x 2 parser attempts
+        (call,) = messages.calls
+        assert 0 < call["timeout"] <= 0.2
+        assert parser.client.options == [{"max_retries": 0}]
+        assert parser.spend_usd == 0.0
 
     def test_no_parser_or_nothing_to_choose_means_no_call(self, cfg):
         picked, how = N.pick_top(ranked(45), cfg, None)  # no key / daily cap spent
@@ -691,6 +726,36 @@ class TestDailyTop:
         assert stats == {"sent": 0, "skipped": "run deadline reached", "day": LOCAL_DAY}
         assert messages.calls == [] and db.meta_get(N.pick_key(LOCAL_DAY)) is None
 
+    def test_less_than_the_pick_timeout_left_waits_for_the_next_run(self, db, cfg, monkeypatch):
+        # A model slower than the time left could run the job past its
+        # budget (and its timeout kills the state.db commit): nothing is
+        # asked, sent or stored; the next run, with time, picks and sends.
+        configure(monkeypatch)
+        worker, factory = FakeWorker([("a@x.com", "t1")]), Factory()
+        parser, messages = make_parser(cfg, Hang(), ids_answer(3, 2, 1))
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL, deals=ranked(45),
+                                        smtp_factory=factory, http_client=worker.client(),
+                                        deadline=time.monotonic() + N.PICK_TIMEOUT_S - 1,
+                                        parser=parser)
+        assert stats == {"sent": 0, "day": LOCAL_DAY,
+                         "skipped": "run deadline near: today's pick rides the next run"}
+        assert messages.calls == [] and factory.messages == []
+        assert db.meta_get(N.pick_key(LOCAL_DAY)) is None
+        messages.answers.pop(0)  # the Hang was never reached
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10),
+                                        deals=ranked(45), smtp_factory=factory,
+                                        http_client=worker.client(),
+                                        deadline=time.monotonic() + 600, parser=parser)
+        assert stats["sent"] == 1 and len(messages.calls) == 1
+        assert "1. Item 03" in bodies(factory.messages[0])["plain"]
+        # Once stored, the pick needs no model time: a near deadline still sends.
+        worker.subs.append(("b@x.com", "t2"))
+        stats = N.send_daily_newsletter(db, cfg, AFTER_8_LOCAL + timedelta(minutes=20),
+                                        deals=ranked(45), smtp_factory=factory,
+                                        http_client=worker.client(),
+                                        deadline=time.monotonic() + 1, parser=parser)
+        assert stats["sent"] == 1 and len(messages.calls) == 1
+
 
 class TestTopEmail:
     def test_ten_lines_cta_and_unsubscribe(self, cfg):
@@ -714,6 +779,16 @@ class TestTopEmail:
         cfg.custom_domain = ""
         _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
         assert "#signup" not in text and "#signup" not in html
+
+    @pytest.mark.parametrize("api_url, enabled", [("", True), ("https://w.example", False)])
+    def test_no_membership_cta_without_the_paywall(self, cfg, api_url, enabled):
+        # No paywall Worker: the site has no sign-up for /#signup to open.
+        # Paywall off: every deal is already free on the wall.
+        cfg.paywall_api_url, cfg.paywall_enabled = api_url, enabled
+        _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
+        assert "Members get every deal" not in text and "Members get every deal" not in html
+        assert "#signup" not in text and "#signup" not in html
+        assert "Live wall: https://wowpriced.com/" in text  # the rest is unchanged
 
 
 class TestSiteCopy:

@@ -1,7 +1,7 @@
 """Daily email for the free sign-up list: the day's top
 cfg.newsletter_top_n deals, one email per subscriber per local day, with no
 server of our own. Members get every deal (members.py); this email ends
-with the trial link.
+with the trial link whenever the paywall offers membership.
 
 The list lives in a Cloudflare Worker + KV (cloudflare/subscribe-worker):
 the site's form POSTs to it, and each run at/after cfg.newsletter_hour_local
@@ -15,9 +15,10 @@ same per-run and per-day spend caps, priced by the model used), chooses
 newsletter_top_n of the best PICK_CANDIDATES published deals by rank. It
 returns ids only: every fact in the email comes from the stored deal. No
 parser, no spend left, an API failure or an unreadable answer: rank order.
-The pick (deal keys) is stored in meta pick_key(<local date>) before the
-first send, so a rerun or a retried send never asks the model again and
-sends the same deals.
+The model gets one attempt of at most PICK_TIMEOUT_S, inside the run's
+deadline. The pick (deal keys) is stored in meta pick_key(<local date>)
+before the first send, so a rerun or a retried send never asks the model
+again and sends the same deals.
 
 Idempotency: meta "newsletter:<local date>" holds the JSON list of
 fingerprints (hashes, never addresses: state.db lives on a git branch) of
@@ -65,7 +66,9 @@ log = logging.getLogger("dealradar.publish.newsletter")
 PICK_CANDIDATES = 40
 #: Output cap for the pick: a short JSON list, with room to think first.
 PICK_MAX_TOKENS = 4096
-#: Seconds per pick request: past it, the day's email goes out in rank order.
+#: The pick's request timeout. ONE attempt, no SDK or parser retries, and
+#: never past the run's deadline: a timeout means rank order for the day.
+#: With less than this left before the deadline, the next run picks.
 PICK_TIMEOUT_S = 30.0
 PICK_SYSTEM_PROMPT = (
     "You choose the best deals for a free daily deals email. Each line is one "
@@ -224,7 +227,11 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
     # Members get every deal: the free list's email ends with the trial.
     days = int(getattr(cfg, "paywall_trial_days", 7) or 0)
     join = f"Start the {days}-day free trial" if days > 0 else "Become a member"
-    cta = f"Members get every deal. {join}: {site}#signup" if site else ""
+    # Only when membership is offered: the site has no sign-up without the
+    # paywall Worker, and with the paywall off every deal is already free.
+    member = (getattr(cfg, "paywall_enabled", True)
+              and bool(getattr(cfg, "paywall_api_url", "")))
+    cta = f"Members get every deal. {join}: {site}#signup" if site and member else ""
 
     lines = [f"{brand}: {heading}", ""]
     for i, d in enumerate(deals, 1):
@@ -352,7 +359,9 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         return skip("no published deals yet today")  # tried again next run
     if deadline is not None and time.monotonic() > deadline:
         return skip("run deadline reached")  # the pick and the sends ride the next run
-    deals = todays_top(db, cfg, deals, local.date(), parser)
+    deals = todays_top(db, cfg, deals, local.date(), parser, deadline)
+    if deals is None:
+        return skip("run deadline near: today's pick rides the next run")
     if not deals:
         return skip("today's picks are no longer live")
 
@@ -412,12 +421,15 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
 # ---------------------------------------------------------------- the day's top
 
 
-def _ask_model(candidates: list[dict[str, Any]], n: int, parser) -> list[Any] | None:
+def _ask_model(candidates: list[dict[str, Any]], n: int, parser,
+               deadline: float | None = None) -> list[Any] | None:
     """The parse model's ids (1-based, best first) for the day's top ``n`` of
     ``candidates``, or None when it gave no usable answer: spend cap reached
     (the parser's own gate raises before any call), API failure or timeout,
-    refusal, cut-off or unreadable JSON. Spend is accounted on the shared
-    parser at the model's own price."""
+    refusal, cut-off or unreadable JSON. ONE attempt: no parser retry and no
+    SDK retries, its timeout PICK_TIMEOUT_S capped at what is left before
+    ``deadline`` (time.monotonic). Spend is accounted on the shared parser
+    at the model's own price."""
     from ..parse.claude_client import _strip_fences  # lazy: the anthropic SDK
 
     lines = []
@@ -432,20 +444,25 @@ def _ask_model(candidates: list[dict[str, Any]], n: int, parser) -> list[Any] | 
                      f" | {d.get('verify_tier') or 'unverified'}"
                      + (f" | {conds}" if conds else ""))
     prompt = f"Pick the {n} best of these {len(candidates)} deals:\n" + "\n".join(lines)
+    timeout = PICK_TIMEOUT_S
+    if deadline is not None:
+        timeout = max(0.0, min(timeout, deadline - time.monotonic()))
+    client = parser.client
+    if callable(getattr(client, "with_options", None)):
+        client = client.with_options(max_retries=0)  # the SDK retries twice by default
     try:
-        resp = parser._request(lambda: parser.client.messages.create(
+        parser._check_spend_cap()  # the same gate as every parser call
+        resp = client.messages.create(
             model=parser.model,
             max_tokens=PICK_MAX_TOKENS,
             system=PICK_SYSTEM_PROMPT.format(n=n),
             messages=[{"role": "user", "content": prompt}],
-            timeout=PICK_TIMEOUT_S,
-        ))
-    except Exception as e:  # spend cap, rejected request: rank order today
+            timeout=timeout,
+        )
+    except Exception as e:  # spend cap, API failure or timeout: rank order today
         log.warning("newsletter pick: no model answer (%s: %s); rank order",
                     type(e).__name__, e)
         return None
-    if resp is None:
-        return None  # API failure or timeout, logged by the parser
     parser._account(resp, parser.model)
     if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
         log.warning("newsletter pick: model stopped (%s); rank order",
@@ -462,19 +479,24 @@ def _ask_model(candidates: list[dict[str, Any]], n: int, parser) -> list[Any] | 
     return ids if isinstance(ids, list) else None
 
 
-def pick_top(deals: list[dict[str, Any]], cfg,
-             parser: Any = None) -> tuple[list[dict[str, Any]], str]:
+def _asks_model(deals: list[dict[str, Any]], cfg, parser: Any) -> bool:
+    """Whether pick_top would call the model for ``deals``."""
+    return parser is not None and min(len(deals), PICK_CANDIDATES) > _top_n(cfg)
+
+
+def pick_top(deals: list[dict[str, Any]], cfg, parser: Any = None,
+             deadline: float | None = None) -> tuple[list[dict[str, Any]], str]:
     """(the day's top newsletter_top_n of ``deals``, who picked them).
     ``deals`` is in rank order, best first. "model": the parse model chose
     among the best PICK_CANDIDATES; unknown ids and repeats are dropped and
     the list is padded from rank order. "rank": no parser, nothing to choose
-    between, or no usable answer."""
+    between, or no usable answer. ``deadline``: see _ask_model."""
     n = _top_n(cfg)
     candidates = deals[:PICK_CANDIDATES]
-    if parser is None or len(candidates) <= n:
+    if not _asks_model(deals, cfg, parser):
         return candidates[:n], "rank"
     chosen: list[int] = []
-    for i in _ask_model(candidates, n, parser) or []:
+    for i in _ask_model(candidates, n, parser, deadline) or []:
         if (isinstance(i, int) and not isinstance(i, bool)
                 and 1 <= i <= len(candidates) and i - 1 not in chosen):
             chosen.append(i - 1)
@@ -485,12 +507,15 @@ def pick_top(deals: list[dict[str, Any]], cfg,
 
 
 def todays_top(db, cfg, deals: list[dict[str, Any]], day: date,
-               parser: Any = None) -> list[dict[str, Any]]:
+               parser: Any = None,
+               deadline: float | None = None) -> list[dict[str, Any]] | None:
     """The day's top deals, with current facts from ``deals``. The first
     call of a local day picks (pick_top) and stores the deal keys before
     anything is sent; every later call that day reuses them, so a rerun or
     a retried send never asks the model again. A picked deal that is no
-    longer published drops out rather than being replaced."""
+    longer published drops out rather than being replaced. None: the model
+    would be asked with less than PICK_TIMEOUT_S left before ``deadline``
+    (time.monotonic); nothing is stored and the next run picks."""
     key = pick_key(day.isoformat())
     try:
         stored = json.loads(db.meta_get(key) or "null")
@@ -499,7 +524,10 @@ def todays_top(db, cfg, deals: list[dict[str, Any]], day: date,
     if isinstance(stored, dict) and isinstance(stored.get("keys"), list):
         live = {d.get("dedupe_key"): d for d in deals}
         return [live[k] for k in stored["keys"] if k in live]
-    picked, how = pick_top(deals, cfg, parser)
+    if (_asks_model(deals, cfg, parser) and deadline is not None
+            and deadline - time.monotonic() < PICK_TIMEOUT_S):
+        return None
+    picked, how = pick_top(deals, cfg, parser, deadline)
     db.meta_set(key, json.dumps({"keys": [d.get("dedupe_key") for d in picked],
                                  "by": how}))
     # Yesterday's pick has done its job: it shrinks rather than piling up.

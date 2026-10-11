@@ -90,3 +90,6 @@ Keep this file current: whoever stops working updates it in their last commit.
    every morning. Cancel any time."
 3. Done: the Customer Portal is active (1 configuration), so "Manage
    membership" works.
+4. Any change under `cloudflare/subscribe-worker/` goes live only after the
+   `deploy subscribe worker` workflow runs (fast/hourly deploy the site
+   only). It was run for the daily top-10 confirm page on 2026-10-11.
