@@ -121,11 +121,11 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealmoon_us
-    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
-    method: rss
+    method: html
+    adapter: dealmoon_us
     url: https://www.dealmoon.com/en
     region: US
-    allowed_html: false
+    allowed_html: true
     fast_lane: false
     notes: "US (English) edition only."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
@@ -237,12 +237,13 @@ sources:
     fast_lane: false
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: jungle_deals
-    enabled: false   # URL is an HTML page (now jungle.deals), not a feed, source probe 2026-10-11
-    method: rss
-    url: https://jungledealsblog.com/
+    method: api
+    adapter: jungle_deals
+    url: https://www.jungle.deals/api/get-top-deals
     region: US
     allowed_html: true
     fast_lane: false
+    notes: "Public top-deals API used by Jungle's frontend; source credit uses /deal/ASIN."
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: clark_deals
     method: rss
@@ -520,13 +521,13 @@ sources:
     notes: server-rendered deal cards; no feed autodiscovery
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: morningsave
-    enabled: false   # URL is an HTML page, not a feed (needs a page reader), source probe 2026-10-11
-    method: rss
+    method: html
+    adapter: morningsave
     url: https://morningsave.com/
     region: US
-    allowed_html: false
+    allowed_html: true
     fast_lane: false
-    notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
+    notes: Mediocre Corp (Meh family); server-rendered deal cards with exact accessible price labels
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: sidedeal
     method: rss

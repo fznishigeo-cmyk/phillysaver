@@ -20,6 +20,12 @@ FIXTURES = Path(__file__).parent / "fixtures" / "pages"
 
 
 def source(name):
+    if name in {"dealmoon_us", "morningsave", "jungle_deals"}:
+        urls = {"dealmoon_us": "https://www.dealmoon.com/en",
+                "morningsave": "https://morningsave.com/",
+                "jungle_deals": "https://www.jungle.deals/api/get-top-deals"}
+        return SourceConfig(name, "api" if name == "jungle_deals" else "html",
+                            urls[name], adapter=name, allowed_html=True)
     return SourceConfig(name, "html", f"https://www.{name}.com/" +
                         ("deals" if name == "bradsdeals" else ""),
                         adapter=name, allowed_html=True)
@@ -55,7 +61,7 @@ def test_cards_preserve_evidence_identity_credit_and_ignore_chrome(name):
         assert p.published_at == datetime(2026, 10, 11, 15, 51, 49, tzinfo=timezone.utc)
 
 
-@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica'])
+@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica', 'dealmoon_us', 'morningsave'])
 def test_registry_and_validation_do_not_try_feed_discovery(name):
     src = source(name)
     calls = []
@@ -70,7 +76,7 @@ def test_registry_and_validation_do_not_try_feed_discovery(name):
     assert _validate_one(replace(src, enabled=False), f, AppConfig())[0] == 'disabled'
 
 
-@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica'])
+@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica', 'dealmoon_us', 'morningsave'])
 @pytest.mark.parametrize('status,robots,content,error', [
     (403, False, b'Forbidden', 'http_403'),
     (200, False, b'<title>Just a moment...</title>', 'empty_or_changed_deal_page'),
@@ -86,7 +92,7 @@ def test_refusals_and_changed_layout_are_failures(name, status, robots, content,
     assert _validate_one(source(name), f, AppConfig())[0] == 'dead'
 
 
-@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica'])
+@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica', 'dealmoon_us', 'morningsave'])
 def test_conditional_requests_permission_host_and_deadline(tmp_path, name):
     src = replace(source(name), crawl_permission='Written permission on file')
     requests = []
@@ -99,7 +105,7 @@ def test_conditional_requests_permission_host_and_deadline(tmp_path, name):
     f = PoliteFetcher(db, AppConfig(), transport=httpx.MockTransport(respond), sleep_fn=lambda _: None)
     try:
         adapter = PageAdapter()
-        assert len(adapter.fetch_page(src, f, NOW)) == 1
+        assert len(adapter.fetch_page(src, f, NOW)) == (2 if name == "morningsave" else 1)
         assert adapter.fetch_page(src, f, NOW) == []
         assert [str(r.url) for r in requests] == [src.url, src.url]
         assert requests[-1].headers['if-none-match'] == 'cards-v1'
@@ -110,7 +116,7 @@ def test_conditional_requests_permission_host_and_deadline(tmp_path, name):
         f.close()
 
 
-@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica'])
+@pytest.mark.parametrize('name', ['bradsdeals', 'dealsofamerica', 'dealmoon_us', 'morningsave'])
 def test_without_permission_robots_still_apply(tmp_path, name):
     requests = []
     def respond(req):
@@ -121,7 +127,8 @@ def test_without_permission_robots_still_apply(tmp_path, name):
     try:
         with pytest.raises(RuntimeError, match='blocked_by_robots'):
             PageAdapter().fetch_posts(source(name), f, db, AppConfig(), NOW)
-        assert requests == [f'https://www.{name}.com/robots.txt']
+        from urllib.parse import urlsplit
+        assert requests == [f'https://{urlsplit(source(name).url).netloc}/robots.txt']
     finally:
         f.close()
 
@@ -191,3 +198,78 @@ def test_price_quotes_reach_unchanged_evidence_verifier():
                                            regular_price_quote='Normally $70.99'))
     assert verify_evidence(deal, post.text) == (True, '')
     assert verify_evidence(replace(deal, final_price=1.99), post.text)[0] is False
+
+
+@pytest.mark.parametrize('name,count', [('dealmoon_us', 1), ('morningsave', 2)])
+def test_new_html_cards_preserve_exact_prices_conditions_and_credit(name, count):
+    src = source(name)
+    posts = parse_page(src, body(name), NOW)
+    assert len(posts) == count
+    assert len(parse_page(src, body(name) * 2, NOW)) == count
+    for p in posts:
+        assert p.uid == p.url and p.source_name == name
+        assert not p.image_url and not p.photos.images
+        assert '$999' not in p.text and '$0.01' not in p.text
+        assert p.fetched_at == NOW and p.published_at is None
+    p = posts[0]
+    assert 'Widget & Case' in p.title and 'SAVE30' in p.text
+    if name == 'dealmoon_us':
+        assert p.url == 'https://www.dealmoon.com/en/widget/123456.html'
+        assert 'Now $4.07 (list price $9.49).' in p.text
+        assert 'subscribe & save' in p.text
+        assert 'https://go.dealmoon.com/exec/j?d=123456&lang=en' in p.text
+    else:
+        assert p.url == 'https://morningsave.com/deals/widget'
+        assert 'Sale price 2 for $19.99. List price $60.' in p.text
+        assert 'Sale price $27.99 to $29.99.' in posts[1].text
+        assert 'SAVE30' not in posts[1].text
+
+
+@pytest.mark.parametrize('name', ['dealmoon_us', 'morningsave'])
+def test_new_cards_fail_on_missing_title_or_offsite_permalink(name):
+    src = source(name)
+    original = body(name)
+    if name == 'dealmoon_us':
+        broken = original.replace(b'zoom-title', b'changed-title')
+        foreign = original.replace(b'www.dealmoon.com/en/widget', b'evil.example/en/widget')
+    else:
+        broken = original.replace(b'h2', b'h4')
+        foreign = original.replace(b'href="/deals/widget"', b'href="https://evil.example/deals/widget"')
+    for markup in [broken, foreign]:
+        with pytest.raises(RuntimeError, match='changed_deal_card|invalid_deal_permalink'):
+            parse_page(src, markup, NOW)
+
+
+def test_new_sources_are_enabled_only_with_explicit_readers():
+    from dealradar.fetch.jungle import JungleAdapter
+    primary, backups = load_sources()
+    for name in ('dealmoon_us', 'morningsave', 'jungle_deals'):
+        src = next(s for s in primary + backups if s.name == name)
+        assert src.enabled and src.crawl_permission
+        assert src.adapter == name
+        assert isinstance(get_adapter(src, AppConfig()),
+                          JungleAdapter if name == 'jungle_deals' else PageAdapter)
+
+
+@pytest.mark.parametrize('name', ['dealmoon_us', 'morningsave'])
+def test_new_html_cards_remain_isolated_and_capped(name):
+    original = body(name)
+    changed = original.replace(b'123456', b'654321').replace(b'/deals/widget', b'/deals/other')
+    changed = changed.replace(b'hero-widget', b'other-hero').replace(b'SAVE30', b'OTHER')
+    posts = parse_page(source(name), original + changed, NOW)
+    assert 'OTHER' not in posts[0].text
+    assert 'SAVE30' not in posts[2 if name == 'morningsave' else 1].text
+    many = b''.join(original.replace(b'123456', str(i).encode())
+                   .replace(b'/deals/widget', f'/deals/widget-{i}'.encode())
+                   .replace(b'hero-widget', f'hero-widget-{i}'.encode())
+                   for i in range(100))
+    assert len(parse_page(source(name), many, NOW)) == 60
+
+
+def test_morningsave_sales_counters_do_not_change_identity():
+    original = parse_page(source('morningsave'), body('morningsave'), NOW)
+    changed = parse_page(source('morningsave'),
+                         body('morningsave').replace(b'100+ Sold Today', b'200+ Sold Today'), NOW)
+    assert [p.content_hash for p in original] == [p.content_hash for p in changed]
+    with pytest.raises(RuntimeError, match='changed_deal_card'):
+        parse_page(source('morningsave'), body('morningsave').replace(b'sale-price', b'new-price'), NOW)

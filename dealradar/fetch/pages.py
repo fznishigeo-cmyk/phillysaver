@@ -12,7 +12,7 @@ from ..models import RawPost
 from .base import SourceAdapter
 from .rss import MAX_ENTRIES, _permission_host
 
-PAGE_ADAPTERS = {"bradsdeals", "dealsofamerica"}
+PAGE_ADAPTERS = {"bradsdeals", "dealsofamerica", "dealmoon_us", "morningsave"}
 
 
 @dataclass
@@ -70,6 +70,8 @@ def _first(node, **kw):
 
 def parse_page(source, body: bytes, now: datetime) -> list[RawPost]:
     root = _Tree(body.decode("utf-8", "replace")).root
+    if source.adapter in {"dealmoon_us", "morningsave"}:
+        return _parse_new_cards(source, root, now)
     brads = source.adapter == "bradsdeals"
     cards = root.find(cls="post-tile-vertical" if brads else "deal")
     posts, seen = [], set()
@@ -106,6 +108,71 @@ def parse_page(source, body: bytes, now: datetime) -> list[RawPost]:
             if stamp:
                 published = util.parse_feed_date(stamp.text().removeprefix("Posted at ").strip(), source.tz, now)
         posts.append(RawPost(source.name, url, url, title, text, published, now))
+        seen.add(url)
+        if len(posts) >= MAX_ENTRIES:
+            break
+    return posts
+
+
+def _parse_new_cards(source, root, now):
+    dealmoon = source.adapter == "dealmoon_us"
+    cards = (root.find(cls="mlist") if dealmoon else
+             list(root.find(tag="a")) + list(root.find(cls="details"))
+             + list(root.find(cls="bonus")))
+    posts, seen = [], set()
+    for card in cards:
+        if dealmoon:
+            if card.attrs.get("data-type") != "deal":
+                continue
+            title_node = _first(card, cls="zoom-title")
+            details = _first(card, cls="zoom-brief")
+            if title_node is None or details is None:
+                raise RuntimeError("changed_deal_card")
+            href = title_node.attrs.get("href") or ""
+            title = title_node.text()
+            text = title + "\n" + details.text()
+            pattern = r"/en/[^/]+/\d+\.html"
+        else:
+            if card.tag == "a" and card.attrs.get("role") == "button":
+                continue  # handled with its enclosing titled hero card
+            link_node = card if card.tag == "a" else _first(card, cls="buy-it")
+            href = link_node.attrs.get("href", "") if link_node else ""
+            # Event previews and photo-only recommendations are not deal cards.
+            if not urlsplit(href).path.startswith("/deals/"):
+                continue
+            title_node = _first(card, tag="h2") or _first(card, tag="h3")
+            price = _first(card, cls="sale-price")
+            if price is None:
+                if title_node is not None:
+                    raise RuntimeError("changed_deal_card")
+                continue
+            button = _first(card, cls="buy-it")
+            label = button.attrs.get("aria-label", "") if button else ""
+            if (title_node is None or not label.startswith("Sale price ")
+                    or not re.search(r"\$\d", label)):
+                raise RuntimeError("changed_deal_card")
+            title = title_node.text()
+            # The accessible label contains the exact unsplit dollar amounts.
+            text = title + "\n" + label
+            if card.tag == "a":
+                text += "\n" + card.text()
+            pattern = r"/deals/[^/]+"
+        url = urljoin(source.url, href)
+        parts = urlsplit(url)
+        if (parts.scheme not in {"http", "https"}
+                or parts.netloc != urlsplit(source.url).netloc
+                or not re.fullmatch(pattern, parts.path)):
+            raise RuntimeError("invalid_deal_permalink")
+        url = url.split("#", 1)[0].split("?", 1)[0]
+        if url in seen or not re.search(r"\$\s?\d", text):
+            continue
+        if dealmoon:
+            buy = _first(card, cls="btn-buy")
+            if buy and buy.attrs.get("href"):
+                link = urljoin(source.url, buy.attrs["href"])
+                if urlsplit(link).scheme in {"http", "https"}:
+                    text += "\nBuy: " + link  # preserve credit; never fetch it
+        posts.append(RawPost(source.name, url, url, title, text, None, now))
         seen.add(url)
         if len(posts) >= MAX_ENTRIES:
             break

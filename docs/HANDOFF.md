@@ -86,6 +86,40 @@ Keep this file current: whoever stops working updates it in their last commit.
     1 deselected, including 21 page-reader tests. No paid LLM/publish run.
   - Remaining: review/merge PR; monitor source health in the first deployed
     runs. The cloud network access blocker was resolved in environment settings.
+- **Dealmoon / Jungle Deals / MorningSave readers (task 002):** implemented
+  on `codex/task-002`, PR #3; all three enabled on this branch after live checks.
+  - Dealmoon reads only `/en` US English deal cards; MorningSave reads regular
+    and titled daily/bonus cards, preserving accessible dollar amounts, ranges,
+    quantity wording and coupons. One transient RawPost per source permalink;
+    no source images. Changed cards/pages fail loudly.
+  - Jungle's homepage currently renders loading placeholders with an empty
+    initial deal list. Its own frontend publishes the public, keyless
+    `https://www.jungle.deals/api/get-top-deals` endpoint: the new API adapter
+    copies final/current/list/average prices and coupon/Subscribe & Save fields
+    without calculating savings. Credit links use the site's `/deal/<ASIN>`
+    route; no Amazon pages are fetched. Image/check-time fields are excluded.
+  - Feed/API investigation: no feeds advertised by Jungle or MorningSave;
+    Jungle `/feed/` is HTML, not a feed. Dealmoon advertises a generic external
+    FeedBurner RSS link, but no US-English-specific feed/API was discovered;
+    that external host was not crawled under the source-host permission.
+    MorningSave `/feed`, `/feed.json`, `/api`, `/api/1/current.json` and
+    `/developers` return 404. The existing Meh adapter reads only Meh's daily
+    deal; `api.meh.com` documentation could not be inspected because its
+    robots.txt returns 302 and PoliteFetcher conservatively disallows it.
+    MorningSave's waiver was not extended to that sibling host. No verified
+    MorningSave API/feed was found, so its working HTML reader is used.
+  - Live verified (2026-10-11): **28 Dealmoon, 30 Jungle, 17 MorningSave posts**
+    on the final check (Dealmoon returned 14 on the initial check);
+    source validation reports all three live, and a sample source permalink
+    from each returns HTTP 200. All network requests used PoliteFetcher with
+    the project User-Agent, per-host rate limits, conditional GETs and host-
+    scoped written permission. No retailer crawl or paid LLM/publish run.
+  - Tests: 1,026 passed, 1 live integration test deselected by the repository's
+    default configuration; 57 focused reader tests cover fixtures, evidence,
+    stable identity, per-card isolation, caps, changed layouts, refusals,
+    robots permissions, deadlines and conditional GETs.
+  - Remaining: Claude reviews PR #3 before merge; monitor source health after
+    deployment. Jungle's endpoint is frontend-facing and may change its schema.
 - **Tripped sources** (`source probe` run, 2026-10-11). `crawl_permission`
   waives robots.txt only; a site's firewall still decides.
   - **Firewall blocks GitHub's servers.** The owner must allowlist our
@@ -102,7 +136,8 @@ Keep this file current: whoever stops working updates it in their last commit.
     - dead: dealsplus and kinja_deals (DNS), carolinas_and_dollars (hosting
       suspended), couponflick (no feed);
     - redundant: hip2save_freebies (its posts are in the hip2save feed);
-    - HTML pages, not feeds: dealmoon_us, jungle_deals, morningsave. Each needs a page reader before it can return.
+    - dealmoon_us, jungle_deals and morningsave: restored on `codex/task-002`
+      (PR #3), verified live with 28/30/17 posts respectively; pending review/merge.
   - **inspiring_savings:** their server returns 500; it retries on its own.
 
 ## Open tasks

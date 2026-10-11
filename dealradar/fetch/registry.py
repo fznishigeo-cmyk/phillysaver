@@ -27,9 +27,10 @@ def get_adapter(source: SourceConfig, cfg: AppConfig, *, fast_lane: bool = False
     even though construction currently needs nothing from it.
     """
     method = (source.method or "").lower()
-    if method == "html" and source.adapter in {"bradsdeals", "dealsofamerica"}:
-        from .pages import PageAdapter
-        return PageAdapter()
+    if method == "html":
+        from .pages import PAGE_ADAPTERS, PageAdapter
+        if source.adapter in PAGE_ADAPTERS:
+            return PageAdapter()
     if method in ("rss", "html"):
         # html sources are served by the RSS adapter after first-run
         # validation has autodiscovered a feed URL for them.
@@ -37,6 +38,9 @@ def get_adapter(source: SourceConfig, cfg: AppConfig, *, fast_lane: bool = False
         return RssAdapter()
     if method == "api":
         adapter_name = (source.adapter or "").lower()
+        if adapter_name == "jungle_deals":
+            from .jungle import JungleAdapter
+            return JungleAdapter()
         if adapter_name == "reddit":
             from .reddit import RedditAdapter
             return RedditAdapter()
