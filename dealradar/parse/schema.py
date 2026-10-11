@@ -12,6 +12,7 @@ because ``extractor`` imports this module at load time.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -37,6 +38,71 @@ def _drop_null_keys(data):
     if isinstance(data, dict):
         return {k: v for k, v in data.items() if v is not None}
     return data
+
+
+#: Fields the model must answer with a list; Haiku writes "" for "none".
+_LIST_FIELDS = ("stack_steps", "codes", "rebates", "conditions")
+#: Free-text fields it answers with a bare number or a JSON boolean
+#: (shipping "35", deferred value "11", online_only true).
+_TEXT_FIELDS = ("online_only", "shipping_cost_or_threshold", "deferred_value",
+                "expires_at_raw", "quantity_or_unit", "brand", "product_url",
+                "regular_price_unit", "final_price_unit", "currency", "region",
+                "category", "deal_type", "item", "store")
+
+#: Store name from a product link's host, for a deal the model left
+#: store-less. Only well-known retailers: a tracker or blog host must never
+#: be mistaken for the store (that would credit the wrong seller).
+_STORE_BY_HOST = {
+    "amazon": "Amazon", "walmart": "Walmart", "target": "Target",
+    "bestbuy": "Best Buy", "ebay": "eBay", "homedepot": "Home Depot",
+    "lowes": "Lowe's", "costco": "Costco", "kohls": "Kohl's", "macys": "Macy's",
+    "woot": "Woot", "samsclub": "Sam's Club", "wayfair": "Wayfair",
+    "newegg": "Newegg", "staples": "Staples", "officedepot": "Office Depot",
+    "cvs": "CVS", "walgreens": "Walgreens", "chewy": "Chewy", "petco": "Petco",
+    "petsmart": "PetSmart", "ulta": "Ulta", "sephora": "Sephora",
+    "oldnavy": "Old Navy", "gap": "Gap", "nike": "Nike", "adidas": "adidas",
+    "lego": "LEGO", "gamestop": "GameStop", "bhphotovideo": "B&H",
+    "michaels": "Michaels", "joann": "JOANN", "rei": "REI", "zappos": "Zappos",
+    "dell": "Dell", "lenovo": "Lenovo", "samsung": "Samsung", "apple": "Apple",
+}
+
+
+def store_from_url(url) -> str:
+    """'https://www.amazon.com/dp/X?tag=..' -> 'Amazon'; '' when the host is
+    not a known retailer."""
+    m = re.match(r"^(?:https?://)?(?:www\.)?([a-z0-9-]+)\.", str(url or "").lower())
+    return _STORE_BY_HOST.get(m.group(1), "") if m else ""
+
+
+def _repair_payload(data):
+    """Repair the type slips a cheap model makes in JSON mode so a post is
+    neither re-asked (paid) nor dropped over formatting: null -> the field
+    default; "" for a list -> []; a bare string for a list -> [string];
+    a JSON boolean or number in a text field -> its text ("true", "35").
+    Values are never invented; numbers in price fields stay numbers."""
+    if not isinstance(data, dict):
+        return data
+    out = {k: v for k, v in data.items() if v is not None}
+    for k in _LIST_FIELDS:
+        v = out.get(k)
+        if v == "":
+            out[k] = []
+        elif isinstance(v, str):
+            out[k] = [v]
+    for k in _TEXT_FIELDS:
+        v = out.get(k)
+        if isinstance(v, bool):
+            out[k] = "true" if v else "false"
+        elif isinstance(v, (int, float)):
+            out[k] = str(v)
+    ev = out.get("evidence")
+    if isinstance(ev, dict):
+        out["evidence"] = {k: (str(v) if isinstance(v, (int, float, bool))
+                               else v)
+                           for k, v in ev.items() if v is not None}
+    elif ev == "":
+        out.pop("evidence")
+    return out
 
 
 class LLMEvidence(BaseModel):
@@ -92,7 +158,7 @@ class LLMDeal(BaseModel):
     price_is_range: bool = False
     price_upper_bound: float | None = None
 
-    _drop_nulls = model_validator(mode="before")(_drop_null_keys)
+    _repair = model_validator(mode="before")(_repair_payload)
 
     @field_validator("regular_price", "final_price", "pct_off", "abs_savings",
                      "price_upper_bound", mode="before")
@@ -145,6 +211,35 @@ class LLMDeals(BaseModel):
     """Top-level structured output: a list of deals (possibly empty)."""
 
     deals: list[LLMDeal] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _salvage_deals(cls, data):
+        """One hopeless deal (no item, or no store even from its link) is
+        dropped alone, with a log line, instead of failing the whole answer:
+        a failure here costs a paid re-ask and, after the retries, every
+        other deal in the post."""
+        if isinstance(data, list):
+            data = {"deals": data}
+        if not isinstance(data, dict) or not isinstance(data.get("deals"), list):
+            return data
+        kept = []
+        for d in data["deals"]:
+            if not isinstance(d, dict):
+                kept.append(d)  # an LLMDeal instance validates as itself
+                continue
+            if not str(d.get("store") or "").strip():
+                store = store_from_url(d.get("product_url"))
+                if store:
+                    d = {**d, "store": store}
+            if not str(d.get("item") or "").strip() or \
+                    not str(d.get("store") or "").strip():
+                log.warning("dropping deal with no %s: %r",
+                            "item" if not str(d.get("item") or "").strip()
+                            else "store", str(d.get("item") or "")[:60])
+                continue
+            kept.append(d)
+        return {**data, "deals": kept}
 
 
 SYSTEM_PROMPT = """\

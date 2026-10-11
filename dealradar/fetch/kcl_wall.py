@@ -128,6 +128,11 @@ class KclWallAdapter(SourceAdapter):
         posts: list[RawPost] = []
         for i, chunk in enumerate(_chunk_lines(text)):
             digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()[:12]
+            # Fourth window: the exact text the parser sees for this card
+            # group (it has priced nothing so far; the names, regular prices
+            # or codes may simply not be in the server-rendered text).
+            log.info("kcl wall %s: chunk %d (%d chars): %r",
+                     source.name, i, len(chunk), chunk[:4500])
             posts.append(RawPost(
                 source_name=source.name,
                 uid=f"wall:{i}:{digest}",  # changed card group = new post

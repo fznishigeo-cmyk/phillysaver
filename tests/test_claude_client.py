@@ -347,7 +347,7 @@ class TestJsonFallback:
         # retries_on_invalid_json=2 -> initial attempt + 2 retries = 3 calls
         messages = FakeCreateOnlyMessages(create_responses=[
             FakeCreateResponse("not json at all", FakeUsage(10, 10)),
-            FakeCreateResponse('{"deals": [{"store": "x"}]}', FakeUsage(10, 10)),  # fails validation
+            FakeCreateResponse('{"deals": {"not": "a list"}}', FakeUsage(10, 10)),  # fails validation
             FakeCreateResponse("{broken", FakeUsage(10, 10)),
         ])
         parser = make_parser(messages, cfg=make_cfg(retries_on_invalid_json=2))
@@ -355,6 +355,36 @@ class TestJsonFallback:
         assert len(messages.create_calls) == 3
         # every attempt was still accounted against the spend cap
         assert parser.spend_usd == pytest.approx(3 * (10 * 0.10 + 10 * 0.50) / 1e6)
+
+    def test_type_slips_repaired_without_a_paid_reask(self):
+        """Live: a third of Haiku's answers failed validation over trivia
+        ("" for an empty list, true for "true", 35 for "35", a store-less
+        deal with an Amazon link) and each cost up to three paid re-asks,
+        then the post. One answer, every deal kept, one call."""
+        slips = json.dumps({"deals": [
+            {"item": "Widget", "store": "", "final_price": 10.0,
+             "product_url": "https://www.amazon.com/dp/B0TESTASIN1?tag=x",
+             "rebates": "", "codes": "", "online_only": True,
+             "shipping_cost_or_threshold": 35, "deferred_value": 11,
+             "evidence": {"final_price_quote": "now $10.00", "pct_quote": None}},
+            {"item": "Gadget", "store": "Target", "final_price": 5.0,
+             "stack_steps": "clip the 50% coupon",
+             "evidence": {"final_price_quote": "$5.00"}},
+            {"item": "", "store": "Nowhere"},
+        ]})
+        messages = FakeCreateOnlyMessages(create_responses=[
+            FakeCreateResponse(slips, FakeUsage(10, 10)),
+            FakeCreateResponse("never asked", FakeUsage(10, 10)),
+        ])
+        parser = make_parser(messages, cfg=make_cfg(retries_on_invalid_json=2))
+        deals = parser.extract("text", META)
+        assert len(messages.create_calls) == 1
+        assert [d.item for d in deals] == ["Widget", "Gadget"]
+        w, g = deals
+        assert w.store == "Amazon" and w.rebates == [] and w.codes == []
+        assert w.online_only == "true"
+        assert w.shipping_cost_or_threshold == "35" and w.deferred_value == "11"
+        assert g.stack_steps == ["clip the 50% coupon"]
 
     def test_invalid_then_valid_json_recovers(self):
         messages = FakeCreateOnlyMessages(create_responses=[

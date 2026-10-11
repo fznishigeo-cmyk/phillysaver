@@ -115,12 +115,32 @@ def _harvest_image(deal: dict[str, Any], product: dict[str, Any]) -> None:
             deal["image_url"] = f"https://m.media-amazon.com/images/I/{first}"
 
 
+#: Stack-step wording whose discount Amazon's listed price never shows: the
+#: shopper only sees it in the cart (clip coupon, promo code, Subscribe &
+#: Save, checkout promo). A plain sale step IS the listed price.
+_HIDDEN_PROMO_RE = re.compile(
+    r"coupon|clip|subscribe|promo|\bcode\b|checkout|cart", re.I)
+
+
+def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
+    """True when the deal's final price only materialises at checkout, so
+    a live LISTED price cannot be expected to match it."""
+    if deal.get("codes"):
+        return True
+    if "subscribe_save" in set(deal.get("conditions") or []):
+        return True
+    return any(_HIDDEN_PROMO_RE.search(str(step))
+               for step in (deal.get("stack_steps") or []))
+
+
 def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
     """Is this Amazon deal's price still live? (The legal equivalent of
     clicking the product page before publishing: Keepa's licensed API
     mirrors it.) True = a current offer still matches the deal's final
-    price within 10%; False = the price moved (deal is over); None = no
-    opinion (flag/key off, no ASIN/price, or the API failed).
+    price within 10% (or, for a deal whose discount only shows at checkout
+    — coupon, code, Subscribe & Save — the quoted regular price); False =
+    the price moved (deal is over); None = no opinion (flag/key off, no
+    ASIN/price, or the API failed).
 
     A used/open-box deal is checked against the Warehouse price; anything
     else against Amazon's own price or the lowest new offer.
@@ -161,9 +181,19 @@ def recheck_amazon_price(deal: dict[str, Any], cfg) -> bool | None:
         if not prices:
             return False  # no live offer of the right kind: deal is gone
         live = min(prices)
-        ok = live <= float(final) * 1.10 + 0.01
-        log.info("price recheck %s: final=$%.2f live=$%.2f (%s) -> %s",
-                 asin, float(final), live,
+        target = float(final)
+        basis = "final"
+        regular = deal.get("regular_price")
+        if _price_hidden_by_promo(deal) and regular:
+            # Live wart: every coupon / promo-code deal died at recheck
+            # because the listing shows the pre-coupon price. For those the
+            # deal is only over once the LISTING itself climbs past the
+            # regular price the post quoted; the coupon is invisible here.
+            target = max(target, float(regular))
+            basis = "regular (promo hidden from listing)"
+        ok = live <= target * 1.10 + 0.01
+        log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (%s)"
+                 " -> %s", asin, float(final), live, basis, target,
                  "warehouse" if is_used else "new", ok)
         return ok
     except Exception as e:  # tokens exhausted, transport, schema drift

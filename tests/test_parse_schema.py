@@ -119,6 +119,49 @@ class TestLLMModels:
         assert b.codes == []
 
 
+class TestPayloadRepair:
+    """Formatting slips of a cheap model are repaired, never re-asked."""
+
+    def test_store_from_url_known_hosts_only(self):
+        from dealradar.parse.schema import store_from_url
+        assert store_from_url("https://www.amazon.com/dp/B0X?tag=a-20") == "Amazon"
+        assert store_from_url("amazon.com/dp/B0X") == "Amazon"
+        assert store_from_url("https://www.bestbuy.com/site/x") == "Best Buy"
+        # a tracker or blog host is not a store
+        assert store_from_url("https://slickdeals.net/f/1") == ""
+        assert store_from_url("") == ""
+
+    def test_empty_list_and_bare_values_repaired(self):
+        from dealradar.parse.schema import LLMDeal
+        d = LLMDeal.model_validate({
+            "item": "Widget", "store": "Amazon", "rebates": "", "codes": "",
+            "conditions": "used", "online_only": False,
+            "shipping_cost_or_threshold": 5.99, "deferred_value": 11,
+            "evidence": {"final_price_quote": 10, "pct_quote": None}})
+        assert d.rebates == [] and d.codes == [] and d.conditions == ["used"]
+        assert d.online_only == "false"
+        assert d.shipping_cost_or_threshold == "5.99"
+        assert d.deferred_value == "11"
+        assert d.evidence.final_price_quote == "10" and d.evidence.pct_quote == ""
+
+    def test_hopeless_deal_dropped_alone(self):
+        from dealradar.parse.schema import LLMDeal, LLMDeals
+        out = LLMDeals.model_validate({"deals": [
+            {"item": "Ok", "store": "", "product_url": "https://walmart.com/ip/1"},
+            {"item": "No store anywhere", "store": "",
+             "product_url": "https://slickdeals.net/f/1"},
+            {"item": "", "store": "Amazon"},
+            LLMDeal(item="Instance", store="Target"),
+        ]})
+        assert [d.item for d in out.deals] == ["Ok", "Instance"]
+        assert out.deals[0].store == "Walmart"
+
+    def test_bare_list_answer_accepted(self):
+        from dealradar.parse.schema import LLMDeals
+        out = LLMDeals.model_validate([{"item": "A", "store": "Target"}])
+        assert [d.item for d in out.deals] == ["A"]
+
+
 class TestSystemPrompt:
     def test_core_invariants_present(self):
         low = SYSTEM_PROMPT.lower()

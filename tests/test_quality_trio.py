@@ -616,6 +616,37 @@ class TestPriceRecheck:
                             self._stats_response([9999, 10500, -1]))
         assert verify.recheck_amazon_price(deal, cfg) is False
 
+    def test_coupon_deal_judged_against_listing_not_cart_price(self, monkeypatch):
+        """Live wart: every clip-coupon / promo-code deal died at recheck —
+        Amazon lists the pre-coupon price, so the cart price never matches.
+        Such a deal is over only once the listing passes the quoted regular
+        price."""
+        import httpx
+
+        from dealradar import verify
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        coded = {"asin": "B0TESTASIN1", "final_price": 9.99,
+                 "regular_price": 19.99, "codes": ["SAVE50"], "conditions": []}
+        clipped = {"asin": "B0TESTASIN1", "final_price": 9.99,
+                   "regular_price": 19.99, "codes": [], "conditions": [],
+                   "stack_steps": ["clip the 50% coupon"]}
+        plain = {"asin": "B0TESTASIN1", "final_price": 9.99,
+                 "regular_price": 19.99, "codes": [], "conditions": [],
+                 "stack_steps": ["50% off sale"]}
+        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+                            self._stats_response([1999, -1, -1]))
+        assert verify.recheck_amazon_price(coded, cfg) is True
+        assert verify.recheck_amazon_price(clipped, cfg) is True
+        # A plain sale IS the listed price: a listing at the regular price
+        # means the sale ended.
+        assert verify.recheck_amazon_price(plain, cfg) is False
+        # Listing climbed past the regular price: the coupon deal is gone too.
+        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+                            self._stats_response([2499, -1, -1]))
+        assert verify.recheck_amazon_price(coded, cfg) is False
+
     def test_recheck_backfills_missing_image_for_free(self, monkeypatch):
         """Live gap: cards without thumbnails. Every product response we
         already pay for carries imagesCSV — the recheck must harvest it."""
