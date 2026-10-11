@@ -28,10 +28,6 @@ logger = logging.getLogger("dealradar.publish.site")
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-# Minutes between publishes per run kind (fast.yml: */10, hourly.yml: 0 * * * *).
-# The page's "next drop" countdown reads meta.cadence_minutes instead of
-# guessing; an unknown kind gets the fast lane's, the site's shortest cadence.
-_CADENCE_MINUTES = {"fast": 10, "hourly": 60}
 #: Sites shown in the footer's "deals found across" wall, at most.
 _SOURCE_SITES_MAX = 36
 
@@ -255,8 +251,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # run publishes minutes later and the page's countdown anchors here).
         "published_at": iso(util_now()),
         "last_run": last_run or {},
-        "cadence_minutes": _CADENCE_MINUTES.get(
-            (last_run or {}).get("kind", ""), _CADENCE_MINUTES["fast"]),
+        # The page's drop clock step (config.yaml publish.drop_minutes): the
+        # real gap between publishes of either lane, so the countdown is not
+        # shorter than the cron that feeds it.
+        "cadence_minutes": int(getattr(cfg, "drop_minutes", 15)),
         "disclosure": cfg.ftc_disclosure,
         "count": len(serialized),
         # Membership links (empty until the operator pastes them in

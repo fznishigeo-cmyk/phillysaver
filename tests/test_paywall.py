@@ -245,9 +245,8 @@ class TestTeaserRotation:
     """Operator ask: every drop must ACTUALLY change the free 8, so a visitor
     who has not subscribed keeps seeing new deals."""
 
-    def _cfg(self, n=8, pool=0, memory=2000):
-        return AppConfig(paywall_enabled=True, paywall_teaser_count=n, paywall_teaser_pool=pool,
-                         paywall_teaser_memory=memory)
+    def _cfg(self, n=8, pool=0):
+        return AppConfig(paywall_enabled=True, paywall_teaser_count=n, paywall_teaser_pool=pool)
 
     def _drops(self, deals, cfg, k):
         recent, out = [], []
@@ -270,6 +269,55 @@ class TestTeaserRotation:
         assert first12 == [d["key"] for d in deals[:96]]      # best unshown first
         # Drop 13: the last 4 unshown, then the 4 shown longest ago.
         assert drops[12] == [d["key"] for d in deals[96:100]] + drops[0][:4]
+
+    def test_more_live_deals_than_any_count_cap_never_repeat_early(self):
+        """Review finding: memory capped at 2000 keys let the first drops'
+        deals (the best ones) come back after ~250 drops while live deals
+        that were never free waited. Memory now follows the live set."""
+        cfg = self._cfg()
+        deals = []
+        for i in range(2100):                    # > the old 2000-key cap
+            d = _deal(i)
+            d["store"] = f"Store {i % 100}"
+            deals.append(d)
+        drops = self._drops(deals, cfg, 263)
+        lap = [k for d in drops[:262] for k in d]
+        assert len(lap) == len(set(lap)) == 2096   # no repeat in 262 drops
+        # The last 4 never-free deals, then the 4 shown longest ago.
+        assert set(drops[262][:4]) == {d["key"] for d in deals} - set(lap)
+        assert drops[262][4:] == drops[0][:4]
+
+    def test_memory_follows_the_live_set(self):
+        """A dead deal's key leaves memory (it no longer fills a slot); a
+        live one stays however many drops ago it was free."""
+        cfg = self._cfg(n=2)
+        deals = [_deal(i) for i in range(4)]
+        keys = [d["key"] for d in deals]
+        teaser, _ = P.split_teaser(deals, cfg)
+        recent = P.teaser_memory(teaser, ["gone1", "gone2"], cfg)
+        assert recent == keys[:2]                # unknown keys dropped
+        deals[0] = _deal(0, status="dead")
+        teaser, _ = P.split_teaser(deals, cfg, recent)
+        assert [d["key"] for d in teaser if not d.get("locked") and d["status"] == "alive"] == keys[2:]
+        assert P.teaser_memory(teaser, recent, cfg) == [keys[1], *keys[2:]]
+
+    def test_a_short_lap_repeats_strictly_least_recently_shown_first(self):
+        """Review finding: the 2-per-store cap applied to already-shown deals
+        skipped the oldest ones of a capped store and brought back a deal
+        from the drop just before, while 9 other live deals stayed locked.
+        24 live deals and 8 free: three disjoint drops, then the same three."""
+        cfg = self._cfg()
+        stores = "s4 s1 s2 s4 s3 s4 s0 s4 s0 s3 s2 s4 s1 s1 s3 s4 s4 s3 s3 s1 s1 s1 s4 s3".split()
+        deals = []
+        for i, store in enumerate(stores):
+            d = _deal(i)
+            d["store"] = store
+            deals.append(d)
+        drops = self._drops(deals, cfg, 9)
+        for t in range(len(drops) - 2):
+            window = drops[t] + drops[t + 1] + drops[t + 2]
+            assert len(set(window)) == 24, t       # every live deal, once
+        assert drops[3:6] == drops[0:3] and drops[6:9] == drops[0:3]
 
     def test_a_top_n_pool_still_laps_when_set(self):
         cfg = self._cfg(pool=48)
@@ -318,21 +366,23 @@ class TestTeaserRotation:
 
     def test_memory_is_bounded_and_off_with_a_pool_of_n(self):
         cfg = self._cfg(n=8, pool=48)
-        teaser, _ = P.split_teaser([_deal(i) for i in range(60)], cfg)
-        assert len(P.teaser_memory(teaser, [f"x{i}" for i in range(100)], cfg)) == 40
+        deals = [_deal(i) for i in range(60)]
+        teaser, _ = P.split_teaser(deals, cfg)
+        older = [d["key"] for d in deals[8:58]]
+        assert len(P.teaser_memory(teaser, older, cfg)) == 40
         cfg = self._cfg(n=8, pool=8)
-        assert P.teaser_memory(teaser, ["x"], cfg) == []
-        cfg = self._cfg(n=8, memory=50)   # every live deal: the memory knob bounds it
-        assert len(P.teaser_memory(teaser, [f"x{i}" for i in range(100)], cfg)) == 50
+        assert P.teaser_memory(teaser, older, cfg) == []
+        cfg = self._cfg(n=8)              # every live deal: bounded by the live set
+        assert len(P.teaser_memory(teaser, older + ["x"], cfg)) == 58
 
     def test_memory_keeps_each_key_once_at_its_latest_showing(self):
         cfg = self._cfg(n=2)
-        deals = [_deal(i) for i in range(2)]
-        teaser, _ = P.split_teaser(deals, cfg)
+        deals = [_deal(i) for i in range(3)]
         keys = [d["key"] for d in deals]
-        assert P.teaser_memory(teaser, [keys[0], "x", keys[1]], cfg) == ["x", *keys]
+        recent = [keys[0], keys[2], keys[1]]
+        teaser, _ = P.split_teaser(deals, cfg, recent)   # all shown: k0, k2 longest ago
+        assert P.teaser_memory(teaser, recent, cfg) == [keys[1], keys[0], keys[2]]
 
     def test_config_knob(self):
         assert load_config().paywall_teaser_pool == 0
-        assert load_config().paywall_teaser_memory == 2000
         assert AppConfig().paywall_teaser_pool == 0

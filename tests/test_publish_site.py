@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from dealradar.config import AppConfig
+from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish.site import render_site, rewrite_affiliate
 from dealradar.util import iso
@@ -255,18 +255,20 @@ class TestLiveHomePage:
         render_site(db, cfg, NOW, out_dir=out, deals=[], last_run=last_run)
         return json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
 
-    def test_meta_cadence_follows_run_kind(self, db, cfg, tmp_path):
+    def test_meta_cadence_is_the_drop_knob_for_every_run_kind(self, db, cfg, tmp_path):
+        """Review finding: a 10-minute clock against publishes that land every
+        11-15 min (cron drift) said "Next drop soon" in 2 of 3 cycles. The
+        step is config.yaml publish.drop_minutes, whichever lane published."""
         fast = self._meta(db, cfg, tmp_path / "fast",
                           {"run_key": "2026-10-09T14:00:fast", "kind": "fast"})
-        assert fast["cadence_minutes"] == 10
         hourly = self._meta(db, cfg, tmp_path / "hourly",
                             {"run_key": "2026-10-09T14", "kind": "hourly"})
-        assert hourly["cadence_minutes"] == 60
+        assert fast["cadence_minutes"] == hourly["cadence_minutes"] == cfg.drop_minutes == 15
         # The page never guesses the publish time: generated_at is always set.
         assert fast["generated_at"] == hourly["generated_at"] == iso(NOW)
-
-    def test_meta_cadence_defaults_to_fast_lane_without_last_run(self, db, cfg, tmp_path):
-        assert self._meta(db, cfg, tmp_path / "none", None)["cadence_minutes"] == 10
+        cfg.drop_minutes = 12
+        assert self._meta(db, cfg, tmp_path / "none", None)["cadence_minutes"] == 12
+        assert load_config().drop_minutes == 15
 
     @pytest.fixture()
     def html(self, db, cfg, tmp_path):
@@ -777,6 +779,38 @@ class TestDropClock:
         assert "Math.floor((t - phase) / step) + 1) * step" in html
         assert "Math.floor((t - phase) / step)" in html
 
+    def test_the_step_is_the_published_cadence_never_a_fixed_10(self, html):
+        step = _between(html, "function dropStepMs(", "function dropPhase(")
+        assert "(c > 0 ? c : DROP_MIN) * 60 * 1000" in step and "Math.min" not in step
+        assert "var DROP_MIN = 15;" in html and "FAST_LANE_MIN" not in html
+
+    def test_a_page_opened_during_a_wait_waits_and_polls(self, html):
+        """Review finding: a page first loaded after its publish's mark had
+        passed counted to the mark after next and never polled, so the late
+        publish reached it only through the 5-minute fallback."""
+        sync = _between(html, "function syncClock(", "function paintClock(")
+        assert ("if (pub != null && pub + clock.step <= now && !clock.waiting) "
+                "clock.waiting = clock.lastPoll = now;") in sync
+        assert sync.index("if (!clock.dropping) {") < sync.index("clock.waiting = clock.lastPoll")
+
+    def test_a_publish_that_lands_before_its_mark_waits_for_it(self, html):
+        """With the clock stepping at the real cadence most publishes land
+        before their mark; the 5-minute fallback put them up early and cut
+        the countdown short. It now runs only while the clock waits."""
+        load = _between(html, "function loadData(", "loadData();")
+        assert load.index("if (loadedOnce && !clock.waiting) return;") < load.index("fetchPublish()")
+
+    def test_a_drop_never_presents_a_publish_twice_or_parks_after_one(self, html):
+        """Review findings: a member's drop presented a publish the fallback
+        had already put up (NEW tags wiped, toast replaced), and a drop whose
+        publish another path put up parked the clock on "Next drop soon"."""
+        body = _between(html, "function drop(", "function loadData(")
+        assert "var key0 = state.dataKey" in body
+        finish = _between(html, "function finish(", "got.catch(noop);")
+        assert "if (pub && isNewPublish(pub)) { present(pub, deals, seed); return; }" in finish
+        assert "if (state.dataKey !== key0) { syncClock(); return; }" in finish
+        assert finish.index("state.dataKey !== key0") < finish.index("clock.waiting = clock.lastPoll")
+
     def test_drop_contract(self, html):
         assert "DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000" in html
         assert "POLL_MS = 15 * 1000, POLL_SLOW_MS = 30 * 1000, SLOW_AFTER_MS = 6 * 60 * 1000" in html
@@ -793,7 +827,7 @@ class TestDropClock:
         rows). Now only a new publish is a drop; until it lands the clock
         says "Next drop soon" and polls (HEAD, then the file if it changed)."""
         finish = _between(html, "function finish(", "got.catch(noop);")
-        assert "if (pub) { present(pub, deals, seed); return; }" in finish
+        assert "present(pub, deals, seed); return; }" in finish
         assert "clock.waiting = clock.lastPoll = Date.now();" in finish
         assert "reorganize(" not in finish
         assert "present(pub, deals, null);" in _between(html, "function landed(", "function merge(")

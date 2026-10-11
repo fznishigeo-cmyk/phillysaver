@@ -51,9 +51,10 @@ Keep this file current: whoever stops working updates it in their last commit.
 
 ## Operator decisions (standing rules; do not undo)
 - **Free 8:** every drop unlocks 8 completely new deals; none is free twice
-  until every live deal has had a turn (`paywall.teaser_memory`). A drop is
-  a new publish: when the 10-minute mark comes first, the clock says "Next
-  drop soon" and the page waits for it; it never re-deals the same 8.
+  until every live deal has had a turn (state.db meta `teaser_recent`). A
+  drop is a new publish on a `publish.drop_minutes` (15) clock: one that
+  lands early waits for its mark; when the mark comes first, the clock says
+  "Next drop soon" and the page waits for it; it never re-deals the same 8.
 - **Brand:** a tilted teal tile whose "w" doubles as a price-drop zigzag,
   with a gold spark (inline SVG, also the favicon), and the "wowpriced"
   wordmark. The home header is an ink bar in both themes; top right: drop

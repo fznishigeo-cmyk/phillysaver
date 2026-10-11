@@ -604,9 +604,9 @@ footer .meta{font-size:11.5px}
   var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "",
                 sortKey: "fresh", sortDir: -1, catTab: 0,
                 seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
-  // The fast lane redeploys the site every 10 minutes even between hourly
-  // sweeps, so the next drop is never further off than that.
-  var FAST_LANE_MIN = 10;
+  // Minutes between drops when deals.json does not say: meta.cadence_minutes
+  // is config.yaml publish.drop_minutes, the real gap between publishes.
+  var DROP_MIN = 15;
   // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
   // for at most DROP_MAX_MS. A mark that comes before its publish never
   // re-deals the same deals (operator: the free 8 must really change): the
@@ -749,14 +749,14 @@ footer .meta{font-size:11.5px}
   }
 
   // ---- the drop clock ----
-  // Drops sit on fixed wall-clock marks: every step (meta.cadence_minutes,
-  // capped at the fast lane's 10) at the phase where publishes land
-  // (meta.published_at mod step). At each mark the page drops: it fetches
-  // deals.json (waiting at most 2.5 s), re-deals the wall seeded by the
-  // mark's index, animates the move and counts to the next mark at once.
-  // A publish that has not landed by its mark is polled for quietly and
-  // merged in place when it does; "Dropping…" never sits for more than 3 s.
-  var clock = { target: 0, step: FAST_LANE_MIN * 60 * 1000, phase: 0,
+  // Drops sit on fixed wall-clock marks: every step (meta.cadence_minutes)
+  // at the phase where publishes land (meta.published_at mod step). At each
+  // mark the page drops: it fetches deals.json (waiting at most 2.5 s) and
+  // puts a new publish up, re-dealt and animated, then counts to the next
+  // mark. A publish that has not landed by its mark is polled for ("Next
+  // drop soon") and is the drop when it lands; one that lands before its
+  // mark waits for it. "Dropping…" never sits for more than 3 s.
+  var clock = { target: 0, step: DROP_MIN * 60 * 1000, phase: 0,
                 dropping: 0, waiting: 0, lastPoll: 0, tag: "", lastSeed: null };
   function publishTime(m) {
     // published_at is the moment the file was built; generated_at is the
@@ -772,7 +772,7 @@ footer .meta{font-size:11.5px}
   }
   function dropStepMs(m) {
     var c = num(m.cadence_minutes);
-    return Math.min(c > 0 ? c : FAST_LANE_MIN, FAST_LANE_MIN) * 60 * 1000;
+    return (c > 0 ? c : DROP_MIN) * 60 * 1000;
   }
   // Mark math: marks are the instants t with (t - phase) mod step == 0.
   function dropPhase(m, step) {
@@ -786,11 +786,17 @@ footer .meta{font-size:11.5px}
     return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60);
   }
   function syncClock() {
-    var m = state.meta || {};
+    var m = state.meta || {}, now = Date.now(), pub = publishTime(m);
     clock.step = dropStepMs(m);
     clock.phase = dropPhase(m, clock.step);
-    if (!clock.dropping) clock.target = nextMarkAfter(Date.now(), clock.phase, clock.step);
-    paintClock(Date.now());
+    if (!clock.dropping) {
+      clock.target = nextMarkAfter(now, clock.phase, clock.step);
+      // The publish on the wall already passed its next mark without a
+      // newer one (a page opened while the next publish is late): wait
+      // and poll for it, as an open tab does after a missed mark.
+      if (pub != null && pub + clock.step <= now && !clock.waiting) clock.waiting = clock.lastPoll = now;
+    }
+    paintClock(now);
   }
   function paintClock(now) {
     var box = document.getElementById("drop");
@@ -2195,8 +2201,8 @@ footer .meta{font-size:11.5px}
     renderMeta();
     return added;
   }
-  // A publish that lands after its mark (the clock said "Next drop soon"),
-  // or before it (caught by the 5-minute fallback), is the drop.
+  // A publish that lands after its mark (the clock says "Next drop soon";
+  // the poll or the 5-minute fallback finds it) is the drop.
   function landed(pub, deals) {
     if (!isNewPublish(pub)) return;  // a drop got there first
     present(pub, deals, null);
@@ -2258,7 +2264,7 @@ footer .meta{font-size:11.5px}
   function drop(now) {
     var last = nextMarkAfter(now, clock.phase, clock.step) - clock.step;  // a sleeping tab may have missed several
     var seed = markIndex(last, clock.phase, clock.step);
-    var done = false, got = fetchPublish();
+    var key0 = state.dataKey, done = false, got = fetchPublish();
     clock.dropping = now;
     clock.target = nextMarkAfter(now, clock.phase, clock.step);
     paintClock(now);
@@ -2268,7 +2274,11 @@ footer .meta{font-size:11.5px}
       done = true;
       clearTimeout(guard);
       clock.dropping = 0;
-      if (pub) { present(pub, deals, seed); return; }
+      // Still new (a member's list waits on the Worker): it is the drop.
+      if (pub && isNewPublish(pub)) { present(pub, deals, seed); return; }
+      // Another path put a publish up while this drop was out: that was
+      // the drop; count to the next mark instead of waiting.
+      if (state.dataKey !== key0) { syncClock(); return; }
       clock.waiting = clock.lastPoll = Date.now();
       paintClock(Date.now());
     }
@@ -2285,6 +2295,10 @@ footer .meta{font-size:11.5px}
   }
 
   function loadData() {
+    // Once the wall is up, a publish goes up at its mark (drop) or, while
+    // the clock waits for a late one, as soon as it lands: the fallback
+    // never puts one up early, so the countdown is never cut short.
+    if (loadedOnce && !clock.waiting) return;
     fetchPublish().then(function (pub) {
       if (loadedOnce) return merge(pub);  // the 5-minute fallback
       // Signed in: the teaser goes up now (CTA held back) and the full
