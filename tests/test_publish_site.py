@@ -1116,7 +1116,7 @@ class TestTrialCtasAreHonest:
         assert "err.textContent = blockText(blk)" in step2
         assert '<button type="button" id="comanage" class="pwbtn alt" hidden>Manage membership</button>' in html
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
-        assert '.textContent = blk ? blockText(blk) : {' in panel
+        assert '.textContent = blk ? blockText(blk) : open[mode] || {' in panel
         assert 'var fb = buy && !o.lapsed && !blk ? auth.fb : ""' in panel
         # The refusal ends with the account: a new sign-in or a log-out.
         assert 'auth.block = "";' in _between(html, "function dropSession(", "function isMember(")
@@ -1410,8 +1410,11 @@ class TestOpenAccess:
         home = (out / "index.html").read_text(encoding="utf-8")
         assert "8 free deals, new at every drop" not in home
         assert '<p id="authsub" class="meta">Free account first, then your 7-day free trial.</p>' in home
-        # Sign-up keeps its in-wall band while open, with nothing to unlock.
+        # Sign-up keeps its in-wall band while open, with nothing to unlock,
+        # and the sticky trial panel follows every non-member down the wall.
         assert "function openBand()" in home and "openBand() + gridHtml" in home
+        assert "updatePaywall(rows.some(isLocked) || openNudge())" in home
+        assert "openAccess() && !!apiUrl() && !isMember()" in home
         # Members read the public file while open (the Worker copy can lag).
         assert "(pub.meta || {}).open_access ||" in home
         # A flip of the mode changes the version, so open tabs reload.

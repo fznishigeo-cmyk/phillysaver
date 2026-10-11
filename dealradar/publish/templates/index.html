@@ -1279,7 +1279,7 @@ footer .meta{font-size:11.5px}
     var content = document.getElementById("content");
     var rows = state.deals.length ? ordered(filtered()) : [];
     traceFree = state.deals.some(isLocked);
-    updatePaywall(rows.some(isLocked));
+    updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length) {
       content.innerHTML = '<p class="empty">No qualifying deals right now</p>';
       return;
@@ -1499,6 +1499,9 @@ footer .meta{font-size:11.5px}
   // Open access (meta.open_access): every deal is in full for everyone, so
   // the sign-up copy never says "unlock".
   function openAccess() { return !!(state.meta || {}).open_access; }
+  // While open, the sticky trial panel still follows every non-member down
+  // the wall (operator, 2026-10-11); members never see it.
+  function openNudge() { return openAccess() && !!apiUrl() && !isMember(); }
   function teaserCount() {
     var n = num((state.meta || {}).teaser_count);
     return n == null ? 8 : n;
@@ -1663,7 +1666,12 @@ footer .meta{font-size:11.5px}
       // a lapsed account, whose subscription may only need a new card.
       var blk = buy ? auth.block : "";
       var fb = buy && !o.lapsed && !blk ? auth.fb : "";
-      panel.querySelector(".pwtext").textContent = blk ? blockText(blk) : {
+      var open = !openAccess() ? {} : {
+        out: "wowpriced membership — " + (o.trial ? "your first " + o.days + " days free" : "$9.99/month"),
+        trial: "You're signed in. Start your " + o.days + "-day free trial.",
+        sub: "You're signed in. Subscribe — $9.99/month."
+      };
+      panel.querySelector(".pwtext").textContent = blk ? blockText(blk) : open[mode] || {
         plain: plural(locked, "more deal") + " for members",
         out: "Unlock all " + total + " deals" +
           (o.trial ? " with a " + o.days + "-day free trial" : ""),
