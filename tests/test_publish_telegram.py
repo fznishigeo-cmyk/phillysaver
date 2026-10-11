@@ -97,7 +97,7 @@ def test_tier_rank_ordering():
 def test_format_message_full():
     msg = format_message(make_deal(conditions=["online only", "max 2"]))
     assert msg == (
-        "LEGO Set — $10.00 (80% off, unverified) at Walmart"
+        "LEGO Set — $10.00 (80% off) at Walmart"
         " · online only, max 2"
         " · via Slickdeals https://slickdeals.net/f/1"
         " · https://www.walmart.com/ip/12345"
@@ -108,7 +108,15 @@ def test_format_message_omits_empty_conditions():
     msg = format_message(make_deal(conditions=[]))
     assert "online only" not in msg
     assert " · via Slickdeals" in msg
-    assert msg.startswith("LEGO Set — $10.00 (80% off, unverified) at Walmart")
+    assert msg.startswith("LEGO Set — $10.00 (80% off) at Walmart")
+
+
+def test_format_message_names_corroboration_in_plain_words():
+    assert "(80% off, 2+ sources) at" in format_message(
+        make_deal(verify_tier="corroborated"))
+    assert "(80% off, price history) at" in format_message(
+        make_deal(verify_tier="history-checked"))
+    assert "unverified" not in format_message(make_deal(verify_tier="unverified"))
 
 
 def test_first_sighting_sends(db, cfg, monkeypatch):

@@ -29,15 +29,22 @@ def tier_rank(tier: str) -> int:
     return _TIER_RANKS.get(tier, 0)
 
 
+#: How a deal was corroborated, in the reader's words (same labels as the
+#: site's badges). Every alerted deal already passed the verbatim-price
+#: check and the critic, so a single-source deal simply carries no label.
+_TIER_WORDS = {"corroborated": "2+ sources", "history-checked": "price history"}
+
+
 def format_message(deal: dict[str, Any]) -> str:
-    """'ITEM — $FINAL (PCT% off, TIER) at STORE · conditions · via SOURCE · URL'."""
+    """'ITEM — $FINAL (PCT% off[, TIER]) at STORE · conditions · via SOURCE · URL'."""
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
     pct_s = f"{pct:.0f}% off" if pct is not None else "?% off"
-    tier = deal.get("verify_tier") or "unverified"
+    tier = _TIER_WORDS.get(deal.get("verify_tier") or "", "")
+    head = f"{pct_s}, {tier}" if tier else pct_s
     parts = [
-        f"{deal.get('item', '')} — {price} ({pct_s}, {tier}) at {deal.get('store', '')}"
+        f"{deal.get('item', '')} — {price} ({head}) at {deal.get('store', '')}"
     ]
     conditions = [c for c in (deal.get("conditions") or []) if c]
     if conditions:
