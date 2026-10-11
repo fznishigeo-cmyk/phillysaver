@@ -97,20 +97,26 @@ class KclWallAdapter(SourceAdapter):
                  "raw html (%d chars); text head: %r",
                  source.name, n_prices, len(text),
                  len(_PRICE_TOKEN.findall(html)), len(html), text[:300])
-        # Second window: the first run showed a 510 KB page with 33 '$' in
-        # total, i.e. the cards are not text at all. If they ride a JSON
-        # data blob (Next.js __NEXT_DATA__ or ld+json), its shape tells us
-        # how to read them — that is the next adapter iteration.
-        blob = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
-                         html, re.S)
-        log.info("kcl wall %s: __NEXT_DATA__=%s ld+json=%d price-keys=%d "
-                 "self.__next_f=%d blob head: %r",
-                 source.name, "yes" if blob else "no",
-                 html.count("application/ld+json"),
-                 sum(html.count(k) for k in ('"price"', '"salePrice"',
-                                              '"sale_price"', '"currentPrice"')),
-                 html.count("self.__next_f"),
-                 (blob.group(1)[:700] if blob else html[-1500:]))
+        # Second window (iterating from live logs; the sandbox cannot reach
+        # the host): no Next.js blob, but one ld+json block and ~20 price-like
+        # keys exist. Show the ld+json head, the context of the first price
+        # key, and any API-looking URLs the page references.
+        ld = re.search(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>',
+                       html, re.S)
+        first_price = -1
+        for key in ('"price"', '"salePrice"', '"sale_price"', '"currentPrice"'):
+            i = html.find(key)
+            if i != -1 and (first_price == -1 or i < first_price):
+                first_price = i
+        api_urls = sorted({u for u in re.findall(r'https?://[^\s"\'<>]+', html)
+                           if re.search(r'/api/|graphql|\.json|algolia|contentful|'
+                                        r'sanity|strapi|wp-json', u, re.I)})[:12]
+        log.info("kcl wall %s: ld+json head: %r | first price-key context: %r "
+                 "| api-ish urls: %s", source.name,
+                 (ld.group(1)[:900] if ld else ""),
+                 (html[max(0, first_price - 200):first_price + 200]
+                  if first_price != -1 else ""),
+                 api_urls)
         if n_prices < MIN_PRICE_TOKENS:
             # Loud diagnostic: the next run's logs must say exactly why.
             log.warning(
