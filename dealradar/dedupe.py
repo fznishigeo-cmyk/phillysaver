@@ -188,7 +188,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     """Insert a new deal or merge into an existing one. Idempotent per post.
 
     Returns {'deal_id', 'dedupe_key', 'is_new_deal', 'price_improved',
-    'payload'}.
+    'revived', 'payload'}; 'revived' = a new sighting brought a dead deal
+    back alive.
     """
     from .http_client import extract_asin  # lazy: written by another layer
 
@@ -206,7 +207,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                              extracted.item, cfg.fuzzy_threshold,
                              codes=extracted.codes)
 
-    price_improved = False
+    price_improved = revived = False
     if existing is None:
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
@@ -284,10 +285,24 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["image_url"] = post.image_url
         payload["last_seen_at"] = util.iso(now)
 
-        db.add_sighting(deal_id, source_name=post.source_name,
-                        source_url=post.url, content_hash=post.content_hash,
-                        seen_at=now, final_price=savings.final_price)
+        fresh = db.add_sighting(deal_id, source_name=post.source_name,
+                                source_url=post.url,
+                                content_hash=post.content_hash,
+                                seen_at=now, final_price=savings.final_price)
         payload["sightings"] = db.sightings_for(deal_id)
+        # A NEW sighting of a dead deal is proof it is on sale again. Live
+        # wart (B0BKQSDF5C): the price recheck killed a Warehouse deal and
+        # fifteen minutes later Keepa's deals feed listed it LOWER; the
+        # merge left it dead. The recheck stamp is cleared so the next pass
+        # re-judges it; a post that says "sold out" (or a past expiry)
+        # still ends it in the same run (pipeline.run, mark_expired_dead).
+        revived = fresh and existing.get("status") == "dead"
+        if revived:
+            payload["status"] = "alive"
+            payload["died_at"] = ""
+            payload["price_rechecked_at"] = ""
+            payload["flags"] = [f for f in payload.get("flags") or []
+                                if f != "price_moved"]
 
         db.update_deal(
             key,
@@ -296,9 +311,13 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             pct_at_checkout=savings.pct_at_checkout if price_improved else None,
             abs_savings=savings.abs_savings if price_improved else None,
             online_only=merged_online,
+            status="alive" if revived else None,
             expires_at=merged_expires,
             last_seen_at=now,
         )
+        if revived:
+            log.info("revived dead deal %s: new sighting from %s", key,
+                     post.source_name)
         log.info("merged deal %s (price_improved=%s)", key, price_improved)
 
     if savings.final_price is not None:
@@ -310,5 +329,6 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         "dedupe_key": key,
         "is_new_deal": is_new,
         "price_improved": price_improved,
+        "revived": revived,
         "payload": payload,
     }

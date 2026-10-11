@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import get_secret
@@ -156,6 +156,36 @@ _HIDDEN_PROMO_RE = re.compile(
     r"coupon|clip|subscribe|promo|\bcode\b|checkout|cart", re.I)
 
 
+def is_used_deal(deal: dict[str, Any]) -> bool:
+    """True for a used / open-box deal (Amazon Warehouse, Amazon Resale)."""
+    return bool({"used", "open_box"} & set(deal.get("conditions") or []))
+
+
+#: Keepa timestamps count minutes from 2011-01-01T00:00Z; that moment is
+#: this many minutes after the unix epoch.
+KEEPA_EPOCH_MINUTES = 21564000
+
+
+def keepa_time(minutes: Any) -> datetime | None:
+    """A Keepa timestamp (minutes since 2011-01-01 UTC) as an aware UTC
+    datetime; None when missing or negative (Keepa's "no data" is -1)."""
+    if not isinstance(minutes, (int, float)) or isinstance(minutes, bool) \
+            or minutes < 0:
+        return None
+    return datetime.fromtimestamp((minutes + KEEPA_EPOCH_MINUTES) * 60,
+                                  tz=timezone.utc)
+
+
+def _keepa_since_first_seen(minutes: Any, deal: dict[str, Any]) -> bool | None:
+    """Whether Keepa gathered its data (``minutes``, Keepa time) at or after
+    the deal's first sighting; None when either time is unknown."""
+    at = keepa_time(minutes)
+    seen = parse_iso(deal.get("first_seen_at") or "")
+    if at is None or seen is None:
+        return None
+    return at >= seen
+
+
 def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
     """True when the deal's final price only materialises at checkout, so
     a live LISTED price cannot be expected to match it."""
@@ -170,24 +200,30 @@ def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
 #: Keepa's /product endpoint takes up to this many ASINs per call, one
 #: token each: one request fetches a hundred photos or live prices.
 KEEPA_BATCH = 100
+#: Marketplace offers asked for on a used/open-box recheck (Keepa's
+#: minimum for the ``offers`` parameter, ~6 extra tokens per ASIN). Only
+#: an offers scan refreshes the Warehouse/used price slots.
+RECHECK_OFFERS = 20
 
 
 def keepa_products(key: str, asins: list[str], stats: int,
-                   budget: KeepaBudget | None) -> dict[str, dict[str, Any]] | None:
+                   budget: KeepaBudget | None,
+                   offers: int | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs: ``{asin:
     product}`` (an ASIN Keepa does not know is simply absent), or None on
     a 429 (the token bucket is empty — it refills by the minute and costs
-    nothing, so that is "no opinion", never a verdict). Every response
+    nothing, so that is "no opinion", never a verdict). ``offers`` asks for
+    that many live marketplace offers per product (pricier). Every response
     body, the 429 included, feeds the shared token budget when given."""
     import httpx
 
     asins = [a for a in asins if a][:KEEPA_BATCH]
-    resp = httpx.get(
-        "https://api.keepa.com/product",
-        params={"key": key, "domain": 1, "asin": ",".join(asins),
-                "stats": stats},
-        timeout=30,
-    )
+    params: dict[str, Any] = {"key": key, "domain": 1,
+                              "asin": ",".join(asins), "stats": stats}
+    if offers is not None:
+        params["offers"] = offers
+    resp = httpx.get("https://api.keepa.com/product", params=params,
+                     timeout=30)
     payload = response_payload(resp)
     if budget is not None:
         budget.note(payload)
@@ -220,31 +256,119 @@ def _keepa_product(key: str, asin: str, stats: int,
     return products.get(asin, {})
 
 
+#: Keepa offer conditions that count as used / open-box: 2-5 Used (Like
+#: New .. Acceptable) and 6 Refurbished. 1 is New, 0 unknown, 7+ collectible.
+_USED_OFFER_CONDITIONS = frozenset(range(2, 7))
+
+
+def _current_price(current: Any, i: int) -> float | None:
+    """stats.current[i] in dollars; None when absent or -1 (no offer)."""
+    if isinstance(current, list) and len(current) > i \
+            and isinstance(current[i], (int, float)) and current[i] >= 0:
+        return float(current[i]) / 100.0
+    return None
+
+
+def _offer_total(offer: dict[str, Any]) -> float | None:
+    """One marketplace offer's current price plus shipping, in dollars:
+    the last [keepaTime, price, shipping] triple of its offerCSV (shipping
+    -1 = none stated, counted as free). None when the price is unknown."""
+    csv = offer.get("offerCSV")
+    if not isinstance(csv, list) or len(csv) < 3 or len(csv) % 3:
+        return None
+    price, ship = csv[-2], csv[-1]
+    if not isinstance(price, (int, float)) or price < 0:
+        return None
+    if not isinstance(ship, (int, float)) or ship < 0:
+        ship = 0
+    return (float(price) + float(ship)) / 100.0
+
+
+def _judge_used(asin: str, deal: dict[str, Any], product: dict[str, Any],
+                stats: dict[str, Any]) -> bool | None:
+    """Verdict for a used/open-box deal. Live wart: five Amazon Warehouse
+    deals died within hours of being seen and were still on sale — a plain
+    /product record showed the Warehouse slot at -1, but Keepa refreshes
+    the Warehouse and used slots only on an offers scan. So only a fresh
+    offers scan (taken after the deal was first seen) without a matching
+    used offer may call the unit sold; a stats-only record can confirm a
+    deal (True) and never kills one."""
+    final = float(deal["final_price"])
+    cap = final * 1.10 + 0.01
+    offers, order = product.get("offers"), product.get("liveOffersOrder")
+    if isinstance(offers, list) and isinstance(order, list):
+        totals = [_offer_total(offers[i]) for i in order
+                  if isinstance(i, int) and 0 <= i < len(offers)
+                  and isinstance(offers[i], dict)
+                  and offers[i].get("condition") in _USED_OFFER_CONDITIONS]
+        live = min((t for t in totals if t is not None), default=None)
+        if live is not None and live <= cap:
+            log.info("price recheck %s: final=$%.2f live=$%.2f (used offer)"
+                     " -> True", asin, final, live)
+            return True
+        scanned = stats.get("lastOffersUpdate")
+        seen = ("no live used offer" if live is None
+                else f"cheapest live used offer ${live:.2f}")
+        # offersSuccessful=false: Keepa's scan failed, so it proves nothing.
+        if _keepa_since_first_seen(scanned, deal) \
+                and product.get("offersSuccessful") is not False:
+            log.info("price recheck %s: final=$%.2f, offer scan at %s shows "
+                     "%s -> False", asin, final, iso(keepa_time(scanned)), seen)
+            return False
+        log.debug("price recheck %s: final=$%.2f, %s but no successful offer "
+                  "scan since first seen (scan at %s); no opinion", asin, final,
+                  seen, iso(keepa_time(scanned)) or "unknown")
+        return None
+    current = stats.get("current")
+    prices = [p for p in (_current_price(current, 9), _current_price(current, 2))
+              if p is not None]
+    live = min(prices, default=None)
+    if live is not None and live <= cap:
+        log.info("price recheck %s: final=$%.2f live=$%.2f (warehouse/used)"
+                 " -> True", asin, final, live)
+        return True
+    log.debug("price recheck %s: final=$%.2f, stats-only record (%s) cannot "
+              "show a sold unit; no opinion", asin, final,
+              "no warehouse/used price" if live is None else f"${live:.2f}")
+    return None
+
+
 def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | None:
     """The verdict for one deal given its Keepa product record: True =
     a current offer still matches the deal's final price within 10% (or,
     for a deal whose discount only shows at checkout — coupon, code,
     Subscribe & Save — the quoted regular price); False = the price moved
-    (deal is over); None = no opinion (no current prices in the record).
-    A used/open-box deal is checked against the Warehouse price; anything
-    else against Amazon's own price or the lowest new offer. The record's
-    image is harvested for free either way."""
+    or no offer is left (deal is over); None = no opinion. A used/open-box
+    deal is judged by _judge_used (live offers when the record carries
+    them, else the Warehouse/used price, which can only confirm). Anything
+    else is checked against Amazon's own price or the lowest new offer,
+    and a False needs Keepa data (lastUpdate) gathered since the deal was
+    first seen: older data cannot know the deal ended. The record's image
+    is harvested for free either way."""
     asin = str(deal.get("asin") or "").strip().upper()
     final = deal.get("final_price")
-    is_used = bool({"used", "open_box"} & set(deal.get("conditions") or []))
     _harvest_image(deal, product)
     stats = product.get("stats")
+    if is_used_deal(deal):
+        return _judge_used(asin, deal, product,
+                           stats if isinstance(stats, dict) else {})
     current = stats.get("current") if isinstance(stats, dict) else None
     if not isinstance(current, list) or not current:
         return None
-    idx = [9] if is_used else [0, 1]  # warehouse vs amazon/new offer
-    prices = []
-    for i in idx:
-        if len(current) > i and isinstance(current[i], (int, float)) \
-                and current[i] >= 0:
-            prices.append(float(current[i]) / 100.0)
+    prices = [p for p in (_current_price(current, 0), _current_price(current, 1))
+              if p is not None]
+    updated = product.get("lastUpdate")
+    # Only a False verdict needs fresh data; unknown times apply no gate.
+    stale = _keepa_since_first_seen(updated, deal) is False
     if not prices:
-        return False  # no live offer of the right kind: deal is gone
+        if stale:
+            log.debug("price recheck %s: no live new offer in Keepa data from "
+                      "%s, before first seen %s; no opinion", asin,
+                      iso(keepa_time(updated)), deal.get("first_seen_at"))
+            return None
+        log.info("price recheck %s: final=$%.2f, no live new offer -> False",
+                 asin, float(final))
+        return False
     live = min(prices)
     target = float(final)
     basis = "final"
@@ -257,45 +381,59 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | No
         target = max(target, float(regular))
         basis = "regular (promo hidden from listing)"
     ok = live <= target * 1.10 + 0.01
-    log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (%s)"
-             " -> %s", asin, float(final), live, basis, target,
-             "warehouse" if is_used else "new", ok)
+    if not ok and stale:
+        log.debug("price recheck %s: final=$%.2f live=$%.2f in Keepa data from "
+                  "%s, before first seen %s; no opinion", asin, float(final),
+                  live, iso(keepa_time(updated)), deal.get("first_seen_at"))
+        return None
+    log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (new)"
+             " -> %s", asin, float(final), live, basis, target, ok)
     return ok
 
 
 def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
-                          budget: KeepaBudget | None = None
+                          budget: KeepaBudget | None = None,
+                          used_offers: bool = True
                           ) -> dict[str, bool | None]:
     """Live price verdicts for many Amazon deals in as few Keepa calls as
     possible (KEEPA_BATCH ASINs per call): ``{dedupe_key: verdict}`` per
     judge_live_price; a deal left out (flag/key off, no ASIN or price,
     tokens exhausted, transport failure, unknown ASIN) has no entry.
-    ``budget`` learns every response's token state."""
+    Used/open-box deals go in batches of their own that ask for
+    RECHECK_OFFERS live offers (only an offers scan can show a Warehouse
+    unit sold); ``used_offers=False`` keeps every batch stats-only (the
+    photo pass), where a used deal can only be confirmed. ``budget``
+    learns every response's token state."""
     out: dict[str, bool | None] = {}
     if not cfg.feature_flags.get("keepa"):
         return out
     key = get_secret("KEEPA_KEY")
     if not key:
         return out
-    wanted: list[tuple[str, dict[str, Any]]] = []
+    new: list[tuple[str, dict[str, Any]]] = []
+    used: list[tuple[str, dict[str, Any]]] = []
     for deal in deals:
         asin = str(deal.get("asin") or "").strip().upper()
         if asin and deal.get("final_price") is not None:
-            wanted.append((asin, deal))
-    for start in range(0, len(wanted), KEEPA_BATCH):
-        chunk = wanted[start:start + KEEPA_BATCH]
-        try:
-            products = keepa_products(key, [a for a, _ in chunk], 1, budget)
-        except Exception as e:  # transport, schema drift
-            log.warning("price recheck batch of %d failed: %s", len(chunk), e)
-            continue
-        if products is None:
-            continue  # 429: the bucket is empty, try a later pass
-        for asin, deal in chunk:
-            product = products.get(asin)
-            if product is None:
+            (used if used_offers and is_used_deal(deal) else new).append(
+                (asin, deal))
+    for wanted, offers in ((new, None), (used, RECHECK_OFFERS)):
+        for start in range(0, len(wanted), KEEPA_BATCH):
+            chunk = wanted[start:start + KEEPA_BATCH]
+            try:
+                products = keepa_products(key, [a for a, _ in chunk], 1,
+                                          budget, offers=offers)
+            except Exception as e:  # transport, schema drift
+                log.warning("price recheck batch of %d failed: %s",
+                            len(chunk), e)
                 continue
-            out[deal["dedupe_key"]] = judge_live_price(deal, product)
+            if products is None:
+                continue  # 429: the bucket is empty, try a later pass
+            for asin, deal in chunk:
+                product = products.get(asin)
+                if product is None:
+                    continue
+                out[deal["dedupe_key"]] = judge_live_price(deal, product)
     return out
 
 

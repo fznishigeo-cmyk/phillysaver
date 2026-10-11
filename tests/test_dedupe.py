@@ -279,3 +279,45 @@ def test_amazon_asin_recovered_from_post_text(tmp_path) -> None:
         "a (https://amazon.com/dp/B0AAAAAAAA) b (https://www.amazon.com/dp/B0BBBBBBBB)") == ""
     assert dedupe._asin_from_text("no links here $5") == ""
     db.close()
+
+
+def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
+    """Live wart (B0BKQSDF5C): the price recheck killed a Warehouse deal and
+    a fresh sighting minutes later merged into the dead row and left it
+    dead. A NEW sighting revives it — even at the same price, where the
+    merge keeps the old flags; replaying a known post never does."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    ext = make_extracted(item="Steiner binoculars", store="Amazon",
+                         product_url="https://www.amazon.com/dp/B0BKQSDF5C",
+                         conditions=["used", "open_box"])
+    sav = make_savings(final=744.50, regular=1599.99, pct=53.5, abs_s=855.49)
+    res1 = dedupe.upsert_extracted(
+        db, ext, sav, make_post("keepa_amazon_drops", "B0BKQSDF5C:wh:744.50"),
+        cfg, NOW)
+    assert res1["revived"] is False
+    key = res1["dedupe_key"]
+
+    def kill() -> None:  # what the recheck does on a False verdict
+        payload = dict(db.get_deal(key), flags=["limited_qty", "price_moved"],
+                       died_at=util.iso(NOW),
+                       price_rechecked_at=util.iso(NOW))
+        db.update_deal(key, payload=payload, status="dead")
+
+    kill()
+    later = NOW + timedelta(minutes=15)
+    other = make_post("slickdeals_frontpage", "sd1", "Steiner binoculars $744.50")
+    res2 = dedupe.upsert_extracted(db, ext, sav, other, cfg, later)
+    assert res2["revived"] is True and res2["price_improved"] is False
+    row = db.get_deal(key)
+    assert row["status"] == "alive"
+    assert row["flags"] == ["limited_qty"]
+    assert row["died_at"] == "" and row["price_rechecked_at"] == ""
+
+    kill()
+    res3 = dedupe.upsert_extracted(db, ext, sav, other, cfg, later)
+    assert res3["revived"] is False
+    assert db.get_deal(key)["status"] == "dead"
+    assert len(db.all_deals()) == 1
+    assert len(db.sightings_for(res1["deal_id"])) == 2
+    db.close()

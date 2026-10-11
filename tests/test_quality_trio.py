@@ -5,7 +5,7 @@ Offline only — fake clients/parsers, no network, no real model calls.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -711,11 +711,12 @@ class TestPriceRecheck:
         monkeypatch.setattr(httpx, "get",
                             lambda *a, **k: self._stats_response(current))
         assert verify.recheck_amazon_price(used_deal, cfg) is True
-        # Warehouse offer vanished entirely -> the deal is over.
+        # Warehouse slot empty in a stats-only record: Keepa refreshes it
+        # only on an offers scan, so that is no opinion, never "sold".
         gone = [8155, 8155, -1, -1, -1, -1, -1, -1, -1, -1]
         monkeypatch.setattr(httpx, "get",
                             lambda *a, **k: self._stats_response(gone))
-        assert verify.recheck_amazon_price(used_deal, cfg) is False
+        assert verify.recheck_amazon_price(used_deal, cfg) is None
 
     def test_pipeline_recheck_marks_moved_deals_dead_once_per_window(
             self, tmp_path, monkeypatch):
@@ -735,14 +736,14 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
             calls.extend(d["asin"] for d in deals)
             return {d["dedupe_key"]: False for d in deals}
 
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert stats == {"checked": 1, "dead": 1, "image_backfill": 0,
-                         "tokens_short": 0}
+                         "tokens_short": 0, "used_checked": 0}
         row = db.get_deal(d["dedupe_key"])
         assert row["status"] == "dead"
         assert "price_moved" in row["flags"]
@@ -750,7 +751,8 @@ class TestPriceRecheck:
         # Within the 6-hour window nothing is re-checked (and dead deals
         # are out of the alive set anyway).
         assert pipeline._recheck_prices(db, cfg, NOW) == {
-            "checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0}
+            "checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
+            "used_checked": 0}
         assert len(calls) == 1
         db.close()
 
@@ -780,7 +782,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
             for deal in deals:
                 calls.append(deal["dedupe_key"])
                 deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
@@ -790,7 +792,7 @@ class TestPriceRecheck:
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|a"]                      # photo'd deal untouched
         assert stats == {"checked": 1, "dead": 0, "image_backfill": 1,
-                         "tokens_short": 0}
+                         "tokens_short": 0, "used_checked": 0}
         assert db.get_deal("url|a")["image_url"].endswith("new.jpg")
         db.close()
 
@@ -813,7 +815,7 @@ class TestPriceRecheck:
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
 
-        def fake_recheck(deals, _cfg, budget=None):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=False):
             for deal in deals:
                 deal["image_url"] = "https://m.media-amazon.com/images/I/p.jpg"
             return {deal["dedupe_key"]: None for deal in deals}
@@ -855,7 +857,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
             calls.extend(d["dedupe_key"] for d in deals)
             budget.note({"tokensLeft": 20, "refillRate": 5}, NOW)
             return {d["dedupe_key"]: True for d in deals}
@@ -872,7 +874,7 @@ class TestPriceRecheck:
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|due"]
         assert stats == {"checked": 1, "dead": 0, "image_backfill": 0,
-                         "tokens_short": 1}
+                         "tokens_short": 1, "used_checked": 0}
         # The response's reading is persisted for the adapter / next run.
         assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 20
         # 5 tokens: nothing spends (both deals are now in-window photo calls).
@@ -1010,10 +1012,366 @@ class TestBatchedRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
         monkeypatch.setattr(verify, "recheck_amazon_prices",
-                            lambda deals, _c, budget=None: (calls.extend(deals),
-                                                            {d["dedupe_key"]: True for d in deals})[1])
+                            lambda deals, _c, budget=None, used_offers=True: (
+                                calls.extend(deals),
+                                {d["dedupe_key"]: True for d in deals})[1])
         stats = pipeline._recheck_prices(db, cfg, NOW, deadline=_time.monotonic() - 1)
         assert calls == [] and stats["checked"] == 0 and stats["tokens_short"] == 3
         stats = pipeline._recheck_prices(db, cfg, NOW, deadline=_time.monotonic() + 60)
         assert len(calls) == 3 and stats["checked"] == 3
+        db.close()
+
+
+# ----------------------------------------- careful death (used / open-box)
+
+_IMG = "https://m.media-amazon.com/images/I/x.jpg"
+
+
+def _km(dt: datetime) -> int:
+    """Keepa time (minutes since 2011-01-01 UTC) for an aware datetime."""
+    return int(dt.timestamp()) // 60 - 21564000
+
+
+def _offer(condition: int, cents: int, ship: int = -1) -> dict:
+    """A Keepa offer whose offerCSV holds an older, dearer triple first:
+    only the LAST [time, price, shipping] triple is the current price."""
+    return {"condition": condition,
+            "offerCSV": [_km(NOW) - 600, cents + 5000, ship,
+                         _km(NOW), cents, ship]}
+
+
+def _seed_amazon(db, key: str, asin: str, *, used: bool = False,
+                 last: str = "", image: str = _IMG, **over) -> dict:
+    d = _deal_dict(dedupe_key=key, item=key, asin=asin, image_url=image,
+                   conditions=["used", "open_box"] if used else [],
+                   price_rechecked_at=last, **over)
+    db.insert_deal(dedupe_key=key, store=d["store"], item=key,
+                   normalized_item=key, canonical_url="", payload=d,
+                   final_price=d["final_price"],
+                   pct_at_checkout=d["pct_at_checkout"],
+                   abs_savings=d["abs_savings"], online_only="true",
+                   expires_at="", now=NOW)
+    return d
+
+
+class TestCarefulDeath:
+    """Live incident (2026-10-11): five Amazon Warehouse open-box deals were
+    marked dead by the price recheck within 0.5-7 h and were still on sale.
+    A plain /product record is no evidence a Warehouse unit sold."""
+
+    FIRST_SEEN = datetime(2026, 10, 10, 11, 0, tzinfo=timezone.utc)
+
+    def _used(self) -> dict:
+        return {"asin": "B0BKQSDF5C", "final_price": 449.51,
+                "conditions": ["used", "open_box"],
+                "first_seen_at": self.FIRST_SEEN.isoformat()}
+
+    def test_keepa_time(self):
+        from dealradar import verify
+        assert verify.KEEPA_EPOCH_MINUTES == 21564000
+        assert verify.keepa_time(0) == datetime(2011, 1, 1, tzinfo=timezone.utc)
+        assert verify.keepa_time(8296560) == NOW
+        assert verify.keepa_time(1).timestamp() == (1 + 21564000) * 60
+        for missing in (None, -1, "8296560", True):
+            assert verify.keepa_time(missing) is None
+
+    def test_used_stats_only_record_confirms_but_never_kills(self):
+        from dealradar import verify
+
+        def judge(current):
+            return verify.judge_live_price(self._used(),
+                                           {"stats": {"current": current}})
+
+        empty = [89900, 89900] + [-1] * 8
+        assert judge(empty) is None       # the incident: this was False
+        used = list(empty)
+        used[2] = 47999                   # lowest used offer, within 10%
+        assert judge(used) is True
+        warehouse = list(empty)
+        warehouse[9] = 44951
+        assert judge(warehouse) is True
+        warehouse[9] = 60000              # dearer: still no proof of a sale
+        assert judge(warehouse) is None
+        assert verify.judge_live_price(self._used(), {}) is None
+
+    def test_used_offers_record(self):
+        from dealradar import verify
+        fresh = _km(NOW)                                  # after first seen
+        stale = _km(self.FIRST_SEEN - timedelta(hours=2))
+
+        def judge(order, offers=None, scanned=fresh, **extra):
+            product = {"offers": offers if offers is not None
+                       else [_offer(1, 89900), _offer(3, 44951)],
+                       "liveOffersOrder": order,
+                       "stats": {"current": [89900, 89900] + [-1] * 8,
+                                 "lastOffersUpdate": scanned}}
+            product.update(extra)
+            return verify.judge_live_price(self._used(), product)
+
+        assert judge([0, 1]) is True          # live used offer at the price
+        assert judge([]) is False             # fresh scan, no offer: sold
+        assert judge([0]) is False            # only the new offer is live
+        assert judge([], scanned=stale) is None   # scan predates the deal
+        assert judge([], scanned=-1) is None
+        assert judge([], offersSuccessful=False) is None
+        # Shipping counts (440 + 60 > 10% over); collectible is not used.
+        assert judge([0, 1], offers=[_offer(1, 89900),
+                                     _offer(3, 44000, 6000)]) is False
+        assert judge([0, 1], offers=[_offer(1, 89900),
+                                     _offer(7, 44951)]) is False
+
+    def test_new_deal_dies_only_on_data_newer_than_the_deal(self, caplog):
+        from dealradar import verify
+
+        def deal():
+            return {"asin": "B0NEW00001", "final_price": 29.99,
+                    "conditions": [],
+                    "first_seen_at": self.FIRST_SEEN.isoformat()}
+
+        before = _km(self.FIRST_SEEN - timedelta(hours=1))
+        after = _km(NOW)
+        moved = {"stats": {"current": [9999, 10500]}}
+        assert verify.judge_live_price(deal(), dict(moved, lastUpdate=before)) is None
+        assert verify.judge_live_price(deal(), dict(moved, lastUpdate=after)) is False
+        assert verify.judge_live_price(deal(), moved) is False  # no gate
+        live = {"stats": {"current": [2999, -1]}, "lastUpdate": before}
+        assert verify.judge_live_price(deal(), live) is True
+        gone = {"stats": {"current": [-1, -1]}}
+        assert verify.judge_live_price(deal(), dict(gone, lastUpdate=before)) is None
+        with caplog.at_level("INFO", logger="dealradar.verify"):
+            assert verify.judge_live_price(
+                deal(), dict(gone, lastUpdate=after)) is False
+        assert ("price recheck B0NEW00001: final=$29.99, no live new offer "
+                "-> False") in caplog.text
+
+    def test_only_used_batches_ask_keepa_for_offers(self, monkeypatch):
+        import httpx
+
+        from dealradar import verify
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        sent = []
+
+        def fake_get(url, params=None, timeout=None):
+            sent.append(dict(params))
+            prods = [{"asin": a, "stats": {"current": [1000] + [-1] * 8 + [1000]}}
+                     for a in params["asin"].split(",")]
+            return httpx.Response(200, json={"products": prods},
+                                  request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(httpx, "get", fake_get)
+        deals = [{"dedupe_key": "n1", "asin": "B0NEW00001", "final_price": 10.0,
+                  "conditions": []},
+                 {"dedupe_key": "u1", "asin": "B0USED0001", "final_price": 10.0,
+                  "conditions": ["open_box"]},
+                 {"dedupe_key": "n2", "asin": "B0NEW00002", "final_price": 10.0,
+                  "conditions": []}]
+        verdicts = verify.recheck_amazon_prices(deals, cfg)
+        assert [(p["asin"], p.get("offers")) for p in sent] == [
+            ("B0NEW00001,B0NEW00002", None), ("B0USED0001", 20)]
+        assert verdicts == {"n1": True, "n2": True, "u1": True}
+        sent.clear()
+        verify.recheck_amazon_prices(deals, cfg, used_offers=False)  # photos
+        assert [(p["asin"], p.get("offers")) for p in sent] == [
+            ("B0NEW00001,B0USED0001,B0NEW00002", None)]
+
+    def test_used_deal_stays_alive_through_a_stats_only_answer(
+            self, tmp_path, monkeypatch):
+        import httpx
+        db = DB(tmp_path / "state.db")
+        _seed_amazon(db, "url|wh", "B0BKQSDF5C", used=True, final_price=449.51,
+                     pct_at_checkout=55.0, abs_savings=550.48)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        sent = []
+
+        def fake_get(url, params=None, timeout=None):
+            sent.append(dict(params))
+            return httpx.Response(200, json={"products": [{
+                "asin": "B0BKQSDF5C",
+                "stats": {"current": [89900, 89900] + [-1] * 8}}]},
+                request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(httpx, "get", fake_get)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert sent[0]["offers"] == 20
+        assert stats["checked"] == 0 and stats["dead"] == 0
+        row = db.get_deal("url|wh")
+        assert row["status"] == "alive" and "price_moved" not in row["flags"]
+        db.close()
+
+    def test_used_deals_come_due_every_six_hours(self, tmp_path, monkeypatch):
+        from dealradar import verify
+        db = DB(tmp_path / "state.db")
+        four = (NOW - timedelta(hours=4)).isoformat()
+        seven = (NOW - timedelta(hours=7)).isoformat()
+        _seed_amazon(db, "url|new4h", "B0NEW00004", last=four)
+        _seed_amazon(db, "url|used4h", "B0USED0004", used=True, last=four)
+        _seed_amazon(db, "url|used7h", "B0USED0007", used=True, last=seven)
+        _seed_amazon(db, "url|usedpic", "B0USEDPIC1", used=True, last=four,
+                     image="")
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        calls = []
+
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+            calls.append(([d["dedupe_key"] for d in deals], used_offers))
+            return {d["dedupe_key"]: True for d in deals}
+
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        # New deals stay on 3 h; used wait 6 h; a photo-less used deal in
+        # its window rides the stats-only photo batch.
+        assert calls == [(["url|new4h"], True), (["url|used7h"], True),
+                         (["url|usedpic"], False)]
+        assert stats["checked"] == 3 and stats["used_checked"] == 2
+        db.close()
+
+    def test_used_batches_are_sized_for_the_offers_cost(self, tmp_path,
+                                                        monkeypatch):
+        """~7 tokens a deal: 45 tokens buy (45 - 10) / 7 = 5 used rechecks
+        and the deal lane keeps its last 10. At 16 tokens a plain recheck
+        could run, but one offers scan would dig into the deal lane's 10."""
+        import json
+
+        from dealradar import verify
+        from dealradar.keepa_budget import META_KEY
+        db = DB(tmp_path / "state.db")
+        for i in range(12):
+            _seed_amazon(db, f"url|u{i}", f"B0USED{i:04d}", used=True)
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        sizes = []
+
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+            sizes.append(len(deals))
+            budget.note({"tokensLeft": budget.available(NOW) - 7 * len(deals),
+                         "refillRate": 0}, NOW)
+            return {d["dedupe_key"]: True for d in deals}
+
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
+
+        def reading(tokens):
+            db.meta_set(META_KEY, json.dumps({
+                "tokens_left": tokens, "refill_rate": 0,
+                "seen_at": NOW.isoformat()}))
+
+        reading(45)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert sizes == [5]
+        assert stats["used_checked"] == 5 and stats["tokens_short"] == 7
+        assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 10
+        sizes.clear()
+        reading(16)
+        stats = pipeline._recheck_prices(db, cfg, NOW)
+        assert sizes == [] and stats["tokens_short"] == 7
+        db.close()
+
+    def test_one_time_repair_revives_used_deals_the_recheck_killed(
+            self, tmp_path, caplog):
+        import dataclasses
+        import json
+
+        from dealradar.dedupe import _DEAL_FIELDS
+        from dealradar.models import Deal
+        db = DB(tmp_path / "state.db")
+
+        def seed_dead(key, asin, conditions, flags):
+            payload = dataclasses.asdict(Deal(
+                dedupe_key=key, store="Amazon", item=key, asin=asin,
+                conditions=conditions, flags=flags, final_price=449.51,
+                pct_at_checkout=55.0, abs_savings=550.48, online_only="true",
+                died_at=NOW.isoformat(), price_rechecked_at=NOW.isoformat()))
+            db.insert_deal(dedupe_key=key, store="Amazon", item=key,
+                           normalized_item=key, canonical_url="",
+                           payload=payload, final_price=449.51,
+                           pct_at_checkout=55.0, abs_savings=550.48,
+                           online_only="true", expires_at="", now=NOW)
+            db.update_deal(key, status="dead")
+
+        seed_dead("url|wh", "B0BKQSDF5C", ["used", "open_box"],
+                  ["price_moved", "limited_qty"])
+        seed_dead("url|soldout", "B0SOLDOUT1", ["used"], [])  # post said so
+        seed_dead("url|new", "B0NEWMOVED", [], ["price_moved"])
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = False  # the repair runs regardless
+        with caplog.at_level("INFO", logger="dealradar.pipeline"):
+            pipeline._recheck_prices(db, cfg, NOW)
+        assert "revive repair: 1 used/open-box deal(s)" in caplog.text
+        row = db.get_deal("url|wh")
+        assert row["status"] == "alive"
+        assert row["flags"] == ["limited_qty"]
+        assert row["died_at"] == "" and row["price_rechecked_at"] == ""
+        stored = json.loads(db.conn.execute(
+            "SELECT payload FROM deals WHERE dedupe_key='url|wh'").fetchone()[0])
+        assert set(_DEAL_FIELDS) <= set(stored)
+        assert db.get_deal("url|soldout")["status"] == "dead"
+        assert db.get_deal("url|new")["status"] == "dead"
+        # Once only: a later legitimate kill stays dead.
+        db.update_deal("url|wh", payload=dict(stored, flags=["price_moved"]),
+                       status="dead")
+        pipeline._recheck_prices(db, cfg, NOW)
+        assert db.get_deal("url|wh")["status"] == "dead"
+        db.close()
+
+    def test_resighting_revives_a_deal_the_recheck_killed(self, tmp_path,
+                                                          monkeypatch):
+        """B0BKQSDF5C: judged gone at 01:23; fifteen minutes later Keepa's
+        deals feed listed it LOWER and the merge left it dead. The new
+        sighting brings it back, and the next pass re-judges it."""
+        import httpx
+        db = DB(tmp_path / "state.db")
+        cfg = _cfg()
+        cfg.feature_flags["keepa"] = True
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        url = "https://www.amazon.com/dp/B0BKQSDF5C"
+        key = "url|" + url
+
+        def sight(final, pct, at):
+            ext = ExtractedDeal(item="Open-box binoculars", store="Amazon",
+                                source_url=url, source_name="keepa_amazon_drops",
+                                product_url=url, online_only="true",
+                                conditions=["used", "open_box"])
+            sav = SavingsResult(computable=True, final_price=final,
+                                regular_price=999.99, pct_at_checkout=pct,
+                                abs_savings=round(999.99 - final, 2),
+                                basis="quoted_regular")
+            post = _post(source_name="keepa_amazon_drops",
+                         uid=f"B0BKQSDF5C:wh:{final:.2f}",
+                         url="https://keepa.com/#!product/1-B0BKQSDF5C",
+                         text=f"Open-box binoculars yours for ${final:.2f}")
+            return upsert_extracted(db, ext, sav, post, cfg, at)
+
+        answer = {}
+
+        def fake_get(url, params=None, timeout=None):
+            assert params["offers"] == 20
+            return httpx.Response(200, json={"products": [dict(
+                answer, asin="B0BKQSDF5C")]},
+                request=httpx.Request("GET", url))
+
+        monkeypatch.setattr(httpx, "get", fake_get)
+        assert sight(449.51, 55.05, NOW)["revived"] is False
+        killed_at = NOW + timedelta(minutes=83)
+        answer.update(offers=[_offer(1, 99999)], liveOffersOrder=[0],
+                      stats={"lastOffersUpdate": _km(killed_at)})
+        assert pipeline._recheck_prices(db, cfg, killed_at)["dead"] == 1
+        assert "price_moved" in db.get_deal(key)["flags"]
+
+        res = sight(431.20, 56.88, NOW + timedelta(minutes=98))
+        assert res["revived"] is True and res["price_improved"] is True
+        row = db.get_deal(key)
+        assert row["status"] == "alive" and row["final_price"] == 431.20
+        assert "price_moved" not in row["flags"]
+        assert row["died_at"] == "" and row["price_rechecked_at"] == ""
+        # Due at once: a fresh offers scan finds the cheaper unit.
+        later = NOW + timedelta(minutes=105)
+        answer.update(offers=[_offer(1, 99999), _offer(2, 43120)],
+                      liveOffersOrder=[0, 1],
+                      stats={"lastOffersUpdate": _km(later)})
+        stats = pipeline._recheck_prices(db, cfg, later)
+        assert stats["used_checked"] == 1 and stats["dead"] == 0
+        assert db.get_deal(key)["status"] == "alive"
         db.close()

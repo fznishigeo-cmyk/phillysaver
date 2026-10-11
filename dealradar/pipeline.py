@@ -240,6 +240,12 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
 #: Hours between live price re-checks of the same Amazon deal (a dead
 #: deal is off the wall within this long, and a batch is one Keepa call).
 _RECHECK_EVERY_H = 3.0
+#: The same for a used/open-box deal: its recheck carries an offers scan
+#: (~7 tokens per ASIN instead of 1), so it comes round half as often.
+_RECHECK_EVERY_USED_H = 6.0
+#: Estimated Keepa tokens per ASIN in a used recheck batch (1 for the
+#: product + ~6 for the offers scan); sizes those batches.
+_USED_RECHECK_TOKENS = 7
 #: Early (in-window) Keepa calls per run made only to fetch a missing photo
 #: (1 token each). The shared token budget (keepa_budget) is the real
 #: brake: these run only while the bucket holds MIN_FOR_IMAGE_BACKFILL,
@@ -545,46 +551,86 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     return found
 
 
+_REVIVE_USED_KEY = "revive_used_2026_10_11"
+
+
+def _revive_used_price_moved(db: DB, now: datetime) -> int:
+    """One-time repair (db meta keyed): the recheck read a plain /product
+    record's empty Warehouse slot as "sold" and killed live open-box deals
+    (live: five Amazon Warehouse deals dead within 0.5-7 h, still on sale).
+    Every dead used/open-box deal the recheck killed ('price_moved', its
+    only way to kill) comes back alive with its recheck stamp cleared, so
+    the next pass re-judges it on a fresh offers scan."""
+    from .dedupe import _DEAL_FIELDS
+    from .verify import is_used_deal
+
+    if db.meta_get(_REVIVE_USED_KEY):
+        return 0
+    revived = 0
+    for d in db.all_deals(status="dead"):
+        flags = list(d.get("flags") or [])
+        if not is_used_deal(d) or "price_moved" not in flags:
+            continue
+        payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+        payload["flags"] = [f for f in flags if f != "price_moved"]
+        payload["status"] = "alive"
+        payload["died_at"] = ""
+        payload["price_rechecked_at"] = ""
+        db.update_deal(d["dedupe_key"], payload=payload, status="alive")
+        revived += 1
+    db.meta_set(_REVIVE_USED_KEY, util.iso(now))
+    if revived:
+        log.info("revive repair: %d used/open-box deal(s) the recheck "
+                 "wrongly killed are alive again", revived)
+    return revived
+
+
 def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     image_backfill: bool = True,
                     deadline: float | None = None) -> dict[str, Any]:
     """The 'click the page before publishing' gate, via Keepa's licensed API
     (we never scrape retailer pages): every about-to-publish Amazon deal
-    gets its LIVE price checked at most once per _RECHECK_EVERY_H hours,
-    a hundred deals per Keepa call. A moved price means the deal is over:
-    status dead + 'price_moved' flag — the site shows it marked dead,
-    alerts never fire for it. Photo-less deals inside the window ride the
-    same batches early (the record carries the image), after the due
-    rechecks. ``deadline`` (time.monotonic) ends the pass."""
+    gets its LIVE price checked at most once per _RECHECK_EVERY_H hours
+    (_RECHECK_EVERY_USED_H for used/open-box, whose batches carry an
+    offers scan and cost ~_USED_RECHECK_TOKENS per deal), a hundred deals
+    per Keepa call. A moved price means the deal is over: status dead +
+    'price_moved' flag — the site shows it marked dead, alerts never fire
+    for it. Photo-less deals inside the window ride stats-only batches
+    early (the record carries the image), after the due rechecks.
+    ``deadline`` (time.monotonic) ends the pass."""
     from datetime import timedelta
 
     from . import rank
     from .dedupe import _DEAL_FIELDS
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
                                MIN_FOR_RECHECK, KeepaBudget)
-    from .verify import KEEPA_BATCH, recheck_amazon_prices
+    from .verify import KEEPA_BATCH, is_used_deal, recheck_amazon_prices
 
-    stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0}
+    _revive_used_price_moved(db, now)
+    stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
+             "used_checked": 0}
     if not cfg.feature_flags.get("keepa"):
         return stats
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
     budget = KeepaBudget.load(db)
     due: list[dict[str, Any]] = []
+    due_used: list[dict[str, Any]] = []
     photo: list[dict[str, Any]] = []
     for deal in db.all_deals(status="alive"):
         if not deal.get("asin"):
             continue
+        used = is_used_deal(deal)
+        every = _RECHECK_EVERY_USED_H if used else _RECHECK_EVERY_H
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
-        in_window = (last is not None
-                     and now - last < timedelta(hours=_RECHECK_EVERY_H))
+        in_window = last is not None and now - last < timedelta(hours=every)
         if in_window and (not image_backfill or deal.get("image_url")
                           or len(photo) >= _IMAGE_BACKFILL_PER_RUN):
             continue
         ok, _reason = rank.is_publishable(deal, cfg)
         if not ok:
             continue  # only spend tokens on deals that would publish
-        (photo if in_window else due).append(deal)
+        (photo if in_window else due_used if used else due).append(deal)
 
     def apply(deal: dict[str, Any], verdict: bool | None,
               had_photo: bool = True) -> None:
@@ -596,6 +642,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 db.update_deal(deal["dedupe_key"], payload=payload)
             return  # API had no opinion; try again next pass
         stats["checked"] += 1
+        if is_used_deal(deal):
+            stats["used_checked"] += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         payload["price_rechecked_at"] = util.iso(now)
         if verdict:
@@ -613,9 +661,15 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     # Due rechecks first (a nice-to-have photo never delays them); each
     # class waits while the bucket is below its bar, and a batch never
-    # takes the deal lane's last MIN_FOR_DEAL_QUERY tokens.
-    for group, need, is_photo in ((due, MIN_FOR_RECHECK, False),
-                                  (photo, MIN_FOR_IMAGE_BACKFILL, True)):
+    # takes the deal lane's last MIN_FOR_DEAL_QUERY tokens — a used batch
+    # (offers scan) needs room for at least one deal at its higher cost.
+    # Photo batches stay stats-only: a used deal there can only be
+    # confirmed, never killed.
+    used_need = max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + _USED_RECHECK_TOKENS)
+    for group, need, per_deal, is_photo in (
+            (due, MIN_FOR_RECHECK, 1, False),
+            (due_used, used_need, _USED_RECHECK_TOKENS, False),
+            (photo, MIN_FOR_IMAGE_BACKFILL, 1, True)):
         i = 0
         while i < len(group):
             if deadline is not None and time.monotonic() > deadline:
@@ -627,11 +681,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 stats["tokens_short"] += len(group) - i
                 break
             avail = budget.available(now)
-            size = KEEPA_BATCH if avail is None else max(
-                1, min(KEEPA_BATCH, int(avail - MIN_FOR_DEAL_QUERY)))
+            size = KEEPA_BATCH if avail is None else max(1, min(
+                KEEPA_BATCH, int((avail - MIN_FOR_DEAL_QUERY) / per_deal)))
             batch = group[i:i + size]
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
-            verdicts = recheck_amazon_prices(batch, cfg, budget=budget)
+            verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
+                                             used_offers=not is_photo)
             if is_photo:
                 stats["image_backfill"] += len(batch)
             for deal in batch:
