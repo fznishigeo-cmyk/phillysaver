@@ -39,7 +39,7 @@ header{background:var(--card);border-bottom:1px solid var(--line);
 .brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
 .brand .dot{color:var(--accent)}
 .tag{color:var(--muted);font-size:13px}
-/* The drop clock: "Next shuffle in m:ss" over a bar that fills across
+/* The drop clock: "Next drop in m:ss" over a bar that fills across
    the cycle; the pulse says the page is live. */
 .drop{margin-left:auto;position:relative;display:inline-flex;align-items:center;gap:8px;
       white-space:nowrap;background:var(--chip);border:1px solid var(--line);border-radius:12px;
@@ -266,7 +266,7 @@ footer .meta{font-size:11.5px}
     <h1 class="brand">wowpriced<span class="dot">●</span></h1>
     <span id="tagline" class="tag">verified deals</span>
     <div id="drop" class="drop" role="timer" aria-live="off">
-      <span class="droplbl">Next shuffle in</span>
+      <span class="droplbl">Next drop in</span>
       <span id="countdown" class="dropt">-:--</span>
       <span class="dropbar" aria-hidden="true"><span id="dropfill" class="dropfill"></span></span>
     </div>
@@ -375,14 +375,16 @@ footer .meta{font-size:11.5px}
   // teaser: what deals.json carried; me: the Worker's account record.
   // seed: the drop mark the fresh-drops order is dealt from; newKeys: live
   // deals that arrived since the last drop (they lead, tagged NEW);
-  // dropKeys: what was on the wall at the last drop.
+  // dropKeys: what was on the wall at the last drop; unlocked: how many
+  // cards the last publish opened that were locked before (every drop
+  // unlocks a new set of free deals for visitors).
   var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "",
                 sortKey: "fresh", sortDir: -1, catTab: 0,
-                seed: 0, newKeys: {}, dropKeys: {} };
+                seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
   // The fast lane redeploys the site every 10 minutes even between hourly
   // sweeps, so the next drop is never further off than that.
   var FAST_LANE_MIN = 10;
-  // A drop waits at most DROP_FETCH_MS for deals.json and says "Shuffling…"
+  // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
   // for at most DROP_MAX_MS; a publish that missed its mark is polled for
   // quietly every POLL_MS until LATE_MS after the mark.
   var DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000;
@@ -472,6 +474,15 @@ footer .meta{font-size:11.5px}
     }).length;
   }
   function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+  // The open (unlocked, live) cards' keys.
+  function openKeys(deals) {
+    var o = {};
+    deals.forEach(function (d) {
+      var k = dealKey(d);
+      if (k && d.status !== "dead" && d.locked !== true) o[k] = true;
+    });
+    return o;
+  }
 
   function renderMeta() {
     var m = state.meta || {};
@@ -542,7 +553,7 @@ footer .meta{font-size:11.5px}
   // deals.json (waiting at most 2.5 s), re-deals the wall seeded by the
   // mark's index, animates the move and counts to the next mark at once.
   // A publish that has not landed by its mark is polled for quietly and
-  // merged in place when it does; "Shuffling…" never sits for more than 3 s.
+  // merged in place when it does; "Dropping…" never sits for more than 3 s.
   var clock = { target: 0, step: FAST_LANE_MIN * 60 * 1000, phase: 0,
                 dropping: 0, lateUntil: 0, lastPoll: 0, lastSeed: null };
   function publishTime(m) {
@@ -584,7 +595,7 @@ footer .meta{font-size:11.5px}
     box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
     var left = clock.target - now;
-    document.getElementById("countdown").textContent = clock.dropping ? "Shuffling…" : mmss(left);
+    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
     var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
     document.getElementById("dropfill").style.transform = "scaleX(" + f.toFixed(4) + ")";
   }
@@ -1696,7 +1707,9 @@ footer .meta{font-size:11.5px}
   // A publish goes up: meta, list, clock. Returns how many live deals it
   // brought that were not on the wall before (tagged NEW).
   function applyPublish(pub, deals) {
-    var before = keySet(state.deals), first = !loadedOnce, added = 0;
+    var before = keySet(state.deals), wasOpen = openKeys(state.deals);
+    var first = !loadedOnce, added = 0;
+    state.unlocked = 0;
     state.teaser = pub.deals;
     state.meta = pub.meta;
     state.deals = deals;
@@ -1716,6 +1729,8 @@ footer .meta{font-size:11.5px}
         var k = dealKey(d);
         if (k && d.status !== "dead" && !before[k]) { state.newKeys[k] = true; added++; }
       });
+      var open = openKeys(deals);
+      for (var k in open) { if (!isMember() && before[k] && !wasOpen[k]) state.unlocked++; }
     }
     rememberSeen(deals);
     renderMeta();
@@ -1730,6 +1745,7 @@ footer .meta{font-size:11.5px}
     clock.lateUntil = 0;
     reorganize(false);
     if (added) toast(plural(added, "new deal") + " just landed");
+    else if (state.unlocked) toast(plural(state.unlocked, "new free deal") + " unlocked");
   }
   function merge(pub) {
     if (!isNewPublish(pub)) return Promise.resolve();
@@ -1763,6 +1779,7 @@ footer .meta{font-size:11.5px}
       done = true;
       clearTimeout(guard);
       var added = pub && isNewPublish(pub) ? applyPublish(pub, deals) : 0;
+      var unlocked = added || !pub ? 0 : state.unlocked;
       var fresh = !!pub || publishTime(state.meta || {}) >= last - clock.step / 2;
       // What arrived since the last drop leads, tagged NEW.
       state.newKeys = {};
@@ -1774,14 +1791,15 @@ footer .meta{font-size:11.5px}
       state.seed = clock.lastSeed =
         clock.lastSeed == null ? seed : Math.max(seed, clock.lastSeed + 1);
       clock.dropping = 0;
-      var moved = reorganize(true, added > 0);
+      var moved = reorganize(true, added + unlocked > 0);
       syncClock();
       if (!fresh) { clock.lateUntil = last + LATE_MS; clock.lastPoll = Date.now(); }
-      // Only real new keys are announced as new; a mark that just re-dealt
-      // the fresh sort says so with the list's age; a sort or filter that
-      // nothing moved in gets no toast at all.
+      // Only real new keys are announced as new; free deals the drop opened
+      // come next; a mark that just re-dealt the fresh sort says so with the
+      // list's age; a sort or filter that nothing moved in gets no toast.
       if (added) toast(plural(added, "new deal") + " just landed");
-      else if (moved && state.sortKey === "fresh") toast("Fresh shuffle" + updatedAgo());
+      else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");
+      else if (moved && state.sortKey === "fresh") toast("Fresh drop" + updatedAgo());
     }
     got.catch(noop);
     withTimeout(got, DROP_FETCH_MS).then(function (pub) {

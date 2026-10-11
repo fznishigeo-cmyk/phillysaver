@@ -237,7 +237,7 @@ def test_out_dir_defaults_to_cfg_site_dir(db, cfg):
 
 class TestLiveHomePage:
     """Meta fields and template hooks behind the rotating, counting-down
-    home page (fresh-drops sort, "Next shuffle in" countdown, floor-derived
+    home page (fresh-drops sort, "Next drop in" countdown, floor-derived
     tagline)."""
 
     @staticmethod
@@ -266,7 +266,7 @@ class TestLiveHomePage:
 
     def test_index_has_countdown_driven_by_meta(self, html):
         assert 'id="countdown"' in html
-        assert "Next shuffle in" in html and "Shuffling…" in html
+        assert "Next drop in" in html and "Dropping…" in html
         # The old open-ended wait is gone: a drop never sits for minutes.
         assert "Loading new drops" not in html
         # Publish time and cadence come from deals.json meta, not the clock alone.
@@ -768,8 +768,8 @@ class TestDropClock:
         start = html.index("function drop(")
         body = html[start:html.index("function loadData(")]
         assert "withTimeout(got, DROP_FETCH_MS)" in body
-        assert "markIndex(last" in body and "reorganize(true, added > 0)" in body
-        assert '"Fresh shuffle" + updatedAgo()' in body
+        assert "markIndex(last" in body and "reorganize(true, added + unlocked > 0)" in body
+        assert '"Fresh drop" + updatedAgo()' in body
         assert '" · updated "' in html and '" min ago"' in html
         # One ticking interval for the whole page, plus the 5-minute fallback.
         assert html.count("setInterval(") == 2
@@ -1070,18 +1070,20 @@ class TestHonestShuffleAndPage:
     def test_toast_only_for_real_news_or_a_visible_shuffle(self, html):
         body = _between(html, "function drop(", "function loadData(")
         assert 'if (added) toast(plural(added, "new deal") + " just landed");' in body
+        assert ('else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");'
+                in body)
         assert ('else if (moved && state.sortKey === "fresh") '
-                'toast("Fresh shuffle" + updatedAgo());') in body
+                'toast("Fresh drop" + updatedAgo());') in body
         assert "Deals reshuffled" not in html
         reorg = _between(html, "function reorganize(", "// ---- paywall")
         assert "var changed = cardOrder() !== was;" in reorg and "return changed;" in reorg
 
     def test_clock_names_the_shuffle_and_sweeps_only_with_news(self, html):
-        assert '<span class="droplbl">Next shuffle in</span>' in html
-        assert '"Shuffling…"' in html and "Dropping…" not in html
+        assert '<span class="droplbl">Next drop in</span>' in html
+        assert '"Dropping…"' in html and "Shuffling" not in html and "Next shuffle" not in html
         reorg = _between(html, "function reorganize(", "// ---- paywall")
         assert 'if (sweep) el.classList.add("moved");' in reorg
-        assert "reorganize(true, added > 0)" in html
+        assert "reorganize(true, added + unlocked > 0)" in html
 
     def test_account_row_wraps_on_phones(self, html):
         mobile = _between(html, "@media (max-width:640px)", "@media (max-width:520px)")
@@ -1103,3 +1105,21 @@ class TestHonestShuffleAndPage:
         # Disabling a focused button drops its focus; checkout gives it back.
         chk = _between(html, "function checkout(", "function noPortalText(")
         assert "had = document.activeElement === ui.btn" in chk and "ui.fb.focus()" in chk
+
+
+def test_each_render_unlocks_a_new_teaser(db, tmp_path):
+    """Two publishes in a row show visitors two different free 8, and the
+    rotation lives in state.db meta (no new rows per run)."""
+    cfg = AppConfig(paywall_enabled=True, paywall_teaser_count=8, paywall_teaser_pool=48,
+                    site_dir=str(tmp_path / "unused"))
+    deals = [make_deal(dedupe_key=f"walmart|item-{i}", item=f"Item {i}", store=f"Store {i}",
+                       canonical_url=f"https://www.walmart.com/ip/{i}", score=100.0 - i)
+             for i in range(30)]
+    shown = []
+    for run in range(2):
+        out = tmp_path / f"site{run}"
+        render_site(db, cfg, NOW, out_dir=out, deals=deals)
+        doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
+        shown.append({d["key"] for d in doc["deals"] if not d.get("locked")})
+    assert len(shown[0]) == len(shown[1]) == 8 and not shown[0] & shown[1]
+    assert len(json.loads(db.meta_get("teaser_recent"))) == 16

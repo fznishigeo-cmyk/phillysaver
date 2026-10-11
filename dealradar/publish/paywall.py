@@ -1,7 +1,8 @@
 """Paywall: the public deals.json is a teaser; members get the full payload.
 
 The static site never holds the locked data (docs/paywall.md). render_site
-keeps the top cfg.paywall_teaser_count alive deals in full and turns every
+keeps cfg.paywall_teaser_count alive deals in full (a different set from the
+top cfg.paywall_teaser_pool at every drop) and turns every
 other alive deal into a locked stub — store, percent, photo, nothing that
 names, prices or links it — then the pipeline POSTs the full payload to the
 Worker, which serves it to signed-in members only.
@@ -27,19 +28,44 @@ def _stub(deal: dict[str, Any]) -> dict[str, Any]:
     return {"locked": True, **{k: deal.get(k) for k in STUB_KEYS}}
 
 
-def split_teaser(deals: list[dict[str, Any]], cfg) -> tuple[list[dict[str, Any]], int]:
-    """(teaser, locked_count) for serialized deals in site order: the first
-    teaser_count alive deals stay full, the other alive deals become locked
-    stubs, dead deals follow unchanged. Passthrough with the paywall off."""
+def split_teaser(deals: list[dict[str, Any]], cfg,
+                 recent: list[str] | tuple[str, ...] = ()) -> tuple[list[dict[str, Any]], int]:
+    """(teaser, locked_count) for serialized deals in site order: teaser_count
+    alive deals from the top teaser_pool stay full, the other alive deals
+    become locked stubs, dead deals follow unchanged. recent: the keys the
+    last drops unlocked (oldest first); they go to the back of the line, so
+    every drop unlocks different deals. Passthrough with the paywall off."""
     if not getattr(cfg, "paywall_enabled", False):
         return deals, 0
     n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
+    pool = max(n, int(getattr(cfg, "paywall_teaser_pool", 48)))
     alive = [d for d in deals if d.get("status") == "alive"]
     dead = [d for d in deals if d.get("status") != "alive"]
-    picked = _pick_teaser(alive, n)
+    picked = _pick_teaser(_rotate(alive[:pool], recent), n)
     chosen = {id(d) for d in picked}
     teaser = picked + [_stub(d) for d in alive if id(d) not in chosen] + dead
     return teaser, max(0, len(alive) - len(picked))
+
+
+def _rotate(pool: list[dict[str, Any]], recent) -> list[dict[str, Any]]:
+    """The pool with the deals unlocked in recent drops moved to the back,
+    least recently shown first: a visitor who stays or comes back sees new
+    free deals at every drop."""
+    last = {k: i for i, k in enumerate(recent)}
+    fresh = [d for d in pool if d.get("key") not in last]
+    stale = sorted((d for d in pool if d.get("key") in last), key=lambda d: last[d.get("key")])
+    return fresh + stale
+
+
+def teaser_memory(teaser: list[dict[str, Any]], recent, cfg) -> list[str]:
+    """recent with this drop's unlocked keys appended, keeping the last
+    teaser_pool - teaser_count: a deal comes back only after the rest of the
+    pool has had its turn."""
+    n = max(0, int(getattr(cfg, "paywall_teaser_count", 8)))
+    keep = max(0, int(getattr(cfg, "paywall_teaser_pool", 48)) - n)
+    shown = [d.get("key") for d in teaser
+             if d.get("status") == "alive" and not d.get("locked") and d.get("key")]
+    return (list(recent) + shown)[-keep:] if keep else []
 
 
 #: Unlocked picks per store in the first pass: eight $5 phone cases from one

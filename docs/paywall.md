@@ -1,9 +1,10 @@
 # wowpriced paywall — contract (v3: the trial is Stripe's, card up front)
 
-Visitors who are not signed in see the **top 8** deals in full; every other
+Visitors who are not signed in see **8** deals in full, a new 8 from the top
+48 at every drop (every publish); every other
 live deal is **locked**: a blurred card (real photo blurred, store and
 percent visible, no name, price or link) under one call to action. Signing
-up (email + password, or Google) is **free** and shows the same top-8
+up (email + password, or Google) is **free** and shows the same 8-deal
 teaser, plus a clear next step: start the free trial.
 
 Every deal beyond the top 8 unlocks **only** with a Stripe subscription
@@ -49,6 +50,7 @@ payload to the Cloudflare Worker, which serves it only to members.
 paywall:
   enabled: true
   teaser_count: 8          # unlocked deals for visitors and free accounts
+  teaser_pool: 48          # every drop unlocks a new teaser_count of the top teaser_pool
   trial_days: 7            # page copy only; keep it equal to the Worker's TRIAL_DAYS
   api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
@@ -62,9 +64,14 @@ paywall:
 
 ## Teaser `deals.json`
 
-`deals` = the top `teaser_count` **alive** published deals (by the site's
-score order) as full objects, followed by every other alive deal as a
-locked stub, followed by the dead "Just missed" deals unchanged (they are
+`deals` = `teaser_count` **alive** published deals from the top
+`teaser_pool` (by the site's score order) as full objects, at most 2 per
+store while others remain. Each publish unlocks a different set: the keys
+the last drops unlocked are kept in state.db `meta` (`teaser_recent`, the
+last `teaser_pool - teaser_count` keys) and go to the back of the line, so
+a deal is unlocked again only after the rest of the pool had its turn (one
+lap = 6 drops = an hour) while a new best deal is unlocked at once. They
+are followed by every other alive deal as a locked stub, then by the dead "Just missed" deals unchanged (they are
 gone; FOMO is the point):
 
 ```json

@@ -239,3 +239,60 @@ class TestContractDoc:
                        "released_customer", "checkout:<ref>", "expires_at", "resource_missing",
                        "its verified email (b)"):
             assert needle in self.TEXT, needle
+
+
+class TestTeaserRotation:
+    """Operator ask: every drop must ACTUALLY change the free 8, so a visitor
+    who has not subscribed keeps seeing new deals."""
+
+    def _cfg(self, n=8, pool=48):
+        return AppConfig(paywall_enabled=True, paywall_teaser_count=n, paywall_teaser_pool=pool)
+
+    def _drops(self, deals, cfg, k):
+        recent, out = [], []
+        for _ in range(k):
+            teaser, _locked = P.split_teaser(deals, cfg, recent)
+            out.append([d["key"] for d in teaser if not d.get("locked") and d["status"] == "alive"])
+            recent = P.teaser_memory(teaser, recent, cfg)
+        return out
+
+    def test_consecutive_drops_unlock_different_deals_and_cycle_the_pool(self):
+        cfg = self._cfg()
+        deals = [_deal(i) for i in range(100)]   # 100 stores: no variety skips
+        drops = self._drops(deals, cfg, 7)
+        assert drops[0] == [d["key"] for d in deals[:8]]     # the best 8 first
+        for a, b in zip(drops, drops[1:]):
+            assert len(b) == 8 and not set(a) & set(b)       # never last drop's
+        assert set().union(*drops[:6]) == {d["key"] for d in deals[:48]}  # top 48 only
+        assert drops[6] == drops[0]                           # then round again
+
+    def test_a_new_best_deal_is_unlocked_at_once(self):
+        cfg = self._cfg()
+        deals = [_deal(i) for i in range(1, 60)]
+        teaser, _ = P.split_teaser(deals, cfg)
+        recent = P.teaser_memory(teaser, [], cfg)
+        hot = _deal(0)
+        teaser, _ = P.split_teaser([hot, *deals], cfg, recent)
+        assert teaser[0]["key"] == hot["key"] and not teaser[0].get("locked")
+
+    def test_rotation_keeps_store_variety(self):
+        cfg = self._cfg(n=4, pool=12)
+        deals = []
+        for i in range(12):
+            d = _deal(i)
+            d["store"] = "Amazon" if i % 2 else f"Store {i}"
+            deals.append(d)
+        for drop in self._drops(deals, cfg, 3):
+            stores = [next(d["store"] for d in deals if d["key"] == k) for k in drop]
+            assert stores.count("Amazon") <= 2
+
+    def test_memory_is_bounded_and_off_with_a_pool_of_n(self):
+        cfg = self._cfg(n=8, pool=48)
+        teaser, _ = P.split_teaser([_deal(i) for i in range(60)], cfg)
+        assert len(P.teaser_memory(teaser, [f"x{i}" for i in range(100)], cfg)) == 40
+        cfg = self._cfg(n=8, pool=8)
+        assert P.teaser_memory(teaser, ["x"], cfg) == []
+
+    def test_config_knob(self):
+        assert load_config().paywall_teaser_pool == 48
+        assert AppConfig().paywall_teaser_pool == 48

@@ -17,7 +17,7 @@ from typing import Any
 
 from ..config import redact_secrets
 from ..util import iso, parse_iso
-from .paywall import split_teaser
+from .paywall import split_teaser, teaser_memory
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -27,6 +27,8 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 # The page's "next drop" countdown reads meta.cadence_minutes instead of
 # guessing; an unknown kind gets the fast lane's, the site's shortest cadence.
 _CADENCE_MINUTES = {"fast": 10, "hourly": 60}
+#: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
+_TEASER_META = "teaser_recent"
 
 
 def util_now():
@@ -174,7 +176,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
-    teaser, locked_count = split_teaser(serialized, cfg)
+    # Each drop unlocks different deals: the keys the last drops showed are
+    # kept in meta and go to the back of the line.
+    try:
+        recent = [str(k) for k in json.loads(db.meta_get(_TEASER_META) or "[]")]
+    except (TypeError, ValueError):
+        recent = []
+    teaser, locked_count = split_teaser(serialized, cfg, recent)
+    if getattr(cfg, "paywall_enabled", False):
+        db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
     site_version = site_template_version()
     meta = {
         "site_version": site_version,
