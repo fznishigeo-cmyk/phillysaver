@@ -529,6 +529,226 @@ sources:
     notes: Mediocre Corp (Meh family) daily deals; validator autodiscovers
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
 
+  # ---- added 2026-10-11: public RSS feeds, polite defaults (robots honored, no
+  # grants). Dead guesses are autodiscovered or culled at the daily revalidation. ----
+  - name: couponztime
+    method: rss
+    url: https://www.couponztime.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Coupon/deal blog."
+  - name: frugal_coupon_living
+    method: rss
+    url: https://www.frugalcouponliving.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog; Amazon and online deals."
+  - name: deal_seeking_mom
+    method: rss
+    url: https://www.dealseekingmom.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: bargain_babe
+    method: rss
+    url: https://www.bargainbabe.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: couponing_with_rachel
+    method: rss
+    url: https://www.couponingwithrachel.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: raining_hot_coupons
+    method: rss
+    url: https://www.raininghotcoupons.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog; heavy online-deal mix."
+  - name: all_things_target
+    method: rss
+    url: https://www.allthingstarget.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Target-focused; store-run posts are discarded."
+  - name: printable_coupons_and_deals
+    method: rss
+    url: https://www.printablecouponsanddeals.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: coupons_and_freebies_mom
+    method: rss
+    url: https://www.couponsandfreebiesmom.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal and freebie blog."
+  - name: cuckoo_for_coupon_deals
+    method: rss
+    url: https://www.cuckooforcoupondeals.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: lady_savings
+    method: rss
+    url: https://www.ladysavings.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: edealinfo
+    method: rss
+    url: https://www.edealinfo.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Online deals and codes."
+  - name: spoofee
+    method: rss
+    url: https://www.spoofee.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal forum/blog; online-deal posts."
+  - name: inspiring_savings
+    method: rss
+    url: https://www.inspiringsavings.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: couponing_to_disney
+    method: rss
+    url: https://www.couponingtodisney.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog; many Amazon posts."
+  - name: coupons_for_your_family
+    method: rss
+    url: https://www.couponsforyourfamily.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: dealmama
+    method: rss
+    url: https://www.dealmama.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: my_bjs_wholesale
+    method: rss
+    url: https://www.mybjswholesale.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "BJ's-focused deals; online-orderable posts pass."
+  - name: my_couponing_buddy
+    method: rss
+    url: https://www.mycouponingbuddy.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: steals_and_deals_for_kids
+    method: rss
+    url: https://www.stealsanddealsforkids.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Kids/baby deals."
+  - name: coupon_lady_deals
+    method: rss
+    url: https://www.couponladydeals.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: savings_angel
+    method: rss
+    url: https://www.savingsangel.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: torok_coupon_hunter
+    method: rss
+    url: https://www.torokcouponhunter.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: carolinas_and_dollars
+    method: rss
+    url: https://www.carolinasanddollars.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: coupon_with_star
+    method: rss
+    url: https://www.couponwithstar.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: crazy_for_couponing
+    method: rss
+    url: https://www.crazyforcouponing.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: couponflick
+    method: rss
+    url: https://www.couponflick.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: the_crazy_coupons
+    method: rss
+    url: https://www.thecrazycoupons.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: couponing_with_greg
+    method: rss
+    url: https://www.couponingwithgregthatdude.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: coupon_with_kayla
+    method: rss
+    url: https://www.couponwithkayla.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+  - name: saving_our_way
+    method: rss
+    url: https://www.savingourway.com/feed/
+    region: US
+    allowed_html: true
+    fast_lane: false
+    notes: "Deal blog."
+
 backup_sources:
   - name: dealspotr
     method: rss
