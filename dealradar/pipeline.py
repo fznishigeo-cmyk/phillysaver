@@ -821,7 +821,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Paying members (Stripe) get the same new deals by email, bundled.
         summary["member_alerts"] = send_member_alerts(db, cfg, now)
         summary["digest_sent"] = maybe_send_digest(db, cfg, now)
-        summary["newsletter"] = send_daily_newsletter(db, cfg, now)
+        summary["newsletter"] = send_daily_newsletter(db, cfg, now,
+                                                      deadline=deadline)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,
                                                     items_fetched=len(posts),
                                                     kind=kind)

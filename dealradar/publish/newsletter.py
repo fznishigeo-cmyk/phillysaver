@@ -25,6 +25,7 @@ import html as html_lib
 import json
 import logging
 import smtplib
+import time
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -228,10 +229,13 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
 def send_daily_newsletter(db, cfg, now: datetime, *,
                           deals: list[dict[str, Any]] | None = None,
                           smtp_factory: Any = None,
-                          http_client: Any = None) -> dict[str, Any]:
+                          http_client: Any = None,
+                          deadline: float | None = None) -> dict[str, Any]:
     """The day's email to every subscriber not yet sent today, at most
-    cfg.newsletter_max_per_run per run. Returns {sent, skipped, day}; the
-    `skipped` reason is "" whenever messages went out."""
+    cfg.newsletter_max_per_run per run and never past ``deadline`` (a
+    time.monotonic() value: the run's budget; a job killed by its timeout
+    would lose the state.db commit and re-send). Returns {sent, skipped,
+    day}; the `skipped` reason is "" whenever messages went out."""
     local = now.astimezone(ZoneInfo(cfg.newsletter_timezone))
     day = local.date().isoformat()
     stats: dict[str, Any] = {"sent": 0, "skipped": "", "day": day}
@@ -294,6 +298,10 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         return skip(f"smtp connect failed: {e}", log.warning)
     try:
         for sub in pending:
+            if deadline is not None and time.monotonic() > deadline:
+                log.info("newsletter: run deadline reached after %d sends; "
+                         "the rest ride the next run", stats["sent"])
+                break
             unsub = (f"{worker_url}/unsubscribe?"
                      + urlencode({"e": sub["email"], "t": sub["token"]}))
             msg = MIMEMultipart("alternative")

@@ -165,10 +165,10 @@ def fps(*emails: str) -> set[str]:
     return {N.fingerprint(e) for e in emails}
 
 
-def send(db, cfg, now, worker, factory, deals=None):
+def send(db, cfg, now, worker, factory, deals=None, deadline=None):
     return N.send_daily_newsletter(
         db, cfg, now, deals=[make_deal()] if deals is None else deals,
-        smtp_factory=factory, http_client=worker.client())
+        smtp_factory=factory, http_client=worker.client(), deadline=deadline)
 
 
 # ---------------------------------------------------------------- gating
@@ -342,6 +342,21 @@ class TestSending:
         assert sorted(recipients) == sorted(e for e, _ in subs)
         assert len(set(recipients)) == 5  # everyone exactly once
         assert set(sent_today(db)) == fps(*(e for e, _ in subs))
+
+    def test_run_deadline_stops_the_batch_for_the_next_run(self, db, cfg, monkeypatch):
+        """A job killed by its timeout would lose the state.db commit and
+        re-send; the loop stops at the run deadline instead (review finding)."""
+        import time as _time
+        configure(monkeypatch)
+        subs = [(f"{c}@x.com", f"tok-{c}") for c in "abc"]
+        worker, factory = FakeWorker(subs), Factory()
+        past = _time.monotonic() - 1  # already crossed before the first send
+        r = send(db, cfg, AFTER_8_LOCAL, worker, factory, deadline=past)
+        assert r["sent"] == 0 and factory.messages == []
+        future = _time.monotonic() + 60
+        r = send(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, factory,
+                 deadline=future)
+        assert r["sent"] == 3
 
     def test_failed_recipient_is_retried_next_run(self, db, cfg, monkeypatch):
         configure(monkeypatch)
