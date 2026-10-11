@@ -19,7 +19,7 @@ from ..config import get_secret
 log = logging.getLogger("dealradar.publish.paywall")
 
 #: The only keys a locked stub carries: enough to draw a blurred card.
-STUB_KEYS = ("dedupe_key", "pct_at_checkout", "store", "category",
+STUB_KEYS = ("key", "pct_at_checkout", "store", "category",
              "first_seen_at", "image_url", "status", "conditions")
 
 

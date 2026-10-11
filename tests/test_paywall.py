@@ -23,7 +23,7 @@ def clean_env(monkeypatch):
 
 def _deal(i: int, status: str = "alive") -> dict:
     """A serialized deal as render_site emits it (the fields that matter)."""
-    return {"dedupe_key": f"store|item-{i}", "store": f"Store {i}",
+    return {"dedupe_key": f"store|item-{i}", "key": f"k{i:015d}", "store": f"Store {i}",
             "item": f"Secret Item {i}", "url": f"https://shop.example/{i}",
             "image_url": f"https://img.example/{i}.jpg",
             "final_price": 1.0 * i, "regular_price": 10.0 * i,
@@ -49,7 +49,7 @@ class TestSplitTeaser:
         for stub, src in zip(teaser[8:11], alive[8:]):
             assert set(stub) == {"locked", *P.STUB_KEYS}
             assert stub["locked"] is True
-            assert stub["dedupe_key"] == src["dedupe_key"]
+            assert stub["key"] == src["key"] and "dedupe_key" not in stub
             assert stub["store"] == src["store"]
             assert stub["pct_at_checkout"] == src["pct_at_checkout"]
             assert stub["image_url"] == src["image_url"]
@@ -200,3 +200,22 @@ class TestTeaserVariety:
         teaser, locked = split_teaser(deals, cfg)
         assert [d["item"] for d in teaser if not d.get("locked")] == ["case 0", "case 1", "case 2"]
         assert locked == 1
+
+
+class TestStubOpacity:
+    def test_locked_stub_carries_only_an_opaque_key(self):
+        """Review finding: the dedupe key names the product link or the item
+        words, so a visitor could read locked deals out of deals.json."""
+        from dealradar.config import AppConfig
+        from dealradar.publish.paywall import split_teaser
+        cfg = AppConfig(paywall_enabled=True, paywall_teaser_count=0)
+        deals = [{"status": "alive", "item": "Secret Widget", "store": "Walmart",
+                  "dedupe_key": "url|https://www.walmart.com/ip/secret-widget/123",
+                  "key": "0123456789abcdef", "url": "https://www.walmart.com/ip/123",
+                  "pct_at_checkout": 55.0, "category": "home"}]
+        teaser, locked = split_teaser(deals, cfg)
+        stub = teaser[0]
+        assert stub["locked"] and stub["key"] == "0123456789abcdef"
+        text = str(stub)
+        assert "dedupe_key" not in stub and "walmart.com" not in text
+        assert "Secret Widget" not in text and "url" not in stub

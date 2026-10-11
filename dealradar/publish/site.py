@@ -7,6 +7,7 @@ are written — never full post text or images.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import shutil
 from datetime import datetime
@@ -25,6 +26,11 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 # The page's "next drop" countdown reads meta.cadence_minutes instead of
 # guessing; an unknown kind gets the fast lane's, the site's shortest cadence.
 _CADENCE_MINUTES = {"fast": 10, "hourly": 60}
+
+
+def util_now():
+    from ..util import now_utc
+    return now_utc()
 
 
 def site_template_version() -> str:
@@ -108,6 +114,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         (credits[0]["url"] if credits else "")
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
+        # Opaque id (locked stubs carry only this: the dedupe key names the
+        # product link or the item words, which a visitor must not see).
+        "key": hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16],
         "store": deal.get("store", ""),
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
@@ -169,6 +178,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
+        # The moment this file was built (now is the run's start; a long
+        # run publishes minutes later and the page's countdown anchors here).
+        "published_at": iso(util_now()),
         "last_run": last_run or {},
         "cadence_minutes": _CADENCE_MINUTES.get(
             (last_run or {}).get("kind", ""), _CADENCE_MINUTES["fast"]),

@@ -372,7 +372,7 @@ class TestPaywallTeaser:
     alive deals full, the rest locked stubs, dead deals unchanged) and
     render_site hands the full payload back for the member upload."""
 
-    STUB_KEYS = {"locked", "dedupe_key", "pct_at_checkout", "store", "category",
+    STUB_KEYS = {"locked", "key", "pct_at_checkout", "store", "category",
                  "first_seen_at", "image_url", "status", "conditions"}
 
     @staticmethod
@@ -415,7 +415,7 @@ class TestPaywallTeaser:
         for stub, i in zip(doc["deals"][3:5], (3, 4)):
             assert set(stub) == self.STUB_KEYS
             assert stub["locked"] is True and stub["status"] == "alive"
-            assert stub["dedupe_key"] == f"walmart|zz-{i}"
+            assert "dedupe_key" not in stub and len(stub["key"]) == 16
             assert stub["store"] == "Walmart" and stub["pct_at_checkout"] == 80.0
         dead = doc["deals"][5]
         assert dead["status"] == "dead" and dead["item"] == "ZZSECRET-MUG"
@@ -574,3 +574,17 @@ class TestLoginDeepLink:
         assert '"#login"' in html and '"#signup"' in html
         assert "state.meta.api_url" in html.split("function openFromHash()")[1][:400]
         assert "setTimeout(openFromHash, 0)" in html
+
+
+class TestOpaqueKeysAndPublishTime:
+    def test_full_deals_carry_key_and_meta_published_at(self, db, cfg, tmp_path):
+        import json
+
+        from dealradar.publish.site import render_site
+        render_site(db, cfg, NOW, out_dir=tmp_path)
+        doc = json.loads((tmp_path / "deals.json").read_text())
+        assert doc["meta"]["published_at"] >= doc["meta"]["generated_at"]
+        for d in doc["deals"]:
+            assert len(d["key"]) == 16 and d["key"] != d["dedupe_key"]
+        html = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert "d.key || d.dedupe_key" in html and "m.published_at" in html
