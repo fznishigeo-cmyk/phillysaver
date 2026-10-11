@@ -13,3 +13,6 @@ site/
 .coverage
 dist/
 *.egg-info/
+
+# agent worktrees created during build sessions
+.claude/worktrees/
