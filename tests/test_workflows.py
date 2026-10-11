@@ -279,8 +279,8 @@ def test_deploy_subscribe_worker_reports_stripe_mode(tmp_path: Path, key: str, l
     differ, and never the key itself in the output."""
     _, mode = _stripe_mode_step()
     toml = (WORKER_DIR / "wrangler.toml").read_text()
-    if link:  # what the deploy step writes for a non-empty input
-        toml = re.sub(r"^STRIPE_PAYMENT_LINK = .*$", "STRIPE_PAYMENT_LINK = " + json.dumps(link), toml, flags=re.M)
+    # The link as deployed (wrangler.toml now commits the live one).
+    toml = re.sub(r"^STRIPE_PAYMENT_LINK = .*$", "STRIPE_PAYMENT_LINK = " + json.dumps(link), toml, flags=re.M)
     (tmp_path / "wrangler.deploy.toml").write_text(toml)
     res = subprocess.run(["bash", "-c", mode["run"]], cwd=tmp_path, capture_output=True, text=True, timeout=30,
                          env={"PATH": os.environ["PATH"], "STRIPE_SECRET_KEY": key})
@@ -290,6 +290,28 @@ def test_deploy_subscribe_worker_reports_stripe_mode(tmp_path: Path, key: str, l
         assert any(line.startswith(needle) for line in lines), (needle, lines)
     assert sum("differ" in line for line in lines) == sum("differ" in w for w in want)
     assert "FAKEKEY" not in res.stdout + res.stderr
+
+
+def test_deploy_subscribe_worker_fails_live_key_without_link(tmp_path: Path) -> None:
+    """A live key with no Payment Link on the Worker means checkout has no
+    price (live, 2026-10-11: 'Checkout is busy'): the deploy run fails."""
+    _, mode = _stripe_mode_step()
+    toml = re.sub(r"^STRIPE_PAYMENT_LINK = .*$", 'STRIPE_PAYMENT_LINK = ""',
+                  (WORKER_DIR / "wrangler.toml").read_text(), flags=re.M)
+    (tmp_path / "wrangler.deploy.toml").write_text(toml)
+    res = subprocess.run(["bash", "-c", mode["run"]], cwd=tmp_path, capture_output=True, text=True, timeout=30,
+                         env={"PATH": os.environ["PATH"], "STRIPE_SECRET_KEY": "sk_live_FAKEKEY"})
+    assert res.returncode != 0
+    assert "::error::STRIPE_PAYMENT_LINK is empty" in res.stdout
+    assert "FAKEKEY" not in res.stdout + res.stderr
+
+
+def test_worker_config_commits_the_live_payment_link() -> None:
+    """A plain deploy ships wrangler.toml's values: the live link and the
+    Google client ID are committed there."""
+    toml = (WORKER_DIR / "wrangler.toml").read_text()
+    assert re.search(r'^STRIPE_PAYMENT_LINK = "https://buy\.stripe\.com/[A-Za-z0-9]+"', toml, re.M)
+    assert re.search(r'^GOOGLE_CLIENT_ID = "[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com"', toml, re.M)
 
 
 @pytest.mark.parametrize("portal, warned", [("", True), ("https://billing.stripe.com/p/login/abc123", False)])
