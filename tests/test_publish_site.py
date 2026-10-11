@@ -126,8 +126,8 @@ def test_deals_json_has_disclosure_credit_badge_age(db, cfg, tmp_path):
     assert deal["alive"] is True
     assert deal["status"] == "alive"
     assert deal["age_hours"] == pytest.approx(2.0)
-    # product link passed through the (identity) affiliate hook
-    assert deal["url"] == "https://www.walmart.com/ip/12345"
+    # Code SAVE10: Get deal opens the source post that explains it.
+    assert deal["needs_steps"] is True and deal["url"] == "https://slickdeals.net/f/1"
     # only extracted facts: no raw post text field in the output
     assert "text" not in deal
 
@@ -402,6 +402,7 @@ class TestPaywallTeaser:
                           canonical_url=f"https://www.walmart.com/ip/zz{i}",
                           image_url=f"https://i5.walmartimages.com/zzimg{i}.jpg",
                           final_price=1000.0 + i, regular_price=5000.0 + i,
+                          codes=[f"ZZCODE{i}"], stack_steps=[f"Clip ZZSTEP{i}"],
                           score=100.0 - i)
                 for i in range(n)]
 
@@ -417,9 +418,10 @@ class TestPaywallTeaser:
         res = render_site(db, cfg, NOW, out_dir=out, deals=deals)
         text = (out / "deals.json").read_text(encoding="utf-8")
         for i in (0, 1, 2):
-            assert f"ZZSECRET-ITEM-{i}" in text
+            assert f"ZZSECRET-ITEM-{i}" in text and f"ZZCODE{i}" in text
         for i in (3, 4):  # locked: no name, price, link or headline anywhere
             assert f"ZZSECRET-ITEM-{i}" not in text
+            assert f"ZZCODE{i}" not in text and f"ZZSTEP{i}" not in text
             assert f"walmart.com/ip/zz{i}" not in text
             assert f"100{i}.0" not in text and f"1,00{i}.00" not in text
             assert f"500{i}.0" not in text
@@ -435,10 +437,14 @@ class TestPaywallTeaser:
             html = page.read_text(encoding="utf-8")
             for i in (3, 4):
                 assert f"ZZSECRET-ITEM-{i}" not in html, page
+                assert f"ZZCODE{i}" not in html and f"ZZSTEP{i}" not in html, page
                 assert f"walmart.com/ip/zz{i}" not in html, page
                 assert f"100{i}.0" not in html and f"500{i}.0" not in html, page
             assert "zzimg" not in html, page
-        assert "ZZSECRET-ITEM-0" in (out / "index.html").read_text(encoding="utf-8")
+        home = (out / "index.html").read_text(encoding="utf-8")
+        assert "ZZSECRET-ITEM-0" in home
+        # A free deal's code and steps are on the static wall too.
+        assert '<code class="code">ZZCODE0</code>' in home and "Clip ZZSTEP0" in home
 
         doc = json.loads(text)
         meta = doc["meta"]

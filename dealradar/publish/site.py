@@ -104,7 +104,7 @@ def _headline(deal: dict[str, Any]) -> str:
         elif deal.get("basis") == "list_price_claim":
             lead += " the claimed list price"
     parts = [lead + "."]
-    if codes:
+    if codes and not _needs_steps(deal):  # else the card's "how" box shows them
         parts.append(("Code " if len(codes) == 1 else "Codes ") + ", ".join(codes) + ".")
     if "range" in flags:
         parts.append("Price varies by option; the discount holds even at the highest price.")
@@ -125,6 +125,45 @@ def _headline(deal: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+#: Conditions under which the product page alone may not show the price
+#: (a cart-only drop, a targeted or new-customer offer, a multi-buy, an
+#: in-store price): the source post says how to get it.
+_STEP_CONDITIONS = frozenset(("subscribe_save", "in_cart", "new_customer", "targeted",
+                              "ymmv", "multi_buy", "in_store_only", "clearance_aisle"))
+
+
+def _needs_steps(deal: dict[str, Any]) -> bool:
+    """True when the price takes more than opening the product page: a code,
+    a coupon to clip, Subscribe & Save, a rebate or a step condition (live:
+    a $2.99 thermometer whose Amazon page said $8.99 before the code)."""
+    from ..verify import _price_hidden_by_promo
+
+    return bool(_price_hidden_by_promo(deal) or deal.get("rebates")
+                or _STEP_CONDITIONS & set(deal.get("conditions") or []))
+
+
+#: What a step condition asks of the shopper, when the post gave no steps.
+_CONDITION_HOW = {
+    "subscribe_save": "Choose Subscribe & Save", "in_cart": "The price drops in the cart",
+    "new_customer": "New customers only", "targeted": "Price may vary by account",
+    "ymmv": "Price may vary by account", "multi_buy": "Multi-buy price",
+    "in_store_only": "In store only", "clearance_aisle": "In-store clearance",
+}
+
+
+def _how(deal: dict[str, Any]) -> list[str]:
+    """The steps as the post stated them (stack steps, then rebates), short
+    and at most four: the card's "how to get this price" line. With none,
+    what the deal's conditions ask (once each)."""
+    steps = [str(x).strip() for x in
+             list(deal.get("stack_steps") or []) + list(deal.get("rebates") or [])]
+    steps = [x[:90] for x in steps if x]
+    if not steps:
+        steps = list(dict.fromkeys(_CONDITION_HOW[c] for c in deal.get("conditions") or []
+                                   if c in _CONDITION_HOW))
+    return steps[:4]
+
+
 def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
@@ -137,10 +176,15 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
     ]
     status = deal.get("status", "alive")
     # No resolved product URL -> link the deal to the source post that
-    # reported it (which also carries the credit) rather than nothing.
+    # reported it (which also carries the credit) rather than nothing. A
+    # deal that needs steps links there too: the product page alone shows
+    # a higher price, the post says how to get this one.
     canon = deal.get("canonical_url") or ""
-    url = rewrite_affiliate(canon) if canon else \
-        (credits[0]["url"] if credits else "")
+    post = next((c["url"] for c in credits
+                 if str(c["url"]).startswith(("https://", "http://"))), "")
+    steps = _needs_steps(deal)
+    url = post if steps and post else \
+        rewrite_affiliate(canon) if canon else (credits[0]["url"] if credits else "")
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
@@ -159,6 +203,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
         "basis": deal.get("basis", ""),
         "flags": deal.get("flags") or [],
         "codes": deal.get("codes") or [],
+        # Get deal goes to the source post (url) and the card shows how.
+        "needs_steps": steps,
+        "how": _how(deal) if steps else [],
         "stack_steps": deal.get("stack_steps") or [],
         "rebates": deal.get("rebates") or [],
         "deferred_value": deal.get("deferred_value", ""),

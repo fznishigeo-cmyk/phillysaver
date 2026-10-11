@@ -55,6 +55,49 @@ class TestSiteAlwaysLinks:
         assert _serialize_deal(d, NOW)["url"] == \
             "https://slickdeals.net/f/123-widget"
 
+    def test_plain_price_links_the_product(self):
+        d = self._deal(canonical_url="https://www.amazon.com/dp/B0X",
+                       stack_steps=["Sale $9.99"])
+        out = _serialize_deal(d, NOW)
+        assert out["url"] == "https://www.amazon.com/dp/B0X"
+        assert out["needs_steps"] is False and out["how"] == []
+
+    def test_a_code_links_the_post_that_explains_it(self):
+        # Live: a $2.99 thermometer whose Amazon page said $8.99.
+        d = self._deal(canonical_url="https://www.amazon.com/dp/B0X",
+                       codes=["TEMP70"], stack_steps=["Sale $8.99", "Code TEMP70"])
+        out = _serialize_deal(d, NOW)
+        assert out["needs_steps"] is True
+        assert out["url"] == "https://slickdeals.net/f/123-widget"
+        assert out["how"] == ["Sale $8.99", "Code TEMP70"]
+        assert out["codes"] == ["TEMP70"]
+        assert "Code TEMP70." not in out["headline"]  # the how box shows it
+
+    def test_steps_and_conditions_link_the_post(self):
+        for over in ({"stack_steps": ["Clip the 20% coupon"]},
+                     {"conditions": ["subscribe_save"]},
+                     {"conditions": ["in_cart"]},
+                     {"rebates": ["$5 mail-in rebate"]}):
+            d = self._deal(canonical_url="https://www.amazon.com/dp/B0X", **over)
+            out = _serialize_deal(d, NOW)
+            assert out["needs_steps"] is True, over
+            assert out["url"] == "https://slickdeals.net/f/123-widget", over
+
+    def test_conditions_say_how_when_the_post_gave_no_steps(self):
+        d = self._deal(conditions=["subscribe_save", "targeted", "ymmv"])
+        assert _serialize_deal(d, NOW)["how"] == [
+            "Choose Subscribe & Save", "Price may vary by account"]
+
+    def test_prime_only_alone_links_the_product(self):
+        d = self._deal(canonical_url="https://www.amazon.com/dp/B0X",
+                       conditions=["prime_only"])
+        assert _serialize_deal(d, NOW)["url"] == "https://www.amazon.com/dp/B0X"
+
+    def test_steps_without_a_post_keep_the_product_link(self):
+        d = self._deal(canonical_url="https://www.amazon.com/dp/B0X",
+                       codes=["TEMP70"], sightings=[])
+        assert _serialize_deal(d, NOW)["url"] == "https://www.amazon.com/dp/B0X"
+
     def test_no_canonical_and_no_sightings_means_no_link(self):
         d = self._deal(canonical_url="", sightings=[])
         assert _serialize_deal(d, NOW)["url"] == ""

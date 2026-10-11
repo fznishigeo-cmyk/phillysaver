@@ -145,6 +145,13 @@ def card_html(d: dict[str, Any]) -> str:
         f'via <a href="{e(_http(c.get("url")))}" rel="noopener">{e(c.get("name"))}</a>'
         if _http(c.get("url")) else f"via {e(c.get('name'))}"
         for c in d.get("credits") or [])
+    how = ""
+    if d.get("needs_steps"):  # url is the source post that explains the steps
+        steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
+        codes = "".join(f'<code class="code">{e(c)}</code>' for c in (d.get("codes") or [])[:3])
+        how = (f'<div class="how"><b>How to get this price:</b> '
+               f'{steps or ("" if codes else "the steps are in the deal post")}'
+               f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
     actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener">Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
     return (f'<article class="card{" gone" if dead else ""}">'
@@ -152,7 +159,7 @@ def card_html(d: dict[str, Any]) -> str:
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
             f'<h3 class="title">{title}</h3>'
             + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") else "")
-            + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
+            + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
             "</div></article>")
 
 

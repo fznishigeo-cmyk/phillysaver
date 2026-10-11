@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-11)
+# Handoff — state of wowpriced.com (updated 2026-10-11, evening)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -61,6 +61,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   dial, "Log in" pill, trial button with a gold "$0 today" chip.
 - **Cards:** the hairline runs on the free 8, on a member's new arrivals, and
   on hover. There is a deal ticker at the top and a sources wall at the bottom.
+- **Get deal:** a deal whose price needs steps (a code, a coupon to clip,
+  Subscribe & Save, a rebate, or an in-cart / targeted / new-customer /
+  multi-buy / in-store condition) links to the source post that explains
+  them, and its card shows "How to get this price" with tap-to-copy codes.
+  A plain-price deal links straight to the product (publish/site.py
+  `_needs_steps`).
 - **No customer emails at all.** Membership is website access only.
   - `members.email_enabled: false` and `newsletter.enabled: false` in
     config.yaml; the code paths stay, switched off.
@@ -109,6 +115,13 @@ Keep this file current: whoever stops working updates it in their last commit.
     dealmoon_us, morningsave (HTML readers in fetch/pages.py) and
     jungle_deals (its frontend's keyless JSON API, fetch/jungle.py; the
     schema may change without notice).
+    bradsdeals, dealmoon_us and jungle_deals stayed tripped on their old
+    feeds' failures; a source whose method, adapter or URL changes now
+    starts with a fresh breaker (fetch/base.py), so they retry at once.
+- **Photos:** the photo passes run but find nothing left to try. Most
+  photo-less deals link through trackers or short links
+  (cc.dealsofamerica.com, on.ltk.com, goto.target.com), so no ASIN and no
+  retailer page. Seeing through them is Codex task 005.
   - **inspiring_savings:** their server returns 500; it retries on its own.
 
 ## Open tasks
@@ -138,12 +151,3 @@ Keep this file current: whoever stops working updates it in their last commit.
    agreement for commercial use. Operator decision.
 9. IndexNow records a URL as sent at publish time, before the POST; a failed
    POST is retried within a week (`seo.indexnow_resubmit_days`).
-
-## Codex task 004 — completed 2026-10-11
-- Updated README section 5 from all ten workflow YAML files: schedules,
-  manual operations, fast-lane site deploys, and shared state concurrency.
-- Encrypted data-branch state and Cloudflare-only hosting remain documented.
-- Validation: `python -m pytest -q` — 1106 passed, 1 slow network test
-  deselected by the repository default; workflow rows and schedules checked.
-- No workflow or application changes; nothing left for task 004 beyond
-  review in PR #5.

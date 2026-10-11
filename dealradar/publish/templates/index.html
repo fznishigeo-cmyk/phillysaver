@@ -221,6 +221,12 @@ header .drop,header .dhole{background:#18252c}
 .credit{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;
         text-overflow:ellipsis;white-space:nowrap}
 .credit a{color:var(--muted);text-decoration:underline}
+.how{font-size:12.5px;line-height:1.45;background:var(--chip);border-radius:8px;padding:6px 9px}
+.how b{font-weight:700}
+.code{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.04em;
+      border:1.5px dashed currentColor;border-radius:6px;padding:4px 7px;margin:2px 4px 0 0;
+      display:inline-block;background:transparent;color:inherit;cursor:pointer}
+.code:hover{background:var(--bg)}
 
 /* ---- paywall: locked stubs, CTA panel, account menu, auth dialog ---- */
 .card.locked{cursor:pointer}
@@ -539,7 +545,7 @@ footer .meta{font-size:11.5px}
      10 minutes.
      <span id="footterms">7-day free trial for new members. $0 today.</span>
      Eight deals stay free for everyone, new at every drop.</p>
-  <p>Every deal links to the seller and credits the source that found it. Prices are
+  <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live.</p>
   <div id="srcwall" class="srcwall" role="img" hidden>
@@ -1133,8 +1139,23 @@ footer .meta{font-size:11.5px}
     var credits = (d.credits || []).map(function (c) {
       return 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
     }).join(", ");
+    // A deal that needs steps (code, coupon, Subscribe & Save, rebate...)
+    // links to the source post that explains them (d.url, set server-side)
+    // and says how here; a code copies on tap.
+    var how = "";
+    if (d.needs_steps) {
+      var codes = (d.codes || []).slice(0, 3).map(function (c) {
+        return '<button type="button" class="code" data-code="' + esc(c) +
+          '" aria-label="Copy code ' + esc(c) + '">' + esc(c) + "</button>";
+      }).join("");
+      var steps = (d.how || []).map(esc).join(" &rarr; ");
+      how = '<div class="how"><b>How to get this price:</b> ' +
+        (steps || (codes ? "" : "the steps are in the deal post")) +
+        (codes ? (steps ? "<br>" : "") + "Code " + codes : "") + "</div>";
+    }
     var actions = (url && !dead
-      ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener">Get deal</a>'
+      ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener"' +
+        (d.needs_steps ? ' title="Opens the deal post with the steps"' : "") + ">Get deal</a>"
       : "") + '<span class="credit">' + credits + "</span>";
 
     return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
@@ -1145,6 +1166,7 @@ footer .meta{font-size:11.5px}
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
       '<h3 class="title">' + title + "</h3>" +
       (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
+      how +
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
       "</div>" + (dead ? "" : traceSvg(d)) + "</article>";
@@ -2053,6 +2075,15 @@ footer .meta{font-size:11.5px}
   // An outbound deal link tells the tags only the deal's store and category
   // (never the item or a price: member deals stay with members).
   document.getElementById("content").addEventListener("click", function (e) {
+    var code = e.target.closest ? e.target.closest(".card .code[data-code]") : null;
+    if (code) {
+      var c = code.getAttribute("data-code");
+      var done = function () { toast("Code " + c + " copied"); };
+      try {
+        navigator.clipboard.writeText(c).then(done, function () { toast("Code: " + c); });
+      } catch (err) { toast("Code: " + c); }
+      return;
+    }
     var go = e.target.closest ? e.target.closest('.card a[rel~="sponsored"]') : null;
     if (go) {
       var k = go.closest(".card").getAttribute("data-key");

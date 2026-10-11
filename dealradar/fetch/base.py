@@ -73,6 +73,15 @@ def run_source(
     cfg.per_source_budget_s)``, ignoring Nones.
     """
     clock = clock if clock is not None else time.monotonic
+    # The breaker judges the reader that failed: a source whose method,
+    # adapter or URL changed since (live: three sources moved from a dead
+    # feed to a new page reader stayed tripped on the old feed's failures)
+    # starts with a clean count.
+    sig_key, sig = "source_sig:" + source.name, \
+        "|".join((source.method, source.adapter or "", source.url))
+    if db.meta_get(sig_key) != sig:
+        db.reset_breaker(source.name)
+        db.meta_set(sig_key, sig)
     if db.is_tripped(source.name, now):
         logger.info("source %s: circuit breaker tripped; skipping", source.name)
         return ([], False, "tripped")

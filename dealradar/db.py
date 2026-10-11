@@ -398,6 +398,13 @@ class DB:
             )
         self.conn.commit()
 
+    def reset_breaker(self, source_name: str) -> None:
+        """Clear a source's failure count and trip (its config changed)."""
+        self.conn.execute(
+            "UPDATE source_health SET consecutive_failures=0, tripped_until=NULL"
+            " WHERE source_name=?", (source_name,))
+        self.conn.commit()
+
     def all_source_health(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT * FROM source_health ORDER BY source_name"

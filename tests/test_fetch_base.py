@@ -182,6 +182,33 @@ def test_circuit_breaker_trips_after_three_consecutive_failures(tmp_path):
     assert db.is_tripped("src1", later) is False
 
 
+def test_changed_source_config_clears_the_breaker(tmp_path):
+    """A tripped source moved to a new reader (method/adapter/URL) is tried
+    again at once with a fresh count; an unchanged one stays tripped."""
+    import dataclasses
+
+    cfg, db, clock, fetcher, source = make_env(tmp_path)
+    now = now_utc()
+    failing = ScriptedAdapter(RuntimeError("boom"))
+    for _ in range(3):
+        run_source(source, failing, fetcher, db, cfg, now, clock=clock)
+    assert db.is_tripped("src1", now)
+    assert run_source(source, failing, fetcher, db, cfg, now,
+                      clock=clock)[2] == "tripped"
+
+    moved = dataclasses.replace(source, method="html", adapter="bradsdeals",
+                                url="https://example.com/deals")
+    reader = ScriptedAdapter([make_post(now)])
+    posts, ok, error = run_source(moved, reader, fetcher, db, cfg, now, clock=clock)
+    assert ok is True and len(posts) == 1 and len(reader.deadlines) == 1
+    assert health_row(db, "src1")["consecutive_failures"] == 0
+
+    # One failure of the new reader is one failure, not a re-trip.
+    run_source(moved, failing, fetcher, db, cfg, now, clock=clock)
+    assert health_row(db, "src1")["consecutive_failures"] == 1
+    assert not db.is_tripped("src1", now)
+
+
 def test_success_resets_consecutive_failures(tmp_path):
     cfg, db, clock, fetcher, source = make_env(tmp_path)
     now = now_utc()

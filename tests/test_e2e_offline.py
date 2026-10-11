@@ -13,6 +13,7 @@ import httpx
 import pytest
 
 from dealradar import pipeline
+from dealradar.db import DB
 from dealradar.models import SourceConfig
 
 FIX = Path(__file__).parent / "fixtures"
@@ -206,9 +207,16 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert fryer["badge"] == "corroborated"  # two independent sources in 24 h
     assert len(fryer["credits"]) == 2
     assert fryer["category"] == "kitchen"    # LLM category tag reaches the site
+    # Promo code FRYDAY: Get deal opens the source post with the steps and
+    # the card shows the code.
+    assert fryer["needs_steps"] is True and "FRYDAY" in fryer["codes"]
+    assert fryer["url"] in {c["url"] for c in fryer["credits"]}
     # canonical retailer URL resolved through the redirector, tracking params stripped
-    assert "acmekitchen.example" in fryer["url"]
-    assert "utm" not in fryer["url"]
+    db = DB(env["db"])
+    canon = next(d["canonical_url"] for d in db.all_deals() if "Ninja Foodi" in d["item"])
+    db.close()
+    assert "acmekitchen.example" in canon
+    assert "utm" not in canon
 
     headphones = next(d for i, d in by_item.items() if "X200" in i)
     assert "range" in headphones["flags"]
