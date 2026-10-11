@@ -87,6 +87,31 @@ verify:
 dedupe:
   fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
 
+keepa:
+  # The /deal lane on the 20 token/min plan (~200 tokens per 10-minute
+  # pull). Each /deal page is 150 rows for ~5 tokens. The first page of each
+  # query runs whenever the bucket holds 10 tokens; every further page only
+  # while reserve_tokens stay untouched for the product calls (price
+  # rechecks, photos). Paging also stops on a short page, a 429, the time
+  # budget, the page cap or the post cap below.
+  amazon_pages_per_pull: 6         # Amazon's own price >=35% under its 90-day average
+  warehouse_pages_per_pull: 12     # a third FRESH (newest warehouse deals first),
+                                   # the rest DEEP (90-day list; its page window
+                                   # rotates across pulls via db meta keepa_deep_page)
+  reserve_tokens: 300              # never start an extra page below this
+  amazon_max_posts_per_pull: 60    # posts emitted per pull (bounds LLM parses;
+  warehouse_max_posts_per_pull: 150  #  only unseen posts ever parse)
+  warehouse_min_drop_pct: 45       # used price this far under the HONEST new price
+                                   # (5 points under publish.used_min_pct)
+  warehouse_min_new_price: 25.0    # honest new price floor: no $10 phone cases
+
+woot:
+  # One /feed/All GET per run (the key's quota is 1,000 requests/day). Every
+  # offer is scored from its structured prices; offers within 5 points of
+  # their publish floor (used_min_pct for refurb/used/open box, min_pct for
+  # new) are mapped deepest-first, used before new, up to this cap.
+  max_items_per_run: 300
+
 telegram:
   channels: []                 # public channels to READ via MTProto, e.g. ["somepublicdealchannel"]
   messages_per_minute: 15

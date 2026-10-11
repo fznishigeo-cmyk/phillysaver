@@ -7,11 +7,18 @@ Prices are written into the post text verbatim (``Sale price: $49.99`` /
 ``List price: $199.99``) so the evidence-quote check can match them exactly;
 Woot's ``Condition`` field is quoted too (Woot sells a lot of refurbs, which
 must carry the used/open-box floor, never pass as new).
+
+The All feed holds thousands of offers, mostly shallow or unpriced, so every
+offer is scored from its structured prices before mapping: only offers whose
+discount off their own list price comes within 5 points of their publish
+floor are mapped, used/refurb/open-box first, deepest first (a selection
+prefilter only: savings for publishing are still computed in savings.py).
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -31,9 +38,75 @@ log = logging.getLogger("dealradar.fetch.woot")
 
 FEED_URL = "https://developer.woot.com/feed/All"
 
-#: Cap on offers mapped per run: bounds LLM spend. The All feed holds
-#: thousands of offers; content-hash dedupe means only unseen ones parse.
-MAX_ITEMS_PER_RUN = 150
+#: Selection ingests offers this many points under their publish floor
+#: (near-misses still feed price history), like the Keepa lanes do.
+FLOOR_SLACK_PCT = 5.0
+
+#: A [min, max] price range wider than this (max/min) has no single price
+#: to score: "from $9.99 to $49.99" is a menu, not a deal.
+MAX_RANGE_RATIO = 1.10
+
+#: Condition words that make an offer used for the floor (Woot's own labels:
+#: "Refurbished", "Manufacturer Refurbished", "Used - Like New", "Open Box",
+#: "Grade A", ...). Anything not plainly "New" counts as used as well.
+_USED_RE = re.compile(
+    r"refurb|recondition|renewed|\bused\b|open[\s-]*box|pre[\s-]*owned|"
+    r"\bgrade\b|like[\s-]*new", re.I)
+_NEW_RE = re.compile(r"(brand[\s-]+)?new\b", re.I)
+
+
+def _is_used(condition: str) -> bool:
+    c = condition.strip()
+    if not c:
+        return False  # unlabeled: the post carries no used signal either
+    return bool(_USED_RE.search(c)) or not _NEW_RE.match(c)
+
+
+def _num(v: Any) -> float | None:
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.strip().lstrip("$").replace(",", ""))
+        except ValueError:
+            return None
+    return None
+
+
+def _single_price(value: Any, *, high: bool) -> float | None:
+    """One price from Woot's shapes (number, string, [min, max] list or
+    ``{"Minimum", "Maximum"}``): the high end for a sale price, the low end
+    for a list price (the conservative discount). None when missing, zero,
+    or a range whose ends differ by more than 10%."""
+    if isinstance(value, dict):
+        vals = [value.get("Minimum"), value.get("Maximum")]
+    elif isinstance(value, (list, tuple)):
+        vals = list(value)
+    else:
+        vals = [value]
+    nums = [n for n in (_num(v) for v in vals) if n is not None]
+    if not nums or min(nums) <= 0:
+        return None
+    lo, hi = min(nums), max(nums)
+    if hi > lo * MAX_RANGE_RATIO:
+        return None
+    return hi if high else lo
+
+
+def _score(item: dict, cfg: AppConfig) -> tuple[float, bool] | None:
+    """(percent off list, is_used) for an offer worth mapping, else None."""
+    sale = _single_price(item.get("SalePrice"), high=True)
+    list_price = _single_price(item.get("ListPrice"), high=False)
+    if sale is None or list_price is None or sale >= list_price:
+        return None  # no list price, or priced at/above it: no deal
+    pct = 100.0 * (1.0 - sale / list_price)
+    used = _is_used(str(item.get("Condition") or ""))
+    floor = cfg.used_min_pct if used else cfg.min_pct
+    if pct < floor - FLOOR_SLACK_PCT:
+        return None
+    return pct, used
 
 
 def _check_deadline(deadline: float | None) -> None:
@@ -119,19 +192,32 @@ class WootAdapter(SourceAdapter):
         else:
             items = []
 
+        # Score every live offer, then map used before new, deepest first
+        # (feed order breaks ties), up to the per-run cap.
+        scored: list[tuple[bool, float, int, dict]] = []
+        for idx, item in enumerate(items):
+            if not isinstance(item, dict) or item.get("IsSoldOut"):
+                continue
+            ends = util.parse_iso(str(item.get("EndDate") or ""))
+            if ends is not None and ends <= now:
+                continue  # already over
+            score = _score(item, cfg)
+            if score is not None:
+                pct, used = score
+                scored.append((not used, -pct, idx, item))
+        scored.sort(key=lambda s: s[:3])
+        n_used = sum(1 for s in scored if not s[0])
+
         posts: list[RawPost] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            if item.get("IsSoldOut"):
-                continue
+        for _new, _pct, _idx, item in scored:
+            if len(posts) >= cfg.woot_max_items_per_run:
+                break
             post = self._map_item(item, source, now)
             if post is not None:
                 posts.append(post)
-            if len(posts) >= MAX_ITEMS_PER_RUN:
-                break
-        log.info("woot %s: %d raw offers -> mapped %d posts",
-                 source.name, len(items), len(posts))
+        log.info("woot: %d raw offers -> %d scored (%d used, %d new) -> "
+                 "%d mapped", len(items), len(scored), n_used,
+                 len(scored) - n_used, len(posts))
         return posts
 
     @staticmethod

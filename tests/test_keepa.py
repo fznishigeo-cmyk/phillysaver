@@ -14,9 +14,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.errors import AdapterNotConfigured
 from dealradar.fetch.base import run_source
-from dealradar.fetch.keepa import (MAX_DEALS_PER_RUN,
-                                   WAREHOUSE_MAX_DEALS_PER_RUN,
-                                   KeepaDealsAdapter)
+from dealradar.fetch.keepa import KeepaDealsAdapter
 from dealradar.keepa_budget import (META_KEY, MIN_FOR_DEAL_QUERY,
                                     KeepaBudget)
 from dealradar.models import SourceConfig
@@ -43,6 +41,12 @@ def _mock_client(handler, cfg: AppConfig) -> httpx.Client:
                         headers={"User-Agent": cfg.resolved_user_agent()})
 
 
+def _adapter(handler, cfg: AppConfig) -> KeepaDealsAdapter:
+    """Adapter on a mock transport; the 1 req/s gap is recorded, not slept."""
+    return KeepaDealsAdapter(http_client=_mock_client(handler, cfg),
+                             sleep_fn=lambda s: None)
+
+
 def _deals_payload():
     def row(asin, title, current, avg):
         return {"asin": asin, "title": title,
@@ -56,6 +60,57 @@ def _deals_payload():
     rows += [row(f"B0FILLER{i:03d}", f"Filler {i}", 1000, 5000)
              for i in range(30)]  # exercises the per-run cap
     return {"deals": {"dr": rows}}
+
+
+def _amazon_row(i: int) -> dict:
+    """An Amazon-price row that maps: 80% under its 90-day average."""
+    return {"asin": f"B0AMZ{i:05d}", "title": f"New gadget {i}",
+            "current": [1000], "avg": [5000]}
+
+
+def _wh_row(i: int, prefix: str = "B0WHS") -> dict:
+    """A warehouse row that maps: $12.07 used vs Amazon's own $81.55."""
+    return {"asin": f"{prefix}{i:05d}", "title": f"Open box {prefix} {i}",
+            "current": [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 1207]}
+
+
+class FakeKeepa:
+    """A paging /deal endpoint: each query shape serves its list in pages of
+    150, keyed by the selection exactly as the adapter sends it."""
+
+    def __init__(self, amazon=(), fresh=(), deep=(), tokens=None, fail=None):
+        self.lists = {"amazon": list(amazon), "fresh": list(fresh),
+                      "deep": list(deep)}
+        self.tokens = tokens          # None: responses carry no token fields
+        self.fail = dict(fail or {})  # (shape, page) -> httpx.Response
+        self.calls: list[tuple[str, int]] = []
+
+    @staticmethod
+    def shape(sel: dict) -> str:
+        if sel["priceTypes"] == [0]:
+            assert (sel["dateRange"], sel["sortType"]) == (3, 4)
+            assert sel["salesRankRange"] == [1, 30000]
+            return "amazon"
+        assert sel["priceTypes"] == [9]
+        assert sel["salesRankRange"] == [1, 200000]
+        assert sel["minRating"] == 20 and 283155 in sel["excludeCategories"]
+        if sel["sortType"] == 1:      # newest first, last 24 hours
+            assert sel["dateRange"] == 0
+            return "fresh"
+        assert (sel["dateRange"], sel["sortType"]) == (3, 2)
+        return "deep"
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        sel = json.loads(request.url.params["selection"])
+        shape, page = self.shape(sel), sel["page"]
+        self.calls.append((shape, page))
+        if (shape, page) in self.fail:
+            return self.fail[(shape, page)]
+        body = {"deals": {"dr": self.lists[shape][page * 150:(page + 1) * 150]}}
+        if self.tokens is not None:
+            self.tokens -= 5
+            body.update(tokensLeft=self.tokens, refillRate=20)
+        return httpx.Response(200, json=body)
 
 
 class TestKeepaAdapter:
@@ -73,10 +128,10 @@ class TestKeepaAdapter:
             assert "domainId" in request.url.params["selection"]
             return httpx.Response(200, json=_deals_payload())
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
 
-        assert 1 <= len(posts) <= MAX_DEALS_PER_RUN
+        assert 1 <= len(posts) <= cfg.keepa_amazon_max_posts_per_pull
         first = posts[0]
         assert first.title == "Mega Blender 9000"
         # Verbatim price lines the evidence check will match against.
@@ -107,9 +162,9 @@ class TestKeepaAdapter:
 
         def handler(request: httpx.Request) -> httpx.Response:
             sel = json.loads(request.url.params["selection"])
-            assert sel["dateRange"] == 3  # drop vs the 90-day average
             assert sel["minRating"] == 20
             if sel["priceTypes"] == [0]:  # amazon-price pass
+                assert sel["dateRange"] == 3  # drop vs the 90-day average
                 # Strict popularity net for the new-price lane.
                 assert sel["salesRankRange"] == [1, 30000]
                 return httpx.Response(
@@ -120,7 +175,7 @@ class TestKeepaAdapter:
             return httpx.Response(
                 200, json={"deals": {"dr": []}, "tokensLeft": 275})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
         assert len(posts) == 1
         assert "On sale for $49.99" in posts[0].text
@@ -145,7 +200,7 @@ class TestKeepaAdapter:
             return httpx.Response(
                 200, json={"deals": {"dr": [sparse]}, "tokensLeft": 250})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         assert adapter.fetch_posts(SRC, None, None, cfg, NOW, None) == []
 
     def test_warehouse_pass_maps_used_vs_live_new_price(self, cfg, monkeypatch):
@@ -169,7 +224,7 @@ class TestKeepaAdapter:
             return httpx.Response(
                 200, json={"deals": {"dr": [deep, shallow, no_new, junk]}})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
         # Only the deep drop maps: 26%-off, no-live-new-price, and
         # low-value junk (new price under $25) are all skipped.
@@ -196,17 +251,17 @@ class TestKeepaAdapter:
             calls.append(request.url.params["selection"])
             return httpx.Response(200, json={"deals": {"dr": []}})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         adapter.fetch_posts(SRC, None, db, cfg, NOW, None)
-        assert len(calls) == 2  # amazon + warehouse queries ran
+        assert len(calls) == 3  # amazon + warehouse fresh + deep queries ran
         # 5 minutes later: inside the window -> no HTTP at all.
         assert adapter.fetch_posts(SRC, None, db, cfg,
                                    NOW + timedelta(minutes=5), None) == []
-        assert len(calls) == 2
+        assert len(calls) == 3
         # 15 minutes later: due again.
         adapter.fetch_posts(SRC, None, db, cfg,
                             NOW + timedelta(minutes=15), None)
-        assert len(calls) == 4
+        assert len(calls) == 6
         db.close()
 
     def test_in_body_api_error_raises_a_source_failure(self, cfg, monkeypatch):
@@ -216,31 +271,24 @@ class TestKeepaAdapter:
             return httpx.Response(200, json={
                 "error": {"type": "parameter", "message": "bad selection"}})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         with pytest.raises(RuntimeError, match="keepa api error"):
             adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
 
-    def test_warehouse_pass_maps_up_to_40_while_amazon_keeps_20(
-            self, cfg, monkeypatch):
-        """The warehouse pass is the only used/open-box supply, so it maps
-        twice the Amazon-price pass's cap per pull."""
+    def test_post_caps_come_from_config(self, cfg, monkeypatch):
+        """Each pass maps at most its configured posts per pull (the LLM
+        bound), and paging stops once the cap is full: no tokens are spent
+        on rows that could not be emitted."""
         monkeypatch.setenv("KEEPA_KEY", "kkey")
-        amazon = [{"asin": f"B0AMZ{i:06d}", "title": f"New {i}",
-                   "current": [1000], "avg": [5000]} for i in range(30)]
-        warehouse = [{"asin": f"B0WHS{i:06d}", "title": f"Open box {i}",
-                      "current": [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 1207]}
-                     for i in range(50)]
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            sel = json.loads(request.url.params["selection"])
-            rows = amazon if sel["priceTypes"] == [0] else warehouse
-            return httpx.Response(200, json={"deals": {"dr": rows}})
-
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
-        posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
-        assert MAX_DEALS_PER_RUN == 20 and WAREHOUSE_MAX_DEALS_PER_RUN == 40
-        assert sum(":wh:" not in p.uid for p in posts) == 20
-        assert sum(":wh:" in p.uid for p in posts) == 40
+        assert cfg.keepa_amazon_max_posts_per_pull == 60
+        assert cfg.keepa_warehouse_max_posts_per_pull == 150
+        fake = FakeKeepa(amazon=[_amazon_row(i) for i in range(1000)],
+                         deep=[_wh_row(i) for i in range(1000)])
+        posts = _adapter(fake, cfg).fetch_posts(SRC, None, None, cfg, NOW, None)
+        assert sum(":wh:" not in p.uid for p in posts) == 60
+        assert sum(":wh:" in p.uid for p in posts) == 150
+        # Amazon's cap filled on page 0, the warehouse cap on deep page 0.
+        assert fake.calls == [("amazon", 0), ("fresh", 0), ("deep", 0)]
 
     def test_429_keeps_mapped_posts_and_never_trips_the_breaker(
             self, cfg, monkeypatch, tmp_path):
@@ -263,7 +311,7 @@ class TestKeepaAdapter:
                 "tokensLeft": -2, "refillIn": 31000, "refillRate": 5,
                 "error": {"type": "tokens", "message": "Too Many Requests"}})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         for i in range(4):  # well past circuit_breaker_failures (3)
             # Three minutes apart: the 429 body (-2 tokens, 5/min) lets the
             # budget clear the next pull's query again by then.
@@ -291,7 +339,7 @@ class TestKeepaAdapter:
             return httpx.Response(429, json={
                 "tokensLeft": -2, "refillIn": 24000, "refillRate": 5})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         assert adapter.fetch_posts(SRC, None, db, cfg, NOW, None) == []
         assert len(calls) == 1  # the pull stopped at the first 429
         assert db.meta_get("keepa_last_fetch_at") is None
@@ -324,7 +372,7 @@ class TestKeepaAdapter:
             return httpx.Response(200, json={
                 "deals": {"dr": [row]}, "tokensLeft": 8, "refillRate": 1})
 
-        adapter = KeepaDealsAdapter(http_client=_mock_client(handler, cfg))
+        adapter = _adapter(handler, cfg)
         with caplog.at_level("INFO", logger="dealradar.fetch.keepa"):
             assert adapter.fetch_posts(SRC, None, db, cfg, NOW, None) == []
         assert calls == []
@@ -494,3 +542,320 @@ class TestDailySpendCap:
         assert parser.run_cap_usd == pytest.approx(0.10)
         parser_full = ClaudeParser(cfg, client=FakeClient())
         assert parser_full.run_cap_usd == pytest.approx(cfg.spend_cap_usd_per_run)
+
+
+def _junk_row(i: int, prefix: str = "B0JNK") -> dict:
+    """A row that never maps (no drop, no warehouse price): pages stay full
+    without the post caps stepping in."""
+    return {"asin": f"{prefix}{i:05d}", "title": f"Flat {i}",
+            "current": [5000], "avg": [5000]}
+
+
+class TestKeepaPaging:
+    """The /deal lane uses the token plan: further pages per pull while the
+    reserve for product calls holds, a rotating DEEP warehouse window."""
+
+    @pytest.fixture(autouse=True)
+    def _key(self, monkeypatch):
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+
+    def test_knob_defaults(self, cfg):
+        assert (cfg.keepa_amazon_pages_per_pull,
+                cfg.keepa_warehouse_pages_per_pull,
+                cfg.keepa_reserve_tokens) == (6, 12, 300)
+
+    def test_pages_up_to_the_caps_one_second_apart(self, cfg, tmp_path):
+        """Plenty of tokens and endless lists: 6 Amazon pages, 4 FRESH and
+        8 DEEP warehouse pages (12 = a third fresh, the rest deep), never
+        more, each request a polite second after the last."""
+        db = DB(tmp_path / "state.db")
+        fake = FakeKeepa(amazon=[_junk_row(i, "B0AAA") for i in range(2000)],
+                         fresh=[_junk_row(i, "B0FFF") for i in range(2000)],
+                         deep=[_junk_row(i, "B0DDD") for i in range(3000)],
+                         tokens=1200)
+        slept: list[float] = []
+        adapter = KeepaDealsAdapter(http_client=_mock_client(fake, cfg),
+                                    sleep_fn=slept.append)
+        adapter.fetch_posts(SRC, None, db, cfg, NOW, None)
+        assert fake.calls == ([("amazon", 0)]
+                              + [("fresh", p) for p in range(4)]
+                              + [("deep", p) for p in range(8)]
+                              + [("amazon", p) for p in range(1, 6)])
+        assert slept == [cfg.min_host_interval_s] * 17
+        assert db.meta_get("keepa_deep_page") == "8"
+        assert db.meta_get("keepa_last_fetch_at") is not None
+        db.close()
+
+    def test_short_page_ends_each_query(self, cfg, tmp_path):
+        db = DB(tmp_path / "state.db")
+        fake = FakeKeepa(amazon=[_junk_row(i, "B0AAA") for i in range(200)],
+                         fresh=[_junk_row(i, "B0FFF") for i in range(10)],
+                         deep=[_junk_row(i, "B0DDD") for i in range(160)])
+        _adapter(fake, cfg).fetch_posts(SRC, None, db, cfg, NOW, None)
+        assert fake.calls == [("amazon", 0), ("fresh", 0), ("deep", 0),
+                              ("deep", 1), ("amazon", 1)]
+        assert db.meta_get("keepa_deep_page") == "0"  # list ended: wrap
+        db.close()
+
+    def test_reserve_is_honoured_with_a_fake_budget(self, cfg, tmp_path,
+                                                    monkeypatch):
+        """Each query's FIRST page needs only MIN_FOR_DEAL_QUERY; an extra
+        page never starts unless the estimate minus its ~5 tokens stays at
+        or above reserve_tokens (300). Stopping there is a normal end of
+        the pull, not a cut-short one."""
+        import dealradar.fetch.keepa as keepa_mod
+
+        class FakeBudget:
+            tokens = 318.0
+            saved = False
+
+            def available(self, now=None):
+                return self.tokens
+
+            def allows(self, need, now=None):
+                return self.tokens >= need
+
+            def note(self, payload, now=None):
+                self.tokens -= 5  # what each page costs
+
+            def save(self, db):
+                self.saved = True
+
+        budget = FakeBudget()
+        monkeypatch.setattr(keepa_mod.KeepaBudget, "load",
+                            classmethod(lambda cls, db: budget))
+        started: list[tuple[tuple[str, int], float]] = []
+        fake = FakeKeepa(amazon=[_junk_row(i, "B0AAA") for i in range(900)],
+                         fresh=[_junk_row(i, "B0FFF") for i in range(900)],
+                         deep=[_junk_row(i, "B0DDD") for i in range(900)])
+
+        def handler(request):
+            resp = fake(request)
+            started.append((fake.calls[-1], budget.tokens))
+            return resp
+
+        db = DB(tmp_path / "state.db")
+        _adapter(handler, cfg).fetch_posts(SRC, None, db, cfg, NOW, None)
+        assert fake.calls == [("amazon", 0), ("fresh", 0), ("fresh", 1),
+                              ("deep", 0)]
+        first_pages = {("amazon", 0), ("fresh", 0), ("deep", 0)}
+        for call, tokens in started:
+            if call not in first_pages:
+                assert tokens - 5 >= cfg.keepa_reserve_tokens
+        assert budget.saved
+        assert db.meta_get("keepa_last_fetch_at") is not None
+        db.close()
+
+    def test_real_budget_learns_tokens_left_and_stops_at_the_reserve(
+            self, cfg, tmp_path):
+        db = DB(tmp_path / "state.db")
+        fake = FakeKeepa(amazon=[_junk_row(i, "B0AAA") for i in range(900)],
+                         fresh=[_junk_row(i, "B0FFF") for i in range(900)],
+                         deep=[_junk_row(i, "B0DDD") for i in range(900)],
+                         tokens=330)
+        _adapter(fake, cfg).fetch_posts(SRC, None, db, cfg, NOW, None)
+        # 325 after amazon p0, 320 after fresh p0; extras while >= 305.
+        assert fake.calls == [("amazon", 0), ("fresh", 0), ("fresh", 1),
+                              ("fresh", 2), ("fresh", 3), ("deep", 0)]
+        assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 300
+        db.close()
+
+    def test_429_mid_paging_keeps_posts_and_never_trips_the_breaker(
+            self, cfg, tmp_path):
+        db = DB(tmp_path / "state.db")
+        deep = ([_wh_row(i, "B0DEP") for i in range(5)]
+                + [_junk_row(i, "B0DDD") for i in range(400)])
+        fake = FakeKeepa(
+            amazon=[_amazon_row(i) for i in range(5)],
+            fresh=[_wh_row(i, "B0FRS") for i in range(3)], deep=deep,
+            fail={("deep", 1): httpx.Response(429, json={
+                "tokensLeft": -3, "refillIn": 9000, "refillRate": 20})})
+        posts, ok, error = run_source(SRC, _adapter(fake, cfg), None, db,
+                                      cfg, NOW)
+        assert (ok, error) == (True, "")
+        assert len(posts) == 5 + 3 + 5
+        assert fake.calls == [("amazon", 0), ("fresh", 0), ("deep", 0),
+                              ("deep", 1)]
+        assert db.meta_get("keepa_deep_page") == "1"  # p1 retried next pull
+        assert db.meta_get("keepa_last_fetch_at") is None
+        assert json.loads(db.meta_get(META_KEY))["tokens_left"] == -3
+        db.close()
+
+    def test_deep_window_rotates_across_pulls_and_wraps(self, cfg, tmp_path):
+        """Coverage, not repetition: each pull reads the NEXT deep pages
+        (db meta keepa_deep_page) and a short page wraps back to 0."""
+        cfg.keepa_warehouse_pages_per_pull = 3  # 1 fresh + 2 deep
+        db = DB(tmp_path / "state.db")
+        fake = FakeKeepa(deep=[_junk_row(i, "B0DDD") for i in range(760)])
+        adapter = _adapter(fake, cfg)
+        seen = []
+        for n in range(4):
+            fake.calls.clear()
+            adapter.fetch_posts(SRC, None, db, cfg,
+                                NOW + timedelta(minutes=10 * n), None)
+            seen.append(([p for s, p in fake.calls if s == "deep"],
+                         db.meta_get("keepa_deep_page")))
+        assert seen == [([0, 1], "2"), ([2, 3], "4"), ([4, 5], "0"),
+                        ([0, 1], "2")]
+        db.close()
+
+    def test_rows_deduped_by_asin_across_pages_and_shapes(self, cfg):
+        cfg.keepa_warehouse_max_posts_per_pull = 1000
+        rows = [_wh_row(i) for i in range(160)]
+        fake = FakeKeepa(fresh=rows[:20],                   # also in deep p0
+                         deep=rows[:150] + rows[:5] + rows[150:155])
+        posts = _adapter(fake, cfg).fetch_posts(SRC, None, None, cfg, NOW,
+                                                None)
+        uids = [p.uid for p in posts]
+        assert len(uids) == len(set(uids)) == 155
+        assert ("deep", 1) in fake.calls
+
+    def test_a_failing_later_page_never_fails_the_pull(self, cfg, tmp_path):
+        """A refused later page (in-body error, 4xx: past the end) ends the
+        list and wraps the window; a hiccup (5xx) stops paging and retries
+        that page next pull. Either way the source stays healthy — a
+        stuck window could otherwise trip the breaker every pull."""
+        db = DB(tmp_path / "state.db")
+        deep = [_wh_row(i, "B0DEP") for i in range(3)] + \
+            [_junk_row(i, "B0DDD") for i in range(1500)]
+        refused = httpx.Response(200, json={"error": {"type": "page"}})
+        fake = FakeKeepa(deep=deep, fail={("deep", 1): refused})
+        adapter = _adapter(fake, cfg)
+        posts, ok, _ = run_source(SRC, adapter, None, db, cfg, NOW)
+        assert ok and len(posts) == 3
+        assert db.meta_get("keepa_deep_page") == "0"
+        fake.fail = {("deep", 1): httpx.Response(503, text="busy")}
+        posts, ok, _ = run_source(SRC, adapter, None, db, cfg,
+                                  NOW + timedelta(minutes=10))
+        assert ok and db.meta_get("keepa_deep_page") == "1"
+        # A window left past the end of a shrunken list wraps, not fails.
+        db.meta_set("keepa_deep_page", "7")
+        fake.fail = {("deep", 7): refused}
+        posts, ok, _ = run_source(SRC, adapter, None, db, cfg,
+                                  NOW + timedelta(minutes=20))
+        assert ok and db.meta_get("keepa_deep_page") == "0"
+        health = {r["source_name"]: r for r in db.all_source_health()}
+        assert health[SRC.name]["consecutive_failures"] == 0
+        db.close()
+
+
+#: The live wart: a $5.70 open-box phone case "90% off" a $58.95 lone
+#: marketplace NEW offer; its 90-day average new price is $12.99.
+BURGA = {"asin": "B0BURGA001", "title": "BURGA Phone Case (open box)",
+         "current": [-1, 5895, -1, -1, -1, -1, -1, -1, -1, 570],
+         "avg": [[-1, 1450], [-1, 1320], [-1, 1305], [-1, 1299]]}
+
+
+def _wh(row: dict, **kw):
+    return KeepaDealsAdapter._map_warehouse_row(row, SRC, NOW, **kw)
+
+
+class TestWarehouseNewPriceBasis:
+    def test_amazon_own_price_is_preferred(self):
+        row = {"asin": "B0AMZBASIS", "title": "Robot Vacuum",
+               "current": [8155, 4000, -1, -1, -1, -1, -1, -1, -1, 1207],
+               "avg": [[8000, 3600], [8100, 3550], [8150, 3500],
+                       [8155, 3500]]}
+        p = _wh(row)
+        assert "New condition price: $81.55." in p.text
+        assert "New price basis: Amazon's own new price." in p.text
+
+    def test_burga_case_uses_the_90_day_average_new_price(self, cfg,
+                                                          monkeypatch):
+        p = _wh(BURGA, min_new_price=10.0)
+        assert p is not None and p.uid == "B0BURGA001:wh:5.70"
+        assert "yours for $5.70." in p.text
+        assert "New condition price: $12.99." in p.text
+        assert "New price basis: lowest new price (90-day average)." in p.text
+        assert "58.95" not in p.text  # the inflated lone offer is gone
+        assert round(100 * (1 - 5.70 / 12.99)) == 56  # >= 45: mapped
+        # At the default $25 value floor the honest basis ($12.99) shows
+        # it for the low-value item it is: never mapped.
+        assert cfg.keepa_warehouse_min_new_price == 25.0
+        assert _wh(BURGA,
+                   min_new_price=cfg.keepa_warehouse_min_new_price) is None
+        # The knob reaches the adapter.
+        monkeypatch.setenv("KEEPA_KEY", "kkey")
+        cfg.keepa_warehouse_min_new_price = 10.0
+        posts = _adapter(FakeKeepa(deep=[BURGA]), cfg).fetch_posts(
+            SRC, None, None, cfg, NOW, None)
+        assert [q.uid for q in posts] == ["B0BURGA001:wh:5.70"]
+
+    def test_lone_third_party_offer_without_history_is_no_basis(self):
+        lone = {k: v for k, v in BURGA.items() if k != "avg"}
+        assert _wh(lone, min_new_price=10.0) is None
+        sparse = dict(BURGA, avg=[[-1, -1], [-1, -1], [-1, -1], [-1, 1299]])
+        assert _wh(sparse, min_new_price=10.0) is None
+        nothing_new = dict(BURGA, current=[-1] * 9 + [570])
+        assert _wh(nothing_new, min_new_price=1.0) is None
+
+    def test_current_offer_under_its_average_is_the_basis(self):
+        row = {"asin": "B0OFFERLOW", "title": "Stand Mixer",
+               "current": [-1, 3000, -1, -1, -1, -1, -1, -1, -1, 1000],
+               "avg": [[-1, 5200], [-1, 5100], [-1, 5000], [-1, 4999]]}
+        p = _wh(row)
+        assert "New condition price: $30.00." in p.text
+        assert "New price basis: lowest new price (current offer)." in p.text
+
+    def test_drop_gate_is_a_knob(self):
+        row = {"asin": "B0GATEKNOB", "title": "Blender",
+               "current": [10000, 10000, -1, -1, -1, -1, -1, -1, -1, 5200]}
+        assert _wh(row) is not None                  # 48% off clears 45
+        assert _wh(row, min_drop_pct=50.0) is None
+
+
+class TestKeepaContentHash:
+    """An unchanged offer hashes identically pull after pull: Keepa's
+    time-weighted averages drift by cents and must not re-parse it."""
+
+    @staticmethod
+    def _amazon(current, avg):
+        return KeepaDealsAdapter._map_row(
+            {"asin": "B0HASHTEST", "title": "Mega Blender",
+             "current": [current], "avg": [avg]}, SRC, NOW)
+
+    def test_amazon_average_drift_keeps_the_hash(self):
+        a, b = self._amazon(2999, 14999), self._amazon(2999, 15003)
+        assert "Regular price (90-day average on Amazon): $150.03." in b.text
+        assert a.content_hash == b.content_hash
+        # A real move re-parses: a new price, or a new whole-percent drop.
+        assert self._amazon(2899, 14999).content_hash != a.content_hash
+        assert self._amazon(2999, 9999).content_hash != a.content_hash
+
+    def test_warehouse_average_basis_drift_keeps_the_hash(self):
+        drifted = dict(BURGA, avg=[[-1, 1450], [-1, 1320], [-1, 1305],
+                                   [-1, 1301]])
+        a, b = _wh(BURGA, min_new_price=10), _wh(drifted, min_new_price=10)
+        assert "New condition price: $13.01." in b.text
+        assert a.content_hash == b.content_hash
+        assert _wh(BURGA, min_new_price=10).content_hash == a.content_hash
+
+
+class TestKeepaWootConfig:
+    def test_knobs_load_with_defaults_when_absent(self, tmp_path):
+        path = tmp_path / "config.yaml"
+        path.write_text("publish:\n  min_pct: 40\n")
+        c = load_config(path)
+        assert (c.keepa_warehouse_pages_per_pull, c.keepa_amazon_pages_per_pull,
+                c.keepa_reserve_tokens, c.keepa_warehouse_max_posts_per_pull,
+                c.keepa_amazon_max_posts_per_pull,
+                c.keepa_warehouse_min_drop_pct,
+                c.keepa_warehouse_min_new_price,
+                c.woot_max_items_per_run) == (12, 6, 300, 150, 60, 45, 25, 300)
+
+    def test_knobs_load_from_their_sections(self, tmp_path):
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "keepa:\n  warehouse_pages_per_pull: 20\n"
+            "  amazon_pages_per_pull: 0\n  reserve_tokens: 500\n"
+            "  warehouse_max_posts_per_pull: 90\n"
+            "  amazon_max_posts_per_pull: 30\n  warehouse_min_drop_pct: 50\n"
+            "  warehouse_min_new_price: 40\n"
+            "woot:\n  max_items_per_run: 120\n")
+        c = load_config(path)
+        assert (c.keepa_warehouse_pages_per_pull, c.keepa_amazon_pages_per_pull,
+                c.keepa_reserve_tokens, c.keepa_warehouse_max_posts_per_pull,
+                c.keepa_amazon_max_posts_per_pull,
+                c.keepa_warehouse_min_drop_pct,
+                c.keepa_warehouse_min_new_price,
+                c.woot_max_items_per_run) == (20, 1, 500, 90, 30, 50, 40, 120)

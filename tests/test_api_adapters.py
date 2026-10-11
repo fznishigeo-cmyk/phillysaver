@@ -200,7 +200,7 @@ class TestWoot:
             {"OfferId": "off-2", "Title": "MacBook Air M2 (Refurbished)",
              "Site": "Computers",
              "Url": "https://computers.woot.com/offers/macbook-air",
-             "SalePrice": {"Minimum": 499.99, "Maximum": 649.99},
+             "SalePrice": {"Minimum": 199.99, "Maximum": 209.99},
              "ListPrice": 1199.0, "Condition": "Refurbished",
              "IsSoldOut": False},
             {"OfferId": "off-3", "Title": "Gone Already",
@@ -219,10 +219,10 @@ class TestWoot:
         adapter = WootAdapter(http_client=_mock_client(handler, cfg))
         posts = adapter.fetch_posts(self.SRC, None, None, cfg, NOW, None)
 
-        # Sold-out offers never become posts.
-        assert [p.uid for p in posts] == ["off-1", "off-2"]
+        # Sold-out offers never become posts; used/refurb offers map first.
+        assert [p.uid for p in posts] == ["off-2", "off-1"]
 
-        first = posts[0]
+        refurb, first = posts
         assert first.title == "RoboVac 11S"
         assert first.url == "https://electronics.woot.com/offers/robot-vacuum"
         # Prices appear verbatim so evidence quotes can match them exactly.
@@ -235,8 +235,7 @@ class TestWoot:
                                               tzinfo=timezone.utc)
         assert first.fetched_at == NOW
 
-        refurb = posts[1]
-        assert "Sale price: $499.99 - $649.99" in refurb.text  # price range
+        assert "Sale price: $199.99 - $209.99" in refurb.text  # price range
         assert "Condition: Refurbished." in refurb.text  # used-floor signal
 
 

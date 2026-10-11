@@ -139,6 +139,17 @@ class AppConfig:
     newsletter_timezone: str = "America/New_York"
     newsletter_max_per_run: int = 200  # messages per run; the rest ride the next run
 
+    # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
+    keepa_amazon_pages_per_pull: int = 6
+    keepa_warehouse_pages_per_pull: int = 12
+    keepa_reserve_tokens: float = 300.0       # left untouched for product calls
+    keepa_amazon_max_posts_per_pull: int = 60
+    keepa_warehouse_max_posts_per_pull: int = 150
+    keepa_warehouse_min_drop_pct: float = 45.0  # used price vs honest new price
+    keepa_warehouse_min_new_price: float = 25.0
+    # -- woot --
+    woot_max_items_per_run: int = 300
+
     # -- retention / flags --
     posts_seen_days: int = 30
     deals_days: int = 14
@@ -239,6 +250,24 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.newsletter_timezone = g("newsletter", "timezone", default=cfg.newsletter_timezone)
     cfg.newsletter_max_per_run = max(1, int(g("newsletter", "max_per_run",
                                               default=cfg.newsletter_max_per_run)))
+
+    cfg.keepa_amazon_pages_per_pull = max(1, int(g(
+        "keepa", "amazon_pages_per_pull", default=cfg.keepa_amazon_pages_per_pull)))
+    cfg.keepa_warehouse_pages_per_pull = max(1, int(g(
+        "keepa", "warehouse_pages_per_pull", default=cfg.keepa_warehouse_pages_per_pull)))
+    cfg.keepa_reserve_tokens = max(0.0, float(g(
+        "keepa", "reserve_tokens", default=cfg.keepa_reserve_tokens)))
+    cfg.keepa_amazon_max_posts_per_pull = max(0, int(g(
+        "keepa", "amazon_max_posts_per_pull", default=cfg.keepa_amazon_max_posts_per_pull)))
+    cfg.keepa_warehouse_max_posts_per_pull = max(0, int(g(
+        "keepa", "warehouse_max_posts_per_pull",
+        default=cfg.keepa_warehouse_max_posts_per_pull)))
+    cfg.keepa_warehouse_min_drop_pct = float(g(
+        "keepa", "warehouse_min_drop_pct", default=cfg.keepa_warehouse_min_drop_pct))
+    cfg.keepa_warehouse_min_new_price = float(g(
+        "keepa", "warehouse_min_new_price", default=cfg.keepa_warehouse_min_new_price))
+    cfg.woot_max_items_per_run = max(0, int(g(
+        "woot", "max_items_per_run", default=cfg.woot_max_items_per_run)))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))
