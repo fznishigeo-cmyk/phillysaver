@@ -222,6 +222,15 @@ class Deal:
     # (inconclusive offers scan, stale data): the deal waits a retry window
     # instead of being re-asked, and paid for, on every run.
     recheck_tried_at: str = ""
+    # ISO UTC of a live check that found the offer gone or its price moved:
+    # one reading is not enough to kill a deal; a second, at least
+    # _CONFIRM_GONE_H later, is (live: Keepa missed a Warehouse offer at
+    # 01:23 that its deals feed listed again, same price, at 07:01).
+    gone_suspect_at: str = ""
+    # Why a dead deal died: "confirmed" (two live checks), "api_ended" (the
+    # store's own API says it ended), "stated_expiry" (a post's end date
+    # passed) or "post_says_over". Only the first two are shown as GONE.
+    death: str = ""
     # The deal's link is one several products of a post or article shared
     # (a store or sale page): it names no product, so no photo is ever
     # matched to it — not the post's, the article's or the retailer's.

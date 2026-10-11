@@ -248,6 +248,9 @@ _RECHECK_EVERY_USED_H = 6.0
 #: Retry window for a new-condition deal whose recheck answered without a
 #: verdict (Keepa data older than the deal's price): 1 token, so hourly.
 _RETRY_NEW_H = 1.0
+#: A live check that says "gone" is asked again this long after; only the
+#: second agreeing reading kills the deal (models.Deal.gone_suspect_at).
+_CONFIRM_GONE_H = 1.0
 #: Early (in-window) Keepa calls per run made only to fetch a missing photo
 #: (1 token each). The shared token budget (keepa_budget) is the real
 #: brake: these run only while the bucket holds MIN_FOR_IMAGE_BACKFILL,
@@ -755,6 +758,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             continue
         used = is_used_deal(deal)
         every = _RECHECK_EVERY_USED_H if used else _RECHECK_EVERY_H
+        if deal.get("gone_suspect_at"):
+            every = _CONFIRM_GONE_H  # a suspect is asked again soon
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
         in_window = last is not None and now - last < timedelta(hours=every)
         if in_window and (used or not image_backfill or deal.get("image_url")
@@ -802,6 +807,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             if verdict:
                 payload["status"] = "alive"
                 payload["died_at"] = ""
+                payload["death"] = ""
                 payload["price_since"] = util.iso(now)
                 payload["flags"] = [f for f in payload.get("flags") or []
                                     if f != "price_moved"]
@@ -811,9 +817,28 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                            status="alive" if verdict else None)
             return
         if verdict:
+            payload["gone_suspect_at"] = ""
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            return
+        # One "gone" reading is not enough: the first marks the deal
+        # suspect (still on the wall) and asks again after _CONFIRM_GONE_H;
+        # only a second reading kills it, as a confirmed death.
+        if not deal.get("gone_suspect_at"):
+            payload["gone_suspect_at"] = util.iso(now)
+            db.update_deal(deal["dedupe_key"], payload=payload)
+            stats["suspect"] = stats.get("suspect", 0) + 1
+            log.info("price recheck: %s looks over; asking again in %.0f h "
+                     "before marking it dead", deal.get("dedupe_key"), _CONFIRM_GONE_H)
+            return
+        suspect = util.parse_iso(deal.get("gone_suspect_at") or "")
+        if suspect is not None and now - suspect < timedelta(hours=_CONFIRM_GONE_H):
+            # Too soon to count as the second reading (an early photo-only
+            # batch asked again): keep waiting.
             db.update_deal(deal["dedupe_key"], payload=payload)
             return
         stats["dead"] += 1
+        payload["death"] = "confirmed"
+        payload["gone_suspect_at"] = ""
         flags = list(payload.get("flags") or [])
         if "price_moved" not in flags:
             flags.append("price_moved")
@@ -1097,6 +1122,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             deals_upserted += 1
             if text_marks_dead(post.text):
                 res["payload"]["died_at"] = util.iso(now)
+                res["payload"]["death"] = "post_says_over"
                 db.update_deal(res["dedupe_key"], payload=res["payload"],
                                status="dead")
         summary["deals_upserted"] = deals_upserted

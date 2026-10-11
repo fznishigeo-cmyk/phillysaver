@@ -22,6 +22,10 @@ from .util import parse_iso
 
 log = logging.getLogger("dealradar.rank")
 
+#: Deaths the site may show as GONE: two live checks agreed, or the
+#: store's own API ended the deal (models.Deal.death).
+VERIFIED_DEATHS = frozenset({"confirmed", "api_ended"})
+
 
 def _age_hours(first_seen_at: str, now: datetime) -> float:
     dt = parse_iso(first_seen_at)
@@ -139,6 +143,11 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
                 # No stamp, or dead too long: off the page. A fresh death
                 # stays briefly as honest "just missed it" proof.
                 if died is None or now - died > max_dead_age:
+                    continue
+                # Only a death we verified is shown as GONE (operator:
+                # "make sure the deals are really expired"); a post's end
+                # date or wording leaves the wall quietly instead.
+                if deal.get("death") not in VERIFIED_DEATHS:
                     continue
             probe = dict(deal)
             probe["status"] = "alive"  # dead rows: test the other gates only

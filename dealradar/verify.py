@@ -107,8 +107,15 @@ def refresh_tiers(db, cfg, now: datetime) -> None:
         db.update_deal(deal["dedupe_key"], verify_tier=tier)
 
 
+#: Sources whose end date comes from the store's own API (Woot's EndDate):
+#: a deal seen ONLY there ended for sure when it passes ("api_ended").
+API_END_SOURCES = frozenset({"woot"})
+
+
 def mark_expired_dead(db, cfg, now: datetime) -> int:
-    """Flip alive deals whose expires_at has passed to status 'dead'."""
+    """Flip alive deals whose expires_at has passed to status 'dead',
+    recording why: "api_ended" when only a store API vouched for the end
+    date, else "stated_expiry" (a post said so; never shown as GONE)."""
     n = 0
     for deal in db.all_deals(status="alive"):
         expires = deal.get("expires_at") or ""
@@ -119,6 +126,9 @@ def mark_expired_dead(db, cfg, now: datetime) -> int:
             payload = {k: v for k, v in deal.items()
                        if k not in ("id", "normalized_item")}
             payload["died_at"] = iso(now)
+            seen = {s.get("source_name") for s in db.sightings_for(deal["id"])}
+            payload["death"] = ("api_ended" if seen and seen <= API_END_SOURCES
+                                else "stated_expiry")
             db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
             n += 1
     if n:

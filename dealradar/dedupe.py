@@ -129,6 +129,19 @@ def _merge_online_only(old: str, new: str) -> str:
     return old
 
 
+def _revivable_death(existing: dict[str, Any]) -> bool:
+    """Whether a later sighting may undo this death: any recorded reason but
+    a source's own "sold out"/"expired" post; for rows that predate the
+    reason, only a live recheck's kill (the 'price_moved' flag, or the death
+    stamped by the recheck itself)."""
+    death = existing.get("death") or ""
+    if death:
+        return death != "post_says_over"
+    rechecked = existing.get("price_rechecked_at") or ""
+    return ("price_moved" in (existing.get("flags") or [])
+            or bool(rechecked and rechecked == existing.get("died_at")))
+
+
 def _merge_expires(old: str, new: str) -> str:
     """Keep the earliest non-empty expiry (ISO strings)."""
     if not old:
@@ -373,12 +386,20 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         died = util.parse_iso(existing.get("died_at") or "")
         after_death = (post.published_at is None or died is None
                        or post.published_at > died)
+        # A live check's kill is undone this way (live: a recheck killed
+        # the Prime Guard DEF Warehouse offer at 01:23 and Keepa's deals
+        # feed listed it again, same price, at 07:01, but the deal stayed
+        # dead because its flag was gone). A source's own "sold out" is
+        # not (another blog's repost may be stale), nor a passed end date.
+        exp = util.parse_iso(merged_expires or "")
         revived = (fresh and existing.get("status") == "dead" and backed
-                   and "price_moved" in (existing.get("flags") or [])
-                   and after_death)
+                   and after_death and _revivable_death(existing)
+                   and (exp is None or exp >= now))
         if revived:
             payload["status"] = "alive"
             payload["died_at"] = ""
+            payload["death"] = ""
+            payload["gone_suspect_at"] = ""
             payload["price_rechecked_at"] = ""
             payload["price_since"] = util.iso(now)
             payload["flags"] = [f for f in payload.get("flags") or []

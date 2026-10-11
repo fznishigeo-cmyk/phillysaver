@@ -209,6 +209,68 @@ class TestCarefulRevival:
         db.close()
 
 
+    def test_a_recheck_kill_without_its_flag_is_undone(self, tmp_path):
+        """Live: the Prime Guard DEF Warehouse offer died at its recheck
+        (price_rechecked_at == died_at) with no 'price_moved' flag left, so
+        Keepa's later sighting at the same price never revived it."""
+        db, cfg, sav, key = self._setup(tmp_path, [])
+        row = db.get_deal(key)
+        db.update_deal(key, payload=dict(row, price_rechecked_at=row["died_at"]))
+        newer = _post("keepa_amazon_drops", "k1", NOW + timedelta(hours=6))
+        res = dedupe.upsert_extracted(db, _ext(), sav, newer, cfg, NOW + timedelta(hours=6))
+        assert res["revived"] is True
+        row = db.get_deal(key)
+        assert row["status"] == "alive" and row["death"] == "" and row["died_at"] == ""
+        db.close()
+
+    def test_a_confirmed_death_is_undone_by_a_later_sighting(self, tmp_path):
+        db, cfg, sav, key = self._setup(tmp_path, [])
+        db.update_deal(key, payload=dict(db.get_deal(key), death="confirmed"))
+        newer = _post("keepa_amazon_drops", "k2", NOW + timedelta(hours=1))
+        assert dedupe.upsert_extracted(db, _ext(), sav, newer, cfg,
+                                       NOW + timedelta(hours=1))["revived"] is True
+        db.close()
+
+
+def test_only_verified_deaths_show_as_gone(tmp_path):
+    """Operator: "make sure the deals are really expired". The page shows a
+    dead deal as GONE only when two live checks agreed or the store's own
+    API ended it; a post's end date or wording leaves the wall quietly."""
+    from dealradar import rank
+
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()  # site floor 70%
+    sav = make_savings(final=19.0, regular=99.0, pct=80.8, abs_s=80.0)
+    for i, death in enumerate(["confirmed", "api_ended", "stated_expiry",
+                               "post_says_over", ""]):
+        ext = make_extracted(item=f"Shelf {i}", store="Walmart",
+                             product_url=f"https://www.walmart.com/ip/{i}")
+        key = dedupe.upsert_extracted(db, ext, sav, _post("blogA", f"g{i}", NOW), cfg, NOW)["dedupe_key"]
+        db.update_deal(key, payload=dict(db.get_deal(key), died_at=util.iso(NOW), death=death),
+                       status="dead")
+    shown = {d["death"] for d in rank.site_deals(db, cfg, NOW + timedelta(hours=1))
+             if d["status"] == "dead"}
+    assert shown == {"confirmed", "api_ended"}
+    db.close()
+
+
+def test_expiry_deaths_record_whether_a_store_api_vouched(tmp_path):
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    sav = make_savings(final=39.0, regular=99.0, pct=60.6, abs_s=60.0)
+    keys = {}
+    for source in ("woot", "hip2save"):
+        ext = make_extracted(item=f"Lamp {source}", store="Woot",
+                             product_url=f"https://www.woot.com/offers/{source}")
+        ext.expires_at = util.iso(NOW + timedelta(minutes=5))
+        keys[source] = dedupe.upsert_extracted(db, ext, sav, _post(source, source, NOW),
+                                               cfg, NOW)["dedupe_key"]
+    assert verify.mark_expired_dead(db, cfg, NOW + timedelta(hours=1)) == 2
+    assert db.get_deal(keys["woot"])["death"] == "api_ended"
+    assert db.get_deal(keys["hip2save"])["death"] == "stated_expiry"
+    db.close()
+
+
 def test_two_runs_sharing_a_key_both_count_toward_the_daily_cap(tmp_path):
     db = DB(tmp_path / "state.db")
     for spend in (0.165, 0.17):  # fast runs at :01 and :11 share :00:fast

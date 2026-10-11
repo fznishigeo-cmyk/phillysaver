@@ -741,19 +741,30 @@ class TestPriceRecheck:
             return {d["dedupe_key"]: False for d in deals}
 
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
+        # One "gone" reading only makes the deal a suspect: still alive,
+        # asked again after _CONFIRM_GONE_H (operator: never show a deal
+        # as expired that is not).
         stats = pipeline._recheck_prices(db, cfg, NOW)
-        assert stats == {"checked": 1, "dead": 1, "image_backfill": 0,
-                         "tokens_short": 0, "used_checked": 0}
+        assert stats == {"checked": 1, "dead": 0, "image_backfill": 0,
+                         "tokens_short": 0, "used_checked": 0, "suspect": 1}
         row = db.get_deal(d["dedupe_key"])
-        assert row["status"] == "dead"
-        assert "price_moved" in row["flags"]
-        assert row["price_rechecked_at"]
-        # Within the 6-hour window nothing is re-checked (and dead deals
-        # are out of the alive set anyway).
-        assert pipeline._recheck_prices(db, cfg, NOW) == {
-            "checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
-            "used_checked": 0}
-        assert len(calls) == 1
+        assert row["status"] == "alive" and row["gone_suspect_at"]
+        assert "price_moved" not in row["flags"]
+        # An early second reading (the photo-only batch may ask again)
+        # never counts: the deal stays alive until the delay has passed...
+        pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=20))
+        assert db.get_deal(d["dedupe_key"])["status"] == "alive"
+        # ...then a second agreeing reading kills it, as a confirmed death.
+        later = NOW + timedelta(hours=pipeline._CONFIRM_GONE_H, minutes=1)
+        stats = pipeline._recheck_prices(db, cfg, later)
+        assert stats["checked"] == 1 and stats["dead"] == 1
+        row = db.get_deal(d["dedupe_key"])
+        assert row["status"] == "dead" and row["death"] == "confirmed"
+        assert "price_moved" in row["flags"] and row["price_rechecked_at"]
+        # Dead deals are out of the alive set: nothing more is checked.
+        n = len(calls)
+        assert pipeline._recheck_prices(db, cfg, later)["checked"] == 0
+        assert len(calls) == n
         db.close()
 
     def test_in_window_recheck_only_for_photoless_deals(self, tmp_path,
@@ -1678,9 +1689,13 @@ class TestCarefulDeath:
 
         monkeypatch.setattr(httpx, "get", fake_get)
         assert sight(449.51, 55.05, NOW)["revived"] is False
+        # Two readings an hour apart (first: suspect, second: dead).
+        suspect_at = NOW + timedelta(minutes=23)
         killed_at = NOW + timedelta(minutes=83)
         answer.update(offers=[_offer(1, 99999)], liveOffersOrder=[0],
-                      stats={"lastOffersUpdate": _km(killed_at)})
+                      stats={"lastOffersUpdate": _km(suspect_at)})
+        assert pipeline._recheck_prices(db, cfg, suspect_at)["suspect"] == 1
+        answer.update(stats={"lastOffersUpdate": _km(killed_at)})
         assert pipeline._recheck_prices(db, cfg, killed_at)["dead"] == 1
         assert "price_moved" in db.get_deal(key)["flags"]
 
@@ -1733,6 +1748,8 @@ class TestCarefulDeath:
                             httpx.Response(200, json={"products": [gone]},
                                            request=httpx.Request("GET", url)))
         sight("keepa_amazon_drops", NOW)
+        # Two readings an hour apart (first: suspect, second: dead).
+        assert pipeline._recheck_prices(db, cfg, t1 - timedelta(hours=1))["suspect"] == 1
         assert pipeline._recheck_prices(db, cfg, t1)["dead"] == 1
         t2 = t1 + timedelta(minutes=15)
         res = sight("slickdeals_frontpage", t2)
