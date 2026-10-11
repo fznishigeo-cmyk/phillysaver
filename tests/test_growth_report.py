@@ -21,7 +21,7 @@ import pytest
 
 from dealradar import cli
 from dealradar.config import AppConfig, load_config
-from dealradar.growth import google, meta, report, stripe_stats
+from dealradar.growth import google, meta, report, site_health, stripe_stats
 
 NOW = datetime(2026, 10, 11, 12, 23, tzinfo=timezone.utc)  # 08:23 in New York
 TODAY_START = int(datetime(2026, 10, 11, 4, 0, tzinfo=timezone.utc).timestamp())
@@ -122,6 +122,14 @@ class FakeApis:
         if host in self.fail:
             # A body that echoes secrets and numbers, to prove it is never logged.
             return httpx.Response(self.fail[host], text=f"denied {GOOGLE_TOKEN} {META_TOKEN} 7316642")
+        if host == "wowpriced.com":
+            if path == "/robots.txt":
+                return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            if path == "/deals.json":
+                return httpx.Response(200, json={"deals": [], "meta": {
+                    "published_at": NOW.isoformat(), "cadence_minutes": 15, "locked_count": 0}})
+            if path == "/":
+                return httpx.Response(200, text='<main id="content"></main>')
         auth = request.headers.get("authorization", "")
         if host == "oauth2.googleapis.com":
             form = parse_qs(request.content.decode())
@@ -218,6 +226,7 @@ def sa_json(private_key: str) -> str:
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
+    monkeypatch.setattr(site_health.time, "sleep", lambda _: None)
     for name in ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
 
@@ -427,6 +436,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     fake = FakeApis()
     with client_for(fake) as client:
         data, status = report.collect(cfg, NOW, client)
+    ok = ok | {"site_health"}
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
     assert set(data) == ok
@@ -479,7 +489,7 @@ def test_invalid_service_account_logs_shape_without_content(cfg, monkeypatch, ca
     assert "character count: 28" in caplog.text
     assert "ends with .json: True" in caplog.text
     assert text not in caplog.text
-    assert not fake.requests
+    assert fake.hosts() == {"wowpriced.com"}
 
 
 def test_other_value_error_messages_remain_private(cfg, monkeypatch, caplog):
@@ -597,6 +607,7 @@ def test_no_channel_sends_nothing(cfg, rsa_key, monkeypatch, caplog):
 
 
 def test_nothing_configured_sends_nothing(cfg, monkeypatch, caplog):
+    cfg.custom_domain = ""
     caplog.set_level(logging.INFO)
     set_telegram(monkeypatch)
     fake = FakeApis()
@@ -608,7 +619,7 @@ def test_nothing_configured_sends_nothing(cfg, monkeypatch, caplog):
 def test_exit_code_only_fails_when_every_configured_section_failed(cfg, rsa_key, monkeypatch):
     set_telegram(monkeypatch)
     monkeypatch.setenv("STRIPE_SECRET_KEY", STRIPE_KEY)
-    fake = FakeApis(fail={"api.stripe.com": 500})
+    fake = FakeApis(fail={"api.stripe.com": 500, "wowpriced.com": 500})
     with client_for(fake) as client:
         assert report.run(cfg, NOW, http_client=client) == 1
     assert fake.telegram[0]["text"].rstrip().endswith("stripe error")  # still reported
