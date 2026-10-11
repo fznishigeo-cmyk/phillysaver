@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from dealradar.product_images import link_identity, match_product_image
+from dealradar.models import PostPhotos
+from dealradar.product_images import (
+    file_words, link_identity, link_key, match_product_image, name_words, photo_by_name,
+    photo_key, pick_photo, single_product)
 
 PIC, OTHER = "https://blog.example/up/mine.jpg", "https://blog.example/up/other.jpg"
 
@@ -193,3 +196,109 @@ def test_redirector_links_of_one_article_never_share_a_photo():
                                {TRX.format("team-hustle"): PIC}) == ""
     assert match_product_image([TRX.format("team-hustle")],
                                {TRX.format("team-hustle"): PIC}) == PIC
+
+
+@pytest.mark.parametrize("deal_link", [
+    "https://www.target.com/c/toy-sale/-/N-5xtnr", "https://www.walmart.com/browse/toys/4171",
+    "https://www.walmart.com/cp/rollbacks/123", "https://www.walmart.com/search?q=lego",
+    "https://www.amazon.com/b?node=12345", "https://www.bestbuy.com/site/promo/toy-sale",
+    "https://www.kohls.com/",
+])
+def test_listing_pages_match_nothing(deal_link):
+    """A category, sale, search, promo or home page is every product: a
+    deal holding one never takes the photo inside it."""
+    assert match_product_image([deal_link], {deal_link: PIC}) == ""
+
+
+def test_link_key_counts_products_not_spellings():
+    """One ASIN or retailer id however linked is one product; links behind
+    one redirector path differ by the product they carry."""
+    assert link_key("https://www.amazon.com/dp/B0ABCDEFGH?tag=x") \
+        == link_key("https://www.amazon.com/Kettle/dp/B0ABCDEFGH")
+    assert link_key(TRX.format("revolution-8")) != link_key(TRX.format("team-hustle"))
+
+
+def test_photo_key_ignores_size_and_query():
+    assert photo_key("https://i0.wp.com/b.example/wp-content/uploads/2026/10/X-300x300.jpg?w=9") \
+        == photo_key("https://b.example/wp-content/uploads/2026/10/x.jpg") == "2026/10/x.jpg"
+    assert photo_key("https://b.example/up/2026/10/x-scaled.jpg") == "2026/10/x.jpg"
+
+
+def test_name_words():
+    assert name_words("Crayola Markers 40ct, Only $19.99 at Amazon!") \
+        == {"crayola", "marker", "40ct", "19", "99"}
+    assert name_words("Women's Fleece Jackets") == {"women", "fleece", "jacket"}
+    # A file name: no extension, size suffix, digits-only upload counters.
+    assert file_words("https://b.example/up/2026/10/LEGO-Classic-Bricks-2-300x300.jpg?w=9") \
+        == {"lego", "classic", "brick"}
+    assert file_words("https://b.example/up/IMG_2041.jpg") == set()
+
+
+MARKERS, LEGO, PLAYDOH = (f"https://b.example/up/{n}.jpg" for n in ("m", "l", "p"))
+ITEMS = ["Crayola Markers 40ct", "LEGO Classic Bricks", "Play-Doh Starter Set"]
+
+
+def test_photo_by_name_gives_each_deal_the_photo_named_after_it():
+    named = {MARKERS: name_words("Crayola Markers 40ct"),
+             LEGO: file_words("https://b.example/up/LEGO-Classic-Bricks-300x300.jpg"),
+             PLAYDOH: name_words("Play-Doh Starter Set 10 pack")}
+    assert [photo_by_name(i, ITEMS, named) for i in ITEMS] == [MARKERS, LEGO, PLAYDOH]
+    # A name the post shows no photo of gets none.
+    assert photo_by_name("Hot Wheels 5-Pack", ITEMS + ["Hot Wheels 5-Pack"], named) == ""
+    # Two shared words scoring under 70 are another product of the line.
+    kitchen = {PLAYDOH: name_words("Play-Doh Kitchen Creations Bundle")}
+    assert photo_by_name("Play-Doh Starter Set", ITEMS, kitchen) == ""
+
+
+def test_brand_only_names_never_match():
+    """Two Crayola products whose photos say only 'Crayola': one shared word
+    is a brand, not a product — none, unless the words separate them."""
+    items = ["Crayola Markers 40ct", "Crayola Colored Pencils 50ct"]
+    brand = {MARKERS: name_words("Crayola") | file_words("https://b.example/crayola-1.jpg"),
+             LEGO: name_words("Crayola") | file_words("https://b.example/crayola-2.jpg")}
+    assert [photo_by_name(i, items, brand) for i in items] == ["", ""]
+    named = {MARKERS: name_words("Crayola Markers"), LEGO: name_words("Crayola Colored Pencils")}
+    assert [photo_by_name(i, items, named) for i in items] == [MARKERS, LEGO]
+
+
+def test_photo_by_name_needs_a_clear_winner_owned_by_no_other_deal():
+    """The best photo must clear the deal's next-best by 10 points, must
+    not name another deal of the post as well or better (a variant's
+    photo), nor name another deal besides (a collage naming several). Two
+    products sharing words (an air fryer and its liners) each keep their
+    own photo."""
+    items = ["LEGO Classic Bricks 300pc", "LEGO Classic Bricks 1500pc"]
+    named = {MARKERS: name_words("LEGO Classic Bricks 300pc"),
+             LEGO: name_words("LEGO Classic Bricks 1500pc")}
+    assert [photo_by_name(i, items, named) for i in items] == ["", ""]
+    collage = {MARKERS: name_words("Crayola Markers, LEGO Classic Bricks and Play-Doh")}
+    assert [photo_by_name(i, ITEMS, collage) for i in ITEMS] == ["", "", ""]
+    # A variant's only photo stays with the variant it names best.
+    one = {LEGO: name_words("LEGO Classic Bricks 1500pc")}
+    assert [photo_by_name(i, items, one) for i in items] == ["", LEGO]
+    fryer = ["Ninja Air Fryer 4qt", "Ninja Air Fryer Liners 100ct"]
+    own = {MARKERS: name_words(fryer[0]), LEGO: name_words(fryer[1])}
+    assert [photo_by_name(i, fryer, own) for i in fryer] == [MARKERS, LEGO]
+
+
+def test_pick_photo_link_name_and_conflict():
+    """In its link, or by name; both and they differ: none (None: no post
+    image either); both and one photo (any size): that photo."""
+    link = "https://www.amazon.com/dp/B0ABCDEFGH"
+    named = {MARKERS: name_words("Crayola Markers 40ct")}
+    assert pick_photo([link], ITEMS[0], ITEMS, PostPhotos(in_link={link: LEGO}, named=named)) \
+        is None
+    assert pick_photo([link], ITEMS[0], ITEMS,
+                      PostPhotos(in_link={link: LEGO}, named={LEGO: frozenset()})) == LEGO
+    assert pick_photo([], ITEMS[0], ITEMS, PostPhotos(in_link={link: LEGO}, named=named)) \
+        == MARKERS
+    sized = MARKERS.replace(".jpg", "-300x300.jpg")
+    assert pick_photo([link], ITEMS[0], ITEMS,
+                      PostPhotos(in_link={link: sized}, named=named)) == sized
+    assert pick_photo([link], ITEMS[0], ITEMS, PostPhotos()) == ""
+
+
+def test_single_product():
+    assert single_product(PostPhotos(links={"a"}, images={"x"}))
+    assert not single_product(PostPhotos(links={"a", "b"}))
+    assert not single_product(PostPhotos(images={"x", "y"}))

@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import dataclasses
+import itertools
 
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from dealradar import dedupe, util
 from dealradar.config import AppConfig
 from dealradar.db import DB
-from dealradar.models import ExtractedDeal, RawPost, SavingsResult
+from dealradar.fetch.rss import post_photos
+from dealradar.models import ExtractedDeal, PostPhotos, RawPost, SavingsResult
+from dealradar.product_images import name_words
 
 NOW = datetime(2026, 10, 9, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -368,169 +373,317 @@ def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
     db.close()
 
 
-GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
-SS = "https://www.southernsavers.com/wp-content/uploads/"
+UP = "https://blog.example/wp-content/uploads/2026/10/"
+POST_URL = "https://blog.example/toy-roundup/"
+_DBS = itertools.count()
 
 
-def _roundup_post(uid: str, photos: dict[str, str]) -> RawPost:
-    post = make_post(source="southernsavers_online", uid=uid,
-                     url=f"https://www.southernsavers.com/{uid}/")
-    post.image_url = SS + "collage.jpg"   # the post's first image
-    post.product_images = photos
-    return post
+def _ingest(tmp_path, html: str, deals, dropped=()) -> dict[str, str]:
+    """An image-granted feed entry through the ingest path, as the pipeline
+    runs it: the body's photos and first image (RssAdapter), every deal the
+    parse read on post.parsed (parse_posts; ``dropped`` items failed the
+    evidence check and are not upserted), shared links marked, each
+    surviving deal upserted. Returns item -> its card photo (UP stripped)."""
+    from dealradar import pipeline
+    from dealradar.fetch.rss import _first_image, post_photos
+    from dealradar.parse.extractor import _post_for_deals
+
+    db = DB(tmp_path / f"state{next(_DBS)}.db")
+    post = make_post(source="blog", uid="roundup", url=POST_URL)
+    post.image_url = _first_image(html)
+    post.photos = post_photos(html, POST_URL)
+    post = _post_for_deals(post, len(deals))
+    extracted = [make_extracted(item=item, store="Amazon", product_url=link,
+                                link_as_posted=link) for item, link in deals]
+    post.parsed = [(e.item, e.product_url) for e in extracted]
+    pairs = [(post, e) for e in extracted if e.item not in dropped]
+    pipeline._mark_shared_links(pairs)
+    keys = {e.item: dedupe.upsert_extracted(db, e, make_savings(), post, make_cfg(), NOW)
+            ["dedupe_key"] for _p, e in pairs}
+    out = {item: db.get_deal(k)["image_url"].removeprefix(UP) for item, k in keys.items()}
+    db.close()
+    return out
 
 
-def test_roundup_post_gives_each_deal_its_own_photo(tmp_path) -> None:
-    """Live wart: three Target cards from one Southern Savers roundup all
-    got the post's first image (later cleared to store-name tiles). Each
-    deal now gets the photo shown next to its own link — by the link as
-    posted (a short link only the post knows), or by the resolved URL's
-    Target id — and a deal with no photo of its own gets none, never the
-    collage."""
+TOYS = [("Crayola Markers 40ct", "https://www.amazon.com/dp/B0000000A1"),
+        ("LEGO Classic Bricks", "https://www.amazon.com/dp/B0000000B2"),
+        ("Play-Doh 10-Pack Starter Set", "https://www.amazon.com/dp/B0000000C3")]
+GENERIC = ("markers", "lego", "playdoh")          # file names that name no product
+NAMED_FILES = ("Crayola-Markers-40ct", "LEGO-Classic-Bricks-300x300", "play-doh-starter")
+ALTS = ("Crayola Markers 40ct", "LEGO Classic Bricks", "Play-Doh Starter Set")
+FEATURED = (f'<figure class="wp-block-image"><img src="{UP}featured.jpg"></figure>'
+            '<p>Great toy deals today!</p>')
+
+
+def _img(name: str, alt: str) -> str:
+    return f'<img src="{UP}{name}.jpg" alt="{alt}">'
+
+
+def _button(link: str) -> str:
+    return (f'<div class="wp-block-buttons"><div class="wp-block-button">'
+            f'<a class="wp-block-button__link" href="{link}">Buy now</a></div></div>')
+
+
+#: The reviewed layouts that shifted every photo to a neighbour's card
+#: under layout pairing: (photo block, item, link) -> one product's HTML.
+LAYOUTS = {
+    "figure/h3/p-link": lambda img, item, link: (
+        f'<figure class="wp-block-image">{img}</figure><h3>{item}</h3>'
+        f'<p>Only $19.99 (reg $59.99) <a href="{link}">Buy now</a></p>'),
+    "figure/p/buttons": lambda img, item, link: (
+        f'<figure class="wp-block-image">{img}</figure><p>{item} only $19.99</p>{_button(link)}'),
+    "columns": lambda img, item, link: (
+        f'<div class="wp-block-column"><figure>{img}</figure><p>{item} $19.99</p>'
+        f'{_button(link)}</div>'),
+    "media-text": lambda img, item, link: (
+        f'<div class="wp-block-media-text"><figure class="wp-block-media-text__media">{img}'
+        f'</figure><div class="wp-block-media-text__content"><h3>{item}</h3>'
+        f'<p>$19.99 <a href="{link}">Buy</a></p></div></div>'),
+    "wp-caption": lambda img, item, link: (
+        f'<div class="wp-caption">{img}<p class="wp-caption-text">{item}</p></div>'
+        f'<p>Only $19.99 <a href="{link}">Buy now</a></p>'),
+    "mirror h3-link/p/figure": lambda img, item, link: (
+        f'<h3><a href="{link}">{item}</a></h3><p>Only $19.99</p><figure>{img}</figure>'),
+}
+
+
+def _listicle(layout: str, names, alts=("", "", "")) -> str:
+    wrap = LAYOUTS[layout]
+    body = "".join(wrap(_img(n, a), item, link) for n, a, (item, link) in zip(names, alts, TOYS))
+    if layout == "columns":
+        body = f'<div class="wp-block-columns">{body}</div>'
+    return FEATURED + body
+
+
+@pytest.mark.parametrize("layout", LAYOUTS)
+def test_reviewed_layouts_never_give_a_neighbours_photo(tmp_path, layout) -> None:
+    """Review finding (high): a heading, a price line or a button between a
+    photo and its link shifted every photo of a Gutenberg listicle to the
+    previous (or next) product's card. Where a photo sits proves nothing:
+    photos that name no product give no card a photo; photos whose alt or
+    file name names each product give each deal its own."""
+    assert _ingest(tmp_path, _listicle(layout, GENERIC), TOYS) \
+        == dict.fromkeys((i for i, _l in TOYS), "")
+    own = {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, NAMED_FILES)}
+    assert _ingest(tmp_path, _listicle(layout, NAMED_FILES), TOYS) == own
+    own = {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, ("a", "b", "c"))}
+    assert _ingest(tmp_path, _listicle(layout, ("a", "b", "c"), ALTS), TOYS) == own
+
+
+def _heading_listicle(names, alts=("", "", ""), lead: str = FEATURED,
+                      intro: str = '<p>Shop <a href="https://www.amazon.com/toys">toys</a></p>'):
+    items = "".join(
+        f'<h3><a href="{link}">{i}. {item} $19.99</a></h3><figure>{_img(n, a)}</figure>'
+        for i, (n, a, (item, link)) in enumerate(zip(names, alts, TOYS), 1))
+    return (lead + intro + items +
+            '<p>Shop more toy deals <a href="https://www.amazon.com/b?node=12345">here</a></p>')
+
+
+def test_heading_listicle_with_featured_image_and_shop_more_link(tmp_path) -> None:
+    """Review finding (high): a featured image, an intro, a heading-linked
+    listicle and a closing 'shop more' link read as photo-then-link and
+    gave LEGO the markers. Classic-editor lead (<p><img><br>intro</p>) too;
+    an intro 'shop the sale' link with a trailing 'pin for later' figure;
+    a gallery over a linked list. Right photo by name, or none."""
+    none = dict.fromkeys((i for i, _l in TOYS), "")
+    classic = f'<p><img src="{UP}collage.jpg"><br>Big toy deals today!</p>'
+    for lead in (FEATURED, classic):
+        assert _ingest(tmp_path, _heading_listicle(GENERIC, lead=lead), TOYS) == none
+        assert _ingest(tmp_path, _heading_listicle(("a", "b", "c"), ALTS, lead=lead), TOYS) \
+            == {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, "abc")}
+    sale = ('<p><a href="https://www.target.com/c/toy-sale/-/N-1">Shop the sale here</a></p>'
+            + "".join(f'<figure>{_img(n, "")}</figure><p>{item} $19.99 <a href="{link}">Buy</a>'
+                      '</p>' for n, (item, link) in zip(GENERIC, TOYS))
+            + f'<figure><img src="{UP}pin-for-later.jpg"></figure>')
+    assert _ingest(tmp_path, FEATURED + sale, TOYS) == none
+    gallery = ('<figure class="wp-block-gallery">'
+               + "".join(f'<figure>{_img(n, "")}</figure>' for n in GENERIC) + '</figure><ul>'
+               + "".join(f'<li><a href="{link}">{item} $19.99</a></li>' for item, link in TOYS)
+               + '</ul>')
+    assert _ingest(tmp_path, FEATURED + gallery, TOYS) == none
+    named_gallery = gallery.replace('alt=""', 'alt="{}"').format(*ALTS)
+    assert _ingest(tmp_path, FEATURED + named_gallery, TOYS) \
+        == {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, GENERIC)}
+
+
+def test_photo_inside_its_own_link_needs_no_name(tmp_path) -> None:
+    """In-link rule: Hip2Save puts each product's photo inside that
+    product's link — the photo is the deal's whatever its file is called
+    (the link as posted, a short link, or the resolved URL's ASIN)."""
+    html = FEATURED + "".join(
+        f'<p><a href="{link}">{_img(n, "")}</a></p><p>{item} $19.99 <a href="{link}">Buy</a></p>'
+        for n, (item, link) in zip(GENERIC, TOYS))
+    assert _ingest(tmp_path, html, TOYS) \
+        == {i: f"{n}.jpg" for (i, _l), n in zip(TOYS, GENERIC)}
+
+
+def test_photo_inside_one_link_named_after_another_product_gives_none(tmp_path) -> None:
+    """Conflict rule: the markers link wraps a photo the post names after
+    the LEGO bricks, while another photo is named after the markers. The
+    two rules disagree for the markers: no photo, not either guess."""
+    html = FEATURED + (
+        f'<p><a href="{TOYS[0][1]}"><img src="{UP}x.jpg" alt="LEGO Classic Bricks"></a></p>'
+        f'<p><img src="{UP}y.jpg" alt="Crayola Markers 40ct"></p>')
+    # The LEGO deal (its link not on the page) is named by x.jpg alone.
+    assert _ingest(tmp_path, html, TOYS[:2]) == {TOYS[0][0]: "", TOYS[1][0]: "x.jpg"}
+
+
+def test_two_products_of_one_brand_need_names_that_separate_them(tmp_path) -> None:
+    """Brand-only collision: two Crayola products whose photos say only
+    'Crayola' get none; photos whose words separate them go to each."""
+    deals = [("Crayola Markers 40ct", "https://www.amazon.com/dp/B0000000A1"),
+             ("Crayola Colored Pencils 50ct", "https://www.amazon.com/dp/B0000000A2")]
+    html = FEATURED + "".join(
+        f'<figure><img src="{UP}crayola-{i}.jpg" alt="{alt}"></figure>'
+        f'<p>{item} $9.99 <a href="{link}">Buy</a></p>'
+        for i, (alt, (item, link)) in enumerate(zip(("Crayola", "Crayola"), deals)))
+    assert _ingest(tmp_path, html, deals) == {deals[0][0]: "", deals[1][0]: ""}
+    html = html.replace('alt="Crayola"', 'alt="Crayola Markers"', 1) \
+        .replace('alt="Crayola"', 'alt="Crayola Colored Pencils"', 1)
+    assert _ingest(tmp_path, html, deals) == {deals[0][0]: "crayola-0.jpg",
+                                              deals[1][0]: "crayola-1.jpg"}
+
+
+def test_sale_page_collage_never_lands_on_a_card(tmp_path) -> None:
+    """Review finding (medium): (a) the sale collage sits inside the
+    Target /c/ sale link the LLM gave the link-less Hot Wheels item: a sale
+    page names no product, so the collage is no one's; LEGO and Barbie keep
+    the photos inside their own links. (b) Two items given one sale link
+    (a collage beside it), one fails the evidence check: the survivor
+    still holds a shared link (counted over everything the parse read) and
+    gets neither the collage nor the post's image."""
+    sale = "https://www.target.com/c/toy-sale/-/N-5xtnr"
+    lego, barbie = "https://www.target.com/p/lego/-/A-2", "https://www.target.com/p/barbie/-/A-3"
+    html = (f'<p><a href="{sale}"><img src="{UP}toy-sale-collage.jpg"></a></p>'
+            '<p>Big toy sale! Hot Wheels 5-packs $4.99 (reg $7.99).</p>'
+            f'<p><a href="{lego}"><img src="{UP}lego.jpg"></a> LEGO Classic $20</p>'
+            f'<p><a href="{barbie}"><img src="{UP}barbie.jpg"></a> Barbie Dreamhouse $90</p>')
+    deals = [("Hot Wheels 5-Pack", sale), ("LEGO Classic Bricks", lego),
+             ("Barbie Dreamhouse", barbie)]
+    assert _ingest(tmp_path, html, deals) == {
+        "Hot Wheels 5-Pack": "", "LEGO Classic Bricks": "lego.jpg",
+        "Barbie Dreamhouse": "barbie.jpg"}
+    page = "https://www.kohls.com/catalog/home-sale.jsp"   # a sale page no rule knows
+    html = (f'<p><img src="{UP}lead.jpg"></p><p>Home sale!</p>'
+            f'<p><a href="{page}"><img src="{UP}sale-collage.jpg"></a></p>'
+            '<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>')
+    deals = [("SONGMICS Shelf", page), ("Drying Rack", page)]
+    assert _ingest(tmp_path, html, deals, dropped=("Drying Rack",)) == {"SONGMICS Shelf": ""}
+
+
+def test_single_product_post_lends_its_image_only_when_it_shows_one(tmp_path) -> None:
+    """The post's own image is a deal's only on a post of one product: one
+    deal parsed, at most one product link and one photo besides the
+    featured one. A second product link or photo: none."""
+    kettle = "https://www.amazon.com/dp/B0KETTLE01"
+    one = (f'<p><img src="{UP}kettle-hero.jpg"></p><p>Kettle $12 <a href="{kettle}">Buy</a>'
+           f' <a href="{kettle}?tag=x">again</a></p><p><img src="{UP}kettle-box.jpg"></p>')
+    deal = [("Steel Kettle", kettle)]
+    assert _ingest(tmp_path, one, deal) == {"Steel Kettle": "kettle-hero.jpg"}
+    two_links = one + '<p>Also: <a href="https://www.amazon.com/dp/B0TOASTER1">a toaster</a></p>'
+    assert _ingest(tmp_path, two_links, deal) == {"Steel Kettle": ""}
+    two_photos = one + f'<p><img src="{UP}toaster.jpg"></p>'
+    assert _ingest(tmp_path, two_photos, deal) == {"Steel Kettle": ""}
+    # A post with no photos read (no grant: API adapters) lends its image.
+    db = DB(tmp_path / "plain.db")
+    post = make_post(uid="plain")
+    post.image_url = "https://m.media-amazon.com/images/I/kettle.jpg"
+    res = dedupe.upsert_extracted(db, make_extracted(item="Steel Kettle"), make_savings(),
+                                  post, make_cfg(), NOW)
+    assert db.get_deal(res["dedupe_key"])["image_url"] == post.image_url
+    db.close()
+
+
+def test_a_later_post_fills_a_photo_less_deal_but_never_replaces_a_photo(tmp_path) -> None:
+    """A deal left photo-less by one roundup takes its photo from a later
+    post that shows it; a photo once set is never replaced."""
     db = DB(tmp_path / "state.db")
     cfg = make_cfg()
-    post = _roundup_post("target-roundup", {
-        "https://howl.me/cShelf9": SS + "shelf.jpg",
-        GOTO + "rack%2F-%2FA-222": SS + "rack.jpg",
-    })
-    shelf = make_extracted(item="SONGMICS 5-Tier Shelf", store="Target",
-                           product_url="https://www.target.com/p/shelf/-/A-111",
-                           link_as_posted="https://howl.me/cShelf9")
-    rack = make_extracted(item="Laundry Drying Rack", store="Target",
-                          product_url="https://www.target.com/p/rack-x/-/A-222?preselect=1")
-    shoes = make_extracted(item="Shoe Rack 4-Tier", store="Target",
-                           product_url="https://www.target.com/p/shoes/-/A-333")
-    keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
-            for e in (shelf, rack, shoes)]
-    assert [db.get_deal(k)["image_url"] for k in keys] == [
-        SS + "shelf.jpg", SS + "rack.jpg", ""]
-
-    # A later roundup showing the shoe rack fills the photo-less deal...
-    later = _roundup_post("target-roundup-2", {
-        GOTO + "shoes%2F-%2FA-333": SS + "shoes.jpg", GOTO + "x%2F-%2FA-9": SS + "x.jpg"})
-    dedupe.upsert_extracted(db, shoes, make_savings(), later, cfg, NOW)
-    assert db.get_deal(keys[2])["image_url"] == SS + "shoes.jpg"
-    # ...and a photo once set is never replaced by another post's.
+    shelf_link = "https://www.target.com/p/shelf/-/A-111"
+    shelf = make_extracted(item="SONGMICS Shelf", store="Target", product_url=shelf_link)
+    first = make_post(uid="r1")
+    first.photos = PostPhotos(links={"a", "b"})
+    key = dedupe.upsert_extracted(db, shelf, make_savings(), first, cfg, NOW)["dedupe_key"]
+    assert db.get_deal(key)["image_url"] == ""
+    later = make_post(uid="r2")
+    later.photos = PostPhotos(in_link={shelf_link: UP + "shelf.jpg"}, links={"a", "b"})
     dedupe.upsert_extracted(db, shelf, make_savings(), later, cfg, NOW)
-    assert db.get_deal(keys[0])["image_url"] == SS + "shelf.jpg"
-    db.close()
-
-
-def test_single_product_post_still_lends_its_image(tmp_path) -> None:
-    """No per-product photo matched, but the post shows one product (one
-    distinct photo, or none paired): its image is the deal's, as before."""
-    db = DB(tmp_path / "state.db")
-    cfg = make_cfg()
-    one = _roundup_post("blender", {"https://www.target.com/p/b/-/A-5": SS + "blender.jpg"})
-    one.image_url = SS + "blender.jpg"
-    res = dedupe.upsert_extracted(
-        db, make_extracted(item="Ninja Blender", store="Target"), make_savings(), one, cfg, NOW)
-    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "blender.jpg"
-    bare = _roundup_post("kettle", {})
-    res = dedupe.upsert_extracted(
-        db, make_extracted(item="Steel Kettle", store="Target"), make_savings(), bare, cfg, NOW)
-    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
-    db.close()
-
-
-def test_roundup_collage_never_lands_on_an_unmatched_deal(tmp_path) -> None:
-    """Hip2Save roundup: the featured collage is the post's first image, one
-    product's photo sits in its link, the other product is text-only. The
-    unmatched deal stays photo-less (the backfill tries its own photo
-    later) instead of carrying the collage for good: one card showing it
-    is never 'shared', so the clear step never removed it."""
-    db = DB(tmp_path / "state.db")
-    cfg = make_cfg()
-    post = _roundup_post("hip-roundup",
-                         {"https://www.target.com/p/shelf/-/A-111": SS + "shelf.jpg"})
-    shelf = make_extracted(item="SONGMICS Shelf", store="Target",
-                           product_url="https://www.target.com/p/shelf/-/A-111")
-    rack = make_extracted(item="Drying Rack", store="Walmart",
-                          product_url="https://www.walmart.com/ip/rack/222")
-    bluey = [make_extracted(item="Bluey Boo Book", store=s, product_url=u) for s, u in (
-        ("Amazon", "https://www.amazon.com/dp/B0BLUEY001"),
-        ("Walmart", "https://www.walmart.com/ip/bluey/333"))]
-    keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
-            for e in (shelf, rack, *bluey)]
-    assert [db.get_deal(k)["image_url"] for k in keys] == [SS + "shelf.jpg", "", "", ""]
-    db.close()
-
-
-def test_roundup_without_pairs_lends_no_image(tmp_path) -> None:
-    """A post the pipeline parsed into two or more products is a roundup:
-    when its photos could not be told apart (none paired), its first image
-    is one product's or a collage, never every deal's. A post of one
-    product still lends its image."""
-    db = DB(tmp_path / "state.db")
-    cfg = make_cfg()
-    post = _roundup_post("two-products", {})
-    post.products = 2
-    res = dedupe.upsert_extracted(db, make_extracted(item="Steel Kettle", store="Target"),
-                                  make_savings(), post, cfg, NOW)
-    assert db.get_deal(res["dedupe_key"])["image_url"] == ""
-    one = _roundup_post("one-product", {})
-    one.products = 1
-    res = dedupe.upsert_extracted(db, make_extracted(item="Ninja Blender", store="Target"),
-                                  make_savings(), one, cfg, NOW)
-    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
-    # A related-post thumbnail (the blog's own link) is no other product.
-    own = _roundup_post("own-links", {"https://www.southernsavers.com/other-post/": SS + "t.jpg"})
-    res = dedupe.upsert_extracted(db, make_extracted(item="Steel Pan", store="Target"),
-                                  make_savings(), own, cfg, NOW)
-    assert db.get_deal(res["dedupe_key"])["image_url"] == SS + "collage.jpg"
+    assert db.get_deal(key)["image_url"] == UP + "shelf.jpg"
+    again = make_post(uid="r3")
+    again.photos = PostPhotos(in_link={shelf_link: UP + "other.jpg"})
+    dedupe.upsert_extracted(db, shelf, make_savings(), again, cfg, NOW)
+    assert db.get_deal(key)["image_url"] == UP + "shelf.jpg"
     db.close()
 
 
 def test_store_link_shared_by_several_products_names_none(tmp_path) -> None:
-    """Review finding: "Target home sale, shop it here" over a list of
-    items the LLM all gives the one sale-page link. The photo beside that
-    link (here the sale collage, after the post's lead image) is none of
-    theirs: no deal holding the link gets it, nor the post's image, and the
-    row keeps the fact, so a later post's photo for that link never lands
-    either. A product of the same post with its own link keeps its photo."""
+    """Review finding: "home sale, shop it here" over a list of items the
+    LLM all gives the one sale-page link. The photo inside that link is
+    none of theirs, nor the post's image, and the row keeps the fact, so a
+    later post's photo inside that link never lands either — only a photo
+    named after the item. A product with its own link keeps its photo."""
     from dealradar import pipeline
-    from dealradar.fetch.rss import product_images
 
     db = DB(tmp_path / "state.db")
     cfg = make_cfg()
-    sale = "https://www.target.com/c/home-sale/-/N-5xtnr"
+    sale = "https://www.kohls.com/catalog/home-sale.jsp"
     lamp = "https://www.target.com/p/lamp/-/A-444"
-    html = (f'<p><img src="{SS}lead.jpg"></p><p>Target home sale!</p>'
-            f'<p><img src="{SS}sale-collage.jpg"></p><p>Shop the sale <a href="{sale}">here</a>:</p>'
+    html = (f'<p><img src="{UP}lead.jpg"></p><p>Home sale!</p>'
+            f'<p><a href="{sale}"><img src="{UP}sale-collage.jpg"></a> Shop the sale:</p>'
             '<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>'
-            f'<p><img src="{SS}lamp.jpg"></p><p>Lamp $9 <a href="{lamp}">Buy</a></p>')
-    post = _roundup_post("home-sale", product_images(html))
-    assert post.product_images[sale] == SS + "sale-collage.jpg"   # the layout pairs it
-    pairs = [(post, make_extracted(item=item, store="Target", product_url=url,
+            f'<p><a href="{lamp}"><img src="{UP}lamp.jpg"></a> Lamp $9</p>')
+    post = make_post(uid="home-sale", url=POST_URL)
+    post.photos = post_photos(html, POST_URL)
+    assert post.photos.in_link[sale] == UP + "sale-collage.jpg"   # the link holds it
+    pairs = [(post, make_extracted(item=item, store="Kohls", product_url=url,
                                    link_as_posted=url))
              for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", sale),
                                ("Desk Lamp", lamp))]
-    pipeline._count_post_products(pairs)
+    post.parsed = [(e.item, e.product_url) for _p, e in pairs]
+    pipeline._mark_shared_links(pairs)
     assert [e.link_shared for _p, e in pairs] == [True, True, False]
     keys = [dedupe.upsert_extracted(db, e, make_savings(), post, cfg, NOW)["dedupe_key"]
             for _p, e in pairs]
     assert keys[0] == keys[1]   # one sale-page link is one row
     row = db.get_deal(keys[0])
     assert row["image_url"] == "" and row["link_shared"] is True
-    assert db.get_deal(keys[2])["image_url"] == SS + "lamp.jpg"
+    assert db.get_deal(keys[2])["image_url"] == UP + "lamp.jpg"
     assert db.get_deal(keys[2])["link_shared"] is False
-    # A later one-product post showing a photo beside that link: still none.
-    later = _roundup_post("shelf-only", {sale: SS + "shelf.jpg"})
-    later.products = 1
-    dedupe.upsert_extracted(db, make_extracted(item="SONGMICS Shelf", store="Target",
-                                               product_url=sale), make_savings(), later, cfg, NOW)
+    # A later one-product post with a photo inside that link: still none...
+    later = make_post(uid="shelf-only")
+    later.photos = PostPhotos(in_link={sale: UP + "shelf.jpg"})
+    later.image_url = UP + "shelf.jpg"
+    shelf = make_extracted(item="SONGMICS Shelf", store="Kohls", product_url=sale)
+    dedupe.upsert_extracted(db, shelf, make_savings(), later, cfg, NOW)
     assert db.get_deal(keys[0])["image_url"] == ""
-    # One short link as posted, resolved for one deal and not for the other
-    # (out of time): still one shared link.
-    short = "https://howl.me/cSale1"
-    timed = [(post, make_extracted(item=item, store="Target", product_url=url,
-                                   link_as_posted=short))
-             for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", short))]
-    pipeline._count_post_products(timed)
-    assert [e.link_shared for _p, e in timed] == [True, True]
-    # One product at two stores sharing a link is one product, not a sale page.
-    bluey = [(post, make_extracted(item="Bluey Boo Book", store=s, product_url=sale))
-             for s in ("Amazon", "Walmart")]
-    pipeline._count_post_products(bluey)
-    assert [e.link_shared for _p, e in bluey] == [False, False]
+    # ...but a photo the post names after the item is the item's.
+    named = make_post(uid="shelf-named")
+    named.photos = PostPhotos(named={UP + "s.jpg": name_words("SONGMICS 5-Tier Shelf")})
+    dedupe.upsert_extracted(db, shelf, make_savings(), named, cfg, NOW)
+    assert db.get_deal(keys[0])["image_url"] == UP + "s.jpg"
     db.close()
+
+
+def test_shared_link_counts_every_deal_the_parse_read() -> None:
+    """Holders of a link are counted over the post's full parse: a second
+    item on the link that failed evidence still makes it a shared (store)
+    link. One short link as posted, resolved for one deal and not for the
+    other, is one link; one product at two stores is one product."""
+    from dealradar import pipeline
+
+    sale, short = "https://www.kohls.com/catalog/sale.jsp", "https://howl.me/cSale1"
+    post = make_post(uid="p")
+    post.parsed = [("SONGMICS Shelf", sale), ("Drying Rack", sale)]
+    survivor = make_extracted(item="SONGMICS Shelf", product_url=sale, link_as_posted=sale)
+    pipeline._mark_shared_links([(post, survivor)])
+    assert survivor.link_shared is True
+    post = make_post(uid="t")
+    timed = [(post, make_extracted(item=item, product_url=url, link_as_posted=short))
+             for item, url in (("SONGMICS Shelf", sale), ("Drying Rack", short))]
+    pipeline._mark_shared_links(timed)
+    assert [e.link_shared for _p, e in timed] == [True, True]
+    two_stores = make_post(uid="b")
+    bluey = [(two_stores, make_extracted(item="Bluey Boo Book", store=s, product_url=sale))
+             for s in ("Amazon", "Walmart")]
+    pipeline._mark_shared_links(bluey)
+    assert [e.link_shared for _p, e in bluey] == [False, False]

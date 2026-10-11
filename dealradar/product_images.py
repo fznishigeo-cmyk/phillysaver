@@ -1,17 +1,30 @@
 """Which photo of a post belongs to which deal.
 
-A roundup post (one article, several products) shows one photo per product
-next to that product's link (fetch.rss.product_images). A deal knows its
-link twice: as the post gave it (often an affiliate redirect) and resolved
-to the retailer's product page. match_product_image pairs them; when
-nothing matches it returns '' rather than guess — a wrong photo on a card
-is worse than the store-name tile.
+A roundup post (one article, several products) shows one photo per
+product. Where a photo sits says nothing provable about whose it is (three
+review rounds of layout pairing each found photos shifted to the next
+product), so a deal gets a photo only on evidence (pick_photo):
+  1. in its link: the photo inside <a href=X> is X's (fetch.rss.post_photos
+     keeps only links that name a product), matched to the deal's link by
+     match_product_image;
+  2. by name: the photo whose alt, title, caption or file name names the
+     deal's item, clearly better than any other photo and no better for
+     another deal of the post (photo_by_name);
+  3. both, and they differ: none.
+A deal knows its link twice: as the post gave it (often an affiliate
+redirect) and resolved to the retailer's product page. When nothing
+matches the answer is '' rather than a guess — a wrong photo on a card is
+worse than the store-name tile.
 """
 
 from __future__ import annotations
 
 import re
 from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+
+from rapidfuzz import fuzz
+
+from .models import PostPhotos
 
 #: Query params that only say who sent the click, never which product.
 #: Not pid/sid/cid: Old Navy, Gap, Banana Republic and Athleta name the
@@ -101,14 +114,31 @@ def _product_id(url: str) -> str:
     return "path:" + host.removeprefix("www.") + "/" + "/".join(segments)
 
 
+#: Retailer pages listing many products (category, sale, search, promo).
+_LISTING_PAGES = (
+    ("target.com", re.compile(r"^/c/", re.I)),
+    ("walmart.com", re.compile(r"^/(?:browse|cp|search)(?:/|$)", re.I)),
+    ("bestbuy.com", re.compile(r"^/site/promo", re.I)),
+)
+
+
 def _names_no_product(url: str) -> bool:
-    """An Amazon link (after unwrapping) without an ASIN: a search, a
-    store page or the deals page — it is every product, so none."""
+    """A link (after unwrapping) that is every product, so none: an Amazon
+    link without an ASIN (a search /s?k=, a node /b?node=, a store or the
+    deals page), a retailer's category, sale, search or promo page (Target
+    /c/, Walmart /browse/ /cp/ /search, Best Buy /site/promo), or a home
+    page (path "/")."""
     from .http_client import extract_asin  # lazy: written by another layer
 
     deepest = _forms(url)[-1]
-    host = (urlsplit(deepest).hostname or "").lower()
-    return bool(_AMAZON_HOST.search(host)) and not extract_asin(deepest)
+    parts = urlsplit(deepest)
+    host = (parts.hostname or "").lower()
+    if _AMAZON_HOST.search(host):
+        return not extract_asin(deepest)
+    if not parts.path.strip("/"):
+        return True
+    return any((host == r or host.endswith("." + r)) and p.search(parts.path)
+               for r, p in _LISTING_PAGES)
 
 
 def match_product_image(urls: list[str], product_images: dict[str, str]) -> str:
@@ -170,15 +200,110 @@ def link_identity(url: str) -> str:
     return _forms(url)[-1]
 
 
-def other_product_photos(product_images: dict[str, str], page_url: str) -> set[str]:
-    """The photos a post pairs with links off its own site — the products
-    it shows. Links to the blog's own pages (related-post thumbnails) are
-    not products of this post."""
-    def site(url: str) -> str:
-        return (urlsplit(url).hostname or "").lower().removeprefix("www.")
+def link_key(url: str) -> str:
+    """One key per product a link names, to count a page's products: the
+    retailer's product id (Amazon ASIN, Target A-id, ...), else the link
+    normalized and unwrapped (a redirector's host+path is every product)."""
+    pid = _product_id(_forms(url)[-1])
+    return pid if pid and not pid.startswith("path:") else link_identity(url)
 
-    own = site(page_url)
-    return {v for k, v in (product_images or {}).items() if v and site(k) != own}
+
+def photo_key(url: str) -> str:
+    """One photo whatever size, CDN or query it is served with: the last
+    three path segments (WordPress: year/month/file), lowercase, without a
+    -WxH or -scaled suffix."""
+    segments = [s for s in urlsplit(url.lower()).path.split("/") if s][-3:]
+    return re.sub(r"-(?:\d+x\d+|scaled)(?=\.[a-z0-9]+$)", "", "/".join(segments))
+
+
+#: Words that name no product: English glue, the generic deal words, pack
+#: sizes, and upload noise.
+_NAME_STOP = frozenset((
+    "a an and the of for with in on at by to or from only just now free reg "
+    "regularly was is are this that these your our my plus more each per "
+    "deal sale off price amazon walmart target new best today "
+    "set pack pk piece pc pcs count ct size color style img image photo scaled"
+).split())
+#: A photo names a deal from this rapidfuzz token_set_ratio up (0-100)...
+_NAME_MIN = 70
+#: ...and only this many points clear of the deal's next-best photo.
+_NAME_MARGIN = 10
+
+
+def name_words(text: str, file_name: bool = False) -> frozenset[str]:
+    """The words of a name, normalized: lowercase alphanumerics, no
+    stopwords or generic deal words, no -WxH size tokens, a plural's s
+    dropped; a file name also loses its digits-only tokens (upload
+    counters, dates)."""
+    out = set()
+    for word in re.split(r"[^a-z0-9]+", re.sub(r"['\u2019]", "", text.lower())):
+        if word in _NAME_STOP or re.fullmatch(r"\d+x\d+", word) \
+                or (file_name and word.isdigit()):
+            continue
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        if len(word) > 1 and word not in _NAME_STOP:
+            out.add(word)
+    return frozenset(out)
+
+
+def file_words(url: str) -> frozenset[str]:
+    """name_words of an image's file name (LEGO-Classic-Bricks-300x300.jpg
+    -> lego, classic, brick), extension dropped."""
+    name = unquote(urlsplit(url).path.rsplit("/", 1)[-1])
+    return name_words(re.sub(r"\.[a-z0-9]{2,5}$", "", name, flags=re.I), file_name=True)
+
+
+def _name_score(a: frozenset[str], b: frozenset[str]) -> float:
+    """How well two names match (0-100). One shared word (a brand: two
+    Crayola products) never counts."""
+    if len(a & b) < 2:
+        return 0.0
+    return fuzz.token_set_ratio(" ".join(sorted(a)), " ".join(sorted(b)))
+
+
+def photo_by_name(item: str, items: list[str], named: dict[str, frozenset[str]]) -> str:
+    """The photo whose words name this deal's item, or ''. ``items`` are
+    the names of every deal of the post (this one included); ``named``
+    maps each photo to its words (PostPhotos.named). The best photo must
+    score _NAME_MIN or more, beat the deal's next-best photo by
+    _NAME_MARGIN, score this deal higher than any other deal of the post,
+    and name no other deal besides (two or more of its words beyond this
+    deal's name are another deal's: a collage, a bundle shot)."""
+    mine = name_words(item)
+    others = {name_words(i) for i in items} - {mine}
+    ranked = sorted(((_name_score(mine, words), url) for url, words in named.items()),
+                    reverse=True)
+    if not ranked or ranked[0][0] < _NAME_MIN:
+        return ""
+    best, url = ranked[0]
+    if len(ranked) > 1 and best - ranked[1][0] < _NAME_MARGIN:
+        return ""
+    rest = named[url] - mine
+    if any(_name_score(other, named[url]) >= best or len(rest & other) >= 2
+           for other in others):
+        return ""
+    return url
+
+
+def pick_photo(links: list[str], item: str, items: list[str],
+               photos: PostPhotos) -> str | None:
+    """This deal's photo in a post: the one inside its own product link,
+    or the one named after its item; '' when neither (a
+    single-product post may then lend its own image); None when both give
+    one and they differ — no photo at all."""
+    linked = match_product_image(links, photos.in_link)
+    named = photo_by_name(item, items, photos.named)
+    if linked and named and photo_key(linked) != photo_key(named):
+        return None
+    return linked or named
+
+
+def single_product(photos: PostPhotos) -> bool:
+    """A post whose own image may be its product's: at most
+    one distinct off-site product link and one photo besides its featured
+    one."""
+    return len(photos.links) <= 1 and len(photos.images) <= 1
 
 
 def _one(photos: set[str]) -> str:

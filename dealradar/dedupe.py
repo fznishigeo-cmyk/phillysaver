@@ -183,33 +183,36 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
     }
 
 
-def _post_image(extracted: models.ExtractedDeal, post: models.RawPost) -> str:
-    """The photo a post gives this deal: the one shown next to the deal's
-    own link, else the post's image — but never a roundup's. Live wart:
-    the first image of a roundup (a collage, or another product's photo)
-    went onto every deal of the post (three Target cards from one Southern
-    Savers post, then cleared to store-name tiles).
+def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
+                shared: bool = False) -> str:
+    """The photo a post gives this deal, or '' (product_images.pick_photo):
+    the photo inside the deal's own product link, else the one the post
+    names after the deal's item — against the names of EVERY deal the parse
+    read in the post (RawPost.parsed); both, and they differ: none. Live
+    wart: a roundup's first image (a collage, or another product's photo)
+    went onto every deal of the post, and pairing by layout shifted photos
+    to the next product. A wrong photo is worse than none: an unmatched
+    deal stays photo-less and unflagged, so the backfill tries again.
 
-    A roundup is a post the parse found two or more products in, or one
-    whose photos went to other products' links but not to the post image
-    (only one of its deals stored): an unmatched deal gets '' and the
-    backfill tries its own photo. A collage on ONE card is never 'shared',
-    so the clear step would never take it off.
+    Else the post's own image, only for a post of one product: one deal
+    parsed (parse_posts blanks a multi-deal post's image), at most one
+    off-site product link and one photo besides the featured one.
 
-    A deal whose link other products of the post share (a store or sale
-    page: "shop the sale here" over a list of items) gets nothing: the
-    photo beside that link is a collage, a banner or one item's, never
-    provably this deal's."""
-    from .product_images import match_product_image, other_product_photos
+    A link several products share (``shared``, or the deal's link_shared:
+    a store or sale page, "shop the sale here" over a list of items) names
+    none of them: no photo inside it and no post image, only one named
+    after the item."""
+    from .product_images import pick_photo, single_product
 
-    if extracted.link_shared:
-        return ""
-    hit = match_product_image([extracted.link_as_posted, extracted.product_url],
-                              post.product_images)
-    if hit:
-        return hit
-    others = other_product_photos(post.product_images, post.url)
-    if post.products > 1 or (others and post.image_url not in others):
+    shared = shared or extracted.link_shared
+    links = [] if shared else [extracted.link_as_posted, extracted.product_url]
+    items = [item for item, _link in post.parsed] or [extracted.item]
+    photo = pick_photo(links, extracted.item, items, post.photos)
+    if photo is None:
+        return ""  # its link and its name point at different photos
+    if photo:
+        return photo
+    if shared or not single_product(post.photos):
         return ""
     return post.image_url
 
@@ -317,8 +320,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # Once several products shared the row's link, no post names it.
         payload["link_shared"] = bool(existing.get("link_shared")) \
             or extracted.link_shared
-        if not payload.get("image_url") and not payload["link_shared"]:
-            image = _post_image(extracted, post)
+        if not payload.get("image_url"):
+            image = _post_image(extracted, post, shared=payload["link_shared"])
             if image:
                 payload["image_url"] = image
         payload["last_seen_at"] = util.iso(now)

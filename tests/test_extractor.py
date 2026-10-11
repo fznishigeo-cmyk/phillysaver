@@ -224,6 +224,10 @@ class TestParsePosts:
         assert stats["deals_extracted"] == 2
         assert stats["deals_dropped_evidence"] == 1
         assert any("evidence check failed" in r.message for r in caplog.records)
+        # The post keeps every deal the LLM read, the dropped one too: its
+        # name still competes for the post's photos, its link still counts
+        # as shared (dedupe, pipeline). Nothing of it is stored.
+        assert pairs[0][0].parsed == [("Widget", ""), ("Ghost", "")]
 
     def test_evidence_verified_against_same_cleaned_truncated_text(self):
         # The quote exists in the raw text but is beyond the truncation cap, so

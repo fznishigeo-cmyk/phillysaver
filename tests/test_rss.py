@@ -43,8 +43,8 @@ from dealradar.config import AppConfig  # noqa: E402
 from dealradar.db import DB  # noqa: E402
 from dealradar.fetch import autodiscovery  # noqa: E402
 from dealradar.fetch.rss import (  # noqa: E402
-    MAX_ENTRIES, RssAdapter, _pi_image_url, product_images)
-from dealradar.models import FetchResult, SourceConfig  # noqa: E402
+    MAX_ENTRIES, RssAdapter, _pi_image_url, post_photos)
+from dealradar.models import FetchResult, PostPhotos, SourceConfig  # noqa: E402
 from dealradar.product_images import match_product_image  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -350,293 +350,72 @@ def test_long_body_not_enriched(db, cfg):
 
 UP = "https://blog.example/wp-content/uploads/2026/10/"
 #: The post's featured image (its first image; og:image on an article) and
-#: an intro line, as live posts open: the featured image is never a
-#: product's loose photo, so layouts below start after it.
+#: an intro line, as live posts open: the featured image is never a photo
+#: inside a product link, so layouts below start after it.
 BANNER = f'<p><img src="{UP}banner.jpg"></p><p>Great deals today!</p>'
+A, B, C = (f"https://www.target.com/p/{n}/-/A-{i}"
+           for i, n in ((1, "markers"), (2, "lego"), (3, "barbie")))
 
 
-def test_product_images_image_inside_its_link():
+def test_post_photos_image_inside_its_link():
     """(a) Hip2Save shape: the photo wrapped in the product link, the text
     and a second link to the same product below it — per product. The key
-    is the href as a parser reads it (entities decoded)."""
+    is the href as a parser reads it (entities decoded). Without a banner
+    the first product's photo is the post's first image, its featured one:
+    never in a link's keeping."""
     x = "https://www.amazon.com/dp/B0AAAAAAAA?tag=h2s-20&amp;th=1"
     y = "https://www.amazon.com/dp/B0BBBBBBBB?tag=h2s-20"
-    html = (f'<p><a href="{x}"><img src="{UP}shelf.jpg" class="wp-image-11"></a></p>'
-            f'<p>SONGMICS Shelf $9.99 <a href="{x}">Buy</a></p>'
-            f'<p><a href="{y}"><img src="{UP}rack.jpg" class="wp-image-12"></a></p>'
-            f'<p>Drying Rack $5.99 <a href="{y}">Buy</a></p>')
-    assert product_images(html) == {
+    items = (f'<p><a href="{x}"><img src="{UP}shelf.jpg" class="wp-image-11"></a></p>'
+             f'<p>SONGMICS Shelf $9.99 <a href="{x}">Buy</a></p>'
+             f'<p><a href="{y}"><img src="{UP}rack.jpg" class="wp-image-12"></a></p>'
+             f'<p>Drying Rack $5.99 <a href="{y}">Buy</a></p>')
+    assert post_photos(BANNER + items).in_link == {
         "https://www.amazon.com/dp/B0AAAAAAAA?tag=h2s-20&th=1": UP + "shelf.jpg",
         y: UP + "rack.jpg",
     }
+    assert post_photos(items).in_link == {y: UP + "rack.jpg"}
 
 
-def test_product_images_lazy_sources_and_srcset():
+def test_post_photos_lazy_sources_and_srcset():
     """(b) Lazy-loaded images: src is a data: URI or a placeholder gif, the
     photo sits in data-src / data-lazy-src, or only in srcset (largest
     candidate wins)."""
     html = BANNER + (
-            '<p><img src="data:image/gif;base64,R0lGOD" data-src="https://cdn.example/a.jpg"'
-            ' class="lazyload"></p><p>A $1 <a href="https://shop.example/p/a/1">a</a></p>'
-            '<p><img src="https://blog.example/lazy-placeholder.gif"'
-            ' data-lazy-src="https://cdn.example/b.jpg"></p>'
-            '<p>B $2 <a href="https://shop.example/p/b/2">b</a></p>'
-            '<p><img srcset="https://cdn.example/c-300.jpg 300w, '
-            'https://cdn.example/c-1024.jpg 1024w, https://cdn.example/c-768.jpg 768w"></p>'
-            '<p>C $3 <a href="https://shop.example/p/c/3">c</a></p>')
-    assert product_images(html) == {
+        '<p><a href="https://shop.example/p/a/1"><img src="data:image/gif;base64,R0lGOD"'
+        ' data-src="https://cdn.example/a.jpg" class="lazyload"></a></p>'
+        '<p><a href="https://shop.example/p/b/2"><img src="https://blog.example/lazy-placeholder.gif"'
+        ' data-lazy-src="https://cdn.example/b.jpg"></a></p>'
+        '<p><a href="https://shop.example/p/c/3"><img srcset="https://cdn.example/c-300.jpg 300w, '
+        'https://cdn.example/c-1024.jpg 1024w, https://cdn.example/c-768.jpg 768w"></a></p>')
+    assert post_photos(html).in_link == {
         "https://shop.example/p/a/1": "https://cdn.example/a.jpg",
         "https://shop.example/p/b/2": "https://cdn.example/b.jpg",
         "https://shop.example/p/c/3": "https://cdn.example/c-1024.jpg",
     }
 
 
-def test_product_images_list_items():
-    """(c) One product per <li>: photo, name, link."""
-    html = BANNER + ('<ul><li><img src="https://cdn.example/1.jpg"> Towels $4 '
-            '<a href="https://www.walmart.com/ip/towels/111">link</a></li>'
-            '<li><img src="https://cdn.example/2.jpg"> Sheets $9 '
-            '<a href="https://www.walmart.com/ip/sheets/222">link</a></li></ul>')
-    assert product_images(html) == {
-        "https://www.walmart.com/ip/towels/111": "https://cdn.example/1.jpg",
-        "https://www.walmart.com/ip/sheets/222": "https://cdn.example/2.jpg",
-    }
-
-
-def test_product_images_figure_with_caption():
-    """(d) Gutenberg image block: linked photo in a <figure>, caption below."""
-    html = ('<figure class="wp-block-image"><a href="https://www.kohls.com/product/prd-5/x.jsp">'
-            f'<img src="{UP}kohls.jpg"></a><figcaption>Blender $19.99</figcaption></figure>')
-    assert product_images(html) == {
-        "https://www.kohls.com/product/prd-5/x.jsp": UP + "kohls.jpg"}
-
-
-def test_product_images_skips_junk_and_non_product_links():
-    """(e) Logos, icons, share buttons, pixels and SVGs are not photos;
-    share/comment/feed links and the post's own link are not products (a
-    picture linked to the post itself is its collage: dropped). A word that
-    merely contains a junk token ("silicone", "blanket") is no junk."""
-    post = "https://blog.example/roundup/"
-    mat = "https://shop.example/p/mat/5"
-    html = (f'<p><a href="{post}"><img src="{UP}collage.jpg"></a></p>'
-            f'<p><img src="{UP}pin-me.jpg"> '
-            '<a href="https://www.facebook.com/sharer.php?u=x">Share</a> '
-            '<a href="https://x.com/intent/tweet?url=x">Post</a> '
-            '<a href="https://pinterest.com/pin/create/?url=x">Pin</a> '
-            f'<a href="{post}?share=email">Email</a> <a href="{post}#respond">Reply</a> '
-            '<a href="https://blog.example/comments/feed/">Comments</a> '
-            '<a href="mailto:hi@blog.example">Mail</a></p>'
-            # Every junk image comes first inside the product link: each one
-            # must be skipped for the real photo to win.
-            f'<p>Mat $5 <a href="{mat}"><img src="{UP}site-logo.png">'
-            f'<img src="{UP}icons/cart.png"><img src="{UP}t.gif" width="1" height="1">'
-            f'<img src="{UP}star.svg"><img src="{UP}buy.jpg" class="share-button">'
-            '<img src="https://secure.gravatar.com/avatar/1.jpg">'
-            f'<img src="{UP}silicone-blanket.jpg" alt="Silicone mat, silicon tray, blanket">'
-            '</a></p>')
-    assert product_images(html, post) == {mat: UP + "silicone-blanket.jpg"}
-
-
-def test_product_images_adjacent_products_never_swap():
-    """(f) Loose photos in their own paragraph, each above its product's
-    text and link: each pairs with the link right after it, never with
-    the previous product's (nor with both); a photo farther than the
-    distance limit pairs with nothing."""
-    html = BANNER + (
-            f'<p><img src="{UP}a.jpg"></p>'
-            '<p>Shelf $9.99 <a href="https://www.target.com/p/shelf/-/A-111">Buy</a></p>'
-            f'<p><img src="{UP}b.jpg"></p>'
-            '<p>Rack $5 <a href="https://www.target.com/p/rack/-/A-222">Buy</a></p>'
-            f'<p>One more:</p><p><img src="{UP}far.jpg"></p>'
-            f'<p>Far away {"words " * 200} $1 '
-            '<a href="https://www.target.com/p/far/-/A-333">Buy</a></p>')
-    assert product_images(html) == {
-        "https://www.target.com/p/shelf/-/A-111": UP + "a.jpg",
-        "https://www.target.com/p/rack/-/A-222": UP + "b.jpg",
-    }
-    # One photo between two links reads both ways (photo under the mug's
-    # link, or above the cup's): neither gets it.
-    html = BANNER + ('<p>Mug <a href="https://shop.example/p/mug/1">Buy</a></p>'
-                     f'<p><img src="{UP}cup.jpg"></p>'
-                     '<p>Cup <a href="https://shop.example/p/cup/2">Buy</a></p>')
-    assert product_images(html) == {}
-    # A trailing photo after the last link makes the run read both ways.
-    html = BANNER + (f'<p><img src="{UP}a.jpg"></p><p>Shelf <a href="{A}">Buy</a></p>'
-                     f'<p><img src="{UP}b.jpg"></p><p>Rack <a href="{B}">Buy</a></p>'
-                     f'<p><img src="{UP}c.jpg"></p>')
-    assert product_images(html) == {}
-
-
-def test_product_images_lightbox_link():
-    """(g) A photo linked to its full-size file (lightbox) is not a product
-    link: the photo belongs to the nearest product link instead."""
-    html = BANNER + (
-            f'<p><a href="{UP}shelf-full.jpg"><img src="{UP}shelf-300x300.jpg"></a></p>'
-            '<p>Shelf $9.99 <a href="https://shop.example/p/shelf/1">Buy</a></p>')
-    assert product_images(html) == {
-        "https://shop.example/p/shelf/1": UP + "shelf-300x300.jpg"}
-
-
-def test_product_images_one_image_many_links_one_entry():
-    """(h) One product linked three times around one photo: one entry, and
-    a second photo of the same product does not replace the first."""
-    x = "https://shop.example/p/kettle/9"
-    html = (f'<p><a href="{x}">Kettle</a> $12 <a href="{x}"><img src="{UP}kettle.jpg"></a>'
-            f' <a href="{x}">Buy now</a></p><p><a href="{x}"><img src="{UP}kettle-2.jpg"></a></p>')
-    assert product_images(html) == {x: UP + "kettle.jpg"}
-
-
-# Reviewed layouts: a wrong photo is worse than none.
-A, B, C, Z =(f"https://www.target.com/p/{n}/-/A-{i}"
-              for i, n in ((1, "markers"), (2, "lego"), (3, "barbie"), (9, "crayons")))
-
-
-def test_product_images_heading_linked_listicle_takes_the_photo_below():
-    """Heading-linked listicle: each photo sits UNDER its product's linked
-    heading, the next heading follows its description. A first cut gave
-    each photo to the NEXT heading (B showed the markers)."""
-    html = BANNER + "".join(
-        f'<h2><a href="{link}">{i}. Product</a></h2>'
-        f'<figure><img src="{UP}{name}.jpg"></figure><p>Why we love it, $9.</p>'
-        for i, (link, name) in enumerate(((A, "a"), (B, "b"), (C, "c")), 1))
-    assert product_images(html) == {A: UP + "a.jpg", B: UP + "b.jpg", C: UP + "c.jpg"}
-
-
-def test_product_images_several_products_in_one_paragraph():
-    """Products separated by <br> in ONE <p>, each photo above its text: a
-    first cut measured the short hop back to the previous link and swapped
-    them; a text-only product just before a photo took that photo."""
-    html = BANNER + (
-        f'<p><img src="{UP}a.jpg"><br>Crayola Markers 40ct only $9.99 (reg $19.99) '
-        f'<a href="{A}">Shop now</a><br>Crayons 24ct only $1 <a href="{Z}">Shop now</a>'
-        f'<br><img src="{UP}b.jpg"><br>LEGO Classic Brick Box only $29.99 (reg $59.99) '
-        f'<a href="{B}">Shop now</a></p>')
-    assert product_images(html) == {A: UP + "a.jpg", B: UP + "b.jpg"}
-    # Without the banner the first photo is the post's featured image: it
-    # still opens the run (photo-then-link) but is never paired.
-    assert product_images(html.removeprefix(BANNER)) == {B: UP + "b.jpg"}
-    # Two products in one table row (a <td> opens no block): the same read.
-    row = BANNER + (
-        f'<table><tr><td><img src="{UP}a.jpg"><br>Markers $9.99 <a href="{A}">Buy</a></td>'
-        f'<td><img src="{UP}b.jpg"><br>LEGO $29.99 <a href="{B}">Buy</a></td></tr></table>')
-    assert product_images(row) == {A: UP + "a.jpg", B: UP + "b.jpg"}
-
-
-def test_product_images_extra_photo_never_falls_back_to_the_previous_product():
-    """Two image blocks (or lightbox links) for one product after a
-    text-only product: the extra photo is not the text-only product's."""
-    html = (BANNER + f'<p>Product Z $5 <a href="{Z}">here</a></p>'
-            f'<figure><img src="{UP}a1.jpg"></figure><figure><img src="{UP}a2.jpg"></figure>'
-            f'<p>Product A $6 <a href="{A}">here</a></p>')
-    assert Z not in product_images(html)
-    lightbox = (BANNER + f'<p>Product Z $5 <a href="{Z}">here</a></p>'
-                f'<figure><a href="{UP}a-full.jpg"><img src="{UP}a-300x300.jpg"></a></figure>'
-                f'<figure><a href="{UP}cart.png"><img src="{UP}cart-300.png"></a></figure>'
-                f'<p>Product A $6 <a href="{A}">here</a></p>')
-    assert Z not in product_images(lightbox)
-    assert Z not in product_images(html.removeprefix(BANNER))
-
-
-def test_product_images_collage_never_pairs_with_the_first_product():
-    """A roundup's top collage in its own block, then the products: it is
-    the post's featured image, not the first product's photo."""
-    collage = (f'<p><img class="aligncenter size-full wp-image-991" '
-               f'src="{UP}target-toy-sale-collage.jpg" width="1200"></p>')
-    items = (f'<ul><li>LEGO Classic $20 <a href="{A}">here</a></li>'
-             f'<li>Barbie Dreamhouse $90 <a href="{B}">here</a></li></ul>')
-    assert product_images(collage + "<p>Target has a big toy sale this week...</p>"
-                          + items) == {}
-    assert product_images(collage + items) == {}
-    with_photo = items.replace("<li>Barbie", f'<li><img src="{UP}barbie.jpg"> Barbie')
-    assert product_images(collage + with_photo) == {B: UP + "barbie.jpg"}
-    # An article's og:image is its featured image too, wherever it sits.
-    page = (f'<meta property="og:image" content="{UP}hero.jpg">'
-            f'<p><img src="{UP}masthead.jpg"></p><p>Intro</p>'
-            f'<p><img src="{UP}hero.jpg"></p>{items}')
-    assert product_images(page) == {}
-
-
-def test_product_images_repeated_image_is_decoration_lazy_src_wins():
-    """Jetpack lazy images: the same 1x1 placeholder in every src, the
-    photo in data-lazy-src. A 'buy now' button repeated inside every
-    product link is decoration too: the loose photo beside it wins."""
-    gif = "https://blog.example/wp-content/plugins/jetpack/modules/lazy-images/images/1x1.trans.gif"
-    html = "".join(
-        f'<p><a href="{link}"><img src="{gif}" data-lazy-src="{UP}{name}.jpg" '
-        f'width="600" height="600"></a></p><p>Product $9 <a href="{link}">Buy</a></p>'
-        for link, name in ((A, "a"), (B, "b")))
-    assert product_images(html) == {A: UP + "a.jpg", B: UP + "b.jpg"}
-    button = f'<img src="{UP}buy-now-amazon.png">'
-    html = BANNER + "".join(
-        f'<p><img src="{UP}{name}.jpg"> Product $9 <a href="{link}">{button}</a></p>'
-        for link, name in ((A, "a"), (B, "b")))
-    assert product_images(html) == {A: UP + "a.jpg", B: UP + "b.jpg"}
-    # Even once, a 'buy now' / 'shop now' graphic is no product photo.
-    once = (f'<p><a href="{A}"><img src="{UP}shop-now.png"></a></p>'
-            f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
-    assert product_images(once) == {B: UP + "lego.jpg"}
-    # A product photo shown loose once and inside its own link once is the
-    # product's, not decoration.
-    twice = (f'<p><img src="{UP}lego.jpg"></p><p>LEGO deal!</p>'
-             f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
-    assert product_images(twice) == {B: UP + "lego.jpg"}
-
-
-def test_product_images_picture_in_the_post_link_or_a_share_link_is_dropped():
-    """A picture linked to the post itself (its collage) or to a share
-    link (a 'pin it' graphic) is no one's photo: dropped, not kept loose,
-    even when the product right after it has no photo of its own."""
-    post = "https://blog.example/roundup/"
-    for href in (post, "https://pinterest.com/pin/create/?url=x"):
-        html = BANNER + (f'<p><a href="{href}"><img src="{UP}collage.jpg"></a></p>'
-                         f'<p>Markers $9.99 <a href="{A}">Buy</a></p>')
-        assert product_images(html, post) == {}
-
-
-def test_product_images_photo_in_a_block_nested_inside_its_link():
-    """Product boxes: the link wraps a <div> with the photo and one with the
-    text, the next product right after. A photo inside a link is that
-    link's, whatever blocks sit between them."""
-    boxes = "".join(f'<a href="{link}"><div class="pbox"><img src="{UP}{name}.jpg"></div>'
-                    f'<div>Product $9</div></a>' for link, name in ((A, "a"), (B, "b")))
-    assert product_images(BANNER + boxes) == {A: UP + "a.jpg", B: UP + "b.jpg"}
-
-
-@pytest.mark.parametrize("tag,wrap", [
-    ("p", ""), ("li", "ul"), ("div", ""), ("figure", ""), ("tr", "table"),
-    ("h3", ""), ("section", ""), ("article", ""), ("table", "")])
-def test_product_images_each_block_opener_separates_products(tag, wrap):
-    """(c) A text-only product, then one with its photo, each in its own
-    block: the photo is the second product's. Were the tag no block opener,
-    both would share one block and the photo would read both ways."""
-    towels = "https://www.walmart.com/ip/towels/111"
-    sheets = "https://www.walmart.com/ip/sheets/222"
-    items = (f'<{tag}>Towels $4 <a href="{towels}">link</a></{tag}>'
-             f'<{tag}><img src="{UP}sheets.jpg"> Mainstays Microfiber Sheet Set, Queen, '
-             f'4-piece, $9.99 (reg $30) <a href="{sheets}">link</a></{tag}>')
-    if wrap:
-        items = f"<{wrap}>{items}</{wrap}>"
-    intro = "div" if tag == "p" else "p"   # the intro never uses the tag under test
-    html = (f'<{intro}><img src="{UP}lead.jpg"></{intro}>'
-            f'<{intro}>{"Intro words. " * 70}</{intro}>{items}')
-    assert product_images(html) == {sheets: UP + "sheets.jpg"}
-
-
-def test_product_images_photo_goes_to_the_very_next_link_within_the_limit():
-    """A photo reads to the very next link: the first of two in the block
-    below it; the nearer of two photos above one link. Within 800
-    characters it pairs past a long description, beyond them never."""
-    two = BANNER + (f'<p><img src="{UP}a.jpg"></p>'
-                    f'<p>Markers $9 <a href="{A}">Buy</a>, or LEGO $5 <a href="{B}">here</a></p>')
-    assert product_images(two) == {A: UP + "a.jpg"}
-    near = BANNER + (f'<p><img src="{UP}brand-banner.jpg"> Markers deal! '
-                     f'<img src="{UP}a.jpg"> Markers $9 <a href="{A}">Buy</a></p>')
-    assert product_images(near) == {A: UP + "a.jpg"}
-    words = "Markers that never dry out. " * 11   # 308 characters
-    assert product_images(BANNER + f'<p><img src="{UP}a.jpg"></p>'
-                          f'<p>{words}$9 <a href="{A}">Buy</a></p>') == {A: UP + "a.jpg"}
-    assert product_images(BANNER + f'<p><img src="{UP}a.jpg"></p>'
-                          f'<p>{words * 3}$9 <a href="{A}">Buy</a></p>') == {}
+@pytest.mark.parametrize("href", [
+    "https://www.target.com/c/toy-sale/-/N-5xtnr",                 # category / sale
+    "https://www.walmart.com/browse/toys/4171",
+    "https://www.walmart.com/cp/rollbacks/123",
+    "https://www.walmart.com/search?q=lego",
+    "https://www.amazon.com/b?node=12345",
+    "https://www.amazon.com/s?k=lego",
+    "https://www.amazon.com/deals",                                # Amazon, no ASIN
+    "https://goto.target.com/c/1?u=https%3A%2F%2Fwww.target.com%2Fc%2Fsale%2F-%2FN-1",
+    "https://www.bestbuy.com/site/promo/toy-sale",
+    "https://www.kohls.com/",                                      # a home page
+    f"{UP}lego-full.jpg",                                          # a lightbox
+])
+def test_post_photos_photo_inside_a_listing_link_is_no_ones(href):
+    """In-link rule: the photo inside a link belongs to it only when the
+    link names a product. A sale, category, search or home page (or a
+    lightbox) is every product: its photo is kept only for the by-name
+    rule, and the link is no product of the post."""
+    photos = post_photos(BANNER + f'<p><a href="{href}"><img src="{UP}lego.jpg"></a></p>')
+    assert photos.in_link == {}
+    assert UP + "lego.jpg" in photos.named
+    assert photos.links == set()
 
 
 @pytest.mark.parametrize("href", [
@@ -644,16 +423,197 @@ def test_product_images_photo_goes_to_the_very_next_link_within_the_limit():
     "https://pinterest.com/pin/create/?url=x", "https://api.whatsapp.com/send?text=x",
     "https://www.reddit.com/submit?url=x", "https://www.linkedin.com/shareArticle?url=x",
     "https://x.com/intent/tweet?url=x", "https://mobile.x.com/intent/tweet?url=x",
-    "https://t.me/share/url?url=x", "https://other.example/feed/",
-    "https://other.example/2026/10/a-post/comments/", "https://other.example/a-post/#respond",
+    "https://t.me/share/url?url=x", "https://www.instagram.com/blog/",
+    "https://www.youtube.com/@blog", "https://www.tiktok.com/@blog",
+    "https://other.example/feed/", "https://other.example/2026/10/a-post/comments/",
+    "https://other.example/a-post/#respond", "https://blog.example/roundup/",
     "https://blog.example/roundup/?share=email", "mailto:hi@blog.example",
 ])
-def test_product_images_share_comment_and_feed_links_are_no_products(href):
-    """(e) A share, comment or feed link between a photo and its product's
-    link is not a product: the photo still reads to the product."""
-    html = BANNER + (f'<p><img src="{UP}a.jpg"></p>'
-                     f'<p>Markers $9 <a href="{href}">Share</a> <a href="{A}">Buy</a></p>')
-    assert product_images(html, "https://blog.example/roundup/") == {A: UP + "a.jpg"}
+def test_post_photos_share_follow_comment_and_post_links_are_dropped(href):
+    """A share, follow, comment or feed link, or the post itself: no
+    product, and a picture inside it (a 'pin it' graphic, the collage
+    linked to the post) is no one's photo at all."""
+    photos = post_photos(BANNER + f'<p><a href="{href}"><img src="{UP}pin.jpg"></a></p>',
+                         "https://blog.example/roundup/")
+    assert photos.in_link == {} and UP + "pin.jpg" not in photos.named
+    assert photos.links == set() and photos.images == set()
+
+
+def test_post_photos_featured_or_repeated_photo_is_never_in_a_link():
+    """The post's featured image (og:image, its first image, at whatever
+    size) inside a product link is not that product's: it is the collage
+    or the lead photo. A picture shown twice in the post is decoration (or
+    one product's photo lent to another link): in no link's keeping."""
+    lead = (f'<p><a href="{A}"><img src="{UP}collage.jpg"></a></p>'
+            f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
+    assert post_photos(lead).in_link == {B: UP + "lego.jpg"}
+    og = (f'<meta property="og:image" content="{UP}lego.jpg?w=1200">'
+          f'<p><img src="{UP}masthead.jpg"></p>'
+          f'<p><a href="{B}"><img src="{UP}lego-300x300.jpg"></a></p>')
+    assert post_photos(og).in_link == {}
+    twice = BANNER + (f'<p><a href="{A}"><img src="{UP}lego.jpg"></a></p>'
+                      f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
+    assert post_photos(twice).in_link == {}
+    loose_too = BANNER + (f'<p><img src="{UP}lego.jpg"></p><p>LEGO deal!</p>'
+                          f'<p><a href="{B}"><img src="{UP}lego.jpg"></a></p>')
+    assert post_photos(loose_too).in_link == {}
+
+
+def test_post_photos_skips_junk_images():
+    """Logos, icons, share buttons, pixels, avatars and SVGs are not photos
+    (every junk image comes first inside the product link: each one must be
+    skipped for the real photo to win). A word that merely contains a junk
+    token ("silicone", "blanket") is no junk."""
+    mat = "https://shop.example/p/mat/5"
+    html = BANNER + (
+        f'<p>Mat $5 <a href="{mat}"><img src="{UP}site-logo.png">'
+        f'<img src="{UP}icons/cart.png"><img src="{UP}t.gif" width="1" height="1">'
+        f'<img src="{UP}star.svg"><img src="{UP}buy.jpg" class="share-button">'
+        '<img src="https://secure.gravatar.com/avatar/1.jpg">'
+        f'<img src="{UP}shop-now.png"><img src="{UP}buy-now-amazon.png">'
+        f'<img src="{UP}silicone-blanket.jpg" alt="Silicone mat, silicon tray, blanket">'
+        '</a></p>')
+    photos = post_photos(html)
+    assert photos.in_link == {mat: UP + "silicone-blanket.jpg"}
+    assert set(photos.named) == {UP + "banner.jpg", UP + "silicone-blanket.jpg"}
+
+
+def test_post_photos_one_product_linked_three_times_one_entry():
+    """(h) One product linked three times around one photo: one entry, and
+    a second photo of the same product does not replace the first."""
+    x = "https://shop.example/p/kettle/9"
+    html = BANNER + (
+        f'<p><a href="{x}">Kettle</a> $12 <a href="{x}"><img src="{UP}kettle.jpg"></a>'
+        f' <a href="{x}">Buy now</a></p><p><a href="{x}"><img src="{UP}kettle-2.jpg"></a></p>')
+    assert post_photos(html).in_link == {x: UP + "kettle.jpg"}
+
+
+def test_post_photos_photo_in_a_block_nested_inside_its_link():
+    """Product boxes: the link wraps a <div> with the photo and one with the
+    text, the next product right after. A photo inside a link is that
+    link's, whatever blocks sit between them."""
+    boxes = "".join(f'<a href="{link}"><div class="pbox"><img src="{UP}{name}.jpg"></div>'
+                    f'<div>Product $9</div></a>' for link, name in ((A, "a"), (B, "b")))
+    assert post_photos(BANNER + boxes).in_link == {A: UP + "a.jpg", B: UP + "b.jpg"}
+
+
+def test_post_photos_words_name_each_photo():
+    """By-name rule input: each photo's words are its alt, title, its
+    figure's figcaption and its file name (no extension, -WxH size, digits
+    or deal words; a plural's s dropped). One photo served at two sizes is
+    one entry; a related post's thumbnail (the blog's own link) is none of
+    this post's photos."""
+    post = "https://blog.example/roundup/"
+    html = (
+        f'<figure class="wp-block-image"><img src="{UP}IMG_2041.jpg" alt="Crayola Markers 40ct">'
+        '</figure>'
+        f'<figure><a href="{A}"><img src="{UP}LEGO-Classic-Bricks-300x300.jpg"></a>'
+        '<figcaption>The <a href="x">Brick Box</a> today</figcaption></figure>'
+        f'<p><img src="{UP}LEGO-Classic-Bricks.jpg?w=912" title="Storage Tub"></p>'
+        '<figure class="wp-block-gallery"><figure><img src="https://cdn.example/1-2026.png">'
+        '<figcaption>Play-Doh Starter Set</figcaption></figure></figure>'
+        f'<p><a href="https://blog.example/old-lego-post/"><img src="{UP}lego-tower.jpg"'
+        ' alt="LEGO Classic Tower"></a></p>')
+    named = post_photos(html, post).named
+    assert named == {
+        UP + "IMG_2041.jpg": {"crayola", "marker", "40ct"},
+        UP + "LEGO-Classic-Bricks-300x300.jpg": {"lego", "classic", "brick", "box",
+                                                 "storage", "tub"},
+        "https://cdn.example/1-2026.png": {"play", "doh", "starter"},
+    }
+
+
+def test_post_photos_counts_products_and_photos():
+    """A post's own image may be its product's only while it shows at most
+    one product link and one photo besides the featured one: counted as
+    distinct off-site product links (one ASIN however linked is one; two
+    redirector links differing in the product they carry are two) and
+    distinct photos (one photo at two sizes is one; the featured image,
+    related-post thumbnails and listing pages do not count)."""
+    post = "https://blog.example/roundup/"
+    trx = "https://clicks.trx-hub.com/xid/h2s?q=https%3A%2F%2Fwww.nike.com%2Ft%2F{}"
+    html = (f'<meta property="og:image" content="{UP}hero.jpg">'
+            f'<p><img src="{UP}hero-1024x768.jpg"></p>'
+            '<p><a href="https://www.amazon.com/dp/B0AAAAAAAA?tag=x">Buy</a> '
+            '<a href="https://www.amazon.com/Kettle/dp/B0AAAAAAAA">Buy</a> '
+            f'<a href="{trx.format("shoe-1")}">a</a> <a href="{trx.format("shoe-2")}">b</a> '
+            '<a href="https://www.amazon.com/s?k=kettle">more</a> '
+            '<a href="https://blog.example/other-post/">related</a></p>'
+            f'<p><img src="{UP}kettle.jpg"></p><p><img src="{UP}kettle-300x300.jpg"></p>'
+            f'<p><a href="https://blog.example/other-post/"><img src="{UP}thumb.jpg"></a></p>')
+    photos = post_photos(html, post)
+    assert len(photos.links) == 3
+    assert photos.images == {"2026/10/kettle.jpg"}
+
+
+ROUNDUP_URL = "https://blog.example/target-roundup/"
+GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
+ROUNDUP_BODY = (
+    f'<p><a href="{ROUNDUP_URL}"><img src="{UP}collage.jpg"></a></p>'
+    f'<p><a href="{GOTO}shelf%2F-%2FA-111"><img src="{UP}shelf.jpg" class="wp-image-11"></a></p>'
+    f'<p>SONGMICS 5-Tier Shelf $39.99 (reg $59.99) <a href="{GOTO}shelf%2F-%2FA-111">Buy</a></p>'
+    f'<p><img src="{UP}Laundry-Drying-Rack.jpg" class="wp-image-12"></p>'
+    f'<p>Laundry Drying Rack $19.99 (reg $34.99) <a href="{GOTO}rack%2F-%2FA-222">Buy</a></p>'
+)
+
+
+def _roundup_feed(body_tag: str) -> bytes:
+    return (
+        "<?xml version='1.0'?><rss version='2.0' "
+        "xmlns:content='http://purl.org/rss/1.0/modules/content/'><channel><title>t</title>"
+        "<item><guid>rt-1</guid><title>Target home deals</title>"
+        f"<link>{ROUNDUP_URL}</link>{body_tag}</item></channel></rss>"
+    ).encode()
+
+
+def test_feed_roundup_entry_carries_its_photos(db, cfg):
+    """A content:encoded roundup with two products: the post carries the
+    shelf's photo inside its link and the rack's loose photo by its name
+    only (the collage linked to the post is no one's); image_url stays the
+    first image, as before. No grant, no photos."""
+    feed = _roundup_feed(f"<content:encoded><![CDATA[{ROUNDUP_BODY}]]></content:encoded>")
+    granted = make_source(url="https://feeds.example/roundup", image_permission=True)
+    f1 = FakeFetcher({granted.url: fr(granted.url, body=feed)})
+    post = RssAdapter().fetch_posts(granted, f1, db, cfg, NOW, None)[0]
+    assert post.photos.in_link == {GOTO + "shelf%2F-%2FA-111": UP + "shelf.jpg"}
+    assert set(post.photos.named) == {UP + "shelf.jpg", UP + "Laundry-Drying-Rack.jpg"}
+    assert len(post.photos.links) == 2
+    assert post.image_url == UP + "collage.jpg"
+    assert f1.calls == [granted.url]
+
+    plain = make_source(url="https://feeds.example/roundup")
+    f2 = FakeFetcher({plain.url: fr(plain.url, body=feed)})
+    assert RssAdapter().fetch_posts(plain, f2, db, cfg, NOW, None)[0].photos == PostPhotos()
+
+
+def test_article_photos_fill_gaps_body_photos_win(db, cfg):
+    """An excerpt (no price -> the article is fetched) shows one product;
+    the article shows more. The article fills the gaps; for the product the
+    excerpt already holds, the excerpt's photo stays, and that photo is
+    never handed to a second link. One photo at two sizes is one name."""
+    shelf, rack = GOTO + "shelf%2F-%2FA-111", GOTO + "rack%2F-%2FA-222"
+    lamp = GOTO + "lamp%2F-%2FA-333"
+    excerpt = (f'<p><img src="{UP}lead.jpg"></p>'
+               f'<p><a href="{shelf}"><img src="{UP}shelf-excerpt.jpg"></a> Shelf deal</p>')
+    feed = _roundup_feed(f"<description><![CDATA[{excerpt}]]></description>")
+    article = (f'<html><body><p><img src="{UP}lead.jpg"></p>'
+               f'<p><a href="{shelf}"><img src="{UP}shelf.jpg"></a></p>'
+               f'<p>Shelf $39.99 <a href="{shelf}">Buy</a></p>'
+               f'<p><a href="{rack}"><img src="{UP}rack.jpg"></a></p>'
+               f'<p>Rack $19.99 <a href="{rack}">Buy</a></p>'
+               f'<p><a href="{lamp}"><img src="{UP}shelf-excerpt-300x300.jpg"></a></p>'
+               '</body></html>').encode()
+    src = make_source(url="https://feeds.example/roundup", allowed_html=True,
+                      image_permission=True)
+    fetcher = FakeFetcher({src.url: fr(src.url, body=feed),
+                           ROUNDUP_URL: fr(ROUNDUP_URL, body=article)})
+    post = RssAdapter().fetch_posts(src, fetcher, db, cfg, NOW, None)[0]
+    assert ROUNDUP_URL in fetcher.calls
+    assert post.photos.in_link == {shelf: UP + "shelf-excerpt.jpg", rack: UP + "rack.jpg"}
+    assert set(post.photos.named) == {UP + "lead.jpg", UP + "shelf-excerpt.jpg",
+                                      UP + "shelf.jpg", UP + "rack.jpg"}
+    assert len(post.photos.links) == 3
+    assert "$39.99" in post.text
 
 
 IMG = "https://cdn.example/"
@@ -676,7 +636,7 @@ IMG = "https://cdn.example/"
     ({"data-original": IMG + "3.jpg", "src": IMG + "4.jpg"}, IMG + "3.jpg"),
     ({"src": IMG + "4.jpg", "srcset": IMG + "5.jpg 2000w"}, IMG + "4.jpg"),
 ])
-def test_product_images_image_source_rules(attrs, want):
+def test_image_source_rules(attrs, want):
     assert _pi_image_url(attrs) == want
 
 
@@ -715,76 +675,11 @@ def real_roundup_html(post_url: str) -> str:
 
 @pytest.mark.parametrize("i", range(len(REAL_LINKS)))
 def test_real_affiliate_links_find_their_own_photo(i):
-    """The deal's link as posted (and stored) is the href next to its
-    photo: each one finds that photo, never a neighbour's."""
+    """The deal's link as posted (and stored) is the href its photo sits
+    in: each one finds that photo, never a neighbour's."""
     post_url = "https://hip2save.com/deals/nike-sale/"
-    photos = product_images(real_roundup_html(post_url), post_url)
-    assert match_product_image([REAL_LINKS[i]], photos) == f"{UP}p{i}.jpg"
-
-
-ROUNDUP_URL = "https://blog.example/target-roundup/"
-GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
-ROUNDUP_BODY = (
-    f'<p><a href="{ROUNDUP_URL}"><img src="{UP}collage.jpg"></a></p>'
-    f'<p><img src="{UP}shelf.jpg" class="wp-image-11"></p>'
-    f'<p>SONGMICS 5-Tier Shelf $39.99 (reg $59.99) <a href="{GOTO}shelf%2F-%2FA-111">Buy</a></p>'
-    f'<p><img src="{UP}rack.jpg" class="wp-image-12"></p>'
-    f'<p>Laundry Drying Rack $19.99 (reg $34.99) <a href="{GOTO}rack%2F-%2FA-222">Buy</a></p>'
-)
-
-
-def _roundup_feed(body_tag: str) -> bytes:
-    return (
-        "<?xml version='1.0'?><rss version='2.0' "
-        "xmlns:content='http://purl.org/rss/1.0/modules/content/'><channel><title>t</title>"
-        "<item><guid>rt-1</guid><title>Target home deals</title>"
-        f"<link>{ROUNDUP_URL}</link>{body_tag}</item></channel></rss>"
-    ).encode()
-
-
-def test_feed_roundup_entry_carries_per_product_photos(db, cfg):
-    """A content:encoded roundup with two products: the post carries each
-    product link's own photo (the collage linked to the post is not one);
-    image_url stays the first image, as before. No grant, no photos."""
-    feed = _roundup_feed(f"<content:encoded><![CDATA[{ROUNDUP_BODY}]]></content:encoded>")
-    granted = make_source(url="https://feeds.example/roundup", image_permission=True)
-    f1 = FakeFetcher({granted.url: fr(granted.url, body=feed)})
-    post = RssAdapter().fetch_posts(granted, f1, db, cfg, NOW, None)[0]
-    assert post.product_images == {
-        GOTO + "shelf%2F-%2FA-111": UP + "shelf.jpg",
-        GOTO + "rack%2F-%2FA-222": UP + "rack.jpg",
-    }
-    assert post.image_url == UP + "collage.jpg"
-    assert f1.calls == [granted.url]
-
-    plain = make_source(url="https://feeds.example/roundup")
-    f2 = FakeFetcher({plain.url: fr(plain.url, body=feed)})
-    assert RssAdapter().fetch_posts(plain, f2, db, cfg, NOW, None)[0].product_images == {}
-
-
-def test_article_photos_fill_gaps_body_photos_win(db, cfg):
-    """An excerpt (no price -> the article is fetched) shows one product;
-    the article shows more. The article fills the gaps; for the product the
-    excerpt already paired, the excerpt's photo stays, and that photo is
-    never handed to a second link."""
-    shelf, rack = GOTO + "shelf%2F-%2FA-111", GOTO + "rack%2F-%2FA-222"
-    lamp = GOTO + "lamp%2F-%2FA-333"
-    excerpt = f'<p><a href="{shelf}"><img src="{UP}shelf-excerpt.jpg"></a> Shelf deal</p>'
-    feed = _roundup_feed(f"<description><![CDATA[{excerpt}]]></description>")
-    article = (f'<html><body><p><a href="{shelf}"><img src="{UP}shelf.jpg"></a></p>'
-               f'<p>Shelf $39.99 <a href="{shelf}">Buy</a></p>'
-               f'<p><a href="{rack}"><img src="{UP}rack.jpg"></a></p>'
-               f'<p>Rack $19.99 <a href="{rack}">Buy</a></p>'
-               f'<p><a href="{lamp}"><img src="{UP}shelf-excerpt.jpg"></a></p>'
-               '</body></html>').encode()
-    src = make_source(url="https://feeds.example/roundup", allowed_html=True,
-                      image_permission=True)
-    fetcher = FakeFetcher({src.url: fr(src.url, body=feed),
-                           ROUNDUP_URL: fr(ROUNDUP_URL, body=article)})
-    post = RssAdapter().fetch_posts(src, fetcher, db, cfg, NOW, None)[0]
-    assert ROUNDUP_URL in fetcher.calls
-    assert post.product_images == {shelf: UP + "shelf-excerpt.jpg", rack: UP + "rack.jpg"}
-    assert "$39.99" in post.text
+    photos = post_photos(real_roundup_html(post_url), post_url)
+    assert match_product_image([REAL_LINKS[i]], photos.in_link) == f"{UP}p{i}.jpg"
 
 
 # ------------------------------------------------------------ autodiscovery

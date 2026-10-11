@@ -289,16 +289,19 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     Deals created before a source's image grant (or from an excerpt-only
     feed entry) keep the credited article URL in their sightings; fetching
     that page once — politely, robots/permission-checked by the fetcher —
-    fills the card with the photo the article shows next to the deal's own
-    product link, else (single-product article only) its og:image. A
-    roundup article is fetched once per pass for all of its deals. A deal
-    whose article yields no photo is flagged so it is never fetched again.
-    A link several products share (marked at ingest, or held by two or
-    more products of one article) names none of them: no photo, no fetch.
+    fills the card by the ingest contract (product_images.pick_photo): the
+    photo inside the deal's own product link, else the one the page names
+    after its item (against the names of every deal stored for the
+    article); both, and they differ: none. Else, for a single-product
+    article only, its og:image. An article is fetched once per pass for all
+    of its deals. A deal whose article yields no photo is flagged so it is
+    never fetched again. A link several products share (marked at ingest,
+    or held by two or more products of one article) names none of them:
+    no photo inside it, no og:image — only one named after the item.
     """
     from .dedupe import _DEAL_FIELDS
-    from .fetch.rss import _first_image, _og_image, _permission_host, product_images
-    from .product_images import link_identity, match_product_image, other_product_photos
+    from .fetch.rss import _first_image, _og_image, _permission_host, post_photos
+    from .product_images import link_identity, pick_photo, single_product
 
     granted = {s.name: s for s in sources if s.image_permission}
     if not granted:
@@ -311,13 +314,15 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     # a collage that belongs to none of its deals. Live wart: the same
     # collage sat on four cards, and three jigsaw puzzles from one post
     # shared one puzzle's photo. A roundup's share image is never used;
-    # each of its deals gets only the photo shown next to its own link,
-    # and an image already on another product's card is never copied.
+    # each of its deals gets only its own photo (in its link, or named
+    # after it), and an image already on another product's card is never
+    # copied.
     # "Roundup" = an article credited by two or more DISTINCT products. One
     # product at two stores ("Bluey book at Amazon or Walmart") is one
     # product: its article photo is the product's. (A first cut counted
     # deals, not products, and dropped 173 good photos in one run.)
     article_items: dict[str, set[str]] = {}
+    article_names: dict[str, list[str]] = {}  # article -> its deals' item names
     # (article, link) -> products: a link two or more products of one
     # article hold is a store or sale page, naming none of them.
     article_links: dict[tuple[str, str], set[str]] = {}
@@ -330,6 +335,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             if sgt["source_name"] in granted:
                 url = str(sgt.get("source_url", ""))
                 article_items.setdefault(url, set()).add(_product_of(d))
+                article_names.setdefault(url, []).append(str(d.get("item") or ""))
                 if link:
                     article_links.setdefault((url, link), set()).add(_product_of(d))
     article_deals = {url: len(items) for url, items in article_items.items()}
@@ -337,7 +343,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     deals = _lift_roundup_flags(db, deals, granted, article_deals, now, show_dead)
     done += _clear_shared_article_images(db, deals, article_deals)
     pages: dict[str, str] = {}                 # article -> html ('' = no page)
-    photos: dict[str, dict[str, str]] = {}     # article -> product link -> photo
+    photos: dict[str, Any] = {}                # article -> its PostPhotos
     for deal in deals:
         if deal.get("image_url") or \
                 "image_backfill_tried" in (deal.get("flags") or []):
@@ -348,11 +354,11 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if sighting is None:
             continue
         article = str(sighting["source_url"])
-        # A link several products share names none: no photo beside it, no
-        # og:image, and no fetch for it.
+        # A link several products share names none: no photo inside it, no
+        # og:image; a photo named after the item is still the deal's.
         shared = bool(deal.get("link_shared")) or len(article_links.get(
             (article, link_identity(deal.get("canonical_url") or "")), ())) > 1
-        if not shared and article not in pages:
+        if article not in pages:
             if done >= _BLOG_IMAGE_BACKFILL_PER_RUN or \
                     (deadline is not None and time.monotonic() > deadline):
                 continue  # unflagged: the next pass fetches it
@@ -370,20 +376,22 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             if res.status == 200 and res.body and not res.blocked_by_robots:
                 pages[article] = res.body.decode("utf-8", errors="replace")
             done += 1
-        html = "" if shared else pages[article]
+        html = pages[article]
         image = ""
         if html:
             if article not in photos:
-                photos[article] = product_images(html, article)
-            image = match_product_image([deal.get("canonical_url") or ""],
-                                        photos[article])
-            if not image and article_deals.get(article, 0) <= 1 \
-                    and len(other_product_photos(photos[article], article)) < 2:
+                photos[article] = post_photos(html, article)
+            image = pick_photo([] if shared else [deal.get("canonical_url") or ""],
+                               str(deal.get("item") or ""),
+                               article_names.get(article, []), photos[article])
+            if image == "" and not shared and article_deals.get(article, 0) <= 1 \
+                    and single_product(photos[article]):
                 # Single-product article: its share image is the product's.
-                # One stored deal is not enough: a page that shows two or
-                # more products by their own photos is a roundup, and its
-                # share image is the collage.
+                # One stored deal is not enough: a page with two or more
+                # product links or photos is a roundup, and its share image
+                # is the collage.
                 image = _og_image(html) or _first_image(html)
+            image = image or ""  # None: its link and its name disagree
         product = _product_of(deal)
         if image and images_in_use.get(image, set()) - {product}:
             image = ""  # already another product's photo: not this deal's
@@ -437,7 +445,9 @@ def _repair_emptied_photos(db: DB, deals: list[dict[str, Any]], granted: dict,
     return deals
 
 
-_ROUNDUP_LIFT_KEY = "roundup_images_2026_10_11"
+#: Re-keyed when the per-product rule changed (layout pairing -> link and
+#: name evidence): roundup deals flagged under the old rule retry once.
+_ROUNDUP_LIFT_KEY = "roundup_photos_by_name_2026_10_11"
 
 
 def _lift_roundup_flags(db: DB, deals: list[dict[str, Any]], granted: dict,
@@ -445,9 +455,10 @@ def _lift_roundup_flags(db: DB, deals: list[dict[str, Any]], granted: dict,
                         show_dead: timedelta) -> list[dict[str, Any]]:
     """One-time lift (db meta keyed): roundup articles used to be refused
     outright — their deals were flagged 'tried' without a fetch (400 of the
-    720 photo-less live cards). Photo-less deals on the page (alive, or in
-    the "Just missed" window) credited to a roundup lose that flag once, so
-    the per-product pass tries each of them."""
+    720 photo-less live cards) — then tried under a layout rule since
+    replaced. Photo-less deals on the page (alive, or in the "Just missed"
+    window) credited to a roundup lose that flag once, so the per-product
+    pass tries each of them under the current rule."""
     from .dedupe import _DEAL_FIELDS
 
     if db.meta_get(_ROUNDUP_LIFT_KEY):
@@ -903,26 +914,29 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
     return stats
 
 
-def _count_post_products(pairs) -> None:
-    """Tell each post how many distinct products the parse found in it
-    (one product at two stores is one): dedupe lends a post's first image
-    only to a post of one product, never across a roundup. A link (as
-    posted or resolved) that two or more of a post's products hold is a
-    store or sale page naming none of them: each deal holding it is marked
-    link_shared and gets no photo."""
+def _mark_shared_links(pairs) -> None:
+    """A link (as posted or resolved) that two or more distinct products of
+    one post hold is a store or sale page naming none of them: each deal
+    holding it is marked link_shared (no photo inside that link, no post
+    image). Holders are every deal the parse read in the post
+    (RawPost.parsed, before evidence drops): a dropped item still shares."""
     from .product_images import link_identity
 
-    items: dict[int, set[str]] = {}
     holders: dict[tuple[int, str], set[str]] = {}   # (post, link) -> products
-    links = [{link_identity(u) for u in (e.link_as_posted, e.product_url)} - {""}
-             for _p, e in pairs]
-    for (post, extracted), mine in zip(pairs, links):
-        item = util.normalize_item(extracted.item)
-        items.setdefault(id(post), set()).add(item)
+
+    def hold(post, item: str, urls) -> set[str]:
+        mine = {link_identity(u) for u in urls} - {""}
         for link in mine:
-            holders.setdefault((id(post), link), set()).add(item)
+            holders.setdefault((id(post), link), set()).add(util.normalize_item(item))
+        return mine
+
+    links = []
+    for post, extracted in pairs:
+        for item, link in post.parsed:
+            hold(post, item, [link])
+        links.append(hold(post, extracted.item,
+                          [extracted.link_as_posted, extracted.product_url]))
     for (post, extracted), mine in zip(pairs, links):
-        post.products = len(items[id(post)])
         extracted.link_shared = any(len(holders[id(post), link]) > 1 for link in mine)
 
 
@@ -936,7 +950,7 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     The source's original link stays on the sighting for credit; only
     product_url is canonicalized. The product link as the post gave it is
     kept on link_as_posted (in memory only): the post's photos are keyed
-    by it (RawPost.product_images).
+    by it (RawPost.photos.in_link).
     """
     from .http_client import canonicalize_url, resolve_redirects
 
@@ -1062,7 +1076,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         _resolve_product_urls(pairs, fetcher, cfg, deadline)
 
         # ---- savings math + dedupe/upsert ----
-        _count_post_products(pairs)
+        _mark_shared_links(pairs)
         deals_upserted = 0
         for post, extracted in pairs:
             sav = compute_savings(extracted)

@@ -63,14 +63,15 @@ class TestBlogImageBackfill:
     SHELF = "https://www.target.com/p/songmics-shelf/-/A-111"
     RACK = "https://www.walmart.com/ip/drying-rack/222"
     GOTO = "https://goto.target.com/c/1/2/3?u=https%3A%2F%2Fwww.target.com%2Fp%2F"
-    # Two products, each photo above its affiliate link (lazy-loaded), plus
-    # the post's collage as og:image and linked to the post itself.
+    # Two products: the shelf's photo loose above its affiliate link (lazy-
+    # loaded, named in its alt), the rack's inside its own link; the post's
+    # collage as og:image and linked to the post itself.
     ROUNDUP_PAGE = (
         "<html><head><meta property='og:image' "
         "content='https://hip2save.com/i/collage.jpg'></head><body>"
         "<p><a href='https://hip2save.com/deals/roundup/'>"
         "<img src='https://hip2save.com/i/collage.jpg'></a></p>"
-        "<p><img src='data:image/gif;base64,R0l' "
+        "<p><img src='data:image/gif;base64,R0l' alt='SONGMICS 5-Tier Shelf' "
         "data-src='https://hip2save.com/i/shelf.jpg'></p>"
         "<p>SONGMICS Shelf $39.99 <a href='" + GOTO + "songmics-shelf%2F-%2FA-111'>"
         "Buy</a></p>"
@@ -111,11 +112,11 @@ class TestBlogImageBackfill:
     def test_roundup_page_gives_each_product_its_own_photo(self, tmp_path):
         """Live: 400 photo-less cards came from roundups (three Target cards
         from one Southern Savers post showed the store name). One fetch of
-        the page gives each deal the photo next to its own link — via the
-        affiliate redirect's Target id, or the Walmart item id — never the
-        collage; a deal without a product link gets nothing."""
+        the page gives each deal its own photo — the rack's inside its link
+        (the Walmart item id), the shelf's by the name in its alt — never the
+        collage; a deal neither linked nor named gets nothing."""
         db = DB(tmp_path / "state.db")
-        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, item="SONGMICS Shelf")
         self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK)
         self._seed(db, "nolink", self.ROUNDUP)
         self._seed(db, "amazon_search", self.ROUNDUP,
@@ -182,11 +183,11 @@ class TestBlogImageBackfill:
         db.close()
 
     def test_roundup_photo_never_goes_to_a_different_product(self, tmp_path):
-        """The photo next to the shelf link is already another product's
-        card photo: the shelf deal does not get it. The same product listed
-        at a second store may share it."""
+        """The photo named after the shelf is already another product's card
+        photo: the shelf deal does not get it. The same product listed at a
+        second store may share it."""
         db = DB(tmp_path / "state.db")
-        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF)
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, item="SONGMICS Shelf")
         self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK)
         self._seed(db, "rack_other_store", "https://hip2save.com/deals/b/",
                    image="https://hip2save.com/i/rack.jpg", item="rack")
@@ -209,14 +210,18 @@ class TestBlogImageBackfill:
         db.close()
 
     def test_one_time_lift_retries_flagged_roundup_deals(self, tmp_path):
-        """The old rule flagged every roundup deal 'tried' without a fetch.
-        Once (meta-keyed), photo-less roundup deals on the page lose that
-        flag and get the per-product pass; dead-and-gone deals, deals of a
-        single-product article and later flags are left alone."""
+        """The old rules flagged roundup deals 'tried' (first without a fetch,
+        then under layout pairing). Once (meta-keyed anew, so a db where the
+        layout-rule lift already ran gets it too), photo-less roundup deals
+        on the page lose that flag and get the per-product pass; dead-and-
+        gone deals, deals of a single-product article and later flags are
+        left alone."""
         db = DB(tmp_path / "state.db")
         db.meta_set("image_repair_2026_10_11", "done")  # the earlier repair ran
+        db.meta_set("roundup_images_2026_10_11", "done")  # the layout-rule lift ran
         tried = ("image_backfill_tried",)
-        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, flags=tried)
+        self._seed(db, "shelf", self.ROUNDUP, canonical=self.SHELF, flags=tried,
+                   item="SONGMICS Shelf")
         self._seed(db, "rack", self.ROUNDUP, canonical=self.RACK, flags=tried)
         self._seed(db, "gone", self.ROUNDUP, canonical=self.SHELF + "9", flags=tried)
         db.update_deal("gone", status="dead")  # no died_at: off the page
@@ -232,7 +237,7 @@ class TestBlogImageBackfill:
         assert db.get_deal("rack")["image_url"] == "https://hip2save.com/i/rack.jpg"
         assert db.get_deal("gone")["flags"] == ["image_backfill_tried"]
         assert db.get_deal("single")["flags"] == ["image_backfill_tried"]
-        assert db.meta_get("roundup_images_2026_10_11")
+        assert db.meta_get("roundup_photos_by_name_2026_10_11")
         # Runs once: a roundup deal flagged after the lift stays flagged.
         self._seed(db, "later", self.ROUNDUP, canonical=self.SHELF + "8", flags=tried)
         fetcher.calls.clear()
@@ -369,44 +374,97 @@ class TestBlogImageBackfill:
 
     def test_link_shared_by_several_products_names_none(self, tmp_path):
         """Review finding: two deals of one article hold the store's sale
-        page ("shop the sale here"), which the page pairs with its sale
-        collage after the lead image. Neither gets it nor the og:image, in
-        any pass, and neither asks the retailer's sale page for its share
-        image; a row marked at ingest (deals merged on that link) is not
-        even fetched for. A deal with its own link on the page gets its own
-        photo."""
+        page ("shop the sale here"), whose link wraps the sale collage.
+        Neither gets it nor the og:image, in any pass, and neither asks the
+        retailer's sale page for its share image; the shelf still gets the
+        photo the page names after it. A row marked at ingest (deals merged
+        on that link) gets one look at its article for a named photo. A
+        deal with its own link on the page gets the photo inside it."""
         db = DB(tmp_path / "state.db")
         article = "https://hip2save.com/deals/home-sale/"
-        sale = "https://www.target.com/c/home-sale/-/N-5xtnr"
+        sale = "https://www.kohls.com/catalog/home-sale.jsp"
         lamp = "https://www.target.com/p/desk-lamp/-/A-444"
         page = ("<meta property='og:image' content='https://hip2save.com/i/lead.jpg'>"
-                "<p><img src='https://hip2save.com/i/lead.jpg'></p><p>Target home sale!</p>"
-                "<p><img src='https://hip2save.com/i/sale-collage.jpg'></p>"
-                f"<p>Shop the sale <a href='{sale}'>here</a>:</p>"
+                "<p><img src='https://hip2save.com/i/lead.jpg'></p><p>Kohl's home sale!</p>"
+                f"<p><a href='{sale}'><img src='https://hip2save.com/i/sale-collage.jpg'></a>"
+                " Shop the sale:</p>"
                 "<ul><li>SONGMICS Shelf $39.99</li><li>Drying Rack $19.99</li></ul>"
-                "<p><img src='https://hip2save.com/i/lamp.jpg'></p>"
-                f"<p>Lamp $9 <a href='{lamp}'>Buy</a></p>").encode()
-        self._seed(db, "shelf", article, canonical=sale)
-        self._seed(db, "rack", article, canonical=sale + "?ref=h2s")  # same page
+                "<figure><img src='https://hip2save.com/i/songmics.jpg' "
+                "alt='SONGMICS 5-Tier Shelf'></figure>"
+                f"<p><a href='{lamp}'><img src='https://hip2save.com/i/lamp.jpg'></a> Lamp $9</p>"
+                ).encode()
+        self._seed(db, "shelf", article, canonical=sale, item="SONGMICS Shelf")
+        self._seed(db, "rack", article, canonical=sale + "?ref=h2s",  # same page
+                   item="Drying Rack")
         self._seed(db, "lamp", article, canonical=lamp)
         marked = "https://hip2save.com/deals/rollbacks/"
-        self._seed(db, "merged", marked, canonical="https://www.walmart.com/cp/rollbacks/123")
+        self._seed(db, "merged", marked, canonical="https://www.walmart.com/ip/x/123")
         db.update_deal("merged", payload=dict(db.get_deal("merged"), link_shared=True))
         src = make_source("hip2save", allowed_html=True, image_permission=True,
                           crawl_permission="written grant on file")
-        fetcher = self._Fetcher({article: page, marked: page})
+        # The marked row's article is a one-product page: still no og:image.
+        fetcher = self._Fetcher({article: page, marked:
+                                 b"<meta property='og:image' content='https://hip2save.com/i/rb.jpg'>"})
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
-        assert fetcher.calls == [article]
-        for key in ("shelf", "rack", "merged"):
+        assert fetcher.calls == [article, marked]
+        assert db.get_deal("shelf")["image_url"] == "https://hip2save.com/i/songmics.jpg"
+        for key in ("rack", "merged"):
             d = db.get_deal(key)
             assert d["image_url"] == "" and "image_backfill_tried" in d["flags"]
-            assert d["link_shared"] is True
+        for key in ("shelf", "rack", "merged"):
+            assert db.get_deal(key)["link_shared"] is True
         assert db.get_deal("lamp")["image_url"] == "https://hip2save.com/i/lamp.jpg"
         fetcher.calls.clear()
         pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
         pipeline._backfill_product_images(db, fetcher, None)
         assert fetcher.calls == []
-        assert [db.get_deal(k)["image_url"] for k in ("shelf", "rack", "merged")] == [""] * 3
+        assert [db.get_deal(k)["image_url"] for k in ("rack", "merged")] == [""] * 2
+        db.close()
+
+    def test_reviewed_listicle_page_gives_the_right_photo_or_none(self, tmp_path):
+        """Review finding (high), backfill path: a Gutenberg listicle (photo
+        figure / name heading / price-and-link paragraph) served as the
+        article, og:image a collage, three deals seeded with its dp links.
+        Layout pairing gave the markers deal the LEGO photo. One fetch: none
+        while the photos name no product, each its own once they do."""
+        from tests.test_dedupe import ALTS, GENERIC, TOYS, UP, _listicle
+
+        og = "<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>"
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        for i, (names, alts, want) in enumerate((
+                (GENERIC, ("", "", ""), ["", "", ""]),
+                (("a", "b", "c"), ALTS, [UP + "a.jpg", UP + "b.jpg", UP + "c.jpg"]))):
+            db = DB(tmp_path / f"state{i}.db")
+            for key, (item, link) in zip("xyz", TOYS):
+                self._seed(db, key, self.ROUNDUP, canonical=link, item=item)
+            fetcher = self._Fetcher({self.ROUNDUP: (
+                og + _listicle("figure/h3/p-link", names, alts)).encode()})
+            assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+            assert [db.get_deal(k)["image_url"] for k in "xyz"] == want
+            db.close()
+
+    def test_one_stored_deal_of_a_page_of_three_gets_no_collage(self, tmp_path):
+        """Review finding (medium): the page shows three products, each with
+        its own photo and dp link, opens with 'Shop it here' and closes with
+        'More toy deals here'; its one stored deal (a kettle, not on the
+        page) is no single product's: never the og:image collage."""
+        db = DB(tmp_path / "state.db")
+        self._seed(db, "kettle", self.ROUNDUP, canonical="https://www.amazon.com/dp/B0000000K9",
+                   item="Steel Kettle")
+        page = ("<meta property='og:image' content='https://hip2save.com/i/collage.jpg'>"
+                "<p><a href='https://www.walmart.com/shop/deals/toys'>Shop it here</a></p>"
+                + "".join(f"<figure><img src='https://hip2save.com/i/{n}.jpg'></figure>"
+                          f"<p>{n} $9 <a href='https://www.amazon.com/dp/B00000000{i}'>Buy</a></p>"
+                          for i, n in enumerate(("markers", "lego", "playdoh")))
+                + "<p>More toy deals <a href='https://www.target.com/c/toys/-/N-5xtb0'>here</a>"
+                "</p>").encode()
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({self.ROUNDUP: page})
+        assert pipeline._backfill_blog_images(db, fetcher, [src], deadline=None) == 1
+        kettle = db.get_deal("kettle")
+        assert kettle["image_url"] == "" and "image_backfill_tried" in kettle["flags"]
         db.close()
 
     def test_per_run_cap_leaves_deals_unflagged(self, tmp_path, monkeypatch):
@@ -490,24 +548,6 @@ def test_resolving_the_product_url_keeps_the_link_as_posted(monkeypatch):
     failed = deal()
     pipeline._resolve_product_urls([(None, failed)], None, cfg, time.monotonic() + 600)
     assert failed.link_as_posted == posted and "utm_source" not in failed.product_url
-
-
-def test_posts_parsed_into_several_products_are_marked_roundups():
-    """dedupe lends a post's first image only to a post of one product; the
-    pipeline counts the distinct products each post yielded (one product
-    at two stores is one)."""
-    from dealradar.models import ExtractedDeal
-
-    def deal(item, store):
-        return ExtractedDeal(item=item, store=store, source_url="s", source_name="n")
-
-    roundup, single, two_stores = make_post("a", 1), make_post("a", 2), make_post("a", 3)
-    pipeline._count_post_products([
-        (roundup, deal("SONGMICS Shelf", "Target")), (roundup, deal("Drying Rack", "Target")),
-        (single, deal("Ninja Blender", "Target")),
-        (two_stores, deal("Bluey Boo Book", "Amazon")),
-        (two_stores, deal("Bluey Boo Book", "Walmart"))])
-    assert (roundup.products, single.products, two_stores.products) == (2, 1, 1)
 
 
 def make_post(source: str, i: int) -> RawPost:

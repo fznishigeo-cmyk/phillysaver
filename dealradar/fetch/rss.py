@@ -24,7 +24,8 @@ from typing import Any
 import feedparser
 
 from .. import util
-from ..models import RawPost, SourceConfig
+from ..models import PostPhotos, RawPost, SourceConfig
+from ..product_images import _names_no_product, file_words, link_key, name_words, photo_key
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.rss")
@@ -77,23 +78,21 @@ def _first_image(body_html: str) -> str:
     return ""
 
 
-#: The tags product_images() reads: anchors and images, plus the block
-#: openers that separate one product of a roundup from the next.
-_PI_TAG = re.compile(
-    r"<(/?)(a|img|p|li|div|figure|h[1-6]|tr|section|article|table)\b([^>]*)>",
-    re.I)
+#: The tags post_photos() reads: anchors and images.
+_PI_TAG = re.compile(r"<(/?)(a|img)\b([^>]*)>", re.I)
 _PI_ATTR = re.compile(
     r"""([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))""")
-#: A loose image pairs with an anchor at most this many characters away.
-_PI_MAX_GAP = 800
+#: An innermost <figure> (a gallery's own figures hold one image each).
+_PI_FIGURE = re.compile(r"<figure\b(?:(?!<figure\b).)*?</figure>", re.I | re.S)
+_PI_CAPTION = re.compile(r"<figcaption\b[^>]*>(.*?)</figcaption>", re.I | re.S)
 #: Decoration, not a product: matched at word edges, so a silicone spatula
 #: or a throw blanket keeps its photo.
 _PI_JUNK_WORD = re.compile(
     r"(?<![a-z])(?:logo|icon|badge|button|spinner|placeholder|blank|loading"
     r"|share|sprite|buy[-_ ]?now|shop[-_ ]?now)s?(?![a-z])", re.I)
-#: Anchors that are never a product: social share/comment links.
+#: Anchors that are never a product: social share/follow/comment links.
 _PI_SOCIAL_HOSTS = ("facebook", "twitter", "pinterest", "whatsapp", "reddit",
-                    "linkedin")
+                    "linkedin", "instagram", "youtube", "tiktok")
 _PI_SOCIAL_EXACT = ("x.com", "t.me")
 _PI_NOT_PRODUCT = ("/feed/", "/comments", "#respond")  # mailto: is no http link
 #: An anchor to an image file is a lightbox, not a product.
@@ -109,7 +108,11 @@ def _pi_attrs(raw: str) -> dict[str, str]:
 
 
 def _pi_anchor_kind(href: str, article_url: str) -> str:
-    """'product', 'lightbox' or 'ignore' for one <a href>."""
+    """What one <a href> is: 'product' (an off-site page naming one
+    product), 'listing' (a category, sale, search or home page: every
+    product, so none), 'site' (the blog's own other pages: related posts,
+    redirects), 'lightbox' (an image file) or 'ignore' (share, follow,
+    comment and feed links, the post itself, non-http)."""
     if not href.startswith(("http://", "https://")):
         return "ignore"  # fragment, mailto:, javascript:, tel:, relative
     low = href.lower()
@@ -126,7 +129,9 @@ def _pi_anchor_kind(href: str, article_url: str) -> str:
         if host == (art.hostname or "") \
                 and parts.path.rstrip("/") == art.path.rstrip("/"):
             return "ignore"  # the post itself (?share=..., #comments)
-    return "product"
+        if host.removeprefix("www.") == (art.hostname or "").removeprefix("www."):
+            return "site"
+    return "listing" if _names_no_product(href) else "product"
 
 
 def _pi_url_ok(url: str) -> bool:
@@ -167,127 +172,92 @@ def _pi_image_url(attrs: dict[str, str]) -> str:
     return best
 
 
-def product_images(html: str, article_url: str = "") -> dict[str, str]:
-    """Each product link of a post -> the photo shown next to it.
+def post_photos(html: str, article_url: str = "") -> PostPhotos:
+    """What a post's HTML shows: the photo inside each product link, the
+    words naming each photo, and how many products and photos it shows.
 
     Live wart: a roundup (one post, several products) put its FIRST image —
-    a collage or one product's photo — on every deal of the post (three
-    Southern Savers Target cards showed the store name instead). Deal blogs
-    are WordPress: each product has its own <img>, inside its link or in
-    the same paragraph/list item/figure as its link and text.
-
-    One sequential scan of <a>, </a> and <img> tags (positions kept), the
-    HTML split into blocks at <p|li|div|figure|h1-6|tr|section|article|
-    table> openers. A wrong photo is worse than none, so a photo pairs
-    only when the layout says whose it is:
-      0. an <img> inside <a href=X>..</a> belongs to X;
-      1. a block holding one loose photo and one product link (a list
-         item, a paragraph, a figure) is that product;
-      2. else photos and links are read in runs, a run cut wherever a
-         text-bearing block (a description, a heading) or more than
-         _PI_MAX_GAP characters separates two of them. A run opening with
-         a photo and closing with a link reads photo-then-link: each photo
-         is the very next link's. One opening with a link and closing with
-         a photo reads link-then-photo (a heading-linked listicle): each
-         photo is the link just before it. Any other run reads both ways
-         and pairs nothing — the reviewed swaps (two products in one <p>,
-         a product's second photo after a text-only product) were all
-         such runs read one way.
-    Never paired loose: the post's featured image (og:image, its first
-    image: a collage, a banner, or one product's photo), and decoration —
-    a picture repeated across the post, inside two products' links or
-    loose twice (a lazy placeholder, a 'buy now' button, a divider); it
-    is no one's photo. Each image goes to one href, each href keeps its
-    first image. Share, comment, mailto and the post's own links are not
-    products (an image inside them is dropped); a lightbox link (href to
-    an image file) is not either, but its image is kept loose.
+    a collage or one product's photo — on every deal of the post. Pairing
+    loose photos with links by layout then failed three review rounds (a
+    heading, a price line or a featured image between a photo and its link
+    shifted every photo to the next product), and a wrong photo is worse
+    than none. So nothing here is paired by position:
+      - in_link: an <img> inside <a href=X>..</a> is X's — only when X names
+        a product (not a category, sale, search or home page, a share or
+        follow link, a lightbox or the post itself), the image is not the
+        post's featured image (og:image, its first image), and it appears
+        once in the post (a repeated picture is decoration: a lazy
+        placeholder, a button, a divider);
+      - named: every photo (loose or linked, the featured one too) with its
+        words: alt, title, its figure's figcaption and its file name.
+        Photos inside the blog's own links (related posts) are not this
+        post's;
+      - links / images: the distinct off-site product links, and the
+        distinct photos besides the featured one.
+    The deal side (product_images.pick_photo) takes the photo in its own
+    link, else the one named after its item.
 
     Only ever called for image-granted sources; the URLs are hotlinked,
     never copied or stored, and no text of the post is kept.
     """
     html = html or ""
-    anchors: list[list] = []                             # href, start, end of </a>, block
-    images: list[tuple[str, int, int, int, str]] = []    # url, start, end, block, owner
-    openers = [0]                                        # block k starts at openers[k]
-    first = ""                                           # the first image, wherever it sits
-    open_kind, open_href = "", ""
+    figures = [(m.start(), m.end(), _PI_CAPTION.search(m.group(0)))
+               for m in _PI_FIGURE.finditer(html)]
+    found: list[tuple[str, str, str, frozenset[str]]] = []   # url, kind, href, words
+    photos = PostPhotos()
+    first = ""                                               # the first image, wherever it sits
+    kind, href = "", ""
     for m in _PI_TAG.finditer(html):
         closing, tag = m.group(1), m.group(2).lower()
-        block = len(openers) - 1
         if tag == "a":
-            if closing:
-                if open_kind == "product":
-                    anchors[-1][2] = m.end()
-                open_kind, open_href = "", ""
-                continue
-            href = _pi_attrs(m.group(3)).get("href", "")
-            open_kind, open_href = _pi_anchor_kind(href, article_url), href
-            if open_kind == "product":
-                anchors.append([href, m.start(), m.end(), block])
-        elif tag == "img":
-            url = "" if closing else _pi_image_url(_pi_attrs(m.group(3)))
-            first = first or url
-            if url and open_kind != "ignore":
-                owner = open_href if open_kind == "product" else ""
-                images.append((url, m.start(), m.end(), block, owner))
-        elif not closing:
-            openers.append(m.start())
+            kind, href = "", ""
+            if not closing:
+                href = _pi_attrs(m.group(3)).get("href", "")
+                kind = _pi_anchor_kind(href, article_url)
+                if kind == "product":
+                    photos.links.add(link_key(href))
+            continue
+        attrs = {} if closing else _pi_attrs(m.group(3))
+        url = _pi_image_url(attrs) if attrs else ""
+        first = first or url
+        if not url or kind == "ignore":
+            continue
+        caption = next((c.group(1) for s, e, c in figures if c and s <= m.start() < e), "")
+        text = " ".join((attrs.get("alt", ""), attrs.get("title", ""),
+                         html_lib.unescape(re.sub(r"<[^>]*>", " ", caption))))
+        found.append((url, kind, href, name_words(text) | file_words(url)))
 
-    owners: dict[str, list[str]] = {}
-    for url, _s, _e, _b, owner in images:
-        owners.setdefault(url, []).append(owner)
-    decor = {u for u, o in owners.items() if len(set(o) - {""}) > 1 or o.count("") > 1}
-    featured = {_og_image(html), _first_image(html), first}
-    out: dict[str, str] = {}
-    used: set[str] = set()
-
-    def take(href: str, url: str) -> None:
-        if href not in out and url not in used:
-            out[href] = url
-            used.add(url)
-
-    for url, _s, _e, _b, owner in images:                # 0. inside its own link
-        if owner and url not in decor:
-            take(owner, url)
-    # The featured image stays in the layout (it opens the run it sits in:
-    # dropping it would flip how that run reads) but is never paired.
-    loose = [i for i in images if not i[4] and i[0] not in decor]
-    links_in: dict[int, set[str]] = {}
-    for href, _s, _e, blk in anchors:
-        links_in.setdefault(blk, set()).add(href)
-    photos_in = Counter(i[3] for i in loose)
-    rest = []
-    for url, start, end, blk, _o in loose:               # 1. its block's product
-        if url not in featured and photos_in[blk] == 1 and len(links_in.get(blk, ())) == 1 \
-                and min(max(a[1] - end, start - a[2])
-                        for a in anchors if a[3] == blk) <= _PI_MAX_GAP:
-            take(next(iter(links_in[blk])), url)
-        else:
-            rest.append((start, end, blk, "", url))
-    runs: list[list[tuple[int, int, int, str, str]]] = []  # 2. by the layout
-    for tok in sorted([(a[1], a[2], a[3], a[0], "") for a in anchors] + rest):
-        prev = runs[-1][-1] if runs else None
-        if prev and tok[0] - prev[1] <= _PI_MAX_GAP and (
-                tok[2] == prev[2]
-                or not _pi_has_text(html, openers[prev[2] + 1], openers[tok[2]])):
-            runs[-1].append(tok)
-        else:
-            runs.append([tok])
-    for run in runs:
-        opens_photo, closes_photo = bool(run[0][4]), bool(run[-1][4])
-        if opens_photo == closes_photo:
-            continue  # reads both ways
-        step = 1 if opens_photo else -1
-        for j, (_s, _e, _b, _h, url) in enumerate(run):
-            if url and url not in featured and 0 <= j + step < len(run) and run[j + step][3]:
-                take(run[j + step][3], url)
-    return out
+    featured = {photo_key(u) for u in (_og_image(html), _first_image(html), first) if u}
+    seen = Counter(photo_key(u) for u, *_rest in found)
+    named_as: dict[str, str] = {}                            # photo key -> its first URL
+    for url, kind, href, words in found:
+        key = photo_key(url)
+        if key not in featured and seen[key] == 1 and (kind == "product" or (
+                kind == "site" and not _names_no_product(href))):
+            photos.in_link.setdefault(href, url)
+        if kind == "site":
+            continue  # a related post's thumbnail is not this post's photo
+        url = named_as.setdefault(key, url)
+        photos.named[url] = photos.named.get(url, frozenset()) | words
+        if key not in featured:
+            photos.images.add(key)
+    return photos
 
 
-def _pi_has_text(html: str, start: int, end: int) -> bool:
-    """Visible text (tags dropped) in html[start:end]."""
-    return end > start and bool(
-        html_lib.unescape(re.sub(r"<[^>]*>", " ", html[start:end])).strip())
+def _merge_photos(body: PostPhotos, page: PostPhotos) -> PostPhotos:
+    """The entry body's photos plus its article page's. The body's links
+    win; the page fills gaps, never with a photo the body gave another
+    link. One photo is one entry whatever size each served it at."""
+    taken = {photo_key(v) for v in body.in_link.values()}
+    in_link = {**{k: v for k, v in page.in_link.items() if photo_key(v) not in taken},
+               **body.in_link}
+    named = dict(body.named)
+    urls = {photo_key(u): u for u in named}
+    for url, words in page.named.items():
+        url = urls.setdefault(photo_key(url), url)
+        named[url] = named.get(url, frozenset()) | words
+    return PostPhotos(in_link=in_link, named=named, links=body.links | page.links,
+                      images=body.images | page.images)
 
 
 def _entry_body(entry: Any) -> str:
@@ -399,8 +369,8 @@ class RssAdapter(SourceAdapter):
                 fetched_at=now,
                 image_url=(_first_image(body_html)
                            if source.image_permission else ""),
-                product_images=(product_images(body_html, url)
-                                if source.image_permission else {}),
+                photos=(post_photos(body_html, url)
+                        if source.image_permission else PostPhotos()),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
@@ -428,7 +398,7 @@ class RssAdapter(SourceAdapter):
         fetch silently falls back to the summary text. With ``want_image``
         (image-granted source, no picture yet) the article's og:image is
         taken as the post image. With ``images`` (image-granted source) the
-        article's per-product photos fill the gaps of the entry body's.
+        article's photos fill the gaps of the entry body's.
         """
         res = fetcher.get(post.url, conditional=False, deadline=deadline)
         if res.blocked_by_robots or res.status != 200 or not res.body:
@@ -439,21 +409,14 @@ class RssAdapter(SourceAdapter):
         image = post.image_url
         if want_image and not image:
             image = _og_image(html) or _first_image(html)
-        photos = post.product_images
+        photos = post.photos
         if images:
-            # The entry body's pairs win; the article only fills gaps, and
-            # never with a photo the body already gave another link.
-            taken = set(post.product_images.values())
-            photos = {**{k: v for k, v in product_images(html, post.url).items()
-                         if v not in taken},
-                      **post.product_images}
+            photos = _merge_photos(post.photos, post_photos(html, post.url))
         article_text = util.html_to_text(html)[:ARTICLE_TEXT_CAP]
         if not article_text:
             # Nothing readable to add — but a picture found is still kept.
-            if (image and image != post.image_url) \
-                    or photos != post.product_images:
-                return dataclasses.replace(post, image_url=image,
-                                           product_images=photos)
+            if (image and image != post.image_url) or photos != post.photos:
+                return dataclasses.replace(post, image_url=image, photos=photos)
             return None
         return RawPost(
             source_name=post.source_name,
@@ -464,7 +427,7 @@ class RssAdapter(SourceAdapter):
             published_at=post.published_at,
             fetched_at=post.fetched_at,
             image_url=image,  # enrichment must not drop (or may add) the image
-            product_images=photos,
+            photos=photos,
             # Idempotency anchor stays the summary-level text: whether (or how)
             # enrichment succeeded must never change the content hash, or the
             # same unchanged entry would re-parse on the next run.

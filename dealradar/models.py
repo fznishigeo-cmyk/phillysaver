@@ -38,6 +38,23 @@ class SourceConfig:
 
 
 @dataclass
+class PostPhotos:
+    """What a post's HTML shows (fetch.rss.post_photos; image-granted
+    sources only). Transient like RawPost.text, never persisted; the URLs
+    are hotlinked, never copied or stored."""
+
+    # Product link as posted -> the photo inside that link (<a href=X><img>).
+    in_link: dict[str, str] = field(default_factory=dict)
+    # Photo -> the words naming it (alt, title, figcaption, file name),
+    # normalized (product_images.name_words).
+    named: dict[str, frozenset[str]] = field(default_factory=dict)
+    # Distinct off-site product links, and distinct photos besides the
+    # post's featured one: more than one of either is more than one product.
+    links: set[str] = field(default_factory=set)
+    images: set[str] = field(default_factory=set)
+
+
+@dataclass
 class RawPost:
     """One post/item from a source. `text` is transient (never persisted)."""
 
@@ -57,14 +74,13 @@ class RawPost:
                                   # to the PRE-enrichment text so a flaky article
                                   # fetch can't make the same post hash differently
                                   # between runs. Empty -> `text` is used.
-    # Product link as posted -> the photo next to it in the post (roundups:
-    # one photo per product). Image-granted sources only; transient like
-    # `text`, never persisted. Values are hotlinked, never copied or stored.
-    product_images: dict[str, str] = field(default_factory=dict)
-    # Distinct products the parse found in this post (set by the pipeline
-    # before upsert; 0 = not counted). Two or more: a roundup, whose first
-    # image is never lent to a deal it was not paired with. Transient.
-    products: int = 0
+    # The photos the post shows (roundups: one per product). Image-granted
+    # sources only; transient like `text`, never persisted.
+    photos: PostPhotos = field(default_factory=PostPhotos)
+    # (item, product link as posted) of EVERY deal the parse read in this
+    # post, before evidence checks drop any: the names a photo is matched
+    # against, the holders of a shared link. Set by parse_posts; transient.
+    parsed: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def content_hash(self) -> str:
@@ -125,7 +141,7 @@ class ExtractedDeal:
     price_upper_bound: float | None = None
     # The product link exactly as the post gave it, kept by the pipeline
     # before product_url is resolved to the retailer URL; it is what the
-    # post's photos are keyed by (RawPost.product_images). Never persisted.
+    # post's photos are keyed by (RawPost.photos.in_link). Never persisted.
     link_as_posted: str = ""
     # Set by the pipeline: two or more different products of this post hold
     # this deal's link (a store or sale page). It names none of them; the

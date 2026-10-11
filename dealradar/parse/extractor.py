@@ -270,9 +270,12 @@ def parse_posts(
         stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
         post = _post_for_deals(post, len(llm_deals))
-        for d in llm_deals:
+        deals = [to_extracted(d, post, tz_name, now) for d in llm_deals]
+        # Every deal the LLM read, before evidence drops any: a dropped item
+        # still names a photo and still shares a link (dedupe, pipeline).
+        post.parsed = [(deal.item, deal.product_url) for deal in deals]
+        for deal in deals:
             stats["deals_extracted"] += 1
-            deal = to_extracted(d, post, tz_name, now)
             ok, reason = verify_evidence(deal, cleaned)
             if not ok:
                 stats["deals_dropped_evidence"] += 1
