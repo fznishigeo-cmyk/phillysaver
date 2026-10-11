@@ -107,7 +107,7 @@ paywall:
   # is a locked stub on the public site. The full payload is POSTed to the
   # Worker at api_url each render (NEWSLETTER_SECRET secret) and served to
   # members only. See docs/paywall.md.
-  enabled: true
+  enabled: false   # OFF until the page and the Worker are live; then true
   teaser_count: 8          # unlocked deals for visitors
   trial_days: 7
   api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev

@@ -143,7 +143,9 @@ class TestPublishFull:
 class TestConfig:
     def test_config_yaml_block(self):
         cfg = load_config()
-        assert cfg.paywall_enabled is True
+        # The switch is a deliberate operator decision (off until the page
+        # and the Worker are live); only its type is asserted here.
+        assert isinstance(cfg.paywall_enabled, bool)
         assert cfg.paywall_teaser_count == 8
         assert cfg.paywall_trial_days == 7
         assert cfg.paywall_api_url == ""
