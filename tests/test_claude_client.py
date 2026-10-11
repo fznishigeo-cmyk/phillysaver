@@ -226,7 +226,7 @@ class TestParsePathAndSpend:
         call = messages.parse_calls[0]
         assert call["model"] == HAIKU_NEW
         assert call["output_format"] is LLMDeals
-        assert call["max_tokens"] == 4096
+        assert call["max_tokens"] == 8192
         assert "BEGIN POST" in call["messages"][0]["content"]
 
     def test_default_pricing_used_for_unknown_model(self):
@@ -385,6 +385,32 @@ class TestJsonFallback:
         assert w.online_only == "true"
         assert w.shipping_cost_or_threshold == "35" and w.deferred_value == "11"
         assert g.stack_steps == ["clip the 50% coupon"]
+
+    def test_truncated_answer_keeps_the_complete_deals(self):
+        """A roundup cut off by max_tokens used to lose every deal; the
+        objects that closed before the cut are kept, the half one never."""
+        cut = ('{"deals": [{"item": "A \\"quoted\\" one", "store": "Target", '
+               '"final_price": 1.0, "evidence": {"final_price_quote": "$1.00"}}, '
+               '{"item": "B", "store": "Walmart", "final_price": 2.0, '
+               '"evidence": {"final_price_quote": "$2.00"}}, '
+               '{"item": "C half written", "store": "Ko')
+        messages = FakeCreateOnlyMessages(create_responses=[
+            FakeCreateResponse(cut, FakeUsage(10, 10), stop_reason="max_tokens"),
+            FakeCreateResponse("never asked", FakeUsage(10, 10)),
+        ])
+        parser = make_parser(messages)
+        deals = parser.extract("text", META)
+        assert [d.item for d in deals] == ['A "quoted" one', "B"]
+        assert len(messages.create_calls) == 1
+
+    def test_truncated_answer_with_nothing_complete_skips(self):
+        messages = FakeCreateOnlyMessages(create_responses=[
+            FakeCreateResponse('{"deals": [{"item": "C', FakeUsage(10, 10),
+                               stop_reason="max_tokens"),
+        ])
+        parser = make_parser(messages)
+        assert parser.extract("text", META) == []
+        assert len(messages.create_calls) == 1
 
     def test_invalid_then_valid_json_recovers(self):
         messages = FakeCreateOnlyMessages(create_responses=[

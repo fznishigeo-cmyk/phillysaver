@@ -34,7 +34,11 @@ log = logging.getLogger("dealradar.parse.claude_client")
 # LAST RESORT ONLY: used when GET /v1/models itself fails. Never the primary path.
 FALLBACK_MODEL = "claude-haiku-5-5"
 
-MAX_TOKENS = 4096
+#: Output cap per extraction. A roundup post ("20 Prime Day deals") needs
+#: ~250 output tokens per deal; 4096 cut such posts off at ~15 deals and
+#: the whole answer was dropped. Output is the cheap side of the bill and
+#: the spend caps still bound every run.
+MAX_TOKENS = 8192
 
 _JSON_ONLY_SUFFIX = (
     "\n\nRespond with ONLY a single JSON object, no prose and no markdown fences, "
@@ -57,6 +61,52 @@ def _strip_fences(text: str) -> str:
     """Tolerate a model that wraps its JSON in markdown fences despite orders."""
     m = _FENCE_RE.match(text)
     return m.group(1) if m else text.strip()
+
+
+def _salvage_truncated(text: str) -> str | None:
+    """A JSON answer cut off by max_tokens still holds every deal object
+    that closed before the cut. Return '{"deals": [<complete objects>]}'
+    (or None when nothing complete exists) so a long roundup yields its
+    first N deals instead of nothing. The scanner respects JSON strings;
+    it never repairs a half-written object (that would invent values)."""
+    text = _strip_fences(text)
+    start = text.find('"deals"')
+    if start == -1:
+        return None
+    lb = text.find("[", start)
+    if lb == -1:
+        return None
+    objects: list[str] = []
+    depth = 0
+    in_str = False
+    esc = False
+    obj_start = -1
+    for i in range(lb + 1, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start != -1:
+                objects.append(text[obj_start:i + 1])
+                obj_start = -1
+        elif ch == "]" and depth == 0:
+            break
+    if not objects:
+        return None
+    return '{"deals": [' + ",".join(objects) + "]}"
 
 
 class ClaudeParser:
@@ -279,15 +329,29 @@ class ClaudeParser:
             if stop == "refusal":
                 log.warning("model refused extraction (fallback path); zero deals")
                 return []
-            if stop == "max_tokens":
-                log.warning("fallback output truncated at max_tokens; skipping "
-                            "post instead of re-asking an identical truncation")
-                return []
             raw = "".join(
                 getattr(block, "text", "")
                 for block in getattr(resp, "content", []) or []
                 if getattr(block, "type", "") == "text"
             )
+            if stop == "max_tokens":
+                # A re-ask would truncate identically; keep the deals that
+                # closed before the cut (a long roundup's first N) or skip.
+                salvaged = _salvage_truncated(raw)
+                if salvaged is None:
+                    log.warning("fallback output truncated at max_tokens with "
+                                "no complete deal; skipping post")
+                    return []
+                try:
+                    deals = list(LLMDeals.model_validate(
+                        json.loads(salvaged)).deals)
+                except (ValueError, ValidationError) as e:
+                    log.warning("fallback output truncated at max_tokens; "
+                                "salvage failed (%s); skipping post", e)
+                    return []
+                log.warning("fallback output truncated at max_tokens; kept %d "
+                            "complete deal(s) from the cut answer", len(deals))
+                return deals
             try:
                 data = json.loads(_strip_fences(raw))
                 return list(LLMDeals.model_validate(data).deals)
