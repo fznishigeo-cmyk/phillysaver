@@ -277,7 +277,11 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     # shared one puzzle's photo. An article credited by two or more deals
     # is never used as a photo source, and an image already on another
     # card is never copied onto a second one.
-    article_deals: dict[str, int] = {}
+    # "Roundup" = an article credited by two or more DISTINCT products. One
+    # product at two stores ("Bluey book at Amazon or Walmart") is one
+    # product: its article photo is the product's. (A first cut counted
+    # deals, not products, and dropped 173 good photos in one run.)
+    article_items: dict[str, set[str]] = {}
     images_in_use: set[str] = set()
     for d in deals:
         if d.get("image_url"):
@@ -285,7 +289,10 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         for sgt in db.sightings_for(d["id"]):
             if sgt["source_name"] in granted:
                 url = str(sgt.get("source_url", ""))
-                article_deals[url] = article_deals.get(url, 0) + 1
+                article_items.setdefault(url, set()).add(
+                    str(d.get("normalized_item") or d.get("item") or d["dedupe_key"]))
+    article_deals = {url: len(items) for url, items in article_items.items()}
+    deals = _repair_emptied_photos(db, deals, granted, article_deals)
     done += _clear_shared_article_images(db, deals, article_deals)
     for deal in deals:
         if deal.get("image_url") or \
@@ -307,7 +314,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if article_deals.get(str(sighting["source_url"]), 0) > 1:
             # Roundup: its share image is a collage, not this deal's photo.
             flags = list(payload.get("flags") or [])
-            flags.append("image_backfill_tried")
+            if "image_backfill_tried" not in flags:
+                flags.append("image_backfill_tried")
             payload["flags"] = flags
             db.update_deal(deal["dedupe_key"], payload=payload)
             continue
@@ -331,7 +339,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
             images_in_use.add(image)
         else:
             flags = list(payload.get("flags") or [])
-            flags.append("image_backfill_tried")
+            if "image_backfill_tried" not in flags:
+                flags.append("image_backfill_tried")
             payload["flags"] = flags
         db.update_deal(deal["dedupe_key"], payload=payload)
         done += 1
@@ -342,12 +351,45 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     return done
 
 
+_PHOTO_REPAIR_KEY = "image_repair_2026_10_11"
+
+
+def _repair_emptied_photos(db: DB, deals: list[dict[str, Any]], granted: dict,
+                           article_deals: dict[str, int]) -> list[dict[str, Any]]:
+    """One-time repair (db meta keyed): the first roundup rule counted deals
+    instead of products and emptied 173 good photos in one run. Photo-less
+    deals credited to a single-product article get their 'tried' flag
+    lifted once so the normal pass fetches the article photo again."""
+    from .dedupe import _DEAL_FIELDS
+
+    if db.meta_get(_PHOTO_REPAIR_KEY):
+        return deals
+    lifted = 0
+    for d in deals:
+        flags = list(d.get("flags") or [])
+        if d.get("image_url") or "image_backfill_tried" not in flags:
+            continue
+        urls = [str(s.get("source_url", "")) for s in db.sightings_for(d["id"])
+                if s["source_name"] in granted]
+        if not urls or any(article_deals.get(u, 0) > 1 for u in urls):
+            continue
+        flags.remove("image_backfill_tried")
+        d["flags"] = flags
+        payload = {k: d.get(k) for k in _DEAL_FIELDS if k in d}
+        db.update_deal(d["dedupe_key"], payload=payload)
+        lifted += 1
+    db.meta_set(_PHOTO_REPAIR_KEY, util.iso(util.now_utc()))
+    if lifted:
+        log.info("photo repair: %d deal(s) may fetch their article photo again", lifted)
+    return deals
+
+
 def _clear_shared_article_images(db: DB, deals: list[dict[str, Any]],
                                  article_deals: dict[str, int]) -> int:
     """Drop a photo that two or more deals share when any of them was
-    credited to a roundup article (two or more deals from one page): that
-    image is the article's collage, not a product. Each loses the image and
-    is flagged so the backfill never re-attaches it."""
+    credited to a roundup article (two or more DISTINCT products from one
+    page): that image is the article's collage, not a product. Each loses
+    the image and is flagged so the backfill never re-attaches it."""
     from .dedupe import _DEAL_FIELDS
 
     by_image: dict[str, list[dict[str, Any]]] = {}

@@ -86,6 +86,62 @@ class TestBlogImageBackfill:
         assert db.get_deal("owner")["image_url"] == "https://hip2save.com/i/shared.jpg"
         db.close()
 
+    def test_one_product_at_two_stores_keeps_its_photo(self, tmp_path):
+        """Live regression: a deal-count rule treated 'Bluey book at Amazon
+        or Walmart' as a roundup and dropped 173 photos. Two deals of the
+        SAME product from one article are not a collage."""
+        db = DB(tmp_path / "state.db")
+        pic = "https://hip2save.com/i/bluey.jpg"
+        for key, store in (("bluey_amazon", "Amazon"), ("bluey_walmart", "Walmart")):
+            payload = {"dedupe_key": key, "store": store, "item": "Bluey Boo Book",
+                       "flags": [], "image_url": pic, "conditions": []}
+            deal_id = db.insert_deal(
+                dedupe_key=key, store=store, item="Bluey Boo Book",
+                normalized_item="bluey boo book", canonical_url="", payload=payload,
+                final_price=5.0, pct_at_checkout=50.0, abs_savings=5.0,
+                online_only="true", expires_at="", now=NOW)
+            db.add_sighting(deal_id, source_name="hip2save",
+                            source_url="https://hip2save.com/deals/bluey/",
+                            content_hash="h" + key, seen_at=NOW, final_price=5.0)
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        pipeline._backfill_blog_images(db, self._Fetcher({}), [src], deadline=None)
+        assert db.get_deal("bluey_amazon")["image_url"] == pic
+        assert db.get_deal("bluey_walmart")["image_url"] == pic
+        db.close()
+
+    def test_one_time_repair_refetches_wrongly_emptied_photos(self, tmp_path):
+        db = DB(tmp_path / "state.db")
+        # Emptied by the old rule: flagged tried, no photo, single-product article.
+        payload = {"dedupe_key": "lego", "store": "Amazon", "item": "LEGO Advent",
+                   "flags": ["image_backfill_tried"], "image_url": "", "conditions": []}
+        deal_id = db.insert_deal(dedupe_key="lego", store="Amazon", item="LEGO Advent",
+                                 normalized_item="advent lego", canonical_url="",
+                                 payload=payload, final_price=20.0, pct_at_checkout=50.0,
+                                 abs_savings=20.0, online_only="true", expires_at="", now=NOW)
+        db.add_sighting(deal_id, source_name="hip2save",
+                        source_url="https://hip2save.com/deals/lego/",
+                        content_hash="hlego", seen_at=NOW, final_price=20.0)
+        src = make_source("hip2save", allowed_html=True, image_permission=True,
+                          crawl_permission="written grant on file")
+        fetcher = self._Fetcher({"https://hip2save.com/deals/lego/":
+                                 b"<meta property='og:image' content='https://hip2save.com/i/lego.jpg'>"})
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert db.get_deal("lego")["image_url"] == "https://hip2save.com/i/lego.jpg"
+        assert fetcher.calls == ["https://hip2save.com/deals/lego/"]
+        # The repair runs once: a later photo-less, tried deal is left alone.
+        payload2 = dict(payload, dedupe_key="later", item="Later", image_url="")
+        did = db.insert_deal(dedupe_key="later", store="Amazon", item="Later",
+                             normalized_item="later", canonical_url="", payload=payload2,
+                             final_price=1.0, pct_at_checkout=50.0, abs_savings=5.0,
+                             online_only="true", expires_at="", now=NOW)
+        db.add_sighting(did, source_name="hip2save", source_url="https://hip2save.com/deals/later/",
+                        content_hash="hlater", seen_at=NOW, final_price=1.0)
+        fetcher.calls.clear()
+        pipeline._backfill_blog_images(db, fetcher, [src], deadline=None)
+        assert fetcher.calls == []
+        db.close()
+
     def test_collage_already_attached_is_cleared(self, tmp_path):
         """Three puzzles from one post carried one puzzle's photo: an image
         shared by deals of a roundup is dropped from all of them, once."""
