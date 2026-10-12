@@ -332,7 +332,7 @@ tracking:
   # Site-ownership checks: the content value of each meta tag, on every page.
   google_site_verification: ""      # google-site-verification
   bing_site_verification: ""        # msvalidate.01 (32 hex characters)
-  pinterest_domain_verify: ""       # p:domain_verify (32 hex characters)
+  pinterest_domain_verify: "a24dd8688b84862029ffdb65db755ed9"  # p:domain_verify (32 hex characters)
   facebook_domain_verification: ""  # facebook-domain-verification
 
 digest:
