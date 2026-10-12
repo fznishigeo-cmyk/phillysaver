@@ -155,16 +155,14 @@ Keep this file current: whoever stops working updates it in their last commit.
 - **Front-page mix (Codex task 034, merged 2026-10-12):** config-driven top 24 on
   All/fresh, static wall and best-today; other views, rotation and remaining
   order preserved. Sparse supply relaxes caps instead of hiding deals.
-  Tests: 19 focused checks pass; full suite 1,597 passed, 7 existing Stripe
-  socket tests blocked by sandbox, 1 deselected. Full green run outside
-  sandbox remains. No commit or push.
+  `niche_after: 8` keeps the first screen everyday. Full suite green; live
+  site check passed 2026-10-12 07:37 UTC (desktop + phone).
 - **Search, filters and freshness (Codex task 031, merged 2026-10-12):** rounded header
   search, word matching across categories with tab restore, counted store/source
   display-name filters, cache headers and return-to-tab refresh. Offline harness
-  covers search/refresh; hourly step 4 waits for the debounce. Full pytest:
-  1,585 passed, 7 existing Stripe tests blocked by sandbox sockets, 1 deselected.
-  Chromium is also sandbox-blocked; full green run and visual verification
-  remain. No commit or push.
+  covers search/refresh; hourly step 4 waits for the debounce. Chromium-
+  verified ("best office" finds BestOffice; Walmart in the store list); full
+  suite green; live site check passed 2026-10-12 07:37 UTC.
 - **Sovrn links (Codex task 032, merged 2026-10-12; off until the redirect probe passes):** enabled retailer wrappers
   with tracking stripped and stable deal `cuid`; overrides win, Amazon/source
   links and emails keep their rules. Added Sovrn reporting and hourly guard.
