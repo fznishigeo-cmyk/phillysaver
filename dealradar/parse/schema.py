@@ -29,12 +29,14 @@ CATEGORIES = (
 
 CATEGORY_RULES = """\
 Luggage, bags, wallets, sunglasses/eyewear, watches -> fashion;
+clothing, shoes, boots, sandals, jewelry (rings, earrings, necklaces, bracelets) -> fashion;
 car parts and accessories -> auto;
 personal care (skin care, makeup, hair care, fragrance, shaving and grooming,
 bath and body, nails) -> beauty;
 vitamins, supplements, medicine, first aid, oral care, medical devices,
 hearing-aid batteries, household supplies (cleaning, paper, laundry) -> health;
-lamps, blinds, furniture, bedding, home improvement -> home;
+lamps, lighting, mirrors, blinds, furniture, bedding, home improvement,
+tools, plumbing, brooms and mops -> home;
 outdoor gear, pools, lawn -> outdoors; binoculars and optics -> sports.
 Use other only when nothing fits.
 """

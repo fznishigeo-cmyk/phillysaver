@@ -437,7 +437,8 @@ def recategorize_live_deals(db, parser, deadline: float | None = None) -> None:
         db.meta_set("recategorized_v2", "1")
 
 
-OTHER_TRIED_META = "recategorize_other_tried"
+# v2: rules gained jewelry/shoes/tools (2026-10-12); earlier "other" answers get one more read.
+OTHER_TRIED_META = "recategorize_other_tried_v2"
 
 
 def recategorize_other(db, parser, deadline: float | None = None, per_run: int = 120) -> int:
