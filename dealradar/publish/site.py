@@ -272,9 +272,9 @@ SUPPORT_NOTE_MONTHLY = (
     "nothing extra; every deal stays free."
 )
 JOIN_FORM = (
-    '<form class="joinform"><label>Email <input name="email" type="email" '
-    'autocomplete="email" required></label><button type="submit" class="pwbtn btn">Join free</button>'
-    '<p class="meta muted">The best deals by email. Free. Unsubscribe anytime.</p>'
+    '<form class="joinform"><label for="join-email">Email</label><input id="join-email" name="email" type="email" '
+    'autocomplete="email" required><button type="submit" class="pwbtn btn">Join free</button>'
+    '<p class="meta muted">One email with the best deals. Unsubscribe anytime.</p>'
     '<p data-join-message role="status" hidden></p></form>'
 )
 
@@ -545,6 +545,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     pages = ("index.html", "welcome.html", "about.html",
              "careers.html", "contact.html", "how-it-works.html", "hacks.html",
              "subscribe.html", "privacy.html")
+    if support:
+        pages += ("join.html",)
+    else:
+        (out / "join.html").unlink(missing_ok=True)
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
@@ -579,6 +583,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
             html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
             html = html.replace("{{SUPPORT_PAGE_LABEL}}", "Join &amp; support" if link else "Join free")
+            html = html.replace("{{SUPPORT_PAGE_URL}}", "subscribe.html" if link else "/join")
             html = html.replace("{{SUPPORT_ACTION}}", (
                 f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
                 'target="_blank" rel="noopener">' + ("Support once" if monthly else "Support our work")
@@ -592,7 +597,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 f'<p class="disc muted" data-support-note>{SUPPORT_NOTE_MONTHLY if monthly else SUPPORT_NOTE}</p>'
                 if link else ""))
             html = html.replace("{{JOIN_FORM}}", JOIN_FORM)
-            html = html.replace("{{JOIN_FORM_JSON}}", json.dumps(JOIN_FORM))
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
@@ -626,6 +630,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
     public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
               "contact.html", "careers.html", "privacy.html"]
+    if support:
+        public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
     seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals)

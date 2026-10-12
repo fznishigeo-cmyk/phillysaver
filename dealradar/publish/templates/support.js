@@ -1,36 +1,16 @@
 "use strict";
 (function () {
-  var meta = {}, opener = null, dismissed = false, queued = false;
+  var meta = {}, dismissed = false, queued = false;
   var KEY = "wp.support.dismissed", WEEK = 7 * 24 * 60 * 60 * 1000;
-  var modal = document.getElementById("authmodal"), panel = document.getElementById("paywall");
-  var form = {{JOIN_FORM_JSON}};
+  var panel = document.getElementById("paywall");
   try { dismissed = Number(localStorage.getItem(KEY)) > Date.now(); }
   catch (e) { /* storage blocked: dismissal lasts for this page view */ }
   function track(name, params) {
     try { if (typeof window.wpTrack === "function") window.wpTrack(name, params); }
     catch (e) { /* never in the way */ }
   }
-  function open() {
-    if (!modal) { location.href = "/#join"; return; }
-    if (modal.hidden) opener = document.activeElement;
-    modal.hidden = false;
-    document.body.style.overflow = "hidden";
-    modal.querySelector('input[type="email"]').focus();
-  }
-  function close() {
-    if (!modal || modal.hidden) return;
-    modal.hidden = true;
-    document.body.style.overflow = "";
-    var back = opener && document.body.contains(opener) && opener.offsetParent !== null
-      ? opener : document.getElementById("subscribe");
-    if (back) back.focus();
-    opener = null;
-  }
   function fromHash() {
-    if (!["#join", "#signup", "#login"].includes(location.hash.toLowerCase())) return;
-    try { history.replaceState(null, "", location.pathname + location.search); }
-    catch (e) { /* fine */ }
-    open();
+    if (["#join", "#signup", "#login"].includes(location.hash.toLowerCase())) location.replace("/join");
   }
   function inView(el, edge) {
     if (!el || el.hidden) return false;
@@ -59,17 +39,15 @@
     // The header is sticky on desktop and scrolls away on phones: measure
     // from the viewport top, or the header's bottom while it is on screen.
     var edge = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
-    // Let the inline form and footer ask speak for themselves.
+    // Let the inline and footer asks speak for themselves.
     var otherAsk = Array.from(document.querySelectorAll(
-      "#content .joinform, footer [data-join], footer [data-support], footer [data-support-monthly]"
+      '#content .trialband, #content .joinform, footer a[href="/join"], footer [data-support], footer [data-support-monthly]'
     )).some(function (el) { return inView(el, edge); });
     panel.hidden = dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
     var bar = document.getElementById("subbar");
     if (bar) bar.hidden = !panel.hidden || otherAsk || inView(document.getElementById("subscribe"));
   }
   document.addEventListener("click", function (e) {
-    if (e.target.closest("[data-join]")) { e.preventDefault(); open(); }
-    if (e.target.closest("[data-join-close]") || e.target === modal) close();
     if (e.target.closest("[data-support]")) track("support_click", {plan: "once"});
     if (e.target.closest("[data-support-monthly]")) track("support_click", {plan: "monthly"});
     if (e.target.closest("[data-support-close]")) {
@@ -78,17 +56,6 @@
       catch (err) { /* storage blocked: still hide for this page view */ }
       refresh();
     }
-  });
-  document.addEventListener("keydown", function (e) {
-    if (!modal || modal.hidden) return;
-    if (e.key === "Escape") { e.preventDefault(); close(); }
-    if (e.key !== "Tab") return;
-    var controls = Array.from(modal.querySelectorAll("input,button,a[href]")).filter(function (el) {
-      return !el.disabled && el.offsetParent !== null;
-    });
-    var first = controls[0], last = controls[controls.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
   document.addEventListener("submit", function (e) {
     var el = e.target;
@@ -129,7 +96,8 @@
     new IntersectionObserver(function () { refresh(); }).observe(subscribe);
   }
   window.addEventListener("hashchange", fromHash);
-  window.wpSupport = {open: open, fromHash: fromHash, refresh: refresh, form: form};
+  window.wpSupport = {fromHash: fromHash, refresh: refresh};
+  fromHash();
   if (!document.getElementById("content")) {
     fetch("/deals.json?t=" + Date.now(), {cache: "no-store"})
       .then(function (r) { return r.json(); }).then(function (d) { refresh(d.meta || {}); }).catch(function () {});

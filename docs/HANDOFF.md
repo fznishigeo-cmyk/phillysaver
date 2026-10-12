@@ -149,6 +149,17 @@ Keep this file current: whoever stops working updates it in their last commit.
   1,576 passed, 7 existing Stripe socket tests blocked by sandbox, 1 deselected.
   Full green run outside this sandbox and live Sovrn verification remain.
   No commit or push.
+- **Professional buttons + Join page (Codex task 030, merged 2026-10-12):** support-mode
+  pills and calm buttons in both themes; all Join links now go to `/join`,
+  with old home hashes redirected and the email-only form on `join.html`.
+  Sitemap/IndexNow and hourly step 6 include it; membership bytes unchanged.
+  Merge resolution preserves task 029's header observer/scroll fallback and
+  inline/footer suppression for plain `/join` links; both Node harness assertion
+  sets run. Validation: 28 support checks passed; full suite: 1,521 passed,
+  only 7 existing Stripe tests blocked by sandbox sockets, 1 deselected;
+  all `tests/*.cjs` passed through pytest wrappers. Full green run and visual
+  verification remain. Files resolved but unstaged (Git index is read-only in
+  this sandbox). No commit or push.
 - **Calmer wall (Codex task 029, merged 2026-10-12):** flames need 2+
   signals; phone Join yields to the visible header (observer + scroll fallback),
   banner and inline/footer asks; only the ticker loops. Tests: 1,463 passed,

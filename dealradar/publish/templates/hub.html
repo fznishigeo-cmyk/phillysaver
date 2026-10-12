@@ -107,7 +107,13 @@ footer p{margin:0 0 8px}
 @media (max-width:520px){
   .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
 }
-</style>
+<!--support-->
+.tag{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.getdeal{font-weight:600;border-radius:10px;box-shadow:none;transition:background-color 150ms}
+.getdeal:hover,.getdeal:focus-visible{background:#0f7b6e;filter:none;transform:none}
+@media (prefers-color-scheme:dark){.getdeal:hover,.getdeal:focus-visible{background:#42c2b2}}
+.getdeal:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+<!--/support--></style>
 </head>
 <body>
 <header>
@@ -138,7 +144,7 @@ footer p{margin:0 0 8px}
     <a href="/contact.html">Contact</a>
     <a href="/privacy.html">Privacy</a>
   </nav>
-  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/#join">Join free</a></p><!--/support-->
+  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/join">Join free</a></p><!--/support-->
   <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Some outbound
      links are the source's affiliate links.</p>
 </footer>
