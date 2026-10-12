@@ -211,6 +211,8 @@ class AppConfig:
     keepa_amazon_pages_per_pull: int = 6
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
+    keepa_focus_categories: list[str] = field(default_factory=lambda: [
+        "Beauty & Personal Care", "Health & Household"])
     # NEW (not yet content-hashed) posts per pull: the first-run burst bound
     keepa_amazon_max_new_posts_per_pull: int = 10
     keepa_warehouse_max_new_posts_per_pull: int = 20
@@ -393,6 +395,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "warehouse_pages_per_pull", default=cfg.keepa_warehouse_pages_per_pull)))
     cfg.keepa_reserve_tokens = max(0.0, float(g(
         "keepa", "reserve_tokens", default=cfg.keepa_reserve_tokens)))
+    cfg.keepa_focus_categories = list(g(
+        "keepa", "focus_categories", default=cfg.keepa_focus_categories) or [])
     cfg.keepa_amazon_max_new_posts_per_pull = max(0, int(g(
         "keepa", "amazon_max_new_posts_per_pull",
         default=cfg.keepa_amazon_max_new_posts_per_pull)))

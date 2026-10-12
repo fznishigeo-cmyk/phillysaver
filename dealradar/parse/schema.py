@@ -27,6 +27,18 @@ CATEGORIES = (
     "office", "auto", "books_media", "gaming", "other",
 )
 
+CATEGORY_RULES = """\
+Luggage, bags, wallets, sunglasses/eyewear, watches -> fashion;
+car parts and accessories -> auto;
+personal care (skin care, makeup, hair care, fragrance, shaving and grooming,
+bath and body, nails) -> beauty;
+vitamins, supplements, medicine, first aid, oral care, medical devices,
+hearing-aid batteries, household supplies (cleaning, paper, laundry) -> health;
+lamps, blinds, furniture, bedding, home improvement -> home;
+outdoor gear, pools, lawn -> outdoors; binoculars and optics -> sports.
+Use other only when nothing fits.
+"""
+
 DEAL_TYPES = ("", "bogo", "b2g1", "b2g3", "b1g1_50", "free_after_rebate",
               "moneymaker", "penny")
 
@@ -295,7 +307,7 @@ Rules:
   kids_baby, toys_games, fashion, beauty, health, grocery, pets, outdoors,
   sports, office, auto, books_media, gaming, other.
 - confidence: your 0-1 confidence that this is a real, correctly copied deal.
-"""
+""" + "\nCategory rules:\n" + CATEGORY_RULES
 
 class CriticVerdict(BaseModel):
     """Deal-critic structured output: is the claimed regular price honest?"""
@@ -311,10 +323,6 @@ class IndexedCriticVerdict(CriticVerdict):
 
 class CriticVerdicts(BaseModel):
     verdicts: list[IndexedCriticVerdict]
-
-
-class DealCategories(BaseModel):
-    categories: list[str]
 
 
 CRITIC_SYSTEM_PROMPT = """\

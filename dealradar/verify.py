@@ -336,6 +336,9 @@ def keepa_products(key: str, asins: list[str], stats: int,
             asin = asins[0]  # single-ASIN answers may omit the field
         if asin:
             out[asin] = p
+    if budget is not None:
+        from .keepa_categories import remember_roots
+        remember_roots(budget.db, [dict(p, asin=a) for a, p in out.items()])
     return out
 
 

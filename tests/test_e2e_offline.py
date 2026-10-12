@@ -128,6 +128,19 @@ class _FakeResponse:
 
 
 class _FakeMessages:
+    def create(self, *, model, max_tokens, system, messages):
+        from types import SimpleNamespace
+
+        assert "Return ONLY a JSON array" in system
+        entries = json.loads(messages[0]["content"])
+        categories = {"Ninja Foodi 8-qt Air Fryer": "kitchen",
+                      "Chef Pro Knife Set": "kitchen", "Copper Pan Duo": "kitchen",
+                      "Mega Headphones X200": "electronics"}
+        response = _FakeResponse(None)
+        response.content = [SimpleNamespace(type="text", text=json.dumps([
+            {"i": e["i"], "category": categories[e["title"]]} for e in entries]))]
+        return response
+
     def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
         from dealradar.parse.schema import CriticVerdicts
         import json

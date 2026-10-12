@@ -8,10 +8,12 @@ counted, never guessed.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import re
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -329,8 +331,10 @@ def parse_posts(
                     stats["aborted_spend_cap"] = True
 
     # Category reuse is independent of status and condition; only verified
-    # structured deals need a title read. One call per run, at most 60 titles.
+    # structured deals need a title read. At most 60 titles, plus one retry
+    # of just the missing indexes.
     from ..http_client import extract_asin
+    from ..keepa_categories import category_from_name
     from .claude_client import categorize_titles
 
     categories = {}
@@ -345,6 +349,11 @@ def parse_posts(
         if post.structured is None:
             continue
         asin = str(post.structured.get("asin") or extract_asin(deal.product_url)).upper()
+        if post.structured.get("category") in CATEGORIES and post.structured["category"] != "other":
+            # Amazon's Home & Kitchen root still permits a known kitchen title.
+            deal.category = category_from_name(
+                post.structured.get("keepa_category_name", ""), categories.get(asin, "")) or deal.category
+            continue
         if asin in categories:
             deal.category = categories[asin]
         else:
@@ -353,13 +362,75 @@ def parse_posts(
             pending.setdefault(key, []).append(deal)
     groups = list(pending.values())[:60]
     if groups and (deadline is None or time.monotonic() < deadline):
+        def apply_category(i: int, category: str) -> None:
+            for deal in groups[i]:
+                deal.category = category
+
         try:
-            chosen = categorize_titles(parser, [g[0].item for g in groups])
-            for group, category in zip(groups, chosen):
-                for deal in group:
-                    deal.category = category
+            chosen = categorize_titles(parser, [g[0].item for g in groups], on_result=apply_category)
+            for i, category in enumerate(chosen):
+                apply_category(i, category)
         except SpendCapReached:
             stats["aborted_spend_cap"] = True
-            log.warning("spend cap reached in category call; using other")
+            log.warning("spend cap reached in category call; keeping accepted categories")
     stats["spend_usd"] = float(getattr(parser, "spend_usd", 0.0))
     return pairs, stats
+
+
+def recategorize_live_deals(db, parser, deadline: float | None = None) -> None:
+    """One resumable category-only repair; cached Amazon roots, then titles.
+    Accepted title answers are persisted before a retry can hit the cap.
+    """
+    from ..http_client import extract_asin
+    from ..keepa_categories import NAMES_META, ROOTS_META, cached_meta, category_from_name
+    from .claude_client import categorize_titles
+
+    if db.meta_get("recategorized_v2") == "1":
+        return
+    progress = cached_meta(db, "recategorized_v2")
+    done = set(progress.get("keys", []))
+    deals = sorted(db.all_deals(status="alive"), key=lambda d: d["dedupe_key"])
+    before = dict(sorted(Counter(d.get("category", "other") for d in deals).items()))
+    names = cached_meta(db, NAMES_META)
+    roots = cached_meta(db, ROOTS_META)
+
+    def save(deal: dict, category: str) -> None:
+        # Read the original payload: the DB's expanded row adds SQL columns,
+        # and a repair must not persist any of those or change other facts.
+        key = deal["dedupe_key"]
+        row = db.conn.execute("SELECT payload FROM deals WHERE dedupe_key=?", (key,)).fetchone()
+        payload = json.loads(row["payload"])
+        if payload.get("category") != category:
+            payload["category"] = category
+            db.update_deal(key, payload=payload)
+        done.add(key)
+        db.meta_set("recategorized_v2", json.dumps({"keys": sorted(done)}))
+
+    pending = []
+    for deal in deals:
+        if deal["dedupe_key"] in done:
+            continue
+        asin = str(deal.get("asin") or extract_asin(deal.get("canonical_url") or "")).upper()
+        category = category_from_name(names.get(roots.get(asin, ""), ""), deal.get("category", ""))
+        if asin and category:
+            save(deal, category)
+        else:
+            pending.append(deal)
+    for start in range(0, len(pending), 60):
+        if parser is None or (deadline is not None and time.monotonic() >= deadline):
+            break
+        group = pending[start:start + 60]
+        try:
+            chosen = categorize_titles(parser, [d["item"] for d in group],
+                                       on_result=lambda i, cat: save(group[i], cat))
+        except SpendCapReached:
+            log.info("recategorize v2: spend cap; unfinished titles resume next run")
+            break
+        for deal, category in zip(group, chosen):
+            if deal["dedupe_key"] not in done:
+                save(deal, category)
+    after = dict(sorted(Counter(d.get("category", "other") for d in
+                               db.all_deals(status="alive")).items()))
+    log.info("recategorize v2: before=%s after=%s", before, after)
+    if all(d["dedupe_key"] in done for d in deals):
+        db.meta_set("recategorized_v2", "1")

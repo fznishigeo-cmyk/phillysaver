@@ -34,7 +34,9 @@ def _clean_env(monkeypatch):
 
 @pytest.fixture()
 def cfg() -> AppConfig:
-    return load_config()
+    cfg = load_config()
+    cfg.keepa_focus_categories = []  # these tests cover the general lanes
+    return cfg
 
 
 def _mock_client(handler, cfg: AppConfig) -> httpx.Client:
