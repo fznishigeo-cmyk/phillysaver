@@ -2,6 +2,27 @@
 
 Keep this file current: whoever stops working updates it in their last commit.
 
+## Starting a new session (if the chat is lost)
+Nothing lives only in the chat: code, workflows, briefs (`docs/codex-tasks/`),
+this file and the encrypted state (`data` branch) are all in the repo, the
+site is on Cloudflare, keys are GitHub secrets, and the schedules keep running
+on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
+- **Working agreement with the operator** (non-technical, runs the business):
+  answer first, fast, in plain words and short bullets; ask nothing that can
+  be decided; put the important answer in the last message of a turn; work in
+  the background and say so in a line. "What do you think" = discuss, don't
+  build. Every published number has a check behind it; report failures
+  plainly.
+- **Codex** does routine coding (`codex exec -m gpt-6.1-sol`, effort
+  `xhigh`, `max` only if xhigh fails; operator 2026-10-12: "A+ quality" while
+  the free usage resets last, use the earliest-expiring reset first); Claude
+  writes the brief, reviews every diff, runs the suite and pushes.
+- **Recreate the session routines** (they fire into the session that made
+  them): hourly recap at :55 from 7:55am to 1:55am New York (none 3-8am);
+  keys reminder at 7:53, 13:53 and 19:53 New York until every key is in.
+- **Never** paste a key in chat or a log; the operator saves keys as GitHub
+  secrets. Probes (`*-probe.yml`) check each key read-only.
+
 ## How the system runs
 - **Pipeline:** `.github/workflows/fast.yml` runs every ~10 min and `hourly.yml`
   hourly. Each run fetches the sources, parses deals (Claude Haiku; Sonnet
