@@ -2,7 +2,8 @@ name: Meta key probe (manual)
 
 # Read-only check of META_SYSTEM_TOKEN: is it valid and never-expiring, does
 # it carry the posting permissions, and which Facebook Page and Instagram
-# account it can reach. Prints names, ids and counts only, never the key.
+# account it can reach, with their public website link and follower counts.
+# Prints names, ids, links and counts only, never the key.
 on:
   workflow_dispatch:
 
@@ -53,13 +54,17 @@ jobs:
           me, _ = get("me", fields="id,name")
           if me:
               print(f"key belongs to: {me.get('name')} ({me.get('id')})")
-          pages, _ = get("me/accounts", fields="id,name,instagram_business_account{id,username}")
+          pages, _ = get("me/accounts", fields="id,name,website,followers_count,"
+                         "instagram_business_account{id,username,website,followers_count,media_count}")
           rows = (pages or {}).get("data", [])
           print(f"pages this key can manage: {len(rows)}")
           for p in rows:
               ig = p.get("instagram_business_account") or {}
-              print(f"  page: {p.get('name')} ({p.get('id')}); instagram: "
-                    + (f"@{ig.get('username')} ({ig.get('id')})" if ig else "NOT LINKED"))
+              print(f"  page: {p.get('name')} ({p.get('id')}); website: {p.get('website') or '(none)'}; "
+                    f"followers: {p.get('followers_count', '?')}")
+              print("  instagram: " + (f"@{ig.get('username')} ({ig.get('id')}); website: "
+                    f"{ig.get('website') or '(none)'}; followers: {ig.get('followers_count', '?')}; "
+                    f"posts: {ig.get('media_count', '?')}" if ig else "NOT LINKED"))
           ok = ok and any(p.get("instagram_business_account") for p in rows)
           print("PROBE OK: ready to post" if ok else "PROBE NOT OK: see the lines above")
           raise SystemExit(0 if ok else 1)
