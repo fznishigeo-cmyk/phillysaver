@@ -133,6 +133,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Hourly screenshots + daily Lighthouse (Codex task 025, merged 2026-10-12):**
+  desktop/phone home, deal, best-today and phone banner captures in `site-shots`;
+  Lighthouse 12.6.1 daily 06:17 UTC, first sitemap hub/deal, accessibility/SEO
+  `LH_MIN` 85, matching tracker blocks. Artifacts: 3 days. Node checks pass;
+  pytest: 1,363 passed, 7 existing Stripe tests fail on sandbox socket
+  permissions, 1 deselected. Chromium launch blocked here: live captures/scores
+  need verification in Actions. No commit or push made.
 - **AI spend under $6/day (Codex task 020, merged 2026-10-12):** the critic
   judges up to `parse.critic_batch_size` (8) deals per Sonnet call with
   reasons cut to 120 characters, and reuses a stored verdict for the same

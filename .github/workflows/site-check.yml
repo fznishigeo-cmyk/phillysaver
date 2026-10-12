@@ -32,3 +32,10 @@ jobs:
         run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Check the live site
         run: node scripts/site_check.js
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-shots
+          path: shots/
+          retention-days: 3

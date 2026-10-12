@@ -1,0 +1,12 @@
+{
+  "categories": {
+    "performance": {"score": 1, "auditRefs": []},
+    "accessibility": {"score": 0.84, "auditRefs": [{"id": "labels", "weight": 7}]},
+    "best-practices": {"score": 1, "auditRefs": []},
+    "seo": {"score": 0.82, "auditRefs": [{"id": "description", "weight": 1}]}
+  },
+  "audits": {
+    "labels": {"score": 0, "title": "Form elements have labels", "description": "Private detail must not appear", "details": {"items": ["private@example.test"]}},
+    "description": {"score": 0, "title": "Document has a meta description"}
+  }
+}

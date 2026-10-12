@@ -1,0 +1,21 @@
+{
+  "categories": {
+    "performance": {"score": 0.42, "auditRefs": [{"id": "slow", "weight": 10}, {"id": "minor", "weight": 1}, {"id": "info", "weight": 0}]},
+    "accessibility": {"score": 0.91, "auditRefs": [{"id": "labels", "weight": 7}, {"id": "contrast", "weight": 3}, {"id": "minor", "weight": 1}]},
+    "best-practices": {"score": 0.73, "auditRefs": [{"id": "secure", "weight": 5}, {"id": "images", "weight": 2}, {"id": "manual", "weight": 9}, {"id": "na", "weight": 9}]},
+    "seo": {"score": 0.85, "auditRefs": [{"id": "title", "weight": 6}, {"id": "passed", "weight": 10}]}
+  },
+  "audits": {
+    "slow": {"score": 0.3, "title": "Largest Contentful Paint"},
+    "labels": {"score": 0, "title": "Form elements have labels"},
+    "title": {"score": 0, "title": "Document has a title"},
+    "secure": {"score": 0, "title": "Uses HTTPS"},
+    "contrast": {"score": 0, "title": "Background and foreground colors have sufficient contrast"},
+    "images": {"score": 0, "title": "Displays images with correct aspect ratio"},
+    "minor": {"score": 0, "title": "Minor issue"},
+    "info": {"score": 0, "title": "Informational finding", "scoreDisplayMode": "informative"},
+    "manual": {"score": null, "title": "Manual check", "scoreDisplayMode": "manual"},
+    "na": {"score": null, "title": "Not applicable", "scoreDisplayMode": "notApplicable"},
+    "passed": {"score": 1, "title": "Passing audit"}
+  }
+}

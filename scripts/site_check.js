@@ -71,7 +71,7 @@ function check(ok, reason) { if (!ok) throw new Error(reason); }
 
 async function walk(page, doc, device) {
   const results = [], errors = [];
-  let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "";
+  let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "", dealPage = "";
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
   async function step(n, name, action) {
     try {
@@ -177,10 +177,6 @@ async function walk(page, doc, device) {
         const response = await readSite(path), body = await response.text();
         check(response.status === 200, `HTTP ${response.status}`);
         if (kind === "html") check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
-        if (kind === "deal") {
-          check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
-          check(/<a\b[^>]*href=["']https?:\/\/[^"']+["'][^>]*>Get deal<\/a>/i.test(body), "missing Get deal link");
-        }
         // XML and plain text have no HTML title.
         if (kind === "xml") check(/<urlset\b/.test(body), "invalid sitemap");
         if (kind === "text") check(/User-agent:/i.test(body), "invalid robots.txt");
@@ -197,11 +193,9 @@ async function walk(page, doc, device) {
       .slice(0, 3);
     if (hubs.length < 3) problems.push("fewer than 3 category hubs in sitemap");
     for (const hub of hubs) await read(hub);
-    const deal = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
+    dealPage = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
       .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } });
-    if (deal) await read(deal, "deal");
-    else problems.push("no deal page in sitemap");
-    await read("best-deals-today/", "deal");
+    if (!dealPage) problems.push("no deal page in sitemap");
     check(!problems.length, problems.join("; "));
   });
   await step(9, "Publish freshness", async () => {
@@ -214,6 +208,34 @@ async function walk(page, doc, device) {
     check(result.ok, result.reason);
     return result.note;
   });
+  fs.mkdirSync("shots", { recursive: true });
+  await step(11, "Home screenshot", async () => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    // Home is deliberately just the first screen, never the endless wall.
+    await page.screenshot({ path: `shots/${device}-home.png`, fullPage: false });
+  });
+  if (device === "phone" && support) await step(12, "Support banner screenshot", async () => {
+    await page.locator(CARDS).nth(7).evaluate((card) =>
+      window.scrollTo(0, window.scrollY + card.getBoundingClientRect().bottom + 1));
+    await page.locator("#paywall.support").waitFor({ state: "visible" });
+    const box = await page.locator("#paywall.support").boundingBox();
+    check(box && box.y < 844 && box.y + box.height > 0, "banner outside phone viewport");
+    await page.screenshot({ path: "shots/phone-support.png", fullPage: false });
+  });
+  // Browser visits replace step 8's old HTML fetches: one navigation each,
+  // with the same content checks and request/analytics guard as home.
+  for (const [name, url] of [["deal", dealPage], ["best-today", "best-deals-today/"]]) {
+    await step(name === "deal" ? 13 : 14, `${name} page / screenshot`, async () => {
+      check(url, "no deal page in sitemap");
+      check(new URL(url, SITE).origin === SITE_URL.origin, "off-site URL");
+      const response = await page.goto(new URL(url, SITE).href, { waitUntil: "load", timeout: 60000 });
+      await page.screenshot({ path: `shots/${device}-${name}.png`, fullPage: true });
+      check(response && response.status() === 200, `HTTP ${response && response.status()}`);
+      const body = await response.text();
+      check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+      check(/<a\b[^>]*href=["']https?:\/\/[^"']+["'][^>]*>Get deal<\/a>/i.test(body), "missing Get deal link");
+    });
+  }
   // Include errors from every interaction in the home/no-page-errors step.
   if (errors.length) Object.assign(results[0], { ok: false, reason: `page errors: ${errors.length}` });
   return { device, results, shown, errors };

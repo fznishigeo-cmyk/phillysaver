@@ -201,18 +201,21 @@ def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():
     if not shutil.which("node"):
         import pytest
         pytest.skip("node unavailable")
-    # Exercise step 8 with offline HTTP responses; no retailer URL is opened.
+    # Discover pages in step 8, then visit each exactly once for screenshots.
     script = r'''
 const assert = require("node:assert/strict"), fs = require("node:fs");
 const source = fs.readFileSync("scripts/site_check.js", "utf8");
-const code = "await step(8," + source.split("await step(8,")[1].split("await step(9,")[0];
-const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", code);
+const code = "let dealPage; await step(8," + source.split("await step(8,")[1].split("await step(9,")[0] +
+  source.slice(source.indexOf('  for (const [name, url] of [["deal", dealPage]'),
+    source.indexOf("  // Include errors from every interaction"));
+const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "page", "SITE", "SITE_URL", "device", code);
 const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
   "/deals/electronics/", "/deals/pets/", "/deals/home-kitchen/", "/best-deals-today/"]
   .map(p => `<url><loc>https://wowpriced.com${p}</loc></url>`).join("") + '</urlset>';
 (async () => {
   for (const missing of ["", "/deal/first-12345678/", "/best-deals-today/"]) {
     const requests = [];
+    const shots = [], problems = [];
     const read = async p => {
       const path = new URL(p, "https://wowpriced.com/").pathname;
       requests.push(path);
@@ -221,14 +224,21 @@ const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
           '<a class="getdeal" href="https://store.test/product" rel="sponsored noopener">Get deal</a>');
       return {status: 200, text: async () => body};
     };
-    const execute = () => run(async (n, name, action) => action(), read,
-      (ok, reason) => { if (!ok) throw new Error(reason); });
-    if (missing) await assert.rejects(execute, /missing Get deal link/);
-    else await execute();
+    await run(async (n, name, action) => { try { await action(); } catch(e) { problems.push(e.message); } }, read,
+      (ok, reason) => { if (!ok) throw new Error(reason); },
+      {goto: async url => {const r = await read(url); return {status: () => r.status, text: r.text};},
+        screenshot: async options => shots.push(options)},
+      "https://wowpriced.com/", new URL("https://wowpriced.com/"), "desktop");
+    assert.deepEqual(problems, missing ? ["missing Get deal link"] : []);
     assert(requests.includes("/deal/first-12345678/"));
     assert(requests.includes("/best-deals-today/"));
     assert(!requests.includes("/deal/second-87654321/"));
     assert(!requests.some(p => p.includes("store.test")));
+    assert.equal(requests.filter(p => p === "/deal/first-12345678/").length, 1);
+    assert.equal(requests.filter(p => p === "/best-deals-today/").length, 1);
+    if (!missing) assert.deepEqual(shots, [
+      {path: "shots/desktop-deal.png", fullPage: true},
+      {path: "shots/desktop-best-today.png", fullPage: true}]);
   }
 })().catch(e => { console.error(e); process.exitCode = 1; });
 '''
