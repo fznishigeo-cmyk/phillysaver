@@ -67,7 +67,7 @@ def test_config_defaults_valid_link_and_operator_switch(tmp_path):
     cfg = load_config(path)
     assert cfg.support_enabled and cfg.support_payment_link == LINK
     assert load_config().support_enabled is True
-    assert load_config().support_payment_link == ""
+    assert load_config().support_payment_link.startswith("https://buy.stripe.com/")  # operator link 2026-10-12
     assert load_config().newsletter_enabled is False  # email launch is later
 
 

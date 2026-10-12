@@ -199,7 +199,7 @@ members:
 
 support:
   enabled: true        # free site: Join free + Support; trial/membership UI hidden
-  payment_link: ""     # one-time, pay-what-you-want Stripe Payment Link; empty hides Support
+  payment_link: "https://buy.stripe.com/8x2fZia1zadCfGD8UjeIw02"     # one-time, pay-what-you-want Stripe Payment Link; empty hides Support
 
 paywall:
   # Visitors and free accounts see the top teaser_count deals in full; every
