@@ -830,3 +830,26 @@ def test_config_loader_reads_google_ads_ids(tmp_path):
     shipped = load_config()
     assert shipped.growth_google_ads_customer_id == "4976667972"
     assert shipped.growth_google_ads_login_customer_id == "5861019939"
+
+
+def test_google_ads_steps_down_from_a_version_google_does_not_serve(cfg, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    for k, v in GADS_ENV.items():
+        monkeypatch.setenv(k, v)
+    seen = []
+
+    def handler(request):
+        if request.url.host == "googleads.googleapis.com":
+            seen.append(request.url.path.split("/")[1])
+            if request.url.path.startswith(("/v26/", "/v25/")):
+                return httpx.Response(404, json={"error": {"code": 404, "status": "NOT_FOUND",
+                                                           "message": "Method not found."}})
+            request = httpx.Request(request.method, str(request.url).replace("/v24/", "/v26/"),
+                                    headers=request.headers, content=request.content)
+        return FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        _, status = report.collect(gads_cfg(cfg), NOW, client)
+    assert status["google_ads"] == "ok"
+    assert seen[:3] == ["v26", "v25", "v24"] and set(seen[3:]) == {"v24"}
+    assert "google_ads: API v24" in caplog.messages

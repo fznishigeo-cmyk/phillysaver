@@ -92,6 +92,17 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
     say(`by photo host: ${top(broken, (d) => host(d.image_url))}`);
     say(`by store: ${top(broken, (d) => d.store)}`);
     broken.slice(0, EXAMPLES).forEach((d) => say(line(d) + ` | photo ${host(d.image_url)}`));
+    // Why they fail: what the photo host answers outside the page (status,
+    // type, http or https), for a few of them.
+    for (const d of broken.slice(0, 3)) {
+      let why;
+      try {
+        const r = await fetch(d.image_url, { redirect: "follow", headers: { "User-Agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" } });
+        why = `HTTP ${r.status} ${r.headers.get("content-type") || "?"}`;
+      } catch (e) { why = String(e && e.cause && e.cause.code || e).slice(0, 60); }
+      say(`  photo check: ${new URL(d.image_url).protocol} ${d.image_url.slice(0, 120)} -> ${why}`);
+    }
   }
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -8,9 +8,12 @@ Since 2026-09 the developer token is optional, so none is sent.
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 from typing import Any
+
+log = logging.getLogger("dealradar.growth")
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SEARCH = "https://googleads.googleapis.com/{}/customers/{}/googleAds:search"
@@ -63,9 +66,17 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
     start..yesterday (the ad account's time zone)."""
     headers = {"Authorization": f"Bearer {token}"}
     # Which accounts this sign-in reaches: yes/no only, so a failed search
-    # says whether the account or the manager is the one missing.
-    seen = client.get(ACCESSIBLE.format(version), headers=dict(headers))
-    _check(seen)
+    # says whether the account or the manager is the one missing. A version
+    # Google does not serve this project answers 404 "Method not found":
+    # the next older one is tried (at most three), and the log names the
+    # one that answered so config can pin it.
+    for _ in range(4):
+        seen = client.get(ACCESSIBLE.format(version), headers=dict(headers))
+        if seen.status_code != 404 or not re.fullmatch(r"v\d+", version) or version == "v1":
+            break
+        version = f"v{int(version[1:]) - 1}"
+    _check(seen, f" (API {version})")
+    log.info("google_ads: API %s", version)
     names = set(seen.json().get("resourceNames") or [])
     context = (f" (sign-in reaches {len(names)} account(s); ad account listed: "
                f"{'yes' if 'customers/' + customer_id in names else 'no'}; manager listed: "
