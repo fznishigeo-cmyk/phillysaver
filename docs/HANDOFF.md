@@ -138,6 +138,11 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Calmer wall (Codex task 029, merged 2026-10-12):** flames need 2+
+  signals; phone Join yields to the visible header (observer + scroll fallback),
+  banner and inline/footer asks; only the ticker loops. Tests: 1,463 passed,
+  7 existing socket tests blocked by sandbox, 1 deselected. Chromium blocked too;
+  full green run and visual check remain. No commit or push.
 - **Greyed inline gone deals (Codex task 027, merged 2026-10-12):** post/expiry
   signals queue API rechecks; Woot reuses its feed, with no extra requests.
   Confirmed deaths alone publish as gone, inline and inert for 24 hours;

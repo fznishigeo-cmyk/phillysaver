@@ -138,7 +138,7 @@
   }
   function hotHtml(d) {
     var signals = hotSignals(d);
-    if (!signals.length) return "";
+    if (signals.length < 2) return "";
     var label = esc("Hot: " + signals.join(", "));
     return '<span class="hotmeter" role="img" title="' + label + '" aria-label="' + label + '">' +
       '<span aria-hidden="true">' + "🔥".repeat(signals.length) + "</span></span>";

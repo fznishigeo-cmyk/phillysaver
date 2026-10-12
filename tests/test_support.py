@@ -93,7 +93,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     home = (out / "index.html").read_text()
     assert 'id="loginlink"' not in home and 'id="dialogplans"' not in home
     assert 'id="subscribe" class="getdeal" href="#join" data-join>Join free' in home
-    assert 'id="subbar" class="subbar ready" href="#join" data-join>Join free' in home
+    assert 'id="subbar" class="subbar ready" href="#join" data-join hidden>Join free' in home
     assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
     assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
     assert "Emails are stored by our Cloudflare Worker and used only for the deals email." in (out / "privacy.html").read_text()
@@ -114,14 +114,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "cc1d50a3e59efb680b1348707abd3d9ed628064b6830ecec340d19f666536538"),
-    (False, 49, "4f434310a5afa9c0f77d264c602e4be4b969248a3fe76eab54c358180160ca7d"),
-    (True, 0, "c09e266794424392f74dfb99cc16960951021f49d2f067697ea5a74dd39a96bd"),
-    (True, 49, "fd8b3cfea6b053bd77bdc7f3c2ff27540828a51c91d831afcea5b2c8fa6a992b"),
+    (False, 0, "1a9a5fbde0d694cac86caae2b2488a3e00e250aaffe12ca7bb1c0dd5ade36899"),
+    (False, 49, "5c76baa7e89ae19062b609243285f0f1fe4b4b79e9c7cddaa522c10fef00906f"),
+    (True, 0, "9d638765488d710262142efa061f4fad9005cc499beed8773d643a8ac27fffa1"),
+    (True, 49, "90322bec064da3cc3471b8ddf864afdd10613ad0018f69d17e186d59947ce1b0"),
 ])
-def test_support_off_index_bytes_match_task027_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 027 intentionally updates the shared wall in both membership modes.
-    # These baselines include inline gone cards; the version stays fixed.
+def test_support_off_index_bytes_match_task029_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 029 changes shared flames and limits animation in both membership modes.
+    # These baselines retain inline gone cards; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected
