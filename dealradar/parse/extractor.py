@@ -342,7 +342,8 @@ def parse_posts(
         asin = str(stored.get("asin") or extract_asin(
             stored.get("canonical_url") or "")).upper()
         cat = stored.get("category")
-        if asin and cat in CATEGORIES:
+        # "other" is no answer: reusing it would file the ASIN there forever.
+        if asin and cat in CATEGORIES and cat != "other":
             categories.setdefault(asin, cat)
     pending = {}
     for post, deal in pairs:
@@ -434,3 +435,67 @@ def recategorize_live_deals(db, parser, deadline: float | None = None) -> None:
     log.info("recategorize v2: before=%s after=%s", before, after)
     if all(d["dedupe_key"] in done for d in deals):
         db.meta_set("recategorized_v2", "1")
+
+
+OTHER_TRIED_META = "recategorize_other_tried"
+
+
+def recategorize_other(db, parser, deadline: float | None = None, per_run: int = 120) -> int:
+    """Live deals still filed under "other" get the cached Amazon root first,
+    then one cheap title read each (at most per_run titles a run, inside the
+    spend caps). A title is asked once: a real "other" answer stays put, and
+    only accepted answers count as asked. Returns how many moved."""
+    from ..http_client import extract_asin
+    from ..keepa_categories import NAMES_META, ROOTS_META, cached_meta, category_from_name
+    from .claude_client import categorize_titles
+
+    if per_run <= 0:
+        return 0
+    deals = sorted((d for d in db.all_deals(status="alive")
+                    if (d.get("category") or "other") == "other"),
+                   key=lambda d: d["dedupe_key"])
+    try:
+        tried = set(json.loads(db.meta_get(OTHER_TRIED_META) or "[]"))
+    except ValueError:
+        tried = set()
+    tried &= {d["dedupe_key"] for d in deals}  # keep the list small: live "other" only
+    names, roots = cached_meta(db, NAMES_META), cached_meta(db, ROOTS_META)
+    moved = 0
+
+    def save(deal: dict, category: str) -> None:
+        nonlocal moved
+        key = deal["dedupe_key"]
+        if category in CATEGORIES and category != "other":
+            row = db.conn.execute("SELECT payload FROM deals WHERE dedupe_key=?", (key,)).fetchone()
+            payload = json.loads(row["payload"])
+            payload["category"] = category
+            db.update_deal(key, payload=payload)
+            moved += 1
+        else:
+            tried.add(key)  # a real "other": never asked again
+
+    pending = []
+    for deal in deals:
+        if deal["dedupe_key"] in tried:
+            continue
+        asin = str(deal.get("asin") or extract_asin(deal.get("canonical_url") or "")).upper()
+        category = category_from_name(names.get(roots.get(asin, ""), "")) if asin else ""
+        if category:
+            save(deal, category)
+        else:
+            pending.append(deal)
+    pending = pending[:per_run]
+    for start in range(0, len(pending), 60):
+        if parser is None or (deadline is not None and time.monotonic() >= deadline):
+            break
+        group = pending[start:start + 60]
+        try:
+            categorize_titles(parser, [d["item"] for d in group],
+                              on_result=lambda i, cat: save(group[i], cat))
+        except SpendCapReached:
+            log.info("recategorize other: spend cap; the rest resume next run")
+            break
+    db.meta_set(OTHER_TRIED_META, json.dumps(sorted(tried)))
+    if moved:
+        log.info("recategorize other: %d of %d live deals moved out of other", moved, len(deals))
+    return moved

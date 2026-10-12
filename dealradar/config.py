@@ -115,6 +115,7 @@ class AppConfig:
     critic_enabled: bool = True
     critic_batch_size: int = 8
     critic_reserve_share: float = 0.5   # of each run's allowance, kept for the critic
+    recategorize_other_per_run: int = 120  # live "other" titles re-read per run; 0 = off
     critic_shadow_model: str = "claude-haiku-5-5"
     critic_shadow_batches_per_day: int = 12
     exclude_suspect_msrp: bool = True
@@ -296,6 +297,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.critic_batch_size = max(1, int(g("parse", "critic_batch_size", default=8)))
     cfg.critic_reserve_share = min(0.9, max(0.0, float(g(
         "parse", "critic_reserve_share", default=cfg.critic_reserve_share))))
+    cfg.recategorize_other_per_run = max(0, int(g(
+        "parse", "recategorize_other_per_run", default=cfg.recategorize_other_per_run)))
     cfg.critic_shadow_model = g("parse", "critic_shadow_model", default=cfg.critic_shadow_model) or ""
     cfg.critic_shadow_batches_per_day = max(0, int(g(
         "parse", "critic_shadow_batches_per_day", default=cfg.critic_shadow_batches_per_day)))

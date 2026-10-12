@@ -142,6 +142,15 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **"Other" category repair (2026-10-12 09:45 UTC):** the 09:08 site check
+  found 1,195 of 1,843 live deals (65%) under "other". Cause: a run reads at
+  most 60 structured-deal titles, the rest were stored as "other", and the
+  ASIN reuse map treated "other" as an answer, so they never got a read.
+  Fix: "other" is never reused; `recategorize_other` gives live "other" deals
+  the cached Amazon root, then one Haiku title read each
+  (`parse.recategorize_other_per_run: 120`, inside the caps; only a real
+  "other" answer is remembered as asked). Watch the site check's category
+  audit: "other" should fall within a couple of hours.
 - **Rich results + photo preconnect (Codex task 037, merged 2026-10-12):** live
   deal pages carry Product + Offer (price, InStock, seller = store,
   itemCondition from conditions; image only if https; brand if known);

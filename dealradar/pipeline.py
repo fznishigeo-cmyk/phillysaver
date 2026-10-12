@@ -1611,8 +1611,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
 
-        from .parse.extractor import recategorize_live_deals
+        from .parse.extractor import recategorize_live_deals, recategorize_other
         recategorize_live_deals(db, parser, deadline - _RESERVE_FOR_TAIL_S / 2)
+        summary["recategorized_other"] = recategorize_other(
+            db, parser, deadline - _RESERVE_FOR_TAIL_S / 2,
+            per_run=cfg.recategorize_other_per_run)
 
         # Total LLM spend this run: extraction + second opinions + critic
         # (+ the newsletter pick, added after it below).

@@ -383,3 +383,65 @@ def test_remembered_roots_stay_bounded():
     kc.remember_roots(db, [{"asin": f"B{i:09d}", "rootCat": 3760911} for i in range(kc.MAX_ROOTS + 50)])
     roots = kc.cached_meta(db, kc.ROOTS_META)
     assert len(roots) == kc.MAX_ROOTS and f"B{kc.MAX_ROOTS + 49:09d}" in roots and "B000000000" not in roots
+
+
+def test_other_is_never_reused_for_a_resighted_asin(tmp_path):
+    # A stored "other" must not file the same ASIN there again: it gets a title read.
+    db = DB(tmp_path / "state.db")
+    posts = [KeepaDealsAdapter._map_row(_amazon_row(0), SRC, NOW)]
+    asin = posts[0].structured["asin"]
+    insert(db, deal("seen", asin=asin, category="other"))
+    messages = IndexedMessages([[{"i": 0, "category": "beauty"}]])
+    parser, _ = parser_for(messages)
+    pairs, _ = parse_posts(posts, parser, parser.cfg, NOW, {}, db=db)
+    assert [d.category for _, d in pairs] == ["beauty"] and len(messages.calls) == 1
+    db.close()
+
+
+def test_recategorize_other_moves_live_other_deals_once_within_caps(tmp_path, caplog):
+    from dealradar.parse.extractor import OTHER_TRIED_META, recategorize_other
+    db = DB(tmp_path / "state.db")
+    for i in range(3):
+        insert(db, deal(f"o{i}", item=f"Title {i}", asin="", category="other",
+                        canonical_url=f"https://store.example/{i}"))
+    insert(db, deal("rooted", category="other"))           # cached Amazon root, no LLM
+    insert(db, deal("kept", category="kitchen", asin=""))  # real category: untouched
+    insert(db, deal("gone", category="other", status="dead", asin=""))
+    db.meta_set(NAMES_META, json.dumps({"101": "Beauty & Personal Care"}))
+    db.meta_set(ROOTS_META, json.dumps({"B000000001": "101"}))
+    original = snapshot(db)
+    # o0 -> fashion, o1 really is "other", o2 unanswered (retried next run).
+    messages = IndexedMessages([[{"i": 0, "category": "fashion"}, {"i": 1, "category": "other"}], []])
+    parser, _ = parser_for(messages)
+    with caplog.at_level("INFO"):
+        assert recategorize_other(db, parser, per_run=10) == 2
+    cats = {k: db.get_deal(k)["category"] for k in ("o0", "o1", "o2", "rooted", "kept", "gone")}
+    assert cats == {"o0": "fashion", "o1": "other", "o2": "other", "rooted": "beauty",
+                    "kept": "kitchen", "gone": "other"}
+    assert set(json.loads(db.meta_get(OTHER_TRIED_META))) == {"o1"}  # live "other" only
+    asked = [e["title"] for c in messages.calls for e in json.loads(c["messages"][0]["content"])]
+    assert "Title 0" in asked and "Title 1" in asked and "Title 2" in asked
+    # Only category changed on the moved rows.
+    after = snapshot(db)
+    for key in ("o0", "rooted"):
+        old, new = json.loads(original[key]["payload"]), json.loads(after[key]["payload"])
+        old.pop("category"); new.pop("category")
+        assert old == new
+    assert snapshot(db)["gone"] == original["gone"] and "Title" not in caplog.text
+    # Next run: only the unanswered title is asked again; o1 is never re-asked.
+    messages = IndexedMessages([[{"i": 0, "category": "home"}]])
+    parser, _ = parser_for(messages)
+    assert recategorize_other(db, parser, per_run=10) == 1
+    assert [e["title"] for c in messages.calls for e in json.loads(c["messages"][0]["content"])] == ["Title 2"]
+    assert db.get_deal("o2")["category"] == "home"
+    # Switch off, no parser, past deadline, or a spend cap: nothing asked.
+    insert(db, deal("o9", item="Title 9", asin="", category="other", canonical_url="https://store.example/9"))
+    for kwargs in ({"per_run": 0}, {"deadline": time.monotonic() - 1}):
+        p, m = parser_for()
+        recategorize_other(db, p, **kwargs)
+        assert m.calls == []
+    assert recategorize_other(db, None) == 0
+    p, m = parser_for(IndexedMessages([[{"i": 0, "category": "home"}]]), spend_cap_usd_per_run=0.0)
+    assert recategorize_other(db, p) == 0 and db.get_deal("o9")["category"] == "other"
+    assert load_config().recategorize_other_per_run == 120
+    db.close()
