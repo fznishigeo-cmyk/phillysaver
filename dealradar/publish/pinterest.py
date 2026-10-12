@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -29,11 +30,21 @@ SCOPES = "boards:read,boards:write,pins:read,pins:write,user_accounts:read"
 
 
 class _APIError(Exception):
-    """Never retain a response body, request, code or credentials in an error."""
+    """Never retain a response body, request, OAuth code or credentials in an error.
 
-    def __init__(self, status: int | None = None):
+    Only the HTTP status, Pinterest's numeric error code and the endpoint
+    (method and path, never query or body) are kept, so a failure can be
+    diagnosed from the public log.
+    """
+
+    def __init__(self, status: int | None = None, code: int | None = None, where: str = ""):
         self.status = status
-        super().__init__(f"HTTP {status}" if status is not None else "request failed")
+        text = f"HTTP {status}" if status is not None else "request failed"
+        if code is not None:
+            text += f" code {code}"
+        if where:
+            text += f" ({where})"
+        super().__init__(text)
 
 
 def _meta(db, key: str) -> dict:
@@ -82,7 +93,12 @@ class _API:
         except httpx.HTTPError:
             raise _APIError() from None
         if not response.is_success:
-            raise _APIError(response.status_code)
+            try:
+                code = response.json().get("code")
+            except (ValueError, AttributeError):
+                code = None
+            where = f"{method} {path}" if re.fullmatch(r"/[a-z_/]+", path) else method
+            raise _APIError(response.status_code, code if type(code) is int else None, where)
         try:
             data = response.json()
         except ValueError:

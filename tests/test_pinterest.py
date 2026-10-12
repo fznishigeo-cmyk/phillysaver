@@ -349,3 +349,19 @@ def test_cli_routes_commands_with_config_and_database(db, cfg, monkeypatch, caps
                         int(database.path != db.path or config is not cfg))
     assert cli.main(["pinterest-connect", "--db", str(db.path), "--code", CODE]) == 0
     assert cli.main(["pinterest-post", "--db", str(db.path)]) == 0
+
+
+def test_error_log_names_status_numeric_code_and_endpoint_only(caplog):
+    cfg = load_config()
+
+    def handle(request):
+        return httpx.Response(400, json={"code": 1, "message": "secret-ish text " + APP_SECRET})
+
+    api = pinterest._API(cfg, transport=httpx.MockTransport(handle))
+    with pytest.raises(pinterest._APIError) as caught:
+        api.request("POST", "/boards", json={"name": "x"})
+    assert str(caught.value) == "HTTP 400 code 1 (POST /boards)"
+    with pytest.raises(pinterest._APIError) as caught:
+        api.request("GET", "/boards?bookmark=abc")
+    assert str(caught.value) == "HTTP 400 code 1 (GET)"
+    assert APP_SECRET not in str(caught.value)
