@@ -617,8 +617,10 @@ footer .meta{font-size:11.5px}
   // A drop waits at most DROP_FETCH_MS for deals.json and says "Dropping…"
   // for at most DROP_MAX_MS. A mark that comes before its publish never
   // re-deals the same deals (operator: the free 8 must really change): the
-  // clock says "Next drop soon" and asks every POLL_MS (POLL_SLOW_MS after
-  // SLOW_AFTER_MS) until the publish lands, and that is the drop.
+  // clock counts on to the next mark and asks every POLL_MS (POLL_SLOW_MS
+  // after SLOW_AFTER_MS) until the publish lands, and that is the drop. It
+  // never parks on "Next drop soon" (operator, 2026-10-12: it looked stuck while the
+  // hourly run held the queue).
   var DROP_FETCH_MS = 2500, DROP_MAX_MS = 3000;
   var POLL_MS = 15 * 1000, POLL_SLOW_MS = 30 * 1000, SLOW_AFTER_MS = 6 * 60 * 1000;
   // Fresh drops mix up to JITTER_H hours of seeded jitter into the arrival
@@ -709,7 +711,6 @@ footer .meta{font-size:11.5px}
 
   function renderMeta() {
     var m = state.meta || {};
-    var lr = m.last_run || {};
     // Consumer header: brand, one tagline derived from the configured alert
     // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
     var floor = num((m.floors || {}).min_pct);
@@ -721,13 +722,10 @@ footer .meta{font-size:11.5px}
     document.getElementById("tagline").textContent =
       tagline + " · " + plural(live, "live deal");
     document.title = "wowpriced — " + tagline;
-    // Footer line: last run + the FTC disclosure, which comes from
-    // meta.disclosure verbatim, never hardcoded in this template.
-    var t = lr.finished_at || lr.started_at || m.generated_at || "";
-    var when = Date.parse(t);
-    document.getElementById("metaline").textContent =
-      "Last run: " + (isNaN(when) ? t : new Date(when).toLocaleString()) +
-      " · " + (m.count || 0) + " deals · " + (m.disclosure || "");
+    // Footer line: the FTC disclosure, from meta.disclosure verbatim, never
+    // hardcoded in this template. Run times and counts are the operator's
+    // (Actions summary), not visitors' (operator, 2026-10-12).
+    document.getElementById("metaline").textContent = m.disclosure || "";
     // Account menu (docs/paywall.md): only once a Worker is configured.
     var me = state.me, on = !!apiUrl(m);
     document.getElementById("account").hidden = !on;
@@ -760,9 +758,10 @@ footer .meta{font-size:11.5px}
   // at the phase where publishes land (meta.published_at mod step). At each
   // mark the page drops: it fetches deals.json (waiting at most 2.5 s) and
   // puts a new publish up, re-dealt and animated, then counts to the next
-  // mark. A publish that has not landed by its mark is polled for ("Next
-  // drop soon") and is the drop when it lands; one that lands before its
-  // mark waits for it. "Dropping…" never sits for more than 3 s.
+  // mark. A publish that has not landed by its mark is polled for while the
+  // clock counts to the next mark, and is the drop when it lands; one that
+  // lands before its mark waits for it. "Dropping…" never sits for more
+  // than 3 s.
   var clock = { target: 0, step: DROP_MIN * 60 * 1000, phase: 0,
                 dropping: 0, waiting: 0, lastPoll: 0, tag: "", lastSeed: null };
   function publishTime(m) {
@@ -809,12 +808,9 @@ footer .meta{font-size:11.5px}
     var box = document.getElementById("drop");
     box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
-    var wait = !clock.dropping && !!clock.waiting;
-    var left = wait ? 0 : clock.target - now;
-    box.querySelector(".droplbl").textContent = wait ? "Next drop" : "Next drop in";
-    document.getElementById("countdown").textContent =
-      clock.dropping ? "Dropping…" : wait ? "soon" : mmss(left);
-    var f = clock.dropping || wait ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
+    var left = clock.target - now;
+    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
+    var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
     paintDial(f, clock.dropping ? null : left);
   }
   // The dial's ring for f = 0..1 of the cycle, swept clockwise from 12
@@ -833,10 +829,11 @@ footer .meta{font-size:11.5px}
     document.getElementById("dhead").style.transform = "rotate(" + deg.toFixed(2) + "deg)";
   }
   // The page's one ticking interval: paints the clock, fires the drop at
-  // each mark and runs the quiet late poll.
+  // each mark (also while a late publish is awaited) and runs the quiet
+  // late poll in between.
   function tick() {
     var now = Date.now();
-    if (!clock.dropping && !clock.waiting && loadedOnce && clock.target && now >= clock.target) {
+    if (!clock.dropping && loadedOnce && clock.target && now >= clock.target) {
       drop(now);
     } else if (!clock.dropping && clock.waiting) {
       var every = now - clock.waiting >= SLOW_AFTER_MS ? POLL_SLOW_MS : POLL_MS;
@@ -2263,7 +2260,7 @@ footer .meta{font-size:11.5px}
     renderMeta();
     return added;
   }
-  // A publish that lands after its mark (the clock says "Next drop soon";
+  // A publish that lands after its mark (the clock counting on to the next;
   // the poll or the 5-minute fallback finds it) is the drop.
   function landed(pub, deals) {
     if (!isNewPublish(pub)) return;  // a drop got there first
@@ -2321,7 +2318,7 @@ footer .meta{font-size:11.5px}
   }
   // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS).
   // A new publish is the drop (present). None yet: nothing is re-dealt,
-  // the clock says "Next drop soon" and tick() polls until it lands.
+  // the clock counts to the next mark and tick() polls until it lands.
   // Everything happens inside DROP_MAX_MS; whatever answers later lands.
   function drop(now) {
     var last = nextMarkAfter(now, clock.phase, clock.step) - clock.step;  // a sleeping tab may have missed several

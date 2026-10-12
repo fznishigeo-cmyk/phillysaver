@@ -357,9 +357,11 @@ class TestLiveHomePage:
         # (CSS uses 50% for circles/centering; the copy and script must not.)
         assert "50%" not in html[html.index("</style>"):]
         assert "floors.min_pct" in html
-        # "Last run" + disclosure moved to the footer, verbatim from meta.
+        # The disclosure sits in the footer, verbatim from meta; the run
+        # time and deal count are the operator's, never shown (2026-10-12).
         assert html.index('id="metaline"') > html.index("<footer>")
-        assert "m.disclosure" in html
+        assert 'getElementById("metaline").textContent = m.disclosure || "";' in html
+        assert "Last run" not in html
         assert DISCLOSURE not in html
 
 
@@ -898,18 +900,27 @@ class TestDropClock:
         """Operator ask (2026-10-11): the free 8 must change completely; a
         mark that came before its publish re-dealt the same 8 (cards moved
         rows). Now only a new publish is a drop; until it lands the clock
-        says "Next drop soon" and polls (HEAD, then the file if it changed)."""
+        polls (HEAD, then the file if it changed). Operator (2026-10-12): it
+        must never park on "Next drop soon" (it looked stuck while the hourly
+        run held the queue), so it counts on to the next mark, which is a
+        drop attempt like any other."""
         finish = _between(html, "function finish(", "got.catch(noop);")
         assert "present(pub, deals, seed); return; }" in finish
         assert "clock.waiting = clock.lastPoll = Date.now();" in finish
         assert "reorganize(" not in finish
         assert "present(pub, deals, null);" in _between(html, "function landed(", "function merge(")
         tick = _between(html, "function tick(", "setInterval(tick, 1000)")
-        assert "!clock.waiting && loadedOnce" in tick and "poll();" in tick
+        assert "if (!clock.dropping && loadedOnce && clock.target && now >= clock.target)" in tick
+        assert "else if (!clock.dropping && clock.waiting)" in tick and "poll();" in tick
         poll = _between(html, "function poll(", "function updatedAgo(")
         assert 'method: "HEAD"' in poll and "fetchPublish().then(merge)" in poll
         clockp = _between(html, "function paintClock(", "function paintDial(")
-        assert 'wait ? "Next drop" : "Next drop in"' in clockp and 'wait ? "soon"' in clockp
+        assert 'clock.dropping ? "Dropping…" : mmss(left)' in clockp
+        assert '"soon"' not in html and "wait ?" not in clockp
+        # drop() moves the target to the next mark before it knows whether
+        # a publish came, so a late one is counted toward, never parked on.
+        drop = _between(html, "function drop(", "function finish(")
+        assert "clock.target = nextMarkAfter(now, clock.phase, clock.step);" in drop
         assert "lateUntil" not in html
         assert '" · updated "' in html and '" min ago"' in html
         # One ticking interval for the whole page, plus the 5-minute fallback.
