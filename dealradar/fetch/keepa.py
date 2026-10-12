@@ -853,6 +853,16 @@ class KeepaDealsAdapter(SourceAdapter):
             fetched_at=now,
             image_url=_image_url(row),
             hash_text=f"{title}\n${current:,.2f}, {pct} under the 90-day average",
+            structured={
+                "item": title, "asin": asin, "store": "Amazon",
+                "product_url": f"https://www.amazon.com/dp/{asin}",
+                "online_only": "true", "final_price": round(current, 2),
+                "regular_price": round(avg, 2),
+                "regular_price_basis": "90-day average on Amazon",
+                "conditions": [], "confidence": 1.0,
+                "evidence": {"final_price_quote": lines[1],
+                             "regular_price_quote": lines[2]},
+            },
         )
 
     @staticmethod
@@ -902,4 +912,13 @@ class KeepaDealsAdapter(SourceAdapter):
             fetched_at=now,
             image_url=_image_url(row),
             hash_text=f"{title}\n${used:,.2f} used, {pct} under the {label}",
+            structured={
+                "item": title, "asin": asin, "store": "Amazon",
+                "product_url": f"https://www.amazon.com/dp/{asin}",
+                "online_only": "true", "final_price": round(used, 2),
+                "regular_price": round(new_p, 2), "regular_price_basis": label,
+                "conditions": ["used", "open_box"], "confidence": 1.0,
+                "evidence": {"final_price_quote": lines[1],
+                             "regular_price_quote": lines[2]},
+            },
         )

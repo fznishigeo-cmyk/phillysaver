@@ -129,14 +129,17 @@ class _FakeResponse:
 
 class _FakeMessages:
     def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
-        from dealradar.parse.schema import CriticVerdict
+        from dealradar.parse.schema import CriticVerdicts
+        import json
 
         text = messages[0]["content"]
-        if output_format is CriticVerdict:  # deal-critic call
-            plausible = "Chef Pro Knife Set" not in text  # knife set = fake MSRP
-            return _FakeResponse(CriticVerdict(
-                plausible=plausible, confidence=0.9,
-                reason="judged by the offline fake critic"))
+        if output_format is CriticVerdicts:
+            entries = json.loads(text)
+            return _FakeResponse(CriticVerdicts.model_validate({"verdicts": [
+                {"index": entry["index"],
+                 "plausible": "Chef Pro Knife Set" not in entry["item"],
+                 "confidence": 0.9, "reason": "judged by the offline fake critic"}
+                for entry in entries]}))
         deals = _canned_deals(text)
         return _FakeResponse(output_format.model_validate({"deals": deals}))
 
@@ -187,7 +190,7 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     # 3 deals clear the savings floors: air fryer (77%), knife set (81.7%),
     # headphones (70.0% range). The critic judges all 3 and flags the knife
     # set ("$150 value" fake MSRP) -> suspect_msrp -> only 2 publish.
-    assert summary["critic"] == {"judged": 3, "suspect": 1}
+    assert summary["critic"] == {"judged": 3, "suspect": 1, "reused": 0, "calls": 1}
     assert summary["published"] == 2
     assert summary["telegram"]["dry_run"] is True
     assert summary["telegram"]["sent"] == 2
@@ -230,10 +233,10 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert "## Source health (2 sources, 0 tripped)" in md
     assert "| blogone | ok |" in md and "| feedtwo | ok |" in md
     assert "## LLM spend by kind" in md
-    assert "| extract | 5 |" in md and "| critic | 3 |" in md
+    assert "| extract | 5 |" in md and "| critic | 1 |" in md
     assert "## Extraction spend by source" in md
     assert summary["spend_by_kind"]["extract"]["calls"] == 5
-    assert summary["spend_by_kind"]["critic"]["calls"] == 3
+    assert summary["spend_by_kind"]["critic"]["calls"] == 1
     assert sum(s["usd"] for s in summary["spend_by_kind"].values()) == pytest.approx(
         summary["spend_usd"])
     assert sum(s["calls"] for s in summary["extract_by_source"].values()) == 5

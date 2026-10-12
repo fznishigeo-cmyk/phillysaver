@@ -20,7 +20,7 @@ from .. import util
 from ..config import AppConfig
 from ..errors import SpendCapReached
 from ..models import ExtractedDeal, RawPost
-from .schema import to_extracted
+from .schema import CATEGORIES, LLMDeal, to_extracted
 
 log = logging.getLogger("dealradar.parse.extractor")
 
@@ -206,9 +206,10 @@ def parse_posts(
     now: datetime,
     tz_by_source: dict[str, str],
     deadline: float | None = None,
+    db=None,
 ) -> tuple[list[tuple[RawPost, ExtractedDeal]], dict]:
-    """Run the LLM parse over posts, verifying evidence against the SAME
-    cleaned text sent to the model.
+    """Parse API facts in code or read posts with the LLM. Verify evidence
+    against the synthesized source text or the SAME cleaned model input.
 
     Stats: posts_sent (posts the parser was called on), deals_extracted (deals
     the LLM returned, pre-verification), deals_dropped_evidence (rejected by
@@ -218,6 +219,8 @@ def parse_posts(
     by the max-posts cap, a spend-cap abort, or the run deadline stay
     unrecorded and are retried on the next run instead of being lost.
     ``deadline`` is a time.monotonic() value; crossing it stops the loop.
+    ``structured_parse`` counts API posts, verified deals and evidence drops;
+    ``db`` supplies stored categories for ASIN reuse, across all statuses.
     """
     stats = {
         "posts_sent": 0,
@@ -227,6 +230,7 @@ def parse_posts(
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
         "processed_hashes": [],
+        "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
     }
     if len(posts) > cfg.max_posts_per_run:
         dropped = len(posts) - cfg.max_posts_per_run
@@ -245,6 +249,8 @@ def parse_posts(
 
     def _extract(post: RawPost) -> tuple[RawPost, str, list]:
         """Worker: one post's LLM read(s); runs on a pool thread."""
+        if post.structured is not None:
+            return post, post.text, [LLMDeal.model_validate(post.structured)]
         cleaned = clean_for_llm(post, cfg.max_chars_per_post)
         meta = {
             "source_name": post.source_name,
@@ -267,7 +273,14 @@ def parse_posts(
 
     def _record(post: RawPost, cleaned: str, llm_deals: list) -> None:
         """Main thread: evidence-verify and collect one parsed post."""
-        stats["posts_sent"] += 1
+        structured = post.structured is not None
+        if structured:
+            stats["structured_parse"]["posts"] += 1
+            if hasattr(parser, "extract_by_source"):
+                parser.extract_by_source.setdefault(
+                    post.source_name, {"calls": 0, "usd": 0.0})
+        else:
+            stats["posts_sent"] += 1
         stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
         post = _post_for_deals(post, len(llm_deals))
@@ -280,12 +293,16 @@ def parse_posts(
             ok, reason = verify_evidence(deal, cleaned)
             if not ok:
                 stats["deals_dropped_evidence"] += 1
+                if structured:
+                    stats["structured_parse"]["dropped_evidence"] += 1
                 log.warning(
                     "dropped deal %r from %s (evidence check failed: %s)",
                     deal.item, post.source_name, reason,
                 )
                 continue
             pairs.append((post, deal))
+            if structured:
+                stats["structured_parse"]["deals"] += 1
 
     # Posts go out in batches of `workers` concurrent reads (throughput is
     # bound by API round-trip time, not tokens); results are collected in
@@ -298,7 +315,7 @@ def parse_posts(
             if deadline is not None and time.monotonic() >= deadline:
                 log.warning("run deadline reached: stopping parse with %d posts left"
                             " (they stay unrecorded and retry next run)",
-                            len(posts) - stats["posts_sent"])
+                            len(posts) - len(stats["processed_hashes"]))
                 break
             batch = posts[idx: idx + workers]
             idx += len(batch)
@@ -311,5 +328,38 @@ def parse_posts(
                         log.warning("spend cap reached, aborting parse: %s", e)
                     stats["aborted_spend_cap"] = True
 
+    # Category reuse is independent of status and condition; only verified
+    # structured deals need a title read. One call per run, at most 60 titles.
+    from ..http_client import extract_asin
+    from .claude_client import categorize_titles
+
+    categories = {}
+    for stored in db.all_deals() if db is not None else []:
+        asin = str(stored.get("asin") or extract_asin(
+            stored.get("canonical_url") or "")).upper()
+        cat = stored.get("category")
+        if asin and cat in CATEGORIES:
+            categories.setdefault(asin, cat)
+    pending = {}
+    for post, deal in pairs:
+        if post.structured is None:
+            continue
+        asin = str(post.structured.get("asin") or extract_asin(deal.product_url)).upper()
+        if asin in categories:
+            deal.category = categories[asin]
+        else:
+            # Multiple sightings of one ASIN share a single title read.
+            key = asin or post.content_hash
+            pending.setdefault(key, []).append(deal)
+    groups = list(pending.values())[:60]
+    if groups and (deadline is None or time.monotonic() < deadline):
+        try:
+            chosen = categorize_titles(parser, [g[0].item for g in groups])
+            for group, category in zip(groups, chosen):
+                for deal in group:
+                    deal.category = category
+        except SpendCapReached:
+            stats["aborted_spend_cap"] = True
+            log.warning("spend cap reached in category call; using other")
     stats["spend_usd"] = float(getattr(parser, "spend_usd", 0.0))
     return pairs, stats

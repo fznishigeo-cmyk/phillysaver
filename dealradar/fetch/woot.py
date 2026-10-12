@@ -292,6 +292,23 @@ class WootAdapter(SourceAdapter):
         if end_date:
             lines.append(f"Ends: {end_date}")
         lines.append("Sold online at Woot.com (Amazon's official deals site).")
+        structured = None
+        plain_money = r"\$\d+(?:,\d{3})*(?:\.\d{1,2})?"
+        if re.fullmatch(plain_money, sale) and re.fullmatch(plain_money, list_price):
+            conditions = []
+            if _is_used(condition):
+                conditions = ["used"]
+                if re.search(r"open[\s-]*box", condition, re.I):
+                    conditions.append("open_box")
+            structured = {
+                "item": title, "store": "Woot",
+                "product_url": str(item.get("Url") or ""),
+                "online_only": "true", "final_price": _num(sale),
+                "regular_price": _num(list_price), "conditions": conditions,
+                "expires_at_raw": end_date, "confidence": 1.0,
+                "evidence": {"final_price_quote": f"Sale price: {sale}",
+                             "regular_price_quote": f"List price: {list_price}"},
+            }
         return RawPost(
             source_name=source.name,
             uid=uid,
@@ -302,4 +319,5 @@ class WootAdapter(SourceAdapter):
                                               source.tz, now),
             fetched_at=now,
             image_url=_item_photo(item),
+            structured=structured,
         )

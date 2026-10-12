@@ -91,6 +91,7 @@ class RawPost:
     # post, before evidence checks drop any: the names a photo is matched
     # against, the holders of a shared link. Set by parse_posts; transient.
     parsed: list[tuple[str, str]] = field(default_factory=list)
+    structured: dict | None = None  # API facts + quotes; transient like text
 
     @property
     def content_hash(self) -> str:

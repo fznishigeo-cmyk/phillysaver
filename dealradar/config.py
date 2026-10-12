@@ -111,6 +111,7 @@ class AppConfig:
     max_second_opinions_per_run: int = 8
     critic_model: str = ""              # "" disables the deal critic
     critic_enabled: bool = True
+    critic_batch_size: int = 8
     exclude_suspect_msrp: bool = True
 
     # -- publish / ranking --
@@ -265,6 +266,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
     cfg.critic_model = g("parse", "critic_model", default="") or ""
     cfg.critic_enabled = bool(g("parse", "critic_enabled", default=cfg.critic_enabled))
+    cfg.critic_batch_size = max(1, int(g("parse", "critic_batch_size", default=8)))
     cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
 
