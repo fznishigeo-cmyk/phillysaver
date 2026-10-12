@@ -198,7 +198,7 @@ paywall:
   teaser_pool: 0           # 0 = every live deal: a drop unlocks the best 8 not yet free; none
                            # is free again until every live deal had a turn (state.db meta)
   trial_days: 7            # page copy only; the Stripe trial is the Worker's TRIAL_DAYS: keep them equal
-  yearly_price_usd: 0      # 49 once the Worker has STRIPE_YEARLY_PRICE_ID (the $49/year price); 0 hides yearly
+  yearly_price_usd: 49     # the Worker's STRIPE_YEARLY_PRICE_ID amount (the deploy checks it with Stripe); 0 hides yearly
   api_url: "https://wowpriced-subscribe.wowpriced.workers.dev"              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleusercontent.com"     # public OAuth Web client ID; Google button hidden when empty
 

@@ -65,6 +65,54 @@ jobs:
       - name: Install wrangler
         run: npm install -g wrangler@4
 
+      # The yearly price the Worker sells must be the one the page shows:
+      # asked of Stripe before anything deploys (read-only; the key is read
+      # from the environment, never printed or put on a command line).
+      - name: Check the yearly price with Stripe
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, re, sys, urllib.request
+          toml = open("wrangler.toml", encoding="utf-8").read()
+          m = re.search(r'^STRIPE_YEARLY_PRICE_ID = "([^"]*)"', toml, re.M)
+          price = m.group(1) if m else ""
+          if not price:
+              print("::notice::yearly plan: not sold (STRIPE_YEARLY_PRICE_ID empty)")
+              sys.exit(0)
+          cfg = open("../../config.yaml", encoding="utf-8").read()
+          y = re.search(r"^\s*yearly_price_usd:\s*([0-9.]+)", cfg, re.M)
+          want = round(float(y.group(1)) * 100) if y else 0
+          key = os.environ.get("STRIPE_SECRET_KEY", "")
+          if not key:
+              print("::error::STRIPE_YEARLY_PRICE_ID is set but STRIPE_SECRET_KEY is not: cannot check it")
+              sys.exit(1)
+          api = os.environ.get("STRIPE_API_BASE", "https://api.stripe.com")  # tests point it elsewhere
+          req = urllib.request.Request(api + "/v1/prices/" + price, headers={
+              "Authorization": "Basic " + base64.b64encode((key + ":").encode()).decode()})
+          try:
+              p = json.load(urllib.request.urlopen(req, timeout=20))
+          except Exception as e:
+              print(f"::error::Stripe did not return the yearly price ({type(e).__name__})")
+              sys.exit(1)
+          rec = p.get("recurring") or {}
+          live = key.startswith(("sk_live_", "rk_live_"))
+          problems = [msg for ok, msg in (
+              (p.get("active") is True, "price is not active"),
+              (p.get("currency") == "usd", f"currency is {p.get('currency')}, not usd"),
+              (p.get("unit_amount") == want, f"amount is {p.get('unit_amount')} cents, page shows {want}"),
+              (rec.get("interval") == "year" and rec.get("interval_count") == 1,
+               f"billing is every {rec.get('interval_count')} {rec.get('interval')}, not yearly"),
+              (p.get("livemode") == live, "price and key are in different modes (live/test)"),
+          ) if not ok]
+          if problems:
+              print("::error::yearly price check failed: " + "; ".join(problems))
+              sys.exit(1)
+          print(f"::notice::yearly price ok: {want / 100:.2f} USD per year, active, "
+                f"{'live' if live else 'test'} mode")
+          PY
+
       - name: Find or create the KV namespace
         id: kv
         run: |

@@ -808,3 +808,77 @@ def test_worker_behaviour(tmp_path: Path) -> None:
     assert out["preflight_ok"] == {"status": 204, "origin": "https://wowpriced.com"}
     assert out["preflight_bad"] == 403
     assert out["not_found"] == [404, 404, 404]
+
+
+def _yearly_check(tmp_path: Path, price_id: str, yearly_usd: str, key: str, price: dict | None):
+    """Run the deploy's yearly-price step against a fake Stripe."""
+    import http.server
+    import threading
+
+    step = next(s for s in single_job(load_workflow(DEPLOY_WORKER))["steps"]
+                if s.get("name") == "Check the yearly price with Stripe")
+    worker = tmp_path / "cloudflare" / "subscribe-worker"
+    worker.mkdir(parents=True)
+    toml = re.sub(r"^STRIPE_YEARLY_PRICE_ID = .*$", "STRIPE_YEARLY_PRICE_ID = " + json.dumps(price_id),
+                  (WORKER_DIR / "wrangler.toml").read_text(), flags=re.M)
+    (worker / "wrangler.toml").write_text(toml)
+    (tmp_path / "config.yaml").write_text(f"paywall:\n  yearly_price_usd: {yearly_usd}\n")
+    seen = []
+
+    class Stripe(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen.append((self.path, self.headers.get("Authorization", "")))
+            body = json.dumps(price or {}).encode()
+            self.send_response(200 if price else 404)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Stripe)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        res = subprocess.run(["bash", "-c", step["run"]], cwd=worker, capture_output=True, text=True, timeout=30,
+                             env={"PATH": os.environ["PATH"], "STRIPE_SECRET_KEY": key,
+                                  "STRIPE_API_BASE": f"http://127.0.0.1:{server.server_port}"})
+    finally:
+        server.shutdown()
+    assert step["env"] == {"STRIPE_SECRET_KEY": "${{ secrets.STRIPE_SECRET_KEY }}"}
+    assert "FAKEKEY" not in res.stdout + res.stderr
+    return res, seen
+
+
+_YEARLY = {"id": "price_Y", "active": True, "currency": "usd", "unit_amount": 4900, "livemode": True,
+           "recurring": {"interval": "year", "interval_count": 1}}
+
+
+@pytest.mark.parametrize("change, error", [
+    ({}, ""),
+    ({"unit_amount": 4999}, "amount is 4999 cents, page shows 4900"),
+    ({"recurring": {"interval": "month", "interval_count": 1}}, "billing is every 1 month, not yearly"),
+    ({"active": False}, "price is not active"),
+    ({"livemode": False}, "different modes"),
+    ({"currency": "eur"}, "currency is eur"),
+])
+def test_deploy_checks_the_yearly_price_with_stripe(tmp_path: Path, change: dict, error: str) -> None:
+    """Operator ask (2026-10-12): $9.99/month or $49/year. The Worker never
+    deploys a yearly price that is not $49 (the page's figure), yearly,
+    active and in the key's mode."""
+    res, seen = _yearly_check(tmp_path, "price_Y", "49", "sk_live_FAKEKEY", {**_YEARLY, **change})
+    assert seen and seen[0][0] == "/v1/prices/price_Y" and seen[0][1].startswith("Basic ")
+    if error:
+        assert res.returncode != 0 and "::error::yearly price check failed" in res.stdout and error in res.stdout
+    else:
+        assert res.returncode == 0, res.stdout + res.stderr
+        assert "::notice::yearly price ok: 49.00 USD per year, active, live mode" in res.stdout
+
+
+def test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key(tmp_path: Path) -> None:
+    res, seen = _yearly_check(tmp_path / "a", "", "49", "sk_live_FAKEKEY", _YEARLY)
+    assert res.returncode == 0 and "yearly plan: not sold" in res.stdout and not seen
+    res, seen = _yearly_check(tmp_path / "b", "price_Y", "49", "", _YEARLY)
+    assert res.returncode != 0 and "STRIPE_SECRET_KEY is not" in res.stdout
+    res, seen = _yearly_check(tmp_path / "c", "price_Y", "49", "sk_live_FAKEKEY", None)
+    assert res.returncode != 0 and "did not return the yearly price" in res.stdout

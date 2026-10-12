@@ -20,7 +20,7 @@ GOOGLE_CLIENT_ID = "242086574232-f057r0gmud5befbjk2cl6hofocr2mu45.apps.googleuse
 STRIPE_PAYMENT_LINK = "https://buy.stripe.com/14A5kE5LjgC01PN3zZeIw01"  # the $9.99/mo Payment Link (live); me.subscribe_url is "" when empty, and
                             # POST /api/checkout bills its price unless STRIPE_PRICE_ID is set
 STRIPE_PRICE_ID = ""        # the $9.99/mo recurring price (price_...); "" = the Payment Link's price
-STRIPE_YEARLY_PRICE_ID = "" # the $49/year recurring price (price_...); "" = yearly not sold
+STRIPE_YEARLY_PRICE_ID = "price_1UPYHFKDkQ8DJw9DvG7Oubf1"  # the $49/year recurring price (live, 2026-10-12); "" = yearly not sold
 STRIPE_PORTAL_LINK = ""     # customer-portal link; me.portal_url is "" when empty
 STRIPE_PORTAL_CONFIG = ""   # billing-portal configuration (bpc_...); "" = the active one scripts/stripe_setup.py
                             # made (metadata app=wowpriced), else the dashboard default
