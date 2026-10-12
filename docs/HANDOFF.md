@@ -142,6 +142,19 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Spend pacing + critic shadow (Codex task 036, merged 2026-10-12):** each
+  run may spend at most `day cap x (minutes since 00:00 UTC + 2 h) / 1440`
+  minus today's spend (`parse.spend_pacing`, `spend_pacing_headroom_hours`);
+  the hard daily and per-run caps are unchanged and pacing only tightens
+  them. Deferred posts retry next run. The critic keeps
+  `parse.critic_reserve_share` (0.5) of each run's allowance so paced runs
+  never publish deals unjudged because extraction spent it all. Up to 12
+  Haiku shadow batches/day re-judge real critic batches after all real
+  judging; verdicts are recorded (counts only), never used. The growth
+  report restores a read-only state snapshot (continue-on-error) for
+  "critic shadow: agree N/M". Why: 2026-10-12 spend ran ~$0.45/h; the $6 cap
+  from Oct 14 would otherwise run out ~13:00 UTC. Decide on a Haiku critic
+  from the shadow numbers.
 - **Join card (Codex task 033, merged 2026-10-12):** one card on `/join` (email
   field open) and as a weekly prompt on the home page (`join.prompt`,
   `join.prompt_delay_s` ≥ 15, `join.apple: false`). Prompt rules: 15 s + one

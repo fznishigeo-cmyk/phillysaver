@@ -99,7 +99,7 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     from .config import load_config
     from .growth.report import run
 
-    return run(load_config(args.config))
+    return run(load_config(args.config), db_path=args.db)
 
 
 def cmd_domains(args: argparse.Namespace) -> int:
@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     sp.set_defaults(fn=cmd_indexnow)
     sp = sub.add_parser("growth-report",
                         help="daily private growth report (operator email / Telegram admin)")
-    sp.add_argument("--config", default=None)
+    common(sp)
     sp.set_defaults(fn=cmd_growth_report)
 
     sp = sub.add_parser("domains", help="print outbound hostnames for allowlists")

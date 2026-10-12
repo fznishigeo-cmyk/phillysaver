@@ -136,7 +136,7 @@ class ClaudeParser:
         self.spend_usd: float = 0.0
         self.spend_by_kind: dict[str, dict] = {
             kind: {"calls": 0, "usd": 0.0}
-            for kind in ("extract", "second_opinion", "critic", "category", "newsletter_pick", "other")
+            for kind in ("extract", "second_opinion", "critic", "critic_shadow", "category", "newsletter_pick", "other")
         }
         self.extract_by_source: dict[str, dict] = {}
         self._spend_lock = threading.Lock()
@@ -389,7 +389,8 @@ class ClaudeParser:
         return []
 
 
-def critique_deals(parser: "ClaudeParser", deals: list[dict]) -> list[dict | None]:
+def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = False,
+                   reserve_shadow: Callable[[], bool] | None = None) -> list[dict | None]:
     """Judge a bounded batch independently; bad/missing indices stay unjudged."""
     opinions = [None] * len(deals)
     cfg = parser.cfg
@@ -410,22 +411,45 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict]) -> list[dict | Non
     if not entries:
         return opinions
 
-    def request():
-        parser.critic_calls = getattr(parser, "critic_calls", 0) + 1
-        return parser.client.messages.parse(
-            model=cfg.critic_model, max_tokens=100 + 80 * len(entries),
+    model = cfg.critic_shadow_model if shadow else cfg.critic_model
+    if not model:
+        return opinions
+    kwargs = dict(
+            model=model, max_tokens=100 + 80 * len(entries),
             system=CRITIC_SYSTEM_PROMPT + (
                 "\nJudge each indexed deal independently using all the rules above. "
                 "Return verdicts with their original index. Each reason must be "
                 "one short sentence of at most 120 characters."),
             messages=[{"role": "user", "content": json.dumps(entries)}],
             output_format=CriticVerdicts)
+    if shadow:
+        # Conservative admission: one token per UTF-8 byte of prompt/schema,
+        # plus framing overhead and the entire output allowance. Never start
+        # an optional call merely because a few cents remain below the cap.
+        pricing = (cfg.model_pricing_per_mtok.get(model)
+                   or cfg.model_pricing_per_mtok.get("default") or {})
+        if not pricing.get("input") or not pricing.get("output"):
+            return opinions
+        input_bound = len(json.dumps({
+            "system": kwargs["system"], "messages": kwargs["messages"],
+            "schema": CriticVerdicts.model_json_schema()}).encode("utf-8")) + 1024
+        cost_bound = (input_bound * float(pricing["input"])
+                      + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
+        if parser.spend_usd + cost_bound > parser.run_cap_usd:
+            raise SpendCapReached("insufficient allowance for critic shadow")
+        if reserve_shadow is None or not reserve_shadow():
+            return opinions
+
+    def request():
+        if not shadow:
+            parser.critic_calls = getattr(parser, "critic_calls", 0) + 1
+        return parser.client.messages.parse(**kwargs)
 
     try:
         resp = parser._request(request)
         if resp is None:
             return opinions
-        parser._account(resp, cfg.critic_model, kind="critic")
+        parser._account(resp, model, kind="critic_shadow" if shadow else "critic")
         if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
             return opinions
         parsed = CriticVerdicts.model_validate(resp.parsed_output)

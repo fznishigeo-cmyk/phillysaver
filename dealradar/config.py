@@ -98,6 +98,8 @@ class AppConfig:
     # spend_cap_boost_until (an ISO date, exclusive); 0 / "" = none.
     spend_cap_boost_usd_per_day: float = 0.0
     spend_cap_boost_until: str = ""
+    spend_pacing: bool = True
+    spend_pacing_headroom_hours: float = 2.0
     retries_on_invalid_json: int = 2
     # Probe the structured messages.parse endpoint for extraction. Off by
     # default: our schema is rejected as "too complex" after a MINUTES-long
@@ -112,6 +114,9 @@ class AppConfig:
     critic_model: str = ""              # "" disables the deal critic
     critic_enabled: bool = True
     critic_batch_size: int = 8
+    critic_reserve_share: float = 0.5   # of each run's allowance, kept for the critic
+    critic_shadow_model: str = "claude-haiku-5-5"
+    critic_shadow_batches_per_day: int = 12
     exclude_suspect_msrp: bool = True
 
     # -- publish / ranking --
@@ -278,6 +283,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                               default=cfg.spend_cap_boost_usd_per_day) or 0.0)
     cfg.spend_cap_boost_until = str(g("parse", "spend_cap_boost_until",
                                       default=cfg.spend_cap_boost_until) or "")
+    cfg.spend_pacing = bool(g("parse", "spend_pacing", default=cfg.spend_pacing))
+    cfg.spend_pacing_headroom_hours = max(0.0, float(g(
+        "parse", "spend_pacing_headroom_hours", default=cfg.spend_pacing_headroom_hours)))
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
     cfg.parse_concurrency = max(1, int(g("parse", "concurrency", default=cfg.parse_concurrency)))
@@ -286,6 +294,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.critic_model = g("parse", "critic_model", default="") or ""
     cfg.critic_enabled = bool(g("parse", "critic_enabled", default=cfg.critic_enabled))
     cfg.critic_batch_size = max(1, int(g("parse", "critic_batch_size", default=8)))
+    cfg.critic_reserve_share = min(0.9, max(0.0, float(g(
+        "parse", "critic_reserve_share", default=cfg.critic_reserve_share))))
+    cfg.critic_shadow_model = g("parse", "critic_shadow_model", default=cfg.critic_shadow_model) or ""
+    cfg.critic_shadow_batches_per_day = max(0, int(g(
+        "parse", "critic_shadow_batches_per_day", default=cfg.critic_shadow_batches_per_day)))
     cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
 
@@ -498,3 +511,16 @@ def daily_spend_cap(cfg: "AppConfig", now) -> float:
         except ValueError:
             pass  # a malformed date never raises the cap
     return float(cfg.spend_cap_usd_per_day)
+
+
+def spend_allowance(cfg: AppConfig, now, spent_today: float) -> tuple[float, float]:
+    """(Run allowance, allowed today): pacing can only tighten the hard caps."""
+    from datetime import timezone
+
+    day_cap = daily_spend_cap(cfg, now)
+    allowed = day_cap
+    if cfg.spend_pacing:
+        utc = now.astimezone(timezone.utc)
+        minutes = utc.hour * 60 + utc.minute
+        allowed *= min(1.0, (minutes + max(0, cfg.spend_pacing_headroom_hours) * 60) / 1440)
+    return max(0.0, min(cfg.spend_cap_usd_per_run, allowed - spent_today)), allowed

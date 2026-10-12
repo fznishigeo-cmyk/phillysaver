@@ -47,6 +47,7 @@ class Messages:
 
 def parser_for(messages=None, **over):
     cfg = load_config()
+    cfg.critic_shadow_batches_per_day = 0  # these tests isolate the real critic
     for key, value in over.items():
         setattr(cfg, key, value)
     messages = messages or Messages()

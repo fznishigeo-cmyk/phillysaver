@@ -280,8 +280,8 @@ def test_deploy_subscribe_worker_shape() -> None:
 
 
 def test_growth_report_shape() -> None:
-    """Daily + manual, read-only, its own concurrency group, never near
-    state.db or the data branch; the secrets reach the report step only."""
+    """Daily + manual, read-only snapshot, no state writeback; secrets
+    reach only the step that needs them."""
     doc = load_workflow(GROWTH)
     assert doc["name"] == "growth report"
     on = workflow_on(doc)
@@ -292,8 +292,10 @@ def test_growth_report_shape() -> None:
     job = single_job(doc)
     body = "\n".join(run_commands(doc))
     assert "python -m dealradar growth-report" in body
-    for banned in ("state", "git ", "GITHUB_STEP_SUMMARY", "echo"):
+    for banned in ("commit_state", "git push", "GITHUB_STEP_SUMMARY", "echo"):
         assert banned not in body, banned
+    restore = next(s for s in job["steps"] if s.get("run") == "bash scripts/restore_state.sh")
+    assert restore["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
     step = next(s for s in job["steps"] if s.get("run", "").strip() == "python -m dealradar growth-report")
     assert set(step["env"]) == {
         "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
@@ -304,7 +306,7 @@ def test_growth_report_shape() -> None:
     }
     for name, value in step["env"].items():
         assert value == "${{ secrets.%s }}" % name
-    assert all("env" not in s for s in job["steps"] if s is not step)
+    assert all("env" not in s for s in job["steps"] if s is not step and s is not restore)
     assert "env" not in job and "env" not in doc
 
 

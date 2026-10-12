@@ -23,6 +23,15 @@ from .models import RawPost
 from .util import iso, now_utc, parse_iso
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS critic_shadow_daily (
+    day TEXT PRIMARY KEY,
+    batches INTEGER NOT NULL DEFAULT 0,
+    deals_judged INTEGER NOT NULL DEFAULT 0,
+    same_verdict INTEGER NOT NULL DEFAULT 0,
+    shadow_kept_critic_killed INTEGER NOT NULL DEFAULT 0,
+    shadow_killed_critic_kept INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS posts_seen (
     id INTEGER PRIMARY KEY,
     source_name TEXT NOT NULL,
@@ -124,8 +133,12 @@ CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 
 
 class DB:
-    def __init__(self, path: str | Path = "state.db") -> None:
+    def __init__(self, path: str | Path = "state.db", *, read_only: bool = False) -> None:
         self.path = str(path)
+        if read_only:
+            self.conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
+            self.conn.row_factory = sqlite3.Row
+            return
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
@@ -486,6 +499,49 @@ class DB:
             return None
         vals = [r["items_fetched"] for r in rows]
         return sum(vals) / len(vals)
+
+    def critic_shadow_counts(self, now: datetime, days: int = 1) -> dict[str, int]:
+        day = now.astimezone(timezone.utc).date()
+        columns = ("batches", "deals_judged", "same_verdict",
+                   "shadow_kept_critic_killed", "shadow_killed_critic_kept")
+        if not self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table'"
+                                 " AND name='critic_shadow_daily'").fetchone():
+            return dict.fromkeys(columns, 0)  # read-only snapshot before this migration
+        row = self.conn.execute(
+            "SELECT " + ", ".join(f"COALESCE(SUM({c}), 0) AS {c}" for c in columns)
+            + " FROM critic_shadow_daily WHERE day >= ? AND day <= ?",
+            ((day - timedelta(days=days - 1)).isoformat(), day.isoformat()),
+        ).fetchone()
+        return dict(row)
+
+    def start_critic_shadow_batch(self, now: datetime, limit: int) -> bool:
+        """Reserve a daily slot before sending, including failed batches."""
+        day = now.astimezone(timezone.utc).date().isoformat()
+        self.conn.execute("INSERT OR IGNORE INTO critic_shadow_daily(day) VALUES (?)", (day,))
+        result = self.conn.execute(
+            "UPDATE critic_shadow_daily SET batches=batches+1 WHERE day=? AND batches < ?",
+            (day, limit))
+        self.conn.commit()
+        return result.rowcount == 1
+
+    def record_critic_shadow(self, now: datetime, critic: list, shadow: list) -> None:
+        counts = [0, 0, 0, 0]
+        for real, other in zip(critic, shadow):
+            if real is None or other is None:
+                continue  # missing verdicts are not agreements or disagreements
+            counts[0] += 1
+            if real["plausible"] == other["plausible"]:
+                counts[1] += 1
+            elif other["plausible"]:
+                counts[2] += 1
+            else:
+                counts[3] += 1
+        self.conn.execute(
+            "UPDATE critic_shadow_daily SET deals_judged=deals_judged+?,"
+            " same_verdict=same_verdict+?, shadow_kept_critic_killed=shadow_kept_critic_killed+?,"
+            " shadow_killed_critic_kept=shadow_killed_critic_kept+? WHERE day=?",
+            (*counts, now.astimezone(timezone.utc).date().isoformat()))
+        self.conn.commit()
 
     # ---------------- meta / retention ----------------
 
