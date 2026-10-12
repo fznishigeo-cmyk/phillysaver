@@ -38,8 +38,18 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
   await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
   await page.waitForTimeout(5000);
+  // Photos load lazily: bring the top 24 cards into view first.
+  for (const i of [7, 15, 23]) {
+    await page.evaluate((i) => { const c = document.querySelectorAll("#content .card[data-key]")[i];
+      if (c) c.scrollIntoView({ block: "center" }); }, i);
+    await page.waitForTimeout(1500);
+  }
+  await page.waitForTimeout(2000);
   const shown = await page.evaluate(() => ({
     cards: document.querySelectorAll("#content .card[data-key]").length,
+    // What a visitor sees first: the top 24 cards with a loaded photo.
+    top: [...document.querySelectorAll("#content .card[data-key]")].slice(0, 24)
+      .filter((c) => [...c.querySelectorAll("img")].some((i) => i.complete && i.naturalWidth > 1)).length,
     clock: (document.getElementById("countdown") || {}).textContent || "",
     tagline: (document.getElementById("tagline") || {}).textContent || "",
   }));
@@ -73,6 +83,7 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
   say(`## Site check ${new Date().toISOString().slice(0, 16)}Z`);
   say(`live deals ${alive.length}, cards on the page ${shown.cards}, clock "${shown.clock}", tagline "${shown.tagline}"`);
   say(`photos showing: ${good} (${pct(good)}%) | no photo: ${none.length} (${pct(none.length)}%) | broken: ${broken.length} (${pct(broken.length)}%)`);
+  say(`first screens: ${shown.top} of the top 24 cards show a photo`);
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);
   if (none.length) {
     say(`\n### No photo (${none.length})`);

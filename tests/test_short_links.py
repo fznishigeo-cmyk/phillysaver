@@ -293,3 +293,11 @@ def test_only_the_given_deals_are_considered(setup):
     pipeline._resolve_short_links(db, fetcher, None, cfg,
                                   deals=[db.get_deal("shown")])
     assert calls == ["https://a.co/shown"]
+
+
+def test_a_www_tracker_host_is_followed(setup):
+    """Live: www.creator.anchor.store links were never followed."""
+    db, cfg, fetcher, calls, targets = setup
+    PhotoFixture._seed(db, "www", "https://www.creator.anchor.store/x")
+    pipeline._resolve_short_links(db, fetcher, None, cfg)
+    assert calls == ["https://www.creator.anchor.store/x"]

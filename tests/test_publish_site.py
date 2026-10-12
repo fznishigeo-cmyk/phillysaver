@@ -1372,6 +1372,18 @@ def test_visitors_see_a_rounded_deal_count(db, cfg, tmp_path):
     assert "1,400+ more deals on the live wall" in seo.static_wall(alive, True)
 
 
+def test_fresh_drops_lead_with_photos(db, cfg, tmp_path):
+    """Operator (2026-10-12): the top of the wall showed store tiles. In
+    fresh drops a deal without a photo counts as NO_PHOTO_H hours older
+    (still on the wall, never hidden), new arrivals included."""
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert "var NO_PHOTO_H = 12;" in html
+    body = _between(html, "function freshOrder(", "function ordered(")
+    assert "(state.newKeys[k] ? -1e9 : 0) + s + (d.image_url ? 0 : NO_PHOTO_H)" in body
+
+
 def test_hover_never_moves_what_the_pointer_rests_on(db, cfg, tmp_path):
     """Operator report (2026-10-11): the page "moves up every few seconds".
     A card that lifts on :hover slides out from under a resting pointer,

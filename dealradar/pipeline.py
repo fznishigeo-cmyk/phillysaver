@@ -711,7 +711,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             continue
         if parts.scheme not in ("http", "https") or not host or is_challenge_url(link):
             continue
-        if host not in _SHORT_LINK_HOSTS:
+        if host.removeprefix("www.") not in _SHORT_LINK_HOSTS:  # www.creator.anchor.store, live
             domain = _site_of(link)
             # Known sellers remain product pages even if credited as a source.
             if not domain or domain.startswith("amazon.") or \
