@@ -1,0 +1,44 @@
+name: Sovrn redirect probe (manual)
+
+# One request to Sovrn's redirect for one Walmart page, redirects NOT
+# followed (never visits the retailer): prints the status and the host it
+# points to, so the operator can switch affiliate.sovrn_enabled on safely.
+# Prints no key and no full URL.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask Sovrn where one wrapped link goes
+        env:
+          SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import os, re, urllib.error, urllib.parse, urllib.request
+          key = os.environ.get("SOVRN_API_KEY", "").strip()
+          if not re.fullmatch(r"[0-9a-f]{32}", key):
+              print("SOVRN_API_KEY missing or not a link key"); raise SystemExit(1)
+          target = "https://www.walmart.com/ip/222918738"
+          url = ("https://redirect.viglink.com?key=" + key + "&u="
+                 + urllib.parse.quote(target, safe="") + "&cuid=probe")
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *a, **k): return None
+          opener = urllib.request.build_opener(NoRedirect)
+          req = urllib.request.Request(url, headers={
+              "User-Agent": "wowpriced-sovrn-probe/1.0 (+https://wowpriced.com; hello@wowpriced.com)"})
+          try:
+              resp = opener.open(req, timeout=20); status, loc = resp.status, resp.headers.get("Location", "")
+          except urllib.error.HTTPError as e:
+              status, loc = e.code, e.headers.get("Location", "")
+          host = urllib.parse.urlsplit(loc).hostname or "(none)"
+          print(f"status {status}; points to host: {host}")
+          ok = 300 <= status < 400 and host != "(none)"
+          print("PROBE OK: the redirect works" if ok else "PROBE NOT OK: keep sovrn_enabled false")
+          raise SystemExit(0 if ok else 1)
+          PY
