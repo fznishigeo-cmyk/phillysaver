@@ -11,16 +11,19 @@
 <style>
 :root{
   color-scheme: light dark;
-  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
   --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
   --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
          --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
          --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
 }
 *{box-sizing:border-box}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+         clip:rect(0,0,0,0);white-space:nowrap;border:0}
+input::placeholder{color:var(--muted);opacity:1}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
 a{color:var(--link);text-decoration:none}
@@ -56,6 +59,8 @@ footer p{margin:0 0 8px}
   .tag{display:none}
   h1{font-size:26px}
 }
+p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
 </head>
 <body>
@@ -71,6 +76,7 @@ footer p{margin:0 0 8px}
 <p class="lede">Fourteen tactics we would tell a friend. None of them involve a
    coupon-code generator or a second account.</p>
 
+<h2 class="sr-only">Deal hacks</h2>
 <div class="hack">
   <h3><span class="n">1.</span>Read the strike-through like a skeptic</h3>
   <p>A crossed-out price is a claim, not a fact. Ask three things: was that price

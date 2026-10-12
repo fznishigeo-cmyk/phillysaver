@@ -9,13 +9,14 @@
 <meta name="description" content="Join wowpriced free for one email with the best deals. Unsubscribe anytime.">
 <link rel="canonical" href="{{SITE_URL}}/join.html">
 <style>
-:root{color-scheme:light dark;--bg:#f3f5f7;--card:#fff;--fg:#1a1d21;--muted:#616a75;
+:root{color-scheme:light dark;--bg:#f3f5f7;--card:#fff;--fg:#1a1d21;--muted:#5c6570;
   --line:#e2e6eb;--accent:#0e7569;--accent-fg:#fff;--accent-hover:#0f7b6e;
   --shadow:0 8px 32px rgba(15,23,32,.06)}
 @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--card:#161c23;--fg:#e7eaee;
-  --muted:#9aa3ad;--line:#2a313a;--accent:#2fb3a4;--accent-fg:#07211d;
+  --muted:#a4adb7;--line:#2a313a;--accent:#2fb3a4;--accent-fg:#07211d;
   --accent-hover:#42c2b2;--shadow:0 8px 32px rgba(0,0,0,.25)}}
 *{box-sizing:border-box}
+input::placeholder{color:var(--muted);opacity:1}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:var(--accent)}
@@ -36,6 +37,8 @@ header a{color:#9fe6da}
 {{JOIN_STYLE}}
 @media (max-width:640px){.wrap{padding:40px 16px}.wrap::before{display:none}
   .joincard{padding:28px 24px}.hrow{padding:16px;gap:12px}.back{font-size:13px}h1{font-size:27px}}
+p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
 </head>
 <body>

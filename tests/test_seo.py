@@ -73,7 +73,7 @@ def test_static_wall_holds_the_free_deals_credits_and_locked_lines(db, cfg, tmp_
     for d in free:
         assert d["item"] in wall and f'href="{d["url"]}"' in wall
     assert 'via <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>' in wall
-    assert '<h2 class="secth">' in wall and "<noscript>" in wall
+    assert '<h2 class="secth sr-only">' in wall and "<noscript>" in wall
     # Locked deals: one line per store, a count and a % range only.
     assert re.search(r"<li>2 more deals at (Walmart|Target), \d\d–\d\d% off, members only</li>", wall)
     assert "img.example" not in wall and "<img" not in wall

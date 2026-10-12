@@ -12,20 +12,23 @@
 <style>
 :root{
   color-scheme: light dark;
-  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
-  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
-  --flag:#d9480f; --flag-fg:#ffffff; --cond:#b7791f; --cond-fg:#ffffff;
-  --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
+  --tile-fg:#0d1014; --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --flag:#cc420c; --flag-fg:#ffffff; --cond:#94621a; --cond-fg:#ffffff;
+  --good:#107a3d; --hist:#1d5fd1; --unv:#656c79;
   --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
          --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
          --flag:#ff6b3d; --flag-fg:#2b0e02; --cond:#f2b544; --cond-fg:#3a2503;
          --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0;
          --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
 }
 *{box-sizing:border-box}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+         clip:rect(0,0,0,0);white-space:nowrap;border:0}
+input::placeholder{color:var(--muted);opacity:1}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
 a{color:var(--link);text-decoration:none}
@@ -59,7 +62,7 @@ p{margin:0 0 14px}
 .media{position:relative;height:90px;border-bottom:1px solid var(--line)}
 .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     padding:12px;text-align:center}
-.ph span{font-size:20px;font-weight:800;color:rgba(255,255,255,.95);line-height:1.2}
+.ph span{font-size:20px;font-weight:800;color:var(--tile-fg);line-height:1.2}
 .flag{position:absolute;top:8px;left:8px;background:var(--flag);color:var(--flag-fg);
       font-size:13px;font-weight:800;padding:3px 9px;border-radius:7px}
 .condtag{position:absolute;top:8px;right:8px;background:var(--cond);color:var(--cond-fg);
@@ -113,7 +116,9 @@ footer p{margin:0 0 8px}
 .getdeal:hover,.getdeal:focus-visible{background:#0f7b6e;filter:none;transform:none}
 @media (prefers-color-scheme:dark){.getdeal:hover,.getdeal:focus-visible{background:#42c2b2}}
 .getdeal:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-<!--/support--></style>
+<!--/support-->p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+</style>
 </head>
 <body>
 <header>

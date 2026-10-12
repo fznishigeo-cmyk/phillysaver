@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "5b6d8f343c741c40a0e7a8b2e73576461881408675945395a30ecc7ed1e600dd"),
-    (False, 49, "d05d88681a3715501c901cf718fe883fb2c82af635b2983e6d7b18f6e1931bf9"),
-    (True, 0, "81b8d85c2283542167f6b346e914ba55456915c74d5ed7db85854e8373f86d5a"),
-    (True, 49, "4a079d13e7e8e9ea4500b0fb57616b5251359ebdda055a32f428bd174f4cf94e"),
+    (False, 0, "10f81db81d8bdbb145669a14d93e6d3cc25341b61fdd50fbf6107f81bceb8973"),
+    (False, 49, "f345c6b7964624e740a234cfcebd2f148a8ccddae6bbd6cdbbade6991dd3f95f"),
+    (True, 0, "86203435e8276ac81fc8ce656691e1ef7b8fb953af44a3c572f9cb2b2edc1176"),
+    (True, 49, "3710e8bdc40859be336e5c811d9d66f632cb81a7c7b93956de178a8296165af4"),
 ])
-def test_support_off_index_bytes_match_task031_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Tasks 031/034 change shared search, filters, refresh and the front-page mix.
+def test_support_off_index_bytes_match_task035_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 035 updates shared contrast, headings and initial paint work.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

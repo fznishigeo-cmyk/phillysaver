@@ -248,7 +248,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
             "categories above.</p></noscript>")
     if not (free or stubs):
         return html + '<p class="empty">No qualifying deals right now</p>'
-    html += '<h2 class="secth">Verified deals right now</h2>'
+    html += '<h2 class="secth sr-only">Verified deals right now</h2>'
     if free:
         html += '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>"
     if more:
@@ -635,7 +635,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
-        _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall), encoding="utf-8")
+        _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall,
+              TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
     (out / "404.html").write_text(_fill((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                                         HUB_LINKS=_hub_links(),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
@@ -671,7 +672,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
-                              '<div class="grid">' + ''.join(card_html(d, paths) for d in front_page_mix(live, cfg.front_page)[:30]) + '</div>',
+                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in front_page_mix(live, cfg.front_page)[:30]) + '</div>',
                               intro=intro)
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
     (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")
@@ -688,7 +689,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         intro += "."
         page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
         html = _landing_page(page_template, title, heading, intro, path, site_url,
-                             '<div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
+                             '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
                              + '</div>', intro=intro)
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
