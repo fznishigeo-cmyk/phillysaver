@@ -351,17 +351,23 @@ def test_cli_routes_commands_with_config_and_database(db, cfg, monkeypatch, caps
     assert cli.main(["pinterest-post", "--db", str(db.path)]) == 0
 
 
-def test_error_log_names_status_numeric_code_and_endpoint_only(caplog):
+def test_error_names_status_code_endpoint_and_a_masked_reason(monkeypatch):
+    monkeypatch.setenv("PINTEREST_APP_SECRET", APP_SECRET)
     cfg = load_config()
 
     def handle(request):
-        return httpx.Response(400, json={"code": 1, "message": "secret-ish text " + APP_SECRET})
+        return httpx.Response(400, json={
+            "code": 58, "message": "Board name\nexists " + APP_SECRET + " pina_abc123XYZ " + "x" * 200})
 
     api = pinterest._API(cfg, transport=httpx.MockTransport(handle))
     with pytest.raises(pinterest._APIError) as caught:
         api.request("POST", "/boards", json={"name": "x"})
-    assert str(caught.value) == "HTTP 400 code 1 (POST /boards)"
+    text = str(caught.value)
+    assert text.startswith("HTTP 400 code 58 (POST /boards): Board name exists <masked> <masked> <masked>")
+    assert APP_SECRET not in text and "pina_" not in text and len(text) < 180
     with pytest.raises(pinterest._APIError) as caught:
         api.request("GET", "/boards?bookmark=abc")
-    assert str(caught.value) == "HTTP 400 code 1 (GET)"
-    assert APP_SECRET not in str(caught.value)
+    assert str(caught.value).startswith("HTTP 400 code 58 (GET): Board name exists")
+    with pytest.raises(pinterest._APIError) as caught:
+        api.request("POST", "/oauth/token", data={"code": "c"})
+    assert str(caught.value) == "HTTP 400 code 58 (POST /oauth/token)"

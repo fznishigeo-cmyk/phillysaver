@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 import httpx
 
 from .. import util
-from ..config import get_secret
+from ..config import get_secret, redact_secrets
 from .social import _candidates, _word_trim, _without_prices
 
 log = logging.getLogger(__name__)
@@ -37,13 +37,16 @@ class _APIError(Exception):
     diagnosed from the public log.
     """
 
-    def __init__(self, status: int | None = None, code: int | None = None, where: str = ""):
+    def __init__(self, status: int | None = None, code: int | None = None, where: str = "",
+                 reason: str = ""):
         self.status = status
         text = f"HTTP {status}" if status is not None else "request failed"
         if code is not None:
             text += f" code {code}"
         if where:
             text += f" ({where})"
+        if reason:
+            text += f": {reason}"
         super().__init__(text)
 
 
@@ -94,11 +97,19 @@ class _API:
             raise _APIError() from None
         if not response.is_success:
             try:
-                code = response.json().get("code")
+                body = response.json()
+                code, reason = body.get("code"), body.get("message")
             except (ValueError, AttributeError):
-                code = None
+                code, reason = None, None
             where = f"{method} {path}" if re.fullmatch(r"/[a-z_/]+", path) else method
-            raise _APIError(response.status_code, code if type(code) is int else None, where)
+            # Pinterest's own short explanation ("Board name already exists"),
+            # never for OAuth calls. Any long unbroken run (a token, code or
+            # id) and any live secret is masked, so only plain words remain.
+            if path.startswith("/oauth") or not isinstance(reason, str):
+                reason = ""
+            reason = re.sub(r"pina_\S*|\S{16,}", "<masked>",
+                            redact_secrets(" ".join(reason.split())))[:120]
+            raise _APIError(response.status_code, code if type(code) is int else None, where, reason)
         try:
             data = response.json()
         except ValueError:
