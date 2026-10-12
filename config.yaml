@@ -197,6 +197,13 @@ members:
   timezone: "America/New_York"
   max_deals_per_email: 200   # ~46 KB of HTML at 200: under Gmail's ~102 KB clipping
 
+engagement:
+  new_since_visit: true
+  weekly_finds: true
+  visit_streak: true
+  surprise_me: true
+  hot_meter: true
+
 support:
   enabled: true        # free site: Join free + Support; trial/membership UI hidden
   monthly_link: "https://buy.stripe.com/7sY9AUflT5Xm2TR1rReIw03"     # monthly, $1 x the quantity the visitor picks; empty hides it

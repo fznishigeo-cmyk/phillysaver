@@ -1619,3 +1619,92 @@ class TestWallPagination:
         script = (Path(__file__).resolve().parents[1] / "scripts/site_check.js").read_text()
         assert "cards rendered ${shown.cards} of ${alive.length} live" in script
         assert "cards on the page" not in script
+
+
+ENGAGEMENT_SWITCHES = ("new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")
+
+
+def test_engagement_config_defaults_and_independent_switches(tmp_path):
+    path = tmp_path / "engagement.yaml"
+    path.write_text("{}")
+    assert load_config(path).engagement == dict.fromkeys(ENGAGEMENT_SWITCHES, True)
+    assert load_config().engagement == dict.fromkeys(ENGAGEMENT_SWITCHES, True)
+    for name in ENGAGEMENT_SWITCHES:
+        path.write_text(f"engagement:\n  {name}: false\n")
+        assert load_config(path).engagement == {key: key != name for key in ENGAGEMENT_SWITCHES}
+
+
+@pytest.mark.parametrize("mode", ["support", "open", "paywall"])
+@pytest.mark.parametrize("disabled", [None, *ENGAGEMENT_SWITCHES, "all"])
+def test_engagement_switches_reach_public_and_member_meta(db, cfg, tmp_path, mode, disabled):
+    cfg.engagement = {name: disabled not in (name, "all") for name in ENGAGEMENT_SWITCHES}
+    cfg.support_enabled = mode == "support"
+    cfg.paywall_open_access = mode == "open"
+    result = render_site(db, cfg, NOW, out_dir=tmp_path, deals=[make_deal()])
+    public = json.loads((tmp_path / "deals.json").read_text())
+    assert public["meta"]["engagement"] == cfg.engagement
+    assert result["full_payload"]["meta"]["engagement"] == cfg.engagement
+    home = (tmp_path / "index.html").read_text()
+    assert "{{" not in home
+    tag = re.search(r'<button id="surprise"[^>]*>', home).group()
+    assert ("hidden" in tag) is (not cfg.engagement["surprise_me"])
+    header = re.search(r"<header>.*?</header>", home, re.S).group()
+    assert "weeklyfinds" not in header and "visitstreak" not in header
+    assert "engagement" not in header
+    for reserved in ("engagement-slot", "engagement-clock", "visit-header", "engagement-chip"):
+        assert reserved not in home
+    assert ".sr-only{position:absolute;width:1px;height:1px;" in home
+    # Turning engagement on must leave the pre-task header markup intact.
+    cfg.engagement = {}
+    render_site(db, cfg, NOW, out_dir=tmp_path / "baseline", deals=[make_deal()])
+    baseline = (tmp_path / "baseline" / "index.html").read_text()
+    assert header == re.search(r"<header>.*?</header>", baseline, re.S).group()
+    cfg.engagement = public["meta"]["engagement"]
+    explanation = (tmp_path / "how-it-works.html").read_text()
+    assert ("Flames mark real signals:" in explanation) is cfg.engagement["hot_meter"]
+
+
+def test_engagement_published_logic_offline(db, cfg, tmp_path):
+    import shutil
+    import subprocess
+
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    cfg.engagement = dict.fromkeys(ENGAGEMENT_SWITCHES, True)
+    cfg.support_enabled = True
+    render_site(db, cfg, NOW, out_dir=tmp_path, deals=[make_deal()])
+    home = tmp_path / "index.html"
+    for i, code in enumerate(re.findall(r"<script>(.*?)</script>", home.read_text(), re.S)):
+        script = tmp_path / f"engagement-{i}.js"
+        script.write_text(code)
+        subprocess.run(["node", "--check", str(script)], check=True, capture_output=True, text=True)
+    result = subprocess.run(["node", str(Path(__file__).with_name("engagement_logic.cjs")), str(home)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_surprise_event_dispatch_and_private_fields_stay_local(tmp_path):
+    import shutil
+    import subprocess
+
+    from dealradar.publish.tracking import head_snippet
+    from tests.test_tracking import HARNESS, SAMPLE, _script
+
+    cfg = AppConfig(tracking=SAMPLE, engagement=dict.fromkeys(ENGAGEMENT_SWITCHES, True))
+    snippet = head_snippet(cfg)
+    assert "surprise_click:" in snippet
+    cfg.engagement["surprise_me"] = False
+    assert "surprise_click:" not in head_snippet(cfg)
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    (tmp_path / "snippet.js").write_text(_script(snippet))
+    (tmp_path / "harness.cjs").write_text(HARNESS)
+    (tmp_path / "scenarios.json").write_text(json.dumps({"surprise": {"calls": [[
+        "surprise_click", {"finds": 100, "streak": 5, "lastVisit": "private", "key": "private"}
+    ]]}}))
+    result = subprocess.run(["node", "harness.cjs", "snippet.js", "scenarios.json"], cwd=tmp_path,
+                            capture_output=True, text=True, check=True)
+    events = json.loads(result.stdout)["surprise"]
+    assert any(event[:2] == ["event", "surprise_click"] for event in events["dataLayer"])
+    assert any(event[:2] == ["trackCustom", "SurpriseClick"] for event in events["fbq"])
+    assert "private" not in result.stdout and "lastVisit" not in result.stdout

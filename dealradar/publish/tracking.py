@@ -259,6 +259,9 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if getattr(cfg, "engagement", {}).get("surprise_me", False):
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    surprise_click: { metaCustom: "SurpriseClick", tiktok: "ClickButton", uet: "surprise_click" },')
     if getattr(cfg, "support_enabled", False):
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    support_click: { metaCustom: "SupportClick", tiktok: "ClickButton", uet: "support_click" },')

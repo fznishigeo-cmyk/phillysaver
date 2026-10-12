@@ -361,6 +361,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         data = ((TEMPLATES_DIR / "index.html").read_bytes()
                 + (TEMPLATES_DIR / "support.js").read_bytes() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
+    engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
+        "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
+    if cfg.engagement:
+        site_version = hashlib.sha256(
+            site_version.encode() + (TEMPLATES_DIR / "engagement.js").read_bytes()
+        ).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -402,6 +408,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # "unlock" (nothing is locked).
         "open_access": open_access,
         "support": {"enabled": support, "link": link, "monthly_link": monthly},
+        "engagement": engagement,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
         "source_sites": _source_sites(serialized),
@@ -441,6 +448,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if name == "index.html" and yearly > 0:
             html = html.replace("<strong>Membership — $9.99/month", f"<strong>Membership — $9.99/month or ${yearly:g}/year")
         html = copy_variant(html, open_access, support)
+        html = re.sub(r"<!--engagement-->(.*?)<!--/engagement-->",
+                      lambda m: m.group(1) if cfg.engagement else "", html, flags=re.S)
+        if name == "index.html" and cfg.engagement:
+            html = html.replace("{{ENGAGEMENT_SCRIPT}}", (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8"))
+            html = html.replace("{{SURPRISE_HIDDEN}}", "" if engagement["surprise_me"] else "hidden")
+        html = html.replace("{{HOT_EXPLANATION}}", (
+            " Flames mark real signals: one each for at least 60% off, confirmation by "
+            "two or more independent sources, and a first sighting less than two hours ago."
+        ) if engagement["hot_meter"] else "")
         html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
         if support:
             html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
