@@ -142,6 +142,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Join card (Codex task 033, merged 2026-10-12):** one card on `/join` (email
+  field open) and as a weekly prompt on the home page (`join.prompt`,
+  `join.prompt_delay_s` ≥ 15, `join.apple: false`). Prompt rules: 15 s + one
+  screen scrolled or a tab/filter used, once per 7 days, never on `/join`,
+  never after a join, never without durable storage. It takes the support
+  banner's place for that page view (never both). Desktop: centred modal, Esc /
+  ✕ / outside close, focus trapped and returned. Phone: bottom sheet ≤ 45%.
+  Google = the Worker's verified `/api/google` then `/subscribe` (no token
+  kept). Site check pre-marks the prompt seen so it never covers the walk.
+  Chromium-verified desktop + phone; full suite 1,617 passed.
 - **Front-page mix (Codex task 034, merged 2026-10-12):** config-driven top 24 on
   All/fresh, static wall and best-today; other views, rotation and remaining
   order preserved. Sparse supply relaxes caps instead of hiding deals.

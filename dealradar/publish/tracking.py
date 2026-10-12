@@ -264,6 +264,8 @@ def head_snippet(cfg) -> str:
                                     '    surprise_click: { metaCustom: "SurpriseClick", tiktok: "ClickButton", uet: "surprise_click" },')
     if getattr(cfg, "support_enabled", False):
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    signup_prompt_shown: { metaCustom: "SignupPromptShown", tiktok: "SignupPromptShown", uet: "signup_prompt_shown" },\n'
+                                    '    signup_prompt_closed: { metaCustom: "SignupPromptClosed", tiktok: "SignupPromptClosed", uet: "signup_prompt_closed" },\n'
                                     '    support_click: { metaCustom: "SupportClick", tiktok: "ClickButton", uet: "support_click" },')
     script = f"<script>\n{_HEAD}{''.join(blocks)}{dispatch}</script>\n" if blocks else ""
     if not metas and not script:

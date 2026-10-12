@@ -475,7 +475,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = site_template_version() + ("-open" if open_access else "")
     if support:
         data = ((TEMPLATES_DIR / "index.html").read_bytes()
-                + (TEMPLATES_DIR / "support.js").read_bytes() + link.encode() + monthly.encode())
+                + (TEMPLATES_DIR / "support.js").read_bytes()
+                + (TEMPLATES_DIR / "join-card.html").read_bytes()
+                + (TEMPLATES_DIR / "join-card.css").read_bytes()
+                + str(cfg.join_prompt).encode() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
@@ -524,6 +527,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # "unlock" (nothing is locked).
         "open_access": open_access,
         "support": {"enabled": support, "link": link, "monthly_link": monthly},
+        "join": {"prompt": support and cfg.join_prompt,
+                 "prompt_delay_s": max(15, cfg.join_prompt_delay_s), "apple": cfg.join_apple},
         "engagement": engagement,
         "front_page": cfg.front_page,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
@@ -597,7 +602,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{SUPPORT_NOTE}}", (
                 f'<p class="disc muted" data-support-note>{SUPPORT_NOTE_MONTHLY if monthly else SUPPORT_NOTE}</p>'
                 if link else ""))
-            html = html.replace("{{JOIN_FORM}}", JOIN_FORM)
+            card = (TEMPLATES_DIR / "join-card.html").read_text(encoding="utf-8")
+            card = card.replace("{{JOIN_FORM}}", JOIN_FORM)
+            card = card.replace("{{JOIN_HEADING}}", "h1" if name == "join.html" else "h2")
+            if name == "join.html":  # the visitor chose to join: the email field is already open
+                card = card.replace('class="joinchoice" type="button"', 'class="joinchoice" type="button" hidden')
+                card = card.replace('<div id="join-email-fields" hidden>', '<div id="join-email-fields">')
+            card = card.replace("{{JOIN_CLOSE}}", '' if name == "join.html" else (
+                '<button type="button" class="joinclose" data-join-close aria-label="Close sign-up prompt">✕</button>'))
+            html = html.replace("{{JOIN_CARD}}", card)
+            html = html.replace("{{JOIN_PROMPT}}", (
+                '<div id="join-prompt" class="joinoverlay" hidden><div role="dialog" aria-modal="true" '
+                'aria-labelledby="join-title" aria-describedby="join-description" tabindex="-1">'
+                + card + '</div></div>' if cfg.join_prompt else ""))
+            html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

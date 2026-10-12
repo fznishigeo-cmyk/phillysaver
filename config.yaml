@@ -225,6 +225,11 @@ engagement:
   surprise_me: true
   hot_meter: true
 
+join:
+  prompt: true
+  prompt_delay_s: 15       # never earlier than 15 seconds, and only after engagement
+  apple: false             # reserved; no Apple Developer account yet
+
 support:
   enabled: true        # free site: Join free + Support; trial/membership UI hidden
   monthly_link: "https://buy.stripe.com/7sY9AUflT5Xm2TR1rReIw03"     # monthly, $1 x the quantity the visitor picks; empty hides it
