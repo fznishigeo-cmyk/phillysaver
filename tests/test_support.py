@@ -122,11 +122,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     (True, 49, "3710e8bdc40859be336e5c811d9d66f632cb81a7c7b93956de178a8296165af4"),
 ])
 def test_support_off_index_bytes_match_task035_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 035 updates shared contrast, headings and initial paint work.
+    # Keep task 035's baseline after removing task 037's head-only hint.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
-    assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected
+    html = (out / "index.html").read_bytes()
+    hint = b'<link rel="preconnect" href="https://m.media-amazon.com">\n'
+    assert html.count(hint) == 1
+    assert hashlib.sha256(html.replace(hint, b"")).hexdigest() == expected
     assert doc["meta"]["support"] == {"enabled": False, "link": "", "monthly_link": ""}
 
 

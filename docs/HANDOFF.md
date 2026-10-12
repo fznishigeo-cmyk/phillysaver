@@ -142,6 +142,15 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Rich results + photo preconnect (Codex task 037, merged 2026-10-12):** live
+  deal pages carry Product + Offer (price, InStock, seller = store,
+  itemCondition from conditions; image only if https; brand if known);
+  ended deal pages carry no Product. BreadcrumbList on deal, hub,
+  best-today, store and price pages; ItemList (max 30, page order) where a
+  page shows linked cards, none when empty. Home preconnects to
+  m.media-amazon.com plus the top other image host of the first 24 cards.
+  Review dropped priceValidUntil so deal-page bytes stay data-only (no
+  midnight churn of every page through IndexNow).
 - **Spend pacing + critic shadow (Codex task 036, merged 2026-10-12):** each
   run may spend at most `day cap x (minutes since 00:00 UTC + 2 h) / 1440`
   minus today's spend (`parse.spend_pacing`, `spend_pacing_headroom_hours`);

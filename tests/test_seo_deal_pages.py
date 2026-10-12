@@ -99,9 +99,12 @@ def test_deal_page_facts_schema_disclosure_affiliate_and_related(db, cfg, tmp_pa
     assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener">Get deal</a><p class="disclosure">Disclosure: affiliate links may earn a commission.</p>' in html
     product = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
     assert product == {"@context": "https://schema.org", "@type": "Product", "name": d["item"],
+                       "brand": {"@type": "Brand", "name": d["brand"]},
                        "offers": {"@type": "Offer", "price": "10.00", "priceCurrency": "USD",
                                   "availability": "https://schema.org/InStock",
-                                  "url": "https://wowpriced.com" + _path(d)}}
+                                  "url": "https://wowpriced.com" + _path(d),
+                                  "seller": {"@type": "Organization", "name": "Walmart"},
+                                  "itemCondition": "https://schema.org/UsedCondition"}}
     assert '<strong>$10.00</strong>' in html and "Store: Walmart" in html
     assert 'href="/deals/home-kitchen/"' in html
     assert html.count('<article class="card">') == 6
@@ -144,7 +147,8 @@ def test_ended_page_retained_from_database_until_row_deleted(db, cfg, tmp_path):
     assert "This deal has ended" in html and '<meta name="robots" content="noindex">' in html
     assert '>Get deal</a>' not in html and 'href="/deals/electronics/"' in html
     assert _path(d) not in (tmp_path / "sitemap.xml").read_text()
-    assert "offers" not in json.loads(re.search(r'application/ld\+json">(.*?)</script>', html).group(1))
+    blocks = [json.loads(s) for s in re.findall(r'application/ld\+json">(.*?)</script>', html)]
+    assert [b["@type"] for b in blocks] == ["BreadcrumbList"]
     db.conn.execute("DELETE FROM deals WHERE dedupe_key=?", (d["dedupe_key"],))
     db.conn.commit()
     _render(db, cfg, tmp_path, [])

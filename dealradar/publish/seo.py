@@ -18,10 +18,12 @@ import re
 import shutil
 import statistics
 import unicodedata
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import yaml
@@ -333,6 +335,45 @@ def _fill(template: str, **tokens: str) -> str:
     return re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: tokens.get(m.group(1), m.group(0)), template)
 
 
+def _json_ld(data: dict[str, Any]) -> str:
+    return '<script type="application/ld+json">' + json.dumps(data).replace('<', '\\u003c') + '</script>'
+
+
+def _breadcrumbs(site_url: str, pages: list[tuple[str, str]]) -> str:
+    return _json_ld({"@context": "https://schema.org", "@type": "BreadcrumbList",
+                     "itemListElement": [
+                         {"@type": "ListItem", "position": i, "name": name, "item": site_url + path}
+                         for i, (name, path) in enumerate([("Home", "/")] + pages, 1)]})
+
+
+def _item_list(rows: list[dict[str, Any]], paths: dict[str, str], site_url: str) -> str:
+    urls = [site_url + paths[d["key"][:8]] for d in rows if d["key"][:8] in paths][:30]
+    if not urls:
+        return ""  # an empty ItemList is a Search Console warning
+    return _json_ld({"@context": "https://schema.org", "@type": "ItemList",
+                     "itemListElement": [{"@type": "ListItem", "position": i, "url": url}
+                                         for i, url in enumerate(urls, 1)]})
+
+
+def _image_preconnects(teaser: list[dict[str, Any]], site_url: str, front_page: dict) -> str:
+    rows = front_page_mix(place_gone([d for d in teaser if not d.get("locked")]), front_page)[:24]
+    hosts: Counter[str] = Counter()
+    for d in rows:
+        try:
+            image = urlsplit(d.get("image_url") or "")
+            if image.scheme in ("http", "https") and image.hostname and image.hostname != "m.media-amazon.com":
+                hosts[image.hostname] += 1
+        except ValueError:
+            continue
+    links = '<link rel="preconnect" href="https://m.media-amazon.com">'
+    if hosts:
+        host = hosts.most_common(1)[0][0]
+        own = (urlsplit(site_url).hostname or "").removeprefix("www.")
+        if host.removeprefix("www.") != own:
+            links += f'\n<link rel="preconnect" href="{escape("https://" + host)}">'
+    return links
+
+
 def _site_floor(cfg) -> float:
     return min(cfg.min_pct, getattr(cfg, "site_show_from_pct", cfg.min_pct))
 
@@ -403,7 +444,9 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
         deals += f'<p class="muted">{escape(_locked_line(stubs, f"in {label}"))}.</p>'
     return _fill(template, TITLE=escape(copy["title"]), DESCRIPTION=escape(copy["description"]),
                  PAGE_TITLE=escape(copy["title"] + " — wowpriced"),
-                 CANONICAL=escape(f"{site_url}/deals/{slug}/"), EXTRA_HEAD="", TABS="",
+                 CANONICAL=escape(f"{site_url}/deals/{slug}/"),
+                 EXTRA_HEAD=_breadcrumbs(site_url, [(copy["title"], hub_href(slug))])
+                 + _item_list(free, deal_paths or {}, site_url), TABS="",
                  ROBOTS="" if indexable else '<meta name="robots" content="noindex">\n',
                  SITE_URL=site_url, SLUG=slug, INTRO=escape(copy["intro"]),
                  STATS=f'<div class="box"><p>{line}</p></div>', DEALS=deals,
@@ -426,11 +469,13 @@ def _date(dt: datetime, full: bool = False) -> str:
 
 def _landing_page(template: str, title: str, heading: str, description: str,
                   path: str, site_url: str, content: str, *, dead: bool = False,
-                  extra_head: str = "", intro: str = "") -> str:
+                  extra_head: str = "", intro: str = "",
+                  breadcrumbs: list[tuple[str, str]] | None = None) -> str:
     return _fill(template, TITLE=escape(heading), PAGE_TITLE=escape(title),
                  DESCRIPTION=escape(description), CANONICAL=escape(site_url + path),
                  ROBOTS='<meta name="robots" content="noindex">\n' if dead else "",
-                 EXTRA_HEAD=extra_head, INTRO=escape(intro), STATS="", DEALS=content,
+                 EXTRA_HEAD=extra_head + _breadcrumbs(site_url, breadcrumbs or [(heading, path)]),
+                 INTRO=escape(intro), STATS="", DEALS=content,
                  TABS='<nav class="hrow" aria-label="categories">' + tabs_html() + '</nav>',
                  HUB_LINKS=_hub_links())
 
@@ -517,14 +562,25 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if related:
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
             card_html(r, paths) for r in related) + '</div>'
-    product: dict[str, Any] = {"@context": "https://schema.org", "@type": "Product", "name": item}
+    ld = ""
     if not dead and d.get("final_price") is not None:
-        product["offers"] = {"@type": "Offer", "price": f'{float(d["final_price"]):.2f}',
-                             "priceCurrency": "USD", "availability": "https://schema.org/InStock",
-                             "url": site_url + path}
-    ld = '<script type="application/ld+json">' + json.dumps(product).replace('<', '\\u003c') + '</script>'
+        conditions = set(d.get("conditions") or [])
+        condition = "UsedCondition" if {"used", "open_box"} & conditions else \
+            "RefurbishedCondition" if "refurbished" in conditions else "NewCondition"
+        product: dict[str, Any] = {"@context": "https://schema.org", "@type": "Product", "name": item,
+                                  "offers": {"@type": "Offer", "price": price,
+                                             "priceCurrency": "USD", "availability": "https://schema.org/InStock",
+                                             "url": site_url + path,
+                                             "seller": {"@type": "Organization", "name": store},
+                                             "itemCondition": "https://schema.org/" + condition}}
+        if str(d.get("image_url") or "").startswith("https://"):
+            product["image"] = d["image_url"]
+        if d.get("brand"):
+            product["brand"] = {"@type": "Brand", "name": d["brand"]}
+        ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
-                         '<div class="deal-detail">' + content + '</div>', dead=dead, extra_head=ld)
+                         '<div class="deal-detail">' + content + '</div>', dead=dead, extra_head=ld,
+                         breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
 
 def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
@@ -636,6 +692,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
         _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall,
+              IMAGE_PRECONNECTS=_image_preconnects(teaser, site_url, cfg.front_page),
               TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
     (out / "404.html").write_text(_fill((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                                         HUB_LINKS=_hub_links(),
@@ -670,10 +727,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     n = sum(d.get("status") == "alive" for d in teaser)
     count = f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
+    best_rows = front_page_mix(live, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
-                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in front_page_mix(live, cfg.front_page)[:30]) + '</div>',
-                              intro=intro)
+                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in best_rows) + '</div>',
+                              intro=intro, extra_head=_item_list(best_rows, paths, site_url))
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
     (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")
     landing_pages[best_path] = best_html
@@ -690,7 +748,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
         html = _landing_page(page_template, title, heading, intro, path, site_url,
                              '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
-                             + '</div>', intro=intro)
+                             + '</div>', intro=intro, extra_head=_item_list(rows[:_HUB_MAX], paths, site_url))
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")

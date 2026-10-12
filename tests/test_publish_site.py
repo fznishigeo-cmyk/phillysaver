@@ -496,8 +496,9 @@ class TestPaywallTeaser:
 
         # Every HTML page written (the static wall, the category hubs, 404)
         # holds the free deals at most: never a locked deal's name, price,
-        # link or photo, and no photo at all. (deals.json's stubs carry
-        # image_url by contract; the HTML never does.)
+        # link or photo. Only public Product JSON-LD carries photo URLs;
+        # static cards still use store tiles. deals.json's locked stubs
+        # carry image_url by contract.
         pages = list(out.rglob("*.html"))
         assert out / "index.html" in pages and out / "deals" / "other" / "index.html" in pages
         for page in pages:
@@ -507,7 +508,9 @@ class TestPaywallTeaser:
                 assert f"ZZCODE{i}" not in html and f"ZZSTEP{i}" not in html, page
                 assert f"walmart.com/ip/zz{i}" not in html, page
                 assert f"100{i}.0" not in html and f"500{i}.0" not in html, page
-            assert "zzimg" not in html, page
+                assert f"zzimg{i}" not in html, page
+            without_ld = re.sub(r'<script type="application/ld\+json">.*?</script>', "", html, flags=re.S)
+            assert "zzimg" not in without_ld, page
         home = (out / "index.html").read_text(encoding="utf-8")
         assert "ZZSECRET-ITEM-0" in home
         # A free deal's code and steps are on the static wall too.
