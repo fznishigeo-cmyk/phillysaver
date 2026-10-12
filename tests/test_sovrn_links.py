@@ -67,8 +67,11 @@ def test_source_post_steps_and_override_precedence():
     assert _serialize_deal(plain, NOW, overrides=override, sovrn_key=KEY, sovrn_enabled=True)["url"] == override["walmart.com/12345"]
     steps = make_deal(codes=["SAVE10"])
     out = _serialize_deal(steps, NOW, overrides=override, sovrn_key=KEY, sovrn_enabled=True)
-    assert out["url"] == steps["sightings"][0]["source_url"]
+    assert out["url"] == override["walmart.com/12345"]
     assert out["needs_steps"] and out["codes"] == ["SAVE10"]
+    complex_deal = dict(steps, stack_steps=["Clip the coupon", "Use code SAVE10"])
+    assert _serialize_deal(complex_deal, NOW, overrides=override, sovrn_key=KEY,
+                           sovrn_enabled=True)["url"] == steps["sightings"][0]["source_url"]
     assert _serialize_deal(dict(plain, canonical_url=""), NOW, sovrn_key=KEY, sovrn_enabled=True)["url"] == plain["sightings"][0]["source_url"]
     blog = dict(plain, canonical_url="https://hip2save.com/product")
     assert _serialize_deal(blog, NOW, sovrn_key=KEY, sovrn_enabled=True)["url"] == blog["canonical_url"]

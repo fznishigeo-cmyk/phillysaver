@@ -123,7 +123,6 @@ def test_seeded_browser_caps_render_and_python_parity(tmp_path, cfg, db, options
     {"state": {"sortKey": "pct"}}, {"state": {"sortKey": "price"}},
     {"state": {"sortDir": 1}}, {"controls": {"q": "car"}},
     {"controls": {"storesel": "Amazon"}}, {"controls": {"minpct": "80"}},
-    {"controls": {"srcsel": "@2"}}, {"controls": {"srcsel": "slickdeals.net"}},
 ])
 def test_other_views_unchanged(tmp_path, cfg, db, options, view):
     cases = [dict(rows=rows(), options=o, **view) for o in (options, {})]
@@ -131,6 +130,15 @@ def test_other_views_unchanged(tmp_path, cfg, db, options, view):
     assert not actual["active"]
     assert actual["ordered"] == baseline["ordered"]
     assert actual["rendered"] == baseline["rendered"]
+
+
+@pytest.mark.parametrize("source", ["@2", "Slickdeals"])
+def test_removed_source_selection_is_ignored(tmp_path, cfg, db, options, source):
+    cases = [dict(rows=rows(), options=options, controls=controls)
+             for controls in ({"srcsel": source}, {})]
+    restored, default = browser(tmp_path, cfg, db, cases)
+    assert restored["active"]
+    assert restored == default
 
 
 def test_gone_slots_and_free_picks_preserved(tmp_path, cfg, db, options):

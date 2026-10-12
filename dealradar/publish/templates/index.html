@@ -353,25 +353,7 @@ footer .meta{font-size:11.5px}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
                    50%{box-shadow:0 0 0 4px rgba(14,117,105,.16)}}
 
-/* ---- the sources wall: one still, centred cloud of chips ---- */
-.srcwall{margin:18px 0 6px;display:flex;flex-direction:column;gap:12px}
-.srchead{display:flex;justify-content:center}
-.srceye{display:inline-flex;align-items:center;gap:12px;font-size:11px;font-weight:700;
-        letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
-.srceye::before,.srceye::after{content:"";width:32px;height:1px;
-        background:linear-gradient(90deg,transparent,var(--muted))}
-.srceye::after{transform:scaleX(-1)}
-.srcrows{display:flex;flex-direction:column;gap:10px}
-.srcrow:has(.srctrack:empty){display:none}
-.srctrack{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;padding:2px 0;animation:none}
-.srcmore span{color:var(--muted)}
-.srcchip{flex:none;display:inline-flex;align-items:center;gap:8px;
-         padding:7px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);
-         transition:border-color .4s,transform .4s}
-.srcchip:hover{border-color:color-mix(in srgb,var(--muted) 45%,var(--line))}
-.srcchip svg{width:16px;height:16px;display:block;color:var(--muted)}
-.srcchip span{font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--fg);white-space:nowrap}
-@media (prefers-reduced-motion: reduce){.srctrack{animation:none}}
+.searchnote{margin:18px 0 6px;text-align:center;color:var(--muted)}
 /* ---- the deal ticker: a stencilled notice band on worn plaster above the
    header; a torn mustard label, an ink band with a spray-dot texture and
    the live deals scrolling on a seamless loop (hover or PAUSE stops it) ---- */
@@ -501,7 +483,7 @@ footer .meta{font-size:11.5px}
 :root{--accent-hover:#0f7b6e}
 @media (prefers-color-scheme:dark){:root{--accent-hover:#42c2b2}}
 header{--accent-hover:#45d0bf}
-.tag,.secth,.srceye{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.tag,.secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .getdeal,.pwbtn,.subbar.ready{font-weight:600;border-radius:10px;box-shadow:none;
   transition:background-color 150ms,color 150ms,border-color 150ms}
 .getdeal:hover,.getdeal:focus-visible,.pwbtn:hover,.pwbtn:focus-visible,.subbar.ready:hover,.subbar.ready:focus-visible{
@@ -620,7 +602,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   </select>
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
-  <select id="srcsel" aria-label="Found by"><option value="">Found by: any site</option><option value="@2">&#10003; Confirmed by 2+ sites</option></select>
 </div>
 <div id="content">{{STATIC_WALL}}</div>
 <!--standard--><div id="paywall" class="paywall" hidden>
@@ -651,16 +632,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
      <span id="footterms">7-day free trial for new members. $0 today.</span>
      <!--paywall-->Eight deals stay free for everyone, new at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with new deals every {{DROP_MINUTES}} minutes.<!--/open--></p>
 <!--/standard--><!--support-->  <p>wowpriced is free for everyone. {{SUPPORT_FOOT_LINK}}<a href="/join"><strong>Join free</strong></a></p>{{SUPPORT_NOTE}}
-<!--/support-->  <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Prices are
+<!--/support-->  <p>Every deal links to the seller (or, when it needs extra steps, to the post that explains how) and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live.</p>
-  <div id="srcwall" class="srcwall" role="img" hidden>
-    <div class="srchead"><span class="srceye">Deals found across</span></div>
-    <div class="srcrows">
-      <div class="srcrow"><div class="srctrack" id="srca"></div></div>
-      <div class="srcrow"><div class="srctrack rev" id="srcb"></div></div>
-    </div>
-  </div>
+  <p class="searchnote">We search the top deal sites and stores for hours every day, so you don't have to.</p>
 <!--standard-->  <p id="acctfoot" class="meta" hidden>Your account:
     <button type="button" id="billing" class="linkbtn">Manage membership</button></p>
 <!--/standard--><!--support--><!--/support-->  <nav class="footnav" aria-label="site pages">
@@ -1034,33 +1009,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       if (!names[key]) names[key] = name;
     });
     countedOptions("storesel", counts, names);
-    populateSources();
-  }
-  function sourceNames(d) {
-    var names = [], credited = [];
-    (d.credits || []).forEach(function (credit) {
-      if (!credit.name) return;
-      names.push(credit.name);
-      try { credited.push(new URL(credit.url).hostname.toLowerCase().split(".").slice(-2).join(".")); }
-      catch (e) { /* a historical credit may have no URL */ }
-    });
-    (d.src || []).forEach(function (site) {
-      if (credited.indexOf(site) === -1) names.push(site);
-    });
-    return Array.from(new Set(names.filter(Boolean)));
-  }
-  // Display names from public credits; locked stubs fall back to their sites.
-  function populateSources() {
-    var counts = Object.create(null), names = Object.create(null);
-    state.deals.forEach(function (d) {
-      if (d.status === "dead") return;
-      sourceNames(d).forEach(function (name) {
-        if (!name) return;
-        counts[name] = (counts[name] || 0) + 1;
-        names[name] = name;
-      });
-    });
-    countedOptions("srcsel", counts, names);
   }
 
   function searchText() { return document.getElementById("q").value.trim(); }
@@ -1114,7 +1062,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var store = document.getElementById("storesel").value;
     var group = (CATGROUPS[q ? 0 : state.catTab] || CATGROUPS[0])[1];
     var minpct = Number(document.getElementById("minpct").value) || 0;
-    var src = document.getElementById("srcsel").value;
     return state.deals.filter(function (d) {
       if (q && !matchesSearch(d, words)) return false;
       if (store && storeKey(d.store) !== store) return false;
@@ -1125,12 +1072,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         return false;
       }
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
-      // Count distinct credited sites, including on locked stubs.
-      if (src === "@2") {
-        if (new Set(d.src || []).size < 2) return false;
-      } else if (src && sourceNames(d).indexOf(src) === -1) {
-        return false;
-      }
       return true;
     });
   }
@@ -1324,7 +1265,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     // Source credit is required on every card.
     var credits = (d.credits || []).map(function (c) {
-      return dead ? "via " + esc(c.name)
+      return dead || !c.url ? "via " + esc(c.name)
         : 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
     }).join(", ");
     // A deal that needs steps (code, coupon, Subscribe & Save, rebate...)
@@ -1359,52 +1300,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
       "</div>" + (dead ? "" : traceSvg(d)) + "</article>";
-  }
-
-  // ---- the sources wall (footer) ----
-  // meta.source_sites: the sites the live deals were found on, most first;
-  // dealt into two rows, each chip with an invented geometric mark (no
-  // real logos) picked by the site's name.
-  var SRC_MARKS = [
-    '<circle cx="12" cy="12" r="8"/>',
-    '<path d="M12 4l8.4 15H3.6z" fill="currentColor" stroke="none"/>',
-    '<path d="M12 3l7.8 4.5v9L12 21l-7.8-4.5v-9z"/>',
-    '<path d="M12 3l9 9-9 9-9-9z"/>',
-    '<path d="M4 8l8 5 8-5M4 14l8 5 8-5"/>',
-    '<path d="M4 17a8 8 0 0116 0"/>',
-    '<circle cx="9.3" cy="12" r="6"/><circle cx="14.7" cy="12" r="6"/>',
-    '<path d="M12 3l8.5 6.2-3.2 10H6.7l-3.2-10z"/>',
-    '<path d="M6 18V9M12 18V5M18 18v-6" stroke-width="3"/>',
-    '<circle cx="12" cy="12" r="7.5" fill="currentColor" stroke="none"/>',
-    '<path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z" fill="currentColor" stroke="none"/>',
-    '<path d="M12 3v18M4.4 7.5l15.2 9M19.6 7.5l-15.2 9" stroke-width="1.8"/>'
-  ];
-  var srcSig = "", SRC_SHOWN = 16;
-  function paintSources() {
-    var sites = ((state.meta || {}).source_sites || []).filter(function (x) {
-      return typeof x === "string" && /^[a-z0-9.-]+$/i.test(x);
-    });
-    var sig = sites.join(",");
-    if (sig === srcSig) return;
-    srcSig = sig;
-    var wall = document.getElementById("srcwall");
-    wall.hidden = sites.length < 4;
-    if (wall.hidden) return;
-    wall.setAttribute("aria-label", "Deals found across " + sites.join(", "));
-    function chip(site) {
-      return '<span class="srcchip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-        'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        SRC_MARKS[hashStr(site) % SRC_MARKS.length] + "</svg><span>" + esc(site) + "</span></span>";
-    }
-    // One centred cloud of the busiest sites; the rest are counted, not listed.
-    var rows = [sites.slice(0, SRC_SHOWN).map(chip), []];
-    if (sites.length > SRC_SHOWN) {
-      rows[0].push('<span class="srcchip srcmore"><span>+' + (sites.length - SRC_SHOWN) + " more</span></span>");
-    }
-    ["srca", "srcb"].forEach(function (id, i) {
-      var h = rows[i].join("");
-      document.getElementById(id).innerHTML = h;
-    });
   }
 
   // ---- the deal ticker ----
@@ -1485,8 +1380,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       state.sortKey === "fresh" && state.sortDir === -1 &&
       !document.getElementById("q").value.trim() &&
       !document.getElementById("storesel").value &&
-      !(Number(document.getElementById("minpct").value) || 0) &&
-      !document.getElementById("srcsel").value;
+      !(Number(document.getElementById("minpct").value) || 0);
   }
 
   // Match rank.front_page_mix: no random calls; input is already shuffled.
@@ -1565,7 +1459,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function render() {
     if (moreObserver) moreObserver.disconnect();
     paintTicker();
-    paintSources();
     cardImageIndex = 0;
     var content = document.getElementById("content");
 <!--engagement-->    var engagementHtml = engagementLineHtml();
@@ -2598,7 +2491,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   });
   document.addEventListener("visibilitychange", function () {
     document.getElementById("tkband").classList.toggle("hiddentab", document.hidden);
-    document.getElementById("srcwall").classList.toggle("hiddentab", document.hidden);
   });
 
   function resetWall() {
@@ -2628,7 +2520,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   });
   document.getElementById("clearsearch").addEventListener("click", clearSearch);
 
-  ["storesel", "minpct", "srcsel"].forEach(function (id) {
+  ["storesel", "minpct"].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener("input", resetWall);
     el.addEventListener("change", resetWall);
@@ -2680,18 +2572,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   })();
 
   function refreshStores() {
-    // Rebuild the store and source lists, keeping the user's selections
-    // (the fixed options at the top stay).
-    var lists = [["storesel", 1], ["srcsel", 2]].map(function (x) {
-      var sel = document.getElementById(x[0]), current = sel.value;
-      while (sel.options.length > x[1]) sel.remove(x[1]);
-      return [sel, current];
-    });
+    // Rebuild the store list, keeping the user's selection when available.
+    var sel = document.getElementById("storesel"), current = sel.value;
+    while (sel.options.length > 1) sel.remove(1);
     populateStores();
-    lists.forEach(function (x) {
-      x[0].value = x[1];
-      if (x[0].selectedIndex === -1) x[0].selectedIndex = 0;
-    });
+    sel.value = current;
+    if (sel.selectedIndex === -1) sel.selectedIndex = 0;
   }
 
   // ---- publishes: first load, drops at the marks, late landings ----

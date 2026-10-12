@@ -32,8 +32,7 @@ def test_search_filters_and_refresh(tmp_path, support):
     assert 'aria-label="Clear search"' in header
     assert 'id="searchcount" role="status" aria-live="polite"' in header
     assert 'aria-label="Store"><option value="">All stores' in home
-    assert 'aria-label="Found by"><option value="">Found by: any site' in home
-    assert 'Confirmed by 2+ sites' in home
+    assert "srcsel" not in home and "Found by:" not in home
     for i, script in enumerate(re.findall(r'<script>(.*?)</script>', home, re.S)):
         path = tmp_path / f'script-{i}.js'
         path.write_text(script)

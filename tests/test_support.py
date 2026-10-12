@@ -116,13 +116,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "71e3d2bcbb035dda6678b94af25a4cae3383e72e0ed952736023dcb56496450a"),
-    (False, 49, "f328d9ba4307e4f3244115f404801e43b3c16fc2431af275b0d666aa1e030339"),
-    (True, 0, "2f95acbae49423a77f08bf1120776d6e16765b2d45d23134f415dd87a8e6cfed"),
-    (True, 49, "686aee82992afa451855beebc73a56fc3a6e79ccf199b27b991f61abf8f20100"),
+    (False, 0, "b1b078772194e598a8ffc5bb453bf09f695d679368c1fa5044390d40e9a55f79"),
+    (False, 49, "6c7e437473d3b69903eaa48f6b3215eb58d206863afea8eeef1eecec0bb3b631"),
+    (True, 0, "be9d0efbb227e0d7f744917f1be87c4badfdf45f93909464b72ef0a38989f28f"),
+    (True, 49, "91a7c57771788b1a6affe050b938ef1d73d82978d702f6e063cfda03e4b26a88"),
 ])
-def test_support_off_index_bytes_match_task035_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Keep task 035's baseline after removing task 037's head-only hint.
+def test_support_off_index_bytes_match_task041_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 041 removes the source wall/filter in all modes; keep the shared
+    # baseline without task 037's head-only hint.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
@@ -288,7 +289,7 @@ def test_support_button_styles_and_theme_contrast(tmp_path):
     assert "font-weight:600;border-radius:10px;box-shadow:none" in home
     assert ".pwbtn.alt,#surprise" in home
     assert "outline:2px solid var(--accent);outline-offset:3px" in home
-    assert ".tag,.secth,.srceye{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}" in home
+    assert ".tag,.secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}" in home
     for name in ("index.html", "join.html", "deals/electronics/index.html"):
         html = (out / name).read_text()
         # Any hover transform must explicitly leave cards/buttons in place.

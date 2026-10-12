@@ -31,29 +31,15 @@ logger = logging.getLogger("dealradar.publish.site")
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-#: Sites shown in the footer's "deals found across" wall, at most.
-_SOURCE_SITES_MAX = 36
 
-
-def _credit_site(url: str) -> str:
-    """The site a credit URL belongs to, subdomains folded
-    (home.woot.com -> woot.com); "" when it has none."""
-    host = urlsplit(url or "").netloc.lower().split(":")[0]
-    site = ".".join(host.split(".")[-2:])
-    return site if "." in site else ""
-
-
-def _source_sites(deals: list[dict[str, Any]]) -> list[str]:
-    """The sites the live deals were found on (credit domains), most deals
-    first. Public credit, nothing about any locked deal beyond where deals
-    come from."""
-    count: dict[str, int] = {}
-    for d in deals:
-        if d.get("status") != "alive":
-            continue
-        for site in set(d.get("src") or ()):
-            count[site] = count.get(site, 0) + 1
-    return sorted(count, key=lambda k: (-count[k], k))[:_SOURCE_SITES_MAX]
+def _credit(sighting: dict[str, Any]) -> dict[str, str]:
+    """Public credit, including stored sightings from before the rename."""
+    name = sighting.get("source_name", "")
+    url = sighting.get("source_url", "")
+    host = (urlsplit(url or "").hostname or "").lower()
+    if name.lower().startswith("keepa") or host == "keepa.com" or host.endswith(".keepa.com"):
+        return {"name": "Amazon price drop", "url": ""}
+    return {"name": source_display_name(name), "url": url}
 
 
 #: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
@@ -242,6 +228,21 @@ def _needs_steps(deal: dict[str, Any]) -> bool:
                 or _STEP_CONDITIONS & set(deal.get("conditions") or []))
 
 
+def _simple_code_deal(deal: dict[str, Any]) -> bool:
+    """Only applying a listed code is needed; unfamiliar steps stay on the post."""
+    codes = [re.escape(str(c).strip()) for c in deal.get("codes") or []
+             if str(c).strip()]
+    if not codes or deal.get("rebates") or "rebate_dependent" in (deal.get("flags") or []) \
+            or _STEP_CONDITIONS & set(deal.get("conditions") or []):
+        return False
+    code_step = re.compile(
+        r"(?:use|enter|apply)\s+(?:the\s+)?"
+        r"(?:(?:(?:coupon|promo|discount)\s+)?code\s*:?\s*)?"
+        r"[\"']?(?:" + "|".join(codes) + r")[\"']?(?:\s+at\s+checkout)?[.!]?", re.I)
+    return all(code_step.fullmatch(str(step).strip())
+               for step in deal.get("stack_steps") or [])
+
+
 #: What a step condition asks of the shopper, when the post gave no steps.
 _CONDITION_HOW = {
     "subscribe_save": "Choose Subscribe & Save", "in_cart": "The price drops in the cart",
@@ -352,10 +353,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     age_hours: float | None = None
     if first_seen is not None:
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
-    credits = [
-        {"name": source_display_name(s.get("source_name", "")), "url": s.get("source_url", "")}
-        for s in (deal.get("sightings") or [])
-    ]
+    credits = [_credit(s) for s in (deal.get("sightings") or [])]
     status = deal.get("status", "alive")
     # No resolved product URL -> link the deal to the source post that
     # reported it (which also carries the credit) rather than nothing. A
@@ -369,19 +367,23 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
                                    sovrn_enabled=sovrn_enabled, cuid=key,
                                    credit_urls=[c["url"] for c in credits]) if canon else ""
-    # A deal that needs steps links the post that explains them, except when
-    # the store link carries our Amazon tag (operator, 2026-10-12): then Get
-    # deal goes to Amazon and the card keeps the code, the steps and the
-    # "via" link to the post.
+    override = (overrides or {}).get(_override_key(canon)) if canon else None
+    # Get deal goes to the store when it earns (operator, 2026-10-12): any
+    # Amazon deal with our tag, and simple code deals at a store with a
+    # Sovrn wrap or override. Other steps keep the post. The card keeps the
+    # code, the steps and the "via" credit either way.
     try:
         host = (urlsplit(canon).hostname or "").lower() if canon.startswith("https://") else ""
     except ValueError:
         host = ""
-    ours = bool(steps and amazon_tag and host in _AMAZON_HOSTS)
+    earning = bool(override or (amazon_tag and host in _AMAZON_HOSTS)
+                   or (store_link != canon and store_link.startswith("https://redirect.viglink.com?")))
+    if override:
+        store_link = override
+    amazon = bool(amazon_tag and host in _AMAZON_HOSTS)
+    ours = amazon or (earning and _simple_code_deal(deal))
     url = post if steps and post and not ours else \
         store_link if canon else (credits[0]["url"] if credits else "")
-    if overrides and canon and url == store_link:
-        url = overrides.get(_override_key(canon), url)
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
@@ -398,7 +400,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "abs_savings": deal.get("abs_savings"),
         "flags": deal.get("flags") or [],
         "codes": deal.get("codes") or [],
-        # Get deal goes to the source post (url) and the card shows how.
+        # The card shows how even when Get deal uses an earning store link.
         "needs_steps": steps,
         "how": _how(deal) if steps else [],
         "conditions": deal.get("conditions") or [],
@@ -412,8 +414,6 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "first_seen_at": deal.get("first_seen_at", ""),
         "age_hours": age_hours,
         "credits": credits,
-        # The sites that reported it (domains only): the source filter.
-        "src": sorted({_credit_site(c["url"]) for c in credits} - {""}),
     }
 
 
@@ -547,7 +547,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "front_page": cfg.front_page,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
-        "source_sites": _source_sites(serialized),
     }
     full_doc = {"meta": meta, "deals": serialized}
     (out / "deals.json").write_text(

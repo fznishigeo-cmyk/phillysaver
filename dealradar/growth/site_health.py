@@ -91,7 +91,8 @@ def check(client, cfg, now: datetime) -> dict:
     photos = [d for d in live if d.get("image_url")]
     missing = [d for d in live if not d.get("image_url")]
     stores = Counter(d.get("store") or "Unknown" for d in missing)
-    sources = Counter(s for d in missing for s in set(d.get("src") or []))
+    sources = Counter(s for d in missing for s in
+                      {c.get("name") for c in d.get("credits") or []} if s)
     groups = defaultdict(list)
     for deal in photos:
         group = groups[deal.get("store") or "Unknown"]
@@ -156,7 +157,7 @@ def lines(health: dict) -> list[str]:
         result.append("⚠ " + "; ".join(health["warnings"]))
     result += [f"Photos: {health['photos']:,} of {health['live']:,} live deals ({health['coverage']:.1f}%)",
                "Missing most at stores: " + counts(health["missing_stores"]),
-               "Missing most at source sites: " + counts(health["missing_sources"]),
+               "Missing most at sources: " + counts(health["missing_sources"]),
                f"Broken: {health['broken']} of {health['checked']} checked ("
                + counts(health["broken_stores"]) + ")"
                + (f"; {health['unchecked']} could not be checked" if health.get("unchecked") else ""),

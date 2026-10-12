@@ -91,6 +91,10 @@ async function walk(page, doc, device) {
     const response = await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
     check(response && response.status() === 200, `HTTP ${response && response.status()}`);
     html = await response.text();
+    check(!/keepa/i.test(html + JSON.stringify(doc)), "private Amazon source in published data");
+    check(!/srcwall|srcsel/.test(html), "source wall or filter still present");
+    check(html.includes("We search the top deal sites and stores for hours every day, so you don't have to."),
+      "missing footer search note");
     await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
       null, { timeout: STEP_TIMEOUT_MS });
     await page.waitForTimeout(1000);

@@ -129,7 +129,7 @@
     var signals = [], pct = Number(d.pct_at_checkout), seen = Date.parse(d.first_seen_at || "");
     if (Number.isFinite(pct) && pct >= 60) signals.push(pct + "% off");
     if (d.badge === "corroborated") {
-      var sources = new Set(d.src || []).size;
+      var sources = new Set((d.credits || []).map(function (c) { return c.name; }).filter(Boolean)).size;
       signals.push("confirmed by " + (sources >= 2 ? sources : "2+") + " sources");
     }
     var age = Date.now() - seen;

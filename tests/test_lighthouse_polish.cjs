@@ -12,13 +12,13 @@ const rows = Array.from({length:18}, (_, i) => ({key:String(i), status:'alive',
   image_url:`https://img.example/${i}.jpg`, store:'Target', item:`Product ${i}`,
   pct_at_checkout:80, final_price:9, credits:[], conditions:[]}));
 const content = {innerHTML:'', querySelector:()=>null, appendChild(){}};
-const controls = Object.fromEntries(['q','storesel','minpct','srcsel'].map(id=>[id,{value:''}]));
+const controls = Object.fromEntries(['q','storesel','minpct'].map(id=>[id,{value:''}]));
 const ctx = {
   state:{meta:{floors:{min_pct:70}}, deals:rows, shown:60, newKeys:{}, sortKey:'fresh',
     sortDir:-1, catTab:0}, moreObserver:null, panel:{}, cardImageIndex:0, traceFree:false,
   TIER_LABEL:{}, num:x=>x == null ? null : Number(x), esc:x=>String(x ?? ''),
   document:{getElementById:id=>id === 'content' ? content : controls[id] || null},
-  window:{wpSupport:{refresh(){}}}, paintTicker(){}, paintSources(){},
+  window:{wpSupport:{refresh(){}}}, paintTicker(){},
   engagementLineHtml:()=>'', filtered:()=>rows, ordered:rows=>rows,
   renderSearchCount(){}, updatePaywall(){}, openNudge:()=>false, canJoin:()=>false,
   openAccess:()=>false, isLocked:d=>!!d.locked, storeHue:()=>0, usedTag:()=>'',
@@ -27,10 +27,14 @@ const ctx = {
   openBand:()=>'<p>Join free</p>'
 };
 vm.createContext(ctx);
-vm.runInContext(fragment('  function mediaHtml(', '  // ---- the sources wall'), ctx);
+vm.runInContext(fragment('  function mediaHtml(', '  // ---- the deal ticker ----'), ctx);
 vm.runInContext(fragment('  function gridHtml(', '  function showMore('), ctx);
 ctx.render();
 const wall = content.innerHTML;
+const creditCard = ctx.cardHtml({...rows[0], credits:[
+  {name:'Amazon price drop', url:''}, {name:'Slickdeals', url:'https://slickdeals.net/f/1'}]});
+assert(creditCard.includes('via Amazon price drop, via <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>'));
+assert(!creditCard.includes('href=""'));
 // The support banner splits the grids after eight; it must not reset priority.
 assert.equal((wall.match(/fetchpriority="high"/g) || []).length, 4);
 ctx.render();

@@ -59,9 +59,9 @@ def test_locked_pages_removed_but_url_remembered_across_rotation(db, cfg, tmp_pa
 
 def test_basis_label_names_who_stated_the_regular_price():
     label = seo._basis_label
-    assert label({"credits": [{"name": "Keepa"}]}) == "90-day average on Amazon, tracked by Keepa"
-    assert label({"credits": [{"name": "Keepa"}], "conditions": ["used"]}) == "new price tracked by Keepa"
-    assert label({"credits": [{"name": "Slickdeals"}, {"name": "Keepa"}]}) == "as stated by Slickdeals"
+    assert label({"credits": [{"name": "Amazon price drop"}]}) == "90-day average price on Amazon"
+    assert label({"credits": [{"name": "Amazon price drop"}], "conditions": ["used"]}) == "new price on Amazon"
+    assert label({"credits": [{"name": "Slickdeals"}, {"name": "Amazon price drop"}]}) == "as stated by Slickdeals"
     assert label({"credits": []}) == "as stated by the source"
 
 

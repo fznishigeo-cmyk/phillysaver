@@ -109,7 +109,7 @@ def test_serialized_fields_have_consumers():
         "how",  # index.html and SEO how-to steps
         "conditions",  # index.html labels/category filter; SEO; STUB_KEYS
         "category",  # index.html filter/click tracking; SEO hubs; STUB_KEYS
-        "badge",  # index.html source filter/card badge; SEO cards
+        "badge",  # index.html card badge; SEO cards
         "headline",  # index.html and SEO card explanation
         "status",  # index.html/SEO alive/dead split; paywall rotation
         "alive",  # test_deals_json_has_disclosure_credit_badge_age/dead deal
@@ -118,7 +118,6 @@ def test_serialized_fields_have_consumers():
         "first_seen_at",  # index.html freshOrder; SEO hub lastmod; STUB_KEYS
         "age_hours",  # index.html age sort/card age; publish age assertion
         "credits",  # index.html and SEO source credit; publish/e2e assertions
-        "src",  # index.html source filter; site source_sites; STUB_KEYS
     }
     assert set(_serialize_deal(make_deal(), NOW)) == fields
 
@@ -460,7 +459,7 @@ class TestPaywallTeaser:
     render_site hands the full payload back for the member upload."""
 
     STUB_KEYS = {"locked", "key", "pct_at_checkout", "store", "category",
-                 "first_seen_at", "image_url", "status", "conditions", "src"}
+                 "first_seen_at", "image_url", "status", "conditions"}
 
     @staticmethod
     def _deals(n):
@@ -529,8 +528,7 @@ class TestPaywallTeaser:
             assert stub["locked"] is True and stub["status"] == "alive"
             assert "dedupe_key" not in stub and len(stub["key"]) == 16
             assert stub["store"] == "Walmart" and stub["pct_at_checkout"] == 80.0
-            # The source filter: the reporting sites, never the post URL.
-            assert stub["src"] and all("/" not in s for s in stub["src"])
+            assert "src" not in stub
         dead = doc["deals"][5]
         assert dead["status"] == "dead" and dead["item"] == "ZZSECRET-MUG"
         assert "locked" not in dead
@@ -1361,13 +1359,12 @@ class TestEyeCatchers:
         assert ".trace rect{animation:none}" in reduced
         assert '<div class="freetag"><i></i>free this drop</div>' in html
 
-    def test_sources_wall_in_the_footer(self, html):
+    def test_search_note_in_the_footer(self, html):
         foot = html[html.index("<footer>"):html.index("</footer>")]
-        assert 'id="srcwall"' in foot and "Deals found across" in foot
-        paint = _between(html, "function paintSources(", "// ---- the deal ticker ----")
-        assert "/^[a-z0-9.-]+$/i.test(x)" in paint
-        assert 'document.getElementById(id).innerHTML = h;' in paint and "h + h" not in paint
-        assert ".srctrack{animation:none}" in html
+        assert "We search the top deal sites and stores for hours every day, so you don't have to." in foot
+        assert ".searchnote{margin:18px 0 6px;text-align:center;color:var(--muted)}" in html
+        assert "srcwall" not in html and "srcsel" not in html
+        assert "paintSources" not in html and "source_sites" not in html
 
     def test_only_the_ticker_loops_and_reduced_motion_stops_it(self, html):
         css = _between(html, "<style>", "</style>")
@@ -1427,21 +1424,6 @@ def test_hover_never_moves_what_the_pointer_rests_on(db, cfg, tmp_path):
         css = page.read_text(encoding="utf-8")
         for rule in re.findall(r":hover\s*\{[^}]*\}", css):
             assert "transform" not in rule and "translate" not in rule, (page.name, rule)
-
-
-def test_source_sites_meta_folds_subdomains_and_ranks(db, cfg, tmp_path):
-    deals = []
-    for i, url in enumerate(["https://home.woot.com/a", "https://electronics.woot.com/b",
-                             "https://www.slickdeals.net/c", "https://hip2save.com/d"]):
-        d = make_deal(dedupe_key=f"walmart|s-{i}", canonical_url=f"https://www.walmart.com/ip/s{i}")
-        d["sightings"] = [{"source_name": "x", "source_url": url, "seen_at": iso(NOW)}]
-        deals.append(d)
-    dead = make_deal(dedupe_key="walmart|gone", status="dead")
-    dead["sightings"] = [{"source_name": "x", "source_url": "https://deadsite.com/x", "seen_at": iso(NOW)}]
-    out = tmp_path / "site"
-    render_site(db, cfg, NOW, out_dir=out, deals=deals + [dead])
-    meta = json.loads((out / "deals.json").read_text(encoding="utf-8"))["meta"]
-    assert meta["source_sites"] == ["woot.com", "hip2save.com", "slickdeals.net"]
 
 
 def test_search_engines_get_a_sitemap_robots_and_canonical_urls(db, cfg, tmp_path):
@@ -1642,7 +1624,7 @@ class TestWallPagination:
     def test_filters_sort_and_category_reset_but_publishes_do_not(self, html):
         reset = _between(html, "function resetWall()", "// Easy sorting:")
         assert "state.shown = PAGE_CARDS;" in reset and "render();" in reset
-        assert '["storesel", "minpct", "srcsel"]' in reset
+        assert '["storesel", "minpct"]' in reset
         search = _between(reset, "function updateSearch()", "function clearSearch()")
         assert "resetWall();" in search
         assert 'searchTimer = setTimeout(updateSearch, 150)' in reset

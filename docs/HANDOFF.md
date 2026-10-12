@@ -142,6 +142,20 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Simple code deal links (Codex task 040, shipped 2026-10-12):** code-only
+  deals (codes, no rebates, steps only "use/enter/apply code X") at a store
+  with a Sovrn wrap or override send Get deal to that store link. Every
+  Amazon deal with our tag still goes to Amazon, steps or not (review fix:
+  Codex had narrowed Amazon to simple deals). Other steps keep the post;
+  codes, copy buttons and credit stay; emails and locked stubs unchanged.
+- **Quiet sources (Codex task 041, shipped 2026-10-12):** the footer line
+  "We search the top deal sites and stores for hours every day, so you
+  don't have to." replaces the source wall; the "Found by" filter, per-deal
+  `src` and `meta.source_sites` are gone. Keepa credits publish as "Amazon
+  price drop" with no link (mapped at publish in `site._credit`, so stored
+  sightings and the adapter keep Keepa's URL); deal pages say "90-day
+  average price on Amazon"; about/hubs say Amazon. The site check fails on
+  "keepa" anywhere in the home page or deals.json.
 - **"Other" category repair (2026-10-12 09:45 UTC):** the 09:08 site check
   found 1,195 of 1,843 live deals (65%) under "other". Cause: a run reads at
   most 60 structured-deal titles, the rest were stored as "other", and the

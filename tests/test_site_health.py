@@ -22,7 +22,9 @@ def clock(monkeypatch):
 
 
 def deal(store="Woot", image="", **extra):
-    return dict(store=store, image_url=image, alive=True, src=["source.example"], **extra)
+    credits = extra.pop("credits", [{"name": "Source", "url": "https://source.example/post"}])
+    return dict(store=store, image_url=image, alive=True,
+                credits=credits, **extra)
 
 
 class PublicSite:
@@ -59,20 +61,27 @@ def check(fake):
 def test_coverage_and_top_missing_stores_and_sources(clock):
     missing = []
     for i in range(12):
-        missing += [dict(store=f"Store {i}", alive=True, src=[f"src{i}.example"] * 2)] * (i + 1)
+        missing += [dict(store=f"Store {i}", alive=True,
+                        credits=[{"name": f"Source {i}", "url": f"https://src{i}.example/post"}] * 2)] * (i + 1)
     fake = PublicSite(missing + [deal(image="https://img.example/ok")] + [
         dict(store="Dead", alive=False, image_url=""), dict(locked=True)])
     health = check(fake)
     assert health["live"] == 79 and health["photos"] == 1
     assert health["coverage"] == pytest.approx(100 / 79)
     assert health["missing_stores"][0] == ("Store 11", 12)
-    assert health["missing_sources"][0] == ("src11.example", 12)
+    assert health["missing_sources"][0] == ("Source 11", 12)
     assert len(health["missing_stores"]) == len(health["missing_sources"]) == 10
     assert health["locked_count"] == 7
     assert health["warnings"] == ["photo coverage under 85%"]
     text = "\n".join(site_health.lines(health))
     assert "⚠ photo coverage" in text and "Last publish: 6 min ago" in text
-    assert "src11.example 12" in text
+    assert "Source 11 12" in text
+
+
+def test_missing_amazon_photo_uses_credit_without_a_link(clock):
+    fake = PublicSite([deal(credits=[{"name": "Amazon price drop", "url": ""}])])
+    health = check(fake)
+    assert health["missing_sources"] == [("Amazon price drop", 1)]
 
 
 def test_sample_spreads_across_stores_and_rate_limits_each_host(clock):

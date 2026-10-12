@@ -486,8 +486,8 @@ def _basis_label(d: dict[str, Any]) -> str:
     price" the deal did not claim (Keepa's basis is its 90-day average)."""
     first = str(((d.get("credits") or [{}])[0] or {}).get("name") or "")
     used = bool({"used", "open_box"} & set(d.get("conditions") or []))
-    if first == "Keepa":
-        return "new price tracked by Keepa" if used else "90-day average on Amazon, tracked by Keepa"
+    if first == "Amazon price drop":
+        return "new price on Amazon" if used else "90-day average price on Amazon"
     if used:
         return f"new-condition price, as stated by {first}" if first else "new-condition price"
     return f"as stated by {first}" if first else "as stated by the source"

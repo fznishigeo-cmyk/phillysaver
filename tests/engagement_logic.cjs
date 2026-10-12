@@ -8,7 +8,8 @@ const enabled = {new_since_visit:true, weekly_finds:true, visit_streak:true, sur
 const NOW = Date.parse('2026-10-12T12:00:00-04:00'); // Monday, local time
 const row = (key, changes = {}) => ({key, status:'alive', item:'Item', store:'Store', category:'other',
   url:'https://store.test/item', pct_at_checkout:70, abs_savings:10.25, badge:'corroborated',
-  src:['one.test','two.test'], first_seen_at:new Date(NOW-3600000).toISOString(), ...changes});
+  credits:[{name:'One',url:'https://one.test/post'}, {name:'Two',url:'https://two.test/post'}],
+  first_seen_at:new Date(NOW-3600000).toISOString(), ...changes});
 function fragment(start, end) {
   const a = home.indexOf(start), b = home.indexOf(end, a);
   assert.ok(a >= 0 && b > a, start);
@@ -66,7 +67,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
       setItem(k,v) {if (throwing==='write') throw Error('readonly'); storage.set(k,v);},
       removeItem(k) {if (throwing==='write') throw Error('readonly'); storage.delete(k);}},
     ordered:rows=>rows, filtered:()=>wall, isLocked:d=>d.locked===true,
-    cardEls:cards, moreObserver:null, renderSearchCount(){}, paintTicker(){}, paintSources(){}, updatePaywall(){},
+    cardEls:cards, moreObserver:null, renderSearchCount(){}, paintTicker(){}, updatePaywall(){},
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
     setTimeout:cb=>timers.push(cb), mediaHtml:()=>'<span>photo</span>', ageText:()=>'',
     isNew:()=>false, isFreePick:()=>false, lit:()=>false, traceSvg:()=>'', TIER_LABEL:{corroborated:'✓ 2+ sources'},
@@ -78,7 +79,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   vm.runInContext(fragment('  function dealKey(d)', '  function keySet'), ctx);
   vm.runInContext(fragment('  // Browser-only visit state.', '  function renderMeta()'), ctx);
   vm.runInContext(fragment('  function lockedHtml(d)', '  function cardHtml(d)'), ctx);
-  vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the sources wall'), ctx);
+  vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
   vm.runInContext(fragment('  function gridHtml(deals)', '  function showMore()'), ctx);
   const renderWall = ctx.render;
   ctx.render = () => {renders++; renderWall(); cards();};

@@ -10,7 +10,7 @@ used-open-box:
     Used and open-box offers, each at least {used_floor}% off. Many are Amazon
     Resale offers (formerly Amazon Warehouse), which Amazon grades by
     condition from Like New to Acceptable; the grade is on the offer page.
-    Amazon prices here are re-checked through Keepa every few hours, and a
+    Prices here are re-checked against Amazon every few hours, and a
     deal whose offer is gone comes off the live wall.
 home-kitchen:
   title: "Home & Kitchen Deals"
@@ -42,8 +42,8 @@ electronics:
   description: "Electronics, computer and gaming deals at {site_floor}% off or more. Prices quoted word for word from the source; Amazon prices re-checked every few hours."
   intro: >-
     Headphones, chargers, laptops, monitors, games and other electronics,
-    each at least {site_floor}% off. Amazon deals are re-checked through
-    Keepa every few hours, and a deal whose price moved comes off the live
+    each at least {site_floor}% off. Amazon deals are re-checked against
+    Amazon every few hours, and a deal whose price moved comes off the live
     wall. When two or more independent sources report the same deal, its card
     says "2+ sources".
 sports-outdoors:

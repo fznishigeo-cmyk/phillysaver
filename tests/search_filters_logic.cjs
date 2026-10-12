@@ -18,7 +18,6 @@ function element(id) {
     focus() {this.focused = true;}, querySelectorAll() {return [];}};
 }
 element('storesel').options.push({value:''});
-element('srcsel').options.push({value:''}, {value:'@2'});
 const session = new Map();
 const ctx = {URL, Set, state:{deals:payload.deals, catTab:1, shown:600, dataKey:'old'}, PAGE_CARDS:60,
   CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]),
@@ -86,32 +85,19 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   const timer=[...timers.values()][0]; assert.equal(timer.delay,150); timer.fn();
   assert.equal(renders,before+1); assert.equal(ctx.state.shown,60);
   handlers['clearsearch:click'](); assert.equal(element('q').value,'');
-  assert.deepEqual(Array.from(ctx.sourceNames({locked:true,src:['fallback.test']})), ['fallback.test']);
   ctx.populateStores();
   assert.deepEqual(element('storesel').options.map(o=>o.textContent).slice(1),
     ["Macy's (2)",'Walmart (2)','Amazon (1)']);
   for(const d of payload.deals) {
     assert.ok(element('storesel').options.some(o=>o.value===ctx.storeKey(d.store)));
-    for(const credit of d.credits)
-      assert.ok(element('srcsel').options.some(o=>o.value===credit.name));
   }
-  for(const option of element('srcsel').options.slice(2)) {
-    const count=payload.deals.filter(d=>ctx.sourceNames(d).includes(option.value)).length;
-    assert.equal(option.textContent,`${option.value} (${count})`);
-  }
-  assert.ok(element('srcsel').options[2].textContent.endsWith('(4)'));
   element('storesel').value='walmart'; assert.equal(query('ninja').length,1);
   element('storesel').value='amazon'; assert.equal(query('ninja').length,0);
   element('storesel').value=''; element('minpct').value='90'; assert.equal(query('ninja').length,0);
   element('minpct').value='0';
   const ninja=payload.deals.find(d=>d.item.startsWith('Ninja'));
-  element('srcsel').value=ninja.credits[0].name; assert.equal(query('ninja').length,1);
-  element('srcsel').value='missing'; assert.equal(query('ninja').length,0);
-  element('srcsel').value='@2'; assert.equal(query('cotton').length,0);
-  element('srcsel').value='';
-  ctx.state.deals.push({store:'Ghost',status:'dead',src:['ghost.test']});
+  ctx.state.deals.push({store:'Ghost',status:'dead'});
   ctx.refreshStores(); assert.ok(!element('storesel').options.some(o=>o.value==='ghost'));
-  assert.ok(!element('srcsel').options.some(o=>o.value==='ghost.test'));
   ctx.state.deals.pop();
   element('storesel').value='walmart'; ctx.refreshStores(); assert.equal(element('storesel').value,'walmart');
   ctx.state.deals=Array.from({length:1637},()=>ninja);

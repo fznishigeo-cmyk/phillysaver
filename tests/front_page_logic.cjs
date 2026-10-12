@@ -9,7 +9,7 @@ function fragment(start, end) {
   return home.slice(a, b);
 }
 const results = cases.map(c => {
-  const controls = Object.fromEntries(['q', 'storesel', 'minpct', 'srcsel'].map(id =>
+  const controls = Object.fromEntries(['q', 'storesel', 'minpct'].map(id =>
     [id, {value: c.controls?.[id] || ''}]));
   const content = {innerHTML:'', querySelector:()=>null, appendChild(){}};
   class FixedDate extends Date { static now() {return Date.parse('2026-10-09T14:00:00Z');} }
@@ -20,7 +20,7 @@ const results = cases.map(c => {
     num:x => x == null ? null : Number(x), dealKey:d=>d.key,
     isLocked:d=>d.locked === true, sortVal:(d,k)=>d[k === 'pct' ? 'pct_at_checkout' : k],
     JITTER_H:3, NO_PHOTO_H:12, moreObserver:null, panel:{},
-    filtered:()=>c.rows, paintTicker(){}, paintSources(){}, updatePaywall(){}, openNudge:()=>false,
+    filtered:()=>c.rows, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
     cardHtml:d=>`<i data-key="${d.key}"></i>`

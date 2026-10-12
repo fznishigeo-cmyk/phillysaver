@@ -198,7 +198,7 @@ def test_ticker_and_search_use_liveness_correctly():
     var state = {deals: JSON.parse(require("fs").readFileSync(0,"utf8")), catTab:0};
     var TICKER_MAX = 16, CATGROUPS = [["All", null, ""]];
     var num = Number, isLocked = () => false, offer = () => ({}), esc = String, dealKey = d => d.key;
-    var values = {q:"Lamp 0", storesel:"", minpct:"", srcsel:""};
+    var values = {q:"Lamp 0", storesel:"", minpct:""};
     var document = {getElementById: id => ({value: values[id]})};
     ''' + '\n'.join(js_function(n) for n in (
         "tickerItems", "searchText", "normalizeSearch", "matchesSearch", "filtered"))
@@ -223,7 +223,7 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var document = {getElementById: id => id === "content" ? content : null};
     var window = {wpSupport:{refresh: () => {}}}, panel = {}, moreObserver = null;
     var renderSearchCount = () => {}; // Search count has its own published-page harness.
-    var paintTicker = () => {}, paintSources = () => {}, updatePaywall = () => {}, openNudge = () => false;
+    var paintTicker = () => {}, updatePaywall = () => {}, openNudge = () => false;
     var filtered = () => state.deals, isLocked = () => false, canJoin = () => true, openAccess = () => true;
     var openBand = () => "<aside>Join</aside>", num = x => x == null ? null : Number(x);
     var gridHtml = rows => {rendered.push(...rows); return "<div class=grid></div>";};
