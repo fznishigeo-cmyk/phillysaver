@@ -1,0 +1,75 @@
+name: Lighthouse (read-only)
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: lighthouse
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Select pages from the sitemap
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          (async () => {
+            const site = 'https://wowpriced.com/';
+            const response = await fetch(new URL('sitemap.xml', site), { signal: AbortSignal.timeout(15000) });
+            if (!response.ok) throw new Error('sitemap unavailable');
+            const body = await response.text();
+            const urls = [...body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map(m => new URL(m[1].trim()));
+            const first = pattern => urls.find(u => u.origin === new URL(site).origin && pattern.test(u.pathname));
+            const hub = first(/^\/deals\/(?!under-)[^/]+\/$/), deal = first(/^\/deal\/[^/]+\/$/);
+            if (!hub || !deal) throw new Error('sitemap missing hub or deal');
+            fs.writeFileSync('lighthouse-pages.tsv', [['home', site], ['hub', hub.href],
+              ['deal', deal.href], ['best-today', new URL('best-deals-today/', site).href]]
+              .map(row => row.join('\t')).join('\n') + '\n');
+          })().catch(() => { console.error('Lighthouse: could not select four pages'); process.exitCode = 1; });
+          NODE
+      - name: Audit four pages
+        run: |
+          export CHROME_PATH="$(node -e 'process.stdout.write(require("playwright").chromium.executablePath())')"
+          mkdir -p lighthouse-reports
+          failed=0
+          while IFS=$'\t' read -r name url; do
+            sleep 1
+            # Mobile is the default; --preset=mobile is not a valid Lighthouse preset.
+            if ! npx --yes lighthouse@12.6.1 "$url" \
+              --chrome-flags='--headless --no-sandbox' \
+              --only-categories=performance,accessibility,best-practices,seo \
+              --output=json --output-path="lighthouse-reports/$name.json" --quiet \
+              --blocked-url-patterns='*googletagmanager*' '*google-analytics*' '*googleadservices*' \
+              '*doubleclick*' '*googlesyndication*' '*facebook.net*' '*facebook.com/tr*' \
+              '*analytics.tiktok*' '*pinimg.com/ct*' '*bat.bing*'; then
+              echo "$name: Lighthouse run failed"
+              failed=1
+            fi
+          done < lighthouse-pages.tsv
+          exit "$failed"
+      - name: Summarize scores and enforce minimum
+        if: always()
+        env:
+          LH_MIN: '85'
+        run: node scripts/lighthouse_summary.js lighthouse-reports/home.json lighthouse-reports/hub.json lighthouse-reports/deal.json lighthouse-reports/best-today.json
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: lighthouse-reports/*.json
+          retention-days: 3

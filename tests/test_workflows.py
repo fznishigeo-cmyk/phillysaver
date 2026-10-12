@@ -23,6 +23,8 @@ FAST = WORKFLOWS / "fast.yml"
 SQUASH = WORKFLOWS / "squash-data.yml"
 DEPLOY_WORKER = WORKFLOWS / "deploy-subscribe-worker.yml"
 GROWTH = WORKFLOWS / "growth-report.yml"
+LIGHTHOUSE = WORKFLOWS / "lighthouse.yml"
+SITE_CHECK = WORKFLOWS / "site-check.yml"
 WORKER_DIR = ROOT / "cloudflare" / "subscribe-worker"
 SCRIPT = ROOT / "scripts" / "commit_state.sh"
 RESTORE = ROOT / "scripts" / "restore_state.sh"
@@ -87,9 +89,75 @@ def assert_cloudflare_is_the_only_host(doc: dict) -> None:
 
 
 def test_all_workflows_parse() -> None:
-    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH, LIGHTHOUSE, SITE_CHECK):
         assert p.is_file(), p
         load_workflow(p)
+
+
+@pytest.mark.parametrize("workflow, name, artifact_path", [
+    (SITE_CHECK, "site-shots", "shots/"),
+    (LIGHTHOUSE, "lighthouse-reports", "lighthouse-reports/*.json"),
+])
+def test_browser_artifacts_survive_failed_checks(workflow, name, artifact_path):
+    doc = load_workflow(workflow)
+    assert doc["permissions"] == {"contents": "read"}
+    steps = single_job(doc)["steps"]
+    upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))
+    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["if"] == "always()"
+    assert upload["with"] == {"name": name, "path": artifact_path, "retention-days": 3}
+
+
+def test_lighthouse_schedule_versions_pages_and_gate():
+    doc = load_workflow(LIGHTHOUSE)
+    on = workflow_on(doc)
+    assert on["schedule"] == [{"cron": "17 6 * * *"}]
+    assert "workflow_dispatch" in on
+    steps = single_job(doc)["steps"]
+    node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
+    assert node["uses"] == "actions/setup-node@v4" and str(node["with"]["node-version"]) == "20"
+    body = "\n".join(run_commands(doc))
+    for needle in ("playwright@1.48.2", "npx playwright install --with-deps chromium",
+                   "npx --yes lighthouse@12.6.1", "CHROME_PATH=", "chromium.executablePath()",
+                   "--only-categories=performance,accessibility,best-practices,seo", "--output=json",
+                   "sitemap.xml", "best-deals-today/", "urls.find", "sleep 1"):
+        assert needle in body, needle
+    audit = next(s for s in steps if s.get("name") == "Audit four pages")
+    assert "--preset=" not in "\n".join(line for line in audit["run"].splitlines() if not line.strip().startswith("#"))
+    assert "continue-on-error" not in audit and 'exit "$failed"' in audit["run"]
+    # Every tracker matched by the hourly check is blocked by Lighthouse too.
+    script = (ROOT / "scripts/site_check.js").read_text()
+    block = re.search(r"const BLOCK = /(.*?)/;", script).group(1)
+    for tracker in block.split("|"):
+        assert f"'*{tracker.replace(chr(92), '')}*'" in audit["run"]
+    gate = next(s for s in steps if "lighthouse_summary.js" in s.get("run", ""))
+    assert gate["env"] == {"LH_MIN": "85"} and gate["if"] == "always()"
+    assert "continue-on-error" not in gate
+    for page in ("home", "hub", "deal", "best-today"):
+        assert f"lighthouse-reports/{page}.json" in gate["run"]
+
+
+def test_lighthouse_summary_logic_and_browser_script_syntax():
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    subprocess.run(["node", str(ROOT / "tests/lighthouse_summary_logic.cjs")],
+                   check=True, capture_output=True, text=True)
+    subprocess.run(["node", str(ROOT / "tests/site_check_screenshots.cjs")],
+                   check=True, capture_output=True, text=True)
+    for name in ("site_check.js", "browser_probe.js", "lighthouse_summary.js"):
+        subprocess.run(["node", "--check", str(ROOT / "scripts" / name)],
+                       check=True, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("report, minimum, status", [("pass", "85", 0), ("fail", "85", 1), ("fail", "80", 0)])
+def test_lighthouse_cli_exit_gate(report, minimum, status):
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    result = subprocess.run(["node", str(ROOT / "scripts/lighthouse_summary.js"),
+                             str(ROOT / f"tests/fixtures/lighthouse_{report}.json")],
+                            env={**os.environ, "LH_MIN": minimum, "GITHUB_STEP_SUMMARY": ""},
+                            capture_output=True, text=True)
+    assert result.returncode == status, result.stdout + result.stderr
 
 
 def test_hourly_shape() -> None:
