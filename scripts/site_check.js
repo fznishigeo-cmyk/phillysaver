@@ -78,7 +78,11 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
     say(`\n### No photo (${none.length})`);
     say(`by store: ${top(none, (d) => d.store)}`);
     say(`by source: ${top(none, source)}`);
-    say(`by link host: ${top(none, (d) => host(d.url))}`);
+    // A deal that needs steps links to its post, so only a direct link's
+    // host says where the pipeline looked for the photo.
+    const direct = none.filter((d) => !d.needs_steps);
+    say(`by link host (direct links, ${direct.length}): ${top(direct, (d) => host(d.url), 15)}`);
+    say(`deals that link to their post (codes/steps): ${none.length - direct.length}`);
     say(`newest:`);
     none.sort((a, b) => String(b.first_seen_at).localeCompare(String(a.first_seen_at)))
       .slice(0, EXAMPLES).forEach((d) => say(line(d)));
