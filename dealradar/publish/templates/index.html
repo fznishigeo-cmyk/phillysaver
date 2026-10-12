@@ -1588,7 +1588,7 @@ footer .meta{font-size:11.5px}
   function openBand() {
     var o = offer();
     return '<div class="trialband"><p class="tbtext"><strong>wowpriced membership</strong>' +
-      (o.trial ? " — your first " + o.days + " days free." : " — $9.99/month.") +
+      (o.trial ? " — your first " + o.days + " days free, then $9.99/month." : " — $9.99/month.") +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
       "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
   }
@@ -1671,8 +1671,9 @@ footer .meta{font-size:11.5px}
       var blk = buy ? auth.block : "";
       var fb = buy && !o.lapsed && !blk ? auth.fb : "";
       var open = !openAccess() ? {} : {
-        out: "wowpriced membership — " + (o.trial ? "your first " + o.days + " days free" : "$9.99/month"),
-        trial: "You're signed in. Start your " + o.days + "-day free trial.",
+        out: "wowpriced membership — " + (o.trial ? "your first " + o.days + " days free, then $9.99/month"
+                                                   : "$9.99/month"),
+        trial: "You're signed in. Start your " + o.days + "-day free trial, then $9.99/month.",
         sub: "You're signed in. Subscribe — $9.99/month."
       };
       panel.querySelector(".pwtext").textContent = blk ? blockText(blk) : open[mode] || {

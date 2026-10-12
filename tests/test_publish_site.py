@@ -1346,6 +1346,17 @@ class TestEyeCatchers:
         assert ".srctrack{animation:none}" in html
 
 
+def test_trial_copy_names_the_price(db, cfg, tmp_path):
+    """Operator (2026-10-12): the sticky panel and the in-wall band say the
+    $9.99/month next to the free days."""
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert '"your first " + o.days + " days free, then $9.99/month"' in html
+    assert '"-day free trial, then $9.99/month."' in html
+    assert '" — your first " + o.days + " days free, then $9.99/month."' in html
+
+
 def test_visitors_see_a_rounded_deal_count(db, cfg, tmp_path):
     """Operator (2026-10-12): "1,400+ live deals", never the exact count."""
     from dealradar.publish import seo
