@@ -241,7 +241,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     assert site.JOIN_FORM in join and EMAIL_LINE in join
     assert '<a href="/privacy.html">privacy policy</a>' in join
     assert "max-width:480px" in join and "border-radius:12px" in join
-    assert ".wrap::before{display:none}" in join
+    assert ".wrap::before" not in join  # clean, white /join: no decorative shape
     assert "noindex" not in join
     assert "Disallow: /join" not in (out / "robots.txt").read_text()
     assert "<loc>https://wowpriced.com/join.html</loc>" in (out / "sitemap.xml").read_text()
@@ -256,7 +256,8 @@ def test_join_page_and_every_join_link(tmp_path, link):
             if re.sub(r"<[^>]+>", "", text).strip() == "Join free":
                 assert 'href="/join"' in attrs, path
         if path.name not in {"join.html", "index.html"}:
-            assert 'class="joinform"' not in html, path
+            assert 'id="join-email"' not in visible, path
+            assert ('<form class="joinform" data-join-footer>' in visible) == ('<footer>' in visible and path.name != '404.html'), path
     home = (out / "index.html").read_text()
     for selector in ('id="subscribe"', 'id="subbar"', 'class="pwbtn alt"'):
         assert re.search(r'<a ' + selector + r'[^>]*href="/join"', home)

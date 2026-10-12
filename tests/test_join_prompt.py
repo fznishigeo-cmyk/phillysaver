@@ -49,6 +49,40 @@ def test_shared_card_and_phone_cap(tmp_path):
     assert 'align-items:flex-end' in css
     assert 'max-height:45vh;max-height:45dvh;overflow:auto' in css
     assert 'body.style.overflow' not in home  # page scrolling is never locked
+    assert '.joinpopup{display:flex;align-items:center;justify-content:center' in home
+    assert '.joinpopup>[role="dialog"]{position:static;width:480px' in home
+    assert re.search(r'\.joinpopup #join-title\{[^}]*font-size:28px;font-weight:700', home)
+    assert re.search(r'\.joinpopup #join-title span\{[^}]*font-size:44px;font-weight:800;color:var\(--accent\)', home)
+    assert re.search(r'\.joinpopup \.joinclose\{[^}]*width:40px;height:40px[^}]*border:1px[^}]*border-radius:50%', home)
+    assert '.joinpopup .pwbtn{height:56px}' in home
+    # Email precedes Google in DOM order as well as the modal's visual order.
+    markup = re.search(r'<section class="joincard".*?</section>', home, re.S)[0]
+    assert markup.index('id="join-email-fields"') < markup.index('id="join-google-or"') < markup.index('id="join-google"')
+
+
+def test_shared_footer_signup_markup(tmp_path):
+    from tests.test_publish_site import make_deal
+
+    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True), [make_deal()])
+    footers = []
+    for path in out.rglob("*.html"):
+        html = path.read_text()
+        if '<footer>' not in html or path.name == '404.html':
+            continue
+        footer = re.search(r'<footer>(.*?)</footer>', html, re.S)[1]
+        signup = re.search(r'<section id="footer-signup".*?</section>', footer, re.S)[0]
+        footers.append(signup)
+        assert footer.index('id="footer-signup"') < footer.index('<nav')
+        assert '<h2 id="footer-signup-title">Sign up for the latest deals</h2>' in signup
+        assert '<form class="joinform" data-join-footer>' in signup
+        assert 'type="email" placeholder="Email address" autocomplete="email" required' in signup
+        assert '<button type="submit" aria-label="Sign up">' in signup
+        assert 'By subscribing you agree to our <a href="/privacy.html">privacy policy</a>.' in signup
+        assert 'role="status" hidden>Thank you for signing up!</p>' in signup
+        assert 'height:48px' in html and 'border-radius:12px' in html and 'width:48px;height:48px;border:0;border-radius:50%' in html
+        assert html.count('window.wpSupport =') == 1
+    assert len(footers) >= 20  # home, info pages and the generated hub/deal pages
+    assert len(set(footers)) == 1
 
 
 @pytest.mark.parametrize("prompt", [True, False])

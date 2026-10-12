@@ -24,6 +24,8 @@
 .joinback{display:block;margin:16px auto 0;padding:4px 8px;border:0;background:transparent;
   color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
 .joinlegal{margin:24px 0 0;color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+.joinlegal{text-wrap:balance}
+#join-success p:last-child{margin-bottom:0}
 .joincard a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 .joincard [data-join-message],#join-google-message{margin:8px 0;font-size:14px;overflow-wrap:anywhere}
 .joinclose{position:absolute;top:8px;right:8px;width:32px;height:32px;border:0;
@@ -34,9 +36,31 @@
   max-width:calc(100vw - 32px);max-height:calc(100dvh - var(--join-top) - 16px);overflow:auto;
   border-radius:16px;pointer-events:auto;box-shadow:0 16px 48px rgba(0,0,0,.12)}
 .joinoverlay .joincard{padding:32px 24px;box-shadow:none}
+.joinpopup{display:flex;align-items:center;justify-content:center;padding:16px;
+  background:rgba(10,18,24,.16);pointer-events:auto}
+.joinpopup>[role="dialog"]{position:static;width:480px;max-height:calc(100dvh - 32px)}
+.joinpopup .joincard{padding:36px 32px;text-align:left}
+.joinpopup #join-title{font-size:28px;font-weight:700;letter-spacing:-.6px}
+.joinpopup #join-title span{display:block;font-size:44px;font-weight:800;color:var(--accent)}
+.joinpopup #join-legal{text-align:left}
+.joinpopup .joinclose{width:40px;height:40px;top:12px;right:12px;border:1px solid var(--line);border-radius:50%}
+.joinpopup .joinform{margin-top:0}
+.joinpopup label{position:static;width:auto;height:auto;overflow:visible;clip-path:none;font-size:14px}
+.joinpopup .pwbtn{height:56px}
+.joinpopup .joinor{margin:16px 0 12px;text-align:center;color:var(--muted);font-size:13px}
 @media (max-width:640px){
   .joinoverlay{display:flex;align-items:flex-end;padding:0;background:rgba(10,18,24,.16);pointer-events:auto}
   .joinoverlay>[role="dialog"]{position:static;width:100%;max-width:none;max-height:45vh;max-height:45dvh;overflow:auto;overscroll-behavior:contain;border-radius:16px 16px 0 0}
   .joinoverlay .joincard{max-width:none;padding:24px 24px max(20px,env(safe-area-inset-bottom));border-radius:16px 16px 0 0}
+  .joinpopup{padding:0}
   #join-description{margin-bottom:18px}
+  /* The phone pop-up fits inside its 45% sheet without scrolling. */
+  .joinpopup .joincard{padding:20px 20px max(16px,env(safe-area-inset-bottom))}
+  .joinpopup #join-title{font-size:22px;margin-right:44px}
+  .joinpopup #join-title span{font-size:34px}
+  .joinpopup #join-description{margin-bottom:12px;font-size:14px}
+  .joinpopup label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .joinpopup .joinform{gap:10px}
+  .joinpopup input,.joinpopup .pwbtn{height:52px}
+  .joinpopup #join-legal{margin-top:12px}
 }

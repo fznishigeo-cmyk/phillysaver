@@ -279,6 +279,18 @@ JOIN_FORM = (
 )
 
 
+def signup_footer(html: str) -> str:
+    """Add the shared email-only footer in support mode."""
+    if "<footer>" not in html:
+        return html
+    html = html.replace("<footer>", "<footer>\n" + (TEMPLATES_DIR / "footer-signup.html").read_text(encoding="utf-8"), 1)
+    html = html.replace("</style>", (TEMPLATES_DIR / "footer-signup.css").read_text(encoding="utf-8") + "</style>", 1)
+    if "window.wpSupport =" not in html:
+        script = (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8")
+        html = html.replace("</body>", "<script>" + script + "</script>\n</body>", 1)
+    return html
+
+
 _SOURCE_ONLY_FOOTER = re.compile(r"Some outbound\s+links are the source's affiliate links\.")
 _SOURCE_ONLY_ABOUT = re.compile(
     r"Some\s+of those links are the source's affiliate links\. That is how they keep the lights\s+on, and we think they earned it\.")
@@ -478,6 +490,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "support.js").read_bytes()
                 + (TEMPLATES_DIR / "join-card.html").read_bytes()
                 + (TEMPLATES_DIR / "join-card.css").read_bytes()
+                + (TEMPLATES_DIR / "footer-signup.html").read_bytes()
+                + (TEMPLATES_DIR / "footer-signup.css").read_bytes()
                 + str(cfg.join_prompt).encode() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
@@ -613,6 +627,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 'aria-labelledby="join-title" aria-describedby="join-description" tabindex="-1">'
                 + card + '</div></div>'))
             html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
+            html = signup_footer(html)
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

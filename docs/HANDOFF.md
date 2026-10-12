@@ -187,27 +187,40 @@ Keep this file current: whoever stops working updates it in their last commit.
   >= 4.7:1) per the operator. Local Lighthouse (mobile): accessibility 100
   on home, best-today, hub, deal and /join; home performance 84 -> 88,
   CLS 0.053 -> 0.001.
-- **Join card (Codex task 033 merged 2026-10-12; task 038 uncommitted):**
-  the same rounded two-step card on `/join`, in the weekly prompt and in
-  the desktop header popover: Google or email, then "What's your email?",
-  email autofocus, Continue disabled until valid, Back, and the exact new
-  privacy line. Successful email/Google joins show "You're on the list.";
-  `/join` shows Back to deals immediately and redirects home after 1.5 s,
-  while the prompt/popover closes after 1.8 s. Desktop (>640px): 360px
-  popover beneath/right-aligned with Join free, no dim, Esc / ✕ / outside
-  close, focus trapped and returned. Header clicks bypass frequency/storage
-  limits (also available with `join.prompt: false`); phone and modified
-  clicks retain `/join` navigation. Phone prompt: bottom sheet ≤45%.
+- **Join card (Codex task 033 merged 2026-10-12; tasks 038/039 uncommitted):**
+  `/join` and the desktop header popover keep the rounded two-step card:
+  Google or email, then "What's your email?", email autofocus, Continue
+  disabled until valid, Back, and the task 038 privacy line. The timed
+  prompt is now a centred desktop modal over a soft dim, with the exact
+  "Save up to / 90% OFF" headline, verified-deals copy, visible Email address
+  label/input, a 56px "Get the deals" pill, configured Google below "or",
+  and the task 039 email-consent/privacy line. Phone prompt: bottom sheet
+  ≤45%. Successful email/Google joins show "You're on the list." plus the
+  muted confirmation-email line; `/join` shows Back to deals immediately
+  and redirects home after 1.5 s, while the prompt/popover closes after
+  1.8 s. Desktop header (>640px): the same 360px popover beneath/right-aligned
+  with Join free, no dim, Esc / ✕ / outside close, focus trapped and returned.
+  Header clicks bypass frequency/storage limits (also available with
+  `join.prompt: false`); phone and modified clicks retain `/join` navigation.
   Automatic rules unchanged: `join.prompt`, `join.prompt_delay_s` ≥15,
   `join.apple: false`; 15 s + one screen scrolled or a tab/filter used,
   once per 7 days, never on `/join`, after a join or without durable storage.
   The card takes the support banner's place for that page view (never both).
   Google = verified `/api/google` then `/subscribe` (no token kept), and
-  `wp.join.joined` still remembers either method. Site check step 6 checks
+  `wp.join.joined` still remembers either method. The shared home/info/hub
+  footer now has "Sign up for the latest deals", a 48px email field and
+  round green arrow, and the exact privacy copy. It submits its own email
+  to `/subscribe`, tracks `sign_up` with `method: "footer"`, replaces the
+  form with "Thank you for signing up!", and hides for remembered joins
+  (including joins elsewhere in the page or another tab). Its visible box
+  suppresses the sticky asks; errors keep the form available for retry.
+  Support-off page bytes remain unchanged. Site check step 6 checks
   step one on `/join` and walks the desktop popover/email/Back/Escape flow
-  without submitting. Offline checks cover steps, validity, errors, fake
-  timers, focus and prompt rules. Validation: 57 focused join/support/page
-  accessibility checks passed; `.venv/bin/python -m pytest -q`: 1,681 passed,
+  without submitting. Offline checks cover popup copy, single-step submit,
+  configured Google/"or", steps, validity, errors, fake timers, focus,
+  unchanged prompt rules, and footer submit/success/error/remembered joins
+  on home and pages without a join card. Validation: 71 focused
+  join/support/SEO/accessibility checks passed; `.venv/bin/python -m pytest -q`: 1,682 passed,
   1 deselected, only 7 existing Stripe tests failed on sandbox socket
   permissions. Chromium launch is blocked by the same restriction;
   desktop/phone visual verification and a full green run outside this
