@@ -10,13 +10,14 @@ const run = new (Object.getPrototypeOf(async function () {}).constructor)(
     const shots = [], visits = [], scrolls = [];
     const site = "https://wowpriced.com/";
     const page = {
+      waitForTimeout: async () => {},
       evaluate: async action => {
         global.window = { scrollY: 0, scrollTo: (x, y) => scrolls.push(y) };
         try { action(); } finally { delete global.window; }
       },
       locator: selector => {
         if (selector === "cards") return { nth: index => {
-          assert.equal(index, 7);
+          assert.equal(index, 7);  // the banner shows here, so the loop stops
           return { evaluate: async action => {
             global.window = { scrollY: 0, scrollTo: (x, y) => scrolls.push(y) };
             try { action({ getBoundingClientRect: () => ({ bottom: 2000 }) }); }
@@ -24,7 +25,8 @@ const run = new (Object.getPrototypeOf(async function () {}).constructor)(
           } };
         } };
         assert.equal(selector, "#paywall.support");
-        return { waitFor: async options => assert.deepEqual(options, { state: "visible" }),
+        return { isVisible: async () => true,
+          waitFor: async options => assert.deepEqual(options, { state: "visible" }),
           boundingBox: async () => ({ y: 600, height: 200 }) };
       },
       goto: async (url, options) => {

@@ -223,8 +223,14 @@ async function walk(page, doc, device) {
     await page.screenshot({ path: `shots/${device}-home.png`, fullPage: false });
   });
   if (device === "phone" && support) await step(12, "Support banner screenshot", async () => {
-    await page.locator(CARDS).nth(7).evaluate((card) =>
-      window.scrollTo(0, window.scrollY + card.getBoundingClientRect().bottom + 1));
+    // The banner waits until no other ask (the in-wall Join box after card
+    // 8, the footer) is on screen: scroll a few cards further, step by step.
+    for (const n of [7, 11, 15, 19]) {
+      await page.locator(CARDS).nth(n).evaluate((card) =>
+        window.scrollTo(0, window.scrollY + card.getBoundingClientRect().bottom + 1));
+      await page.waitForTimeout(300);
+      if (await page.locator("#paywall.support").isVisible()) break;
+    }
     await page.locator("#paywall.support").waitFor({ state: "visible" });
     const box = await page.locator("#paywall.support").boundingBox();
     check(box && box.y < 844 && box.y + box.height > 0, "banner outside phone viewport");
