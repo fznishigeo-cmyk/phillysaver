@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "b1b078772194e598a8ffc5bb453bf09f695d679368c1fa5044390d40e9a55f79"),
-    (False, 49, "6c7e437473d3b69903eaa48f6b3215eb58d206863afea8eeef1eecec0bb3b631"),
-    (True, 0, "be9d0efbb227e0d7f744917f1be87c4badfdf45f93909464b72ef0a38989f28f"),
-    (True, 49, "91a7c57771788b1a6affe050b938ef1d73d82978d702f6e063cfda03e4b26a88"),
+    (False, 0, "b10b202643f39562d2606df2850f23dcfb6010d5fa075a6d62f03b4990f86932"),
+    (False, 49, "0d27cfc0cfa8dfaff19228d39f23506f46091f856325a24e0486973ce09b122a"),
+    (True, 0, "48f485ed197a3d97ac0c8e29afe03b7e39d7ff81886fba62d4be5cb039c3e5e9"),
+    (True, 49, "045c159886cb9028b9454572634445503ab4ab0443a108c9bb4c1a3f60c0f730"),
 ])
-def test_support_off_index_bytes_match_task041_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 041 removes the source wall/filter in all modes; keep the shared
+def test_support_off_index_bytes_match_task042_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 042 changes the default ordering in all modes; keep the shared
     # baseline without task 037's head-only hint.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")

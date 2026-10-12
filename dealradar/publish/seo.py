@@ -29,7 +29,7 @@ import httpx
 import yaml
 
 from ..util import iso, parse_iso
-from ..rank import front_page_mix
+from ..rank import pick_order
 
 logger = logging.getLogger("dealradar.publish.seo")
 
@@ -239,8 +239,11 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
                 deal_paths: dict[str, str] | None = None, now: datetime | None = None,
                 front_page: dict | None = None) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
-    free = place_gone([d for d in teaser if not d.get("locked")])
-    free = front_page_mix(free, front_page or {})
+    free = [d for d in teaser if not d.get("locked")]
+    if (front_page or {}).get("top_picks"):
+        free = place_gone(pick_order(free, front_page))
+    else:
+        free = pick_order(place_gone(free), front_page or {})
     more = max(0, len(free) - _STATIC_WALL_MAX)
     free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked")]
@@ -357,7 +360,9 @@ def _item_list(rows: list[dict[str, Any]], paths: dict[str, str], site_url: str)
 
 
 def _image_preconnects(teaser: list[dict[str, Any]], site_url: str, front_page: dict) -> str:
-    rows = front_page_mix(place_gone([d for d in teaser if not d.get("locked")]), front_page)[:24]
+    rows = [d for d in teaser if not d.get("locked")]
+    rows = (place_gone(pick_order(rows, front_page)) if front_page.get("top_picks")
+            else pick_order(place_gone(rows), front_page))[:24]
     hosts: Counter[str] = Counter()
     for d in rows:
         try:
@@ -731,7 +736,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
-    best_rows = front_page_mix(live, cfg.front_page)[:30]
+    best_rows = pick_order(live, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
                               '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in best_rows) + '</div>',

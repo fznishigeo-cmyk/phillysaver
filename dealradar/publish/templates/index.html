@@ -594,6 +594,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <div id="controls">
   <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
   <select id="sortsel" aria-label="sort order">
+    <option value="top:-1">sort: top picks</option>
     <option value="fresh:-1">sort: fresh drops</option>
     <option value="pct:-1">sort: biggest % off</option>
     <option value="abs:-1">sort: most $ saved</option>
@@ -698,7 +699,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   var AUTO_CARDS = 120;
   var moreObserver = null;
   var state = { shown: PAGE_CARDS, deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
-                sortKey: "fresh", sortDir: -1, catTab: 0,
+                sortKey: "top", sortDir: -1, catTab: 0,
                 seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
   // Minutes between drops when deals.json does not say: meta.cadence_minutes
   // is config.yaml publish.drop_minutes, the real gap between publishes.
@@ -1101,7 +1102,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function jitter(seed, key) { return mix(hashStr(String(key)) ^ mix(seed | 0)) / 4294967296; }
   function freshOrder(rows, shuffleOnly) {
-    // "Fresh drops" (default): arrival order (newest first; a bigger % off
+    // "Fresh drops": arrival order (newest first; a bigger % off
     // counts as a little newer) plus up to JITTER_H hours of jitter seeded
     // by the drop mark, so every drop visibly re-deals the wall and nothing
     // is ever hidden. Deals that arrived since the last drop lead; within
@@ -1118,20 +1119,45 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       return { d: d, s: (state.newKeys[k] ? -1e9 : 0) + s + (d.image_url ? 0 : NO_PHOTO_H) };
     }).sort(function (a, b) { return a.s - b.s; }).map(function (x) { return x.d; });
   }
+  function blockDeal(rows) {
+    var out = [];
+    for (var i = 0; i < rows.length; i += 12) {
+      out = out.concat(rows.slice(i, i + 12).sort(function (a, b) {
+        var ak = dealKey(a), bk = dealKey(b);
+        return (state.newKeys[bk] ? 1 : 0) - (state.newKeys[ak] ? 1 : 0) ||
+          jitter(state.seed, ak) - jitter(state.seed, bk);
+      }));
+    }
+    return out;
+  }
+  function topOrder(rows) {
+    var fresh = freshOrder(rows, false);
+    if (frontPageView()) {
+      var picks = rows.filter(function (d) { return d.pick != null; });
+      picks.sort(function (a, b) { return a.pick - b.pick; });
+      return blockDeal(picks).concat(fresh.filter(function (d) { return d.pick == null; }));
+    }
+    var scored = fresh.filter(function (d) { return d.ps != null; });
+    scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });
+    return blockDeal(scored).concat(fresh.filter(function (d) { return d.ps == null; }));
+  }
   function ordered(rows, deferMix) {
     // The teaser's unlocked deals (the top picks) always lead; the blurred
     // stubs follow, each group dealt within itself, whatever the sort.
     var fresh = state.sortKey === "fresh";
     var open = [], locked = [];
-    (fresh ? rows : rows.slice().sort(cmp)).forEach(function (d) {
+    (fresh || state.sortKey === "top" ? rows : rows.slice().sort(cmp)).forEach(function (d) {
       (isLocked(d) ? locked : open).push(d);
     });
     if (fresh) {
       open = freshOrder(open, locked.length > 0);
       locked = freshOrder(locked, false);
+    } else if (state.sortKey === "top") {
+      open = topOrder(open);
+      locked = freshOrder(locked, false);
     }
     rows = open.concat(locked);
-    return !deferMix && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows;
+    return !deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows;
   }
 
   function storeHue(s) {
@@ -1377,7 +1403,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function frontPageView() {
     var options = (state.meta || {}).front_page;
     return options && Object.keys(options).length > 0 && state.catTab === 0 &&
-      state.sortKey === "fresh" && state.sortDir === -1 &&
+      (state.sortKey === "fresh" || state.sortKey === "top") && state.sortDir === -1 &&
       !document.getElementById("q").value.trim() &&
       !document.getElementById("storesel").value &&
       !(Number(document.getElementById("minpct").value) || 0);
@@ -1476,17 +1502,18 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     var floors = (state.meta && state.meta.floors) || {};
     var alertFloor = Number(floors.min_pct);
-    if (!isNaN(alertFloor)) {
+    var top = state.sortKey === "top";
+    if (!top && !isNaN(alertFloor)) {
       rows = rows.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; }).concat(
         rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; }));
     }
     rows = placeGone(rows);
-    var mixed = frontPageView();
+    var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.
     var split = rows.findIndex(function (d, i) {
-      return (!mixed || i >= 24) && num(d.pct_at_checkout) < alertFloor;
+      return !top && (!mixed || i >= 24) && num(d.pct_at_checkout) < alertFloor;
     });
     var headliners = split < 0 ? rows : rows.slice(0, split);
     var strong = split < 0 ? [] : rows.slice(split);
@@ -1626,7 +1653,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     var head = headKeys(), was = cardOrder(), focus = rememberFocus();
     render();
-    for (var n = 0; reshuffle && state.sortKey === "fresh" && !frontPageView() && n < 3 &&
+    for (var n = 0; reshuffle && (state.sortKey === "fresh" || state.sortKey === "top") && !frontPageView() && n < 3 &&
          head.indexOf(",") !== -1 && headKeys() === head; n++) {
       state.seed = clock.lastSeed = state.seed + 1;
       render();
@@ -2700,7 +2727,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // age; a sort or filter that nothing moved in gets no toast.
     if (added) toast(plural(added, "new deal") + " just landed");
     else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");
-    else if (moved && state.sortKey === "fresh") toast("Fresh drop" + updatedAgo());
+    else if (moved && (state.sortKey === "fresh" || state.sortKey === "top")) toast("Fresh drop" + updatedAgo());
   }
   // The drop at a mark: fetch deals.json at once (at most DROP_FETCH_MS).
   // A new publish is the drop (present). None yet: nothing is re-dealt,

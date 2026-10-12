@@ -15,6 +15,9 @@ Score = pct_at_checkout
 from __future__ import annotations
 
 import logging
+import math
+import re
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
@@ -124,6 +127,80 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     age_penalty = _age_hours(deal.get("first_seen_at", ""), now) \
         * cfg.age_penalty_per_hour
     return pct + boost + abs_bonus - cond_penalty - age_penalty
+
+
+def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
+    """Landing-page quality, with checkout effort and age factored in."""
+    from .publish.site import _needs_steps, _simple_code_deal
+
+    options = cfg.front_page.get("top_picks")
+    conditions = set(deal.get("conditions") or [])
+    category = deal.get("category") or "other"
+    if not options or deal.get("status", "alive") != "alive" or deal.get("locked") \
+            or not str(deal.get("image_url") or "").startswith("https://") \
+            or deal.get("price_is_range") or "range" in (deal.get("flags") or []) \
+            or category == "other" or category in cfg.front_page.get("niche_categories", []) \
+            or conditions & {"targeted", "new_customer", "in_store_only", "ymmv", "clearance_aisle"}:
+        return None
+    quality = (options["pct_weight"] * float(deal.get("pct_at_checkout") or 0)
+               + options["dollars_weight"] * math.log10(1 + float(deal.get("abs_savings") or 0)))
+    tier = deal.get("verify_tier", "unverified")
+    if tier == "corroborated":
+        quality += options["corroborated_bonus"]
+    elif tier == "history-checked":
+        quality += options["history_bonus"]
+    store = str(deal.get("store") or "").strip().lower()
+    if store in {s.strip().lower() for s in options["known_stores"]}:
+        quality += options["known_store_bonus"]
+    if str(deal.get("brand") or "").strip():
+        quality += options["brand_bonus"]
+    if conditions & {"used", "open_box"}:
+        quality *= options["used_factor"]
+    price = deal.get("final_price")
+    if price is not None and price < options["cheap_below"]:
+        quality *= options["cheap_factor"]
+    if _needs_steps(deal) and not _simple_code_deal(deal):
+        quality *= options["steps_factor"]
+    return quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
+                             / options["fresh_half_life_h"])
+
+
+def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list[dict[str, Any]]:
+    """Greedy selection with strict caps; ties retain the input's order."""
+    picks = options.get("top_picks")
+    if not picks:
+        return []
+    stores, brands, categories, twins = Counter(), Counter(), Counter(), Counter()
+    picked, last, run = [], "", 0
+    for deal, _score in sorted(scored, key=lambda pair: pair[1], reverse=True):
+        if len(picked) >= picks["count"]:
+            break
+        store = str(deal.get("store") or "").strip().lower()
+        brand = str(deal.get("brand") or "").strip().lower()
+        category = deal.get("category") or "other"
+        twin = " ".join(re.findall(r"\w+", str(deal.get("item") or "").lower())[:3])
+        if stores[store] >= picks["max_same_store"] \
+                or (brand and brands[brand] >= picks["max_same_brand"]) \
+                or categories[category] >= picks["max_same_category"] \
+                or twins[twin] >= picks["max_title_twins"] \
+                or (len(picked) < 8 and category == last
+                    and run >= options["max_same_category_run"]):
+            continue
+        picked.append(deal)
+        stores[store] += 1
+        brands[brand] += 1
+        categories[category] += 1
+        twins[twin] += 1
+        run = run + 1 if category == last else 1
+        last = category
+    return picked
+
+
+def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
+    """Published pick order followed by the existing order of the rest."""
+    if not options.get("top_picks"):
+        return front_page_mix(rows, options)
+    return sorted(rows, key=lambda d: d.get("pick", math.inf))
 
 
 def is_publishable(deal: dict[str, Any], cfg,

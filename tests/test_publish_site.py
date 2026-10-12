@@ -353,13 +353,13 @@ class TestLiveHomePage:
         assert "30 * 1000" in html and "5 * 60 * 1000" in html
         assert "just landed" in html  # true-count toast after a new publish
 
-    def test_index_defaults_to_fresh_drops_sort(self, html):
+    def test_index_defaults_to_top_picks_sort(self, html):
         start = html.index('id="sortsel"')
         options = re.findall(r'<option value="([^"]+)"',
                              html[start:html.index("</select>", start)])
-        assert options[0] == "fresh:-1"
-        assert options[1:] == ["pct:-1", "abs:-1", "price:1", "age:1"]
-        assert 'sortKey: "fresh"' in html
+        assert options[0] == "top:-1"
+        assert options[1:] == ["fresh:-1", "pct:-1", "abs:-1", "price:1", "age:1"]
+        assert 'sortKey: "top"' in html
         # Rotation is seeded by the publish (run key), never random.
         assert "Math.random" not in html
         assert "first_seen_at" in html
@@ -1262,7 +1262,7 @@ class TestHonestShuffleAndPage:
         assert 'if (added) toast(plural(added, "new deal") + " just landed");' in body
         assert ('else if (unlocked) toast(plural(unlocked, "new free deal") + " unlocked");'
                 in body)
-        assert ('else if (moved && state.sortKey === "fresh") '
+        assert ('else if (moved && (state.sortKey === "fresh" || state.sortKey === "top")) '
                 'toast("Fresh drop" + updatedAgo());') in body
         assert "Deals reshuffled" not in html
         reorg = _between(html, "function reorganize(", "// ---- paywall")

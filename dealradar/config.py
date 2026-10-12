@@ -127,7 +127,7 @@ class AppConfig:
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 24.0      # dead deals linger on the site this long
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
-    front_page: dict = field(default_factory=dict)  # All / fresh drops top-24 mix
+    front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
     # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions
     # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)

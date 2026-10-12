@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const home = fs.readFileSync(process.argv[2], 'utf8');
 const cases = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const defaultSort = home.match(/sortKey: "([^"]+)"/)[1];
 function fragment(start, end) {
   const a = home.indexOf(start), b = home.indexOf(end, a);
   if (a < 0 || b < a) throw Error(start);
@@ -15,11 +16,11 @@ const results = cases.map(c => {
   class FixedDate extends Date { static now() {return Date.parse('2026-10-09T14:00:00Z');} }
   const ctx = {
     Date:FixedDate, state:{meta:{front_page:c.options, floors:{min_pct:70}},
-      catTab:0, sortKey:'fresh', sortDir:-1, seed:42, newKeys:{}, deals:c.rows, shown:10000, ...c.state},
+      catTab:0, sortKey:defaultSort, sortDir:-1, seed:42, newKeys:{}, deals:c.rows, shown:10000, ...c.state},
     document:{getElementById:id => id === 'content' ? content : controls[id] || null},
     num:x => x == null ? null : Number(x), dealKey:d=>d.key,
     isLocked:d=>d.locked === true, sortVal:(d,k)=>d[k === 'pct' ? 'pct_at_checkout' : k],
-    JITTER_H:3, NO_PHOTO_H:12, moreObserver:null, panel:{},
+    JITTER_H:3, NO_PHOTO_H:12, AUTO_CARDS:120, moreObserver:null, panel:{},
     filtered:()=>c.rows, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
@@ -28,6 +29,10 @@ const results = cases.map(c => {
   vm.createContext(ctx);
   vm.runInContext(fragment('  function cmp(', '  function storeHue('), ctx);
   vm.runInContext(fragment('  function gridHtml(', '  function showMore('), ctx);
+  let observed = 0;
+  ctx.window = {IntersectionObserver:true};
+  ctx.IntersectionObserver = class {observe(){observed++;} disconnect(){}};
+  ctx.armMore({});
   const base = ctx.ordered(c.rows, true);
   const ordered = ctx.ordered(c.rows);
   ctx.render();
@@ -43,7 +48,7 @@ const results = cases.map(c => {
   return {base:base.map(d=>d.key), ordered:ordered.map(d=>d.key),
     mixed:ctx.frontPageMix(c.rows, c.options).map(d=>d.key),
     rendered:[...content.innerHTML.matchAll(/data-key="([^"]+)"/g)].map(m=>m[1]),
-    active:!!ctx.frontPageView(), seed:ctx.state.seed, dropRenders,
+    active:!!ctx.frontPageView(), seed:ctx.state.seed, dropRenders, observed, defaultSort,
     strongSection:content.innerHTML.includes('Strong deals')};
 });
 process.stdout.write(JSON.stringify(results));

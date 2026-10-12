@@ -137,10 +137,11 @@ def test_preconnect_omits_missing_own_and_duplicate_hosts(db, cfg, tmp_path, hos
     assert _preconnects(tmp_path) == ["https://m.media-amazon.com"]
 
 
-def test_preconnect_tracks_front_page_mix_and_excludes_locked_images(db, cfg, tmp_path):
+def test_preconnect_tracks_top_picks_and_excludes_locked_images(db, cfg, tmp_path):
     cfg.front_page = load_config(ROOT / "config.yaml").front_page
-    deals = [make_deal(dedupe_key=f"i{i}", store="A" if i < 24 else "B",
-                       category="auto" if i < 24 else "kitchen",
+    deals = [make_deal(dedupe_key=f"i{i}", item=f"Product {i} title", brand="",
+                       store="A" if i < 24 else "B",
+                       category="auto" if i < 24 else ("kitchen" if i % 2 else "home"),
                        image_url="https://niche.example/p.jpg" if i < 24 else "https://broad.example/p.jpg")
              for i in range(48)]
     cfg.paywall_open_access = True

@@ -142,6 +142,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Top picks landing (Codex task 042, shipped 2026-10-12):** config-driven
+  quality/freshness score and strict caps select up to 120; public `pick`/`ps`
+  drive All, static home, photo preconnects and best-today. Browser re-deals
+  blocks of 12 with new arrivals leading; filters use `ps`, fresh drops and
+  the 120-card auto-load limit remain. Operator: "the top 120 deals ...
+  that will suck people in". Knobs: `publish.front_page.top_picks`.
 - **Sure before removing (Codex task 043, shipped 2026-10-12):** operator:
   "make damn well sure that the deal is no longer there before removing
   it". Only a post's title or the line holding a deal's own final-price

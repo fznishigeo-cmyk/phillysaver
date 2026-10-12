@@ -83,7 +83,7 @@ publish:
                                # Set it to the real gap between publishes (the
                                # */10 cron lands every 11-15 min); a publish later
                                # than this shows "Next drop soon" until it lands.
-  front_page:                 # All / fresh drops only; {} disables the mix.
+  front_page:                 # All top picks; fresh drops retains the top-24 mix.
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]
     max_niche_top: 2
@@ -91,6 +91,28 @@ publish:
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true
+    top_picks:                # the All tab's first cards (operator, 2026-10-12)
+      count: 120
+      pct_weight: 1.0
+      dollars_weight: 12.0
+      corroborated_bonus: 8
+      history_bonus: 6
+      known_store_bonus: 5
+      brand_bonus: 3
+      fresh_half_life_h: 36
+      used_factor: 0.9
+      cheap_factor: 0.8
+      cheap_below: 5.0
+      steps_factor: 0.8
+      max_same_store: 40
+      max_same_brand: 3
+      max_same_category: 24
+      max_title_twins: 2
+      known_stores: [amazon, walmart, target, best buy, home depot, lowe's,
+                     costco, kohl's, macy's, nike, adidas, woot, ebay, sephora,
+                     ulta, gap, old navy, wayfair, dell, lenovo, samsung, apple,
+                     newegg, b&h photo, dick's sporting goods, rei, chewy, petco,
+                     lego, walgreens, cvs, staples, nordstrom, zappos]
   site_dir: "site"
   custom_domain: "wowpriced.com"   # the site's one public address (canonical URLs, sitemap, IndexNow)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)

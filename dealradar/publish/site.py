@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
 from ..config import load_sources, redact_secrets, support_link
+from ..rank import pick_score, top_picks
 from ..util import iso, parse_iso
 from . import seo
 from .paywall import is_open, split_teaser, teaser_memory
@@ -467,6 +468,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                  sovrn_key=cfg.affiliate_sovrn_key,
                                  sovrn_enabled=cfg.affiliate_sovrn_enabled) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
+    scores = {d["dedupe_key"]: pick_score(d, cfg, now) for d in deals}
+    for d in serialized:
+        value = scores[d["dedupe_key"]]
+        if value is not None:
+            d["ps"] = round(value, 1)
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
@@ -477,6 +483,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     except (TypeError, ValueError):
         recent = []
     teaser, locked_count = split_teaser(serialized, cfg, recent)
+    candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
+                  if not d.get("locked") and scores[d["dedupe_key"]] is not None]
+    for n, d in enumerate(top_picks(candidates, cfg.front_page), 1):
+        d["pick"] = n
     open_access = is_open(cfg)
     support = bool(getattr(cfg, "support_enabled", False))
     link = support_link(getattr(cfg, "support_payment_link", ""))
