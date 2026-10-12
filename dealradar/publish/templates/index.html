@@ -699,6 +699,12 @@ footer .meta{font-size:11.5px}
     }).length;
   }
   function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+  // A count for visitors: exact under 100, else rounded down to the
+  // hundred with a "+" (operator, 2026-10-12: "1,400+ live deals", never
+  // the exact number).
+  function roughCount(n) {
+    return n < 100 ? String(n) : (Math.floor(n / 100) * 100).toLocaleString("en-US") + "+";
+  }
   // The open (unlocked, live) cards' keys.
   function openKeys(deals) {
     var o = {};
@@ -720,7 +726,7 @@ footer .meta{font-size:11.5px}
     }
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length;
     document.getElementById("tagline").textContent =
-      tagline + " · " + plural(live, "live deal");
+      tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
     document.title = "wowpriced — " + tagline;
     // Footer line: the FTC disclosure, from meta.disclosure verbatim, never
     // hardcoded in this template. Run times and counts are the operator's
@@ -1653,7 +1659,7 @@ footer .meta{font-size:11.5px}
     var m = state.meta || {}, me = state.me;
     panel.hidden = !hasLocked || auth.checking;
     if (!panel.hidden) {
-      var total = dealTotal(), locked = num(m.locked_count) || 0, o = offer();
+      var total = roughCount(dealTotal()), locked = num(m.locked_count) || 0, o = offer();
       var mode = !apiUrl() ? "plain" : (!me ? "out" : (me.member ? "retry"
         : (unknownMembership() ? "unknown" : (pendingClaim() ? "claim"
         : (o.lapsed ? "lapsed" : (o.trial ? "trial" : "sub"))))));
@@ -1872,8 +1878,8 @@ footer .meta{font-size:11.5px}
         : openAccess() ? (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial."
                                   : "Your free account is ready. Subscribe — $9.99/month.")
         : (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial to unlock all " +
-                     dealTotal() + " deals."
-                   : "Your free account is ready. Subscribe to unlock all " + dealTotal() + " deals."));
+                     roughCount(dealTotal()) + " deals."
+                   : "Your free account is ready. Subscribe to unlock all " + roughCount(dealTotal()) + " deals."));
       // Opening step 2 is a fresh try at checkout (a refusal stays).
       auth.fb = "";
       document.getElementById("coerr").hidden = true;

@@ -201,7 +201,8 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False) -> str:
     if free:
         html += '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>"
     if more:
-        html += (f'<p class="meta">{more} more deal{"" if more == 1 else "s"} on the live '
+        n = f"{more // 100 * 100:,}+" if more >= 100 else str(more)  # never the exact count
+        html += (f'<p class="meta">{n} more deal{"" if more == 1 else "s"} on the live '
                  "wall and in the categories above.</p>")
     if stubs:
         by_store: dict[str, list[dict[str, Any]]] = {}

@@ -1346,6 +1346,21 @@ class TestEyeCatchers:
         assert ".srctrack{animation:none}" in html
 
 
+def test_visitors_see_a_rounded_deal_count(db, cfg, tmp_path):
+    """Operator (2026-10-12): "1,400+ live deals", never the exact count."""
+    from dealradar.publish import seo
+
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[])
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert 'n < 100 ? String(n) : (Math.floor(n / 100) * 100).toLocaleString("en-US") + "+"' in html
+    assert '(live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals")' in html
+    assert "var total = roughCount(dealTotal())" in html
+    assert "all \" + dealTotal()" not in html and "+ dealTotal() +" not in html
+    alive = [{"status": "alive", "item": f"x{i}", "pct": 50} for i in range(seo._STATIC_WALL_MAX + 1432)]
+    assert "1,400+ more deals on the live wall" in seo.static_wall(alive, True)
+
+
 def test_hover_never_moves_what_the_pointer_rests_on(db, cfg, tmp_path):
     """Operator report (2026-10-11): the page "moves up every few seconds".
     A card that lifts on :hover slides out from under a resting pointer,
