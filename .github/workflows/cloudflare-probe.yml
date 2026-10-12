@@ -80,11 +80,17 @@ jobs:
               fine = st == 200 or (st == 404 and "redirect" in label)
               print(f"{label}: {'readable' if fine else f'NOT READABLE (HTTP {st}, errors {codes(d)})'}")
               ok = ok and fine
-          q = {"query": "query($z:String!){viewer{zones(filter:{zoneTag:$z}){httpRequests1dGroups(limit:1){dimensions{date}}}}}",
-               "variables": {"z": zid}}
+          import datetime
+          since = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+          q = {"query": "query($z:String!,$d:Date!){viewer{zones(filter:{zoneTag:$z})"
+                        "{httpRequests1dGroups(limit:1,filter:{date_geq:$d}){dimensions{date}}}}}",
+               "variables": {"z": zid, "d": since}}
           st, d = call("/graphql", q)
-          fine = st == 200 and not d.get("errors")
-          print(f"analytics: {'readable' if fine else 'NOT READABLE (HTTP %s)' % st}")
+          errs = d.get("errors") or []
+          fine = st == 200 and not errs
+          # GraphQL error text names the field or permission, never the key.
+          why = "; ".join(str(e.get("message", ""))[:120] for e in errs[:2]) if errs else f"HTTP {st}"
+          print(f"analytics: {'readable' if fine else 'NOT READABLE (' + why + ')'}")
           ok = ok and fine
           if acct:
               st, d = call(f"/accounts/{acct}/pages/projects/wowpriced")
