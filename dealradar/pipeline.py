@@ -232,7 +232,7 @@ def _build_parser(cfg: AppConfig, claude_client=None,
 
 def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
                      now: datetime, tz_by_source: dict[str, str],
-                     deadline: float | None
+                     deadline: float | None, db: DB | None = None
                      ) -> tuple[list[tuple[RawPost, Any]], dict]:
     from .parse.extractor import parse_posts
 
@@ -244,7 +244,7 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
     stats["parser"] = parser.model
     try:
         pairs, pstats = parse_posts(new_posts, parser, cfg, now, tz_by_source,
-                                    deadline=deadline)
+                                    deadline=deadline, db=db)
     except SpendCapReached:
         log.warning("spend cap reached before parsing could start")
         return [], stats
@@ -1257,37 +1257,63 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
     """
     from . import rank
     from .dedupe import _DEAL_FIELDS
-    from .parse.claude_client import critique_deal
+    from .http_client import extract_asin
+    from .parse.claude_client import critique_deals
 
-    stats = {"judged": 0, "suspect": 0}
+    stats = {"judged": 0, "suspect": 0, "reused": 0, "calls": 0}
     if parser is None or not cfg.critic_enabled or not cfg.critic_model:
         return stats
-    for deal in db.all_deals(status="alive"):
-        prior = deal.get("critic")
-        if prior:
-            # One second look per deal: a LOW-CONFIDENCE pass (< 0.7) gets
-            # re-judged exactly once — weak "plausible" verdicts are where
-            # inflated prices slip through. Everything else is settled
-            # until a price change clears the verdict (dedupe).
-            recheck = (prior.get("plausible")
-                       and float(prior.get("confidence") or 0.0) < 0.7
-                       and not prior.get("rechecked"))
-            if not recheck:
+    stored = db.all_deals()
+
+    def asin(deal):
+        store = str(deal.get("store") or "").lower()
+        if store and not store.startswith("amazon"):
+            return ""  # an ASIN on another retailer's deal is not reusable
+        return str(deal.get("asin") or extract_asin(
+            deal.get("canonical_url") or "")).upper()
+
+    def condition_class(deal):
+        conditions = set(deal.get("conditions") or [])
+        for condition in ("open_box", "refurbished", "used"):
+            if condition in conditions:
+                return condition
+        return "new"
+
+    by_asin = {}
+    for deal in stored:
+        identity = asin(deal)
+        if identity:
+            by_asin.setdefault(identity, []).append(deal)
+
+    def reusable(deal):
+        identity = asin(deal)
+        reg = deal.get("regular_price")
+        if not identity or not reg or deal.get("final_price") is None:
+            return None
+        for other in by_asin.get(identity, []):
+            if other["dedupe_key"] == deal["dedupe_key"]:
                 continue
-        ok, _reason = rank.is_publishable(deal, cfg)
-        if not ok:
-            continue  # the critic only spends on deals that would publish
-        try:
-            verdict = critique_deal(parser, deal)
-        except SpendCapReached:
-            log.warning("spend cap reached in deal critic; remaining deals "
-                        "stay unjudged and retry next run")
-            break
-        if verdict is None:
-            continue  # critic disabled/failed: no opinion, deal unaffected
-        if prior:
+            verdict = other.get("critic")
+            basis = other.get("regular_price")
+            if not verdict or not basis or basis <= 0:
+                continue
+            if condition_class(other) != condition_class(deal):
+                continue
+            if abs(reg - basis) > basis * 0.02 + 1e-9:
+                continue
+            if (verdict.get("plausible")
+                    and float(verdict.get("confidence") or 0.0) < 0.7
+                    and not verdict.get("rechecked")):
+                continue
+            return {**verdict, "reason": str(verdict.get("reason", ""))[:120],
+                    "reused_from": other["dedupe_key"]}
+        return None
+
+    def save(deal, verdict, *, reused=False):
+        verdict = dict(verdict)
+        if deal.get("critic"):
             verdict["rechecked"] = True
-        stats["judged"] += 1
+        stats["reused" if reused else "judged"] += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         payload["critic"] = verdict
         if not verdict.get("plausible", True):
@@ -1297,9 +1323,50 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
                 flags.append("suspect_msrp")
             payload["flags"] = flags
             log.warning("deal critic flagged %s as suspect MSRP: %s",
-                        deal.get("dedupe_key", "?"),
-                        verdict.get("reason", ""))
+                        deal["dedupe_key"], verdict.get("reason", ""))
         db.update_deal(deal["dedupe_key"], payload=payload)
+        deal["critic"] = verdict  # available for reuse by later batches
+
+    pending = []
+    for deal in stored:
+        if deal.get("status") != "alive":
+            continue
+        prior = deal.get("critic")
+        if prior and not (prior.get("plausible")
+                          and float(prior.get("confidence") or 0.0) < 0.7
+                          and not prior.get("rechecked")):
+            continue
+        ok, _reason = rank.is_publishable(deal, cfg)
+        if not ok:
+            continue
+        verdict = reusable(deal)
+        if verdict is not None:
+            save(deal, verdict, reused=True)
+        else:
+            pending.append(deal)
+
+    size = max(1, cfg.critic_batch_size)
+    calls_before = getattr(parser, "critic_calls", 0)
+    for start in range(0, len(pending), size):
+        batch = []
+        for deal in pending[start:start + size]:
+            verdict = reusable(deal)
+            if verdict is not None:
+                save(deal, verdict, reused=True)
+            else:
+                batch.append(deal)
+        if not batch:
+            continue
+        try:
+            verdicts = critique_deals(parser, batch)
+        except SpendCapReached:
+            log.warning("spend cap reached in deal critic; remaining deals "
+                        "stay unjudged and retry next run")
+            break
+        for deal, verdict in zip(batch, verdicts):
+            if verdict is not None:
+                save(deal, verdict)
+    stats["calls"] = getattr(parser, "critic_calls", 0) - calls_before
     return stats
 
 
@@ -1448,8 +1515,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # and publishing must still run inside the budget on heavy runs.
         pairs, pstats = _parse_new_posts(
             new_posts, parser, cfg, now, tz_by_source,
-            deadline - _RESERVE_FOR_TAIL_S)
+            deadline - _RESERVE_FOR_TAIL_S, db=db)
         summary["parse"] = pstats
+        summary["structured_parse"] = pstats.get("structured_parse", {
+            "posts": 0, "deals": 0, "dropped_evidence": 0})
         processed = set(pstats.get("processed_hashes") or [])
         recorded = 0
         if pstats.get("parser") == "disabled":

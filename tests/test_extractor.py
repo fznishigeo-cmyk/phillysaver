@@ -181,6 +181,7 @@ class TestParsePosts:
             "second_opinions": 0, "spend_usd": 0.05,
             "aborted_spend_cap": False,
             "processed_hashes": [posts[0].content_hash],
+            "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
         }
 
     def test_parser_gets_the_cleaned_text_and_meta(self):

@@ -305,6 +305,18 @@ class CriticVerdict(BaseModel):
     reason: str = ""
 
 
+class IndexedCriticVerdict(CriticVerdict):
+    index: int = Field(strict=True)
+
+
+class CriticVerdicts(BaseModel):
+    verdicts: list[IndexedCriticVerdict]
+
+
+class DealCategories(BaseModel):
+    categories: list[str]
+
+
 CRITIC_SYSTEM_PROMPT = """\
 You are a skeptical deal reviewer. You are given one deal: an item name, a
 store, a claimed regular price, and a sale price. Judge ONE question: is the

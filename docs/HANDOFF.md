@@ -133,6 +133,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **AI spend under $6/day (Codex task 020, merged 2026-10-12):** the critic
+  judges up to `parse.critic_batch_size` (8) deals per Sonnet call with
+  reasons cut to 120 characters, and reuses a stored verdict for the same
+  Amazon ASIN, condition class and regular price within 2% (`reused_from`).
+  Keepa posts and plain-price Woot posts are parsed in code from the API facts
+  (`RawPost.structured`), still through `verify_evidence`; their category
+  comes from a stored deal with the same ASIN or one Haiku title batch per run
+  (`kind="category"`, 60 max, else "other"). Caps unchanged. Estimate before
+  launch: ~$0.045 per fast run (was ~$0.156). Check `spend_by_kind` and
+  `structured_parse` in the next fast-run summaries.
 - **Hourly site check walks the site like a visitor (Codex task 018, merged
   2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
   (cards, clock, tagline, no JS errors), load-more, a category tab and back,

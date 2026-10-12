@@ -6,6 +6,7 @@ Offline only — fake clients/parsers, no network, no real model calls.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 
 import pytest
 
@@ -17,7 +18,7 @@ from dealradar.errors import SpendCapReached
 from dealradar.models import ExtractedDeal, RawPost, SavingsResult
 from dealradar.parse.claude_client import ClaudeParser, critique_deal
 from dealradar.parse.extractor import _smells_like_deal, parse_posts
-from dealradar.parse.schema import CriticVerdict, LLMDeal, LLMEvidence, to_extracted
+from dealradar.parse.schema import CriticVerdicts, LLMDeal, LLMEvidence, to_extracted
 
 NOW = datetime(2026, 10, 10, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -49,7 +50,7 @@ class _FakeResponse:
 
 
 class _CriticMessages:
-    """messages.parse stub answering CriticVerdict calls; records models used."""
+    """messages.parse stub answering CriticVerdicts calls; records models used."""
 
     def __init__(self, plausible: bool = True) -> None:
         self.plausible = plausible
@@ -58,9 +59,11 @@ class _CriticMessages:
     def parse(self, *, model, max_tokens, system, messages, output_format, **kw):
         self.calls.append({"model": model, "output_format": output_format,
                            "text": messages[0]["content"]})
-        if output_format is CriticVerdict:
-            return _FakeResponse(CriticVerdict(
-                plausible=self.plausible, confidence=0.8, reason="stub"))
+        if output_format is CriticVerdicts:
+            entries = json.loads(messages[0]["content"])
+            return _FakeResponse(CriticVerdicts.model_validate({"verdicts": [
+                {"index": entry["index"], "plausible": self.plausible,
+                 "confidence": 0.8, "reason": "stub"} for entry in entries]}))
         return _FakeResponse(output_format.model_validate({"deals": []}))
 
 
@@ -156,7 +159,8 @@ class TestRunCritic:
         cfg = _cfg()
         parser = ClaudeParser(cfg, client=_FakeClient(_CriticMessages(False)))
         stats = pipeline._run_critic(db, cfg, parser, NOW)
-        assert stats == {"judged": 1, "suspect": 1}
+        assert stats == {"judged": 1, "suspect": 1,
+                       "reused": 0, "calls": 1}
         row = db.get_deal("si|acme|widget")
         assert "suspect_msrp" in row["flags"]
         assert row["critic"]["plausible"] is False
@@ -167,14 +171,14 @@ class TestRunCritic:
         cfg = _cfg()
         msgs = _CriticMessages(True)
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1, "suspect": 0,
+                       "reused": 0, "calls": 1}
         row = db.get_deal("si|acme|widget")
         assert row["critic"]["plausible"] is True
         assert "suspect_msrp" not in row["flags"]
         # Second pass: verdict stored -> zero further API calls.
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         assert len(msgs.calls) == 1
         db.close()
 
@@ -183,19 +187,19 @@ class TestRunCritic:
         cfg = _cfg()
         msgs = _CriticMessages()
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         assert msgs.calls == []
         db.close()
 
     def test_no_parser_or_disabled_means_noop(self, tmp_path):
         db = self._db_with_deal(tmp_path)
-        assert pipeline._run_critic(db, _cfg(), None, NOW) == {"judged": 0,
-                                                               "suspect": 0}
+        assert pipeline._run_critic(db, _cfg(), None, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         cfg_off = _cfg(critic_enabled=False)
         parser = ClaudeParser(cfg_off, client=_FakeClient(_CriticMessages()))
-        assert pipeline._run_critic(db, cfg_off, parser, NOW) == {"judged": 0,
-                                                                  "suspect": 0}
+        assert pipeline._run_critic(db, cfg_off, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         db.close()
 
     def test_low_confidence_pass_is_rejudged_exactly_once(self, tmp_path):
@@ -208,14 +212,14 @@ class TestRunCritic:
         cfg = _cfg()
         msgs = _CriticMessages(plausible=False)  # the recheck flips it
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1,
-                                                              "suspect": 1}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 1, "suspect": 1,
+                       "reused": 0, "calls": 1}
         row = db.get_deal("si|acme|widget")
         assert row["critic"]["rechecked"] is True
         assert "suspect_msrp" in row["flags"]
         # Settled now: no third opinion ever.
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         assert len(msgs.calls) == 1
         db.close()
 
@@ -226,8 +230,8 @@ class TestRunCritic:
         cfg = _cfg()
         msgs = _CriticMessages(plausible=False)
         parser = ClaudeParser(cfg, client=_FakeClient(msgs))
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         assert msgs.calls == []
         db.close()
 
@@ -236,8 +240,8 @@ class TestRunCritic:
         cfg = _cfg()
         parser = ClaudeParser(cfg, client=_FakeClient(_CriticMessages()))
         parser.spend_usd = parser.run_cap_usd  # cap already reached
-        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0,
-                                                              "suspect": 0}
+        assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
+                       "reused": 0, "calls": 0}
         assert db.get_deal("si|acme|widget").get("critic") is None
         db.close()
 

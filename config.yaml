@@ -46,6 +46,7 @@ parse:
   # claimed regular price is a plausible real-world price (kills fake-MSRP junk).
   critic_model: "claude-sonnet-5-5"
   critic_enabled: true
+  critic_batch_size: 8               # judge independent deals in one short reply
   # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
   # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
   # the spend cap uses this table (USD per million tokens); unknown models use `default`.
