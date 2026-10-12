@@ -77,6 +77,7 @@ publish:
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]
     max_niche_top: 2
+    niche_after: 8              # never a niche card on the first screen (cards 1-8)
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true

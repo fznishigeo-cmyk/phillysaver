@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "7ddccf7210a718f254edfd5e0d741550051107081f6b243a125cb130b53d0c5f"),
-    (False, 49, "5c5a76fb1ca4467536c81f22ae8951ade56d467dd771b92971ce1740e3f1780f"),
-    (True, 0, "955be54f014c3478d02fe745fe836293a0e920874dbe46871c6b7d58164fe167"),
-    (True, 49, "891fac6ee0d18876ace4a0828f81c13b29b536e5c91394099aeddd11c4a02e76"),
+    (False, 0, "a89bf6bec33a13bc895e5a4eace6ef94620d4a375b43150b76f80faae1c52ad2"),
+    (False, 49, "1542b50d4c0f8bbf54e3ed59b1d2dd2fb1520c99b49874d0904cc245a853b8a6"),
+    (True, 0, "3b9ab5a0ed104303c9defc1b5fc199c1403425a4fd9bde85aec1281e42e22ca9"),
+    (True, 49, "16fdd63ee1260bd03f9df2f799c7ba2a0a5c8dedc42756c58b23cd1b2ec17f50"),
 ])
 def test_support_off_index_bytes_match_task034_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 034 adds shared front-page functions in both membership modes.

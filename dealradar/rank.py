@@ -40,6 +40,8 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
     broad = set(options.get("broad_categories", []))
     niche = set(options.get("niche_categories", []))
     niche_cap = int(options["max_niche_top"])
+    # The first screen is everyday deals only: niche never before this slot.
+    niche_after = int(options.get("niche_after", 0))
     run_cap = int(options["max_same_category_run"])
     store_cap = int(options["max_same_store_top"])
     picked, used, stores = [], set(), {}
@@ -76,7 +78,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
                     cat = d.get("category") or "other"
                     store = str(d.get("store") or "").strip().lower()
                     is_niche = cat in niche or cat not in broad
-                    if relaxation < 3 and is_niche and niche_count + reserved_niche >= niche_cap:
+                    if relaxation < 3 and is_niche and (slot < niche_after or niche_count + reserved_niche >= niche_cap):
                         continue
                     if relaxation < 2 and stores.get(store, 0) + reserved_stores.get(store, 0) >= store_cap:
                         continue

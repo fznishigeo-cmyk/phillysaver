@@ -1393,7 +1393,8 @@ header{--accent-hover:#45d0bf}
         for (var relaxation = 0; relaxation < 4; relaxation++) {
           var eligible = available.filter(function (i) {
             var d = rows[i], next = slot + 1 < 24 ? rows[slot + 1] : null;
-            return !(relaxation < 3 && isNiche(d) && nicheCount + reservedNiche >= options.max_niche_top) &&
+            return !(relaxation < 3 && isNiche(d) && (slot < (options.niche_after || 0) ||
+                       nicheCount + reservedNiche >= options.max_niche_top)) &&
               !(relaxation < 2 && (stores.get(store(d)) || 0) + (reservedStores.get(store(d)) || 0) >= options.max_same_store_top) &&
               !(relaxation < 1 && category(d) === last && run >= options.max_same_category_run) &&
               !(relaxation < 1 && next && next.status === "dead" && category(next) === category(d) &&

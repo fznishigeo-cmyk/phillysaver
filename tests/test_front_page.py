@@ -82,7 +82,7 @@ def test_photos_lead_when_photographed_supply_is_limited(options):
 def test_config_switches_and_short_supply(tmp_path, options):
     source = rows()
     assert front_page_mix(source, {}) is source
-    uncapped = dict(options, max_niche_top=24, max_same_store_top=24, max_same_category_run=24,
+    uncapped = dict(options, max_niche_top=24, niche_after=0, max_same_store_top=24, max_same_category_run=24,
                     prefer_photos=False)
     assert front_page_mix(source, uncapped) == source
     photos = front_page_mix(source, dict(uncapped, prefer_photos=True))
@@ -214,3 +214,15 @@ def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, option
     cfg.front_page = {}
     render_site(db, cfg, NOW, out_dir=out, deals=source)
     assert titles((out / "best-deals-today/index.html").read_text()) == [d["item"] for d in source[:30]]
+
+
+def test_no_niche_card_on_the_first_screen():
+    from dealradar.rank import front_page_mix
+    opts = {"broad_categories": ["home", "beauty"], "niche_categories": ["auto"],
+            "max_niche_top": 2, "niche_after": 8, "max_same_category_run": 2,
+            "max_same_store_top": 99, "prefer_photos": False}
+    rows = [{"category": "auto", "store": f"s{i}", "status": "alive"} for i in range(6)] + \
+           [{"category": ("home", "beauty")[i % 2], "store": f"t{i}", "status": "alive"} for i in range(30)]
+    top = front_page_mix(rows, opts)[:24]
+    assert all(d["category"] != "auto" for d in top[:8])
+    assert sum(d["category"] == "auto" for d in top) == 2
