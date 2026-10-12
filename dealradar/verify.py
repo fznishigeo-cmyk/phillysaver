@@ -24,6 +24,7 @@ import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlsplit
 
 from .config import get_secret
 from .keepa_budget import (MIN_FOR_RECHECK, KeepaBudget, describe_429,
@@ -110,12 +111,56 @@ def refresh_tiers(db, cfg, now: datetime) -> None:
 #: Sources whose end date comes from the store's own API (Woot's EndDate):
 #: a deal seen ONLY there ended for sure when it passes ("api_ended").
 API_END_SOURCES = frozenset({"woot"})
+CONFIRM_GONE_H = 1.0
+
+
+def woot_offer_url(deal: dict[str, Any]) -> str:
+    """The Woot offer identity, ignoring tracking query strings."""
+    try:
+        url = urlsplit(deal.get("canonical_url") or "")
+        host = (url.hostname or "").lower()
+        if (host == "woot.com" or host.endswith(".woot.com")) and url.path.startswith("/offers/"):
+            return url.path.rstrip("/")
+    except ValueError:
+        pass
+    return ""
+
+
+def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime) -> bool:
+    """Queue an API check when possible; otherwise hide the dead deal."""
+    payload = dict(deal)
+    if deal.get("asin") or woot_offer_url(deal):
+        if deal.get("status") == "dead" or deal.get("gone_suspect_at"):
+            return False
+        payload.update(gone_suspect_at=iso(now), death=reason,
+                       price_rechecked_at="", recheck_tried_at="")
+        db.update_deal(deal["dedupe_key"], payload=payload)
+        return False
+    payload.update(died_at=iso(now), death=reason)
+    db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
+    return True
+
+
+def live_price_reading(payload: dict[str, Any], verdict: bool, now: datetime) -> str:
+    """Apply an API reading to an alive payload; text never counts as a reading."""
+    payload["price_rechecked_at"] = iso(now)
+    payload["recheck_tried_at"] = ""
+    if verdict:
+        payload.update(gone_suspect_at="", death="", died_at="")
+        return "live"
+    suspect = parse_iso(payload.get("gone_suspect_at") or "")
+    if suspect is None or payload.get("death") in {"post_says_over", "stated_expiry"}:
+        payload.update(gone_suspect_at=iso(now), death="")
+        return "suspect"
+    if now - suspect < timedelta(hours=CONFIRM_GONE_H):
+        return "waiting"
+    payload.update(death="confirmed", gone_suspect_at="", died_at=iso(now))
+    payload["flags"] = list(dict.fromkeys([*(payload.get("flags") or []), "price_moved"]))
+    return "dead"
 
 
 def mark_expired_dead(db, cfg, now: datetime) -> int:
-    """Flip alive deals whose expires_at has passed to status 'dead',
-    recording why: "api_ended" when only a store API vouched for the end
-    date, else "stated_expiry" (a post said so; never shown as GONE)."""
+    """End API-expired offers; recheck other expiries when possible, else hide."""
     n = 0
     for deal in db.all_deals(status="alive"):
         expires = deal.get("expires_at") or ""
@@ -125,12 +170,16 @@ def mark_expired_dead(db, cfg, now: datetime) -> int:
         if dt is not None and dt < now:
             payload = {k: v for k, v in deal.items()
                        if k not in ("id", "normalized_item")}
-            payload["died_at"] = iso(now)
             seen = {s.get("source_name") for s in db.sightings_for(deal["id"])}
-            payload["death"] = ("api_ended" if seen and seen <= API_END_SOURCES
-                                else "stated_expiry")
-            db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
-            n += 1
+            if seen and seen <= API_END_SOURCES:
+                payload.update(died_at=iso(now), death="api_ended")
+                db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
+                n += 1
+            else:
+                checked = parse_iso(deal.get("price_rechecked_at") or "")
+                # A live reading after this expiry has already overruled it.
+                if checked is None or checked < dt:
+                    n += mark_unconfirmed_dead(db, deal, "stated_expiry", now)
     if n:
         log.info("marked %d expired deal(s) dead", n)
     return n

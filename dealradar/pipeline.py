@@ -24,6 +24,7 @@ from .config import AppConfig, load_config, load_sources
 from .db import DB
 from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
 from .models import RawPost, SourceConfig
+from .verify import CONFIRM_GONE_H
 
 log = logging.getLogger("dealradar.pipeline")
 
@@ -264,7 +265,7 @@ _RECHECK_EVERY_USED_H = 6.0
 _RETRY_NEW_H = 1.0
 #: A live check that says "gone" is asked again this long after; only the
 #: second agreeing reading kills the deal (models.Deal.gone_suspect_at).
-_CONFIRM_GONE_H = 1.0
+_CONFIRM_GONE_H = CONFIRM_GONE_H
 #: Early (in-window) Keepa calls per run made only to fetch a missing photo
 #: (1 token each). The shared token budget (keepa_budget) is the real
 #: brake: these run only while the bucket holds MIN_FOR_IMAGE_BACKFILL,
@@ -1085,7 +1086,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
                                MIN_FOR_RECHECK, KeepaBudget)
     from .verify import (KEEPA_BATCH, KEEPA_OFFERS_BATCH, USED_RECHECK_TOKENS,
-                         is_used_deal, recheck_amazon_prices)
+                         is_used_deal, live_price_reading, recheck_amazon_prices,
+                         woot_offer_url)
 
     _revive_used_price_moved(db, now)
     stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
@@ -1108,8 +1110,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     due_used: list[dict[str, Any]] = []
     photo: list[dict[str, Any]] = []
     for deal in db.all_deals(status="alive"):
-        if not deal.get("asin"):
+        if not deal.get("asin") or woot_offer_url(deal):
             continue
+        if deal.get("death") in {"post_says_over", "stated_expiry"} \
+                and deal.get("gone_suspect_at") == util.iso(now):
+            continue  # a post/expiry queues the first API reading for the next run
         used = is_used_deal(deal)
         every = _RECHECK_EVERY_USED_H if used else _RECHECK_EVERY_H
         if deal.get("gone_suspect_at"):
@@ -1170,37 +1175,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             db.update_deal(deal["dedupe_key"], payload=payload,
                            status="alive" if verdict else None)
             return
-        if verdict:
-            payload["gone_suspect_at"] = ""
-            db.update_deal(deal["dedupe_key"], payload=payload)
-            return
-        # One "gone" reading is not enough: the first marks the deal
-        # suspect (still on the wall) and asks again after _CONFIRM_GONE_H;
-        # only a second reading kills it, as a confirmed death.
-        if not deal.get("gone_suspect_at"):
-            payload["gone_suspect_at"] = util.iso(now)
-            db.update_deal(deal["dedupe_key"], payload=payload)
+        outcome = live_price_reading(payload, verdict, now)
+        if outcome == "suspect":
             stats["suspect"] = stats.get("suspect", 0) + 1
-            log.info("price recheck: %s looks over; asking again in %.0f h "
-                     "before marking it dead", deal.get("dedupe_key"), _CONFIRM_GONE_H)
-            return
-        suspect = util.parse_iso(deal.get("gone_suspect_at") or "")
-        if suspect is not None and now - suspect < timedelta(hours=_CONFIRM_GONE_H):
-            # Too soon to count as the second reading (an early photo-only
-            # batch asked again): keep waiting.
-            db.update_deal(deal["dedupe_key"], payload=payload)
-            return
-        stats["dead"] += 1
-        payload["death"] = "confirmed"
-        payload["gone_suspect_at"] = ""
-        flags = list(payload.get("flags") or [])
-        if "price_moved" not in flags:
-            flags.append("price_moved")
-        payload["flags"] = flags
-        payload["died_at"] = util.iso(now)
-        db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
-        log.info("price recheck: %s is over (live price moved); marked dead",
-                 deal.get("dedupe_key"))
+        elif outcome == "dead":
+            stats["dead"] += 1
+        db.update_deal(deal["dedupe_key"], payload=payload,
+                       status="dead" if outcome == "dead" else None)
 
     # Due rechecks first (a nice-to-have photo never delays them); each
     # class waits while the bucket is below its bar, and a batch never
@@ -1446,7 +1427,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.site import health_markdown, render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
-    from .verify import mark_expired_dead, refresh_tiers, text_marks_dead
+    from .verify import (mark_expired_dead, mark_unconfirmed_dead,
+                         refresh_tiers, text_marks_dead)
 
     cfg = load_config(config_path)
     now = now or util.now_utc()
@@ -1544,10 +1526,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             res = upsert_extracted(db, extracted, sav, post, cfg, now)
             deals_upserted += 1
             if text_marks_dead(post.text):
-                res["payload"]["died_at"] = util.iso(now)
-                res["payload"]["death"] = "post_says_over"
-                db.update_deal(res["dedupe_key"], payload=res["payload"],
-                               status="dead")
+                mark_unconfirmed_dead(db, db.get_deal(res["dedupe_key"]),
+                                      "post_says_over", now)
         summary["deals_upserted"] = deals_upserted
 
         # ---- verify tiers + dead marking ----

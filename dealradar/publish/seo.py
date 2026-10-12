@@ -113,7 +113,8 @@ def _store_hue(store: str) -> int:
     return h
 
 
-def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> str:
+def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
+              now: datetime | None = None) -> str:
     """One free or dead deal as the wall draws it (index.html cardHtml), with
     the store tile in place of the photo: item, store, price, was-price, %
     off, badge, product link and the "via Source" credit links. Never called
@@ -131,7 +132,10 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> st
     if tag:
         media += f'<span class="condtag">{tag}</span>'
     if dead:
-        media += '<span class="gonetag">GONE</span>'
+        died = parse_iso(d.get("died_at") or "")
+        hours = max(0, ((now or datetime.now(timezone.utc)) - died).total_seconds() / 3600) if died else 0
+        ago = "gone just now" if hours < 1 else f"gone {math.floor(hours + .5)}h ago"
+        media += f'<span class="gonetag">Just missed · {ago}</span>'
     price = ""
     if d.get("final_price") is not None:
         price = f'<span class="now">${float(d["final_price"]):.2f}</span>'
@@ -140,9 +144,9 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> st
     if not dead and d.get("abs_savings") is not None:
         price += f' <span class="save">save ${float(d["abs_savings"]):.2f}</span>'
     page = (deal_paths or {}).get(str(d.get("key") or "")[:8])
-    title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page else
+    title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page and not dead else
              f'<a href="{e(url)}" rel="sponsored noopener">{e(d.get("item"))}</a>'
-             if url else e(d.get("item")))
+             if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip">{e(store)}</span>'
     if tier in _TIER_LABEL:
@@ -151,10 +155,10 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> st
         meta += f'<span class="chip">{e(c).replace("_", " ")}</span>'
     credits = ", ".join(
         f'via <a href="{e(_http(c.get("url")))}" rel="noopener">{e(c.get("name"))}</a>'
-        if _http(c.get("url")) else f"via {e(c.get('name'))}"
+        if not dead and _http(c.get("url")) else f"via {e(c.get('name'))}"
         for c in d.get("credits") or [])
     how = ""
-    if d.get("needs_steps"):  # url is the source post that explains the steps
+    if not dead and d.get("needs_steps"):  # url is the source post that explains the steps
         steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
         codes = "".join(f'<code class="code">{e(c)}</code>' for c in (d.get("codes") or [])[:3])
         how = (f'<div class="how"><b>How to get this price:</b> '
@@ -162,7 +166,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> st
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
     actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener">Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
-    return (f'<article class="card{" gone" if dead else ""}">'
+    disabled = ' aria-disabled="true"' if dead else ""
+    return (f'<article class="card{" gone" if dead else ""}"{disabled}>'
             f'<div class="media">{media}</div><div class="body">'
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
             f'<h3 class="title">{title}</h3>'
@@ -183,27 +188,44 @@ def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
     return f"{n} more deal{'' if n == 1 else 's'} {where}{rng}, members only"
 
 
+def place_gone(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Defer gone cards until slot 9, then leave seven cards between them.
+
+    Excess gone cards wait off the wall if there are not enough live cards.
+    """
+    from collections import deque
+
+    out, pending = [], deque()
+    next_gone = 8
+    for d in rows:
+        if d.get("status") == "dead":
+            pending.append(d)
+        if pending and len(out) >= next_gone:
+            out.append(pending.popleft())
+            next_gone = len(out) + 7
+        if d.get("status") != "dead":
+            out.append(d)
+    if pending and len(out) >= next_gone:
+        out.append(pending.popleft())
+    return out
+
+
 def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
-                deal_paths: dict[str, str] | None = None) -> str:
-    """index.html's #content as plain HTML at publish time (the page's
-    script replaces it with the live wall): the free deals (the top
-    _STATIC_WALL_MAX), one line per store for the locked ones, and the dead
-    deals deals.json carries."""
-    free = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
+                deal_paths: dict[str, str] | None = None, now: datetime | None = None) -> str:
+    """Public cards inline, with the JS spacing rules and a static card cap."""
+    free = place_gone([d for d in teaser if not d.get("locked")])
     more = max(0, len(free) - _STATIC_WALL_MAX)
     free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked")]
-    dead = sorted((d for d in teaser if d.get("status") != "alive" and not d.get("locked")),
-                  key=lambda d: str(d.get("died_at") or ""), reverse=True)
     html = ('<noscript><p class="meta">JavaScript is off: these are the '
             + ("top" if open_access else "free") + " deals as of "
             "the last update. Turn it on for live drops, search and sorting, or browse the "
             "categories above.</p></noscript>")
-    if not (free or stubs or dead):
+    if not (free or stubs):
         return html + '<p class="empty">No qualifying deals right now</p>'
     html += '<h2 class="secth">Verified deals right now</h2>'
     if free:
-        html += '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>"
+        html += '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>"
     if more:
         n = f"{more // 100 * 100:,}+" if more >= 100 else str(more)  # never the exact count
         html += (f'<p class="meta">{n} more deal{"" if more == 1 else "s"} on the live '
@@ -216,9 +238,6 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         html += ('<h2 class="secth">Members-only deals</h2><ul class="lockedlist">'
                  + "".join(f"<li>{escape(_locked_line(v, f'at {k}' if k else 'at other stores'))}</li>"
                            for k, v in rows) + "</ul>")
-    if dead:
-        html += ('<h2 class="secth missed">Just missed</h2><div class="grid">'
-                 + "".join(card_html(d, deal_paths) for d in dead) + "</div>")
     return html
 
 
@@ -587,7 +606,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 
     open_access = is_open(cfg)
     paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
-    wall = static_wall(teaser, open_access, paths)
+    wall = static_wall(teaser, open_access, paths, now)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(

@@ -134,7 +134,7 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
 
     site_floor = min(cfg.min_pct,
                      getattr(cfg, "site_show_from_pct", cfg.min_pct))
-    max_dead_age = timedelta(hours=getattr(cfg, "show_dead_hours", 6.0))
+    max_dead_age = timedelta(hours=getattr(cfg, "show_dead_hours", 24.0))
     out: list[dict[str, Any]] = []
     for status in ("alive", "dead"):
         for deal in db.all_deals(status=status):

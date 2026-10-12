@@ -228,7 +228,9 @@ class Deal:
     # (inconclusive offers scan, stale data): the deal waits a retry window
     # instead of being re-asked, and paid for, on every run.
     recheck_tried_at: str = ""
-    # ISO UTC of a live check that found the offer gone or its price moved:
+    # ISO UTC of a suspected end (post/expiry, or a gone API reading).
+    # death holds post_says_over/stated_expiry until the first API reading.
+    # For API readings:
     # one reading is not enough to kill a deal; a second, at least
     # _CONFIRM_GONE_H later, is (live: Keepa missed a Warehouse offer at
     # 01:23 that its deals feed listed again, same price, at 07:01).

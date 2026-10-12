@@ -39,13 +39,13 @@ def cfg(tmp_path):
                      paywall_teaser_pool=48)
 
 
-def _deals():
+def _deals(n=6):
     """Two stores, two categories; distinctive names so a leak is obvious."""
     return [make_deal(dedupe_key=f"k{i}", item=f"ZZITEM-{i}", store=("Walmart", "Target")[i % 2],
                       category=("electronics", "kitchen")[i % 2], score=100.0 - i,
                       canonical_url=f"https://shop.example/p{i}",
                       pct_at_checkout=71.0 + i, image_url=f"https://img.example/p{i}.jpg")
-            for i in range(6)]
+            for i in range(n)]
 
 
 def _seed_week(db, n, category="electronics", **payload):
@@ -88,12 +88,14 @@ def test_static_wall_holds_the_free_deals_credits_and_locked_lines(db, cfg, tmp_
 
 def test_dead_deals_on_the_wall_only_as_deals_json_has_them(db, cfg, tmp_path):
     out = tmp_path / "site"
-    gone = make_deal(dedupe_key="gone", item="ZZGONE", status="dead",
+    cfg.paywall_open_access = True
+    gone = make_deal(dedupe_key="gone", item="ZZGONE", status="dead", death="confirmed",
                      died_at="2026-10-09T13:00:00+00:00")
-    _render(db, cfg, out, deals=_deals() + [gone])
+    _render(db, cfg, out, deals=_deals(12) + [gone])
     assert "ZZGONE" in (out / "deals.json").read_text(encoding="utf-8")
     html = (out / "index.html").read_text(encoding="utf-8")
-    assert "Just missed" in html and "ZZGONE" in html
+    assert "Just missed · gone 1h ago" in html and "ZZGONE" in html
+    assert 'secth missed' not in html
     for slug in HUBS:  # the hubs show live deals only
         assert "ZZGONE" not in (out / "deals" / slug / "index.html").read_text(encoding="utf-8")
 

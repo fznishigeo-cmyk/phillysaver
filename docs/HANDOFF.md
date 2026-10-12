@@ -123,10 +123,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   pages (legal requirement).
 - **Deals stay until genuinely over.** A live deal is never removed for its
   age (Amazon "used - like new" offers last until someone buys them). A
-  deal dies only when:
-  - its stated expiry passes;
-  - its source post says it ended or sold out;
-  - a live price check (Keepa offers, the Woot API) finds it gone.
+  deal is confirmed gone only after two agreeing Keepa/Woot API readings
+  at least an hour apart, or Woot's own API end date. A post saying it
+  ended or a stated expiry is unconfirmed: Amazon ASINs and Woot offers
+  become suspects for API rechecks; other stores are hidden. Unconfirmed
+  deaths are never shown as gone. Confirmed-gone cards stay greyed and
+  unclickable inline for 24 hours, outside the first 8, at most one per 8.
   Dead deals are deleted 14 days after they die.
 - **No trial reminder emails.** Members cancel by emailing
   hello@wowpriced.com or through Stripe's portal.
@@ -136,6 +138,14 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Greyed inline gone deals (Codex task 027, merged 2026-10-12):** post/expiry
+  signals queue API rechecks; Woot reuses its feed, with no extra requests.
+  Confirmed deaths alone publish as gone, inline and inert for 24 hours;
+  live-only ticker/SEO lists. Updated bottom-section tests in `test_seo.py`
+  and `test_publish_site.py`, plus shared-wall snapshots in `test_support.py`.
+  Validation: 1,438 passed, 7 existing Stripe tests blocked by sandbox sockets,
+  1 deselected; 52 focused checks (including idempotency) passed. No commit
+  or push. Remaining: full green run outside this sandbox, review and merge.
 - **Store and price pages (Codex task 023, merged 2026-10-12):**
   `/stores/<slug>/` ("Amazon deals today": stores with 15+ public live
   deals, top 12; one page per slug, so "Macy's"/"Macys" share a page) and
@@ -217,8 +227,8 @@ Keep this file current: whoever stops working updates it in their last commit.
   home page renders 60 cards (PAGE_CARDS) and adds 60 when the "Show more
   deals" box nears the viewport (IntersectionObserver, button fallback);
   search, filters, sort and category reset it to 60, a drop keeps it; a
-  ticker click shows up to its card. "Just missed" appears once every live
-  card is shown. Verified in Chromium: desktop 7,234 px at open (was
+  ticker click shows up to its card. Confirmed-gone cards now appear
+  inline with spacing limits (task 027). Verified in Chromium: desktop 7,234 px at open (was
   ~150,000), no scroll jump, 0 errors.
 - **Yearly plan (Codex task 015, LIVE 2026-10-12):** `paywall.yearly_price_usd: 49`
   with the Worker's `STRIPE_YEARLY_PRICE_ID` (live price, checked against

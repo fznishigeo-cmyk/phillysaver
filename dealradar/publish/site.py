@@ -331,6 +331,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "") -
         "headline": _headline(deal),
         "status": status,
         "alive": status == "alive",
+        "gone": status == "dead" and deal.get("death") in {"confirmed", "api_ended"},
         "died_at": deal.get("died_at", ""),
         "first_seen_at": deal.get("first_seen_at", ""),
         "age_hours": age_hours,
@@ -385,7 +386,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     out.mkdir(parents=True, exist_ok=True)
 
     amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
-    serialized = [_serialize_deal(d, now, amazon_tag) for d in deals]
+    serialized = [_serialize_deal(d, now, amazon_tag) for d in deals
+                  if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
