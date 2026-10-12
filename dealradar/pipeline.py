@@ -14,7 +14,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import chain, zip_longest
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -1328,6 +1328,10 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
 
     size = max(1, cfg.critic_batch_size)
     calls_before = getattr(parser, "critic_calls", 0)
+    shadow_batches = []
+    shadow_slots = (max(0, cfg.critic_shadow_batches_per_day
+                       - db.critic_shadow_counts(now)["batches"])
+                    if cfg.critic_shadow_model else 0)
     for start in range(0, len(pending), size):
         batch = []
         for deal in pending[start:start + size]:
@@ -1347,7 +1351,17 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
         for deal, verdict in zip(batch, verdicts):
             if verdict is not None:
                 save(deal, verdict)
+        if len(shadow_batches) < shadow_slots and any(v is not None for v in verdicts):
+            shadow_batches.append((batch, verdicts))
     stats["calls"] = getattr(parser, "critic_calls", 0) - calls_before
+    # Every real batch takes priority over the optional experiment.
+    for batch, verdicts in shadow_batches:
+        try:
+            shadow = critique_deals(parser, batch, shadow=True, reserve_shadow=lambda:
+                db.start_critic_shadow_batch(now, cfg.critic_shadow_batches_per_day))
+        except SpendCapReached:
+            break
+        db.record_critic_shadow(now, verdicts, shadow)
     return stats
 
 
@@ -1480,19 +1494,34 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- parse (Claude; evidence-verified) ----
         # Daily ceiling: this run may spend at most what remains of the cap
         # in force for the current UTC day (a temporary boost, else the base).
-        from .config import daily_spend_cap
+        from .config import daily_spend_cap, spend_allowance
         day_cap = daily_spend_cap(cfg, now)
-        remaining_today = max(0.0, day_cap - db.spend_usd_for_day(now))
+        spent_today = db.spend_usd_for_day(now)
+        remaining_today, allowed_today = spend_allowance(cfg, now, spent_today)
+        pacing_line = ""
+        if cfg.spend_pacing:
+            pacing_line = (f"paced allowance ${remaining_today:.4f} "
+                           f"(allowed ${allowed_today:.4f} of ${day_cap:.2f} "
+                           f"by {now.astimezone(timezone.utc):%H:%M} UTC, spent ${spent_today:.4f})")
+            log.info("%s", pacing_line)
+            summary["spend_pacing"] = {"allowance": remaining_today,
+                                       "allowed": allowed_today, "day_cap": day_cap,
+                                       "spent": spent_today}
         parser = None
         if remaining_today <= 0:
             log.warning("daily LLM spend cap ($%.2f) exhausted; parse skipped "
-                        "this run (posts stay unrecorded and retry tomorrow)",
+                        "this run (posts stay unrecorded and retry next run)",
                         day_cap)
         else:
             # Built once per run and shared: extraction, second opinions, and
             # the deal critic all draw on the same spend caps.
             parser = _build_parser(cfg, claude_client=claude_client,
                                    run_cap_usd=remaining_today)
+        # The critic keeps its share of this run's allowance: extraction may
+        # use the rest, and whatever it leaves also goes to the critic.
+        run_cap = parser.run_cap_usd if parser is not None else 0.0
+        if parser is not None and cfg.critic_enabled and cfg.critic_model:
+            parser.run_cap_usd = run_cap * (1 - cfg.critic_reserve_share)
         # Parse stops _RESERVE_FOR_TAIL_S early: the critic, price re-checks,
         # and publishing must still run inside the budget on heavy runs.
         pairs, pstats = _parse_new_posts(
@@ -1566,6 +1595,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if fast_lane else 0)
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
+        if parser is not None:
+            parser.run_cap_usd = run_cap
         summary["critic"] = _run_critic(db, cfg, parser, now)
 
         if fast_lane:
@@ -1657,6 +1688,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 with open(step_summary, "a", encoding="utf-8") as fh:
                     fh.write(_spend_markdown(summary["spend_by_kind"],
                                              summary["extract_by_source"]))
+                    if pacing_line:
+                        fh.write(pacing_line + "\n")
             except OSError as e:
                 log.warning("LLM spend summary not written: %s", e)
         summary["admin_warnings"] = check_and_alert(db, cfg, now,

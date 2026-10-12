@@ -77,6 +77,7 @@ def _cfg(**over) -> AppConfig:
     cfg = load_config()
     cfg.critic_enabled = True
     cfg.critic_model = "claude-sonnet-5-5"
+    cfg.critic_shadow_batches_per_day = 0  # isolate the real critic
     for k, v in over.items():
         setattr(cfg, k, v)
     return cfg

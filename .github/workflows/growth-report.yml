@@ -2,8 +2,8 @@
 # submit), Meta ads/followers and Stripe numbers, sent to the operator's
 # email and/or the Telegram admin chat. Read-only everywhere. The repo and
 # this log are public: the job logs section names and ok / skipped / error
-# only, never a number or a token. It never touches state.db or the data
-# branch. Each missing secret skips only its own section.
+# only, never a number or a token. Restores a local state snapshot for critic
+# shadow counts; never writes back to the data branch.
 name: growth report
 
 on:
@@ -34,6 +34,12 @@ jobs:
 
       - name: Install dealradar
         run: pip install -e .
+
+      - name: Restore state for critic shadow counts
+        continue-on-error: true   # the report still goes out; the shadow line says not available
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/restore_state.sh
 
       - name: Send the growth report
         env:

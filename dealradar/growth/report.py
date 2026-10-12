@@ -15,12 +15,14 @@ import logging
 from datetime import date, datetime, time, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from ..config import get_secret
+from ..db import DB
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
@@ -39,7 +41,16 @@ def _error(e: Exception) -> str:
     return type(e).__name__
 
 
-def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
+def _critic_shadow(db_path, now: datetime) -> dict:
+    db = DB(db_path, read_only=True)
+    try:
+        return {"today": db.critic_shadow_counts(now),
+                "week": db.critic_shadow_counts(now, days=7)}
+    finally:
+        db.close()
+
+
+def collect(cfg, now: datetime, client: Any, *, db_path="state.db") -> tuple[dict, dict]:
     """(section -> data, section -> 'ok' | 'skipped' | 'error')."""
     tz = ZoneInfo(cfg.timezone)
     today = now.astimezone(tz).date()
@@ -63,6 +74,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "critic_shadow": ([("state.db", Path(db_path).is_file())],
+                          lambda: _critic_shadow(db_path, now)),
         "site_health": ([("publish.custom_domain", cfg.custom_domain)],
                         lambda: site_health.check(client, cfg, now)),
         "ga4": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
@@ -197,6 +210,15 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         reason = subs["unavailable"] if subs else status.get("subscribers", "skipped")
         lines.append(f"subscribers: not available ({reason})")
 
+    shadow = data.get("critic_shadow")
+    if shadow is not None:
+        today, week = shadow["today"], shadow["week"]
+        lines.append("critic shadow (Haiku vs Sonnet): "
+                     f"agree {today['same_verdict']}/{today['deals_judged']} today, "
+                     f"7-day {week['same_verdict']}/{week['deals_judged']}")
+    else:
+        lines.append("critic shadow (Haiku vs Sonnet): not available")
+
     if ga:
         y, w = ga["yesterday"], ga["window"]
         lines += ["", "== Google Analytics ==",
@@ -302,13 +324,13 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
 
 
 def run(cfg, now: datetime | None = None, *, http_client: Any = None,
-        smtp_factory: Any = None) -> int:
+        smtp_factory: Any = None, db_path="state.db") -> int:
     """The exit code: 1 only when every configured section failed; a
     delivery failure is logged (channel + error class) but exits 0."""
     now = now or now_utc()
     client = http_client or httpx.Client(timeout=30)
     try:
-        data, status = collect(cfg, now, client)
+        data, status = collect(cfg, now, client, db_path=db_path)
         ran = [s for s in status.values() if s != "skipped"]
         if not ran:
             log.info("no section configured; nothing to send")
