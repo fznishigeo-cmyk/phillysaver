@@ -24,7 +24,7 @@ from ..config import get_secret
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
-from . import google, meta, site_health, stripe_stats
+from . import google, google_ads, meta, site_health, stripe_stats
 
 log = logging.getLogger("dealradar.growth")
 
@@ -53,6 +53,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
     sa = get_secret("GOOGLE_SA_JSON")
     meta_token = get_secret("META_SYSTEM_TOKEN")
     stripe_key = get_secret("STRIPE_SECRET_KEY")
+    gads = [(name, get_secret(name)) for name in
+            ("GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN")]
     token = functools.cache(lambda: google.access_token(client, sa))
     version = cfg.growth_meta_graph_version
     need_google, need_meta = ("GOOGLE_SA_JSON", sa), ("META_SYSTEM_TOKEN", meta_token)
@@ -77,6 +79,11 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
         "instagram": ([need_meta, ("growth.instagram_user_id", cfg.growth_instagram_user_id)],
                       lambda: meta.followers(client, meta_token, version,
                                              cfg.growth_instagram_user_id)),
+        "google_ads": ([*gads, ("growth.google_ads_customer_id", cfg.growth_google_ads_customer_id)],
+                       lambda: google_ads.insights(
+                           client, google_ads.access_token(client, *(v for _, v in gads)),
+                           cfg.growth_google_ads_api_version, cfg.growth_google_ads_customer_id,
+                           cfg.growth_google_ads_login_customer_id, yesterday, start)),
         "stripe": ([("STRIPE_SECRET_KEY", stripe_key)], lambda: stripe_stats.stats(
             client, stripe_key, yesterday_start=epoch(yesterday), window_start=epoch(start),
             today_start=epoch(today), monthly_price=cfg.growth_monthly_price_usd)),
@@ -96,7 +103,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
         except Exception as e:  # one section never stops the others
             status[name] = "error"
             detail = (type(e).__name__ if name == "site_health" else
-                      str(e) if isinstance(e, google.ServiceAccountError) else _error(e))
+                      str(e) if isinstance(e, (google.ServiceAccountError, google_ads.GoogleAdsError))
+                      else _error(e))
             log.warning("%s: error %s", name, detail)
     return data, status
 
@@ -116,8 +124,8 @@ def _pair(fmt, a, b) -> str:
 def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, str]:
     """(subject, plain text): headline numbers first, then one block per section."""
     days = cfg.growth_report_days
-    ga, sc, sm, ads, st = (data.get(k) for k in
-                           ("ga4", "search_console", "sitemap", "meta_ads", "stripe"))
+    ga, sc, sm, ads, gads, st = (data.get(k) for k in ("ga4", "search_console", "sitemap",
+                                                       "meta_ads", "google_ads", "stripe"))
     lines = [f"Growth report for {yesterday:%a %b %d, %Y}: yesterday / last {days} days", ""]
 
     if ga:
@@ -129,8 +137,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines.append("Trials started: " + _pair(_n, *trials))
     if st:
         lines.append(f"Paying members: {_n(st['active'])} (MRR estimate {_usd(st['mrr'])})")
-    if ads:
-        spend = (ads["yesterday"]["spend"], ads["window"]["spend"])
+    paid = [a for a in (ads, gads) if a]  # Meta + Google
+    if paid:
+        spend = tuple(sum(a[k]["spend"] for a in paid) for k in ("yesterday", "window"))
         lines.append("Ad spend: " + _pair(_usd, *spend))
         if trials:
             lines.append("Cost per trial: " + " / ".join(
@@ -177,6 +186,13 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
             lines.append(f"Facebook Page followers: {_n(data['facebook'])}")
         if "instagram" in data:
             lines.append(f"Instagram followers: {_n(data['instagram'])}")
+    if gads:
+        y, w = gads["yesterday"], gads["window"]
+        lines += ["", "== Google Ads ==",
+                  f"Spend {_pair(_usd, y['spend'], w['spend'])}, "
+                  f"impressions {_pair(_n, y['impressions'], w['impressions'])}, "
+                  f"clicks {_pair(_n, y['clicks'], w['clicks'])}, "
+                  f"conversions {y['conversions']:,.0f} / {w['conversions']:,.0f}"]
     if st:
         lines += ["", "== Stripe" + (" (TEST MODE key)" if st["test_mode"] else "") + " ==",
                   f"On trial now: {_n(st['trialing'])}",

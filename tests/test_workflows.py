@@ -229,6 +229,7 @@ def test_growth_report_shape() -> None:
     step = next(s for s in job["steps"] if s.get("run", "").strip() == "python -m dealradar growth-report")
     assert set(step["env"]) == {
         "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
+        "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN",
         "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
         "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID",
     }

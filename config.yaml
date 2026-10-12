@@ -256,7 +256,8 @@ growth:
   # .github/workflows/growth-report.yml): GA4, Search Console (+ a daily
   # sitemap submit), Meta ads/followers and Stripe, sent to the operator by
   # email (REPORT_EMAIL_TO secret, else contact_email) and/or the Telegram
-  # admin chat. Secrets: GOOGLE_SA_JSON, META_SYSTEM_TOKEN, STRIPE_SECRET_KEY.
+  # admin chat. Secrets: GOOGLE_SA_JSON, META_SYSTEM_TOKEN, STRIPE_SECRET_KEY,
+  # GOOGLE_ADS_*.
   # Read-only everywhere. An empty value (or a missing secret) skips its section.
   report_days: 7
   ga4_property_id: "558475393"               # numeric GA4 property ID (Admin -> Property details)
@@ -268,6 +269,13 @@ growth:
   meta_ad_account_id: ""                     # digits, with or without "act_"
   meta_page_id: ""                           # Facebook Page ID (followers)
   instagram_user_id: ""                      # Instagram professional account ID (followers)
+  # Google Ads (secrets GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
+  # GOOGLE_ADS_REFRESH_TOKEN; OAuth client in Cloud project wowpriced-511321).
+  # Pinned API version: Google keeps each about a year; bump it when it is
+  # announced for sunset.
+  google_ads_api_version: "v26"
+  google_ads_customer_id: "497-666-7972"       # the wowpriced ad account
+  google_ads_login_customer_id: "586-101-9939" # the wowpriced manager account
   monthly_price_usd: 9.99                    # MRR estimate = active subscriptions x this
 
 retention:

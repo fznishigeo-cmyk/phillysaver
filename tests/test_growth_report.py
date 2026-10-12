@@ -21,7 +21,7 @@ import pytest
 
 from dealradar import cli
 from dealradar.config import AppConfig, load_config
-from dealradar.growth import google, meta, report, site_health, stripe_stats
+from dealradar.growth import google, google_ads, meta, report, site_health, stripe_stats
 
 NOW = datetime(2026, 10, 11, 12, 23, tzinfo=timezone.utc)  # 08:23 in New York
 TODAY_START = int(datetime(2026, 10, 11, 4, 0, tzinfo=timezone.utc).timestamp())
@@ -32,8 +32,12 @@ META_TOKEN = "EAAFAKEMETASYSTEMTOKEN"
 STRIPE_KEY = "rk_live_FAKESTRIPEKEY"
 BOT_TOKEN = "123456:FAKE-BOT-TOKEN"
 ADMIN_CHAT = "999888"
+GADS_ENV = {"GOOGLE_ADS_CLIENT_ID": "123-fake.apps.googleusercontent.com",
+            "GOOGLE_ADS_CLIENT_SECRET": "GOCSPX-FAKESECRET",
+            "GOOGLE_ADS_REFRESH_TOKEN": "1//FAKE-REFRESH-TOKEN"}
+GADS_TOKEN = "ya29.FAKE-ADS-ACCESS-TOKEN"
 
-ENV_NAMES = ("GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
+ENV_NAMES = (*GADS_ENV, "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
              "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "TELEGRAM_CHANNEL_ID",
              "GITHUB_STEP_SUMMARY")
@@ -65,6 +69,16 @@ SC_PAGES = {"rows": [{"keys": ["https://wowpriced.com/hacks.html"], "clicks": 12
 SITEMAP = {"path": "https://wowpriced.com/sitemap.xml", "lastDownloaded": "2026-10-10T07:12:00Z",
            "isPending": False, "warnings": "2", "errors": "1",
            "contents": [{"type": "web", "submitted": "7", "indexed": "0"}]}
+
+
+GADS_ROWS = [
+    {"segments": {"date": "2026-10-04"}, "metrics": {"costMicros": "2500000", "impressions": "400",
+                                                     "clicks": "10", "conversions": 1.0}},
+    {"segments": {"date": "2026-10-09"}, "metrics": {"costMicros": "1000000", "impressions": "100",
+                                                     "clicks": "3"}},
+    {"segments": {"date": "2026-10-10"}, "metrics": {"costMicros": "4560000", "impressions": "321",
+                                                     "clicks": "12", "conversions": 2.0}},
+]
 
 
 def insights(spend: str, start_trial_key: str) -> dict:
@@ -133,6 +147,12 @@ class FakeApis:
         auth = request.headers.get("authorization", "")
         if host == "oauth2.googleapis.com":
             form = parse_qs(request.content.decode())
+            if form["grant_type"] == ["refresh_token"]:
+                assert {k: v[0] for k, v in form.items() if k != "grant_type"} == {
+                    "client_id": GADS_ENV["GOOGLE_ADS_CLIENT_ID"],
+                    "client_secret": GADS_ENV["GOOGLE_ADS_CLIENT_SECRET"],
+                    "refresh_token": GADS_ENV["GOOGLE_ADS_REFRESH_TOKEN"]}
+                return httpx.Response(200, json={"access_token": GADS_TOKEN, "expires_in": 3599})
             assert form["grant_type"] == ["urn:ietf:params:oauth:grant-type:jwt-bearer"]
             jwt = form["assertion"][0]
             if self.pub_path is not None:
@@ -169,6 +189,17 @@ class FakeApis:
             i = 0 if after is None else [s["id"] for s in self.subs].index(after) + 1
             page = self.subs[i:i + 4]
             return httpx.Response(200, json={"data": page, "has_more": i + 4 < len(self.subs)})
+        if host == "googleads.googleapis.com":
+            assert auth == f"Bearer {GADS_TOKEN}"
+            assert path == "/v26/customers/4976667972/googleAds:search"
+            assert request.headers["login-customer-id"] == "5861019939"
+            assert "developer-token" not in request.headers
+            body = json.loads(request.content)
+            assert "BETWEEN '2026-10-04' AND '2026-10-10'" in body["query"]
+            if "pageToken" not in body:  # two pages, to prove paging
+                return httpx.Response(200, json={"results": GADS_ROWS[:2], "nextPageToken": "p2"})
+            assert body["pageToken"] == "p2"
+            return httpx.Response(200, json={"results": GADS_ROWS[2:]})
         if host == "api.telegram.org":
             self.telegram.append(json.loads(request.content))
             return httpx.Response(200, json={"ok": True})
@@ -693,3 +724,84 @@ def test_cli_never_prints_metrics_report_or_tokens(rsa_key, tmp_path, monkeypatc
     assert "meta_ads: error HTTPStatusError 400" in caplog.messages
     assert "ga4: ok" in caplog.messages and "telegram: sent" in caplog.messages
     assert fake.verified == 1
+
+
+# ------------------------------------------------------------------ Google Ads
+
+
+def gads_cfg(cfg):
+    cfg.growth_google_ads_customer_id = "4976667972"
+    cfg.growth_google_ads_login_customer_id = "5861019939"
+    return cfg
+
+
+def test_google_ads_totals_yesterday_and_window(cfg, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    for k, v in GADS_ENV.items():
+        monkeypatch.setenv(k, v)
+    with client_for(FakeApis()) as client:
+        data, status = report.collect(gads_cfg(cfg), NOW, client)
+    assert status["google_ads"] == "ok"
+    assert data["google_ads"] == {
+        "yesterday": {"spend": 4.56, "impressions": 321, "clicks": 12, "conversions": 2.0},
+        "window": {"spend": 8.06, "impressions": 821, "clicks": 25, "conversions": 3.0}}
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "Ad spend: $4.56 / $8.06" in text  # no Meta: Google alone
+    assert "== Google Ads ==\nSpend $4.56 / $8.06, impressions 321 / 821, clicks 12 / 25, " \
+           "conversions 2 / 3" in text
+    assert not any(v in caplog.text for v in (*GADS_ENV.values(), GADS_TOKEN))
+
+
+def test_google_ads_skipped_without_its_secrets_or_account(cfg, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    with client_for(FakeApis()) as client:
+        _, status = report.collect(gads_cfg(cfg), NOW, client)
+    assert status["google_ads"] == "skipped"
+    assert "google_ads: skipped (GOOGLE_ADS_CLIENT_ID not set)" in caplog.messages
+    for k, v in GADS_ENV.items():
+        monkeypatch.setenv(k, v)
+    cfg.growth_google_ads_customer_id = ""
+    with client_for(FakeApis()) as client:
+        _, status = report.collect(cfg, NOW, client)
+    assert status["google_ads"] == "skipped"
+
+
+@pytest.mark.parametrize("host, code, body, logged", [
+    ("oauth2.googleapis.com", 400,
+     {"error": "invalid_grant", "error_description": "Bad 1//FAKE-REFRESH-TOKEN"},
+     "google_ads: error HTTP 400 invalid_grant"),
+    ("googleads.googleapis.com", 403,
+     {"error": {"code": 403, "message": "secret 7316642", "status": "PERMISSION_DENIED",
+                "details": [{"errors": [{"errorCode": {"authorizationError": "USER_PERMISSION_DENIED"},
+                                         "message": "customer 4976667972 <b>x</b>"}]}]}},
+     "google_ads: error HTTP 403 PERMISSION_DENIED USER_PERMISSION_DENIED"),
+    ("googleads.googleapis.com", 502, None, "google_ads: error HTTP 502"),
+])
+def test_google_ads_errors_log_only_googles_codes(cfg, monkeypatch, caplog, host, code, body, logged):
+    for k, v in GADS_ENV.items():
+        monkeypatch.setenv(k, v)
+
+    def handler(request):
+        if request.url.host == host:
+            return (httpx.Response(code, json=body) if body is not None
+                    else httpx.Response(code, text=f"oops {GADS_TOKEN}"))
+        return FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        _, status = report.collect(gads_cfg(cfg), NOW, client)
+    assert status["google_ads"] == "error"
+    assert logged in caplog.messages
+    for leak in (*GADS_ENV.values(), GADS_TOKEN, "7316642", "4976667972", "<b>"):
+        assert leak not in caplog.text
+
+
+def test_config_loader_reads_google_ads_ids(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("growth:\n  google_ads_customer_id: 497-666-7972\n"
+                    "  google_ads_login_customer_id: '586-101-9939'\n")
+    c = load_config(path)
+    assert (c.growth_google_ads_customer_id, c.growth_google_ads_login_customer_id,
+            c.growth_google_ads_api_version) == ("4976667972", "5861019939", "v26")
+    shipped = load_config()
+    assert shipped.growth_google_ads_customer_id == "4976667972"
+    assert shipped.growth_google_ads_login_customer_id == "5861019939"

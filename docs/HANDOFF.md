@@ -36,6 +36,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   `META_SYSTEM_TOKEN`, `STRIPE_SECRET_KEY`) and sends the report only by
   email (`REPORT_EMAIL_TO`, needs SMTP_*) or the Telegram admin chat. The
   public log shows section names and status only.
+- **Google Ads (read-only so far):** ad account 497-666-7972 under manager
+  586-101-9939; API access is on Cloud project `wowpriced-511321` (Explorer
+  level applied 2026-10-12; developer tokens are sunset). The report's
+  `google_ads` section uses the OAuth secrets `GOOGLE_ADS_CLIENT_ID`,
+  `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` (refresh token from
+  the OAuth Playground with the project's own web client) and logs only
+  Google's error codes. API version pinned in config (`v26`).
 - **Source health is private to the operator's view:** it is in each run's
   Actions summary, never on the site (note: Actions pages of a public repo
   are viewable by anyone who looks).

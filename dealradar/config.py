@@ -141,6 +141,9 @@ class AppConfig:
     growth_meta_ad_account_id: str = ""
     growth_meta_page_id: str = ""
     growth_instagram_user_id: str = ""
+    growth_google_ads_api_version: str = "v26"
+    growth_google_ads_customer_id: str = ""
+    growth_google_ads_login_customer_id: str = ""
     growth_monthly_price_usd: float = 9.99
 
     # -- members: Stripe subscribers get every new verified deal by email --
@@ -292,6 +295,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.growth_meta_ad_account_id = gs("meta_ad_account_id").removeprefix("act_")
     cfg.growth_meta_page_id = gs("meta_page_id")
     cfg.growth_instagram_user_id = gs("instagram_user_id")
+    cfg.growth_google_ads_api_version = (gs("google_ads_api_version")
+                                         or cfg.growth_google_ads_api_version)
+    cfg.growth_google_ads_customer_id = re.sub(r"\D", "", gs("google_ads_customer_id"))
+    cfg.growth_google_ads_login_customer_id = re.sub(r"\D", "", gs("google_ads_login_customer_id"))
     cfg.growth_monthly_price_usd = float(g("growth", "monthly_price_usd",
                                            default=cfg.growth_monthly_price_usd))
 
