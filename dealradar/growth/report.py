@@ -50,7 +50,7 @@ def _critic_shadow(db_path, now: datetime) -> dict:
         db.close()
 
 
-def collect(cfg, now: datetime, client: Any, *, db_path="state.db") -> tuple[dict, dict]:
+def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dict]:
     """(section -> data, section -> 'ok' | 'skipped' | 'error')."""
     tz = ZoneInfo(cfg.timezone)
     today = now.astimezone(tz).date()
@@ -74,7 +74,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path="state.db") -> tuple[dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
-        "critic_shadow": ([("state.db", Path(db_path).is_file())],
+        # Only an explicit snapshot (the CLI passes --db): never a stray local file.
+        "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "site_health": ([("publish.custom_domain", cfg.custom_domain)],
                         lambda: site_health.check(client, cfg, now)),
@@ -324,7 +325,7 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
 
 
 def run(cfg, now: datetime | None = None, *, http_client: Any = None,
-        smtp_factory: Any = None, db_path="state.db") -> int:
+        smtp_factory: Any = None, db_path=None) -> int:
     """The exit code: 1 only when every configured section failed; a
     delivery failure is logged (channel + error class) but exits 0."""
     now = now or now_utc()
