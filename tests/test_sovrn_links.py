@@ -170,4 +170,4 @@ def test_pipeline_workflows_pass_the_sovrn_secret():
     from pathlib import Path
     for wf in ("fast.yml", "hourly.yml"):
         text = (Path(__file__).resolve().parent.parent / ".github/workflows" / wf).read_text()
-        assert "SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY }}" in text
+        assert "SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}" in text

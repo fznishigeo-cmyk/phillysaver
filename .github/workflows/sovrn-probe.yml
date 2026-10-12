@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Ask Sovrn where one wrapped link goes
         env:
-          SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY }}
+          SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}
         run: |
           python3 - <<'PY'
           import os, re, urllib.error, urllib.parse, urllib.request

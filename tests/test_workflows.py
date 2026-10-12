@@ -192,8 +192,10 @@ def test_hourly_shape() -> None:
 
     run_step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar run")
     assert set(run_step["env"]) == set(SECRET_NAMES)
+    # The operator saved the Sovrn link key as SOVRN_API_KEY2 (2026-10-12).
+    renamed = {"SOVRN_API_KEY": "${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}"}
     for name, value in run_step["env"].items():
-        assert value == "${{ secrets.%s }}" % name
+        assert value == renamed.get(name, "${{ secrets.%s }}" % name)
 
 
 def test_fast_shape() -> None:
@@ -418,7 +420,8 @@ def test_no_workflow_pushes_to_main() -> None:
 
 def test_no_secret_is_echoed() -> None:
     """`${{ secrets.X }}` appears only as env-map values, never inside run/echo."""
-    env_line = re.compile(r"^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z_]+ \}\}$")
+    # One secret, or a renamed secret with its old name as fallback.
+    env_line = re.compile(r"^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z0-9_]+( \|\| secrets\.[A-Z0-9_]+)? \}\}$")
     for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
         for line in p.read_text().splitlines():
             if "secrets." in line:
