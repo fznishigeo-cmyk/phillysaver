@@ -662,20 +662,37 @@ _PRODUCT_IMAGE_JUNK = re.compile(
     re.I)
 
 
-_SHORT_LINK_HOSTS = ("on.ltk.com", "goto.target.com", "amzn.to", "a.co")
-_SHORT_LINK_PER_RUN = 20
+_SHORT_LINK_HOSTS = (
+    "on.ltk.com", "goto.target.com", "amzn.to", "a.co", "zdcs.link",
+    "creator.anchor.store", "go.magik.ly", "shoplowes.me", "link.amazon",
+    "go.dealmoon.com", "clicks.trx-hub.com",
+)
+_SHORT_LINK_PER_RUN = 60
+
+
+def _site_of(url: str) -> str:
+    """The site a URL belongs to, subdomains folded (go.dealnews.com ->
+    dealnews.com); "" when it has none. Two labels is enough here: it only
+    tells a deal site's own redirect from a retailer's page."""
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+    site = ".".join(host.split(".")[-2:])
+    return site if "." in site else ""
 
 
 def _resolve_short_links(db: DB, fetcher, deadline: float | None,
-                         cfg: AppConfig) -> int:
-    """Resolve photo-less short links once, preserving the deal's identity."""
+                         cfg: AppConfig, *, stats: dict | None = None) -> int:
+    """Resolve photo-less redirect links once, newest first, keeping identity."""
     from .dedupe import _DEAL_FIELDS
     from .http_client import extract_asin, is_challenge_url, resolve_redirects
 
     resolved = tried = 0
     now = util.now_utc()
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
-    for deal in db.all_deals():
+    for deal in sorted(db.all_deals(), key=lambda d: str(d.get("first_seen_at") or ""),
+                       reverse=True):
         if deal.get("image_url") or deal.get("link_shared") or \
                 "link_resolve_tried" in (deal.get("flags") or []):
             continue
@@ -684,8 +701,22 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             if died is None or now - died > show_dead:
                 continue
         link = deal.get("canonical_url") or ""
-        if (urlsplit(link).hostname or "").lower() not in _SHORT_LINK_HOSTS:
+        try:
+            parts = urlsplit(link)
+            host = (parts.hostname or "").lower()
+        except ValueError:
             continue
+        if parts.scheme not in ("http", "https") or not host or is_challenge_url(link):
+            continue
+        if host not in _SHORT_LINK_HOSTS:
+            domain = _site_of(link)
+            # Known sellers remain product pages even if credited as a source.
+            if not domain or domain.startswith("amazon.") or \
+                    domain in {r + ".com" for r in _PRODUCT_IMAGE_RETAILERS}:
+                continue
+            if not any(domain == _site_of(s.get("source_url") or "")
+                       for s in db.sightings_for(deal["id"])):
+                continue
         if deadline is not None and time.monotonic() > deadline:
             break
         try:
@@ -711,8 +742,30 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
                        canonical_url=target if changed else None)
         if tried >= _SHORT_LINK_PER_RUN:
             break
-    log.info("short links: %d of %d attempts resolved", resolved, tried)
+    if stats is not None:
+        stats.update(resolved=resolved, tried=tried)
     return resolved
+
+
+def _photo_gap_summary(db: DB, redirects: dict) -> tuple[dict, str]:
+    """Only host/count diagnostics: no item names, paths or query strings."""
+    from collections import Counter
+
+    hosts = Counter()
+    for deal in db.all_deals(status="alive"):
+        if not deal.get("image_url"):
+            try:
+                host = (urlsplit(deal.get("canonical_url") or "").hostname or "").lower()
+            except ValueError:
+                host = ""
+            hosts[host or "unknown"] += 1
+    gaps = {"alive_without_photo": sum(hosts.values()),
+            "by_canonical_host": dict(hosts.most_common(10))}
+    counts = ", ".join(f"{h}: {n}" for h, n in gaps["by_canonical_host"].items()) or "none"
+    lines = (f"photo gaps: {gaps['alive_without_photo']} alive deals without a photo; "
+             f"by canonical host: {counts}\n"
+             f"redirects: resolved {redirects['resolved']} of {redirects['tried']}\n")
+    return gaps, lines
 
 
 def _backfill_product_images(db: DB, fetcher, deadline: float | None,
@@ -1340,8 +1393,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["images_cleared"] = (
             _check_stored_images(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, now)
             if fast_lane else 0)
+        summary["redirects"] = {"resolved": 0, "tried": 0}
         summary["short_links"] = (
-            _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg)
+            _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
+                                 stats=summary["redirects"])
             if fast_lane else 0)
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
@@ -1382,6 +1437,15 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Source health is the operator's only: the run's GitHub Actions
         # summary (private to the repository), never the public site.
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if fast_lane:
+            summary["photo_gaps"], photo_lines = _photo_gap_summary(db, summary["redirects"])
+            log.info("%s", photo_lines.rstrip())
+            if step_summary:
+                try:
+                    with open(step_summary, "a", encoding="utf-8") as fh:
+                        fh.write(photo_lines + "\n")
+                except OSError as e:
+                    log.warning("photo summary not written: %s", e)
         if step_summary and site_res.get("health"):
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:

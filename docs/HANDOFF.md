@@ -109,6 +109,15 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Photo redirects (Codex task 014, merged 2026-10-12):** the fast lane
+  follows a photo-less deal's redirect link (60 per run, newest first, one
+  attempt ever) when its host is a known tracker (`_SHORT_LINK_HOSTS`) or
+  the site of one of the deal's own sources (dealnews.com, slickdeals.net
+  ... linking through themselves); retailers, Amazon and bot walls are never
+  resolved. An Amazon landing sets the ASIN (Keepa photo); any other
+  retailer goes to the og:image pass. Fast runs write "photo gaps" (top
+  canonical hosts, counts only) and redirects resolved/tried to the Actions
+  summary. The hourly `site-check.yml` loads every live photo in Chromium.
 - **Site health in the daily report** (Codex task 012, merged 2026-10-11):
   the operator's email opens with photo coverage, the stores and sources
   missing most photos, a 60-photo load check, minutes since the last publish
