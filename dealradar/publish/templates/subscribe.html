@@ -139,7 +139,7 @@ p{margin:0 0 14px}
   var q = new URLSearchParams(location.search), notice = document.getElementById("notice");
   var text = q.has("unsubscribed") ? "You're unsubscribed — no more emails from us."
     : q.has("confirmed") ? "You're confirmed. Our deals email starts soon."
-    : q.has("ok") ? "You're on the list. Our deals email starts soon; you'll get one confirmation email first." : "";
+    : q.has("ok") ? "You're on the list. When our deals email starts, we'll send you one email to confirm first." : "";
   if (text) { notice.textContent = text; notice.style.display = ""; }
 })();
 </script><!--/support-->

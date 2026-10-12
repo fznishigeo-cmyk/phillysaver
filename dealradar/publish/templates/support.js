@@ -97,7 +97,7 @@
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (r.status === 200 && j.ok === true) {
-          say("You're on the list. Our deals email starts soon; you'll get one confirmation email first.", false);
+          say("You're on the list. When our deals email starts, we'll send you one email to confirm first.", false);
           track("sign_up", {method: "email"});
         } else {
           say(r.status === 429 ? "Too many tries. Please try again in an hour."

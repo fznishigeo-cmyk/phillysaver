@@ -195,6 +195,24 @@ class TestAmazonAffiliateTag:
             else:
                 assert "tag=" not in url and doc["meta"]["disclosure"] == cfg.ftc_disclosure
 
+    def test_code_deals_go_to_amazon_with_our_tag_and_keep_the_steps(self):
+        """Operator (2026-10-12): a code/coupon deal links the source post,
+        except when its store link carries our Amazon tag; the card keeps the
+        code and the "via" link to the post either way."""
+        from tests.test_publish_site import NOW, make_deal
+        sightings = [{"source_name": "Slickdeals", "source_url": "https://slickdeals.net/f/1",
+                      "seen_at": "2026-10-09T12:00:00+00:00", "final_price": 10.0}]
+        amazon = make_deal(canonical_url="https://www.amazon.com/dp/B0ABCDEF12", store="Amazon",
+                           codes=["SAVE10"], sightings=sightings)
+        tagged = _serialize_deal(amazon, NOW, "wowpriced-20")
+        assert tagged["needs_steps"] and tagged["codes"] == ["SAVE10"]
+        assert tagged["url"] == "https://www.amazon.com/dp/B0ABCDEF12?tag=wowpriced-20"
+        assert tagged["credits"][0]["url"] == "https://slickdeals.net/f/1"
+        # No Store ID, or another store: the post that explains the steps.
+        assert _serialize_deal(amazon, NOW, "")["url"] == "https://slickdeals.net/f/1"
+        walmart = dict(amazon, canonical_url="https://www.walmart.com/ip/1", store="Walmart")
+        assert _serialize_deal(walmart, NOW, "wowpriced-20")["url"] == "https://slickdeals.net/f/1"
+
     def test_emails_never_carry_the_tag(self):
         from dealradar.publish import newsletter
         assert "tag=" not in newsletter._deal_url({"canonical_url": "https://www.amazon.com/dp/B0ABCDEF12"})

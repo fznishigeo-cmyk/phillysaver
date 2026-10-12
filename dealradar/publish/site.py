@@ -294,8 +294,18 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "") -
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)
-    url = post if steps and post else \
-        rewrite_affiliate(canon, amazon_tag) if canon else (credits[0]["url"] if credits else "")
+    store_link = rewrite_affiliate(canon, amazon_tag) if canon else ""
+    # A deal that needs steps links the post that explains them, except when
+    # the store link carries our Amazon tag (operator, 2026-10-12): then Get
+    # deal goes to Amazon and the card keeps the code, the steps and the
+    # "via" link to the post.
+    try:
+        host = (urlsplit(canon).hostname or "").lower() if canon.startswith("https://") else ""
+    except ValueError:
+        host = ""
+    ours = bool(steps and amazon_tag and host in _AMAZON_HOSTS)
+    url = post if steps and post and not ours else \
+        store_link if canon else (credits[0]["url"] if credits else "")
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the

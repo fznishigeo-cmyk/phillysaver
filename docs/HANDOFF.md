@@ -101,7 +101,10 @@ Keep this file current: whoever stops working updates it in their last commit.
   multi-buy / in-store condition) links to the source post that explains
   them, and its card shows "How to get this price" with tap-to-copy codes.
   A plain-price deal links straight to the product (publish/site.py
-  `_needs_steps`).
+  `_needs_steps`). Exception (operator, 2026-10-12): when the store link
+  is an https amazon.com link and the Amazon Store ID is set, Get deal goes
+  to Amazon with our tag; the card keeps the code, the steps and the "via"
+  link to the post.
 - **Customer emails (changed 2026-10-12):** nothing is sent yet. Join free
   collects addresses for a daily or weekly deals email the operator plans
   to start in about a month (`newsletter.enabled: false` until then;

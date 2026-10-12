@@ -95,7 +95,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert 'id="subscribe" class="getdeal" href="#join" data-join>Join free' in home
     assert 'id="subbar" class="subbar ready" href="#join" data-join>Join free' in home
     assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
-    assert "You're on the list. Our deals email starts soon; you'll get one confirmation email first." in home
+    assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
     assert "Emails are stored by our Cloudflare Worker and used only for the deals email." in (out / "privacy.html").read_text()
     for name, count in (("index.html", 2), ("subscribe.html", 1)):
         html = (out / name).read_text()
