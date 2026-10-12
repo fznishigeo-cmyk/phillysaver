@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
-<title>Create a free account — wowpriced</title>
+<title>Join wowpriced</title>
 <meta name="description" content="Join wowpriced free for one email with the best deals. Unsubscribe anytime.">
 <link rel="canonical" href="{{SITE_URL}}/join.html">
 <style>
@@ -30,27 +30,10 @@ header a{color:#9fe6da}
 .back{font-size:14px;text-decoration:none}
 .back:hover{text-decoration:underline}
 .wrap{position:relative;max-width:1000px;margin:0 auto;padding:80px 24px;isolation:isolate;overflow:hidden}
-.joincard{position:relative;max-width:520px;margin:auto;padding:40px;background:var(--card);
-  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
 .wrap::before{content:"";position:absolute;z-index:-1;top:120px;left:calc(50% + 180px);
   width:240px;height:300px;border:1px solid var(--accent);border-radius:120px 120px 24px 120px;
   background:color-mix(in srgb,var(--accent) 6%,transparent);opacity:.25;transform:rotate(18deg)}
-.kicker{margin:0 0 16px;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase}
-h1{margin:0 0 28px;font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-.6px}
-.joinform{display:flex;flex-direction:column;gap:12px}
-.joinform label{font-size:14px;font-weight:500}
-.joinform input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;
-  background:var(--card);color:var(--fg);font:inherit}
-.pwbtn{width:100%;margin-top:8px;padding:12px 22px;border:1px solid var(--accent);border-radius:10px;
-  background:var(--accent);color:var(--accent-fg);font:inherit;font-weight:600;cursor:pointer;
-  box-shadow:none;transition:background-color 150ms}
-.pwbtn:hover,.pwbtn:focus-visible{background:var(--accent-hover);transform:none}
-.pwbtn:disabled{opacity:.6;cursor:wait}
-a:focus-visible,input:focus-visible,.pwbtn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-header a:focus-visible{outline-color:#2fc4b2}
-.joinform .meta,.privacy{margin:4px 0 0;color:var(--muted);font-size:13px;text-align:center}
-.privacy{margin-top:12px}
-[data-join-message]{margin:8px 0 0;font-size:14px;overflow-wrap:anywhere}
+{{JOIN_STYLE}}
 @media (max-width:640px){.wrap{padding:40px 16px}.wrap::before{display:none}
   .joincard{padding:28px 24px}.hrow{padding:16px;gap:12px}.back{font-size:13px}h1{font-size:27px}}
 </style>
@@ -61,12 +44,7 @@ header a:focus-visible{outline-color:#2fc4b2}
 <a class="back" href="/">Back to deals</a>
 </div></header>
 <main class="wrap">
-  <section class="joincard" aria-labelledby="join-title">
-    <p class="kicker">THE DAY'S BEST DEALS. FREE.</p>
-    <h1 id="join-title">Create a free account</h1>
-    {{JOIN_FORM}}
-    <p class="privacy">By joining, you agree to our <a href="/privacy.html">privacy policy</a>.</p>
-  </section>
+  {{JOIN_CARD}}
 </main>
 <script>{{SUPPORT_SCRIPT}}</script>
 </body>

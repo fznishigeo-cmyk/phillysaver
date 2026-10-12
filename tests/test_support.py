@@ -101,7 +101,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
         html = (out / name).read_text()
         assert "A quick, honest ask." in html and BODY in html
         assert 'href="/join">Join free</a>' in html
-        assert '<form class="joinform">' not in html
+        assert ('<form class="joinform">' in html) == (name == "index.html")
         assert html.count(NOTE) == count
         assert html.count(f'data-support href="{LINK}"') == count
         # Every Stripe button has its disclaimer immediately in the same section.
@@ -109,7 +109,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
             assert 'target="_blank" rel="noopener"' in match.group()
             assert NOTE in html[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
     assert "wowpriced is free for everyone." in home
-    assert 'track("support_click", {plan: "once"})' in home and 'track("sign_up", {method: "email"})' in home
+    assert 'track("support_click", {plan: "once"})' in home and 'rememberJoin("email")' in home
     assert 'fetch(api + "/subscribe"' in home and 'JSON.stringify({email: input.value.trim()})' in home
     assert 'try { dismissed = Number(localStorage.getItem(KEY))' in home
     assert 'try { localStorage.setItem(KEY, String(Date.now() + WEEK)); }' in home
@@ -229,31 +229,30 @@ def test_join_page_and_every_join_link(tmp_path, link):
                     seo_indexnow_key="0123456789abcdef")
     out, _, _, _ = render(tmp_path, cfg, [make_deal()])
     join = (out / "join.html").read_text()
-    assert "<title>Create a free account — wowpriced</title>" in join
+    assert "<title>Join wowpriced</title>" in join
     assert '<link rel="canonical" href="https://wowpriced.com/join.html">' in join
-    assert "THE DAY'S BEST DEALS. FREE." in join
-    assert '<h1 id="join-title">Create a free account</h1>' in join
+    assert "The day's best deals in one email. Free. Unsubscribe anytime." in join
+    assert '<h1 id="join-title">Join wowpriced</h1>' in join
     assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email"' in join
     assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 1
     assert site.JOIN_FORM in join and EMAIL_LINE in join
     assert '<a href="/privacy.html">privacy policy</a>' in join
-    assert "max-width:520px" in join and "border-radius:12px" in join
+    assert "max-width:480px" in join and "border-radius:12px" in join
     assert ".wrap::before{display:none}" in join
     assert "noindex" not in join
     assert "Disallow: /join" not in (out / "robots.txt").read_text()
     assert "<loc>https://wowpriced.com/join.html</loc>" in (out / "sitemap.xml").read_text()
     assert "https://wowpriced.com/join.html" in json.loads(site.seo.due_list_path(out).read_text())
     assert 'fetch(api + "/subscribe"' in join and 'JSON.stringify({email: input.value.trim()})' in join
-    assert 'track("sign_up", {method: "email"})' in join
+    assert 'rememberJoin("email")' in join
     for path in out.rglob("*.html"):
         html = path.read_text()
         assert 'id="authmodal"' not in html, path
-        assert "data-join-close" not in html and "function open()" not in html, path
         visible = re.sub(r"<script\b.*?</script>|<style\b.*?</style>", "", html, flags=re.S)
         for attrs, text in re.findall(r"<a\b([^>]*)>(.*?)</a>", visible, re.S):
             if re.sub(r"<[^>]+>", "", text).strip() == "Join free":
                 assert 'href="/join"' in attrs, path
-        if path.name != "join.html":
+        if path.name not in {"join.html", "index.html"}:
             assert 'class="joinform"' not in html, path
     home = (out / "index.html").read_text()
     for selector in ('id="subscribe"', 'id="subbar"', 'class="pwbtn alt"'):

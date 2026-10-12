@@ -1,0 +1,35 @@
+.joincard{position:relative;width:100%;max-width:480px;margin:auto;padding:36px 40px;
+  background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 16px 48px rgba(0,0,0,.12);text-align:left}
+.joincard [hidden],.joinoverlay[hidden]{display:none!important}
+.joincard h1,.joincard h2{margin:0 24px 12px 0;font-size:28px;line-height:1.2;font-weight:600;letter-spacing:-.6px}
+#join-description{margin:0 0 24px;color:var(--muted);font-size:15px;line-height:1.5}
+.joinchoice,.joincard .pwbtn{display:block;width:100%;height:48px;margin:0;padding:10px 16px;
+  border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--fg);
+  font:500 15px/1.4 system-ui,sans-serif;cursor:pointer;box-shadow:none}
+.joinchoice:hover{border-color:var(--accent)}
+.joincard .pwbtn{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.joincard .pwbtn:disabled{opacity:.6;cursor:wait}
+.joingoogle{display:flex;align-items:center;justify-content:center;width:100%;height:48px;
+  margin-bottom:12px;border-radius:10px;background:#202124;overflow:hidden}
+.joincard .joinform{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.joincard label{font-size:14px;font-weight:500}
+.joincard input{box-sizing:border-box;width:100%;height:48px;padding:12px 14px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);color:var(--fg);font:inherit}
+.joincard .meta{display:none}
+.joinlegal{margin:18px 0 0;color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+.joincard a{color:var(--accent)}
+.joincard [data-join-message],#join-google-message{margin:8px 0;font-size:14px;overflow-wrap:anywhere}
+.joinclose{position:absolute;top:10px;right:10px;width:36px;height:36px;border:0;
+  background:transparent;color:var(--muted);font-size:18px;cursor:pointer;border-radius:10px}
+.joincard :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.joinoverlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;
+  padding:24px;background:rgba(10,18,24,.3)}
+.joinoverlay>[role="dialog"]{width:100%;max-width:480px;max-height:calc(100dvh - 48px);overflow:auto;border-radius:12px}
+@media (max-width:640px){
+  .joinoverlay{align-items:flex-end;padding:0;background:rgba(10,18,24,.16)}
+  .joinoverlay>[role="dialog"]{max-width:none;max-height:45vh;max-height:45dvh;overflow:auto;overscroll-behavior:contain;border-radius:16px 16px 0 0}
+  .joinoverlay .joincard{max-width:none;padding:24px 24px max(20px,env(safe-area-inset-bottom));border-radius:16px 16px 0 0}
+  .joincard h1,.joincard h2{font-size:25px}
+  #join-description{margin-bottom:18px}
+}

@@ -55,6 +55,10 @@ async function readSite(path) {
 }
 async function guardPage(page) {
   page.setDefaultTimeout(STEP_TIMEOUT_MS);
+  // The weekly sign-up prompt would cover the page mid-walk: mark it already seen.
+  await page.addInitScript(() => {
+    try { localStorage.setItem("wp.join.promptUntil", String(Date.now() + 7 * 864e5)); } catch (e) { /* no storage: no prompt */ }
+  });
   await page.route("**/*", async (route) => {
     const request = route.request(), url = new URL(request.url());
     if (BLOCK.test(url.href) || request.method() !== "GET" ||

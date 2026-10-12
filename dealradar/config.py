@@ -200,6 +200,9 @@ class AppConfig:
     support_enabled: bool = False     # absent block preserves membership pages
     support_payment_link: str = ""
     support_monthly_link: str = ""    # recurring Payment Link ($1 x quantity)
+    join_prompt: bool = True
+    join_prompt_delay_s: int = 15
+    join_apple: bool = False          # reserved until Apple sign-in is supported
     # Loaded configs enable all five; an empty programmatic config preserves
     # the legacy template (including the dormant membership snapshots).
     engagement: dict[str, bool] = field(default_factory=dict)
@@ -400,6 +403,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.support_enabled = bool(g("support", "enabled", default=False))
     cfg.support_payment_link = support_link(g("support", "payment_link", default=""))
     cfg.support_monthly_link = support_link(g("support", "monthly_link", default=""))
+    cfg.join_prompt = bool(g("join", "prompt", default=True))
+    cfg.join_prompt_delay_s = max(15, int(g("join", "prompt_delay_s", default=15)))
+    cfg.join_apple = bool(g("join", "apple", default=False))
     cfg.engagement = {name: bool(g("engagement", name, default=True)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
