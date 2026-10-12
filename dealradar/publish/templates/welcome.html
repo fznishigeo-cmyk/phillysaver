@@ -173,7 +173,7 @@ p{margin:0 0 14px}
           // the trial's billing terms are shown only with the new shape.
           if (me.reason === "trial" && "trial_available" in me) {
             show("<b>Your free trial has started.</b> You won't be charged until " +
-                 (day ? text(day) : "the trial ends") + ". Then $9.99/month, renews monthly " +
+                 (day ? text(day) : "the trial ends") + ". Then your chosen plan renews automatically " +
                  "until you cancel." + manageBtn);
           } else if (me.member) {
             show("<b>Membership activated</b> for " + text(me.email) +

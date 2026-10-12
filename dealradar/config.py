@@ -161,6 +161,7 @@ class AppConfig:
     paywall_teaser_count: int = 8      # unlocked deals on the public site
     paywall_teaser_pool: int = 0       # each drop unlocks a new teaser_count of the top N (0 = every live deal)
     paywall_trial_days: int = 7
+    paywall_yearly_price_usd: float = 0.0  # page copy only; 0 hides yearly
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
     # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
@@ -321,6 +322,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.paywall_teaser_pool = 0 if pool <= 0 else max(cfg.paywall_teaser_count, pool)
     cfg.paywall_trial_days = max(0, int(g("paywall", "trial_days",
                                           default=cfg.paywall_trial_days)))
+    cfg.paywall_yearly_price_usd = max(0.0, float(g("paywall", "yearly_price_usd", default=0) or 0))
     cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")
     cfg.paywall_google_client_id = str(g("paywall", "google_client_id", default="") or "").strip()
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))

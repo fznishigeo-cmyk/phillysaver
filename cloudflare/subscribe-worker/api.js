@@ -11,7 +11,7 @@
  *                      | 403 wrong_account | 404 unknown_session | 409 already_claimed
  *                      | 502 stripe_unavailable | 401
  *   POST /api/checkout Bearer <session>  -> 200 {url} (Stripe Checkout) | 409 already_member
- *                      | 409 payment_issue | 409 contact_support (each with me)
+ *                      | 409 plan_unavailable | 409 payment_issue | 409 contact_support (each with me)
  *                      | 503 checkout_unavailable {fallback_url} | 401
  *   POST /api/portal   Bearer <session>  -> 200 {url} (Stripe billing portal) | 404 no_customer
  *                      | 503 portal_unavailable {fallback_url} | 401
@@ -164,6 +164,7 @@ async function claim(request, env, headers) {
 async function checkout(request, env, headers) {
   const acct = await requireAccount(request, env);
   if (!acct) return json({ error: "unauthorized" }, 401, headers);
+  const plan = (await readJson(request)).plan === "year" ? "year" : "month";
   let status, history;
   try {
     status = await meFor(env, acct, true, true);
@@ -186,11 +187,14 @@ async function checkout(request, env, headers) {
     acct.trial_used = true;
     try { await saveAccount(env, acct); } catch (e) { console.warn("trial_used write failed"); } // the checkout still has no trial
   }
+  if (plan === "year" && !env.STRIPE_YEARLY_PRICE_ID) {
+    return json({ error: "plan_unavailable", me: status }, 409, headers);
+  }
   try {
-    return json({ url: await checkoutUrl(env, acct, status, history.gone) }, 200, headers);
+    return json({ url: await checkoutUrl(env, acct, status, history.gone, plan) }, 200, headers);
   } catch (e) {
     console.warn("checkout unavailable:", e && e.message); // status + path, never Stripe's text
-    return json({ error: "checkout_unavailable", fallback_url: e && e.unsafe ? "" : status.subscribe_url }, 503, headers);
+    return json({ error: "checkout_unavailable", fallback_url: plan === "year" || (e && e.unsafe) ? "" : status.subscribe_url }, 503, headers);
   }
 }
 

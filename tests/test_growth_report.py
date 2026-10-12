@@ -451,6 +451,26 @@ def test_stripe_counts_across_pages():
                   "active": 3, "converted": 1, "canceled": 2, "mrr": 29.97}
 
 
+def test_stripe_mrr_mixed_plans_and_missing_prices():
+    def subscription(status, price=None):
+        return {"status": status, "items": {"data": [{"price": price}]}}
+
+    subs = [
+        subscription("active", {"recurring": {"interval": "year"}, "unit_amount": 4900}),
+        subscription("active", {"recurring": {"interval": "month"}, "unit_amount": 999}),
+        {"status": "active"},
+        subscription("active", {"recurring": {"interval": "year"}, "unit_amount": None}),
+        subscription("trialing", {"recurring": {"interval": "year"}, "unit_amount": 4900}),
+        subscription("canceled", {"recurring": {"interval": "year"}, "unit_amount": 4900}),
+    ]
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"data": subs}))) as client:
+        st = stripe_stats.stats(client, STRIPE_KEY, yesterday_start=TODAY_START - DAY,
+                                window_start=TODAY_START - 7 * DAY, today_start=TODAY_START,
+                                monthly_price=9.99)
+    assert st["active"] == 4
+    assert st["mrr"] == round(49 / 12 + 3 * 9.99, 2)
+
+
 # ------------------------------------------------------------------ sections
 
 
