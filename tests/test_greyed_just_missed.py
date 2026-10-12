@@ -196,7 +196,7 @@ def test_ticker_and_search_use_liveness_correctly():
     rows = [_serialize_deal(make_deal(dedupe_key=str(i), item=f"Lamp {i}", status="dead" if i == 0 else "alive"), NOW) for i in range(3)]
     script = '''
     var state = {deals: JSON.parse(require("fs").readFileSync(0,"utf8")), catTab:0};
-    var TICKER_MAX = 16, CATGROUPS = [["All", null, ""]];
+    var TICKER_MAX = 16, CATGROUPS = [["Trending", null, ""]];
     var num = Number, isLocked = () => false, offer = () => ({}), esc = String, dealKey = d => d.key;
     var values = {q:"Lamp 0", storesel:"", minpct:""};
     var document = {getElementById: id => ({value: values[id]})};

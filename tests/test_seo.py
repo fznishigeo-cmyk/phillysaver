@@ -79,10 +79,10 @@ def test_static_wall_holds_the_free_deals_credits_and_locked_lines(db, cfg, tmp_
     assert "img.example" not in wall and "<img" not in wall
     # Tabs are real links to the hubs, drawn from the one Python list.
     nav = html[html.index('<nav id="cattabs"'):html.index("</nav>", html.index('<nav id="cattabs"'))]
-    assert '<a class="cattab active" href="/" data-i="0">All</a>' in nav
+    assert '<a class="cattab active" href="/" data-i="0">Trending</a>' in nav
     for slug in HUBS:
         assert f'href="/deals/{slug}/"' in nav
-    assert "e.preventDefault();" in html and 'var CATGROUPS = [["All", null, ""]' in html
+    assert "e.preventDefault();" in html and 'var CATGROUPS = [["Trending", null, ""]' in html
     assert '<meta name="robots" content="noimageindex">' in html
 
 

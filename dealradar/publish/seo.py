@@ -35,11 +35,11 @@ logger = logging.getLogger("dealradar.publish.seo")
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
-#: The wall's category tabs, one hub each (All is the home page):
+#: The wall's category tabs, one hub each (Trending is the home page):
 #: (label, categories or "USED", hub slug). index.html's tabs and the hubs
 #: both read this one list, so they cannot drift apart.
 CATGROUPS: tuple[tuple[str, Any, str], ...] = (
-    ("All", None, ""),
+    ("Trending", None, ""),  # the home wall: top picks (operator, 2026-10-12)
     # Sentinel tab: filters on the used/open_box CONDITIONS, not category —
     # the Amazon Warehouse giveaway-priced finds get their own front door.
     ("Used & Open-Box", "USED", "used-open-box"),
