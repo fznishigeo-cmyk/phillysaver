@@ -1633,7 +1633,10 @@ class TestWallPagination:
     def test_filters_sort_and_category_reset_but_publishes_do_not(self, html):
         reset = _between(html, "function resetWall()", "// Easy sorting:")
         assert "state.shown = PAGE_CARDS;" in reset and "render();" in reset
-        assert '["q", "storesel", "minpct", "srcsel"]' in reset
+        assert '["storesel", "minpct", "srcsel"]' in reset
+        search = _between(reset, "function updateSearch()", "function clearSearch()")
+        assert "resetWall();" in search
+        assert 'searchTimer = setTimeout(updateSearch, 150)' in reset
         assert 'el.addEventListener("input", resetWall)' in reset
         assert 'el.addEventListener("change", resetWall)' in reset
         sort = _between(html, 'sortsel.addEventListener("change"', "(function restoreSort()")

@@ -21,6 +21,7 @@ const results = cases.map(c => {
     isLocked:d=>d.locked === true, sortVal:(d,k)=>d[k === 'pct' ? 'pct_at_checkout' : k],
     JITTER_H:3, NO_PHOTO_H:12, moreObserver:null, panel:{},
     filtered:()=>c.rows, paintTicker(){}, paintSources(){}, updatePaywall(){}, openNudge:()=>false,
+    renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
     cardHtml:d=>`<i data-key="${d.key}"></i>`
   };

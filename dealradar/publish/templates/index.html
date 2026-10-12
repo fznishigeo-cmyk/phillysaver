@@ -133,10 +133,9 @@ header .drop,header .dhole{background:#18252c}
        box-shadow:0 6px 20px rgba(0,0,0,.25);text-align:center;cursor:pointer}
 
 /* ---- controls ---- */
-#controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:16px 0 6px}
+#controls{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;align-items:center;margin:16px 0 6px}
 #controls input,#controls select{background:var(--card);color:var(--fg);
   border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
-#controls input[type=search]{flex:1 1 200px;min-width:150px}
 #controls input[type=number]{width:70px}
 #controls label{font-size:13px;color:var(--muted);display:flex;gap:5px;align-items:center;
   background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
@@ -426,10 +425,12 @@ footer .meta{font-size:11.5px}
   #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
   .since{padding:0 12px 2px;font-size:12px}
   #cattabs{padding:4px 12px 8px}
-  #controls{gap:6px}
-  #controls input[type=search]{flex-basis:100%}
-  #controls select{flex:1 1 45%;min-width:0}
-  #controls label{flex:1 1 45%;justify-content:center}
+  #controls{gap:6px;scrollbar-width:none;padding-right:28px;
+            -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);
+            mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
+  #controls::-webkit-scrollbar{display:none}
+  #controls select{flex:none;max-width:220px}
+  #controls label{flex:none}
   .wrap{padding:0 12px 84px}
   .acct{order:4;flex-basis:100%;justify-content:center;font-size:12.5px;margin-top:2px}
   .acct,.acct .in{flex-wrap:wrap;white-space:normal;justify-content:center;row-gap:2px}
@@ -507,7 +508,48 @@ header{--accent-hover:#45d0bf}
   outline:2px solid var(--accent);outline-offset:3px}
 .card:hover{transform:none}
 @media (max-width:640px){#subscribe.getdeal{min-height:44px}}
-<!--/support--></style>
+<!--/support-->
+/* Search occupies its row before any data arrives. */
+.search{flex:1 1 200px;max-width:560px;min-width:160px}
+.searchfield{position:relative}
+.searchfield svg{position:absolute;left:16px;top:14px;width:16px;height:16px;color:var(--muted);pointer-events:none}
+#q{width:100%;height:44px;border:1px solid var(--line);border-radius:999px;
+  background:var(--chip);color:var(--fg);padding:0 44px;font:inherit;font-size:16px;appearance:none}
+#q::-webkit-search-cancel-button{display:none}
+#q:focus-visible,#clearsearch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#clearsearch{position:absolute;right:4px;top:2px;width:40px;height:40px;border:0;border-radius:50%;
+  background:transparent;color:var(--muted);font:inherit;cursor:pointer}
+#searchcount{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:18px;margin:2px 16px 0;font-size:12px;line-height:18px;color:var(--muted)}
+.hrow>.tag{order:8;flex-basis:100%;border:0;padding:0}
+#controls select,#controls label,#surprise{flex-shrink:0;font-size:13px}
+@media (max-width:899px){
+  .hrow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px}
+  .brand{grid-column:1;grid-row:1;font-size:21px}
+  .mark{width:31px;height:31px}
+  .brand a{gap:7px}
+  .drop{grid-column:2;grid-row:1;padding:5px 8px;gap:0}
+  .drop .dial,.drop .droplbl{display:none}
+  .dropt{font-size:16px}
+  #subscribe{grid-column:3;grid-row:1;order:0;width:auto;margin:0!important;white-space:nowrap}
+  #subscribe.getdeal{padding:10px 14px;min-height:44px;font-size:13px}
+  .search{grid-column:1 / -1;grid-row:2;max-width:none;min-width:0;width:100%}
+  #q{height:48px}
+  .searchfield svg{top:16px}
+  #clearsearch{top:4px}
+  .hrow>.tag{grid-column:1 / -1;grid-row:3}
+  .acct{grid-column:1 / -1;grid-row:4}
+  .hrow:has(.trialcta) #subscribe{grid-column:1 / -1;grid-row:2}
+  .hrow:has(.trialcta) .search{grid-row:3}
+  .hrow:has(.trialcta)>.tag{grid-row:4}
+  .hrow:has(.trialcta) .acct{grid-row:5}
+}
+@media (max-width:360px){
+  .brand{font-size:18px}
+  .mark{width:26px;height:26px}
+  .brand a{gap:6px}
+  .hrow{column-gap:6px}
+}
+</style>
 </head>
 <body>
 <section id="ticker" class="tk" aria-label="Live deals" hidden>
@@ -522,6 +564,14 @@ header{--accent-hover:#45d0bf}
   <div class="hrow">
     <h1 class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></h1>
     <span id="tagline" class="tag">verified deals</span>
+    <div class="search" role="search">
+      <div class="searchfield">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="m12 12 5 5"/></svg>
+        <input id="q" type="search" placeholder="Search deals" aria-label="Search deals" aria-describedby="searchcount">
+        <button id="clearsearch" type="button" aria-label="Clear search" hidden>✕</button>
+      </div>
+      <p id="searchcount" role="status" aria-live="polite"></p>
+    </div>
     <div id="drop" class="drop" role="timer" aria-live="off">
       <span id="dropdial" class="dial" aria-hidden="true">
         <span class="dbase"></span>
@@ -549,8 +599,7 @@ header{--accent-hover:#45d0bf}
 </header>
 <div class="wrap">
 <div id="controls">
-  <input id="q" type="search" placeholder="search deals&hellip;" aria-label="search deals">
-  <select id="storesel" aria-label="store filter"><option value="">all stores</option></select>
+  <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
   <select id="sortsel" aria-label="sort order">
     <option value="fresh:-1">sort: fresh drops</option>
     <option value="pct:-1">sort: biggest % off</option>
@@ -560,7 +609,7 @@ header{--accent-hover:#45d0bf}
   </select>
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
-  <select id="srcsel" aria-label="source filter"><option value="">all sources</option><option value="@2">&#10003; confirmed by 2+ sources</option></select>
+  <select id="srcsel" aria-label="Found by"><option value="">Found by: any site</option><option value="@2">&#10003; Confirmed by 2+ sites</option></select>
 </div>
 <div id="content">{{STATIC_WALL}}</div>
 <!--standard--><div id="paywall" class="paywall" hidden>
@@ -778,6 +827,7 @@ header{--accent-hover:#45d0bf}
       tagline += ", " + Math.round(floor) + (floor < 90 ? "–90% off" : "%+ off");
     }
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length;
+    document.getElementById("q").placeholder = "Search " + roughCount(live) + " deals";
     document.getElementById("tagline").textContent =
       tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
 <!--engagement-->    renderEngagement();
@@ -938,39 +988,83 @@ header{--accent-hover:#45d0bf}
     lsSet(SEEN_KEY, JSON.stringify(Object.keys(keySet(deals))));
   }
 
-  function populateSelect(id, values) {
+  function storeKey(name) {
+    return (name || "").trim().replace(/\.com$/i, "").normalize("NFKD")
+      .replace(/[^\x00-\x7F]/g, "").toLowerCase().replace(/'/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+  function countedOptions(id, counts, names) {
     var sel = document.getElementById(id);
-    var seen = {};
-    values.forEach(function (s) {
-      if (s && !seen[s]) {
-        seen[s] = true;
-        var opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s.replace(/_/g, " ");
-        sel.appendChild(opt);
-      }
+    Object.keys(counts).sort(function (a, b) {
+      return counts[b] - counts[a] || names[a].localeCompare(names[b]);
+    }).forEach(function (key) {
+      var opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = names[key] + " (" + counts[key] + ")";
+      sel.appendChild(opt);
     });
   }
-
   function populateStores() {
-    populateSelect("storesel", state.deals.map(function (d) { return d.store || ""; }));
-    populateSources();
-  }
-  // The sites the live deals came from, most deals first, with counts
-  // (locked deals included: a stub carries its sites, never its post).
-  function populateSources() {
-    var sel = document.getElementById("srcsel"), count = {};
+    var counts = Object.create(null), names = Object.create(null);
     state.deals.forEach(function (d) {
       if (d.status === "dead") return;
-      (d.src || []).forEach(function (s) { count[s] = (count[s] || 0) + 1; });
+      var name = (d.store || "").trim().replace(/\.com$/i, ""), key = storeKey(name);
+      if (!key) return;
+      counts[key] = (counts[key] || 0) + 1;
+      if (!names[key]) names[key] = name;
     });
-    Object.keys(count).sort(function (a, b) { return count[b] - count[a] || (a < b ? -1 : 1); })
-      .forEach(function (s) {
-        var opt = document.createElement("option");
-        opt.value = s;
-        opt.textContent = s + " (" + count[s] + ")";
-        sel.appendChild(opt);
+    countedOptions("storesel", counts, names);
+    populateSources();
+  }
+  function sourceNames(d) {
+    var names = [], credited = [];
+    (d.credits || []).forEach(function (credit) {
+      if (!credit.name) return;
+      names.push(credit.name);
+      try { credited.push(new URL(credit.url).hostname.toLowerCase().split(".").slice(-2).join(".")); }
+      catch (e) { /* a historical credit may have no URL */ }
+    });
+    (d.src || []).forEach(function (site) {
+      if (credited.indexOf(site) === -1) names.push(site);
+    });
+    return Array.from(new Set(names.filter(Boolean)));
+  }
+  // Display names from public credits; locked stubs fall back to their sites.
+  function populateSources() {
+    var counts = Object.create(null), names = Object.create(null);
+    state.deals.forEach(function (d) {
+      if (d.status === "dead") return;
+      sourceNames(d).forEach(function (name) {
+        if (!name) return;
+        counts[name] = (counts[name] || 0) + 1;
+        names[name] = name;
       });
+    });
+    countedOptions("srcsel", counts, names);
+  }
+
+  function searchText() { return document.getElementById("q").value.trim(); }
+  function normalizeSearch(value) {
+    return String(value || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+  }
+  function matchesSearch(d, words) {
+    var labels = CATGROUPS.filter(function (g) {
+      return Array.isArray(g[1]) && g[1].indexOf(d.category || "other") !== -1;
+    }).map(function (g) { return g[0]; });
+    var hay = normalizeSearch([d.item, d.brand, d.store, d.category, labels.join(" "),
+                               (d.conditions || []).join(" ")].join(" "));
+    var compact = hay.replace(/ /g, ""), parts = hay.split(" ");
+    return words.every(function (word) {
+      return compact.indexOf(word) !== -1 || parts.some(function (part) { return part.indexOf(word) === 0; });
+    });
+  }
+  function renderSearchCount(rows) {
+    var q = searchText(), count = rows.filter(function (d) { return d.status !== "dead"; }).length;
+    document.getElementById("clearsearch").hidden = !document.getElementById("q").value;
+    document.getElementById("searchcount").textContent = !q ? "" : count
+      ? plural(count, "deal") + ' match' + (count === 1 ? 'es' : '') + ' "' + q + '"'
+      : 'No deals match "' + q + '" : try fewer words';
   }
 
   function renderTabs() {
@@ -978,7 +1072,7 @@ header{--accent-hover:#45d0bf}
     // Real links to the category hubs (crawlable); a plain click filters
     // the wall in place, a modified one opens the hub.
     nav.innerHTML = CATGROUPS.map(function (g, i) {
-      return '<a class="cattab' + (i === state.catTab ? " active" : "") + '" href="' +
+      return '<a class="cattab' + (i === (searchText() ? 0 : state.catTab) ? " active" : "") + '" href="' +
         esc(g[2] ? "/deals/" + g[2] + "/" : "/") + '" data-i="' + i + '">' +
         esc(g[0]) + "</a>";
     }).join("");
@@ -986,6 +1080,7 @@ header{--accent-hover:#45d0bf}
       b.addEventListener("click", function (e) {
         if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
+        if (searchText()) return;
         state.catTab = Number(b.getAttribute("data-i")) || 0;
         state.shown = PAGE_CARDS;
         renderTabs();
@@ -995,17 +1090,14 @@ header{--accent-hover:#45d0bf}
   }
 
   function filtered() {
-    var q = document.getElementById("q").value.trim().toLowerCase();
+    var q = searchText(), words = normalizeSearch(q).split(" ").filter(Boolean);
     var store = document.getElementById("storesel").value;
-    var group = (CATGROUPS[state.catTab] || CATGROUPS[0])[1];
+    var group = (CATGROUPS[q ? 0 : state.catTab] || CATGROUPS[0])[1];
     var minpct = Number(document.getElementById("minpct").value) || 0;
     var src = document.getElementById("srcsel").value;
     return state.deals.filter(function (d) {
-      if (q) {
-        var hay = ((d.item || "") + " " + (d.brand || "") + " " + (d.store || "")).toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
-      }
-      if (store && d.store !== store) return false;
+      if (q && !matchesSearch(d, words)) return false;
+      if (store && storeKey(d.store) !== store) return false;
       if (group === "USED") {
         var conds = d.conditions || [];
         if (conds.indexOf("used") === -1 && conds.indexOf("open_box") === -1) return false;
@@ -1013,11 +1105,10 @@ header{--accent-hover:#45d0bf}
         return false;
       }
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
-      // "@2": confirmed by 2+ sources. A locked stub carries no badge:
-      // unknown, not single-source, so it stays.
+      // Count distinct credited sites, including on locked stubs.
       if (src === "@2") {
-        if (!isLocked(d) && (d.badge || "unverified") === "unverified") return false;
-      } else if (src && (d.src || []).indexOf(src) === -1) {
+        if (new Set(d.src || []).size < 2) return false;
+      } else if (src && sourceNames(d).indexOf(src) === -1) {
         return false;
       }
       return true;
@@ -1440,6 +1531,7 @@ header{--accent-hover:#45d0bf}
     var content = document.getElementById("content");
 <!--engagement-->    var engagementHtml = engagementLineHtml();
 <!--/engagement-->    var rows = state.deals.length ? ordered(filtered(), true) : [];
+    renderSearchCount(rows);
     traceFree = state.deals.some(isLocked);
     updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length) {
@@ -2466,10 +2558,54 @@ header{--accent-hover:#45d0bf}
     render();
   }
 
-  ["q", "storesel", "minpct", "srcsel"].forEach(function (id) {
+  var searchTimer;
+  function updateSearch() {
+    clearTimeout(searchTimer);
+    renderTabs();
+    resetWall();
+  }
+  function clearSearch() {
+    document.getElementById("q").value = "";
+    updateSearch();
+    document.getElementById("q").focus();
+  }
+  document.getElementById("q").addEventListener("input", function () {
+    document.getElementById("clearsearch").hidden = !this.value;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(updateSearch, 150);
+  });
+  document.getElementById("q").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") e.preventDefault();
+    if (e.key === "Escape") { e.preventDefault(); clearSearch(); }
+  });
+  document.getElementById("clearsearch").addEventListener("click", clearSearch);
+
+  ["storesel", "minpct", "srcsel"].forEach(function (id) {
     var el = document.getElementById(id);
     el.addEventListener("input", resetWall);
     el.addEventListener("change", resetWall);
+  });
+
+  // A restored or long-hidden page refreshes even between drop marks.
+  var hiddenAt = document.hidden ? Date.now() : null, returnRefresh = null;
+  function refreshOnReturn() {
+    if (returnRefresh) return returnRefresh;
+    returnRefresh = fetchPublish().then(merge).then(function () {
+      render();
+    }).catch(noop).then(function () { returnRefresh = null; });
+    return returnRefresh;
+  }
+  window.addEventListener("pageshow", function (e) {
+    if (e.persisted) refreshOnReturn();
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (hiddenAt === null) hiddenAt = Date.now();
+    } else {
+      var elapsed = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (elapsed >= 5 * 60 * 1000) refreshOnReturn();
+    }
   });
 
   // Easy sorting: the dropdown drives the card order; the choice is

@@ -116,14 +116,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "a89bf6bec33a13bc895e5a4eace6ef94620d4a375b43150b76f80faae1c52ad2"),
-    (False, 49, "1542b50d4c0f8bbf54e3ed59b1d2dd2fb1520c99b49874d0904cc245a853b8a6"),
-    (True, 0, "3b9ab5a0ed104303c9defc1b5fc199c1403425a4fd9bde85aec1281e42e22ca9"),
-    (True, 49, "16fdd63ee1260bd03f9df2f799c7ba2a0a5c8dedc42756c58b23cd1b2ec17f50"),
+    (False, 0, "5b6d8f343c741c40a0e7a8b2e73576461881408675945395a30ecc7ed1e600dd"),
+    (False, 49, "d05d88681a3715501c901cf718fe883fb2c82af635b2983e6d7b18f6e1931bf9"),
+    (True, 0, "81b8d85c2283542167f6b346e914ba55456915c74d5ed7db85854e8373f86d5a"),
+    (True, 49, "4a079d13e7e8e9ea4500b0fb57616b5251359ebdda055a32f428bd174f4cf94e"),
 ])
-def test_support_off_index_bytes_match_task034_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 034 adds shared front-page functions in both membership modes.
-    # Exact snapshots still protect the support-off page; the version stays fixed.
+def test_support_off_index_bytes_match_task031_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Tasks 031/034 change shared search, filters, refresh and the front-page mix.
+    # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected

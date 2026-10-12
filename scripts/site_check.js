@@ -141,10 +141,16 @@ async function walk(page, doc, device) {
     check(word, "no title word");
     try {
       await page.locator("#q").fill(word);
-      await page.waitForFunction((word) => [...document.querySelectorAll("#content .card[data-key] .title")]
-        .some((c) => c.textContent.toLowerCase().includes(word.toLowerCase())), word,
+      await page.waitForFunction((word) =>
+        document.querySelector("#searchcount").textContent.includes('"' + word + '"') &&
+        [...document.querySelectorAll("#content .card[data-key] .title")]
+          .some((c) => c.textContent.toLowerCase().includes(word.toLowerCase())), word,
       { timeout: STEP_TIMEOUT_MS });
-    } finally { await page.locator("#q").fill(""); }
+    } finally {
+      await page.locator("#q").fill("");
+      await page.waitForFunction(() => document.querySelector("#searchcount").textContent === "",
+        null, { timeout: STEP_TIMEOUT_MS });
+    }
     check(await page.locator(CARDS).count() > 0, "no cards after clearing search");
   });
   await step(5, "Get deal URL (unopened)", async () => {
