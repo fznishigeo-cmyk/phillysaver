@@ -445,3 +445,27 @@ def test_recategorize_other_moves_live_other_deals_once_within_caps(tmp_path, ca
     assert recategorize_other(db, p) == 0 and db.get_deal("o9")["category"] == "other"
     assert load_config().recategorize_other_per_run == 120
     db.close()
+
+
+class RawMessages(IndexedMessages):
+    """Replies are raw text: a model may echo titles and be cut off at max_tokens."""
+    def create(self, **kw):
+        self.calls.append(kw)
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=next(self.replies))],
+                               stop_reason="max_tokens", usage=SimpleNamespace(input_tokens=1000, output_tokens=100))
+
+
+def test_cut_off_category_reply_keeps_every_closed_answer():
+    cut = ('```json\n[{"i": 0, "title": "Lip gloss {shiny}", "category": "beauty"},\n'
+           ' {"i": 1, "title": "Brake pads \\"set\\"", "category": "auto"},\n {"i": 2, "title": "Rug", "categ')
+    messages = RawMessages([cut, json.dumps([{"i": 2, "category": "home"}])])
+    parser, _ = parser_for(messages)
+    assert categorize_titles(parser, ["Lip gloss {shiny}", 'Brake pads "set"', "Rug"]) == [
+        "beauty", "auto", "home"]
+    assert [e["i"] for e in json.loads(messages.calls[1]["messages"][0]["content"])] == [2]
+    assert messages.calls[0]["max_tokens"] == 100 + 60 * 3
+    assert "Do not repeat the titles" in messages.calls[0]["system"]
+    # Nothing closed at all: the call counts as unanswered and retries.
+    messages = RawMessages(['[{"i": 0, "cat', json.dumps([{"i": 0, "category": "pets"}])])
+    parser, _ = parser_for(messages)
+    assert categorize_titles(parser, ["Dog bed"]) == ["pets"] and len(messages.calls) == 2
