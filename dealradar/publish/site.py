@@ -15,7 +15,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from ..config import redact_secrets
 from ..util import iso, parse_iso
@@ -70,15 +70,28 @@ def site_template_version() -> str:
     return hashlib.sha256(data).hexdigest()[:12]
 
 
-def rewrite_affiliate(url: str) -> str:
-    """Return the product URL unchanged.
+_AMAZON_HOSTS = {"amazon.com", "www.amazon.com", "smile.amazon.com"}
 
-    Affiliate rewriting is intentionally NOT implemented. This function exists
-    as the single injection point for it later: nothing else in the codebase
-    may rewrite outbound links. When (if ever) affiliate tagging is added, it
-    happens here and only here.
+
+def rewrite_affiliate(url: str, amazon_tag: str = "") -> str:
+    """The one place outbound links are rewritten (nothing else may).
+
+    With the operator's Amazon Associates Store ID (config affiliate.amazon_tag)
+    an https amazon.com link carries tag=<id>, replacing any tag already in it;
+    every other link, and every link without a Store ID, comes back unchanged.
+    Emails never pass a tag: Amazon forbids its tagged links in email.
     """
-    return url
+    if not amazon_tag or not url:
+        return url
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if parts.scheme != "https" or (parts.hostname or "").lower() not in _AMAZON_HOSTS:
+        return url
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
+    query.append(("tag", amazon_tag))
+    return urlunsplit(parts._replace(query=urlencode(query)))
 
 
 def _headline(deal: dict[str, Any]) -> str:
@@ -176,7 +189,7 @@ def _how(deal: dict[str, Any]) -> list[str]:
     return steps[:4]
 
 
-def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "") -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -196,7 +209,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime) -> dict[str, Any]:
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)
     url = post if steps and post else \
-        rewrite_affiliate(canon) if canon else (credits[0]["url"] if credits else "")
+        rewrite_affiliate(canon, amazon_tag) if canon else (credits[0]["url"] if credits else "")
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
@@ -275,7 +288,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     out = Path(out_dir) if out_dir is not None else Path(cfg.site_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    serialized = [_serialize_deal(d, now) for d in deals]
+    amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
+    serialized = [_serialize_deal(d, now, amazon_tag) for d in deals]
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
@@ -302,7 +316,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # real gap between publishes of either lane, so the countdown is not
         # shorter than the cron that feeds it.
         "cadence_minutes": int(getattr(cfg, "drop_minutes", 15)),
-        "disclosure": cfg.ftc_disclosure,
+        # With a Store ID, the disclosure says links may earn wowpriced a
+        # commission and carries Amazon's required sentence.
+        "disclosure": (getattr(cfg, "affiliate_disclosure", "") if amazon_tag else "")
+                      or cfg.ftc_disclosure,
         "count": len(serialized),
         # Membership links (empty until the operator pastes them in
         # config.yaml); the page hides the Subscribe button when empty.

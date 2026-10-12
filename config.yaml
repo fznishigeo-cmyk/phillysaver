@@ -81,6 +81,19 @@ publish:
     Disclosure: some outbound links credit the deal source and may be affiliate links
     that earn the source a commission. Prices change fast and are not guaranteed.
 
+affiliate:
+  # The operator's Amazon Associates Store ID (e.g. "wowpriced-20"). "" = no
+  # link is rewritten. With it, every https amazon.com "Get deal" link on the
+  # site carries tag=<id> (publish/site.py rewrite_affiliate, the only place
+  # links are rewritten); emails never do (Amazon forbids tagged links in
+  # email), and the site's disclosure switches to the one below.
+  amazon_tag: ""
+  disclosure: >-
+    Disclosure: some links are affiliate links; wowpriced or the deal source may
+    earn a commission when you buy, at no extra cost to you. As an Amazon
+    Associate, wowpriced earns from qualifying purchases. Prices change fast and
+    are not guaranteed.
+
 seo:
   # Category hubs (/deals/<slug>/): a hub is indexable and in the sitemap
   # only while its category had at least this many deals pass our checks in

@@ -155,3 +155,56 @@ class TestEnrichmentTrigger:
         body = ("Grab this Ekouaer lounge set for just $14.99 (regularly "
                 "$39.99) with promo code 5HXNMK18 at checkout. ") * 12
         assert _needs_enrichment(body, body) is False
+
+
+class TestAmazonAffiliateTag:
+    """Operator (2026-10-12): affiliate commissions are the income. With a
+    Store ID every https amazon.com link carries it; nothing else changes."""
+
+    def test_tags_amazon_links_only(self):
+        from dealradar.publish.site import rewrite_affiliate as r
+        tag = "wowpriced-20"
+        assert r("https://www.amazon.com/dp/B0ABCDEF12", tag) == "https://www.amazon.com/dp/B0ABCDEF12?tag=wowpriced-20"
+        assert r("https://www.amazon.com/dp/B0ABCDEF12?th=1&tag=other-20", tag) == \
+            "https://www.amazon.com/dp/B0ABCDEF12?th=1&tag=wowpriced-20"
+        for url in ("https://www.walmart.com/ip/1", "http://www.amazon.com/dp/B0ABCDEF12",
+                    "https://www.amazon.com.evil.com/dp/X", "https://slickdeals.net/f/1", ""):
+            assert r(url, tag) == url
+        assert r("https://www.amazon.com/dp/B0ABCDEF12") == "https://www.amazon.com/dp/B0ABCDEF12"
+
+    def test_site_links_and_disclosure_follow_the_store_id(self, tmp_path):
+        import json
+        from dealradar.config import load_config
+        from dealradar.db import DB
+        from dealradar.publish.site import render_site
+        from tests.test_publish_site import NOW, make_deal
+
+        cfg = load_config()
+        deals = [make_deal(dedupe_key="a", canonical_url="https://www.amazon.com/dp/B0ABCDEF12", store="Amazon",
+                           codes=[], stack=[], conditions=[])]
+        for tag, out in (("", tmp_path / "off"), ("wowpriced-20", tmp_path / "on")):
+            cfg.affiliate_amazon_tag = tag
+            render_site(DB(tmp_path / f"{tag or 'off'}.db"), cfg, NOW, out_dir=out, deals=deals)
+            doc = json.loads((out / "deals.json").read_text())
+            (deal,) = doc["deals"]
+            assert not deal["needs_steps"]
+            url = deal["url"]
+            if tag:
+                assert "As an Amazon Associate, wowpriced earns from qualifying purchases." in doc["meta"]["disclosure"]
+                assert url == "https://www.amazon.com/dp/B0ABCDEF12?tag=wowpriced-20"
+            else:
+                assert "tag=" not in url and doc["meta"]["disclosure"] == cfg.ftc_disclosure
+
+    def test_emails_never_carry_the_tag(self):
+        from dealradar.publish import newsletter
+        assert "tag=" not in newsletter._deal_url({"canonical_url": "https://www.amazon.com/dp/B0ABCDEF12"})
+
+    def test_config_reads_and_validates_the_store_id(self, tmp_path):
+        from dealradar.config import load_config
+        p = tmp_path / "c.yaml"
+        p.write_text("affiliate:\n  amazon_tag: wowpriced-20\n  disclosure: X\n")
+        c = load_config(p)
+        assert (c.affiliate_amazon_tag, c.affiliate_disclosure) == ("wowpriced-20", "X")
+        p.write_text("affiliate:\n  amazon_tag: 'bad tag&x=1'\n")
+        assert load_config(p).affiliate_amazon_tag == ""
+        assert load_config().affiliate_amazon_tag == ""  # shipped off until the operator's Store ID

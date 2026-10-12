@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -106,6 +107,8 @@ class AppConfig:
     # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)
     custom_domain: str = ""
     ftc_disclosure: str = ""
+    affiliate_amazon_tag: str = ""     # Amazon Associates Store ID ("" = links untouched)
+    affiliate_disclosure: str = ""     # the disclosure used once a Store ID is set
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
@@ -256,6 +259,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
+    tag = str(g("affiliate", "amazon_tag", default="") or "").strip()
+    if tag and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{1,48}", tag):
+        logging.getLogger("dealradar.config").warning("affiliate.amazon_tag ignored: not a Store ID")
+        tag = ""
+    cfg.affiliate_amazon_tag = tag
+    cfg.affiliate_disclosure = str(g("affiliate", "disclosure", default="") or "").strip()
     cfg.seo_hub_min_items = max(0, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
