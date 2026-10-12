@@ -19,7 +19,7 @@ function element(id) {
 }
 element('storesel').options.push({value:''});
 const session = new Map();
-const ctx = {URL, Set, state:{deals:payload.deals, catTab:1, shown:600, dataKey:'old'}, PAGE_CARDS:60,
+const ctx = {URL, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:'old'}, PAGE_CARDS:60,
   CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]),
   document:{hidden:false, getElementById:element, createElement:()=>({}),
     addEventListener(type, fn) {handlers['document:'+type] = fn;}},
@@ -67,15 +67,15 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   assert.equal(query('best office').length,1);
   assert.equal(element('searchcount').textContent,'1 deal matches "best office"');
   assert.match(element('cattabs').innerHTML, /class="cattab active" href="\/" data-i="0"/);
-  assert.equal(ctx.state.catTab,1);
+  assert.equal(ctx.state.catTab,2);
   let prevented = false;
   handlers['q:keydown']({key:'Enter',preventDefault(){prevented=true;}});
   assert.ok(prevented); assert.equal(element('q').value,'best office');
   handlers['q:keydown']({key:'Escape',preventDefault(){}});
   assert.equal(element('q').value,''); assert.equal(element('searchcount').textContent,'');
   assert.equal(element('clearsearch').hidden,true); assert.ok(element('q').focused);
-  assert.match(element('cattabs').innerHTML,/class="cattab active"[^>]+data-i="1"/);
-  assert.equal(ctx.state.catTab,1);
+  assert.match(element('cattabs').innerHTML,/class="cattab active"[^>]+data-i="2"/);
+  assert.equal(ctx.state.catTab,2);
   assert.equal(ctx.filtered().length,0); // original Used tab is effective again
   const before=renders;
   for (const value of ['n','ni','ninja']) {

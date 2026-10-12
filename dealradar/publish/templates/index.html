@@ -1132,6 +1132,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function topOrder(rows) {
     var fresh = freshOrder(rows, false);
+    // "All deals" (a tab with no filter after Trending): everything, newest first.
+    if (state.catTab > 0 && !document.getElementById("q").value.trim() &&
+        !(CATGROUPS[state.catTab] || [])[1]) return fresh;
     if (frontPageView()) {
       var picks = rows.filter(function (d) { return d.pick != null; });
       picks.sort(function (a, b) { return a.pick - b.pick; });

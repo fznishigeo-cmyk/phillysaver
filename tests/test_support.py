@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "06cb57e09fac03cafda40b9dcf2cb571213d742d114c387b07989e550b482e92"),
-    (False, 49, "0495fcbb365dcfe6fcb640de010f5286e0a176e0c965fb0639b95319af42385e"),
-    (True, 0, "5090bbd1e935b5feff2c4ee78fa394684c7ffdd845dbc2776d963f0743353c62"),
-    (True, 49, "abc91df241c58a9f837b8d2607b562dcebc46980b30fe19c57bab67a9759e98a"),
+    (False, 0, "a0f1640fe9bd8d949b3c4b034c238e02a667355a19c5fba1642f739fb40b9c6d"),
+    (False, 49, "53d216c0c21b174716e3456e6f8a989c6566cda4cae2653e9724d95077360ccc"),
+    (True, 0, "2aa049b4c0d47a4988886c1bc6df79ed2cde6ad1279b61d7ac2b5603f19f711e"),
+    (True, 49, "1ef32f2b65b784f297694ab2aa66da2a6d4f20679feacbad0c2be33ec8e2d60c"),
 ])
 def test_support_off_index_bytes_match_task042_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 042 changes the default ordering in all modes; keep the shared

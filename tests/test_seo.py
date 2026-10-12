@@ -21,7 +21,7 @@ from tests.test_publish_site import NOW, make_deal
 
 ROOT = Path(__file__).resolve().parent.parent
 KEY = "0123456789abcdef0123456789abcdef"
-HUBS = [slug for _label, _group, slug in seo.CATGROUPS[1:]]
+HUBS = [slug for _label, _group, slug in seo.HUB_GROUPS]
 
 
 @pytest.fixture()

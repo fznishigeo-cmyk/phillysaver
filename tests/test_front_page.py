@@ -421,3 +421,17 @@ def test_browser_top_gone_spacing_and_fresh_still_works(tmp_path, cfg, db, optio
     baseline = [{k: v for k, v in d.items() if k not in ("pick", "ps")} for d in source]
     with_picks, without = browser(tmp_path, cfg, db, [dict(rows=r, options=options) for r in (source, baseline)])
     assert with_picks == without
+
+
+def test_browser_all_deals_tab_is_everything_newest_first(tmp_path, cfg, db, options):
+    """Operator, 2026-10-12: a tab "that has everything, like endless scroll"."""
+    from dealradar.publish import seo
+    assert [g[0] for g in seo.CATGROUPS[:3]] == ["Trending", "All deals", "Used & Open-Box"]
+    assert seo.CATGROUPS[1][1] is None and not seo.CATGROUPS[1][2]
+    assert "All deals" not in [g[0] for g in seo.HUB_GROUPS]
+    source = js_pick_rows()
+    all_tab, fresh = browser(tmp_path, cfg, db, [
+        dict(rows=source, options=options, state={"sortKey": "top", "catTab": 1, "shown": 120}),
+        dict(rows=source, options=options, state={"sortKey": "fresh", "catTab": 1, "shown": 120})])
+    assert all_tab["ordered"] == fresh["ordered"]
+    assert all_tab["observed"] == 1  # endless: auto-load keeps going past 120

@@ -21,6 +21,8 @@ const results = cases.map(c => {
     num:x => x == null ? null : Number(x), dealKey:d=>d.key,
     isLocked:d=>d.locked === true, sortVal:(d,k)=>d[k === 'pct' ? 'pct_at_checkout' : k],
     JITTER_H:3, NO_PHOTO_H:12, AUTO_CARDS:120, moreObserver:null, panel:{},
+    CATGROUPS:[['Trending', null, ''], ['All deals', null, ''], ['Used & Open-Box', 'USED', 'used-open-box'],
+               ['Home & Kitchen', ['home', 'kitchen'], 'home-kitchen']],
     filtered:()=>c.rows, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,

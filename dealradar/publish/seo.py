@@ -40,6 +40,9 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 #: both read this one list, so they cannot drift apart.
 CATGROUPS: tuple[tuple[str, Any, str], ...] = (
     ("Trending", None, ""),  # the home wall: top picks (operator, 2026-10-12)
+    # Every live deal, newest first, endless scroll (operator, 2026-10-12:
+    # "a button ... that has everything"). No hub of its own: it is the home.
+    ("All deals", None, ""),
     # Sentinel tab: filters on the used/open_box CONDITIONS, not category —
     # the Amazon Warehouse giveaway-priced finds get their own front door.
     ("Used & Open-Box", "USED", "used-open-box"),
@@ -56,6 +59,8 @@ CATGROUPS: tuple[tuple[str, Any, str], ...] = (
     ("Pets", ["pets"], "pets"),
     ("Other", ["office", "books_media", "other"], "other"),
 )
+#: The tabs with a hub page of their own (Trending and All deals are the home).
+HUB_GROUPS = tuple(g for g in CATGROUPS if g[2])
 
 #: The page's badge labels (index.html TIER_LABEL); no badge = single source.
 _TIER_LABEL = {"corroborated": "✓ 2+ sources", "history-checked": "✓ price history"}
@@ -282,7 +287,7 @@ def tabs_html() -> str:
 def _hub_links() -> str:
     return '<ul class="hubs">' + "".join(
         f'<li><a href="{hub_href(slug)}">{escape(label if slug else "All deals")}</a></li>'
-        for label, _g, slug in CATGROUPS) + "</ul>"
+        for label, _g, slug in CATGROUPS[1:]) + "</ul>"
 
 
 def store_slug(name: str) -> str:
@@ -399,7 +404,7 @@ def week_stats(db, cfg, now: datetime) -> dict[str, dict[str, Any]]:
                 and rank.is_publishable(dict(d, status="alive"), cfg, min_pct=floor)[0]:
             week.append(d)
     out = {}
-    for _label, group, slug in CATGROUPS[1:]:
+    for _label, group, slug in HUB_GROUPS:
         rows = [d for d in week if in_group(d, group)]
         pcts = [float(d["pct_at_checkout"]) for d in rows]
         out[slug] = {"count": len(rows),
@@ -516,7 +521,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     suffix = f" — {pct}% off at {store} | wowpriced" if pct is not None else f" at {store} | wowpriced"
     title = item[:max(0, 70 - len(suffix))].rstrip() + suffix
     # Use the category's hub; Used & Open-Box is a condition hub, not a category.
-    label, group, slug = next((g for g in CATGROUPS[2:] if in_group(d, g[1])), CATGROUPS[-1])
+    label, group, slug = next((g for g in HUB_GROUPS if g[1] != "USED" and in_group(d, g[1])),
+                              CATGROUPS[-1])
     hub = f'<a href="{hub_href(slug)}">{escape(label)} deals</a>'
     content = '<p class="ended"><strong>This deal has ended</strong></p>' if dead else ""
     content += (f'<div class="ph" style="background:hsl({_store_hue(store)},42%,62%)" '
@@ -773,7 +779,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                 folder.unlink()
     floor = int(getattr(cfg, "seo_hub_min_items", 10))
     listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
-    for label, group, slug in CATGROUPS[1:]:
+    for label, group, slug in HUB_GROUPS:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
         indexable = stats[slug]["count"] >= floor
         html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
@@ -782,7 +788,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
         if indexable:
             listed.append((slug, _newest(rows), html))
-    logger.info("seo: %d of %d category hubs indexable", len(listed), len(CATGROUPS) - 1)
+    logger.info("seo: %d of %d category hubs indexable", len(listed), len(HUB_GROUPS))
 
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if key and not _KEY_RE.fullmatch(key):
