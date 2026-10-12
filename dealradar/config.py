@@ -127,6 +127,8 @@ class AppConfig:
     custom_domain: str = ""
     ftc_disclosure: str = ""
     affiliate_amazon_tag: str = ""     # Amazon Associates Store ID ("" = links untouched)
+    affiliate_sovrn_enabled: bool = False
+    affiliate_sovrn_key: str = ""      # public link key, invalid/empty = off
     affiliate_disclosure: str = ""     # the disclosure used once a Store ID is set
     # One store page -> one affiliate short link (network onboarding, e.g. the
     # Sovrn first-click check): {"walmart.com/222918738": "https://sovrn.co/..."}.
@@ -300,6 +302,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         logging.getLogger("dealradar.config").warning("affiliate.amazon_tag ignored: not a Store ID")
         tag = ""
     cfg.affiliate_amazon_tag = tag
+    cfg.affiliate_sovrn_enabled = bool(g("affiliate", "sovrn_enabled", default=False))
+    # The link key lives in the GitHub secret SOVRN_API_KEY (operator's call);
+    # config affiliate.sovrn_key is only a local fallback.
+    key = get_secret("SOVRN_API_KEY") or str(g("affiliate", "sovrn_key", default="") or "")
+    if key and not re.fullmatch(r"[0-9a-f]{32}", key):
+        logging.getLogger("dealradar.config").warning("affiliate.sovrn_key ignored: not a public link key")
+        key = ""
+    cfg.affiliate_sovrn_key = key
     cfg.affiliate_disclosure = str(g("affiliate", "disclosure", default="") or "").strip()
     cfg.affiliate_link_overrides = {}
     for key, link in (g("affiliate", "link_overrides", default={}) or {}).items():

@@ -111,9 +111,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   `members.email_enabled: false`). Emails never carry Amazon-tagged links.
 - **Affiliate (2026-10-12):** affiliate commission is the income. The
   Amazon Store ID `wowpriced-20` (live 2026-10-12) is `config.yaml affiliate.amazon_tag`; only
-  `publish/site.py rewrite_affiliate` tags links (https amazon.com only),
-  and the site disclosure switches to `affiliate.disclosure` (FTC + the
-  Amazon Associates sentence; keep it visible).
+  `publish/site.py rewrite_affiliate` rewrites links: Amazon via our tag
+  (https amazon.com only), every other eligible retailer via Sovrn Commerce
+  (`affiliate.sovrn_enabled`, validated public `affiliate.sovrn_key`).
+  Source posts and credit links stay unchanged; page-specific
+  `affiliate.link_overrides` win. Emails never get our tags or Sovrn wrappers.
+  The site disclosure uses `affiliate.disclosure` (FTC + the Amazon
+  Associates sentence; keep it visible).
 - **"$0 today":** next to a trial button on the main screen the only price
   line is a "$0 today" badge. The footer opens with "Membership —
   $9.99/month", and the full terms stay in the dialog and on Stripe's page.
@@ -138,6 +142,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Sovrn links (Codex task 032, merged 2026-10-12; off until the redirect probe passes):** enabled retailer wrappers
+  with tracking stripped and stable deal `cuid`; overrides win, Amazon/source
+  links and emails keep their rules. Added Sovrn reporting and hourly guard.
+  Validation: 134 focused checks (including idempotency) pass; full pytest:
+  1,576 passed, 7 existing Stripe socket tests blocked by sandbox, 1 deselected.
+  Full green run outside this sandbox and live Sovrn verification remain.
+  No commit or push.
 - **Calmer wall (Codex task 029, merged 2026-10-12):** flames need 2+
   signals; phone Join yields to the visible header (observer + scroll fallback),
   banner and inline/footer asks; only the ticker loops. Tests: 1,463 passed,

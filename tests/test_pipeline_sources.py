@@ -1094,8 +1094,11 @@ class TestProductImageBackfill:
             monkeypatch.delenv(var, raising=False)
         root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
         cfg_path = tmp_path / "config.yaml"
+        # Sovrn on, with a test link key (shipped off until the probe passes).
+        monkeypatch.setenv("SOVRN_API_KEY", "0123456789abcdef0123456789abcdef")
         cfg_path.write_text(root_cfg.read_text().replace(
-            'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
+            'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"').replace(
+            "sovrn_enabled: false", "sovrn_enabled: true"))
         db_path = tmp_path / "state.db"
         db = DB(db_path)
         self._seed(db, "dicks", self.DICKS)
@@ -1121,11 +1124,13 @@ class TestProductImageBackfill:
 
         summary = run(fast_lane=False)
         assert summary["product_images"] == 0
-        assert summary["link_mix"]["by_store"] == {"dickssportinggoods.com": 1}
+        assert summary["link_mix"]["sovrn"] == 1
+        assert summary["link_mix"]["by_store"] == {}
         assert requests == []
         summary = run(fast_lane=True)
         assert summary["product_images"] == 1
-        assert summary["link_mix"]["by_store"] == {"dickssportinggoods.com": 1}
+        assert summary["link_mix"]["sovrn"] == 1
+        assert summary["link_mix"]["by_store"] == {}
         assert requests == ["/robots.txt", "/p/dsg-ultimate-backpack-5-0"]
         db = DB(db_path)
         assert db.get_deal("dicks")["image_url"] == \

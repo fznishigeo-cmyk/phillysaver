@@ -82,7 +82,7 @@ publish:
 
 affiliate:
   # The operator's Amazon Associates Store ID (e.g. "wowpriced-20"). "" = no
-  # link is rewritten. With it, every https amazon.com "Get deal" link on the
+  # Amazon link is rewritten. With it, every https amazon.com "Get deal" link on the
   # site carries tag=<id> (publish/site.py rewrite_affiliate, the only place
   # links are rewritten); emails never do (Amazon forbids tagged links in
   # email), and the site's disclosure switches to the one below.
@@ -91,10 +91,12 @@ affiliate:
   # onboarding (2026-10-12): its first-click check needs a click from our site.
   link_overrides:
     "walmart.com/222918738": "https://sovrn.co/168n3ev"
-  # Sovrn Commerce (2026-10-12, site under review): the site's link key is
-  # the GitHub secret SOVRN_API_KEY (operator's call: not in the repo, though
-  # it travels inside every Sovrn link visitors click). The reporting key is
-  # SOVRN_SECRET_KEY (private; reports only).
+  # Sovrn Commerce (2026-10-12, site under review): non-Amazon retailer links
+  # go through redirect.viglink.com. The link key is the GitHub secret
+  # SOVRN_API_KEY (operator's call: not in the repo, though it travels inside
+  # every Sovrn link); the reporting key SOVRN_SECRET_KEY never goes here.
+  # Off until a probe confirms the redirect works for a site under review.
+  sovrn_enabled: false
   sovrn_key: ""
   disclosure: >-
     Disclosure: some links are affiliate links; wowpriced or the deal source may

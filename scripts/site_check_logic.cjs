@@ -31,6 +31,28 @@ function checkAmazonTag(doc, tag) {
   return {ok: true, badLinks: 0};
 }
 
+function checkSovrnLinks(doc) {
+  let links = 0, badLinks = 0;
+  for (const deal of doc.deals || []) {
+    let url;
+    try { url = new URL(deal.url); } catch { continue; }
+    if (!["redirect.viglink.com", "sovrn.co"].includes(url.hostname)) continue;
+    links++;
+    // Sovrn short-link overrides carry no embedded destination.
+    if (url.hostname === "sovrn.co") continue;
+    let merchant;
+    try { merchant = new URL(url.searchParams.get("u")); } catch {}
+    const keys = url.searchParams.getAll("key"), destinations = url.searchParams.getAll("u");
+    if (url.protocol !== "https:" || keys.length !== 1 || !/^[0-9a-f]{32}$/.test(keys[0]) ||
+        destinations.length !== 1 || !merchant || merchant.protocol !== "https:" ||
+        /(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$/.test(merchant.hostname) ||
+        ["amzn.to", "a.co", "link.amazon"].some(h => merchant.hostname === h || merchant.hostname.endsWith("." + h))) {
+      badLinks++;
+    }
+  }
+  return {ok: badLinks === 0, links, badLinks, reason: `${badLinks} malformed Sovrn links`};
+}
+
 // affiliate.link_overrides values in config.yaml (network onboarding links,
 // e.g. Sovrn's first-click check): which of them a live deal carries now.
 function overrideLinks(config) {
@@ -44,4 +66,4 @@ function overrideNote(doc, links) {
   return links.map((l) => `${l.replace(/^https:\/\//, "")} ${live.has(l) ? "live" : "not on a live deal"}`).join(", ");
 }
 
-module.exports = {amazonTag, checkAmazonTag, overrideLinks, overrideNote};
+module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote};

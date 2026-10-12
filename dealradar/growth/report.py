@@ -172,6 +172,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     mix = data.get("site_health", {}).get("link_mix")
     if mix is not None:
         lines.append(f"Get deal links: {_n(mix['amazon_tagged'])} Amazon (tagged), "
+                     f"{_n(mix.get('sovrn', 0))} via Sovrn, "
                      f"{_n(mix['other_store'])} other stores, {_n(mix['source_post'])} source posts, "
                      f"{_n(mix['none'])} none")
         lines.append("Other store hosts: " + (", ".join(

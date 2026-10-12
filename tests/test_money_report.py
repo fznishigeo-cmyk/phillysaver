@@ -193,6 +193,8 @@ def test_site_check_amazon_guard_offline():
     script = (ROOT / "scripts/site_check.js").read_text()
     step = script.split('if (device === "desktop") await step(10,', 1)[1].split('fs.mkdirSync("shots"', 1)[0]
     assert "checkAmazonTag(doc, amazonTag(config))" in step and "check(result.ok, result.reason)" in step
+    assert "checkSovrnLinks(doc)" in step and "check(sovrn.ok, sovrn.reason)" in step
+    assert "sovrn: ${sovrn.links} links" in step
     assert '"../config.yaml"' in step
     assert "fetch" not in step and "goto" not in step
     assert script.count('readSite("deals.json")') == 1
