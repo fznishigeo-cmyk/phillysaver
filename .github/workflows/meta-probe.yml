@@ -1,0 +1,66 @@
+name: Meta key probe (manual)
+
+# Read-only check of META_SYSTEM_TOKEN: is it valid and never-expiring, does
+# it carry the posting permissions, and which Facebook Page and Instagram
+# account it can reach. Prints names, ids and counts only, never the key.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the Graph API what the key can see
+        env:
+          META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, urllib.error, urllib.parse, urllib.request
+          tok = os.environ.get("META_SYSTEM_TOKEN", "").strip()
+          if not tok:
+              print("META_SYSTEM_TOKEN is empty or missing"); raise SystemExit(1)
+          def get(path, **params):
+              params["access_token"] = tok
+              url = "https://graph.facebook.com/" + path + "?" + urllib.parse.urlencode(params)
+              req = urllib.request.Request(url, headers={
+                  "User-Agent": "wowpriced-meta-probe/1.0 (+https://wowpriced.com; hello@wowpriced.com)"})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      return json.load(r), r.headers.get("facebook-api-version", "?")
+              except urllib.error.HTTPError as e:
+                  err = json.load(e).get("error", {})
+                  print(f"{path}: HTTP {e.code} {err.get('type', '')} {err.get('code', '')}: {err.get('message', '')}")
+                  return None, "?"
+          need = ["business_management", "pages_show_list", "pages_read_engagement",
+                  "pages_manage_posts", "instagram_basic", "instagram_content_publish",
+                  "read_insights", "instagram_manage_insights", "ads_management", "ads_read"]
+          ok = True
+          dbg, ver = get("debug_token", input_token=tok)
+          print(f"Graph API version answering: {ver}")
+          if dbg:
+              d = dbg.get("data", {})
+              exp = d.get("expires_at", 0)
+              when = "never" if not exp else datetime.datetime.utcfromtimestamp(exp).isoformat() + "Z"
+              scopes = set(d.get("scopes", []))
+              print(f"valid: {d.get('is_valid')}; type: {d.get('type')}; app id: {d.get('app_id')}; expires: {when}; {len(scopes)} permissions")
+              for s in need:
+                  print(f"  {s}: {'yes' if s in scopes else 'MISSING'}")
+              ok = ok and bool(d.get("is_valid")) and all(s in scopes for s in need[:6])
+          me, _ = get("me", fields="id,name")
+          if me:
+              print(f"key belongs to: {me.get('name')} ({me.get('id')})")
+          pages, _ = get("me/accounts", fields="id,name,instagram_business_account{id,username}")
+          rows = (pages or {}).get("data", [])
+          print(f"pages this key can manage: {len(rows)}")
+          for p in rows:
+              ig = p.get("instagram_business_account") or {}
+              print(f"  page: {p.get('name')} ({p.get('id')}); instagram: "
+                    + (f"@{ig.get('username')} ({ig.get('id')})" if ig else "NOT LINKED"))
+          ok = ok and any(p.get("instagram_business_account") for p in rows)
+          print("PROBE OK: ready to post" if ok else "PROBE NOT OK: see the lines above")
+          raise SystemExit(0 if ok else 1)
+          PY
