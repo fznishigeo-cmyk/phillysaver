@@ -1,0 +1,32 @@
+name: site check (read-only)
+
+# Every hour: opens wowpriced.com in Chromium, loads every live deal's photo
+# the way a visitor's browser does, and writes which deals have no photo or
+# a broken one (by store, source and host) to the run summary. Read-only;
+# analytics and ad tags are blocked. It never touches state.db or the data
+# branch, and it prints only what the public site already shows.
+on:
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: site-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Check the live site
+        run: node scripts/site_check.js
