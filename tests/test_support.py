@@ -51,7 +51,7 @@ def test_invalid_link_warns_and_hides(tmp_path, caplog, link):
     assert "support.payment_link invalid" in caplog.text
     assert link not in caplog.text
     out, doc, _, _ = render(tmp_path, cfg)
-    assert doc["meta"]["support"] == {"enabled": True, "link": ""}
+    assert doc["meta"]["support"] == {"enabled": True, "link": "", "monthly_link": ""}
     for name in ("index.html", "subscribe.html"):
         html = (out / name).read_text()
         assert "data-support href" not in html and NOTE not in html
@@ -80,7 +80,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     deals = [make_deal(dedupe_key=f"support-{i}", item=f"Support item {i}") for i in range(12)]
     out, doc, full, memory = render(tmp_path, cfg, deals)
     assert doc["meta"] == full["meta"]
-    assert doc["meta"]["support"] == {"enabled": True, "link": LINK}
+    assert doc["meta"]["support"] == {"enabled": True, "link": LINK, "monthly_link": ""}
     assert doc["meta"]["open_access"] and doc["meta"]["locked_count"] == 0
     assert len(doc["deals"]) == 12 and not any(d.get("locked") for d in doc["deals"])
     assert memory == '["before"]'
@@ -107,7 +107,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
             assert 'target="_blank" rel="noopener"' in match.group()
             assert NOTE in html[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
     assert "wowpriced is free for everyone." in home
-    assert 'track("support_click")' in home and 'track("sign_up", {method: "email"})' in home
+    assert 'track("support_click", {plan: "once"})' in home and 'track("sign_up", {method: "email"})' in home
     assert 'fetch(api + "/subscribe"' in home and 'JSON.stringify({email: input.value.trim()})' in home
     assert 'try { dismissed = Number(localStorage.getItem(KEY))' in home
     assert 'try { localStorage.setItem(KEY, String(Date.now() + WEEK)); }' in home
@@ -125,7 +125,7 @@ def test_support_off_index_bytes_match_before_task019(tmp_path, monkeypatch, mod
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected
-    assert doc["meta"]["support"] == {"enabled": False, "link": ""}
+    assert doc["meta"]["support"] == {"enabled": False, "link": "", "monthly_link": ""}
 
 
 def test_variant_choice():
@@ -184,3 +184,31 @@ def test_support_click_reaches_tracking_and_legacy_dispatch_is_unchanged(tmp_pat
     assert any(event[:2] == ["trackCustom", "SupportClick"] for event in result["fbq"])
     cfg.support_enabled = False
     assert head_snippet(cfg) == before
+
+
+MONTHLY = "https://buy.stripe.com/test_monthly"
+
+
+def test_monthly_link_adds_a_second_button_with_renewal_terms(tmp_path):
+    cfg = AppConfig(support_enabled=True, support_payment_link=LINK, support_monthly_link=MONTHLY)
+    out, doc, _, _ = render(tmp_path, cfg)
+    assert doc["meta"]["support"] == {"enabled": True, "link": LINK, "monthly_link": MONTHLY}
+    for name in ("index.html", "subscribe.html"):
+        html = (out / name).read_text()
+        assert f'data-support href="{LINK}"' in html and ">Support once</a>" in html
+        assert f'data-support-monthly href="{MONTHLY}"' in html and ">Support monthly</a>" in html
+        assert site.SUPPORT_NOTE_MONTHLY in html and "renewing each month until you cancel" in html
+        assert "not tax-deductible" in html
+    # A monthly link alone never shows: the one-time link leads.
+    cfg = AppConfig(support_enabled=True, support_monthly_link=MONTHLY)
+    (tmp_path / "solo").mkdir()
+    out, doc, _, _ = render(tmp_path / "solo", cfg)
+    assert doc["meta"]["support"]["monthly_link"] == ""
+    assert "data-support-monthly href" not in (out / "index.html").read_text()
+
+
+def test_shipped_config_has_both_support_links():
+    cfg = load_config()
+    assert cfg.support_payment_link.startswith("https://buy.stripe.com/")
+    assert cfg.support_monthly_link.startswith("https://buy.stripe.com/")
+    assert cfg.support_monthly_link != cfg.support_payment_link

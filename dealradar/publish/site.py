@@ -182,6 +182,13 @@ SUPPORT_NOTE = (
     "One-time payment, any amount, through Stripe. wowpriced is a for-profit business: "
     "support is not tax-deductible and buys nothing extra; every deal stays free."
 )
+#: With the monthly link too: the renewal terms sit next to the button.
+SUPPORT_NOTE_MONTHLY = (
+    "Once: any amount. Monthly: $1 times the number you pick, renewing each month "
+    "until you cancel (email hello@wowpriced.com anytime). Both through Stripe. "
+    "wowpriced is a for-profit business: support is not tax-deductible and buys "
+    "nothing extra; every deal stays free."
+)
 JOIN_FORM = (
     '<form class="joinform"><label>Email <input name="email" type="email" '
     'autocomplete="email" required></label><button type="submit" class="pwbtn btn">Join free</button>'
@@ -345,13 +352,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     open_access = is_open(cfg)
     support = bool(getattr(cfg, "support_enabled", False))
     link = support_link(getattr(cfg, "support_payment_link", ""))
+    monthly = support_link(getattr(cfg, "support_monthly_link", "")) if link else ""
     if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
     # The mode changes the published wording: a flip reloads open tabs.
     site_version = site_template_version() + ("-open" if open_access else "")
     if support:
         data = ((TEMPLATES_DIR / "index.html").read_bytes()
-                + (TEMPLATES_DIR / "support.js").read_bytes() + link.encode())
+                + (TEMPLATES_DIR / "support.js").read_bytes() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     meta = {
         "site_version": site_version,
@@ -393,7 +401,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Every deal in full for everyone: the page's sign-up copy drops
         # "unlock" (nothing is locked).
         "open_access": open_access,
-        "support": {"enabled": support, "link": link},
+        "support": {"enabled": support, "link": link, "monthly_link": monthly},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
         "source_sites": _source_sites(serialized),
@@ -440,11 +448,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{SUPPORT_PAGE_LABEL}}", "Join &amp; support" if link else "Join free")
             html = html.replace("{{SUPPORT_ACTION}}", (
                 f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
-                'target="_blank" rel="noopener">Support our work</a>' if link else ""))
+                'target="_blank" rel="noopener">' + ("Support once" if monthly else "Support our work")
+                + '</a>' if link else "") + (
+                f'<a class="pwbtn btn" data-support-monthly href="{escape(monthly, quote=True)}" '
+                'target="_blank" rel="noopener">Support monthly</a>' if monthly else ""))
             html = html.replace("{{SUPPORT_FOOT_LINK}}", (
                 f'<a data-support href="{escape(link, quote=True)}" target="_blank" '
                 'rel="noopener"><strong>Support our work</strong></a> · ' if link else ""))
-            html = html.replace("{{SUPPORT_NOTE}}", f'<p class="disc muted" data-support-note>{SUPPORT_NOTE}</p>' if link else "")
+            html = html.replace("{{SUPPORT_NOTE}}", (
+                f'<p class="disc muted" data-support-note>{SUPPORT_NOTE_MONTHLY if monthly else SUPPORT_NOTE}</p>'
+                if link else ""))
             html = html.replace("{{JOIN_FORM}}", JOIN_FORM)
             html = html.replace("{{JOIN_FORM_JSON}}", json.dumps(JOIN_FORM))
         (out / name).write_text(html, encoding="utf-8")

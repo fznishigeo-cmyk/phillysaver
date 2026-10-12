@@ -40,6 +40,12 @@
       el.hidden = !link;
       if (link) el.href = link;
     });
+    var monthly = String((meta.support || {}).monthly_link || "");
+    if (!link || !/^https:\/\/buy\.stripe\.com\/[^\s<>"'\\]+$/.test(monthly)) monthly = "";
+    document.querySelectorAll("[data-support-monthly]").forEach(function (el) {
+      el.hidden = !monthly;
+      if (monthly) el.href = monthly;
+    });
     document.querySelectorAll("[data-support-note]").forEach(function (el) { el.hidden = !link; });
     if (!panel) return;
     var cards = document.querySelectorAll("#content .card:not(.gone)[data-key]");
@@ -54,7 +60,8 @@
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-join]")) { e.preventDefault(); open(); }
     if (e.target.closest("[data-join-close]") || e.target === modal) close();
-    if (e.target.closest("[data-support]")) track("support_click");
+    if (e.target.closest("[data-support]")) track("support_click", {plan: "once"});
+    if (e.target.closest("[data-support-monthly]")) track("support_click", {plan: "monthly"});
     if (e.target.closest("[data-support-close]")) {
       dismissed = true;
       try { localStorage.setItem(KEY, String(Date.now() + WEEK)); }
