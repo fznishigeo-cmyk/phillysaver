@@ -91,7 +91,14 @@ jobs:
             exit 1
           fi
           npx --yes wrangler@4 pages project create wowpriced --production-branch main >/dev/null 2>&1 || true
-          npx --yes wrangler@4 pages deploy site --project-name wowpriced --branch main --commit-dirty=true | tee cf-pages.log
+          deploy() { npx --yes wrangler@4 pages deploy site --project-name wowpriced --branch main --commit-dirty=true 2>&1 | tee cf-pages.log; }
+          # Cloudflare sometimes answers "Unknown internal error" (3 runs on
+          # 2026-10-12); uploads go by content hash, so one retry is cheap.
+          if ! deploy; then
+            echo "::warning::Cloudflare Pages deploy failed once; retrying in 30 s"
+            sleep 30
+            deploy
+          fi
           url="$(grep -o 'https://[A-Za-z0-9.-]*\.pages\.dev' cf-pages.log | tail -1 || true)"
           echo "Cloudflare Pages: ${url:-see log}" >> "$GITHUB_STEP_SUMMARY"
 
