@@ -114,14 +114,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "ec2b78169914bd60d5f054ab4f29ff66f6400c0d93ff73511ffbf7bdb74334fa"),
-    (False, 49, "cc8b9779cc098c295e86cc3741800f7ae571b58a651e100998ad8a2a90fccab5"),
-    (True, 0, "b77d434a0cb52fc48deb322023f0fa1950279e39a055e6f60d27ac91202b49f1"),
-    (True, 49, "125b365a5d6823bfcc6cef038413024ad8b8d041ea0df0b0d93119f094c03670"),
+    (False, 0, "cc1d50a3e59efb680b1348707abd3d9ed628064b6830ecec340d19f666536538"),
+    (False, 49, "4f434310a5afa9c0f77d264c602e4be4b969248a3fe76eab54c358180160ca7d"),
+    (True, 0, "c09e266794424392f74dfb99cc16960951021f49d2f067697ea5a74dd39a96bd"),
+    (True, 49, "fd8b3cfea6b053bd77bdc7f3c2ff27540828a51c91d831afcea5b2c8fa6a992b"),
 ])
-def test_support_off_index_bytes_match_before_task019(tmp_path, monkeypatch, mode, yearly, expected):
-    # Baselines captured before editing task 019; only the version is fixed
-    # to make snapshots independent of future intentional template version changes.
+def test_support_off_index_bytes_match_task027_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 027 intentionally updates the shared wall in both membership modes.
+    # These baselines include inline gone cards; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected

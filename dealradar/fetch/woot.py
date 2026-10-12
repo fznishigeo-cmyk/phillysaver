@@ -35,6 +35,8 @@ from ..config import AppConfig, get_secret
 from ..db import DB
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..models import RawPost, SourceConfig
+from ..verify import (CONFIRM_GONE_H, _price_hidden_by_promo,
+                      live_price_reading, woot_offer_url)
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.fetch.woot")
@@ -169,6 +171,43 @@ def _item_photo(item: dict) -> str:
     return ""
 
 
+def _recheck_offers(db: DB, items: list, now: datetime) -> None:
+    """Reuse the official feed; absence is never evidence an offer ended."""
+    offers: dict[str, list[dict]] = {}
+    for item in items:
+        if isinstance(item, dict):
+            key = woot_offer_url({"canonical_url": item.get("Url")})
+            if key:
+                offers.setdefault(key, []).append(item)
+    for deal in db.all_deals(status="alive"):
+        matches = offers.get(woot_offer_url(deal), [])
+        if len(matches) != 1:
+            continue
+        item = matches[0]
+        payload = dict(deal)
+        ends = util.parse_iso(str(item.get("EndDate") or ""))
+        if ends is not None and ends <= now:
+            payload.update(death="api_ended", died_at=util.iso(now), gone_suspect_at="")
+            db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
+            continue
+        checked = util.parse_iso(deal.get("price_rechecked_at") or "")
+        every = CONFIRM_GONE_H if deal.get("gone_suspect_at") else 3.0
+        if checked and (now - checked).total_seconds() < every * 3600:
+            continue
+        price = _single_price(item.get("SalePrice"), high=True)
+        if item.get("IsSoldOut") is True:
+            verdict = False
+        elif item.get("IsSoldOut") is False and price is not None and deal.get("final_price") is not None:
+            if price != _single_price(item.get("SalePrice"), high=False) or _price_hidden_by_promo(deal):
+                continue  # a variant range or coupon is not proof the exact price moved
+            verdict = price <= float(deal["final_price"]) + 0.01
+        else:
+            continue
+        outcome = live_price_reading(payload, verdict, now)
+        db.update_deal(deal["dedupe_key"], payload=payload,
+                       status="dead" if outcome == "dead" else None)
+
+
 class WootAdapter(SourceAdapter):
     def __init__(
         self,
@@ -225,6 +264,9 @@ class WootAdapter(SourceAdapter):
                      or payload.get("Offers") or [])
         else:
             items = []
+
+        if db is not None:
+            _recheck_offers(db, items, now)
 
         # Score every live offer, then select used before new, deepest
         # first (feed order breaks ties), up to the per-run cap. Posts the

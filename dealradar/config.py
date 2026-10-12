@@ -119,7 +119,7 @@ class AppConfig:
     used_min_pct: float = 80.0        # absolute floor for used/open-box deals
     min_abs_savings: float = 5.0
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
-    show_dead_hours: float = 6.0      # dead deals linger on the site this long
+    show_dead_hours: float = 24.0      # dead deals linger on the site this long
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     site_dir: str = "site"
     # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions

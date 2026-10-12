@@ -150,7 +150,7 @@ header .drop,header .dhole{background:#18252c}
       transition:transform .12s ease,box-shadow .12s ease}
 /* Hover highlights without moving: a card that lifts out from under a
    resting pointer loses :hover, drops back, and bobs on its own. */
-.card:hover{box-shadow:0 2px 4px rgba(15,23,32,.08),0 10px 24px rgba(15,23,32,.12)}
+.card:not(.gone):hover{box-shadow:0 2px 4px rgba(15,23,32,.08),0 10px 24px rgba(15,23,32,.12)}
 /* A drop: new arrivals lead with a NEW tag; moved cards get a sweep. */
 .card.isnew{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
 .newtag{position:absolute;left:8px;bottom:8px;background:var(--accent);color:var(--accent-fg);
@@ -196,7 +196,8 @@ header .drop,header .dhole{background:#18252c}
          font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
 .gonetag{position:absolute;inset:auto 8px 8px auto;background:var(--dead);color:#fff;
          font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
-.card.gone .media img{filter:grayscale(1);opacity:.55}
+.card.gone{opacity:.55;cursor:default;animation:none}
+.card.gone .media img{filter:grayscale(1)}
 .body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:7px;flex:1}
 .pricerow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .now{font-size:21px;font-weight:800}
@@ -1107,6 +1108,12 @@ footer .meta{font-size:11.5px}
   }
   function lit(d) { return isFreePick(d) || (isMember() && isNew(d)); }
 
+  function goneText(d) {
+    var hours = Math.max(0, (Date.now() - Date.parse(d.died_at || "")) / 3600000);
+    return "Just missed · " + (!isFinite(hours) || hours < 1
+      ? "gone just now" : "gone " + Math.round(hours) + "h ago");
+  }
+
   function mediaHtml(d) {
     // Media: retailer's own public product image; without one (or on a
     // broken link) a store-colored tile keeps the card looking intentional.
@@ -1127,7 +1134,7 @@ footer .meta{font-size:11.5px}
       media += '<span class="flag">-' + Math.round(pct) + "%</span>";
     }
     if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
-    if (d.status === "dead") media += '<span class="gonetag">GONE</span>';
+    if (d.status === "dead") media += '<span class="gonetag">' + esc(goneText(d)) + "</span>";
     if (isNew(d)) media += '<span class="newtag">NEW</span>';
     return media;
   }
@@ -1170,7 +1177,7 @@ footer .meta{font-size:11.5px}
       price += ' <span class="save">save $' + Number(d.abs_savings).toFixed(2) + "</span>";
     }
 
-    var title = url
+    var title = url && !dead
       ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
 
@@ -1188,13 +1195,14 @@ footer .meta{font-size:11.5px}
 
     // Source credit is required on every card.
     var credits = (d.credits || []).map(function (c) {
-      return 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
+      return dead ? "via " + esc(c.name)
+        : 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
     }).join(", ");
     // A deal that needs steps (code, coupon, Subscribe & Save, rebate...)
     // links to the source post that explains them (d.url, set server-side)
     // and says how here; a code copies on tap.
     var how = "";
-    if (d.needs_steps) {
+    if (d.needs_steps && !dead) {
       var codes = (d.codes || []).slice(0, 3).map(function (c) {
         return '<button type="button" class="code" data-code="' + esc(c) +
           '" aria-label="Copy code ' + esc(c) + '">' + esc(c) + "</button>";
@@ -1210,7 +1218,8 @@ footer .meta{font-size:11.5px}
       : "") + '<span class="credit">' + credits + "</span>";
 
     return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
-      (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '">' +
+      (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '"' +
+      (dead ? ' aria-disabled="true"' : "") + '>' +
       '<div class="media">' + media + "</div>" +
       '<div class="body">' +
       (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +
@@ -1324,6 +1333,20 @@ footer .meta{font-size:11.5px}
     return '<div class="grid">' + deals.map(cardHtml).join("") + "</div>";
   }
 
+  function placeGone(rows) {
+    var out = [], pending = [], nextGone = 8;
+    rows.forEach(function (d) {
+      if (d.status === "dead") pending.push(d);
+      if (pending.length && out.length >= nextGone) {
+        out.push(pending.shift());
+        nextGone = out.length + 7;
+      }
+      if (d.status !== "dead") out.push(d);
+    });
+    if (pending.length && out.length >= nextGone) out.push(pending.shift());
+    return out;
+  }
+
   function render() {
     if (moreObserver) moreObserver.disconnect();
     paintTicker();
@@ -1340,23 +1363,16 @@ footer .meta{font-size:11.5px}
       content.innerHTML = '<p class="empty">No deals match the current filters</p>';
       return;
     }
-    // Live deals ranked on top; dead ones collect in a "Just missed"
-    // section at the very bottom (FOMO: gone before you got here),
-    // newest death first. Tiers within the live set: headliners clear
-    // the alert floor (meta.floors.min_pct); "strong deals" sit between
-    // the site floor and the alert floor — shown, never alerted.
-    var live = rows.filter(function (d) { return d.status !== "dead"; });
-    var missed = rows.filter(function (d) { return d.status === "dead"; });
-    missed.sort(function (a, b) {
-      return String(b.died_at || "").localeCompare(String(a.died_at || ""));
-    });
     var floors = (state.meta && state.meta.floors) || {};
     var alertFloor = Number(floors.min_pct);
-    var headliners = live, strong = [];
     if (!isNaN(alertFloor)) {
-      headliners = live.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
-      strong = live.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
+      rows = rows.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; }).concat(
+        rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; }));
     }
+    rows = placeGone(rows);
+    var split = rows.findIndex(function (d) { return num(d.pct_at_checkout) < alertFloor; });
+    var headliners = split < 0 ? rows : rows.slice(0, split);
+    var strong = split < 0 ? [] : rows.slice(split);
     var html = "", banded = false, remaining = state.shown;
     // The first grid with locked cards gets the trial band ahead of them.
 <!--standard-->    function grid(list) {
@@ -1371,8 +1387,9 @@ footer .meta{font-size:11.5px}
       var shut = banded || !canJoin() ? [] : list.filter(isLocked);
       if (!shut.length) return gridHtml(list);
       banded = true;
-      var open = list.filter(function (d) { return !isLocked(d); });
-      return (open.length ? gridHtml(open) : "") + trialBand() + gridHtml(shut);
+      var firstLocked = list.findIndex(isLocked);
+      return (firstLocked ? gridHtml(list.slice(0, firstLocked)) : "") +
+        trialBand() + gridHtml(list.slice(firstLocked));
     }
 <!--/standard--><!--support-->    var beforeBand = 8;
     function grid(list) {
@@ -1396,23 +1413,13 @@ footer .meta{font-size:11.5px}
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
         "alert bar, still big savings</span></h2>" + grid(strong);
     }
-    if (missed.length && live.length <= state.shown && remaining > 0) {
-      var visibleMissed = missed.slice(0, remaining);
-      remaining -= visibleMissed.length;
-      html += '<h2 class="secth missed">Just missed &#128557; <span class="meta">— ' +
-        "gone before you got here. Check back more often (or get alerts)." +
-        "</span></h2>" + gridHtml(visibleMissed);
-    }
     if (rows.length > state.shown) {
       html += '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button></div>';
     }
     content.innerHTML = html;
-    // The CTA panel (one persistent node, listeners intact) goes after the
-    // live grids, ahead of the public "Just missed" strip: sticky at the
-    // viewport bottom while the locked area scrolls, gone past it.
-    var miss = content.querySelector(".missed");
+    // Keep the persistent CTA panel ahead of the load-more control.
     var more = content.querySelector(".more");
-    if (miss || more) content.insertBefore(panel, miss || more); else content.appendChild(panel);
+    if (more) content.insertBefore(panel, more); else content.appendChild(panel);
 <!--standard-->    var button = document.getElementById("moremore");<!--/standard--><!--support-->    window.wpSupport.refresh(state.meta);
     var button = document.getElementById("moremore");<!--/support-->
     if (button) {

@@ -68,9 +68,7 @@ publish:
   site_show_from_pct: 40       # site-only second tier: "strong deals" below the
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
-  show_dead_hours: 48          # dead deals stay this long in the "Just
-                               # missed" section at the page bottom (FOMO:
-                               # gone before you got here)
+  show_dead_hours: 24          # confirmed-gone cards linger inline for one day
   drop_minutes: 15             # the page's drop clock: minutes between drops.
                                # Set it to the real gap between publishes (the
                                # */10 cron lands every 11-15 min); a publish later

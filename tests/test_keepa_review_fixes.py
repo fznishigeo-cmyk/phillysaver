@@ -265,9 +265,11 @@ def test_expiry_deaths_record_whether_a_store_api_vouched(tmp_path):
         ext.expires_at = util.iso(NOW + timedelta(minutes=5))
         keys[source] = dedupe.upsert_extracted(db, ext, sav, _post(source, source, NOW),
                                                cfg, NOW)["dedupe_key"]
-    assert verify.mark_expired_dead(db, cfg, NOW + timedelta(hours=1)) == 2
+    assert verify.mark_expired_dead(db, cfg, NOW + timedelta(hours=1)) == 1
     assert db.get_deal(keys["woot"])["death"] == "api_ended"
     assert db.get_deal(keys["hip2save"])["death"] == "stated_expiry"
+    assert db.get_deal(keys["hip2save"])["status"] == "alive"
+    assert db.get_deal(keys["hip2save"])["gone_suspect_at"]
     db.close()
 
 

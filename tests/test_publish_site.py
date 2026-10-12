@@ -113,7 +113,8 @@ def test_serialized_fields_have_consumers():
         "headline",  # index.html and SEO card explanation
         "status",  # index.html/SEO alive/dead split; paywall rotation
         "alive",  # test_deals_json_has_disclosure_credit_badge_age/dead deal
-        "died_at",  # index.html and SEO Just missed sort
+        "died_at",  # index.html and SEO gone age label
+        "gone",  # confirmed-death marker in deals.json
         "first_seen_at",  # index.html freshOrder; SEO hub lastmod; STUB_KEYS
         "age_hours",  # index.html age sort/card age; publish age assertion
         "credits",  # index.html and SEO source credit; publish/e2e assertions
@@ -137,7 +138,7 @@ def test_public_json_is_compact_and_matches_members_payload(db, cfg, tmp_path):
 def test_render_site_writes_all_four_files(db, cfg, tmp_path):
     out = tmp_path / "site"
     deals = [make_deal(), make_deal(dedupe_key="target|mug", store="Target",
-                                    item="Coffee Mug", status="dead",
+                                    item="Coffee Mug", status="dead", death="confirmed",
                                     verify_tier="unverified")]
     result = render_site(db, cfg, NOW, out_dir=out, deals=deals,
                          last_run={"finished_at": iso(NOW)})
@@ -181,7 +182,7 @@ def test_deals_json_has_disclosure_credit_badge_age(db, cfg, tmp_path):
 def test_dead_deal_serialized_as_not_alive(db, cfg, tmp_path):
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out,
-                deals=[make_deal(status="dead")], last_run=None)
+                deals=[make_deal(status="dead", death="confirmed")], last_run=None)
     doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
     assert doc["deals"][0]["alive"] is False
 
@@ -480,7 +481,7 @@ class TestPaywallTeaser:
         cfg.paywall_api_url = "https://api.example.workers.dev"
         cfg.paywall_google_client_id = "cid-123"
         deals = self._deals(5) + [make_deal(dedupe_key="target|mug", item="ZZSECRET-MUG",
-                                            status="dead")]
+                                            status="dead", death="confirmed")]
         res = render_site(db, cfg, NOW, out_dir=out, deals=deals)
         text = (out / "deals.json").read_text(encoding="utf-8")
         for i in (0, 1, 2):
@@ -1336,7 +1337,8 @@ class TestEyeCatchers:
 
     def test_trial_band_sits_between_free_and_locked_deals(self, html):
         grid = _between(html, "function render() {", "content.innerHTML = html;")
-        assert 'return (open.length ? gridHtml(open) : "") + trialBand() + gridHtml(shut);' in grid
+        assert 'var firstLocked = list.findIndex(isLocked);' in grid
+        assert 'trialBand() + gridHtml(list.slice(firstLocked))' in grid
         assert "banded || !canJoin()" in grid
         assert 'closest(".card.locked, [data-cta]")' in html
         assert "!isMember() && !auth.checking" in _between(html, "function canJoin(", "function trialBand(")
@@ -1582,7 +1584,7 @@ class TestWallPagination:
         render_site(db, cfg, NOW, out_dir=out, deals=[])
         return (out / "index.html").read_text(encoding="utf-8")
 
-    def test_one_budget_caps_live_and_missed_sections(self, html):
+    def test_one_budget_caps_live_and_inline_gone_cards(self, html):
         assert "var PAGE_CARDS = 60;" in html
         assert "shown: PAGE_CARDS" in html
         body = _between(html, "function render() {", "function showMore()")
@@ -1590,9 +1592,9 @@ class TestWallPagination:
         assert "list = list.slice(0, remaining);" in body
         assert "remaining -= list.length;" in body
         assert "strong.length && remaining > 0" in body
-        assert "missed.length && live.length <= state.shown && remaining > 0" in body
-        assert "missed.slice(0, remaining)" in body
-        assert body.index("grid(headliners)") < body.index("grid(strong)") < body.index("gridHtml(visibleMissed)")
+        assert "rows = placeGone(rows);" in body
+        assert 'secth missed' not in body
+        assert body.index("grid(headliners)") < body.index("grid(strong)")
         # The band eligibility is decided using the full section, so growing
         # a partial grid never puts a band ahead of already visible cards.
         assert body.index("var openBandHere") < body.index("list = list.slice")
@@ -1614,11 +1616,11 @@ class TestWallPagination:
         for forbidden in ("reorganize(", "toast(", "state.seed =", "present("):
             assert forbidden not in more
 
-    def test_cta_precedes_missed_or_more(self, html):
+    def test_cta_precedes_more(self, html):
         body = _between(html, "function render() {", "function showMore()")
-        assert 'var miss = content.querySelector(".missed");' in body
+        assert '.missed' not in body
         assert 'var more = content.querySelector(".more");' in body
-        assert "content.insertBefore(panel, miss || more)" in body
+        assert "content.insertBefore(panel, more)" in body
 
     def test_filters_sort_and_category_reset_but_publishes_do_not(self, html):
         reset = _between(html, "function resetWall()", "// Easy sorting:")
