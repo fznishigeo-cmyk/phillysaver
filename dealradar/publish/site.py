@@ -329,6 +329,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # "unlock" (nothing is locked).
         "open_access": open_access,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
+        "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
         "source_sites": _source_sites(serialized),
     }
     full_doc = {"meta": meta, "deals": serialized}
@@ -350,6 +351,21 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
+        yearly = meta["yearly_price_usd"]
+        for place in ("panel", "dialog"):
+            choices = ""
+            if yearly > 0:
+                choices = (
+                    f'<fieldset id="{place}plans" class="plans">'
+                    '<legend class="sr-only">Billing plan</legend>'
+                    f'<label><input type="radio" name="{place}plan" value="month" checked>'
+                    '<span>Monthly $9.99</span></label>'
+                    f'<label><input type="radio" name="{place}plan" value="year">'
+                    f'<span>Yearly ${yearly:g}</span></label></fieldset>'
+                )
+            html = html.replace("{{PLAN_CHOICES_" + place.upper() + "}}", choices)
+        if name == "index.html" and yearly > 0:
+            html = html.replace("<strong>Membership — $9.99/month", f"<strong>Membership — $9.99/month or ${yearly:g}/year")
         (out / name).write_text(copy_variant(html, open_access), encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

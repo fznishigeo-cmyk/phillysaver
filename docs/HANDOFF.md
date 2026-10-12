@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-11, evening)
+# Handoff — state of wowpriced.com (updated 2026-10-12)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -109,6 +109,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Yearly plan (Codex task 015, merged 2026-10-12, OFF until priced):**
+  `paywall.yearly_price_usd` (0 = hidden; set 49 together with the Worker's
+  `STRIPE_YEARLY_PRICE_ID`, then deploy the Worker). With it on, the dialog
+  and sticky panel offer monthly/yearly (default monthly), disclosures follow
+  the plan, and the panel's buy button opens the full-terms dialog first.
+  The Worker sells yearly only with `STRIPE_YEARLY_PRICE_ID` (else 409
+  plan_unavailable, never a monthly fallback); switching plans expires the
+  open session and the previous session id is in the idempotency key so a
+  switch back never replays an expired one. MRR counts annual as amount/12.
+  Verified in Chromium (desktop + phone): picker, terms, `{plan:"year"}` body.
 - **Photo redirects (Codex task 014, merged 2026-10-12):** the fast lane
   follows a photo-less deal's redirect link (60 per run, newest first, one
   attempt ever) when its host is a known tracker (`_SHORT_LINK_HOSTS`) or

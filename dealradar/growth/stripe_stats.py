@@ -36,6 +36,15 @@ def stats(client: Any, key: str, *, yesterday_start: int, window_start: int,
         return sum(1 for s in subs if s.get("trial_start") and _in(s.get("created"), lo, today_start))
 
     active = sum(1 for s in subs if s.get("status") == "active")
+
+    def monthly_amount(sub: dict) -> float:
+        items = (sub.get("items") or {}).get("data") or []
+        price = (items[0].get("price") or {}) if items else {}
+        amount = price.get("unit_amount")
+        if (price.get("recurring") or {}).get("interval") == "year" and isinstance(amount, (int, float)):
+            return amount / 100 / 12
+        return monthly_price
+
     return {"test_mode": key.startswith(("sk_test_", "rk_test_")),
             "trials_yesterday": trials(yesterday_start),
             "trials_window": trials(window_start),
@@ -46,4 +55,4 @@ def stats(client: Any, key: str, *, yesterday_start: int, window_start: int,
                              and _in(s.get("trial_end"), window_start, today_start)),
             # canceled_at is set on request, so cancel-at-period-end counts too.
             "canceled": sum(1 for s in subs if _in(s.get("canceled_at"), window_start, today_start)),
-            "mrr": round(active * monthly_price, 2)}
+            "mrr": round(sum(monthly_amount(s) for s in subs if s.get("status") == "active"), 2)}

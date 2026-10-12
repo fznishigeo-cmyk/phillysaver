@@ -284,6 +284,15 @@ header .drop,header .dhole{background:#18252c}
 #authstep2{margin-top:14px}
 #authstep2 .autherr{margin-top:10px}
 #cofb,#comanage{margin-top:8px}
+.plans{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:48px;
+       border:0;padding:0;margin:0 0 10px;min-width:0}
+.plans legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.plans label{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;
+             border:1px solid var(--line);border-radius:24px;padding:8px;font-size:12px;cursor:pointer}
+.plans label:has(input:checked){border-color:var(--accent);background:var(--bg)}
+.plans label:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.plans input{width:auto;padding:0;accent-color:var(--accent)}
+.paywall .plans{flex:1 1 100%;margin:0;order:3}
 .autherr{margin:0;color:var(--dead);font-size:13px;font-weight:600}
 .switch{margin:12px 0 0;text-align:center}
 
@@ -528,6 +537,7 @@ footer .meta{font-size:11.5px}
 <div id="content">{{STATIC_WALL}}</div>
 <div id="paywall" class="paywall" hidden>
   <p class="pwtext"></p>
+  {{PLAN_CHOICES_PANEL}}
   <div class="pwbtns">
     <button type="button" id="pwsignup" class="pwbtn" data-auth="signup">Sign up free</button>
     <button type="button" id="pwlogin" class="pwbtn alt" data-auth="login">Log in</button>
@@ -587,6 +597,7 @@ footer .meta{font-size:11.5px}
         <button type="button" id="authswitch" class="linkbtn">Log in</button></p>
     </div>
     <div id="authstep2" hidden>
+      {{PLAN_CHOICES_DIALOG}}
       <button type="button" id="cobtn" class="pwbtn">Start free trial</button>
       <p id="codisc" class="disc"></p>
       <p id="coerr" class="autherr" role="alert" hidden></p>
@@ -608,7 +619,7 @@ footer .meta{font-size:11.5px}
   // dropKeys: what was on the wall at the last drop; unlocked: how many
   // cards the last publish opened that were locked before (every drop
   // unlocks a new set of free deals for visitors).
-  var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "",
+  var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
                 sortKey: "fresh", sortDir: -1, catTab: 0,
                 seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
   // Minutes between drops when deals.json does not say: meta.cadence_minutes
@@ -1503,6 +1514,28 @@ footer .meta{font-size:11.5px}
   // Open access (meta.open_access): every deal is in full for everyone, so
   // the sign-up copy never says "unlock".
   function openAccess() { return !!(state.meta || {}).open_access; }
+  function yearlyPrice() { return Math.max(0, num((state.meta || {}).yearly_price_usd) || 0); }
+  function yearlyMoney() { return "$" + yearlyPrice().toFixed(2).replace(/\.00$/, ""); }
+  function prices() { return "$9.99/month" + (yearlyPrice() > 0 ? " or " + yearlyMoney() + "/year" : ""); }
+  function chosenPlan() { return yearlyPrice() > 0 && state.plan === "year" ? "year" : "month"; }
+  function syncPlanChoices() {
+    ["panelplans", "dialogplans"].forEach(function (id) {
+      var group = document.getElementById(id);
+      if (!group) return;
+      if (yearlyPrice() <= 0) group.hidden = true;
+      group.querySelectorAll("input").forEach(function (input) {
+        input.checked = input.value === chosenPlan();
+        if (input.value === "year") input.nextElementSibling.textContent =
+          "Yearly " + yearlyMoney() + " · save " + Math.round(100 * (1 - yearlyPrice() / (12 * 9.99))) + "%";
+      });
+    });
+  }
+  function planBusy(busy) {
+    ["panelplans", "dialogplans"].forEach(function (id) {
+      var group = document.getElementById(id);
+      if (group) group.querySelectorAll("input").forEach(function (input) { input.disabled = busy; });
+    });
+  }
   // While open, the sticky trial panel still follows every non-member down
   // the wall (operator, 2026-10-11); members never see it.
   function openNudge() { return openAccess() && !!apiUrl() && !isMember(); }
@@ -1520,10 +1553,14 @@ footer .meta{font-size:11.5px}
   }
   // The terms that sit next to every free-trial button, in one line.
   function trialDisclosure(days) {
+    if (chosenPlan() === "year") return "Card required. Free for " + days + " days, then " +
+      yearlyMoney() + "/year, renews yearly until you cancel. " + cancelLine();
     return "Card required. Free for " + days + " days, then $9.99/month, renews monthly " +
       "until you cancel. " + cancelLine();
   }
   function plainDisclosure() {
+    if (chosenPlan() === "year") return "Subscribe — " + yearlyMoney() +
+      "/year, renews yearly until you cancel. " + cancelLine();
     return "Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine();
   }
   // The main screen's one line next to a trial button (panel, band,
@@ -1531,6 +1568,7 @@ footer .meta{font-size:11.5px}
   // names the $9.99/month, and the full terms sit in the dialog next to the
   // button that starts checkout, and on Stripe's page.
   function shortNote(o) {
+    if (!o.trial && chosenPlan() === "year") return yearlyMoney() + "/year, renews yearly.";
     return o.trial ? "$0 today." : "$9.99/month, renews monthly.";
   }
   // The same line as a badge on the wall (band and panel); a click on it
@@ -1579,7 +1617,8 @@ footer .meta{font-size:11.5px}
     var o = offer(), locked = num((state.meta || {}).locked_count) || 0;
     return '<div class="trialband"><p class="tbtext"><strong>&#128275; Unlock ' +
       esc(plural(locked, "more deal")) + "</strong>" +
-      (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every drop.") +
+      (yearlyPrice() > 0 ? (o.trial ? " — your first " + o.days + " days free, then " + prices() + "." : " — " + prices() + ".")
+        : (o.trial ? " — every deal free for " + o.days + " days." : " — every deal, every drop.")) +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
       "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
   }
@@ -1588,7 +1627,7 @@ footer .meta{font-size:11.5px}
   function openBand() {
     var o = offer();
     return '<div class="trialband"><p class="tbtext"><strong>wowpriced membership</strong>' +
-      (o.trial ? " — your first " + o.days + " days free, then $9.99/month." : " — $9.99/month.") +
+      (o.trial ? " — your first " + o.days + " days free, then " + prices() + "." : " — " + prices() + ".") +
       '</p><button type="button" class="pwbtn trialcta" data-cta="1">' + esc(o.btn) +
       "</button>" + (o.trial ? noteHtml(o) : '<p class="disc">' + noteHtml(o) + "</p>") + "</div>";
   }
@@ -1607,8 +1646,8 @@ footer .meta{font-size:11.5px}
     });
   }
   // A JSON POST answered as {status, json}; a body that is not JSON is {}.
-  function apiPost(path) {
-    return api(path, {}).then(function (r) {
+  function apiPost(path, body) {
+    return api(path, body || {}).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         return { status: r.status, ok: r.ok, json: j || {} };
       });
@@ -1671,17 +1710,18 @@ footer .meta{font-size:11.5px}
       var blk = buy ? auth.block : "";
       var fb = buy && !o.lapsed && !blk ? auth.fb : "";
       var open = !openAccess() ? {} : {
-        out: "wowpriced membership — " + (o.trial ? "your first " + o.days + " days free, then $9.99/month"
-                                                   : "$9.99/month"),
-        trial: "You're signed in. Start your " + o.days + "-day free trial, then $9.99/month.",
-        sub: "You're signed in. Subscribe — $9.99/month."
+        out: "wowpriced membership — " + (o.trial ? "your first " + o.days + " days free, then " + prices()
+                                                   : prices()),
+        trial: "You're signed in. Start your " + o.days + "-day free trial, then " + prices() + ".",
+        sub: "You're signed in. Subscribe — " + prices() + "."
       };
       panel.querySelector(".pwtext").textContent = blk ? blockText(blk) : open[mode] || {
         plain: plural(locked, "more deal") + " for members",
-        out: "Unlock all " + total + " deals" +
-          (o.trial ? " with a " + o.days + "-day free trial" : ""),
-        trial: "You're signed in. Start your " + o.days + "-day free trial to unlock all " +
-          total + " deals.",
+        out: "Unlock all " + total + " deals" + (yearlyPrice() > 0
+          ? (o.trial ? " — your first " + o.days + " days free, then " + prices() : " — " + prices())
+          : (o.trial ? " with a " + o.days + "-day free trial" : "")),
+        trial: "You're signed in. Start your " + o.days + (yearlyPrice() > 0
+          ? "-day free trial, then " + prices() + "." : "-day free trial to unlock all " + total + " deals."),
         sub: "You're signed in. Subscribe to unlock all " + total + " deals.",
         lapsed: "No active membership on this account right now. If a payment failed, " +
           "update your card with Manage membership.",
@@ -1696,6 +1736,9 @@ footer .meta{font-size:11.5px}
                    pwcheck: buy || mode === "retry" || mode === "unknown" };
       Object.keys(show).forEach(function (id) { panel.querySelector("#" + id).hidden = !show[id]; });
       panel.querySelector("#pwbuy").textContent = o.btn;
+      syncPlanChoices();
+      var plans = document.getElementById("panelplans");
+      if (plans) plans.hidden = yearlyPrice() <= 0 || !show.pwbuy;
       var pn = panel.querySelector("#pwnote");
       pn.innerHTML = note ? noteHtml(o) : "";
       pn.hidden = !note || !!fb;
@@ -1728,22 +1771,29 @@ footer .meta{font-size:11.5px}
   // means Stripe could not be asked, so only "try again in a minute".
   // ui: {btn, err, fb, manage, alt} of the dialog's step 2 or the panel.
   function checkout(ui) {
-    var o = offer(), had = document.activeElement === ui.btn;
+    var o = offer(), plan = chosenPlan(), had = document.activeElement === ui.btn;
     ui.btn.disabled = true;
+    planBusy(true);
     ui.err.hidden = true;
-    apiPost("/api/checkout").then(function (res) {
+    apiPost("/api/checkout", { plan: plan }).then(function (res) {
       var j = res.json;
       if (res.ok && https(j.url)) {
-        track("begin_checkout");
+        track("begin_checkout", { plan: plan });
         location.assign(https(j.url));
         return;
       }
       ui.btn.disabled = false;
+      planBusy(false);
       // Disabling the button dropped its focus: give it back (below, to
       // what takes the button's place).
       if (had) ui.btn.focus();
       if (res.status === 409) {
         if (j.me) state.me = j.me;
+        if (j.error === "plan_unavailable") {
+          ui.err.textContent = "Yearly isn't available right now. Choose monthly.";
+          ui.err.hidden = false;
+          return;
+        }
         if (j.error === "payment_issue" || j.error === "contact_support") {
           refuse(j.error, ui, had);
           return;
@@ -1764,6 +1814,7 @@ footer .meta{font-size:11.5px}
       // An older Worker without the route (404): the Payment Link from me.
       var fb = res.status === 404 ? https((state.me || {}).subscribe_url) : https(j.fallback_url);
       if (res.status === 429 || o.lapsed) fb = "";
+      if (plan === "year") fb = ""; // the Payment Link sells monthly only
       ui.err.textContent = res.status === 429 ? AUTH_ERR.http_429
         : (!fb ? "Checkout is busy — try again in a minute."
           : (o.trial ? "Free-trial checkout is unavailable right now." : "Checkout is unavailable right now."));
@@ -1776,6 +1827,7 @@ footer .meta{font-size:11.5px}
       }
     }).catch(function () {
       ui.btn.disabled = false;
+      planBusy(false);
       if (had) ui.btn.focus();
       ui.err.textContent = AUTH_ERR.network;
       ui.err.hidden = false;
@@ -1850,6 +1902,9 @@ footer .meta{font-size:11.5px}
     btn.textContent = o.btn;
     disc.textContent = o.note;
     btn.hidden = disc.hidden = !!fb || !!blk;
+    syncPlanChoices();
+    var plans = document.getElementById("dialogplans");
+    if (plans) plans.hidden = yearlyPrice() <= 0 || btn.hidden;
     link.hidden = terms.hidden = !fb;
     if (fb) link.href = fb;
     terms.textContent = fb ? fallbackTerms() : "";
@@ -1862,9 +1917,9 @@ footer .meta{font-size:11.5px}
     var o = offer(), top = teaserCount();
     var title = up ? "Create your free account" : "Log in";
     var sub = !up ? "Welcome back." : (openAccess()
-      ? "Free account first, then " + (o.trial ? "your " + o.days + "-day free trial." : "membership at $9.99/month.")
+      ? "Free account first, then " + (o.trial ? "your " + o.days + "-day free trial." : "membership at " + prices() + ".")
       : "Free account: " + top + " free deals, new at every drop. Every deal: " +
-        (o.trial ? o.days + "-day free trial." : "$9.99/month."));
+        (o.trial ? o.days + "-day free trial." : prices() + "."));
     // The sign-up step carries the full terms of what comes after it.
     var disc = document.getElementById("authdisc");
     disc.textContent = up ? o.note : "";
@@ -1875,9 +1930,9 @@ footer .meta{font-size:11.5px}
       title = auth.block ? "Checkout didn't start" : (o.lapsed ? "No active membership right now"
         : (o.trial ? "Step 2 of 2 — start your free trial" : "Step 2 of 2 — subscribe"));
       sub = auth.block ? "" : (o.lapsed ? "If a payment failed, update your card with Manage membership. " +
-                       "Or restart for $9.99/month."
+                       "Or restart for " + prices() + "."
         : openAccess() ? (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial."
-                                  : "Your free account is ready. Subscribe — $9.99/month.")
+                                  : "Your free account is ready. Subscribe — " + prices() + ".")
         : (o.trial ? "Your free account is ready. Start your " + o.days + "-day free trial to unlock all " +
                      roughCount(dealTotal()) + " deals."
                    : "Your free account is ready. Subscribe to unlock all " + roughCount(dealTotal()) + " deals."));
@@ -2064,8 +2119,21 @@ footer .meta{font-size:11.5px}
                manage: document.getElementById("comanage"), alt: document.getElementById("conotnow") });
   });
   panel.querySelector("#pwbuy").addEventListener("click", function () {
+    // With a plan choice, review its full terms in the dialog before billing.
+    if (yearlyPrice() > 0) { openAuth("checkout"); return; }
     checkout({ btn: this, err: panel.querySelector("#pwerr"), fb: panel.querySelector("#pwfb"),
                manage: panel.querySelector("#pwmanage"), alt: panel.querySelector("#pwcheck") });
+  });
+  document.querySelectorAll(".plans input").forEach(function (input) {
+    input.addEventListener("change", function () {
+      state.plan = this.value;
+      auth.fb = "";
+      document.getElementById("coerr").hidden = true;
+      panel.querySelector("#pwerr").hidden = true;
+      paintStep2();
+      renderMeta();
+      render();
+    });
   });
   ["billing", "pwmanage", "comanage"].forEach(function (id) {
     document.getElementById(id).addEventListener("click", function () { portal(this); });

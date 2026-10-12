@@ -11,8 +11,9 @@ Every deal beyond the top 8 unlocks **only** with a Stripe subscription
 whose status is `trialing` or `active`, i.e. a card on file. There is no
 card-less trial for anyone, existing accounts included. The trial is
 Stripe's: `TRIAL_DAYS` days (default 7), the card collected up front
-(`payment_method_collection=always`), then $9.99/month billed automatically
-every month until cancelled. One trial per account and email address, and
+(`payment_method_collection=always`), then $9.99/month or $49/year billed
+automatically at the chosen interval until cancelled. Monthly is the default.
+One trial per account and email address (across both plans), and
 never a second subscription (nor a second open checkout) while one has not
 ended. Members cancel either way: online in Stripe's customer portal
 (the "Manage membership" link at the bottom of the home page), or by emailing hello@wowpriced.com
@@ -53,6 +54,7 @@ paywall:
   teaser_count: 8          # unlocked deals for visitors and free accounts
   teaser_pool: 0           # 0 = every live deal; N = rotate the top N only
   trial_days: 7            # page copy only; keep it equal to the Worker's TRIAL_DAYS
+  yearly_price_usd: 49     # page copy only; 0 or missing hides yearly everywhere on home
   api_url: ""              # the Worker base URL, e.g. https://wowpriced-api.<sub>.workers.dev
   google_client_id: ""     # public OAuth Web client ID; Google button hidden when empty
 ```
@@ -66,7 +68,7 @@ when the switch goes back to false, and every page publishes its
 upload, accounts, the trial and checkout are unchanged.
 
 `deals.json` meta carries: `api_url`, `google_client_id`, `teaser_count`,
-`locked_count`, `open_access`, `trial_days`, plus the existing `subscribe_url`,
+`locked_count`, `open_access`, `trial_days`, `yearly_price_usd` (0 when off), plus the existing `subscribe_url`,
 `portal_url`, `newsletter_url`, `floors`, `last_run`, `generated_at`,
 `cadence_minutes` (the drop clock's step, `publish.drop_minutes`), `disclosure`, `count`. A signed-in page prefers
 `me.trial_days` (the Worker's real trial length) over `meta.trial_days`.
@@ -132,7 +134,7 @@ count as `sv: 0`.
 | `POST /api/signup` | none | `{email, password}` | `200 {token, me}`; `409 {error:"exists"}`; `400 {error:"invalid_email"|"weak_password"}` (min 8 chars). The account is **unverified** and free: `me.member` is false until a Stripe subscription |
 | `POST /api/login` | none | `{email, password}` | `200 {token, me}`; `401 {error:"bad_credentials"}` |
 | `POST /api/google` | none | `{credential}` (Google ID token) | checks `aud == GOOGLE_CLIENT_ID`, `iss` in {accounts.google.com, https://accounts.google.com}, `exp` and `email_verified` **before** any network call, then the RS256 signature against Google's JWKS; finds or creates the account by the token's email (**verified**); `200 {token, me, new_account}` (`new_account` is `true` only when this call created the account, `false` for returning accounts or takeovers); `401 {error:"bad_token"}` |
-| `POST /api/checkout` | session | `{}` or empty | `200 {url}`: a Stripe Checkout Session URL to send the browser to ("Starting the trial" below; the account's still-open session when there is one); `409 {error:"already_member", me}` (an `active` or `trialing` subscription: also when it is a Stripe customer with the account's email the account has not proven is its own, `me.member` is then false); `409 {error:"payment_issue", me}` (one that is `past_due`, `unpaid`, `incomplete` or `paused`: Stripe may still collect it, so the card is fixed in the portal instead of buying again); `409 {error:"contact_support", me}` (the customer a Google takeover unbound from the account still has a subscription that has not ended, and no other account claimed it: the page says to email hello@wowpriced.com); `503 {error:"checkout_unavailable", fallback_url}`: `fallback_url` is `""` when Stripe could not be asked whether the account already pays or had a trial, or could not expire the account's last open session (never sell on a failed check), else `me.subscribe_url` (may be `""`) when the session itself failed or there is no price; `401 {error:"unauthorized"}`. 10 per IP per hour |
+| `POST /api/checkout` | session | `{plan:"year"}` for yearly; otherwise monthly | `200 {url}`: a Stripe Checkout Session URL to send the browser to ("Starting the trial" below; the account's still-open session when there is one); `409 {error:"already_member", me}` (an `active` or `trialing` subscription: also when it is a Stripe customer with the account's email the account has not proven is its own, `me.member` is then false); `409 {error:"plan_unavailable", me}` (yearly requested with no `STRIPE_YEARLY_PRICE_ID`, no session or fallback); `409 {error:"payment_issue", me}` (one that is `past_due`, `unpaid`, `incomplete` or `paused`: Stripe may still collect it, so the card is fixed in the portal instead of buying again); `409 {error:"contact_support", me}` (the customer a Google takeover unbound from the account still has a subscription that has not ended, and no other account claimed it: the page says to email hello@wowpriced.com); `503 {error:"checkout_unavailable", fallback_url}`: `fallback_url` is `""` when Stripe could not be asked whether the account already pays or had a trial, or could not expire the account's last open session (never sell on a failed check), else `me.subscribe_url` (may be `""`) for monthly when the session itself failed or there is no price; yearly always has an empty fallback; `401 {error:"unauthorized"}`. 10 per IP per hour |
 | `POST /api/portal` | session | `{}` or empty | `200 {url}`: a Stripe billing portal session (cancel, card, invoices; returns to the site home) for the account's customer: the bound one, else the customer of the subscription membership found by the account's own checkout (c) or its verified email (b) ("Billing" below); `404 {error:"no_customer"}` (none of those); `503 {error:"portal_unavailable", fallback_url}` (`STRIPE_PORTAL_LINK` or `""`); `401` |
 | `POST /api/claim` | session | `{session_id}` (the Stripe Checkout Session id from the success redirect, Worker checkout or Payment Link) | binds the session's Stripe customer to the account; `200 {me}`; `400 {error:"bad_session"}` (malformed id, or the session is not `status: complete` + `mode: subscription` with a customer); `403 {error:"wrong_account"}` (the session carries a `client_reference_id` that is not this account's reference); `404 {error:"unknown_session"}` (Stripe does not know it); `409 {error:"already_claimed"}` (that Stripe customer is already bound to another account: one payment, one account); `502 {error:"stripe_unavailable"}` (Stripe down or `STRIPE_SECRET_KEY` unset); `401` |
 | `GET /api/me` | session | — | `200 me`; `401`. `?fresh=1` bypasses the membership cache (at most once a minute per account) |
@@ -286,7 +288,7 @@ written (one KV write, once), so `me` says so from then on. A claim of a
 subscription that is (or was) trialing sets `acct.trial_used = true` too.
 A returning (lapsed) account checks out with its bound customer and pays
 from day one. The card is always collected up front, so the trial converts
-to $9.99/month automatically and renews every month until the member
+to the chosen $9.99/month or $49/year plan automatically and renews until the member
 cancels, online in the customer portal or by emailing hello@wowpriced.com
 (Stripe ends it at the period end, or as configured in the portal
 settings). Accounts from the card-less era never gave a card and never had
@@ -297,7 +299,10 @@ otherwise.
 
 The page's start-trial (or resubscribe) button posts here with the session
 and sends the browser to the returned `url` (Stripe-hosted Checkout). The
-Worker:
+Worker accepts `{plan: "year"}` for yearly; every other body (including
+empty or bad JSON) chooses monthly. The bearer token signs the account
+session, not the request body; `NEEDS_SIGNING` requires `SESSION_SECRET`
+before the route runs and remains unchanged. The Worker:
 
 1. answers `409 already_member` (with `me`) when the account is a member,
    asked **strictly** under the `?fresh=1` rule so a member is never sold a
@@ -323,7 +328,9 @@ Worker:
    (or no `STRIPE_SECRET_KEY`) → `503 {error:"checkout_unavailable",
    fallback_url: ""}` and no session: never sell on a failed check, not
    even through the Payment Link;
-4. finds the price: env `STRIPE_PRICE_ID` when set, else the Payment Link's
+4. for yearly, uses only `STRIPE_YEARLY_PRICE_ID`: empty means `409
+   {error: "plan_unavailable", me}`, no session and no fallback link.
+   For monthly, finds the price: env `STRIPE_PRICE_ID` when set, else the Payment Link's
    own price: `GET /v1/payment_links?active=true&limit=100` (paging with
    `starting_after`, up to 5 pages), the link whose `url` equals
    `STRIPE_PAYMENT_LINK` (origin + path, trailing slash ignored, path
@@ -348,7 +355,10 @@ Worker:
    slot>-<params hash>`, where the hash is the first 16 hex characters of
    SHA-256 of the form-encoded params below without `expires_at`: a double
    click inside a slot makes one session, and a change of params a new one
-   instead of Stripe's idempotency `400`) with, in this order:
+   instead of Stripe's idempotency `400`; after retiring a previous session,
+   its id also enters the idempotency hash so switching back to a plan cannot
+   replay its expired session). The price is part of the params hash, so
+   monthly and yearly sessions are never reused for each other. With, in this order:
 
 | Param | Value |
 |---|---|
@@ -500,6 +510,7 @@ passwords or tokens.
 Worker env: secrets `NEWSLETTER_SECRET`, `STRIPE_SECRET_KEY`,
 `SESSION_SECRET`; vars `GOOGLE_CLIENT_ID`, `STRIPE_PAYMENT_LINK`,
 `STRIPE_PRICE_ID` (optional; else the Payment Link's price),
+`STRIPE_YEARLY_PRICE_ID` (the $49/year recurring `price_...`; empty = yearly not sold),
 `STRIPE_PORTAL_LINK`, `STRIPE_PORTAL_CONFIG` (optional; else the
 wowpriced configuration), `SITE_URL` (default `https://wowpriced.com`),
 `ALLOWED_ORIGINS`, `TRIAL_DAYS`, `PBKDF2_ITERATIONS`. KV binding `SUBS`
@@ -607,6 +618,27 @@ and click the confirmation link, `?confirmed=1` says "You're confirmed",
 `?unsubscribed=1` is unchanged.
 
 ## Page behavior
+
+When `meta.yearly_price_usd > 0`, the dialog and sticky buy panel show native
+radio pills for Monthly $9.99 (default) and Yearly $49 · save 59%. Savings
+are rounded in JS from the configured yearly amount and 12 × $9.99.
+Both groups share `state.plan`; checkout posts `{plan}` and tracks
+`begin_checkout` with it. Trial and renewal disclosures follow the choice.
+The sticky button opens the dialog to show the full terms before starting
+checkout, keeping cancel wording off the main screen. The terms and radio
+pills are in the dialog before it becomes visible, with space reserved for
+the group. `409 plan_unavailable` says "Yearly isn't available right now.
+Choose monthly." Yearly failures never offer the monthly Payment Link,
+including a 404 from an older Worker. The welcome page names the chosen
+plan without assuming an interval or making another Stripe call.
+
+Keep `paywall.yearly_price_usd` equal to the USD annual amount of
+`STRIPE_YEARLY_PRICE_ID`; the config controls copy, not billing. Until the
+Worker var is configured, yearly requests safely return 409. With copy
+set to 0 or missing, home has no yearly pills or price copy and retains
+the monthly flow. The growth report estimates an active annual plan's MRR
+from its listed price's `unit_amount / 100 / 12`, using the configured
+monthly estimate for other subscriptions or missing price data.
 
 1. Load `deals.json` (teaser). If `localStorage["wp.session"]` exists,
    `GET /api/me`; if `member`, `GET /api/deals` and render the full

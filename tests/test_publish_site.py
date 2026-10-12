@@ -955,7 +955,7 @@ class TestWelcomeTrialClaim:
     def test_trial_and_paid_outcomes(self, html):
         assert "Your free trial has started." in html
         assert "You won't be charged until " in html
-        assert "Then $9.99/month, renews monthly " in html
+        assert "Then your chosen plan renews automatically " in html
         assert "Membership activated" in html
         assert "/api/portal" in html and "Manage membership" in html
 
@@ -1352,9 +1352,9 @@ def test_trial_copy_names_the_price(db, cfg, tmp_path):
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=[])
     html = (out / "index.html").read_text(encoding="utf-8")
-    assert '"your first " + o.days + " days free, then $9.99/month"' in html
-    assert '"-day free trial, then $9.99/month."' in html
-    assert '" — your first " + o.days + " days free, then $9.99/month."' in html
+    assert '"your first " + o.days + " days free, then " + prices()' in html
+    assert '"-day free trial, then " + prices() + "."' in html
+    assert '" — your first " + o.days + " days free, then " + prices() + "."' in html
 
 
 def test_visitors_see_a_rounded_deal_count(db, cfg, tmp_path):

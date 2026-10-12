@@ -2,9 +2,9 @@
  * Stripe Checkout and the customer portal for the paywall (docs/paywall.md
  * "Checkout and billing"). The trial is Stripe's: a first checkout carries
  * TRIAL_DAYS of trial with the card collected up front, then the price bills
- * monthly until cancelled (in the portal, or by the operator on request).
+ * at the chosen price's interval until cancelled (in the portal, or by the operator on request).
  *
- *   checkoutUrl(env, acct, me, gone) a subscription Checkout Session's URL
+ *   checkoutUrl(env, acct, me, gone, plan) a subscription Checkout Session's URL
  *   portalUrl(env, customer)         a billing portal session's URL for that customer
  *
  * Both throw on any Stripe error or missing setting; api.js answers 503 with
@@ -142,29 +142,30 @@ async function paramsHash(params) {
 
 // The account's last Checkout Session (KV checkout:<ref>), while Stripe still
 // shows it open: its url when it was made with these very params, else it is
-// expired here (an answer that it is no longer open is fine) and "" comes
-// back, as when there is none. Any other Stripe failure throws, marked
+// expired here (an answer that it is no longer open is fine). The previous
+// id also separates retries from an expired session's idempotency key.
+// Any other Stripe failure throws, marked
 // `unsafe`: an open session might remain, so api.js offers no Payment Link.
 async function reuseOrExpire(env, ref, hash) {
   let last = null;
   try { last = JSON.parse(await env.SUBS.get(`checkout:${ref}`)); } catch (e) { /* none or unreadable */ }
-  if (!last || typeof last.id !== "string" || !SESSION_ID_RE.test(last.id)) return "";
+  if (!last || typeof last.id !== "string" || !SESSION_ID_RE.test(last.id)) return {};
   try {
     let session;
     try {
       session = await stripeGet(env, `/checkout/sessions/${last.id}`);
     } catch (e) {
-      if (isMissing(e)) return "";
+      if (isMissing(e)) return { previous: last.id };
       throw e;
     }
-    if (session.status !== "open") return ""; // complete or expired: nothing left to pay
-    if (last.params === hash && typeof session.url === "string" && session.url) return session.url;
+    if (session.status !== "open") return { previous: last.id }; // complete or expired: nothing left to pay
+    if (last.params === hash && typeof session.url === "string" && session.url) return { url: session.url };
     try {
       await stripePost(env, `/checkout/sessions/${last.id}/expire`, []);
     } catch (e) {
       if (!refused(e)) throw e; // a 4xx: it completed or expired meanwhile
     }
-    return "";
+    return { previous: last.id };
   } catch (e) {
     e.unsafe = true;
     throw e;
@@ -182,9 +183,9 @@ async function reuseOrExpire(env, ref, hash) {
 // every new one expires after 31 to 41 minutes. The Idempotency-Key (ref +
 // 10-minute slot + params hash) makes a double click one session, and a
 // change of params a new one instead of Stripe's 400.
-export async function checkoutUrl(env, acct, me, gone = false) {
+export async function checkoutUrl(env, acct, me, gone = false, plan = "month") {
   if (!env.STRIPE_SECRET_KEY) throw new Error("STRIPE_SECRET_KEY unset");
-  const price = await priceId(env);
+  const price = plan === "year" ? env.STRIPE_YEARLY_PRICE_ID : await priceId(env);
   if (!price) throw new Error("no price: set STRIPE_PRICE_ID or an active STRIPE_PAYMENT_LINK");
   const ref = await accountRef(acct);
   const site = siteUrl(env);
@@ -206,12 +207,14 @@ export async function checkoutUrl(env, acct, me, gone = false) {
   );
   const hash = await paramsHash(params);
   const open = await reuseOrExpire(env, ref, hash);
-  if (open) return open;
+  if (open.url) return open.url;
+  // Switching back to a plan must not replay its already-expired session.
+  const idempotencyHash = open.previous ? await paramsHash([...params, ["previous_session", open.previous]]) : hash;
   const slot = Math.floor(Date.now() / IDEMPOTENCY_SLOT_MS);
   // From the slot's end, so a retry inside the slot sends the very same params.
   const expiresAt = Math.floor(((slot + 1) * IDEMPOTENCY_SLOT_MS) / 1000) + SESSION_OPEN_S;
   const session = await stripePost(env, "/checkout/sessions", [...params, ["expires_at", String(expiresAt)]],
-                                   { "Idempotency-Key": `${ref}-${slot}-${hash}` });
+                                   { "Idempotency-Key": `${ref}-${slot}-${idempotencyHash}` });
   if (typeof session.url !== "string" || !session.url) throw new Error("checkout session without a url");
   try { // one write per new session; without it the next checkout cannot find this one (it still expires)
     await env.SUBS.put(`checkout:${ref}`, JSON.stringify({ id: session.id, url: session.url, trial, params: hash }),

@@ -255,6 +255,17 @@ def _run_node(tmp_path: Path, ids: dict, scenarios: dict) -> dict:
     return json.loads(res.stdout)
 
 
+def test_checkout_plan_reaches_tags_only_as_month_or_year(tmp_path):
+    out = _run_node(tmp_path, SAMPLE, {
+        plan: {"calls": [["begin_checkout", {"plan": plan}]]}
+        for plan in ("month", "year", "secret")
+    })
+    for plan in ("month", "year"):
+        assert ["event", "begin_checkout", {"plan": plan, "send_to": "G-ABC123XYZ9"}] in out[plan]["dataLayer"]
+        assert ["track", "InitiateCheckout", {"plan": plan}] in out[plan]["fbq"]
+    assert "secret" not in json.dumps(out["secret"])
+
+
 def test_consent_and_event_fan_out_in_a_browser_like_run(tmp_path):
     out = _run_node(tmp_path, SAMPLE, {
         "open": {"calls": CALLS},
@@ -370,7 +381,7 @@ def test_event_hooks_at_sign_up_checkout_deal_click_and_welcome(db, cfg, tmp_pat
     assert post.index('if (path === "/api/google" && j.new_account === true) track("sign_up", { method: "google" });') \
         < post.index("signedIn(j.token, j.me, path)")
     body = _between(html, "function checkout(", "function refuse(")
-    assert body.index('track("begin_checkout");') < body.index("location.assign(https(j.url));")
+    assert body.index('track("begin_checkout", { plan: plan });') < body.index("location.assign(https(j.url));")
     assert '["pwfb", "cofb"].forEach' in html and 'addEventListener("click", function () { track("begin_checkout"); })' in html
     click = _between(html, 'e.target.closest(\'.card a[rel~="sponsored"]\')', "nextStep();")
     call = _between(click, 'track("deal_click", {', "});")

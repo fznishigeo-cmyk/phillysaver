@@ -27,7 +27,8 @@
  * STRIPE_SECRET_KEY (wrangler secret put); vars ALLOWED_ORIGINS (comma list,
  * default https://wowpriced.com, https://www.wowpriced.com and
  * https://fznishigeo-cmyk.github.io), GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
- * STRIPE_PORTAL_LINK, STRIPE_PRICE_ID, STRIPE_PORTAL_CONFIG, SITE_URL,
+ * STRIPE_PORTAL_LINK, STRIPE_PRICE_ID, STRIPE_YEARLY_PRICE_ID ($49/year; empty = unavailable),
+ * STRIPE_PORTAL_CONFIG, SITE_URL,
  * TRIAL_DAYS, PBKDF2_ITERATIONS (wrangler.toml).
  */
 

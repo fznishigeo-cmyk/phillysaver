@@ -893,6 +893,71 @@ describe("claim", () => {
 });
 
 describe("checkout", () => {
+  test("monthly is the default for missing, invalid and non-year bodies", async () => {
+    const env = newEnv({ STRIPE_PRICE_ID: "price_month", STRIPE_YEARLY_PRICE_ID: "price_year" });
+    const { json: { token } } = await signup(env, "default@example.com");
+    for (const body of [undefined, "bad JSON", null, [], "\"year\"", {}, { plan: "month" }, { plan: "YEAR" }, { plan: 1 }]) {
+      assert.equal((await checkout(env, token, { body })).status, 200);
+      assert.equal(postedMap()["line_items[0][price]"], "price_month");
+    }
+    assert.equal(stripe.created, 1);
+  });
+
+  test("yearly uses its price, the same trial and card requirement; missing yearly is 409 with no fallback", async () => {
+    const env = newEnv({ STRIPE_YEARLY_PRICE_ID: "price_year" });
+    const { json: { token } } = await signup(env, "year@example.com");
+    let r = await checkout(env, token, { body: { plan: "year" } });
+    assert.equal(r.status, 200);
+    assert.equal(postedMap()["line_items[0][price]"], "price_year");
+    assert.equal(postedMap()["payment_method_collection"], "always");
+    assert.equal(postedMap()["subscription_data[trial_period_days]"], "7");
+    assert.ok(!stripe.urls.some((u) => u.startsWith("/v1/payment_links")));
+    const before = stripe.posts.length;
+    r = await checkout({ ...env, STRIPE_YEARLY_PRICE_ID: "" }, token, { body: { plan: "year" } });
+    assert.equal(r.status, 409);
+    assert.deepEqual(Object.keys(r.json).sort(), ["error", "me"]);
+    assert.equal(r.json.error, "plan_unavailable");
+    assert.equal(r.json.me.email, "year@example.com");
+    assert.equal(stripe.posts.length, before);
+  });
+
+  test("plan switches expire the old session; only the same plan reuses it, including switching back in one slot", async () => {
+    const env = newEnv({ STRIPE_PRICE_ID: "price_month", STRIPE_YEARLY_PRICE_ID: "price_year" });
+    midSlot();
+    const { json: { token } } = await signup(env, "plans@example.com");
+    for (const [i, plan] of ["month", "year", "month"].entries()) {
+      const r = await checkout(env, token, { body: { plan } });
+      assert.equal(r.status, 200);
+      assert.equal(stripe.created, i + 1);
+      const session = stripe.sessions[stripe.lastSession];
+      assert.equal(session.status, "open");
+      assert.equal(session.form["line_items[0][price]"], plan === "year" ? "price_year" : "price_month");
+      const again = await checkout(env, token, { body: { plan } });
+      assert.deepEqual([again.status, again.json.url, stripe.created], [200, r.json.url, i + 1]);
+    }
+    assert.deepEqual(Object.values(stripe.sessions).map((s) => s.status), ["expired", "expired", "open"]);
+    assert.equal(new Set(checkoutPosts().map((p) => p.headers["Idempotency-Key"])).size, 3);
+  });
+
+  test("yearly never falls back to the monthly Payment Link on failed checks, creation or expiry", async () => {
+    const env = newEnv({ STRIPE_YEARLY_PRICE_ID: "price_year" });
+    const { json: { token } } = await signup(env, "yearfail@example.com");
+    stripe.fail = true;
+    let r = await checkout(env, token, { body: { plan: "year" } });
+    assert.deepEqual([r.status, r.json], [503, { error: "checkout_unavailable", fallback_url: "" }]);
+    assert.equal(stripe.created, 0);
+    stripe.fail = false;
+    stripe.failPost = true;
+    r = await checkout(env, token, { body: { plan: "year" } });
+    assert.deepEqual([r.status, r.json], [503, { error: "checkout_unavailable", fallback_url: "" }]);
+    stripe.failPost = false;
+    assert.equal((await checkout(env, token)).status, 200);
+    stripe.failPost = true;
+    r = await checkout(env, token, { body: { plan: "year" } });
+    assert.deepEqual([r.status, r.json], [503, { error: "checkout_unavailable", fallback_url: "" }]);
+    assert.equal(stripe.created, 1);
+  });
+
   test("a new account: card up front (named: the only method), the trial, the account's reference, a literal {CHECKOUT_SESSION_ID}", async () => {
     const env = newEnv();
     midSlot();

@@ -171,7 +171,7 @@ _UET = """\
 _DISPATCH = """\
   // wpTrack(name, params): one site event to every tag that loaded, each
   // call in its own try/catch; a no-op when none loaded. Only the store,
-  // category and method params pass (anything else is dropped here, so no
+  // category, method and checkout plan params pass (anything else is dropped here, so no
   // item name or price ever reaches a partner).
   //
   //   site event      GA4             Meta                  TikTok                Pinterest  Google Ads                Microsoft UET
@@ -196,6 +196,7 @@ _DISPATCH = """\
       var v = params && params[k];
       if (typeof v === "string" && v) p[k] = v.slice(0, 60);
     });
+    if (name === "begin_checkout" && params && (params.plan === "month" || params.plan === "year")) p.plan = params.plan;
     var trial = name === "start_trial";
     function plus(extra) { return Object.assign({}, p, trial ? { value: 0, currency: "USD" } : {}, extra || {}); }
     function send(fn) { try { fn(); } catch (e) { /* one tag's failure never stops the rest */ } }
