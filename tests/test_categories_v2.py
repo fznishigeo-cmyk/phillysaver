@@ -443,7 +443,7 @@ def test_recategorize_other_moves_live_other_deals_once_within_caps(tmp_path, ca
     assert recategorize_other(db, None) == 0
     p, m = parser_for(IndexedMessages([[{"i": 0, "category": "home"}]]), spend_cap_usd_per_run=0.0)
     assert recategorize_other(db, p) == 0 and db.get_deal("o9")["category"] == "other"
-    assert load_config().recategorize_other_per_run == 120
+    assert load_config().recategorize_other_per_run == 240
     db.close()
 
 

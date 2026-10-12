@@ -54,7 +54,7 @@ parse:
   critic_reserve_share: 0.5
   # Live deals still under "Other" (e.g. structured deals past a run's 60-title
   # category read) get one cheap title read each, this many per run.
-  recategorize_other_per_run: 120
+  recategorize_other_per_run: 240
   critic_shadow_model: "claude-haiku-5-5"
   critic_shadow_batches_per_day: 12   # 0 disables comparison; never affects publishing
   # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
