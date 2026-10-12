@@ -143,6 +143,15 @@ Keep this file current: whoever stops working updates it in their last commit.
   (`kind="category"`, 60 max, else "other"). Caps unchanged. Estimate before
   launch: ~$0.045 per fast run (was ~$0.156). Check `spend_by_kind` and
   `structured_parse` in the next fast-run summaries.
+- **Money report and Amazon guard (Codex task 022, merged 2026-10-12):** the
+  morning report shows clicks out per store (GA4 `deal_click` by
+  `customEvent:store`, top 10, yesterday and window; until the GA4 custom
+  dimension `store` is registered it prints how to register it),
+  `support_click`, and the Join free list (total, new yesterday) counted from
+  the Worker's KV key metadata through the Cloudflare API (counts only, never
+  an address). Hourly site check step 10 (desktop): every https amazon.com
+  deal URL carries exactly one `tag=<affiliate.amazon_tag>` and the
+  disclosure has the Amazon Associates line.
 - **Hourly site check walks the site like a visitor (Codex task 018, merged
   2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
   (cards, clock, tagline, no JS errors), load-more, a category tab and back,

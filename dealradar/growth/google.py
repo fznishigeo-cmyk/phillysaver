@@ -22,7 +22,9 @@ SCOPES = ("https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/webmasters")
 GA4_URL = "https://analyticsdata.googleapis.com/v1beta/properties/{}:batchRunReports"
 SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
-EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click")
+EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click")
+STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "
+                      "name store, scope Event, parameter store")
 
 
 def _b64url(data: bytes) -> str:
@@ -129,6 +131,39 @@ def ga4(client: Any, token: str, property_id: str, days: int) -> dict:
             out[dims["dateRange"]][dims["eventName"]] = count
     out["sources"] = [(d.get("sessionSourceMedium", ""), m[0]) for d, m in _rows(sources)]
     out["pages"] = [(d.get("landingPage", ""), m[0]) for d, m in _rows(pages)]
+    return out
+
+
+def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:
+    """Top ten stores and all-store totals, isolated from the main GA4 query."""
+    requests = []
+    for start in ("yesterday", f"{days}daysAgo"):
+        requests.append({
+            "dateRanges": [{"startDate": start, "endDate": "yesterday"}],
+            "dimensions": [{"name": "customEvent:store"}],
+            "metrics": [{"name": "eventCount"}],
+            "dimensionFilter": {"filter": {"fieldName": "eventName",
+                "stringFilter": {"matchType": "EXACT", "value": "deal_click"}}},
+            "metricAggregations": ["TOTAL"], "limit": 10,
+            "orderBys": [{"metric": {"metricName": "eventCount"}, "desc": True}],
+        })
+    resp = client.post(GA4_URL.format(quote(property_id, safe="")),
+                       json={"requests": requests},
+                       headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code == 400:
+        message = str(resp.json().get("error", {}).get("message", "")).lower()
+        if "customevent:store" in message and any(
+                hint in message for hint in ("not a valid dimension", "unknown", "not registered",
+                                              "unrecognized", "not found")):
+            return {"unavailable": STORE_REGISTRATION}
+    resp.raise_for_status()
+    out = {}
+    for key, result in zip(("yesterday", "window"), resp.json()["reports"]):
+        totals = result.get("totals") or []
+        out[key] = {
+            "total": int(float(totals[0]["metricValues"][0]["value"])) if totals else 0,
+            "stores": [(d.get("customEvent:store", ""), m[0]) for d, m in _rows(result)],
+        }
     return out
 
 

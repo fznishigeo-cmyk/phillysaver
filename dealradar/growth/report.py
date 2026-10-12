@@ -24,7 +24,7 @@ from ..config import get_secret
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
-from . import google, google_ads, meta, site_health, stripe_stats
+from . import google, google_ads, meta, site_health, stripe_stats, subscribers
 
 log = logging.getLogger("dealradar.growth")
 
@@ -53,6 +53,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
     sa = get_secret("GOOGLE_SA_JSON")
     meta_token = get_secret("META_SYSTEM_TOKEN")
     stripe_key = get_secret("STRIPE_SECRET_KEY")
+    cf_token = get_secret("CLOUDFLARE_API_TOKEN")
+    cf_account = get_secret("CLOUDFLARE_ACCOUNT_ID")
     gads = [(name, get_secret(name)) for name in
             ("GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN")]
     token = functools.cache(lambda: google.access_token(client, sa))
@@ -65,6 +67,8 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
                         lambda: site_health.check(client, cfg, now)),
         "ga4": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
                 lambda: google.ga4(client, token(), cfg.growth_ga4_property_id, days)),
+        "ga4_stores": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
+                       lambda: google.ga4_stores(client, token(), cfg.growth_ga4_property_id, days)),
         "search_console": ([need_google, site], lambda: google.search_console(
             client, token(), cfg.growth_search_console_site,
             sc_end - timedelta(days=days - 1), sc_end)),
@@ -84,6 +88,9 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
                            client, google_ads.access_token(client, *(v for _, v in gads)),
                            cfg.growth_google_ads_api_version, cfg.growth_google_ads_customer_id,
                            cfg.growth_google_ads_login_customer_id, yesterday, start)),
+        "subscribers": ([("CLOUDFLARE_API_TOKEN", cf_token), ("CLOUDFLARE_ACCOUNT_ID", cf_account)],
+                        lambda: subscribers.counts(client, cf_token, cf_account,
+                            datetime.combine(yesterday, time(), tz), datetime.combine(today, time(), tz))),
         "stripe": ([("STRIPE_SECRET_KEY", stripe_key)], lambda: stripe_stats.stats(
             client, stripe_key, yesterday_start=epoch(yesterday), window_start=epoch(start),
             today_start=epoch(today), monthly_price=cfg.growth_monthly_price_usd)),
@@ -94,14 +101,19 @@ def collect(cfg, now: datetime, client: Any) -> tuple[dict, dict]:
         missing = next((n for n, value in needs if not value), "")
         if missing:
             status[name] = "skipped"
+            if name == "subscribers":
+                data[name] = {"unavailable": f"{missing} not set"}
             log.info("%s: skipped (%s not set)", name, missing)
             continue
         try:
             data[name] = fetch()
-            status[name] = "ok"
-            log.info("%s: ok", name)
+            unavailable = isinstance(data[name], dict) and "unavailable" in data[name]
+            status[name] = "skipped" if unavailable else "ok"
+            log.info("%s: %s", name, status[name])
         except Exception as e:  # one section never stops the others
             status[name] = "error"
+            if name == "subscribers":
+                data[name] = {"unavailable": _error(e)}
             detail = (type(e).__name__ if name == "site_health" else
                       str(e) if isinstance(e, (google.ServiceAccountError, google_ads.GoogleAdsError))
                       else _error(e))
@@ -129,6 +141,14 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines = [f"Growth report for {yesterday:%a %b %d, %Y}: yesterday / last {days} days", ""]
 
     if ga:
+        lines.append("Sessions: " + _pair(_n, ga["yesterday"]["sessions"], ga["window"]["sessions"]))
+        lines.append(f"Clicks out yesterday: {_n(ga['yesterday']['deal_click'])}")
+    stores, subs = data.get("ga4_stores"), data.get("subscribers")
+    if not ga and stores and "unavailable" not in stores:
+        lines.append(f"Clicks out yesterday: {_n(stores['yesterday']['total'])}")
+    if subs and "unavailable" not in subs:
+        lines.append(f"Join free yesterday: {_n(subs['yesterday'])}")
+    if ga:
         lines.append("Visitors: " + _pair(_n, ga["yesterday"]["totalUsers"], ga["window"]["totalUsers"]))
         lines.append("Sign-ups: " + _pair(_n, ga["yesterday"]["sign_up"], ga["window"]["sign_up"]))
     trials = ((st["trials_yesterday"], st["trials_window"]) if st else
@@ -147,6 +167,21 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
 
     if "site_health" in data:
         lines += site_health.lines(data["site_health"])
+
+    lines += ["", "== Money =="]
+    if stores and "unavailable" not in stores:
+        for key, label in (("yesterday", "yesterday"), ("window", f"last {days} days")):
+            lines.append(f"Clicks out by store ({label}): total {_n(stores[key]['total'])}")
+            lines += [f"  {name or '(not set)'}: {_n(n)}" for name, n in stores[key]["stores"]]
+    elif stores:
+        lines.append(stores["unavailable"])
+    else:
+        lines.append(f"Clicks out by store: not available ({status.get('ga4_stores', 'skipped')})")
+    if subs and "unavailable" not in subs:
+        lines.append(f"Join free list: total {_n(subs['total'])}, new yesterday {_n(subs['yesterday'])}")
+    else:
+        reason = subs["unavailable"] if subs else status.get("subscribers", "skipped")
+        lines.append(f"subscribers: not available ({reason})")
 
     if ga:
         y, w = ga["yesterday"], ga["window"]

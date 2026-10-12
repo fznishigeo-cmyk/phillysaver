@@ -8,6 +8,8 @@
 // Everything printed is already public on the site.
 const { chromium } = require("playwright");
 const fs = require("fs");
+const path = require("path");
+const { amazonTag, checkAmazonTag } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
@@ -73,8 +75,8 @@ async function walk(page, doc, device) {
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
   async function step(n, name, action) {
     try {
-      await action();
-      results.push({ n, name, ok: true });
+      const note = await action();
+      results.push({ n, name, ok: true, ...(note ? { note } : {}) });
     } catch (e) {
       // Playwright errors include call logs; keep the summary to one short line.
       const reason = String(e.message || e).split("\n")[0].slice(0, 140);
@@ -197,6 +199,12 @@ async function walk(page, doc, device) {
     const age = Date.now() - Date.parse((doc.meta || {}).published_at);
     check(Number.isFinite(age) && age >= 0 && age < 45 * 60000, "publish missing, future, or >=45 minutes old");
   });
+  if (device === "desktop") await step(10, "Amazon tag", async () => {
+    const tag = amazonTag(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"));
+    const result = checkAmazonTag(doc, tag);
+    check(result.ok, result.reason);
+    return result.note;
+  });
   // Include errors from every interaction in the home/no-page-errors step.
   if (errors.length) Object.assign(results[0], { ok: false, reason: `page errors: ${errors.length}` });
   return { device, results, shown, errors };
@@ -285,7 +293,7 @@ async function walk(page, doc, device) {
   say("\n### Walk-through");
   for (const walk of [desktop, mobile]) {
     for (const step of walk.results) {
-      say(`${walk.device} ${step.n}. ${step.name}: ${step.ok ? "ok" : "FAIL " + step.reason}`);
+      say(`${walk.device} ${step.n}. ${step.name}: ${step.ok ? step.note || "ok" : "FAIL " + step.reason}`);
     }
   }
   if ([desktop, mobile].some((walk) => walk.results.some((step) => !step.ok))) process.exitCode = 1;
