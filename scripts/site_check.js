@@ -327,6 +327,18 @@ async function walk(page, doc, device) {
       say(`  photo check: ${new URL(d.image_url).protocol} ${d.image_url.slice(0, 120)} -> ${why}`);
     }
   }
+  // Category audit: live deals per category with sample titles, so the
+  // sorting into tabs can be judged from the real data (all public).
+  say("\n### Categories (live deals)");
+  const byCat = {};
+  for (const d of alive) (byCat[d.category || "other"] = byCat[d.category || "other"] || []).push(d);
+  for (const [cat, rows] of Object.entries(byCat).sort((a, b) => b[1].length - a[1].length)) {
+    say(`${cat}: ${rows.length}`);
+    const step = Math.max(1, Math.floor(rows.length / (cat === "other" ? 25 : 8)));
+    for (let i = 0; i < rows.length && i / step < (cat === "other" ? 25 : 8); i += step) {
+      say(`  ${rows[i].store} | ${String(rows[i].item).slice(0, 90)}`);
+    }
+  }
   say("\n### Walk-through");
   for (const walk of [desktop, mobile]) {
     for (const step of walk.results) {
