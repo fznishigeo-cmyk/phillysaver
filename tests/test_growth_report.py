@@ -829,8 +829,8 @@ def test_config_loader_reads_google_ads_ids(tmp_path):
     assert (c.growth_google_ads_customer_id, c.growth_google_ads_login_customer_id,
             c.growth_google_ads_api_version) == ("4976667972", "5861019939", "v26")
     shipped = load_config()
-    assert shipped.growth_google_ads_customer_id == "4976667972"
-    assert shipped.growth_google_ads_login_customer_id == "5861019939"
+    assert shipped.growth_google_ads_customer_id == "4412275803"
+    assert shipped.growth_google_ads_login_customer_id == ""
 
 
 def test_google_ads_steps_down_from_a_version_google_does_not_serve(cfg, monkeypatch, caplog):

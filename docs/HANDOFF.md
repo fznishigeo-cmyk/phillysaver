@@ -36,8 +36,8 @@ Keep this file current: whoever stops working updates it in their last commit.
   `META_SYSTEM_TOKEN`, `STRIPE_SECRET_KEY`) and sends the report only by
   email (`REPORT_EMAIL_TO`, needs SMTP_*) or the Telegram admin chat. The
   public log shows section names and status only.
-- **Google Ads (read-only so far):** ad account 497-666-7972 under manager
-  586-101-9939; API access is on Cloud project `wowpriced-511321` (Explorer
+- **Google Ads (read-only so far):** ad account 441-227-5803 (reached
+  directly; manager 586-101-9939 holds no accounts, 497-666-7972 never existed); API access is on Cloud project `wowpriced-511321` (Explorer
   level applied 2026-10-12; developer tokens are sunset). The report's
   `google_ads` section uses the OAuth secrets `GOOGLE_ADS_CLIENT_ID`,
   `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` (refresh token from
