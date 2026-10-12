@@ -109,6 +109,14 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Hourly site check walks the site like a visitor (Codex task 018, merged
+  2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
+  (cards, clock, tagline, no JS errors), load-more, a category tab and back,
+  search, a "Get deal" link's shape (never opened), the trial dialog opens
+  (nothing submitted), the yearly choice, content pages + robots + sitemap
+  + 3 hubs answer 200, and the publish is under 45 min old. Any failed step
+  exits 1 (red run, GitHub emails the owner); photos stay a report. At
+  most 40 page requests, 1/s, analytics blocked.
 - **Amazon links from posts (Codex task 016, merged 2026-10-12):** for live
   site deals with no photo and no product link (or Amazon without an ASIN),
   the fast lane fetches the first credited post politely (robots, official-

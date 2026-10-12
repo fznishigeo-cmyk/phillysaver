@@ -2,14 +2,15 @@
 // 2026-10-12: "go to wowpriced.com and check the images yourself"). Reads
 // deals.json, loads every live deal's photo in Chromium the way a visitor's
 // browser does (no referrer), opens the home page, and prints which deals
-// have no photo or a broken one, grouped by store, source and host. Read-only;
+// have no photo or a broken one, grouped by store, source and host. It also
+// walks the visitor controls on desktop and phone; failed steps exit 1. Read-only;
 // analytics and ad tags are blocked so the check is not counted as a visit.
 // Everything printed is already public on the site.
 const { chromium } = require("playwright");
 const fs = require("fs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
-const BLOCK = /googletagmanager|google-analytics|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
+const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
 const PHOTO_TIMEOUT_MS = 15000, CONCURRENCY = 12, EXAMPLES = 12;
 
 const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return "?"; } };
@@ -21,10 +22,180 @@ function top(rows, key, n = 10) {
 }
 const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} | via ${source(d)} | ${host(d.url)}`;
 
+const CARDS = "#content .card[data-key]";
+const STEP_TIMEOUT_MS = 10000;
+const SITE_URL = new URL(SITE);
+let siteRequests = 0, siteQueue = Promise.resolve(), lastSiteRequest = 0;
+async function siteRequest(photo = false) {
+  if (!photo && ++siteRequests > 40) throw new Error("site request limit (40)");
+  const pending = siteQueue.then(async () => {
+    const delay = Math.max(0, 1000 - (Date.now() - lastSiteRequest));
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    lastSiteRequest = Date.now();
+  });
+  siteQueue = pending;
+  await pending;
+}
+async function readSite(path) {
+  const url = new URL(path, SITE);
+  if (url.origin !== SITE_URL.origin) throw new Error("off-site URL");
+  await siteRequest();
+  // Do not follow redirects to a retailer, source, or login wall.
+  return fetch(url, { cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(15000) });
+}
+async function guardPage(page) {
+  page.setDefaultTimeout(STEP_TIMEOUT_MS);
+  await page.route("**/*", async (route) => {
+    const request = route.request(), url = new URL(request.url());
+    if (BLOCK.test(url.href) || request.method() !== "GET" ||
+        (url.origin !== SITE_URL.origin && request.resourceType() !== "image")) {
+      return route.abort();
+    }
+    try {
+      if (url.origin === SITE_URL.origin) await siteRequest(request.resourceType() === "image");
+      await route.continue();
+    } catch { await route.abort(); }
+  });
+}
+function check(ok, reason) { if (!ok) throw new Error(reason); }
+
+async function walk(page, doc, device) {
+  const results = [], errors = [];
+  let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "";
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
+  async function step(n, name, action) {
+    try {
+      await action();
+      results.push({ n, name, ok: true });
+    } catch (e) {
+      // Playwright errors include call logs; keep the summary to one short line.
+      const reason = String(e.message || e).split("\n")[0].slice(0, 140);
+      results.push({ n, name, ok: false, reason });
+    }
+  }
+  await step(1, "Home", async () => {
+    const response = await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
+    check(response && response.status() === 200, `HTTP ${response && response.status()}`);
+    html = await response.text();
+    await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
+      null, { timeout: STEP_TIMEOUT_MS });
+    await page.waitForTimeout(1000);
+    shown = await page.evaluate(() => ({
+      cards: document.querySelectorAll("#content .card[data-key]").length, top: 0,
+      clock: (document.getElementById("countdown") || {}).textContent || "",
+      tagline: (document.getElementById("tagline") || {}).textContent || "",
+    }));
+    check(/^\d+:[0-5]\d$/.test(shown.clock.trim()), `clock "${shown.clock}"`);
+    check(/\b[\d,]+\+? live deals\b/.test(shown.tagline), "missing live-deals tagline");
+    check(!errors.length, "page error");
+  });
+  // Preserve the photo report's first-screen measurement before loading more.
+  if (shown.cards) {
+    try {
+      for (const i of [7, 15, 23]) {
+        await page.locator(CARDS).nth(i).scrollIntoViewIfNeeded();
+        await page.waitForTimeout(1500);
+      }
+      await page.waitForTimeout(2000);
+      shown.top = await page.locator(CARDS).evaluateAll((cards) => cards.slice(0, 24)
+        .filter((c) => [...c.querySelectorAll("img")].some((i) => i.complete && i.naturalWidth > 1)).length);
+    } catch { /* A photo shortfall alone does not fail the walk-through. */ }
+  }
+  await step(2, "Load more", async () => {
+    const before = await page.locator(CARDS).count();
+    check(before >= 60, `only ${before} cards before scroll`);
+    await page.locator(CARDS).nth(59).scrollIntoViewIfNeeded();
+    await page.waitForFunction((before) => document.querySelectorAll("#content .card[data-key]").length > before,
+      before, { timeout: STEP_TIMEOUT_MS });
+  });
+  await step(3, "Category / All", async () => {
+    const oldCard = await page.locator(CARDS).first().elementHandle();
+    try {
+      await page.locator('#cattabs .cattab[data-i="1"]').click();
+      // The tab re-renders the wall: its cards, or the empty-state line
+      // when that category has nothing right now (not a failure).
+      await page.waitForFunction((old) => !old.isConnected &&
+        document.querySelector('#cattabs .cattab[data-i="1"].active') &&
+        document.querySelector("#content .card[data-key], #content .empty"), oldCard,
+      { timeout: STEP_TIMEOUT_MS });
+    } finally {
+      await page.locator('#cattabs .cattab[data-i="0"]').click();
+    }
+    await page.waitForFunction(() => document.querySelector('#cattabs .cattab[data-i="0"].active') &&
+      document.querySelector("#content .card[data-key]"), null, { timeout: STEP_TIMEOUT_MS });
+  });
+  await step(4, "Search / clear", async () => {
+    const title = await page.locator(CARDS).first().locator(".title").innerText();
+    const words = title.match(/[\p{L}\p{N}]+/gu) || [];
+    const word = words.find((w) => w.length >= 3) || words[0];
+    check(word, "no title word");
+    try {
+      await page.locator("#q").fill(word);
+      await page.waitForFunction((word) => [...document.querySelectorAll("#content .card[data-key] .title")]
+        .some((c) => c.textContent.toLowerCase().includes(word.toLowerCase())), word,
+      { timeout: STEP_TIMEOUT_MS });
+    } finally { await page.locator("#q").fill(""); }
+    check(await page.locator(CARDS).count() > 0, "no cards after clearing search");
+  });
+  await step(5, "Get deal URL (unopened)", async () => {
+    const href = await page.locator(CARDS).first().locator("a.getdeal").getAttribute("href");
+    check(href, "empty URL");
+    const url = new URL(href), name = url.hostname.toLowerCase();
+    check(url.protocol === "https:" && name && name !== "wowpriced.com" &&
+      !name.endsWith(".wowpriced.com") && name !== SITE_URL.hostname, "invalid or own-site deal URL");
+  });
+  await step(6, "Trial dialog / Escape", async () => {
+    try {
+      await page.locator("#subscribe").click();
+      await page.locator("#authmodal").waitFor({ state: "visible" });
+      await page.locator('#authmodal input[type="email"]').waitFor({ state: "visible" });
+    } finally { await page.keyboard.press("Escape"); }
+    await page.locator("#authmodal").waitFor({ state: "hidden" });
+  });
+  await step(7, "Yearly choice", async () => {
+    if (Number((doc.meta || {}).yearly_price_usd) > 0) {
+      check(/<input\b[^>]*value=["']year["'][^>]*>/i.test(html) && /Yearly/.test(html),
+        "missing Yearly plan choice in page source");
+    }
+  });
+  await step(8, "Public pages / hubs", async () => {
+    const problems = [];
+    async function read(path, kind = "html") {
+      try {
+        const response = await readSite(path), body = await response.text();
+        check(response.status === 200, `HTTP ${response.status}`);
+        if (kind === "html") check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+        // XML and plain text have no HTML title.
+        if (kind === "xml") check(/<urlset\b/.test(body), "invalid sitemap");
+        if (kind === "text") check(/User-agent:/i.test(body), "invalid robots.txt");
+        return body;
+      } catch (e) { problems.push(`${path}: ${String(e.message).split("\n")[0]}`); return ""; }
+    }
+    for (const path of ["about.html", "how-it-works.html", "contact.html", "privacy.html", "subscribe.html"]) {
+      await read(path);
+    }
+    const sitemap = await read("sitemap.xml", "xml");
+    await read("robots.txt", "text");
+    const hubs = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
+      .filter((u) => { try { return /^\/deals\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } })
+      .slice(0, 3);
+    if (hubs.length < 3) problems.push("fewer than 3 category hubs in sitemap");
+    for (const hub of hubs) await read(hub);
+    check(!problems.length, problems.join("; "));
+  });
+  await step(9, "Publish freshness", async () => {
+    const age = Date.now() - Date.parse((doc.meta || {}).published_at);
+    check(Number.isFinite(age) && age >= 0 && age < 45 * 60000, "publish missing, future, or >=45 minutes old");
+  });
+  // Include errors from every interaction in the home/no-page-errors step.
+  if (errors.length) Object.assign(results[0], { ok: false, reason: `page errors: ${errors.length}` });
+  return { device, results, shown, errors };
+}
+
 (async () => {
   const out = [];
   const say = (s) => { out.push(s); console.log(s); };
-  const res = await fetch(SITE + "deals.json", { cache: "no-store" });
+  const res = await readSite("deals.json");
   if (!res.ok) throw new Error(`deals.json HTTP ${res.status}`);
   const doc = await res.json();
   const alive = (doc.deals || []).filter((d) => d.status === "alive" && !d.locked);
@@ -33,26 +204,9 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
 
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.route(BLOCK, (r) => r.abort());
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
-  await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
-  await page.waitForTimeout(5000);
-  // Photos load lazily: bring the top 24 cards into view first.
-  for (const i of [7, 15, 23]) {
-    await page.evaluate((i) => { const c = document.querySelectorAll("#content .card[data-key]")[i];
-      if (c) c.scrollIntoView({ block: "center" }); }, i);
-    await page.waitForTimeout(1500);
-  }
-  await page.waitForTimeout(2000);
-  const shown = await page.evaluate(() => ({
-    cards: document.querySelectorAll("#content .card[data-key]").length,
-    // What a visitor sees first: the top 24 cards with a loaded photo.
-    top: [...document.querySelectorAll("#content .card[data-key]")].slice(0, 24)
-      .filter((c) => [...c.querySelectorAll("img")].some((i) => i.complete && i.naturalWidth > 1)).length,
-    clock: (document.getElementById("countdown") || {}).textContent || "",
-    tagline: (document.getElementById("tagline") || {}).textContent || "",
-  }));
+  await guardPage(page);
+  const desktop = await walk(page, doc, "desktop");
+  const { shown, errors } = desktop;
   // Every photo, loaded in the page the way the wall loads it.
   const urls = [...new Set(withPhoto.map((d) => d.image_url))];
   const failed = new Set(await page.evaluate(async ([urls, ms, conc]) => {
@@ -75,6 +229,9 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
     await Promise.all(Array.from({ length: conc }, worker));
     return bad;
   }, [urls, PHOTO_TIMEOUT_MS, CONCURRENCY]));
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
+  await guardPage(phone);
+  const mobile = await walk(phone, doc, "phone");
   await browser.close();
   const broken = withPhoto.filter((d) => failed.has(d.image_url));
 
@@ -115,5 +272,12 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
       say(`  photo check: ${new URL(d.image_url).protocol} ${d.image_url.slice(0, 120)} -> ${why}`);
     }
   }
+  say("\n### Walk-through");
+  for (const walk of [desktop, mobile]) {
+    for (const step of walk.results) {
+      say(`${walk.device} ${step.n}. ${step.name}: ${step.ok ? "ok" : "FAIL " + step.reason}`);
+    }
+  }
+  if ([desktop, mobile].some((walk) => walk.results.some((step) => !step.ok))) process.exitCode = 1;
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
 })().catch((e) => { console.error(e); process.exit(1); });
