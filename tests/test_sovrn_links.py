@@ -116,8 +116,8 @@ def test_config_switch_and_valid_key(tmp_path, caplog):
     path.write_text('affiliate:\n  sovrn_enabled: false\n  sovrn_key: ""\n')
     cfg = load_config(path)
     assert not cfg.affiliate_sovrn_enabled and not cfg.affiliate_sovrn_key
-    # Shipped off until a probe confirms the redirect works for a site under review.
-    assert not caplog.text and not load_config().affiliate_sovrn_enabled
+    # Switched on 2026-10-12 after the probe's 302 to walmart.com with the link key.
+    assert not caplog.text and load_config().affiliate_sovrn_enabled
 
 
 def test_emails_untouched_with_site_sovrn_enabled():

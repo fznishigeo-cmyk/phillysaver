@@ -113,8 +113,8 @@ affiliate:
   # go through redirect.viglink.com. The link key is the GitHub secret
   # SOVRN_API_KEY (operator's call: not in the repo, though it travels inside
   # every Sovrn link); the reporting key SOVRN_SECRET_KEY never goes here.
-  # Off until a probe confirms the redirect works for a site under review.
-  sovrn_enabled: false
+  # On since 2026-10-12: the probe got a 302 to walmart.com with the link key.
+  sovrn_enabled: true
   sovrn_key: ""
   disclosure: >-
     Disclosure: some links are affiliate links; wowpriced or the deal source may
