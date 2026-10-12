@@ -21,8 +21,9 @@ jobs:
             echo "== dig $h"; dig +short "$h" A; dig +short "$h" CNAME; dig +short "$h" NS
           done
           for u in https://wowpriced.com/ https://www.wowpriced.com/ https://wowpriced.pages.dev/ \
-                   https://fznishigeo-cmyk.github.io/phillysaver/ https://wowpriced.com/sitemap.xml; do
+                   https://fznishigeo-cmyk.github.io/phillysaver/ https://wowpriced.com/sitemap.xml \
+                   https://wowpriced.com/deals.json https://wowpriced.com/how-it-works.html; do
             echo "== $u"
             curl -sS -o /dev/null -D - --max-time 20 -A "dealradar site probe" "$u" \
-              | grep -iE '^(HTTP/|server:|location:|cf-ray:|x-github-request-id:|x-served-by:|content-type:)' || true
+              | grep -iE '^(HTTP/|server:|location:|cf-ray:|x-github-request-id:|x-served-by:|content-type:|cache-control:|cf-cache-status:|age:)' || true
           done
