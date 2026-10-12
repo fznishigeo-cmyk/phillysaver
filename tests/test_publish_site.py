@@ -1555,3 +1555,67 @@ class TestOpenAccess:
         meta = json.loads((closed / "deals.json").read_text(encoding="utf-8"))["meta"]
         assert meta["site_version"] == site_template_version()
         assert "Every deal on the wall is yours now" in (closed / "welcome.html").read_text(encoding="utf-8")
+
+
+class TestWallPagination:
+    @pytest.fixture()
+    def html(self, db, cfg, tmp_path):
+        out = tmp_path / "site"
+        render_site(db, cfg, NOW, out_dir=out, deals=[])
+        return (out / "index.html").read_text(encoding="utf-8")
+
+    def test_one_budget_caps_live_and_missed_sections(self, html):
+        assert "var PAGE_CARDS = 60;" in html
+        assert "shown: PAGE_CARDS" in html
+        body = _between(html, "function render() {", "function showMore()")
+        assert "remaining = state.shown" in body
+        assert "list = list.slice(0, remaining);" in body
+        assert "remaining -= list.length;" in body
+        assert "strong.length && remaining > 0" in body
+        assert "missed.length && live.length <= state.shown && remaining > 0" in body
+        assert "missed.slice(0, remaining)" in body
+        assert body.index("grid(headliners)") < body.index("grid(strong)") < body.index("gridHtml(visibleMissed)")
+        # The band eligibility is decided using the full section, so growing
+        # a partial grid never puts a band ahead of already visible cards.
+        assert body.index("var openBandHere") < body.index("list = list.slice")
+        assert "if (openBandHere && list.length > 8)" in body
+
+    def test_button_and_optional_observer_load_more_without_a_drop(self, html):
+        body = _between(html, "function render() {", "// ---- reorganizing the wall")
+        assert "rows.length > state.shown" in body
+        assert '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button></div>' in body
+        assert 'button.addEventListener("click", showMore)' in body
+        assert '"IntersectionObserver" in window' in body
+        assert "entry.isIntersecting && document.body.contains(entry.target)" in body
+        assert 'rootMargin: "1500px"' in body
+        assert "moreObserver.observe(more)" in body
+        assert "moreObserver.disconnect()" in body
+        more = _between(html, "function showMore()", "// ---- reorganizing the wall")
+        assert "state.shown += PAGE_CARDS;" in more and "render();" in more
+        assert "rememberFocus()" in more and "restoreFocus" in more
+        for forbidden in ("reorganize(", "toast(", "state.seed =", "present("):
+            assert forbidden not in more
+
+    def test_cta_precedes_missed_or_more(self, html):
+        body = _between(html, "function render() {", "function showMore()")
+        assert 'var miss = content.querySelector(".missed");' in body
+        assert 'var more = content.querySelector(".more");' in body
+        assert "content.insertBefore(panel, miss || more)" in body
+
+    def test_filters_sort_and_category_reset_but_publishes_do_not(self, html):
+        reset = _between(html, "function resetWall()", "// Easy sorting:")
+        assert "state.shown = PAGE_CARDS;" in reset and "render();" in reset
+        assert '["q", "storesel", "minpct", "srcsel"]' in reset
+        assert 'el.addEventListener("input", resetWall)' in reset
+        assert 'el.addEventListener("change", resetWall)' in reset
+        sort = _between(html, 'sortsel.addEventListener("change"', "(function restoreSort()")
+        assert "resetWall();" in sort
+        tabs = _between(html, "function renderTabs()", "function filtered()")
+        assert "state.shown = PAGE_CARDS;" in tabs
+        publish = _between(html, "function applyPublish(", "function loadData(")
+        assert "state.shown" not in publish and "resetWall" not in publish
+
+    def test_site_check_reports_rendered_and_total(self):
+        script = (Path(__file__).resolve().parents[1] / "scripts/site_check.js").read_text()
+        assert "cards rendered ${shown.cards} of ${alive.length} live" in script
+        assert "cards on the page" not in script

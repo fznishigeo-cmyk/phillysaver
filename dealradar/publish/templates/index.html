@@ -299,6 +299,7 @@ header .drop,header .dhole{background:#18252c}
 /* ---- sections ---- */
 .secth{font-size:17px;margin:28px 0 2px;padding-top:18px;border-top:1px solid var(--line)}
 .secth .meta{font-weight:400;display:inline}
+.more{padding:28px 0;text-align:center}
 .empty{color:var(--muted);padding:34px 0;text-align:center}
 .lockedlist{color:var(--muted);margin:10px 0;padding-left:20px}
 footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
@@ -619,7 +620,9 @@ footer .meta{font-size:11.5px}
   // dropKeys: what was on the wall at the last drop; unlocked: how many
   // cards the last publish opened that were locked before (every drop
   // unlocks a new set of free deals for visitors).
-  var state = { deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
+  var PAGE_CARDS = 60;
+  var moreObserver = null;
+  var state = { shown: PAGE_CARDS, deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
                 sortKey: "fresh", sortDir: -1, catTab: 0,
                 seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
   // Minutes between drops when deals.json does not say: meta.cadence_minutes
@@ -942,6 +945,7 @@ footer .meta{font-size:11.5px}
         if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         state.catTab = Number(b.getAttribute("data-i")) || 0;
+        state.shown = PAGE_CARDS;
         renderTabs();
         render();
       });
@@ -1293,6 +1297,7 @@ footer .meta{font-size:11.5px}
   }
 
   function render() {
+    if (moreObserver) moreObserver.disconnect();
     paintTicker();
     paintSources();
     var content = document.getElementById("content");
@@ -1324,10 +1329,14 @@ footer .meta{font-size:11.5px}
       headliners = live.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
       strong = live.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
     }
-    var html = "", banded = false;
+    var html = "", banded = false, remaining = state.shown;
     // The first grid with locked cards gets the trial band ahead of them.
     function grid(list) {
-      if (openAccess() && !banded && canJoin() && list.length > 8) {
+      var openBandHere = openAccess() && !banded && canJoin() && list.length > 8;
+      list = list.slice(0, remaining);
+      remaining -= list.length;
+      if (!list.length) return "";
+      if (openBandHere && list.length > 8) {
         banded = true;
         return gridHtml(list.slice(0, 8)) + openBand() + gridHtml(list.slice(8));
       }
@@ -1344,22 +1353,55 @@ footer .meta{font-size:11.5px}
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
         "alert bar right now</p>";
     }
-    if (strong.length) {
+    if (strong.length && remaining > 0) {
       html += '<h2 class="secth">Strong deals <span class="meta">— below the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
         "alert bar, still big savings</span></h2>" + grid(strong);
     }
-    if (missed.length) {
+    if (missed.length && live.length <= state.shown && remaining > 0) {
+      var visibleMissed = missed.slice(0, remaining);
+      remaining -= visibleMissed.length;
       html += '<h2 class="secth missed">Just missed &#128557; <span class="meta">— ' +
         "gone before you got here. Check back more often (or get alerts)." +
-        "</span></h2>" + gridHtml(missed);
+        "</span></h2>" + gridHtml(visibleMissed);
+    }
+    if (rows.length > state.shown) {
+      html += '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button></div>';
     }
     content.innerHTML = html;
     // The CTA panel (one persistent node, listeners intact) goes after the
     // live grids, ahead of the public "Just missed" strip: sticky at the
     // viewport bottom while the locked area scrolls, gone past it.
     var miss = content.querySelector(".missed");
-    if (miss) content.insertBefore(panel, miss); else content.appendChild(panel);
+    var more = content.querySelector(".more");
+    if (miss || more) content.insertBefore(panel, miss || more); else content.appendChild(panel);
+    var button = document.getElementById("moremore");
+    if (button) {
+      button.addEventListener("click", showMore);
+      if ("IntersectionObserver" in window) {
+        if (!moreObserver) moreObserver = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting && document.body.contains(entry.target)) showMore();
+          });
+        }, { rootMargin: "1500px" });
+        moreObserver.observe(more);
+      }
+    }
+  }
+
+  function showMore() {
+    var button = document.getElementById("moremore");
+    if (!button) return;
+    var onButton = document.activeElement === button;
+    var focus = rememberFocus(), count = cardEls().length;
+    // Keep the same seed and cards above; loading more is not a drop.
+    state.shown += PAGE_CARDS;
+    render();
+    if (onButton) {
+      var next = document.getElementById("moremore");
+      if (!next && cardEls()[count]) next = cardEls()[count].querySelector("a[href],button");
+      restoreFocus({ el: next });
+    } else restoreFocus(focus);
   }
 
   // ---- reorganizing the wall (drops and late landings) ----
@@ -2210,9 +2252,19 @@ footer .meta{font-size:11.5px}
     var it = e.target.closest(".tkitem");
     if (!it) return;
     if (it.getAttribute("data-locked") && !isMember()) { nextStep(); return; }
-    var k = it.getAttribute("data-k"), cards = cardEls();
+    var k = it.getAttribute("data-k");
+    function findCard() {
+      return Array.prototype.filter.call(cardEls(), function (c) { return c.getAttribute("data-key") === k; })[0];
+    }
+    if (!findCard()) {  // further down than the cards shown so far: show up to it
+      var pos = ordered(filtered()).map(dealKey).indexOf(k);
+      if (pos >= state.shown) {
+        state.shown = Math.ceil((pos + 1) / PAGE_CARDS) * PAGE_CARDS;
+        render();
+      }
+    }
+    var cards = [findCard()].filter(Boolean);
     for (var i = 0; i < cards.length; i++) {
-      if (cards[i].getAttribute("data-key") !== k) continue;
       var card = cards[i];
       card.scrollIntoView({ behavior: reduceMotion() ? "auto" : "smooth", block: "center" });
       card.classList.add("flash");
@@ -2231,10 +2283,15 @@ footer .meta{font-size:11.5px}
     document.getElementById("srcwall").classList.toggle("hiddentab", document.hidden);
   });
 
+  function resetWall() {
+    state.shown = PAGE_CARDS;
+    render();
+  }
+
   ["q", "storesel", "minpct", "srcsel"].forEach(function (id) {
     var el = document.getElementById(id);
-    el.addEventListener("input", render);
-    el.addEventListener("change", render);
+    el.addEventListener("input", resetWall);
+    el.addEventListener("change", resetWall);
   });
 
   // Easy sorting: the dropdown drives the card order; the choice is
@@ -2248,7 +2305,7 @@ footer .meta{font-size:11.5px}
   sortsel.addEventListener("change", function () {
     applySort(this.value);
     lsSet(SORT_KEY, this.value);
-    render();
+    resetWall();
   });
   (function restoreSort() {
     var saved = lsGet(SORT_KEY);
