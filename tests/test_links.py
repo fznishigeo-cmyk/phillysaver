@@ -207,4 +207,4 @@ class TestAmazonAffiliateTag:
         assert (c.affiliate_amazon_tag, c.affiliate_disclosure) == ("wowpriced-20", "X")
         p.write_text("affiliate:\n  amazon_tag: 'bad tag&x=1'\n")
         assert load_config(p).affiliate_amazon_tag == ""
-        assert load_config().affiliate_amazon_tag == ""  # shipped off until the operator's Store ID
+        assert load_config().affiliate_amazon_tag == "wowpriced-20"  # the operator's Store ID (2026-10-12)

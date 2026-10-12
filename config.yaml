@@ -88,7 +88,7 @@ affiliate:
   # site carries tag=<id> (publish/site.py rewrite_affiliate, the only place
   # links are rewritten); emails never do (Amazon forbids tagged links in
   # email), and the site's disclosure switches to the one below.
-  amazon_tag: ""
+  amazon_tag: "wowpriced-20"
   disclosure: >-
     Disclosure: some links are affiliate links; wowpriced or the deal source may
     earn a commission when you buy, at no extra cost to you. As an Amazon

@@ -107,7 +107,7 @@ Keep this file current: whoever stops working updates it in their last commit.
   to start in about a month (`newsletter.enabled: false` until then;
   `members.email_enabled: false`). Emails never carry Amazon-tagged links.
 - **Affiliate (2026-10-12):** affiliate commission is the income. The
-  Amazon Store ID goes in `config.yaml affiliate.amazon_tag`; only
+  Amazon Store ID `wowpriced-20` (live 2026-10-12) is `config.yaml affiliate.amazon_tag`; only
   `publish/site.py rewrite_affiliate` tags links (https amazon.com only),
   and the site disclosure switches to `affiliate.disclosure` (FTC + the
   Amazon Associates sentence; keep it visible).
