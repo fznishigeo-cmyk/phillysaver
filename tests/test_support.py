@@ -116,14 +116,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "1a9a5fbde0d694cac86caae2b2488a3e00e250aaffe12ca7bb1c0dd5ade36899"),
-    (False, 49, "5c76baa7e89ae19062b609243285f0f1fe4b4b79e9c7cddaa522c10fef00906f"),
-    (True, 0, "9d638765488d710262142efa061f4fad9005cc499beed8773d643a8ac27fffa1"),
-    (True, 49, "90322bec064da3cc3471b8ddf864afdd10613ad0018f69d17e186d59947ce1b0"),
+    (False, 0, "fb79a289ffe7658d5905e3c7efc554f6b0817a9304d52065e08de0a8a63fd30c"),
+    (False, 49, "4b52f73a4802365b173ba57b93cbb8d27482b71083a4f686251b76c349d778a8"),
+    (True, 0, "6fd2c322edf8cce61e6e462baf8a7781818c710658a1d4157b8b62a5b8b8ab3b"),
+    (True, 49, "a0f09583655c0a402ef19fb737845d4cb62e92d57d9afeb1e40e80666da3223f"),
 ])
-def test_support_off_index_bytes_match_task029_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 029 changes shared flames and limits animation in both membership modes.
-    # These baselines retain inline gone cards; the version stays fixed.
+def test_support_off_index_bytes_match_task031_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 031 changes shared search, filters and refresh in both membership modes.
+    # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected

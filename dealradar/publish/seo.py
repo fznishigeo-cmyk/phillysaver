@@ -72,6 +72,28 @@ https://:version.:project.pages.dev/*
 
 /deals.json
   X-Robots-Tag: noindex
+  Cache-Control: no-store
+
+/
+  Cache-Control: no-cache
+
+/*.html
+  Cache-Control: no-cache
+
+/deal/*
+  Cache-Control: no-cache
+
+/deals/*
+  Cache-Control: no-cache
+
+/stores/*
+  Cache-Control: no-cache
+
+/best-deals-today/*
+  Cache-Control: no-cache
+
+/join
+  Cache-Control: no-cache
 """
 
 #: meta key: {url: [content hash, iso time]} as last listed for IndexNow.

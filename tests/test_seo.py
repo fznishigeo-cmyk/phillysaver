@@ -172,7 +172,14 @@ def test_404_page_and_cloudflare_headers(db, cfg, tmp_path):
     assert (out / "_headers").read_text(encoding="utf-8") == (
         "https://:project.pages.dev/*\n  X-Robots-Tag: noindex\n\n"
         "https://:version.:project.pages.dev/*\n  X-Robots-Tag: noindex\n\n"
-        "/deals.json\n  X-Robots-Tag: noindex\n")
+        "/deals.json\n  X-Robots-Tag: noindex\n  Cache-Control: no-store\n\n"
+        "/\n  Cache-Control: no-cache\n\n"
+        "/*.html\n  Cache-Control: no-cache\n\n"
+        "/deal/*\n  Cache-Control: no-cache\n\n"
+        "/deals/*\n  Cache-Control: no-cache\n\n"
+        "/stores/*\n  Cache-Control: no-cache\n\n"
+        "/best-deals-today/*\n  Cache-Control: no-cache\n\n"
+        "/join\n  Cache-Control: no-cache\n")
     assert (out / f"{KEY}.txt").read_text(encoding="utf-8") == KEY
     robots = (out / "robots.txt").read_text(encoding="utf-8")
     assert "Allow: /\n" in robots and "deals.json" not in robots

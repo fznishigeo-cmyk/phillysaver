@@ -66,7 +66,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
       setItem(k,v) {if (throwing==='write') throw Error('readonly'); storage.set(k,v);},
       removeItem(k) {if (throwing==='write') throw Error('readonly'); storage.delete(k);}},
     ordered:rows=>rows, filtered:()=>wall, isLocked:d=>d.locked===true,
-    cardEls:cards, moreObserver:null, paintTicker(){}, paintSources(){}, updatePaywall(){},
+    cardEls:cards, moreObserver:null, renderSearchCount(){}, paintTicker(){}, paintSources(){}, updatePaywall(){},
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
     setTimeout:cb=>timers.push(cb), mediaHtml:()=>'<span>photo</span>', ageText:()=>'',
     isNew:()=>false, isFreePick:()=>false, lit:()=>false, traceSvg:()=>'', TIER_LABEL:{corroborated:'✓ 2+ sources'},

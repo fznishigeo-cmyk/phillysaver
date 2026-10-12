@@ -200,7 +200,8 @@ def test_ticker_and_search_use_liveness_correctly():
     var num = Number, isLocked = () => false, offer = () => ({}), esc = String, dealKey = d => d.key;
     var values = {q:"Lamp 0", storesel:"", minpct:"", srcsel:""};
     var document = {getElementById: id => ({value: values[id]})};
-    ''' + js_function("tickerItems") + '\n' + js_function("filtered")
+    ''' + '\n'.join(js_function(n) for n in (
+        "tickerItems", "searchText", "normalizeSearch", "matchesSearch", "filtered"))
     script += '\nconsole.log(JSON.stringify({ticker:tickerItems(), filtered:filtered()}));'
     result = run_js(script, rows)
     assert [d["key"] for d in result["ticker"]] == [d["key"] for d in rows[1:]]
@@ -221,6 +222,7 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var rendered = [], content = {innerHTML:"", querySelector: () => null, appendChild: () => {}};
     var document = {getElementById: id => id === "content" ? content : null};
     var window = {wpSupport:{refresh: () => {}}}, panel = {}, moreObserver = null;
+    var renderSearchCount = () => {}; // Search count has its own published-page harness.
     var paintTicker = () => {}, paintSources = () => {}, updatePaywall = () => {}, openNudge = () => false;
     var filtered = () => state.deals, isLocked = () => false, canJoin = () => true, openAccess = () => true;
     var openBand = () => "<aside>Join</aside>", num = x => x == null ? null : Number(x);
