@@ -10,14 +10,22 @@ filters underneath"; "I searched best office and the BestOffice deal did not
 come up"; "I don't see Walmart under all sources"; "without an incognito
 window the site doesn't update". Subtle, polished, tested.
 
-## 1. Search on its own row
-- `#q` moves to its own full-width row above the filters (desktop and
-  phone): ~48px tall, 16px text (no iOS zoom), a magnifier icon inside on
+## 1. Search front and centre (Kalshi / Polymarket style)
+Operator's inspiration: kalshi.com and polymarket.com put one big rounded
+search field ("Trade on anything") in the middle of the header, logo left,
+Log in / Sign up pills right, the category row underneath. Do the same:
+- Desktop (≥ 900px): `#q` sits in the header between the logo and the drop
+  clock / Join free pill, ~44px tall, fully rounded, soft filled background,
+  max ~560px wide; the tagline moves under the logo or into the category row
+  area as today's kicker. Phone: `#q` is its own full-width row directly
+  under the logo row, above the category tabs.
+- The filters (stores, sort, Surprise me, min %, found by) stay one quiet
+  row under the tabs.
+- `#q`: ~48px tall on phones, 16px text (no iOS zoom), a magnifier icon inside on
   the left, a clear (✕) button on the right when it has text (keyboard
-  reachable, `aria-label="Clear search"`), placeholder "Search 1,600+ deals
-  (brand, product, store)" with the live rounded count. The filters (stores,
-  sort, Surprise me, min %, found by) sit in one row under it; on phones
-  they wrap as today. Same look as task 030's buttons (calm outline).
+  reachable, `aria-label="Clear search"`), placeholder "Search 1,600+ deals"
+  with the live rounded count. Same calm look as task 030's buttons.
+  Header height on phones may grow only by the search row itself.
 - No layout shift: the row exists in the static HTML.
 
 ## 2. Search that finds things
