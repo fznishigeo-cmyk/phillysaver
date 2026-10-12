@@ -194,6 +194,9 @@ class AppConfig:
     support_enabled: bool = False     # absent block preserves membership pages
     support_payment_link: str = ""
     support_monthly_link: str = ""    # recurring Payment Link ($1 x quantity)
+    # Loaded configs enable all five; an empty programmatic config preserves
+    # the legacy template (including the dormant membership snapshots).
+    engagement: dict[str, bool] = field(default_factory=dict)
     # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
     newsletter_enabled: bool = True
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
@@ -371,6 +374,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.support_enabled = bool(g("support", "enabled", default=False))
     cfg.support_payment_link = support_link(g("support", "payment_link", default=""))
     cfg.support_monthly_link = support_link(g("support", "monthly_link", default=""))
+    cfg.engagement = {name: bool(g("engagement", name, default=True)) for name in (
+        "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
     cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
     cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))

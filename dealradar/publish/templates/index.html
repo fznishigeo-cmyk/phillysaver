@@ -493,7 +493,15 @@ footer .meta{font-size:11.5px}
 .joinform p{flex:1 1 100%;margin:0}
 .mcard .joinform{flex-wrap:nowrap}
 .mcard .joinform>*{flex:0 1 auto}
-<!--/support--></style>
+<!--/support--><!--engagement-->
+.engagement-line{color:var(--muted);font-size:12.5px;line-height:1.5;margin:14px 0 0;overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+         clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#surprise{background:var(--chip);color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer}
+#surprise:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.visit-new,.hotmeter{color:var(--muted);font-size:11px;letter-spacing:.02em}
+.visit-new{position:absolute;bottom:8px;right:8px;background:var(--card);border-radius:5px;padding:2px 6px}
+<!--/engagement--></style>
 </head>
 <body>
 <section id="ticker" class="tk" aria-label="Live deals" hidden>
@@ -544,7 +552,8 @@ footer .meta{font-size:11.5px}
     <option value="price:1">sort: cheapest first</option>
     <option value="age:1">sort: newest first</option>
   </select>
-  <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
+<!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
+<!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" min="0" max="100" step="1" value="0"></label>
   <select id="srcsel" aria-label="source filter"><option value="">all sources</option><option value="@2">&#10003; confirmed by 2+ sources</option></select>
 </div>
 <div id="content">{{STATIC_WALL}}</div>
@@ -759,7 +768,8 @@ footer .meta{font-size:11.5px}
     return o;
   }
 
-  function renderMeta() {
+<!--engagement-->  {{ENGAGEMENT_SCRIPT}}
+<!--/engagement-->  function renderMeta() {
     var m = state.meta || {};
     // Consumer header: brand, one tagline derived from the configured alert
     // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
@@ -771,7 +781,8 @@ footer .meta{font-size:11.5px}
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length;
     document.getElementById("tagline").textContent =
       tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
-    document.title = "wowpriced — " + tagline;
+<!--engagement-->    renderEngagement();
+<!--/engagement-->    document.title = "wowpriced — " + tagline;
     // Footer line: the FTC disclosure, from meta.disclosure verbatim, never
     // hardcoded in this template. Run times and counts are the operator's
     // (Actions summary), not visitors' (operator, 2026-10-12).
@@ -906,7 +917,9 @@ footer .meta{font-size:11.5px}
     this.hidden = true;
   });
 
-  function sinceLastVisit(deals) {
+  function sinceLastVisit(deals) {<!--engagement-->
+    return; // Timestamp-based engagement replaces the legacy key count.
+<!--/engagement-->
     // "N new since your last visit": compares against the keys stored on
     // the previous visit; shown only when storage has one.
     var prev = null;
@@ -920,7 +933,9 @@ footer .meta{font-size:11.5px}
     el.textContent = n + " new since your last visit";
     el.hidden = false;
   }
-  function rememberSeen(deals) {
+  function rememberSeen(deals) {<!--engagement-->
+    return;
+<!--/engagement-->
     lsSet(SEEN_KEY, JSON.stringify(Object.keys(keySet(deals))));
   }
 
@@ -1159,7 +1174,9 @@ footer .meta{font-size:11.5px}
     var url = d.url || "";
     var dead = d.status === "dead";
     var conds = d.conditions || [];
-    var media = mediaHtml(d);
+    var media = mediaHtml(d);<!--engagement-->
+    if (newSinceVisit(d)) media += '<span class="visit-new">NEW<span class="sr-only"> since your last visit</span></span>';
+<!--/engagement-->
 
     var price = d.final_price != null
       ? '<span class="now">$' + Number(d.final_price).toFixed(2) + "</span>" : "";
@@ -1179,7 +1196,8 @@ footer .meta{font-size:11.5px}
     if (TIER_LABEL[tier]) {
       metarow += '<span class="badge tier-' + esc(tier) + '">' + TIER_LABEL[tier] + "</span>";
     }
-    var extra = conds.filter(function (c) { return c !== "used" && c !== "open_box"; });
+<!--engagement-->    metarow += hotHtml(d);
+<!--/engagement-->    var extra = conds.filter(function (c) { return c !== "used" && c !== "open_box"; });
     extra.slice(0, 2).forEach(function (c) {
       metarow += '<span class="chip">' + esc(c).replace(/_/g, " ") + "</span>";
     });
@@ -1329,15 +1347,16 @@ footer .meta{font-size:11.5px}
     paintTicker();
     paintSources();
     var content = document.getElementById("content");
-    var rows = state.deals.length ? ordered(filtered()) : [];
+<!--engagement-->    var engagementHtml = engagementLineHtml();
+<!--/engagement-->    var rows = state.deals.length ? ordered(filtered()) : [];
     traceFree = state.deals.some(isLocked);
     updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length) {
-      content.innerHTML = '<p class="empty">No qualifying deals right now</p>';
+      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No qualifying deals right now</p>';
       return;
     }
     if (!rows.length) {
-      content.innerHTML = '<p class="empty">No deals match the current filters</p>';
+      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No deals match the current filters</p>';
       return;
     }
     // Live deals ranked on top; dead ones collect in a "Just missed"
@@ -1357,7 +1376,7 @@ footer .meta{font-size:11.5px}
       headliners = live.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; });
       strong = live.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; });
     }
-    var html = "", banded = false, remaining = state.shown;
+    var html = <!--engagement-->engagementHtml || <!--/engagement-->"", banded = false, remaining = state.shown;
     // The first grid with locked cards gets the trial band ahead of them.
 <!--standard-->    function grid(list) {
       var openBandHere = openAccess() && !banded && canJoin() && list.length > 8;
@@ -2276,7 +2295,9 @@ footer .meta{font-size:11.5px}
     if (go) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });<!--engagement-->
+      if (go.classList.contains("getdeal")) recordFind(d);
+<!--/engagement-->
     }
     var card = e.target.closest ? e.target.closest(".card.locked, [data-cta]") : null;
     if (card) nextStep();
@@ -2316,7 +2337,9 @@ footer .meta{font-size:11.5px}
     if (go) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });<!--engagement-->
+      if (go.classList.contains("getdeal")) recordFind(d);
+<!--/engagement-->
     }
   });
 <!--/support-->  // The ticker: a locked deal takes the next step; a free one scrolls to
@@ -2447,7 +2470,9 @@ footer .meta{font-size:11.5px}
     state.teaser = pub.deals;
     state.meta = pub.meta;
     state.deals = deals;
-    state.dataKey = pub.key;
+    state.dataKey = pub.key;<!--engagement-->
+    initEngagement();
+<!--/engagement-->
     syncClock();
     if (first) {
       loadedOnce = true;

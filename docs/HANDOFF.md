@@ -154,6 +154,17 @@ Keep this file current: whoever stops working updates it in their last commit.
   pytest: 1,363 passed, 7 existing Stripe tests fail on sandbox socket
   permissions, 1 deselected. Chromium launch blocked here: live captures/scores
   need verification in Actions. No commit or push made.
+- **Honest home engagement (Codex task 026, merged 2026-10-12):** five
+  `engagement:` switches default on: browser-only visit NEW tags, weekly finds
+  and streak; filtered top-50 Surprise; flames from published facts. Review fix:
+  original header layout restored with no reserved slots; streak/finds share one
+  muted 12.5px line above the grid in the cards' render pass (absent when empty
+  or switched off); only click finds updates announce politely. NEW's qualifier
+  is visually hidden; its tag sits below the price/condition flags. Updated
+  offline Node checks and legacy page byte checks pass; full pytest: 1,380
+  passed, 1 deselected, only 7 localhost-socket tests blocked by sandbox
+  permissions. Chromium launch also blocked; desktop/phone height remeasurement
+  remains. No commit or push.
 - **AI spend under $6/day (Codex task 020, merged 2026-10-12):** the critic
   judges up to `parse.critic_batch_size` (8) deals per Sonnet call with
   reasons cut to 120 characters, and reuses a stored verdict for the same
