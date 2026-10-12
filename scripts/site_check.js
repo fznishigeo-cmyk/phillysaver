@@ -9,7 +9,7 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-const { amazonTag, checkAmazonTag, overrideLinks, overrideNote } = require("./site_check_logic.cjs");
+const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
@@ -208,13 +208,15 @@ async function walk(page, doc, device) {
     const age = Date.now() - Date.parse((doc.meta || {}).published_at);
     check(Number.isFinite(age) && age >= 0 && age < 45 * 60000, "publish missing, future, or >=45 minutes old");
   });
-  if (device === "desktop") await step(10, "Amazon tag", async () => {
+  if (device === "desktop") await step(10, "Affiliate links", async () => {
     const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
     const result = checkAmazonTag(doc, amazonTag(config));
     check(result.ok, result.reason);
+    const sovrn = checkSovrnLinks(doc);
+    check(sovrn.ok, sovrn.reason);
     // Network links (Sovrn onboarding): a report, never a failure (deals end).
     const extra = overrideNote(doc, overrideLinks(config));
-    return [result.note || "ok", extra && `network links: ${extra}`].filter(Boolean).join("; ");
+    return [result.note || "ok", `sovrn: ${sovrn.links} links`, extra && `network links: ${extra}`].filter(Boolean).join("; ");
   });
   fs.mkdirSync("shots", { recursive: true });
   await step(11, "Home screenshot", async () => {

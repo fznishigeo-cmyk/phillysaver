@@ -8,7 +8,7 @@ from dealradar.publish.site import link_mix
 
 TAG = "our-store-20"
 BUCKETS = ("amazon_tagged", "amazon_untagged", "amazon_short",
-           "source_post", "other_store", "none")
+           "source_post", "sovrn", "other_store", "none")
 
 
 def deal(url="", **extra):

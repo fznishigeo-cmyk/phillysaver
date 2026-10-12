@@ -14,12 +14,13 @@ import re
 import shutil
 from collections import Counter
 from datetime import datetime
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
-from ..config import redact_secrets, support_link
+from ..config import load_sources, redact_secrets, support_link
 from ..util import iso, parse_iso
 from . import seo
 from .paywall import is_open, split_teaser, teaser_memory
@@ -77,27 +78,69 @@ def site_template_version() -> str:
 
 
 _AMAZON_HOSTS = {"amazon.com", "www.amazon.com", "smile.amazon.com"}
+_AMAZON_NETWORK_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
+_SOVRN_HOSTS = {"redirect.viglink.com", "sovrn.co"}
+_AFFILIATE_PARAMS = {
+    "irgwc", "afsrc", "sourceid", "veh", "wmlspartner", "affiliates_ad_id",
+    "campaign_id", "sharedid", "clickid", "irclickid", "cjevent", "cjdata",
+    "ranmid", "raneaid", "ransiteid", "siteid", "sscid",
+}
 
 
-def rewrite_affiliate(url: str, amazon_tag: str = "") -> str:
+@lru_cache(maxsize=1)
+def _deal_source_hosts() -> set[str]:
+    """Known source/blog hosts, including paused sources; stores can also have feeds."""
+    primary, backup = load_sources()
+    retailers = {"woot.com", "meh.com", "morningsave.com", "sidedeal.com",
+                 "dealgenius.com", "dailysteals.com", "tanga.com", "1sale.com"}
+    return {(urlsplit(s.site or s.url).hostname or "").lower().removeprefix("www.")
+            for s in primary + backup} - retailers - {""}
+
+
+def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
+                      sovrn_enabled: bool = False, cuid: str = "",
+                      credit_urls: list[str] | None = None) -> str:
     """The one place outbound links are rewritten (nothing else may).
 
     With the operator's Amazon Associates Store ID (config affiliate.amazon_tag)
     an https amazon.com link carries tag=<id>, replacing any tag already in it;
-    every other link, and every link without a Store ID, comes back unchanged.
-    Emails never pass a tag: Amazon forbids its tagged links in email.
+    eligible other retailers use Sovrn after removing affiliate tracking.
+    Emails pass neither a tag nor a Sovrn key, leaving their links unchanged.
     """
-    if not amazon_tag or not url:
+    if not url:
         return url
     try:
         parts = urlsplit(url)
     except ValueError:
         return url
-    if parts.scheme != "https" or (parts.hostname or "").lower() not in _AMAZON_HOSTS:
+    host = (parts.hostname or "").lower()
+    if parts.scheme != "https" or not host:
         return url
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
-    query.append(("tag", amazon_tag))
-    return urlunsplit(parts._replace(query=urlencode(query)))
+    if amazon_tag and host in _AMAZON_HOSTS:
+        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
+        query.append(("tag", amazon_tag))
+        return urlunsplit(parts._replace(query=urlencode(query)))
+    if not sovrn_enabled or not re.fullmatch(r"[0-9a-f]{32}", sovrn_key):
+        return url
+    excluded = _deal_source_hosts() | _SOVRN_HOSTS | {"wowpriced.com", "amzn.to", "a.co", "link.amazon"}
+    for credit in credit_urls or []:
+        try:
+            credit_host = (urlsplit(credit).hostname or "").lower().removeprefix("www.")
+        except ValueError:
+            continue
+        if credit_host:
+            excluded.add(credit_host)
+    if _AMAZON_NETWORK_HOST.search(host) or any(host == h or host.endswith("." + h) for h in excluded):
+        return url
+    # Keep product options (and their original encoding) exactly as posted.
+    query = [p for p in parts.query.split("&")
+             if (k := unquote_plus(p.split("=", 1)[0]).lower()) not in _AFFILIATE_PARAMS
+             and not k.startswith("utm_")]
+    merchant = urlunsplit(parts._replace(query="&".join(query)))
+    wrapped = f"https://redirect.viglink.com?key={sovrn_key}&u={quote(merchant, safe='')}"
+    if re.fullmatch(r"[A-Za-z0-9]{1,32}", cuid):
+        wrapped += f"&cuid={cuid}"
+    return wrapped
 
 
 def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "") -> dict[str, Any]:
@@ -107,7 +150,7 @@ def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "") -> dict[str, Any
     Locked stubs and ended deals have no live public Get deal link to count.
     """
     counts = dict.fromkeys(("amazon_tagged", "amazon_untagged", "amazon_short",
-                            "source_post", "other_store", "none"), 0)
+                            "source_post", "sovrn", "other_store", "none"), 0)
     stores: Counter[str] = Counter()
     for deal in deals:
         if deal.get("locked") or not deal.get("alive", deal.get("status") == "alive"):
@@ -128,6 +171,8 @@ def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "") -> dict[str, Any
             bucket = "amazon_short"
         elif any(url == c.get("url") for c in deal.get("credits") or []):
             bucket = "source_post"
+        elif host in _SOVRN_HOSTS:
+            bucket = "sovrn"
         else:
             bucket = "other_store"
             stores[host] += 1
@@ -288,7 +333,8 @@ def _override_key(url: str) -> str:
 
 
 def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
-                    overrides: dict[str, str] | None = None) -> dict[str, Any]:
+                    overrides: dict[str, str] | None = None, *,
+                    sovrn_key: str = "", sovrn_enabled: bool = False) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -307,7 +353,10 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)
-    store_link = rewrite_affiliate(canon, amazon_tag) if canon else ""
+    key = hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16]
+    store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
+                                   sovrn_enabled=sovrn_enabled, cuid=key,
+                                   credit_urls=[c["url"] for c in credits]) if canon else ""
     # A deal that needs steps links the post that explains them, except when
     # the store link carries our Amazon tag (operator, 2026-10-12): then Get
     # deal goes to Amazon and the card keeps the code, the steps and the
@@ -325,7 +374,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
         # product link or the item words, which a visitor must not see).
-        "key": hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16],
+        "key": key,
         "store": deal.get("store", ""),
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
@@ -402,7 +451,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
     overrides = getattr(cfg, "affiliate_link_overrides", {}) or {}
-    serialized = [_serialize_deal(d, now, amazon_tag, overrides) for d in deals
+    serialized = [_serialize_deal(d, now, amazon_tag, overrides,
+                                 sovrn_key=cfg.affiliate_sovrn_key,
+                                 sovrn_enabled=cfg.affiliate_sovrn_enabled) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is

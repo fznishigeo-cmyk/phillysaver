@@ -153,7 +153,7 @@ def test_section_runs_without_secrets_and_logs_only_status(clock, monkeypatch, c
     if fail:
         assert text.count("Get deal links: not available") == 1
     else:
-        assert "Get deal links: 0 Amazon (tagged), 0 other stores, 0 source posts, 1 none" in text
+        assert "Get deal links: 0 Amazon (tagged), 0 via Sovrn, 0 other stores, 0 source posts, 1 none" in text
     if not fail:
         assert text.index("== Site health ==") < text.index("Sections:")
 
@@ -180,7 +180,7 @@ def test_money_link_mix_reuses_live_json_and_lists_top_five_hosts(clock):
     assert health["link_mix"]["amazon_untagged_flag"] is True
     _, text = report.build_report(cfg, {"site_health": health}, {"site_health": "ok"}, NOW.date())
     money = text.split("== Money ==\n")[1]
-    assert money.startswith("Get deal links: 1 Amazon (tagged), 28 other stores, 1 source posts, 1 none\n")
+    assert money.startswith("Get deal links: 1 Amazon (tagged), 0 via Sovrn, 28 other stores, 1 source posts, 1 none\n")
     assert money.splitlines()[1] == (
         "Other store hosts: store0.example 7, store1.example 6, store2.example 5, "
         "store3.example 4, store4.example 3")

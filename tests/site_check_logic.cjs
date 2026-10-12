@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {amazonTag, checkAmazonTag} = require("../scripts/site_check_logic.cjs");
+const {amazonTag, checkAmazonTag, checkSovrnLinks} = require("../scripts/site_check_logic.cjs");
 const tag = "wowpriced-20";
 const doc = (...urls) => ({deals: urls.map(url => ({url})),
   meta: {disclosure: "As an Amazon Associate, wowpriced earns from qualifying purchases."}});
@@ -27,6 +27,32 @@ for (const value of ['""', "''", "", '"wowpriced-20"', "'wowpriced-20'", "wowpri
     value.includes(tag) ? tag : "");
 }
 assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
+
+// Manual Sovrn links decode once, keep product parameters, and never wrap Amazon.
+{
+  const key = "0123456789abcdef0123456789abcdef";
+  const wrap = (url, query = `key=${key}`) => `https://redirect.viglink.com?${query}&u=${encodeURIComponent(url)}&cuid=0123456789abcdef`;
+  const result = checkSovrnLinks(doc(wrap("https://target.com/product?size=XL&color=red%26blue"),
+    "https://sovrn.co/onboarding", "https://target.com/product"));
+  assert.deepEqual(result, {ok: true, links: 2, badLinks: 0, reason: "0 malformed Sovrn links"});
+  for (const url of [
+    wrap("https://target.com/product", ""), wrap("https://target.com/product", "key="),
+    wrap("https://target.com/product", "key=invalid"),
+    wrap("https://target.com/product", `key=${key}&key=${key}`),
+    `https://redirect.viglink.com?key=${key}`, wrap("http://target.com/product"),
+    wrap("garbage"), wrap("/relative"), wrap("https%3A%2F%2Ftarget.com%2Fproduct"),
+    wrap("https://target.com/product").replace("https://redirect", "http://redirect"),
+    ...["amazon.com", "www.amazon.com", "amazon.co.uk", "www.amazon.com.au", "amzn.to", "a.co", "link.amazon"]
+      .map(host => wrap(`https://${host}/product`)),
+  ]) {
+    const bad = checkSovrnLinks(doc(url));
+    assert.equal(bad.ok, false, url);
+    assert.equal(bad.badLinks, 1);
+    assert.ok(!bad.reason.includes(key) && !bad.reason.includes("product"));
+  }
+  assert.equal(checkSovrnLinks(doc(wrap("https://amazon.com.evil/product"))).ok, true);
+  assert.equal(checkSovrnLinks(doc()).links, 0);
+}
 
 // Network links (Sovrn onboarding) are reported, never a failure.
 {
