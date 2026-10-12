@@ -22,6 +22,7 @@ CORE_DOMAINS = [
     "api.woot.com",
     "meh.com",
     "api.indexnow.org",       # python -m dealradar indexnow
+    "ssl.bing.com",           # private Bing Webmaster traffic report
     "api-sandbox.pinterest.com", "api.pinterest.com",
 ]
 

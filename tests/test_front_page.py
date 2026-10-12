@@ -213,7 +213,7 @@ def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, option
     assert [d["dedupe_key"] for d in doc["deals"]] == [d["dedupe_key"] for d in source]
     mixed = pick_order(doc["deals"], options)
     titles = lambda html: re.findall(r'<h3 class="title"><a href="[^"]+">([^<]+)</a>', html)
-    wall = (out / "index.html").read_text().split('<div id="content">')[1].split('<div id="paywall"')[0]
+    wall = (out / "index.html").read_text().split('<div id="content" data-clarity-unmask="true">')[1].split('<div id="paywall"')[0]
     assert titles(wall) == [d["item"] for d in mixed[:seo._STATIC_WALL_MAX]]
     best = (out / "best-deals-today/index.html").read_text()
     assert titles(best) == [d["item"] for d in mixed[:30]]
@@ -351,7 +351,7 @@ def test_published_pick_ps_static_order_and_locked_stubs(tmp_path, cfg, db, opti
     assert "ps" not in public[-1] and "pick" not in public[-1]
     ordered_rows = pick_order(public, options)
     titles = lambda html: re.findall(r'<h3 class="title"><a href="[^"]+">([^<]+)</a>', html)
-    wall = (out / "index.html").read_text().split('<div id="content">')[1].split('<div id="paywall"')[0]
+    wall = (out / "index.html").read_text().split('<div id="content" data-clarity-unmask="true">')[1].split('<div id="paywall"')[0]
     assert titles(wall) == [d["item"] for d in ordered_rows[:seo._STATIC_WALL_MAX]]
     assert titles((out / "best-deals-today/index.html").read_text()) == [d["item"] for d in ordered_rows[:30]]
     # Dormant paywall keeps the rotation; public score/selection never names a locked deal.

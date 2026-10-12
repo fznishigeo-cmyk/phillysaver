@@ -21,7 +21,7 @@ import pytest
 
 from dealradar import cli
 from dealradar.config import AppConfig, load_config
-from dealradar.growth import google, google_ads, meta, report, site_health, stripe_stats
+from dealradar.growth import bing, google, google_ads, meta, report, site_health, stripe_stats
 
 NOW = datetime(2026, 10, 11, 12, 23, tzinfo=timezone.utc)  # 08:23 in New York
 TODAY_START = int(datetime(2026, 10, 11, 4, 0, tzinfo=timezone.utc).timestamp())
@@ -36,8 +36,11 @@ GADS_ENV = {"GOOGLE_ADS_CLIENT_ID": "123-fake.apps.googleusercontent.com",
             "GOOGLE_ADS_CLIENT_SECRET": "GOCSPX-FAKESECRET",
             "GOOGLE_ADS_REFRESH_TOKEN": "1//FAKE-REFRESH-TOKEN"}
 GADS_TOKEN = "ya29.FAKE-ADS-ACCESS-TOKEN"
+CF_OPS_TOKEN = "FAKE-CLOUDFLARE-OPS-TOKEN"
+BING_KEY = "FAKE-BING-WEBMASTER-KEY"
 
 ENV_NAMES = (*GADS_ENV, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",
+             "CLOUDFLARE_OPS_TOKEN", "BING_WEBMASTER_API_KEY",
              "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
              "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "TELEGRAM_CHANNEL_ID",
@@ -81,6 +84,15 @@ SC_PAGES = {"rows": [{"keys": ["https://wowpriced.com/hacks.html"], "clicks": 12
 SITEMAP = {"path": "https://wowpriced.com/sitemap.xml", "lastDownloaded": "2026-10-10T07:12:00Z",
            "isPending": False, "warnings": "2", "errors": "1",
            "contents": [{"type": "web", "submitted": "7", "indexed": "0"}]}
+
+CF_ROWS = [{"dimensions": {"date": f"2026-10-{day:02}"}, "uniq": {"uniques": visitors},
+            "sum": {"pageViews": views, "requests": requests}}
+           for day, visitors, views, requests in ((4, 700111, 1100444, 2100777),
+                                                 (9, 800222, 1200555, 2200888),
+                                                 (10, 900333, 1300666, 2300999))]
+BING_ROWS = [{"Date": f"/Date({int(datetime(2026, 10, day, 7, tzinfo=timezone.utc).timestamp() * 1000)}-0700)/",
+              "Clicks": clicks, "Impressions": impressions}
+             for day, clicks, impressions in ((4, 512345, 823456), (9, 612345, 923456), (10, 712345, 1023456))]
 
 
 GADS_ROWS = [
@@ -217,6 +229,25 @@ class FakeApis:
                 return httpx.Response(200, json={"results": GADS_ROWS[:2], "nextPageToken": "p2"})
             assert body["pageToken"] == "p2"
             return httpx.Response(200, json={"results": GADS_ROWS[2:]})
+        if host == "api.cloudflare.com":
+            assert auth == f"Bearer {CF_OPS_TOKEN}"
+            if path == "/client/v4/zones":
+                assert request.url.params["name"] == "wowpriced.com"
+                return httpx.Response(200, json={"success": True, "result": [
+                    {"id": "other-zone", "name": "other.example"},
+                    {"id": "wowpriced-zone", "name": "wowpriced.com"}]})
+            assert request.method == "POST" and path == "/client/v4/graphql"
+            body = json.loads(request.content)
+            assert body["variables"] == {"zone": "wowpriced-zone", "start": "2026-10-04",
+                                         "end": "2026-10-10", "days": 7}
+            assert all(field in body["query"] for field in
+                       ("httpRequests1dGroups", "date_geq", "date_leq", "uniques", "pageViews", "requests"))
+            return httpx.Response(200, json={"data": {"viewer": {"zones": [
+                {"httpRequests1dGroups": CF_ROWS}]}}, "errors": None})
+        if host == "ssl.bing.com":
+            assert request.method == "GET" and path == "/webmaster/api.svc/json/GetRankAndTrafficStats"
+            assert dict(request.url.params) == {"siteUrl": "https://wowpriced.com/", "apikey": BING_KEY}
+            return httpx.Response(200, json={"d": BING_ROWS})
         if host == "api.telegram.org":
             self.telegram.append(json.loads(request.content))
             return httpx.Response(200, json={"ok": True})
@@ -725,6 +756,7 @@ def test_cli_never_prints_metrics_report_or_tokens(rsa_key, tmp_path, monkeypatc
     carry section status only."""
     caplog.set_level(logging.DEBUG)
     set_sources(monkeypatch, rsa_key)
+    set_traffic(monkeypatch)
     set_telegram(monkeypatch)
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_PORT", "2525")
@@ -758,7 +790,7 @@ def test_cli_never_prints_metrics_report_or_tokens(rsa_key, tmp_path, monkeypatc
                   "$29.97", "7316642", "private <b>query", "secret-landing-page", "google / organic"):
         assert value not in public, value
     for secret in (GOOGLE_TOKEN, META_TOKEN, STRIPE_KEY, BOT_TOKEN, "smtp-FAKE-password",
-                   "owner@example.com", "BEGIN PRIVATE KEY", rsa_key[0].splitlines()[1][:40]):
+                   "owner@example.com", "BEGIN PRIVATE KEY", rsa_key[0].splitlines()[1][:40], CF_OPS_TOKEN, BING_KEY):
         assert secret not in public, secret
     assert not summary.exists()
     # ...and the operator still learns which section failed, by class and status only.
@@ -896,3 +928,172 @@ def test_google_ads_error_names_the_managers_accounts_by_status(cfg, monkeypatch
     assert status["google_ads"] == "error"
     assert any(m.endswith("reachable: ...7972; ...9939 holds: ...7972 SETUP_IN_PROGRESS, "
                           "...3333 ENABLED)") for m in caplog.messages), caplog.messages
+
+
+# ------------------------------------------------------------------ Cloudflare + Bing traffic
+
+
+def set_traffic(monkeypatch):
+    monkeypatch.setenv("CLOUDFLARE_OPS_TOKEN", CF_OPS_TOKEN)
+    monkeypatch.setenv("BING_WEBMASTER_API_KEY", BING_KEY)
+
+
+def test_traffic_totals_are_private_and_other_sections_still_run(cfg, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    set_traffic(monkeypatch)
+    fake = FakeApis()
+    with client_for(fake) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["cloudflare_traffic"] == status["bing"] == status["site_health"] == "ok"
+    assert data["cloudflare_traffic"] == {
+        "yesterday": {"visitors": 900333, "page_views": 1300666, "requests": 2300999},
+        "window": {"visitors": 2400666, "page_views": 3601665, "requests": 6602664}}
+    assert data["bing"] == {"yesterday": {"clicks": 712345, "impressions": 1023456},
+                            "window": {"clicks": 1837035, "impressions": 2770368}, "has_data": True}
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "Visitors (Cloudflare): yesterday 900,333, last 7 days 2,400,666; page views 3,601,665" in text
+    assert "Cloudflare page views (yesterday / window): 1,300,666 / 3,601,665; requests 2,300,999 / 6,602,664" in text
+    assert "Clicks (yesterday / window): 712,345 / 1,837,035; impressions 1,023,456 / 2,770,368" in text
+    for secret in (CF_OPS_TOKEN, BING_KEY):
+        assert secret not in caplog.text and secret not in text
+    for section in ("cloudflare_traffic", "bing"):
+        assert f"{section}: ok" in caplog.messages
+        for counts in (data[section]["yesterday"], data[section]["window"]):
+            for value in counts.values():
+                assert str(value) not in caplog.text and f"{value:,}" not in caplog.text
+
+
+@pytest.mark.parametrize("missing, section, host", [
+    ("CLOUDFLARE_OPS_TOKEN", "cloudflare_traffic", "api.cloudflare.com"),
+    ("BING_WEBMASTER_API_KEY", "bing", "ssl.bing.com"),
+])
+def test_traffic_missing_secret_skips_only_its_section(cfg, monkeypatch, caplog, missing, section, host):
+    caplog.set_level(logging.INFO)
+    set_traffic(monkeypatch)
+    monkeypatch.delenv(missing)
+    fake = FakeApis()
+    with client_for(fake) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status[section] == "skipped" and section not in data
+    assert f"{section}: skipped" in caplog.messages and host not in fake.hosts()
+    assert status["bing" if section == "cloudflare_traffic" else "cloudflare_traffic"] == "ok"
+
+
+@pytest.mark.parametrize("host, section, line", [
+    ("api.cloudflare.com", "cloudflare_traffic", "cloudflare_traffic: error"),
+    ("ssl.bing.com", "bing", "bing: error HTTP 500"),
+])
+def test_traffic_http_errors_never_log_keys_urls_bodies_or_metrics(cfg, monkeypatch, caplog, host, section, line):
+    caplog.set_level(logging.DEBUG)
+    set_traffic(monkeypatch)
+    fake = FakeApis(fail={host: 500})
+    with client_for(fake) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status[section] == "error" and section not in data
+    assert status["site_health"] == "ok"
+    assert line in caplog.messages
+    for private in (BING_KEY, CF_OPS_TOKEN, "7316642", "apikey=", "denied"):
+        assert private not in caplog.text
+
+
+@pytest.mark.parametrize("body", [{"d": []}, {"d": None}, {"d": [
+    {"Date": "2026-10-03T00:00:00Z", "Clicks": 1111, "Impressions": 9999}]}])
+def test_empty_or_old_bing_data_is_normal(cfg, monkeypatch, body):
+    monkeypatch.setenv("BING_WEBMASTER_API_KEY", BING_KEY)
+
+    def handler(request):
+        return httpx.Response(200, json=body) if request.url.host == "ssl.bing.com" else FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["bing"] == "ok"
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "no Bing data yet" in text
+
+
+@pytest.mark.parametrize("failure", ["http", "transport", "json", "rows"])
+def test_bing_exception_messages_never_carry_the_key(caplog, failure):
+    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger="httpx")
+
+    def handler(request):
+        if failure == "transport":
+            raise httpx.ConnectError(f"failed {request.url}", request=request)
+        if failure == "http":
+            return httpx.Response(500, text=BING_KEY)
+        if failure == "json":
+            return httpx.Response(200, text=f"invalid {BING_KEY}")
+        return httpx.Response(200, json={"d": [{"Date": BING_KEY}]})
+
+    http_level = logging.getLogger("httpx").level
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(bing.BingError) as exc:
+            bing.stats(client, BING_KEY, "wowpriced.com", date(2026, 10, 10), date(2026, 10, 4))
+    assert str(exc.value) == ("HTTP 500" if failure == "http" else "")
+    assert BING_KEY not in caplog.text and BING_KEY not in str(exc.value)
+    assert exc.value.__suppress_context__ or exc.value.__context__ is None
+    assert logging.getLogger("httpx").level == http_level
+
+
+@pytest.mark.parametrize("stamp, expected", [
+    ("/Date(1316156400000-0700)/", date(2011, 9, 16)),
+    ("/Date(1316131200000)/", date(2011, 9, 16)),
+    ("/Date(1316091600000+1100)/", date(2011, 9, 16)),
+    ("2026-10-10T00:00:00-07:00", date(2026, 10, 10)),
+])
+def test_bing_dates_use_the_reported_daily_bucket(stamp, expected):
+    assert bing._day(stamp) == expected
+
+
+@pytest.mark.parametrize("body", [
+    {"errors": [{"message": f"denied {CF_OPS_TOKEN} 7316642"}], "data": None},
+    {"data": {"viewer": {"zones": []}}, "errors": None},
+])
+def test_cloudflare_graphql_errors_are_private(cfg, monkeypatch, caplog, body):
+    set_traffic(monkeypatch)
+
+    def handler(request):
+        if request.url.path == "/client/v4/graphql":
+            return httpx.Response(200, json=body)
+        return FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        _, status = report.collect(cfg, NOW, client)
+    assert status["cloudflare_traffic"] == "error" and status["bing"] == "ok"
+    assert "cloudflare_traffic: error" in caplog.messages
+    assert CF_OPS_TOKEN not in caplog.text and "7316642" not in caplog.text
+
+
+def test_traffic_workflow_secrets_and_bing_domain_are_wired():
+    from dealradar.config import ROOT
+
+    workflow = (ROOT / ".github/workflows/growth-report.yml").read_text()
+    for name in ("CLOUDFLARE_OPS_TOKEN", "BING_WEBMASTER_API_KEY"):
+        assert f"{name}: ${{{{ secrets.{name} }}}}" in workflow
+    assert "ssl.bing.com" in cli.CORE_DOMAINS
+
+
+def test_traffic_uses_the_configured_window_and_excludes_today(cfg, monkeypatch):
+    set_traffic(monkeypatch)
+    cfg.growth_report_days = 3
+    seen = []
+
+    def handler(request):
+        if request.url.path == "/client/v4/graphql":
+            body = json.loads(request.content)
+            seen.append(body["variables"])
+            rows = CF_ROWS + [{"dimensions": {"date": "2026-10-11"},
+                               "uniq": {"uniques": 999999}, "sum": {"pageViews": 999999, "requests": 999999}}]
+            return httpx.Response(200, json={"data": {"viewer": {"zones": [{"httpRequests1dGroups": rows}]}}})
+        if request.url.host == "ssl.bing.com":
+            return httpx.Response(200, json={"d": BING_ROWS + [
+                {"Date": "2026-10-11T00:00:00Z", "Clicks": 999999, "Impressions": 999999}]})
+        return FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert seen == [{"zone": "wowpriced-zone", "start": "2026-10-08", "end": "2026-10-10", "days": 3}]
+    assert data["cloudflare_traffic"]["window"]["visitors"] == 1700555
+    assert data["bing"]["window"]["clicks"] == 1324690
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "last 3 days 1,700,555" in text

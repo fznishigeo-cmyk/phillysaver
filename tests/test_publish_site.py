@@ -1536,7 +1536,7 @@ class TestOpenAccess:
         n = seo._STATIC_WALL_MAX + 5
         render_site(db, self._open(cfg), NOW, out_dir=out, deals=self._deals(n))
         home = (out / "index.html").read_text(encoding="utf-8")
-        wall = home.split('<div id="content">', 1)[1].split('<div id="paywall"', 1)[0]
+        wall = home.split('<div id="content" data-clarity-unmask="true">', 1)[1].split('<div id="paywall"', 1)[0]
         assert wall.count('<article class="card') == seo._STATIC_WALL_MAX
         assert "5 more deals on the live wall" in wall
         doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))

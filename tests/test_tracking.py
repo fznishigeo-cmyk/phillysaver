@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -30,13 +31,14 @@ SAMPLE = {
     "google_ads_id": "AW-123456789",
     "google_ads_trial_label": "AbC-dEf_123",
     "bing_uet_id": "187654321",
+    "clarity_project_id": "ywsuwmrauy",
     "google_site_verification": "abcDEF123_-xyzXYZ7890abcdEFGH",
     "bing_site_verification": "0123456789ABCDEF0123456789ABCDEF",
     "pinterest_domain_verify": "0123456789abcdef0123456789abcdef",
     "facebook_domain_verification": "abcdefghij0123456789klmnopqrst",
 }
 HOSTS = ("googletagmanager.com", "connect.facebook.net", "analytics.tiktok.com",
-         "s.pinimg.com", "bat.bing.com")
+         "s.pinimg.com", "bat.bing.com", "www.clarity.ms")
 NESTED = "<!doctype html>\n<html><head><title>Hub</title>\n</head><body><p>hub</p></body></html>\n"
 
 
@@ -148,6 +150,11 @@ def test_changed_ids_replace_the_block_and_cleared_ids_remove_it():
     ("google_ads_id", "AW-12x456"),
     ("google_ads_trial_label", "a'b\"c"),
     ("bing_uet_id", "1234567;alert(1)"),
+    ("clarity_project_id", "YWSUWMRAUY"),
+    ("clarity_project_id", "abcdefg"),
+    ("clarity_project_id", "abcdefghijklm"),
+    ("clarity_project_id", "abcdé123"),
+    ("clarity_project_id", 'abcd1234\"><script>'),
     ("google_site_verification", '"><img src=x onerror=alert(1)>'),
     ("bing_site_verification", "0123456789ABCDEF"),
     ("pinterest_domain_verify", "zz23456789abcdef0123456789abcdef"),
@@ -232,6 +239,7 @@ for (const [name, sc] of Object.entries(scenarios)) {
     ttq: ctx.ttq ? plain(ctx.ttq) : null,
     pintrk: ctx.pintrk ? ctx.pintrk.queue : null,
     uetq: ctx.uetq ? Array.from(ctx.uetq) : null,
+    clarity: typeof ctx.clarity === "function",
   };
 }
 process.stdout.write(JSON.stringify(out));
@@ -280,7 +288,9 @@ def test_consent_and_event_fan_out_in_a_browser_like_run(tmp_path):
     assert sorted(o["srcs"]) == sorted([
         ga4, "https://connect.facebook.net/en_US/fbevents.js",
         "https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=C4ABCDEFGH12345678&lib=ttq",
-        "https://s.pinimg.com/ct/core.js", "https://bat.bing.com/bat.js"])
+        "https://s.pinimg.com/ct/core.js", "https://bat.bing.com/bat.js",
+        "https://www.clarity.ms/tag/ywsuwmrauy"])
+    assert o["clarity"]
     assert ["config", "G-ABC123XYZ9", {}] in o["dataLayer"]
     assert ["config", "AW-123456789"] in o["dataLayer"]
     # Only store, category and method ever leave the page.
@@ -314,8 +324,9 @@ def test_consent_and_event_fan_out_in_a_browser_like_run(tmp_path):
         assert not any(c[:2] == ["config", "AW-123456789"] for c in s["dataLayer"]), name
         assert not any(c[:2] == ["event", "conversion"] for c in s["dataLayer"]), name
         assert s["fbq"] is None and s["ttq"] is None and s["pintrk"] is None and s["uetq"] is None
+        assert not s["clarity"]
     # Storage that throws is no opt-out and no crash.
-    assert len(out["storage_blocked"]["srcs"]) == 5 and out["storage_blocked"]["error"] is None
+    assert len(out["storage_blocked"]["srcs"]) == 6 and out["storage_blocked"]["error"] is None
     # One tag failing never stops the others.
     down = out["meta_down"]
     assert down["error"] is None and ["track", "Subscribe", {"value": 0, "currency": "USD"}] in down["ttq"]
@@ -327,6 +338,66 @@ def test_ad_tags_alone_under_gpc_make_no_request_and_wptrack_is_a_no_op(tmp_path
     assert out["srcs"] == [] and out["error"] is None
     assert out["dataLayer"] == []
     assert out["fbq"] is None and out["ttq"] is None and out["pintrk"] is None and out["uetq"] is None
+    assert not out["clarity"]
+
+
+def test_clarity_alone_loads_only_without_gpc_or_opt_out(tmp_path):
+    out = _run_node(tmp_path, {"clarity_project_id": "ywsuwmrauy"}, {
+        "open": {}, "gpc": {"gpc": True}, "out": {"storage": {"wp.adsOptOut": "1"}},
+    })
+    assert out["open"]["srcs"] == ["https://www.clarity.ms/tag/ywsuwmrauy"]
+    for key in ("gpc", "out"):
+        assert out[key]["srcs"] == [] and not out[key]["clarity"]
+    assert head_snippet(AppConfig(tracking={"clarity_project_id": ""})) == ""
+
+
+class MaskedMarkup(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.elements = []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        self.elements.append((tag, attrs, list(self.stack)))
+        if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"}:
+            self.stack.append((tag, attrs))
+
+    def handle_endtag(self, tag):
+        for i in range(len(self.stack) - 1, -1, -1):
+            if self.stack[i][0] == tag:
+                self.stack = self.stack[:i]
+                break
+
+
+@pytest.mark.parametrize("support", [False, True])
+def test_sensitive_forms_inputs_and_account_areas_are_masked(db, cfg, tmp_path, support):
+    from tests.test_publish_site import make_deal
+
+    cfg.support_enabled = support
+    cfg.paywall_yearly_price_usd = 49
+    cfg.custom_domain = "wowpriced.com"
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[make_deal()])
+    seen = set()
+    for name, page in _pages(out).items():
+        parser = MaskedMarkup()
+        parser.feed(page)
+        for tag, attrs, parents in parser.elements:
+            if tag == "form" or tag == "input":
+                assert attrs.get("data-clarity-mask") == "true", (name, tag, attrs)
+                seen.add(attrs.get("id", attrs.get("class")))
+                if attrs.get("type") in {"email", "password"}:
+                    form = next(a for t, a in reversed(parents) if t == "form")
+                    assert form.get("data-clarity-mask") == "true", (name, form)
+            if attrs.get("id") in {"account", "authmodal", "claim", "portal"} or attrs.get("class") == "joincard":
+                assert attrs.get("data-clarity-mask") == "true", (name, attrs)
+    expected = {"join-email", "footer-email"} if support else {"authemail", "authpass"}
+    assert expected <= seen
+    assert '<div id="content" data-clarity-unmask="true">' in (out / "index.html").read_text()
+    for name, page in _pages(out).items():
+        if name.startswith(("deal/", "deals/", "stores/", "best-deals-today/")):
+            assert '<main data-clarity-unmask="true">' in page, name
 
 
 # ---- the privacy page ----
@@ -345,6 +416,7 @@ def test_privacy_page_is_published_linked_and_in_the_sitemap(db, cfg, tmp_path):
     assert "<script src=" not in page and 'rel="stylesheet"' not in page
     for text in ("Your privacy choices", "Global Privacy Control", "Stripe", "card number",
                  "Last updated", "Google Analytics", "Google Ads", "Meta", "TikTok", "Pinterest",
+                 "Microsoft Clarity", "clicks, scrolls and page views", "Typed text and account details are masked",
                  "Microsoft", "delete"):
         assert text in page, text
     # The on-page switch writes the very key the head snippet reads.

@@ -69,7 +69,7 @@ def test_static_wall_holds_the_free_deals_credits_and_locked_lines(db, cfg, tmp_
     free = [d for d in teaser if not d.get("locked")]
     assert len(free) == 2
     html = (out / "index.html").read_text(encoding="utf-8")
-    wall = html[html.index('<div id="content">'):html.index('<div id="paywall"')]
+    wall = html[html.index('<div id="content" data-clarity-unmask="true">'):html.index('<div id="paywall"')]
     for d in free:
         assert d["item"] in wall and f'href="{d["url"]}"' in wall
     assert 'via <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>' in wall

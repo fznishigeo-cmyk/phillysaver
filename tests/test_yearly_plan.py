@@ -33,8 +33,8 @@ def test_yearly_config_and_public_member_meta(tmp_path, setting, expected):
     assert "{{PLAN_CHOICES_" not in html
     if expected:
         for place in ("panel", "dialog"):
-            assert f'<fieldset id="{place}plans" class="plans">' in html
-            assert f'name="{place}plan" value="month" checked' in html
+            assert f'<fieldset id="{place}plans" class="plans" data-clarity-mask="true">' in html
+            assert f'name="{place}plan" value="month" data-clarity-mask="true" checked' in html
             assert f'name="{place}plan" value="year"' in html
         assert "Membership — $9.99/month or $49/year" not in html
         assert ".plans label:focus-within" in html

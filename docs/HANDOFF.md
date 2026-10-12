@@ -163,6 +163,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Clarity + traffic report (Codex task 048, 2026-10-12):** Clarity
+  (`tracking.clarity_project_id`) loads only without GPC/opt-out, like the ad
+  pixels; every form, search box and account area carries
+  `data-clarity-mask`, public deal content is unmasked; privacy.html lists it.
+  The private growth report adds Cloudflare visitors/page views/requests
+  (`CLOUDFLARE_OPS_TOKEN`) and Bing clicks/impressions
+  (`BING_WEBMASTER_API_KEY`, a query-string key: httpx logging is muted
+  around that call); logs say ok/skipped/error only.
 - **Telegram channel picks (Codex task 047, 2026-10-12):** the public
   channel posts published picks only, once per deal, price-free (deal-page
   link, `#ad` last, link preview on); `telegram.channel` caps 1/run,

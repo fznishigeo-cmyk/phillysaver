@@ -321,7 +321,7 @@ tracking:
   # Analytics and ad tags (dealradar/publish/tracking.py). Public IDs only,
   # never secrets; paste each one quoted. Empty = that tag is not on any
   # page; all empty = no page makes a third-party request. A value that does
-  # not look like a real ID is skipped with a warning. The ad pixels never
+  # not look like a real ID is skipped with a warning. The ad pixels and Clarity never
   # load for a visitor whose browser sends Global Privacy Control or who
   # opted out on /privacy.html; GA4 then runs without its ad features.
   # In each partner's settings keep automatic event detection and automatic
@@ -336,6 +336,7 @@ tracking:
   google_ads_id: ""                 # Google Ads, "AW-123456789"
   google_ads_trial_label: ""        # the Google Ads conversion label for start_trial
   bing_uet_id: ""                   # Microsoft Advertising UET tag, digits
+  clarity_project_id: "ywsuwmrauy"   # Microsoft Clarity, lowercase letters and digits
   # Site-ownership checks: the content value of each meta tag, on every page.
   google_site_verification: ""      # google-site-verification
   bing_site_verification: ""        # msvalidate.01 (32 hex characters)
@@ -384,7 +385,7 @@ growth:
   # sitemap submit), Meta ads/followers and Stripe, sent to the operator by
   # email (REPORT_EMAIL_TO secret, else contact_email) and/or the Telegram
   # admin chat. Secrets: GOOGLE_SA_JSON, META_SYSTEM_TOKEN, STRIPE_SECRET_KEY,
-  # GOOGLE_ADS_*.
+  # GOOGLE_ADS_*, CLOUDFLARE_OPS_TOKEN (Zone:Read + Analytics:Read), BING_WEBMASTER_API_KEY.
   # Read-only everywhere. An empty value (or a missing secret) skips its section.
   report_days: 7
   ga4_property_id: "558475393"               # numeric GA4 property ID (Admin -> Property details)

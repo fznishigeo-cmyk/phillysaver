@@ -101,7 +101,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
         html = (out / name).read_text()
         assert "A quick, honest ask." in html and BODY in html
         assert 'href="/join">Join free</a>' in html
-        assert ('<form class="joinform">' in html) == (name == "index.html")
+        assert ('<form class="joinform" data-clarity-mask="true">' in html) == (name == "index.html")
         assert html.count(NOTE) == count
         assert html.count(f'data-support href="{LINK}"') == count
         # Every Stripe button has its disclaimer immediately in the same section.
@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "19ab676297ada2597064819facfe0eadb73c38d85578567e26619fcf5817ba0b"),
-    (False, 49, "27c6eba50e174ca9b8afd1c70b2d5e189acbd83f1d3c794e28716825cceb3c2b"),
-    (True, 0, "16562cbf10f7113519af2c418f307143eab868c9342d27c03e0bfd04db12ecf5"),
-    (True, 49, "0fb2a18e161ccafe7e2018fb04a92204545315fbf02c430b86e7e12023ecd235"),
+    (False, 0, "b4b49bd682360e14ae54b733d6be8a05effd179c99bc702cb1e890c069421e63"),
+    (False, 49, "1128b117eeec97b0bd86994056fb96bd198a527cd4b192dcd48d46ee583b81ea"),
+    (True, 0, "982a00ae611a53ab6cc4847649734f1af3af1432bcc4fc265c1cf228ca27dd09"),
+    (True, 49, "0c16062bfabb6435c66f90dd644c5a4e52952c5d1128cf5bb47d531bba676f1c"),
 ])
-def test_support_off_index_bytes_match_task045_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 045 changes the footer and scroll limit in all modes; keep the shared
+def test_support_off_index_bytes_match_task048_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 048 adds Clarity masking in all modes; keep the shared
     # baseline without task 037's head-only hint.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
@@ -237,7 +237,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     assert '<link rel="canonical" href="https://wowpriced.com/join.html">' in join
     assert "The day's best deals in one email. Free." in join
     assert '<h1 id="join-title">Join wowpriced</h1>' in join
-    assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email"' in join
+    assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email" data-clarity-mask="true"' in join
     assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 2
     assert site.JOIN_FORM in join and EMAIL_LINE in join
     assert '<a href="/privacy.html">privacy policy</a>' in join
@@ -258,7 +258,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
                 assert 'href="/join"' in attrs, path
         if path.name not in {"join.html", "index.html"}:
             assert 'id="join-email"' not in visible, path
-            assert ('<form class="joinform" data-join-footer>' in visible) == ('<footer>' in visible), path
+            assert ('<form class="joinform" data-join-footer data-clarity-mask="true">' in visible) == ('<footer>' in visible), path
     home = (out / "index.html").read_text()
     for selector in ('id="subscribe"', 'id="subbar"', 'class="pwbtn alt"'):
         assert re.search(r'<a ' + selector + r'[^>]*href="/join"', home)

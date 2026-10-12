@@ -134,13 +134,16 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   <li><strong>Google Analytics</strong> counts visits and which pages are used. It runs
       for everyone, with its ad features (Google signals and ad personalization) off
       when you opt out below or your browser sends Global Privacy Control.</li>
+  <li><strong>Microsoft Clarity</strong> records clicks, scrolls and page views to help
+      us improve the site. Typed text and account details are masked. It does not load
+      when you opt out below or your browser sends Global Privacy Control.</li>
   <li><strong>Google Ads, Meta (Facebook and Instagram), TikTok, Pinterest and Microsoft
       Advertising (Bing)</strong> learn that a visitor came from one of our ads, and
       <!--standard-->whether they signed up, started checkout, started a trial or clicked a deal.<!--/standard--><!--support-->whether they joined free, clicked support or clicked a deal.<!--/support-->
       They do not load at all when you opt out below or your browser sends Global
       Privacy Control.</li>
 </ul>
-<p>Their code sees the page you are on, as any such tag does. On top of that we tell
+<p>The ad partners' code sees the page you are on, as any such tag does. On top of that we tell
    them only those events, plus the store and category of a deal you click: never your
    email address, and never which item or price.</p>
 
@@ -166,7 +169,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--standard--><p>We delete your account record and any address on the old email list. If you are a
    member, say so and we end your membership too. Stripe keeps its own payment records.</p>
 
-<p class="muted">Last updated October 11, 2026. If this page changes, so does this date.</p><!--/standard--><!--support--><p>We delete your email-list record when you ask. Stripe keeps its own payment records.</p>
+<p class="muted">Last updated October 12, 2026. If this page changes, so does this date.</p><!--/standard--><!--support--><p>We delete your email-list record when you ask. Stripe keeps its own payment records.</p>
 
 <p class="muted">Last updated October 12, 2026. If this page changes, so does this date.</p><!--/support-->
 </main>
@@ -181,7 +184,7 @@ if (!document.getElementById("dellink").textContent.trim()) {
   document.getElementById("delcontact").hidden = false;
 }
 // The ad-partner switch: localStorage wp.adsOptOut = "1" keeps the ad
-// pixels off (tracking.py reads it before loading any), as does Global
+// pixels and Clarity off (tracking.py reads it before loading any), as does Global
 // Privacy Control.
 (function () {
   var KEY = "wp.adsOptOut";

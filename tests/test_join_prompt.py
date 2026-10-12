@@ -74,8 +74,8 @@ def test_shared_footer_signup_markup(tmp_path):
         footers.append(signup)
         assert footer.index('id="footer-signup"') < footer.index('<nav')
         assert '<h2 id="footer-signup-title">Sign up for the latest deals</h2>' in signup
-        assert '<form class="joinform" data-join-footer>' in signup
-        assert 'type="email" placeholder="Email address" autocomplete="email" required' in signup
+        assert '<form class="joinform" data-join-footer data-clarity-mask="true">' in signup
+        assert 'type="email" data-clarity-mask="true" placeholder="Email address" autocomplete="email" required' in signup
         assert '<button type="submit" aria-label="Sign up">' in signup
         assert 'By subscribing you agree to our <a href="/privacy.html">privacy policy</a>.' in signup
         assert 'role="status" hidden>Thank you for signing up!</p>' in signup

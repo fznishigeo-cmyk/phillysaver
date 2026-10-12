@@ -9,7 +9,7 @@ ID empty nothing is added and no page makes a third-party request.
 Consent (US audience): GA4 loads for everyone, but without Google signals or
 ad personalization for a visitor whose browser sends Global Privacy Control
 or who opted out on /privacy.html (localStorage wp.adsOptOut). For them the
-ad pixels (Google Ads, Meta, TikTok, Pinterest, Microsoft UET) do not load
+ad pixels (Google Ads, Meta, TikTok, Pinterest, Microsoft UET) and Clarity do not load
 at all, so they make no request.
 """
 
@@ -32,6 +32,7 @@ PATTERNS = {
     "google_ads_id": r"AW-[0-9]{5,15}",
     "google_ads_trial_label": r"[A-Za-z0-9_-]{4,64}",
     "bing_uet_id": r"[0-9]{4,15}",
+    "clarity_project_id": r"[a-z0-9]{8,12}",
     "google_site_verification": r"[A-Za-z0-9_-]{10,100}",
     "bing_site_verification": r"[A-Fa-f0-9]{32}",
     "pinterest_domain_verify": r"[A-Fa-f0-9]{32}",
@@ -50,7 +51,7 @@ _BLOCK = re.compile(re.escape(_START) + r".*?" + re.escape(_END) + r"\n?", re.S)
 _HEAD = """\
 (function () {
   "use strict";
-  // Ad pixels load only when the browser sends no Global Privacy Control
+  // Ad pixels and Clarity load only when the browser sends no Global Privacy Control
   // and the visitor did not opt out on /privacy.html; GA4 loads for
   // everyone, without Google signals or ad personalization when either holds.
   var optOut = false;
@@ -168,6 +169,16 @@ _UET = """\
   }
 """
 
+_CLARITY = """\
+  // Microsoft Clarity: typed text and account details are masked in the markup.
+  if (ads) {
+    window.clarity = window.clarity || function () {
+      (window.clarity.q = window.clarity.q || []).push(arguments);
+    };
+    load("https://www.clarity.ms/tag/" + %(id)s);
+  }
+"""
+
 _DISPATCH = """\
   // wpTrack(name, params): one site event to every tag that loaded, each
   // call in its own try/catch; a no-op when none loaded. Only the store,
@@ -255,7 +266,8 @@ def head_snippet(cfg) -> str:
             "load": "" if ga4 else _GADS_LOAD % {"aw": js("google_ads_id")},
             "send_to": json.dumps(f"{aw}/{label}" if label else "")})
     for key, block in (("meta_pixel_id", _META), ("tiktok_pixel_id", _TIKTOK),
-                       ("pinterest_tag_id", _PINTEREST), ("bing_uet_id", _UET)):
+                       ("pinterest_tag_id", _PINTEREST), ("bing_uet_id", _UET),
+                       ("clarity_project_id", _CLARITY)):
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH

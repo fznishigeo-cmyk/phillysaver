@@ -163,7 +163,7 @@ def test_static_and_live_media_share_reserved_geometry(published):
     assert '.media{position:relative;height:150px;' in css
     assert '.media{height:118px}' in css
     assert '.media img{max-width:88%;max-height:88%;object-fit:contain}' in css
-    static = re.search(r'<div id="content">(.*?)</div>\s*<div id="paywall"', home, re.S)[1]
+    static = re.search(r'<div id="content" data-clarity-unmask="true">(.*?)</div>\s*<div id="paywall"', home, re.S)[1]
     assert 'class="media"' in static and '<img' not in static
     assert '<h2 class="secth sr-only">Verified deals right now</h2>' in static
     # External head scripts, if configured later, must not block the header.

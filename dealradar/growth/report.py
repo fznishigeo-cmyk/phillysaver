@@ -26,7 +26,7 @@ from ..db import DB
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
-from . import google, google_ads, meta, site_health, stripe_stats, subscribers
+from . import bing, cloudflare_traffic, google, google_ads, meta, site_health, stripe_stats, subscribers
 
 log = logging.getLogger("dealradar.growth")
 
@@ -66,6 +66,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     stripe_key = get_secret("STRIPE_SECRET_KEY")
     cf_token = get_secret("CLOUDFLARE_API_TOKEN")
     cf_account = get_secret("CLOUDFLARE_ACCOUNT_ID")
+    cf_ops = get_secret("CLOUDFLARE_OPS_TOKEN")
+    bing_key = get_secret("BING_WEBMASTER_API_KEY")
     gads = [(name, get_secret(name)) for name in
             ("GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN")]
     token = functools.cache(lambda: google.access_token(client, sa))
@@ -79,6 +81,12 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                           lambda: _critic_shadow(db_path, now)),
         "site_health": ([("publish.custom_domain", cfg.custom_domain)],
                         lambda: site_health.check(client, cfg, now)),
+        "cloudflare_traffic": ([("CLOUDFLARE_OPS_TOKEN", cf_ops),
+                                ("publish.custom_domain", cfg.custom_domain)],
+                               lambda: cloudflare_traffic.stats(client, cf_ops, cfg.custom_domain,
+                                                               yesterday, start)),
+        "bing": ([("BING_WEBMASTER_API_KEY", bing_key), ("publish.custom_domain", cfg.custom_domain)],
+                 lambda: bing.stats(client, bing_key, cfg.custom_domain, yesterday, start)),
         "ga4": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
                 lambda: google.ga4(client, token(), cfg.growth_ga4_property_id, days)),
         "ga4_stores": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
@@ -117,7 +125,10 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
             status[name] = "skipped"
             if name == "subscribers":
                 data[name] = {"unavailable": f"{missing} not set"}
-            log.info("%s: skipped (%s not set)", name, missing)
+            if name in ("cloudflare_traffic", "bing"):
+                log.info("%s: skipped", name)
+            else:
+                log.info("%s: skipped (%s not set)", name, missing)
             continue
         try:
             data[name] = fetch()
@@ -126,6 +137,10 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
             log.info("%s: %s", name, status[name])
         except Exception as e:  # one section never stops the others
             status[name] = "error"
+            if name in ("cloudflare_traffic", "bing"):
+                code = str(e) if isinstance(e, bing.BingError) else ""
+                log.warning("%s: error%s", name, " " + code if code else "")
+                continue
             if name == "subscribers":
                 data[name] = {"unavailable": _error(e)}
             detail = (type(e).__name__ if name == "site_health" else
@@ -165,6 +180,14 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     if ga:
         lines.append("Visitors: " + _pair(_n, ga["yesterday"]["totalUsers"], ga["window"]["totalUsers"]))
         lines.append("Sign-ups: " + _pair(_n, ga["yesterday"]["sign_up"], ga["window"]["sign_up"]))
+    cf = data.get("cloudflare_traffic")
+    if cf:
+        y, w = cf["yesterday"], cf["window"]
+        lines.append(f"Visitors (Cloudflare): yesterday {_n(y['visitors'])}, last {days} days "
+                     f"{_n(w['visitors'])}; page views {_n(w['page_views'])}")
+        lines.append("Cloudflare page views (yesterday / window): "
+                     + _pair(_n, y["page_views"], w["page_views"]) + "; requests "
+                     + _pair(_n, y["requests"], w["requests"]))
     trials = ((st["trials_yesterday"], st["trials_window"]) if st else
               (ga["yesterday"]["start_trial"], ga["window"]["start_trial"]) if ga else None)
     if trials:
@@ -244,6 +267,15 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   f"Submitted {sm['url']}" + (" (Google has not read it yet)" if sm["pending"] else ""),
                   f"{_n(sm['submitted'])} URLs, {_n(sm['errors'])} errors, "
                   f"{_n(sm['warnings'])} warnings, last read {sm['last_downloaded'] or 'never'}"]
+    bs = data.get("bing")
+    if bs:
+        lines += ["", "== Bing search =="]
+        if bs["has_data"]:
+            y, w = bs["yesterday"], bs["window"]
+            lines.append("Clicks (yesterday / window): " + _pair(_n, y["clicks"], w["clicks"])
+                         + "; impressions " + _pair(_n, y["impressions"], w["impressions"]))
+        else:
+            lines.append("no Bing data yet")
     if ads or "facebook" in data or "instagram" in data:
         lines += ["", "== Meta =="]
         if ads:

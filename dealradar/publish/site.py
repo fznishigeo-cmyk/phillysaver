@@ -276,7 +276,8 @@ SUPPORT_NOTE_MONTHLY = (
     "nothing extra; every deal stays free."
 )
 JOIN_FORM = (
-    '<form class="joinform"><label for="join-email">Email</label><input id="join-email" name="email" type="email" '
+    '<form class="joinform" data-clarity-mask="true"><label for="join-email">Email</label>'
+    '<input id="join-email" name="email" type="email" data-clarity-mask="true" '
     'placeholder="Email" autocomplete="email" required><button type="submit" class="pwbtn btn" disabled>Continue</button>'
     '<p class="meta muted">One email with the best deals. Unsubscribe anytime.</p>'
     '<p data-join-message role="status" hidden></p></form>'
@@ -597,11 +598,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             choices = ""
             if yearly > 0:
                 choices = (
-                    f'<fieldset id="{place}plans" class="plans">'
+                    f'<fieldset id="{place}plans" class="plans" data-clarity-mask="true">'
                     '<legend class="sr-only">Billing plan</legend>'
-                    f'<label><input type="radio" name="{place}plan" value="month" checked>'
+                    f'<label><input type="radio" name="{place}plan" value="month" data-clarity-mask="true" checked>'
                     '<span>Monthly $9.99</span></label>'
-                    f'<label><input type="radio" name="{place}plan" value="year">'
+                    f'<label><input type="radio" name="{place}plan" value="year" data-clarity-mask="true">'
                     f'<span>Yearly ${yearly:g}</span></label></fieldset>'
                 )
             html = html.replace("{{PLAN_CHOICES_" + place.upper() + "}}", choices)
