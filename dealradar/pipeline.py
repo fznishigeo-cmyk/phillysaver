@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timedelta
 from itertools import chain, zip_longest
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from . import rank, util
 from .config import AppConfig, load_config, load_sources
@@ -750,6 +750,106 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
     return resolved
 
 
+_POST_LINK_PER_RUN = 40
+#: Short links (amzn.to, a.co) followed per post: a roundup can hold dozens,
+#: each a polite 1 s hop, and the run's time is shared.
+_POST_SHORT_LINKS = 10
+
+
+def _links_from_posts(db: DB, fetcher, deadline: float | None,
+                      cfg: AppConfig, *, deals: list[dict[str, Any]],
+                      stats: dict | None = None) -> int:
+    """Recover Amazon product links once per live, photo-less site deal.
+
+    Cache only links and anchor words in memory; post content is never stored.
+    The cap counts distinct post fetches, while stats count deals attempted.
+    """
+    from .dedupe import _DEAL_FIELDS
+    from .fetch.pages import _Tree
+    from .http_client import canonicalize_url, extract_asin, resolve_redirects
+
+    posts: dict[str, dict[str, list[set[str]]]] = {}
+    tried = found = fetched = 0
+    for deal in sorted(deals, key=lambda d: str(d.get("first_seen_at") or ""),
+                       reverse=True):
+        if deal.get("status") != "alive" or deal.get("image_url") or \
+                "post_link_tried" in (deal.get("flags") or []):
+            continue
+        if deal.get("canonical_url") and (deal.get("asin") or
+                "amazon" not in (deal.get("store") or "").lower()):
+            continue
+        if deadline is not None and time.monotonic() > deadline:
+            break
+        sightings = db.sightings_for(deal["id"])
+        post = (sightings[0].get("source_url") or "") if sightings else ""
+        if post not in posts:
+            if fetched >= _POST_LINK_PER_RUN:
+                continue
+            posts[post] = {}
+            try:
+                parts = urlsplit(post)
+                if parts.scheme in ("http", "https") and parts.hostname \
+                        and not util.official_feed_only(post):
+                    fetched += 1
+                    res = fetcher.get(post, conditional=False, deadline=deadline)
+                    if res.status == 200 and not res.blocked_by_robots and res.body:
+                        root = _Tree(res.body.decode("utf-8", "replace")).root
+                        short_links = {}
+                        for anchor in root.find(tag="a"):
+                            try:
+                                link = urljoin(res.final_url or post,
+                                               anchor.attrs.get("href") or "")
+                                parts = urlsplit(link)
+                            except ValueError:
+                                continue
+                            host = (parts.hostname or "").lower()
+                            if parts.scheme not in ("http", "https"):
+                                continue
+                            if host in ("amzn.to", "a.co"):
+                                if link not in short_links and \
+                                        len(short_links) >= _POST_SHORT_LINKS:
+                                    continue
+                                if link not in short_links:
+                                    short_links[link] = resolve_redirects(
+                                        fetcher, link, cfg.redirect_max_hops,
+                                        deadline=deadline)
+                                link = short_links[link]
+                            if asin := extract_asin(link):
+                                posts[post].setdefault(asin, []).append(
+                                    set(util.normalize_item(anchor.text()).split()))
+            except (DeadlineExceeded, ValueError):
+                # A timeout or malformed link is still this deal's one attempt.
+                posts[post] = {}
+        candidates = posts[post]
+        asin = ""
+        if len(candidates) == 1:
+            asin = next(iter(candidates))
+        elif candidates:
+            words = set(util.normalize_item(deal.get("item") or "").split())
+            if words:
+                scores = {a: max(len(words & text) / len(words) for text in texts)
+                          for a, texts in candidates.items()}
+                best = max(scores.values())
+                winners = [a for a, score in scores.items() if score == best]
+                if best >= 0.6 and len(winners) == 1:
+                    asin = winners[0]
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        flags = list(payload.get("flags") or []) + ["post_link_tried"]
+        canonical = None
+        if asin:
+            canonical = canonicalize_url(f"https://www.amazon.com/dp/{asin}")
+            payload.update(asin=asin, canonical_url=canonical)
+            flags = [f for f in flags if f not in
+                     ("image_backfill_tried", "product_image_tried")]
+            found += 1
+        payload["flags"] = flags
+        db.update_deal(deal["dedupe_key"], payload=payload, canonical_url=canonical)
+        tried += 1
+    if stats is not None:
+        stats.update(tried=tried, found=found)
+    return found
+
+
 def _photo_gap_summary(deals: list[dict[str, Any]], redirects: dict) -> tuple[dict, str]:
     """Only host/count diagnostics: no item names, paths or query strings.
     deals: the live deals on the site."""
@@ -1398,6 +1498,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             _check_stored_images(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, now)
             if fast_lane else 0)
         summary["redirects"] = {"resolved": 0, "tried": 0}
+        summary["post_links"] = {"tried": 0, "found": 0}
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
                                  stats=summary["redirects"],
@@ -1417,6 +1518,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         summary["critic"] = _run_critic(db, cfg, parser, now)
+
+        if fast_lane:
+            _links_from_posts(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
+                              deals=rank.site_deals(db, cfg, now),
+                              stats=summary["post_links"])
 
         # ---- live price re-check (Amazon deals; moved price => dead) ----
         # The in-window photo-only Keepa calls ride the fast lane, which has

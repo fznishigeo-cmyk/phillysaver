@@ -22,6 +22,11 @@ def test_valid_targets(target):
     assert tracker_target(tracker(target)) == target
 
 
+def test_linksynergy_murl():
+    link = "https://click.linksynergy.com/deeplink?id=abc&murl=" + quote(AMAZON, safe="")
+    assert tracker_target(link) == AMAZON
+
+
 @pytest.mark.parametrize("url", [
     "https://cc.dealsofamerica.com/v1/otc/abc", tracker("http://walmart.com/ip/1"),
     tracker("javascript:alert(1)"), tracker("https://"), tracker("https://[bad"),
