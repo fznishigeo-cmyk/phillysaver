@@ -138,6 +138,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Professional buttons + Join page (Codex task 030, merged 2026-10-12):** support-mode
+  pills and calm buttons in both themes; all Join links now go to `/join`,
+  with old home hashes redirected and the email-only form on `join.html`.
+  Sitemap/IndexNow and hourly step 6 include it; membership bytes unchanged.
+  Validation: 44 focused checks passed; full suite: 1,467 passed, 7 existing
+  Stripe tests blocked by sandbox sockets, 1 deselected. Chromium also blocked;
+  full green run and visual verification remain. No commit or push.
 - **Greyed inline gone deals (Codex task 027, merged 2026-10-12):** post/expiry
   signals queue API rechecks; Woot reuses its feed, with no extra requests.
   Confirmed deaths alone publish as gone, inline and inert for 24 hours;

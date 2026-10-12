@@ -4,42 +4,34 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const code = fs.readFileSync(process.argv[2], 'utf8');
 const home = fs.readFileSync(process.argv[3], 'utf8');
-function harness({blocked = false, stored = '', now = 1000, panelPresent = true} = {}) {
+function harness({blocked = false, stored = '', now = 1000, panelPresent = true, contentPresent = true, hash = ''} = {}) {
   const handlers = {}, storage = new Map([['wp.support.dismissed', stored]]);
   let boundary = 200, count = 12, response = {status: 200, json: async () => ({ok:true})};
-  let request, event, openFocus = false;
-  const input = {value: ' user@example.com ', focus() { document.activeElement = input; }};
-  const btn = {disabled: false, focus() { document.activeElement = btn; }};
-  const closer = {disabled: false, offsetParent: {}, focus() { document.activeElement = closer; }};
-  input.offsetParent = btn.offsetParent = {};
+  let request, event, redirected;
+  const input = {value: ' user@example.com '};
+  const btn = {disabled: false};
   const msg = {hidden: true, setAttribute(k,v) {this[k] = v;}};
   const form = {matches: s => s === '.joinform', querySelector(s) {
     return s.includes('input') ? input : s.includes('button') ? btn : msg;
   }};
-  const opener = {offsetParent: {}, focus() { openFocus = true; document.activeElement = opener; }};
-  const modal = {hidden: true, querySelector: () => input, querySelectorAll: () => [closer, input, btn]};
   const panel = {hidden: true}, bar = {}, support = {}, note = {};
   const document = {
-    activeElement: opener, body: {style: {}, contains: () => true},
-    getElementById(id) { return {authmodal: modal, paywall: panelPresent ? panel : null, subscribe: opener, subbar:bar, content:{}}[id]; },
+    getElementById(id) { return {paywall: panelPresent ? panel : null, subbar:bar, content:contentPresent ? {} : null}[id]; },
     querySelector: () => ({getBoundingClientRect: () => ({bottom: 100})}),
     querySelectorAll: selector => selector === "[data-support]" ? [support] : selector === "[data-support-note]" ? [note] : Array.from({length: count}, () => ({getBoundingClientRect: () => ({bottom: boundary})})),
     addEventListener: (type, cb) => { handlers[type] = cb; }
   };
   const ctx = {
-    document, location:{hash:'', pathname:'/', search:''}, history:{replaceState(){}},
+    document, location:{hash, replace(url) {redirected = url;}, pathname:'/', search:''},
     localStorage:{getItem(k) {if (blocked) throw Error('blocked'); return storage.get(k);},
       setItem(k,v) {if (blocked) throw Error('blocked'); storage.set(k,v);}},
     Date:{now: () => now}, requestAnimationFrame: f => f(),
-    fetch: async (url, opts) => {request = {url, ...opts}; if (response instanceof Error) throw response; return response;},
+    fetch: async (url, opts) => {request = {url, ...opts}; if (!opts || opts.method !== 'POST') return {json:async()=>({meta:{api_url:'https://api.test/'}})}; if (response instanceof Error) throw response; return response;},
     window:{wpTrack: (name, params) => {event = {name, params};}, addEventListener:(type, cb) => {handlers[type] = cb;}}
   };
   vm.runInNewContext(code, ctx);
-  ctx.window.wpSupport.refresh({api_url:'https://api.test/', support:{link:'https://buy.stripe.com/test_support'}});
+  if (contentPresent) ctx.window.wpSupport.refresh({api_url:'https://api.test/', support:{link:'https://buy.stripe.com/test_support'}});
   const click = selector => handlers.click({target:{closest: s => s === selector}, preventDefault(){}});
-  const key = (key, shiftKey = false) => {
-    let prevented = false; handlers.keydown({key, shiftKey, preventDefault(){prevented = true;}}); return prevented;
-  };
   async function submit(res) {
     event = null; response = res;
     handlers.submit({target:form, preventDefault(){}});
@@ -47,9 +39,9 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(btn.disabled, false);
   }
-  return {ctx, modal, panel, bar, support, note, input, btn, closer, msg, opener, storage, handlers, click, key, submit,
+  return {ctx, panel, bar, support, note, input, btn, msg, storage, handlers, click, submit,
     boundary: n => boundary = n, count: n => count = n, request: () => request, event: () => event,
-    openerFocused: () => openFocus};
+    redirected: () => redirected};
 }
 (async () => {
   let h = harness();
@@ -65,15 +57,15 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   h.count(8); h.ctx.window.wpSupport.refresh();
   assert.equal(h.panel.hidden, true); // a short wall has no obstructing banner
   h.count(12); h.ctx.window.wpSupport.refresh();
-  h.click('[data-join]');
-  assert.equal(h.modal.hidden, false);
-  assert.equal(h.ctx.document.activeElement, h.input);
-  h.ctx.document.activeElement = h.btn; h.key('Tab');
-  assert.equal(h.ctx.document.activeElement, h.closer);
-  h.key('Tab', true); assert.equal(h.ctx.document.activeElement, h.btn);
-  h.key('Escape'); assert.equal(h.modal.hidden, true); assert.equal(h.openerFocused(), true);
-  h.click('[data-join]'); h.click('[data-join-close]'); assert.equal(h.modal.hidden, true);
-  h.ctx.location.hash = '#join'; h.handlers.hashchange(); assert.equal(h.modal.hidden, false);
+  assert.equal(h.handlers.keydown, undefined); // no dialog keyboard trap
+  const joinClick = {target:{closest: s => s === '[data-join]'}, preventDefault(){throw Error('Join links must navigate normally');}};
+  h.handlers.click(joinClick);
+  assert.equal(h.redirected(), undefined);
+  for (const hash of ['#join', '#signup', '#JOIN', '#login']) {
+    const legacy = harness({hash});
+    assert.equal(legacy.redirected(), '/join');
+  }
+  h.ctx.location.hash = '#signup'; h.handlers.hashchange(); assert.equal(h.redirected(), '/join');
   await h.submit({status:200,json:async()=>({ok:true})});
   assert.equal(h.request().url, 'https://api.test/subscribe');
   assert.equal(h.request().method, 'POST');
@@ -86,7 +78,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   for (const [status, message] of [[400,'valid email'], [429,'Too many tries'], [503,'unavailable']]) {
     await h.submit({status,json:async()=>({error:'failed'})});
     assert.ok(h.msg.textContent.includes(message)); assert.equal(h.msg.role,'alert');
-    assert.equal(h.event(), null); assert.equal(h.modal.hidden, false);
+    assert.equal(h.event(), null);
   }
   await h.submit(Error('network')); assert.ok(h.msg.textContent.includes("Couldn't reach"));
   await h.submit({status:200,json:async()=>({})}); assert.ok(h.msg.textContent.includes('unavailable'));
@@ -100,6 +92,19 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   h = harness({blocked:true}); h.boundary(90); h.ctx.window.wpSupport.refresh(); assert.equal(h.panel.hidden,false);
   h.click('[data-support-close]'); assert.equal(h.panel.hidden,true);
   await h.submit({status:200,json:async()=>({ok:true})}); assert.equal(h.event().name,'sign_up');
+  // The dedicated Join page loads its endpoint from the public metadata.
+  h = harness({panelPresent:false, contentPresent:false});
+  assert.ok(h.request().url.startsWith('/deals.json?t='));
+  await new Promise(resolve => setImmediate(resolve));
+  await h.submit({status:200,json:async()=>({ok:true})});
+  assert.equal(h.request().url, 'https://api.test/subscribe');
+  assert.deepEqual(JSON.parse(h.request().body), {email:'user@example.com'});
+  assert.equal(h.event().name, 'sign_up');
+  const bandStart = home.indexOf('  function openBand()'), bandEnd = home.indexOf('  function trialBand()', bandStart);
+  const band = {};
+  vm.runInNewContext(home.slice(bandStart, bandEnd), band);
+  assert.ok(band.openBand().includes('<a class="pwbtn alt" href="/join">Join free</a>'));
+  assert.equal(band.openBand().includes('<form'), false);
   // Exercise the actual grid function: the inline offer follows eight
   // cards even when the alert-floor split puts fewer than eight on top.
   const start = home.indexOf('    var beforeBand = 8;'), end = home.indexOf('    if (headliners.length)', start);

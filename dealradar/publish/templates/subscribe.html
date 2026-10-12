@@ -47,10 +47,10 @@ p{margin:0 0 14px}
 @media (max-width:520px){ .plans{grid-template-columns:1fr} .wrap{padding:24px 12px} }
 <!--support-->
 [hidden]{display:none!important}
-.joinform{display:flex;flex-wrap:wrap;gap:10px}
-.joinform label{flex:1 1 180px}
-.joinform input{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
-.joinform p{flex:1 1 100%;margin:0}
+.btn{font-weight:600;box-shadow:none;transition:background-color 150ms,color 150ms}
+.btn.alt{background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:10px 22px;font-weight:500}
+.btn.alt:hover,.btn.alt:focus-visible{background:var(--accent);color:var(--accent-fg);filter:none;transform:none}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 <!--/support--></style>
 </head>
 <body>
@@ -84,7 +84,7 @@ p{margin:0 0 14px}
   {{SUPPORT_ACTION}}
   {{SUPPORT_NOTE}}
   <h2>Join free: the best deals in your inbox</h2>
-  {{JOIN_FORM}}
+  <p><a class="btn alt" href="/join">Join free</a></p>
 <!--/support--></div>
 
 <p class="muted"><a href="./">&larr; Back to the deal wall</a></p>

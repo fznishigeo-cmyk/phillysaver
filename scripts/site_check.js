@@ -155,7 +155,15 @@ async function walk(page, doc, device) {
       !name.endsWith(".wowpriced.com") && name !== SITE_URL.hostname, "invalid or own-site deal URL");
   });
   const support = Boolean(((doc.meta || {}).support || {}).enabled);
-  await step(6, support ? "Join dialog / Escape" : "Trial dialog / Escape", async () => {
+  await step(6, support ? "Join page" : "Trial dialog / Escape", async () => {
+    if (support) {
+      const href = await page.locator("#subscribe").getAttribute("href");
+      check(href && href.endsWith("/join"), "Join link must point to /join");
+      const response = await readSite("join"), body = await response.text();
+      check(response.status === 200, `Join HTTP ${response.status}`);
+      check(/<input\b[^>]*type=["']email["']/i.test(body), "Join page missing email field");
+      return;
+    }
     try {
       await page.locator("#subscribe").click();
       await page.locator("#authmodal").waitFor({ state: "visible" });
