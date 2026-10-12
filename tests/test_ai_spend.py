@@ -12,7 +12,7 @@ from dealradar.fetch.keepa import KeepaDealsAdapter
 from dealradar.fetch.woot import WootAdapter
 from dealradar.parse.claude_client import ClaudeParser, categorize_titles, critique_deals
 from dealradar.parse.extractor import parse_posts, verify_evidence
-from dealradar.parse.schema import CriticVerdicts, DealCategories, LLMDeal, to_extracted
+from dealradar.parse.schema import CriticVerdicts, LLMDeal, to_extracted
 from tests.test_keepa import NOW, SRC, _amazon_row, _wh_row
 
 
@@ -30,14 +30,19 @@ class Messages:
             data = self.reply if self.reply is not None else {"verdicts": [
                 {"index": e["index"], "plausible": True, "confidence": .9,
                  "reason": "This regular price is plausible."} for e in entries]}
-        else:
-            data = {"categories": self.categories or ["home"] * len(entries)}
         return SimpleNamespace(parsed_output=data, stop_reason="end_turn",
                                usage=SimpleNamespace(input_tokens=self.cost[0],
                                                      output_tokens=self.cost[1]))
 
     def create(self, **kw):
-        raise AssertionError("structured posts must not invoke extraction")
+        assert 'Return ONLY a JSON array' in kw["system"], "structured posts must not invoke extraction"
+        self.calls.append(kw)
+        entries = json.loads(kw["messages"][0]["content"])
+        cats = self.categories if self.categories is not None else ["home"] * len(entries)
+        data = [{"i": e["i"], "category": cat} for e, cat in zip(entries, cats)]
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps(data))],
+                               stop_reason="end_turn", usage=SimpleNamespace(
+                                   input_tokens=self.cost[0], output_tokens=self.cost[1]))
 
 
 def parser_for(messages=None, **over):
@@ -184,7 +189,7 @@ def test_keepa_matches_llm_path_and_verifies_with_no_extract(warehouse):
     assert stats["posts_sent"] == 0
     assert parser.spend_by_kind["extract"]["calls"] == 0
     assert parser.extract_by_source[SRC.name] == dict(calls=0, usd=0.)
-    assert msgs.calls[0]["output_format"] is DealCategories
+    assert 'Return ONLY a JSON array' in msgs.calls[0]["system"]
 
 
 def test_altered_structured_quote_is_dropped_before_category_spend():
@@ -241,10 +246,11 @@ def test_category_reuse_and_single_title_only_batch(tmp_path):
     posts = [post, woot_post(), woot_post(OfferId="2", Title="Toy Train")]
     pairs, stats = parse_posts(posts, parser, parser.cfg, NOW, {}, db=db)
     assert [d.category for _, d in pairs] == ["kitchen", "other", "toys_games"]
-    assert len(msgs.calls) == 1
-    assert json.loads(msgs.calls[0]["messages"][0]["content"]) == ["Widget", "Toy Train"]
+    assert len(msgs.calls) == 2  # only the invalid first answer is retried
+    assert json.loads(msgs.calls[0]["messages"][0]["content"]) == [
+        {"i": 0, "title": "Widget"}, {"i": 1, "title": "Toy Train"}]
     assert msgs.calls[0]["model"] == parser.model
-    assert parser.spend_by_kind["category"]["calls"] == 1
+    assert parser.spend_by_kind["category"]["calls"] == 2
     db.close()
 
 
@@ -269,9 +275,10 @@ def test_category_cap_propagates_and_parse_defaults_safely():
     assert msgs.calls == []
 
 
-def test_category_malformed_output_defaults_to_other():
-    parser, _ = parser_for(Messages(categories=["home", "home"]))
-    assert categorize_titles(parser, ["Widget"]) == ["other"]
+def test_category_short_output_preserves_the_answer():
+    parser, msgs = parser_for(Messages(categories=["home"]))
+    assert categorize_titles(parser, ["Widget", "Toy"]) == ["home", "home"]
+    assert len(msgs.calls) == 2
 
 
 def test_one_category_call_at_most_sixty_titles():

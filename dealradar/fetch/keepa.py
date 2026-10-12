@@ -34,7 +34,7 @@ import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -46,6 +46,8 @@ from ..db import DB
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
                             response_payload)
+from ..keepa_categories import (NAMES_META, ROOTS_META, cached_meta,
+                               category_from_name, remember_roots, root_id)
 from ..models import RawPost, SourceConfig
 from ..verify import _keepa_image_name
 from .base import SourceAdapter
@@ -55,6 +57,7 @@ log = logging.getLogger("dealradar.fetch.keepa")
 DEALS_URL = "https://api.keepa.com/deal"
 QUERY_URL = "https://api.keepa.com/query"      # product finder
 PRODUCT_URL = "https://api.keepa.com/product"
+CATEGORY_URL = "https://api.keepa.com/category"
 
 #: Keepa domainId for amazon.com (US).
 DOMAIN_US = 1
@@ -298,6 +301,12 @@ def _pct_key(pct: float, floors: tuple[float, ...]) -> str:
     return key
 
 
+def _structured_category(row: dict, names: dict[str, str] | None) -> dict:
+    name = (names or {}).get(root_id(row), "")
+    category = category_from_name(name)
+    return {"category": category, "keepa_category_name": name} if category else {}
+
+
 def _product_row(product: dict[str, Any]) -> dict[str, Any]:
     """A /product record (stats) in /deal row shape for the warehouse
     mapper: ``stats.current`` uses the same price-type indexes, and
@@ -305,6 +314,7 @@ def _product_row(product: dict[str, Any]) -> dict[str, Any]:
     stats = product.get("stats")
     stats = stats if isinstance(stats, dict) else {}
     return {"asin": product.get("asin"), "title": product.get("title"),
+            "rootCat": product.get("rootCategory"),
             "current": stats.get("current"), "avg90": stats.get("avg90"),
             "image": _keepa_image_name(product)}
 
@@ -355,6 +365,9 @@ class _Pull:
     pages: int = 0          # /deal pages
     raw_rows: int = 0
     sample: dict[str, Any] | None = None  # first raw row, for drift warnings
+    category_names: dict[str, str] | None = None
+    categories_tried: set[str] | None = None
+    focus_tried: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -457,14 +470,15 @@ class KeepaDealsAdapter(SourceAdapter):
                                float(cfg.site_show_from_pct)}))
 
         def map_amazon(row: dict[str, Any]) -> RawPost | None:
-            return self._map_row(row, source, now, floors=floors)
+            return self._map_row(row, source, now, floors=floors,
+                                 category_names=pull.category_names)
 
         def map_warehouse(row: dict[str, Any]) -> RawPost | None:
             return self._map_warehouse_row(
                 row, source, now,
                 min_drop_pct=cfg.keepa_warehouse_min_drop_pct,
                 min_new_price=cfg.keepa_warehouse_min_new_price,
-                floors=floors)
+                floors=floors, category_names=pull.category_names)
 
         amazon_sel = _selection(PRICE_TYPE_AMAZON, (MIN_DROP_PCT, 100),
                                 DATE_RANGE_90D, SORT_PCT_DROP, AMAZON_MAX_RANK)
@@ -482,14 +496,24 @@ class KeepaDealsAdapter(SourceAdapter):
                          now=now, deadline=deadline,
                          reserve=cfg.keepa_reserve_tokens,
                          interval_s=cfg.min_host_interval_s,
-                         margin_s=cfg.request_timeout_s, sleep=self._sleep)
+                         margin_s=cfg.request_timeout_s, sleep=self._sleep,
+                         category_names=cached_meta(db, NAMES_META),
+                         categories_tried=set())
             try:
                 _check_deadline(deadline)
+                self._lookup_categories(pull, list(cached_meta(db, ROOTS_META).values()),
+                                        all_roots=bool(cfg.keepa_focus_categories))
+                self._run_focus(pull, cfg, amazon_sel, amazon_seen,
+                                map_amazon, amazon, amazon_lane)
                 # Pass 1, page 0: Amazon's own NEW price dropped
                 # >= MIN_DROP_PCT below its 90-day average.
                 _, amazon_next = self._run_pass(
                     pull, amazon_sel, 0, 1, source.name, amazon_seen,
                     map_amazon, amazon, amazon_lane)
+                # A first /deal response can establish an unknown bucket.
+                self._lookup_categories(pull, [], all_roots=bool(cfg.keepa_focus_categories))
+                self._run_focus(pull, cfg, amazon_sel, amazon_seen,
+                                map_amazon, amazon, amazon_lane)
                 # Pass 2: warehouse, a third of the pages FRESH and the rest
                 # (plus any FRESH left unused) DEEP. Only the Amazon and
                 # FRESH first pages may run under the reserve.
@@ -543,6 +567,80 @@ class KeepaDealsAdapter(SourceAdapter):
                 source.name, sorted(sample)[:20],
                 sample.get("current"), sample.get("avg"))
         return posts
+
+    def _lookup_categories(self, pull: _Pull, ids: list[str], *,
+                           all_roots: bool = False) -> None:
+        """Keepa /category costs 1 token for up to 10 IDs, or all roots (0).
+        Cache names forever; defer on unknown/short tokens or schema drift.
+        https://keepa.com/api-docs/category-lookup.html
+        """
+        names = pull.category_names
+        tried = pull.categories_tried
+        if names is None or tried is None:
+            return
+        roots_loaded = pull.db is not None and pull.db.meta_get("keepa_root_categories_loaded")
+        missing = sorted({str(i) for i in ids if str(i) not in names and str(i) not in tried})
+        batches = [missing[i:i + 10] for i in range(0, len(missing), 10)]
+        if all_roots and not roots_loaded and "0" not in tried:
+            batches.insert(0, ["0"])
+        for batch in batches:
+            batch = [i for i in batch if i not in names and i not in tried]
+            if not batch:
+                continue
+            avail = pull.budget.available(pull.now)
+            if avail is None or avail - 1 < pull.reserve or not self._time_left(pull, "categories"):
+                return
+            _check_deadline(pull.deadline)
+            tried.update(batch)
+            try:
+                body = self._get(pull, CATEGORY_URL, {
+                    "key": pull.key, "domain": DOMAIN_US,
+                    "category": ",".join(batch), "parents": 0}, "categories")
+            except (_TokensShort, RuntimeError, httpx.HTTPError):
+                log.warning("keepa category lookup unavailable; using titles this pull")
+                return
+            categories = body.get("categories") if isinstance(body, dict) else None
+            if not isinstance(categories, dict):
+                log.warning("keepa category response has no category map; using titles")
+                continue
+            for cid, category in categories.items():
+                name = category.get("name") if isinstance(category, dict) else None
+                if str(cid).isdigit() and isinstance(name, str) and name.strip():
+                    names[str(cid)] = name.strip()
+            if batch != ["0"]:
+                for cid in batch:
+                    names.setdefault(cid, "")  # successful lookup with no name: no opinion
+            if pull.db is not None:
+                pull.db.meta_set(NAMES_META, json.dumps(names))
+                if batch == ["0"] and categories:
+                    pull.db.meta_set("keepa_root_categories_loaded", "1")
+
+    def _run_focus(self, pull: _Pull, cfg: AppConfig, selection: dict,
+                   seen: set[str], mapper, out: list[RawPost], lane: _Lane) -> None:
+        """One Amazon page per named root, sharing the Amazon new-post cap.
+        Focus pages lead so a full general page cannot crowd them out.
+        """
+        ids = {name.casefold(): int(cid) for cid, name in (pull.category_names or {}).items()}
+        for name in cfg.keepa_focus_categories:
+            cid = ids.get(name.strip().casefold())
+            if cid is None or cid in pull.focus_tried or not self._may_fetch(pull, "focus", extra=True):
+                continue
+            # The focus page always keeps at least the standing 300-token reserve.
+            avail = pull.budget.available(pull.now)
+            if avail is None or avail - DEAL_PAGE_COST < max(300, pull.reserve):
+                continue
+            pull.focus_tried.add(cid)
+            rows = self._query_rows(pull, {**selection, "includeCategories": [cid]}, "focus")
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                asin = str(row.get("asin") or "").strip().upper()
+                if not asin or asin in seen:
+                    continue
+                seen.add(asin)
+                post = mapper(row)
+                if post is not None and lane.admit(post):
+                    out.append(post)
 
     def _run_pass(self, pull: _Pull, selection: dict[str, Any], start: int,
                   max_pages: int, label: str, seen: set[str],
@@ -681,6 +779,9 @@ class KeepaDealsAdapter(SourceAdapter):
         pull.raw_rows += len(rows)
         if pull.sample is None:
             pull.sample = next((r for r in rows if isinstance(r, dict)), None)
+        valid_rows = [r for r in rows if isinstance(r, dict)]
+        remember_roots(pull.db, valid_rows)
+        self._lookup_categories(pull, [root_id(r) for r in valid_rows if root_id(r)])
         tokens_left = (payload.get("tokensLeft")
                        if isinstance(payload, dict) else None)
         log.info("keepa %s: %d raw deals (tokensLeft=%s)",
@@ -791,6 +892,9 @@ class KeepaDealsAdapter(SourceAdapter):
             wanted = set(asins)
             products = (body.get("products") if isinstance(body, dict)
                         else None) or []
+            valid_products = [p for p in products if isinstance(p, dict)]
+            remember_roots(pull.db, valid_products)
+            self._lookup_categories(pull, [root_id(p) for p in valid_products if root_id(p)])
             for product in products:
                 if not isinstance(product, dict):
                     continue
@@ -810,7 +914,8 @@ class KeepaDealsAdapter(SourceAdapter):
 
     @staticmethod
     def _map_row(row: dict[str, Any], source: SourceConfig, now: datetime,
-                 *, floors: tuple[float, ...] = ()) -> RawPost | None:
+                 *, floors: tuple[float, ...] = (),
+                 category_names: dict[str, str] | None = None) -> RawPost | None:
         asin = str(row.get("asin") or "").strip().upper()
         title = str(row.get("title") or "").strip()
         if not asin or not title:
@@ -854,6 +959,7 @@ class KeepaDealsAdapter(SourceAdapter):
             image_url=_image_url(row),
             hash_text=f"{title}\n${current:,.2f}, {pct} under the 90-day average",
             structured={
+                **_structured_category(row, category_names),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(current, 2),
@@ -869,7 +975,8 @@ class KeepaDealsAdapter(SourceAdapter):
     def _map_warehouse_row(row: dict[str, Any], source: SourceConfig,
                            now: datetime, *, min_drop_pct: float = 45.0,
                            min_new_price: float = 25.0,
-                           floors: tuple[float, ...] = ()) -> RawPost | None:
+                           floors: tuple[float, ...] = (),
+                           category_names: dict[str, str] | None = None) -> RawPost | None:
         """Amazon Warehouse (Amazon Resale) open-box/used offer, compared
         honestly against what the item really costs NEW (see
         :func:`_new_price_basis`) — the "$12.07 used vs $81.55 new = -85%"
@@ -913,6 +1020,7 @@ class KeepaDealsAdapter(SourceAdapter):
             image_url=_image_url(row),
             hash_text=f"{title}\n${used:,.2f} used, {pct} under the {label}",
             structured={
+                **_structured_category(row, category_names),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(used, 2),

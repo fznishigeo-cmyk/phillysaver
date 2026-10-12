@@ -136,6 +136,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Category sorting + Beauty/Health supply (Codex task 028, merged 2026-10-12):** cached
+  Keepa root names override titles/reuse; indexed title answers retry only
+  missing items; `recategorized_v2` repairs live categories once and resumes
+  after spend caps. Named focus pages keep the token reserve and share the
+  Amazon post cap. API shapes checked against official docs; full pytest:
+  1,475 passed, 7 existing Stripe tests blocked by sandbox socket permissions,
+  1 deselected. Live API verification remains. No commit or push.
 - **Store and price pages (Codex task 023, merged 2026-10-12):**
   `/stores/<slug>/` ("Amazon deals today": stores with 15+ public live
   deals, top 12; one page per slug, so "Macy's"/"Macys" share a page) and
