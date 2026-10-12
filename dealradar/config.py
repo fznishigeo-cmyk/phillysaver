@@ -128,6 +128,9 @@ class AppConfig:
     ftc_disclosure: str = ""
     affiliate_amazon_tag: str = ""     # Amazon Associates Store ID ("" = links untouched)
     affiliate_disclosure: str = ""     # the disclosure used once a Store ID is set
+    # One store page -> one affiliate short link (network onboarding, e.g. the
+    # Sovrn first-click check): {"walmart.com/222918738": "https://sovrn.co/..."}.
+    affiliate_link_overrides: dict = field(default_factory=dict)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_deal_pages_max: int = 3000
@@ -298,6 +301,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         tag = ""
     cfg.affiliate_amazon_tag = tag
     cfg.affiliate_disclosure = str(g("affiliate", "disclosure", default="") or "").strip()
+    cfg.affiliate_link_overrides = {}
+    for key, link in (g("affiliate", "link_overrides", default={}) or {}).items():
+        link = str(link or "").strip()
+        if re.fullmatch(r"https://(sovrn\.co|redirect\.viglink\.com)/[A-Za-z0-9?=&%._/-]+", link) \
+                and re.fullmatch(r"[a-z0-9.-]+/[A-Za-z0-9_-]+", str(key)):
+            cfg.affiliate_link_overrides[str(key)] = link
+        else:
+            logging.getLogger("dealradar.config").warning(
+                "affiliate.link_overrides entry ignored: not <host>/<id> -> a Sovrn link")
     cfg.seo_hub_min_items = max(0, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
     cfg.seo_deal_pages_max = max(0, int(g("seo", "deal_pages_max", default=cfg.seo_deal_pages_max)))
     cfg.seo_store_page_min_deals = max(1, int(g(
