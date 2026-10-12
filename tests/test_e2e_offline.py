@@ -313,3 +313,89 @@ def test_rerun_is_idempotent(env, capsys):
     assert n_hist == 5
     # The re-run lists nothing new for IndexNow (inside seo.indexnow_min_hours).
     assert json.loads((env["site"].parent / "indexnow_urls.json").read_text()) == []
+
+
+@pytest.mark.parametrize("signal,dead_items", [
+    ("unrelated", set()), ("title", {"Chef Pro Knife Set", "Copper Pan Duo"}),
+    ("evidence", {"Chef Pro Knife Set"}),
+])
+def test_end_signals_are_deal_specific_and_counted_once(env, monkeypatch, caplog,
+                                                       signal, dead_items):
+    import dataclasses
+    import logging
+
+    fetch_all = pipeline._fetch_all
+
+    def fetch(*args, **kwargs):
+        posts, errors = fetch_all(*args, **kwargs)
+        changed = []
+        for post in posts:
+            title, text = post.title, post.text
+            if "Chef Pro Knife Set" in text:
+                if signal == "title":
+                    title = "EXPIRED: " + title
+                elif signal == "evidence":
+                    text = text.replace("for $27.50", "for $27.50 — sold out")
+            text += "\nNavigation: expired deals\nSidebar: Dead Sea salt\nComment: OOS"
+            changed.append(dataclasses.replace(post, title=title, text=text))
+        return changed, errors
+
+    monkeypatch.setattr(pipeline, "_fetch_all", fetch)
+    with caplog.at_level(logging.INFO, logger="dealradar.pipeline"):
+        first = _run(env)
+    db = DB(env["db"])
+    assert {d["item"] for d in db.all_deals(status="dead")} == dead_items
+    db.close()
+    assert first["deaths_by_reason"] == (
+        {"post_says_over": len(dead_items)} if dead_items else {})
+    assert any(r.message == f"deaths by reason: {first['deaths_by_reason']}"
+               for r in caplog.records)
+    assert "deaths_by_reason" not in json.loads(
+        (env["site"] / "deals.json").read_text())["meta"]["last_run"]
+    second = _run(env)
+    assert second["deaths_by_reason"] == {}
+
+
+def test_deaths_summary_counts_api_expiry_and_confirmation_but_not_old_deaths(env,
+                                                                           monkeypatch):
+    from datetime import timedelta
+
+    from dealradar import dedupe, util, verify
+    from dealradar.fetch.woot import _recheck_offers
+    from tests.test_dedupe import make_cfg, make_extracted, make_post, make_savings
+
+    now = util.now_utc()
+    db = DB(env["db"])
+    keys = {}
+    for item, store, url in [
+        ("confirmed", "Amazon", "https://www.amazon.com/dp/B012345678"),
+        ("woot", "Woot", "https://home.woot.com/offers/lamp"),
+        ("expiry", "Target", "https://www.target.com/p/lamp"),
+        ("old", "Target", "https://www.target.com/p/old"),
+    ]:
+        ext = make_extracted(item=item, store=store, product_url=url, category="home",
+                             expires_at=util.iso(now - timedelta(minutes=1))
+                             if item == "expiry" else "")
+        keys[item] = dedupe.upsert_extracted(
+            db, ext, make_savings(), make_post(uid=item), make_cfg(), now)["dedupe_key"]
+    row = db.get_deal(keys["confirmed"])
+    db.update_deal(keys["confirmed"], payload=dict(
+        row, gone_suspect_at=util.iso(now - timedelta(hours=2)),
+        price_rechecked_at=util.iso(now - timedelta(hours=2))))
+    verify.mark_unconfirmed_dead(db, db.get_deal(keys["old"]), "post_says_over", now)
+    db.close()
+
+    def fetch(_sources, _fetcher, database, _cfg, at, *_args):
+        # Woot's own end date can kill during fetch, before expiry marking.
+        _recheck_offers(database, [{"Url": "https://home.woot.com/offers/lamp",
+                                   "EndDate": util.iso(at - timedelta(minutes=1))}], at)
+        return [], {}
+
+    monkeypatch.setattr(pipeline, "_fetch_all", fetch)
+    monkeypatch.setattr(verify, "keepa_check", lambda *a, **kw: None)
+    monkeypatch.setattr(verify, "recheck_amazon_prices", lambda deals, *a, **kw:
+                        {d["dedupe_key"]: False for d in deals})
+    first = _run(env)
+    assert first["deaths_by_reason"] == {
+        "api_ended": 1, "stated_expiry": 1, "confirmed": 1}
+    assert _run(env)["deaths_by_reason"] == {}

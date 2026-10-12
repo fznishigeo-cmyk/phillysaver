@@ -142,6 +142,17 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Sure before removing (Codex task 043, shipped 2026-10-12):** operator:
+  "make damn well sure that the deal is no longer there before removing
+  it". Only a post's title or the line holding a deal's own final-price
+  evidence quote can end it (before: "expired/dead/sold out" anywhere on
+  an article page, sidebar and comments included, killed every deal in
+  the post for good); bare "dead" no longer matches; `post_says_over`
+  revives on a later backed post; a dead row is never re-killed (its
+  verified GONE stays). Expiry and explicit online-only values: the most
+  recently published statement wins; empty never clears. Summary
+  `deaths_by_reason` + one log line per run. Keepa/Woot two-reading rules
+  unchanged.
 - **Simple code deal links (Codex task 040, shipped 2026-10-12):** code-only
   deals (codes, no rebates, steps only "use/enter/apply code X") at a store
   with a Sovrn wrap or override send Get deal to that store link. Every

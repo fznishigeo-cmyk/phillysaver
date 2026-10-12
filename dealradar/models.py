@@ -248,6 +248,9 @@ class Deal:
     confidence: float = 0.0
     sightings: list[dict[str, Any]] = field(default_factory=list)
     # each sighting: {source_name, source_url, seen_at, final_price}
+    # Publication time of the sighting supplying each explicit merge value.
+    online_only_published_at: str = ""
+    expires_published_at: str = ""
 
 
 @dataclass

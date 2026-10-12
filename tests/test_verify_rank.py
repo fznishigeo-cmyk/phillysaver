@@ -189,7 +189,10 @@ def test_mark_expired_dead(tmp_path) -> None:
 
 @pytest.mark.parametrize("text,expected", [
     ("This deal is EXPIRED", True),
-    ("dead, mods please remove", True),
+    ("dead, mods please remove", False),
+    ("Dead Sea salt", False),
+    ("the deal is dead", True),
+    ("a dead deal", True),
     ("Sold Out at checkout", True),
     ("sold   out everywhere", True),
     ("currently Out of Stock", True),

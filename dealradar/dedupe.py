@@ -6,8 +6,8 @@ A deal is identified by its dedupe_key:
 
 Merging keeps the best (lowest) observed final price and its matching savings
 fields, unions list facts (codes, conditions, rebates, stack steps), and keeps
-the earliest expiry. Sightings and price history are anchored on the post's
-content_hash, so re-running the pipeline over the same posts adds no rows.
+the most recently stated expiry. Sightings and price history are anchored on
+the post's content_hash, so re-running the pipeline adds no rows.
 
 Note on canonical_url fill-in: the frozen DB contract offers no method to
 update the deals.canonical_url column, so a later-resolved URL is filled into
@@ -120,37 +120,34 @@ def _union(*lists: list[str] | None) -> list[str]:
     return out
 
 
-def _merge_online_only(old: str, new: str) -> str:
-    """First non-unknown value sticks, except an explicit 'false' always wins."""
-    if old == "unknown":
-        return new if new in ("true", "false") else "unknown"
-    if new == "false":
-        return "false"
+def _merge_online_only(old: str, new: str, old_at: str, new_at: str) -> str:
+    """The most recent explicit value wins; unknown never clears one."""
+    if new in ("true", "false"):
+        od, nd = util.parse_iso(old_at), util.parse_iso(new_at)
+        if old not in ("true", "false") or od is None or (nd and nd >= od):
+            return new
     return old
 
 
 def _revivable_death(existing: dict[str, Any]) -> bool:
-    """Whether a later sighting may undo this death: any recorded reason but
-    a source's own "sold out"/"expired" post; for rows that predate the
-    reason, only a live recheck's kill (the 'price_moved' flag, or the death
-    stamped by the recheck itself)."""
+    """Any recorded death is revivable; legacy rows need a recheck's kill."""
     death = existing.get("death") or ""
     if death:
-        return death != "post_says_over"
+        return True
     rechecked = existing.get("price_rechecked_at") or ""
     return ("price_moved" in (existing.get("flags") or [])
             or bool(rechecked and rechecked == existing.get("died_at")))
 
 
-def _merge_expires(old: str, new: str) -> str:
-    """Keep the earliest non-empty expiry (ISO strings)."""
+def _merge_expires(old: str, new: str, old_at: str, new_at: str) -> str:
+    """A later-published statement wins; an empty value never clears one."""
     if not old:
         return new or ""
     if not new:
         return old
-    od, nd = util.parse_iso(old), util.parse_iso(new)
-    if od is not None and nd is not None:
-        return old if od <= nd else new
+    od, nd = util.parse_iso(old_at), util.parse_iso(new_at)
+    if od is None or (nd and nd > od):
+        return new
     return old
 
 
@@ -280,10 +277,14 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                              codes=extracted.codes)
 
     price_improved = revived = False
+    post_at = post.published_at or post.fetched_at
     if existing is None:
         key = canonical_key(extracted.store, extracted.product_url,
                             extracted.item)
         payload = _new_payload(key, extracted, savings, asin, now)
+        payload["online_only_published_at"] = (
+            util.iso(post_at) if extracted.online_only in ("true", "false") else "")
+        payload["expires_published_at"] = util.iso(post_at) if extracted.expires_at else ""
         payload["image_url"] = _post_image(extracted, post)
         deal_id = db.insert_deal(
             dedupe_key=key,
@@ -336,12 +337,29 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         payload["stack_steps"] = _union(existing.get("stack_steps"),
                                         extracted.stack_steps)
 
+        new_at = util.iso(post_at)
+        online_at = (existing.get("online_only_published_at")
+                     or existing.get("last_seen_at") or "")
         merged_online = _merge_online_only(
-            existing.get("online_only", "unknown"), extracted.online_only)
+            existing.get("online_only", "unknown"), extracted.online_only,
+            online_at, new_at)
         payload["online_only"] = merged_online
+        if extracted.online_only in ("true", "false") and (
+                existing.get("online_only") not in ("true", "false")
+                or not online_at or new_at >= online_at):
+            payload["online_only_published_at"] = new_at
+        else:
+            payload["online_only_published_at"] = online_at
+        expires_at = (existing.get("expires_published_at")
+                      or existing.get("last_seen_at") or "")
         merged_expires = _merge_expires(existing.get("expires_at", ""),
-                                        extracted.expires_at)
+                                        extracted.expires_at, expires_at, new_at)
         payload["expires_at"] = merged_expires
+        if extracted.expires_at and (
+                not existing.get("expires_at") or not expires_at or new_at > expires_at):
+            payload["expires_published_at"] = new_at
+        else:
+            payload["expires_published_at"] = expires_at
         payload["confidence"] = max(
             float(existing.get("confidence") or 0.0),
             float(extracted.confidence or 0.0))
@@ -387,17 +405,20 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # mark_expired_dead).
         backed = new_final is not None and (
             price_improved or new_final <= float(old_final) * 1.10 + 0.01)
-        # Only a recheck kill is undone, and only by a post written after
+        # A recorded death is undone only by a post written after
         # the death (live review finding: an older article, merged in the
         # same batch, revived a deal a source had just declared sold out).
         died = util.parse_iso(existing.get("died_at") or "")
         after_death = (post.published_at is None or died is None
                        or post.published_at > died)
+        if existing.get("death") == "post_says_over":
+            after_death = (post.published_at is not None and died is not None
+                           and post.published_at > died)
         # A live check's kill is undone this way (live: a recheck killed
         # the Prime Guard DEF Warehouse offer at 01:23 and Keepa's deals
         # feed listed it again, same price, at 07:01, but the deal stayed
-        # dead because its flag was gone). A source's own "sold out" is
-        # not (another blog's repost may be stale), nor a passed end date.
+        # dead because its flag was gone). A passed end date still blocks
+        # revival unless a later post extended it.
         exp = util.parse_iso(merged_expires or "")
         revived = (fresh and existing.get("status") == "dead" and backed
                    and after_death and _revivable_death(existing)

@@ -34,7 +34,8 @@ from .util import iso, parse_iso
 log = logging.getLogger("dealradar.verify")
 
 _DEAD_RE = re.compile(
-    r"\b(expired|dead|sold\s+out|out\s+of\s+stock|oos)\b", re.IGNORECASE)
+    r"\b(expired|deal\s+is\s+dead|dead\s+deal|sold\s+out|out\s+of\s+stock|oos)\b",
+    re.IGNORECASE)
 
 
 def _history_ratio(cfg) -> float:
@@ -128,9 +129,11 @@ def woot_offer_url(deal: dict[str, Any]) -> str:
 
 def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime) -> bool:
     """Queue an API check when possible; otherwise hide the dead deal."""
+    if deal.get("status") == "dead":
+        return False
     payload = dict(deal)
     if deal.get("asin") or woot_offer_url(deal):
-        if deal.get("status") == "dead" or deal.get("gone_suspect_at"):
+        if deal.get("gone_suspect_at"):
             return False
         payload.update(gone_suspect_at=iso(now), death=reason,
                        price_rechecked_at="", recheck_tried_at="")
@@ -186,9 +189,25 @@ def mark_expired_dead(db, cfg, now: datetime) -> int:
 
 
 def text_marks_dead(text: str) -> bool:
-    """True when the text declares the deal over (expired / dead / sold out /
-    out of stock / OOS), matched case-insensitively on word boundaries."""
+    """Explicit end wording, on word boundaries; bare 'dead' is not enough."""
     return bool(_DEAD_RE.search(text or ""))
+
+
+def post_marks_dead(post, extracted) -> bool:
+    """Only the title or this deal's verbatim final-price evidence line counts."""
+    if text_marks_dead(post.title):
+        return True
+    quote = extracted.evidence.final_price_quote
+    if not quote:
+        return False
+    start = post.text.find(quote)
+    while start >= 0:
+        left = post.text.rfind("\n", 0, start) + 1
+        right = post.text.find("\n", start + len(quote))
+        if text_marks_dead(post.text[left:right if right >= 0 else len(post.text)]):
+            return True
+        start = post.text.find(quote, start + 1)
+    return False
 
 
 _IMAGE_NAME_RE = re.compile(r"[\w.,+%-]+")

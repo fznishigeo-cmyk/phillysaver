@@ -1442,7 +1442,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
     from .verify import (mark_expired_dead, mark_unconfirmed_dead,
-                         refresh_tiers, text_marks_dead)
+                         post_marks_dead, refresh_tiers)
 
     cfg = load_config(config_path)
     now = now or util.now_utc()
@@ -1455,6 +1455,19 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     db.start_run(run_key, kind, now)
     fetcher = PoliteFetcher(db, cfg, transport=transport)
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
+    summary["deaths_by_reason"] = {}
+    recorded_deaths = {(d["dedupe_key"], d.get("died_at"), d.get("death"))
+                       for d in db.all_deals(status="dead")}
+
+    def record_deaths() -> None:
+        # Include Woot deaths during fetch as well as expiry/Keepa deaths.
+        for d in db.all_deals(status="dead"):
+            stamp = (d["dedupe_key"], d.get("died_at"), d.get("death"))
+            if stamp not in recorded_deaths:
+                recorded_deaths.add(stamp)
+                reason = d.get("death") or "unknown"
+                counts = summary["deaths_by_reason"]
+                counts[reason] = counts.get(reason, 0) + 1
 
     try:
         # ---- sources ----
@@ -1473,6 +1486,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- fetch ----
         posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
                                          deadline, fast_lane)
+        record_deaths()
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors
 
@@ -1554,14 +1568,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 continue  # excluded entirely (kept out of the DB by design)
             res = upsert_extracted(db, extracted, sav, post, cfg, now)
             deals_upserted += 1
-            if text_marks_dead(post.text):
-                mark_unconfirmed_dead(db, db.get_deal(res["dedupe_key"]),
-                                      "post_says_over", now)
+            if post_marks_dead(post, extracted):
+                if mark_unconfirmed_dead(db, db.get_deal(res["dedupe_key"]),
+                                         "post_says_over", now):
+                    counts = summary["deaths_by_reason"]
+                    counts["post_says_over"] = counts.get("post_says_over", 0) + 1
+                    recorded_deaths.add((res["dedupe_key"], util.iso(now), "post_says_over"))
         summary["deals_upserted"] = deals_upserted
 
         # ---- verify tiers + dead marking ----
         refresh_tiers(db, cfg, now)
         summary["marked_dead"] = mark_expired_dead(db, cfg, now)
+        record_deaths()
 
         # One-time: product links stored as a retailer's bot wall (the
         # card's link on every lane; the photo passes retry them).
@@ -1610,6 +1628,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["price_recheck"] = _recheck_prices(
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
+        record_deaths()
+        log.info("deaths by reason: %s", summary["deaths_by_reason"])
 
         from .parse.extractor import recategorize_live_deals, recategorize_other
         recategorize_live_deals(db, parser, deadline - _RESERVE_FOR_TAIL_S / 2)

@@ -101,6 +101,7 @@ def test_two_sources_same_canonical_url_merge(tmp_path) -> None:
     post_a = make_post(source="hip2save", uid="a", text="widget deal A")
     post_b = make_post(source="slickdeals_frontpage", uid="b",
                        text="widget deal B different wording")
+    post_b.published_at = post_a.published_at + timedelta(minutes=1)
     ext_a = make_extracted(item="Widget Pro 2000", product_url=url,
                            codes=["SAVE10"], online_only="unknown",
                            expires_at="2026-10-15T00:00:00+00:00")
@@ -124,18 +125,19 @@ def test_two_sources_same_canonical_url_merge(tmp_path) -> None:
     assert deal["codes"] == ["SAVE10", "EXTRA5"]
     # online_only upgrades from unknown
     assert deal["online_only"] == "true"
-    # earliest non-empty expiry kept
+    # the later post's stated expiry wins
     assert deal["expires_at"] == "2026-10-12T00:00:00+00:00"
     db.close()
 
 
-def test_online_only_false_wins_and_first_nonunknown_sticks(tmp_path) -> None:
+def test_online_only_most_recent_explicit_value_wins(tmp_path) -> None:
     db = DB(tmp_path / "state.db")
     cfg = make_cfg()
     url = "https://www.example.com/p/thing"
 
     def up(uid: str, online: str) -> dict:
         post = make_post(source=f"src_{uid}", uid=uid, text=f"thing {uid}")
+        post.published_at += timedelta(minutes=int(uid))
         return dedupe.upsert_extracted(
             db, make_extracted(item="Thing", product_url=url,
                                online_only=online),
@@ -145,9 +147,9 @@ def test_online_only_false_wins_and_first_nonunknown_sticks(tmp_path) -> None:
     up("2", "unknown")
     assert db.get_deal(key)["online_only"] == "true"  # unknown never downgrades
     up("3", "false")
-    assert db.get_deal(key)["online_only"] == "false"  # explicit false wins
+    assert db.get_deal(key)["online_only"] == "false"
     up("4", "true")
-    assert db.get_deal(key)["online_only"] == "false"  # false sticks
+    assert db.get_deal(key)["online_only"] == "true"
     db.close()
 
 
