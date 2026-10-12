@@ -9,42 +9,39 @@
 hub.html), `config.yaml`, `scripts/site_check.js`, tests (byte-hash
 baselines in tests/test_support.py are updated from the new output).
 
-Operator (2026-10-12), comparing with Groupon's one-line footer and
-Slickdeals' link columns: "why does it have to be so wordy, it looks
+Operator (2026-10-12), comparing with Groupon's one-line footer: "why does it have to be so wordy, it looks
 unprofessional" and "slickdeals has several hundred on their homepage, I
 want mine to be similar".
 
-## 1. One shared footer on every page
-Build the footer once (`templates/site-footer.html` + `.css`) and insert it
-on every page the way `footer-signup.html` is inserted; delete each
-template's own footer content. Order, top to bottom:
+## 1. One shared footer on every page, Groupon-style
+Operator follow-up: "I want it like Groupon, the other stuff can be tiny
+and in grey". Build the footer once (`templates/site-footer.html` + `.css`)
+and insert it on every page the way `footer-signup.html` is inserted;
+delete each template's own footer content. Top to bottom:
 1. The existing "Sign up for the latest deals" box (unchanged).
-2. A link grid: 4 columns on desktop, 2 on phones (CSS grid, 24px gap,
-   column headings 13px 600 uppercase muted, links 15px, no underlines
-   until hover/focus, 32px tap rows on phones):
-   - **wowpriced**: the logo mark + name, then one muted line "We search
-     the top deal sites and stores for hours every day, so you don't have
-     to."
-   - **Company**: About, How it works, Work with us, Contact
-   - **Help**: Deal hacks, Join & support, Privacy
-   - **Follow us**: links from new config `publish.social_links`
-     (`pinterest`, `facebook`, `instagram`, all "" for now; https URLs
-     only); the column is left out when none is set.
-3. A thin top-bordered bottom bar, 12px muted: "© 2026 wowpriced" on the
-   left (year from the render date); on the right the existing FTC/Amazon
-   disclosure text exactly as today (same source, same words). On phones
-   the two stack.
+2. ONE line (wraps on phones), 13px, muted grey, centred on phones and
+   left-aligned on desktop, items separated by " · ":
+   "© 2026 wowpriced" (year from the render date), About, How it works,
+   Deal hacks, Work with us, Contact, Join & support, Privacy. Links in the
+   same grey, no underline until hover/focus, 44px-tall tap targets on
+   phones (padding, not bigger text).
+3. One fine-print paragraph, 11px, muted grey, max-width 900px: "We search
+   the top deal sites and stores for hours every day, so you don't have
+   to." followed by the existing FTC/Amazon disclosure text exactly as
+   today (same source, same words). Small and quiet, but keep WCAG AA
+   contrast (the FTC wants it readable; Lighthouse accessibility stays 100).
 - Removed from the footer (nothing else changes): the "wowpriced is free
   for everyone. Support our work · Join free" line, the support small
   print ("Once: any amount ... every deal stays free."), the paywall
-  membership paragraph, and "Every deal links to the seller ... re-checked
-  live." Before removing them, make sure: the support small print (for-
-  profit, not tax-deductible, cancel anytime) still appears on the support
-  page next to its buttons; the "Every deal links to the seller..."
-  explanation appears on how-it-works.html. Add them there if missing.
+  membership paragraph, the old link row, and "Every deal links to the
+  seller ... re-checked live." Before removing them, make sure: the
+  support small print (for-profit, not tax-deductible, cancel anytime)
+  still appears on the support page next to its buttons; the "Every deal
+  links to the seller..." explanation appears on how-it-works.html. Add
+  them there if missing.
 - Keep: the footer's `id`s that scripts use (`metaline` disclosure,
   `acctfoot` account line for members, etc.); links work from nested pages
-  (absolute `/` paths). Same look in dark mode; WCAG AA contrast.
+  (absolute `/` paths). Same look in dark mode.
 
 ## 2. Home page: about 300 deals, like Slickdeals' front page
 - `AUTO_CARDS` 120 -> 300 on Trending: the 120 top picks, then the freshest
@@ -53,10 +50,10 @@ template's own footer content. Order, top to bottom:
   deals tabs keep endless scroll. Static/no-JS wall unchanged.
 
 ## 3. Tests
-Every page has exactly one footer with the 4 headings (3 when no social
-links), the disclosure text unchanged, "© 2026 wowpriced"; none of the
-removed sentences remain in any footer; support small print present on the
-support page; social links only from config and https; Trending auto-load
+Every page has exactly one footer: the one link line with "© 2026
+wowpriced" and all 7 links, the fine print with the search line and the
+disclosure text unchanged; none of the removed sentences remain in any
+footer; support small print present on the support page; Trending auto-load
 stops at 300; site_check.js still passes its footer/sign-up steps. One
 short HANDOFF bullet under "In flight".
 
