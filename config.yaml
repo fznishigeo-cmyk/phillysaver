@@ -274,7 +274,7 @@ growth:
   # GOOGLE_ADS_REFRESH_TOKEN; OAuth client in Cloud project wowpriced-511321).
   # Pinned API version: Google keeps each about a year; bump it when it is
   # announced for sunset.
-  google_ads_api_version: "v26"
+  google_ads_api_version: "v25"   # v26 answers "Method not found" for this project (2026-10-12)
   google_ads_customer_id: "497-666-7972"       # the wowpriced ad account
   google_ads_login_customer_id: "586-101-9939" # the wowpriced manager account
   monthly_price_usd: 9.99                    # MRR fallback; annual prices count as amount / 12
