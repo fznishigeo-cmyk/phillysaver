@@ -97,6 +97,9 @@ affiliate:
 
 seo:
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.
+  store_page_min_deals: 15    # Public live deals required for a store page.
+  store_pages_max: 12         # Maximum store pages, most live deals first.
+  price_pages: [10, 25, 50]   # Sale-price ceilings for /deals/under-<n>/ pages.
   # Category hubs (/deals/<slug>/): a hub is indexable and in the sitemap
   # only while its category had at least this many deals pass our checks in
   # the last 7 days (a stable count: never the rotating free deals or the

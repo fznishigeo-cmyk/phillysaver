@@ -187,17 +187,23 @@ async function walk(page, doc, device) {
         return body;
       } catch (e) { problems.push(`${path}: ${String(e.message).split("\n")[0]}`); return ""; }
     }
-    for (const path of ["about.html", "how-it-works.html", "contact.html", "privacy.html", "subscribe.html"]) {
+    // Cloudflare's extensionless URLs leave room in the request budget for the new pages.
+    for (const path of ["about", "how-it-works", "contact", "privacy", "subscribe"]) {
       await read(path);
     }
     const sitemap = await read("sitemap.xml", "xml");
     await read("robots.txt", "text");
-    const hubs = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
-      .filter((u) => { try { return /^\/deals\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } })
+    const urls = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim());
+    const hubs = urls
+      .filter((u) => { try { return /^\/deals\/(?!under-)[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } })
       .slice(0, 3);
     if (hubs.length < 3) problems.push("fewer than 3 category hubs in sitemap");
     for (const hub of hubs) await read(hub);
-    const deal = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
+    const store = urls.find((u) => { try { return /^\/stores\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } });
+    if (store) await read(store);
+    const price = urls.find((u) => { try { return new URL(u).pathname === "/deals/under-25/"; } catch { return false; } });
+    if (price) await read(price);
+    const deal = urls
       .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } });
     if (deal) await read(deal, "deal");
     else problems.push("no deal page in sitemap");

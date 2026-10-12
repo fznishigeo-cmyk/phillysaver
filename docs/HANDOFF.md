@@ -133,6 +133,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Store and price pages (Codex task 023, prepared 2026-10-12):**
+  `/stores/<slug>/` (15 public live deals, top 12 stores) and
+  `/deals/under-{10,25,50}/` (10 deals), configured in `seo`, show 60 cards.
+  Browse links, stable sitemap/IndexNow entries, stale-folder removal and
+  hourly checks added. Suite: 1,368 passed; 7 existing Stripe workflow tests
+  fail because this sandbox denies local server sockets. Re-run unrestricted
+  before merge; no commit or push made.
 - **AI spend under $6/day (Codex task 020, merged 2026-10-12):** the critic
   judges up to `parse.critic_batch_size` (8) deals per Sonnet call with
   reasons cut to 120 characters, and reuses a stored verdict for the same

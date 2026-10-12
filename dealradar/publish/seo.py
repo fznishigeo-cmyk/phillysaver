@@ -235,6 +235,55 @@ def _hub_links() -> str:
         for label, _g, slug in CATGROUPS) + "</ul>"
 
 
+def store_slug(name: str) -> str:
+    """ASCII store words; apostrophes join letters (Macy's becomes macys)."""
+    name = re.sub(r"\.com$", "", name.strip(), flags=re.I)
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", name.replace("'", "")).strip("-")
+
+
+def _store_pages(cfg, live: list[dict[str, Any]]) -> dict[str, tuple[str, list[dict[str, Any]]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    names: dict[str, str] = {}
+    for d in live:
+        name = re.sub(r"\.com$", "", str(d.get("store") or "").strip(), flags=re.I)
+        # One page per slug: "Macy's", "Macys" and "macys.com" are one store
+        # (keyed by name, two spellings would collide on one path).
+        key = store_slug(name)
+        if not key:
+            continue
+        groups.setdefault(key, []).append(d)
+        names.setdefault(key, name)
+    floor = int(getattr(cfg, "seo_store_page_min_deals", 15))
+    cap = int(getattr(cfg, "seo_store_pages_max", 12))
+    keys = sorted((k for k in groups if len(groups[k]) >= floor),
+                  key=lambda k: (-len(groups[k]), k))[:cap]
+    pages = {}
+    for k in keys:
+        pages[f"/stores/{k}/"] = names[k], groups[k]
+    return pages
+
+
+def _price_pages(cfg, live: list[dict[str, Any]]) -> dict[str, tuple[str, list[dict[str, Any]]]]:
+    pages = {}
+    hubs = {slug for _label, _group, slug in CATGROUPS}
+    for n in sorted(set(getattr(cfg, "seo_price_pages", [10, 25, 50]))):
+        slug = f"under-{n}"
+        assert slug not in hubs, f"Price page collides with category hub: {slug}"
+        rows = [d for d in live if d.get("final_price") is not None and d["final_price"] <= n]
+        if len(rows) >= 10:
+            pages[f"/deals/{slug}/"] = f"Deals under ${n}", rows
+    return pages
+
+
+def _link_row(label: str, links: list[tuple[str, str]], current: str = "") -> str:
+    links = [(path, name) for path, name in links if path != current]
+    if not links:
+        return ""
+    return f'<p><strong>{label}</strong>: ' + " · ".join(
+        f'<a href="{escape(path)}">{escape(name)}</a>' for path, name in links) + '</p>'
+
+
 def _fill(template: str, **tokens: str) -> str:
     """Replace {{NAME}} tokens in one pass (filled-in text is never rescanned)."""
     return re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: tokens.get(m.group(1), m.group(0)), template)
@@ -557,6 +606,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
     live.sort(key=lambda d: order[d["dedupe_key"]])
+    stores, prices = _store_pages(cfg, live), _price_pages(cfg, live)
+    store_links = [(path, name) for path, (name, _rows) in stores.items()]
+    price_links = [(path, name) for path, (name, _rows) in prices.items()]
+    browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
+    template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links))
     landing_pages = {}
     for d in deal_rows:
         path = paths[d["key"][:8]]
@@ -578,6 +632,32 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
     (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")
     landing_pages[best_path] = best_html
+    browse_pages = stores | prices
+    for path, (name, rows) in browse_pages.items():
+        heading = f"{name} deals today" if path in stores else f"{name} today"
+        title = f"{heading} ({_date(now, full=True)}) | wowpriced"
+        count = f"{len(rows) // 100 * 100:,}+" if len(rows) >= 100 else str(len(rows))
+        pcts = [float(d["pct_at_checkout"]) for d in rows if d.get("pct_at_checkout") is not None]
+        intro = f"{count} live deals right now"
+        if path in stores and pcts:
+            intro += f", median {_pct(statistics.median(pcts))}% off"
+        intro += "."
+        page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
+        html = _landing_page(page_template, title, heading, intro, path, site_url,
+                             '<div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
+                             + '</div>', intro=intro)
+        folder = out / path.strip("/")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "index.html").write_text(html, encoding="utf-8")
+        landing_pages[path] = html
+        lastmods[path] = _newest(rows)
+    # Re-used output folders must lose pages that fall below a floor or cap.
+    for folder in list((out / "stores").glob("*")) + list((out / "deals").glob("under-*")):
+        if f"/{folder.relative_to(out).as_posix()}/" not in browse_pages:
+            if folder.is_dir():
+                shutil.rmtree(folder)
+            else:
+                folder.unlink()
     floor = int(getattr(cfg, "seo_hub_min_items", 10))
     listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
     for label, group, slug in CATGROUPS[1:]:
