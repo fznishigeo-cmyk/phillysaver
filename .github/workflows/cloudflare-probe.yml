@@ -1,0 +1,100 @@
+name: Cloudflare ops key probe (manual)
+
+# Read-only check of CLOUDFLARE_OPS_TOKEN: is it active, can it see the
+# wowpriced.com zone, and can it read each area it was given (DNS, SSL,
+# HTTPS, email routing, Pages, analytics, firewall and redirect rules).
+# Changes nothing. Prints settings and ok / not ok only: never the key and
+# never a traffic number (this log is public; numbers go in the private
+# growth report).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask the Cloudflare API what the key can see
+        env:
+          CLOUDFLARE_OPS_TOKEN: ${{ secrets.CLOUDFLARE_OPS_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          tok = os.environ.get("CLOUDFLARE_OPS_TOKEN", "").strip()
+          acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+          if not tok:
+              print("CLOUDFLARE_OPS_TOKEN is empty or missing"); raise SystemExit(1)
+          API = "https://api.cloudflare.com/client/v4"
+          def call(path, body=None):
+              req = urllib.request.Request(API + path, data=None if body is None else json.dumps(body).encode(),
+                                           method="GET" if body is None else "POST", headers={
+                  "Authorization": "Bearer " + tok, "Content-Type": "application/json",
+                  "User-Agent": "wowpriced-cloudflare-probe/1.0 (+https://wowpriced.com; hello@wowpriced.com)"})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      return r.status, json.load(r)
+              except urllib.error.HTTPError as e:
+                  try:
+                      return e.code, json.load(e)
+                  except ValueError:
+                      return e.code, {}
+          def codes(data):
+              return ",".join(str(e.get("code")) for e in (data.get("errors") or [])) or "-"
+          ok = True
+          st, d = call("/user/tokens/verify")
+          print(f"token: {(d.get('result') or {}).get('status', 'unknown')} (HTTP {st})")
+          ok = ok and st == 200
+          st, d = call("/zones?name=wowpriced.com")
+          zones = d.get("result") or []
+          if not zones:
+              print(f"zone wowpriced.com: NOT VISIBLE (HTTP {st}, errors {codes(d)})"); raise SystemExit(1)
+          z = zones[0]; zid = z["id"]
+          print(f"zone wowpriced.com: {z.get('status')} (plan {(z.get('plan') or {}).get('name', '?')})")
+          checks = [
+              ("ssl mode", f"/zones/{zid}/settings/ssl", "value"),
+              ("always use https", f"/zones/{zid}/settings/always_use_https", "value"),
+              ("minimum TLS", f"/zones/{zid}/settings/min_tls_version", "value"),
+          ]
+          for label, path, key in checks:
+              st, d = call(path)
+              val = (d.get("result") or {}).get(key) if st == 200 else None
+              print(f"{label}: {val if val is not None else f'NOT READABLE (HTTP {st}, errors {codes(d)})'}")
+              ok = ok and st == 200
+          st, d = call(f"/zones/{zid}/dns_records?per_page=100")
+          print(f"dns records: {(d.get('result_info') or {}).get('total_count', '?')}" if st == 200
+                else f"dns: NOT READABLE (HTTP {st}, errors {codes(d)})")
+          ok = ok and st == 200
+          st, d = call(f"/zones/{zid}/email/routing")
+          r = d.get("result") or {}
+          print(f"email routing: enabled={r.get('enabled')} status={r.get('status')}" if st == 200
+                else f"email routing: NOT READABLE (HTTP {st}, errors {codes(d)})")
+          ok = ok and st == 200
+          for label, path in (("firewall / WAF rules", f"/zones/{zid}/rulesets"),
+                              ("redirect rules", f"/zones/{zid}/rulesets/phases/http_request_dynamic_redirect/entrypoint")):
+              st, d = call(path)
+              # 404 on the redirect entrypoint just means no redirect rules exist yet.
+              fine = st == 200 or (st == 404 and "redirect" in label)
+              print(f"{label}: {'readable' if fine else f'NOT READABLE (HTTP {st}, errors {codes(d)})'}")
+              ok = ok and fine
+          q = {"query": "query($z:String!){viewer{zones(filter:{zoneTag:$z}){httpRequests1dGroups(limit:1){dimensions{date}}}}}",
+               "variables": {"z": zid}}
+          st, d = call("/graphql", q)
+          fine = st == 200 and not d.get("errors")
+          print(f"analytics: {'readable' if fine else 'NOT READABLE (HTTP %s)' % st}")
+          ok = ok and fine
+          if acct:
+              st, d = call(f"/accounts/{acct}/pages/projects/wowpriced")
+              r = d.get("result") or {}
+              stage = ((r.get("latest_deployment") or {}).get("latest_stage") or {})
+              print(f"pages project: {r.get('name')}, latest deploy {stage.get('name')}/{stage.get('status')}" if st == 200
+                    else f"pages: NOT READABLE (HTTP {st}, errors {codes(d)})")
+              ok = ok and st == 200
+          else:
+              print("pages: skipped (CLOUDFLARE_ACCOUNT_ID not set)")
+          print("PROBE OK: the ops key works" if ok else "PROBE NOT OK: see the lines above")
+          raise SystemExit(0 if ok else 1)
+          PY
