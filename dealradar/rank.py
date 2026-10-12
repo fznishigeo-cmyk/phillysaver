@@ -27,6 +27,84 @@ log = logging.getLogger("dealradar.rank")
 VERIFIED_DEATHS = frozenset({"confirmed", "api_ended"})
 
 
+def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
+    """Pick a varied first 24; retain every remaining card in input order.
+
+    Input order supplies ranking or the browser's seeded shuffle. Free picks
+    still precede locked cards, and gone cards keep their spaced slots. When
+    supply cannot meet every cap, relax runs, then stores, then niche counts.
+    Keep this selection in sync with frontPageMix in index.html.
+    """
+    if not options:
+        return rows
+    broad = set(options.get("broad_categories", []))
+    niche = set(options.get("niche_categories", []))
+    niche_cap = int(options["max_niche_top"])
+    run_cap = int(options["max_same_category_run"])
+    store_cap = int(options["max_same_store_top"])
+    picked, used, stores = [], set(), {}
+    niche_count, last, run = 0, "", 0
+    missing_photo = False
+    anchors = [d for d in rows[:24] if d.get("status") == "dead"]
+    reserved_niche = sum((d.get("category") or "other") in niche
+                         or (d.get("category") or "other") not in broad for d in anchors)
+    reserved_stores: dict[str, int] = {}
+    for d in anchors:
+        store = str(d.get("store") or "").strip().lower()
+        reserved_stores[store] = reserved_stores.get(store, 0) + 1
+    for slot in range(min(24, len(rows))):
+        if rows[slot].get("status") == "dead":
+            chosen = slot
+            cat = rows[slot].get("category") or "other"
+            store = str(rows[slot].get("store") or "").strip().lower()
+            reserved_niche -= cat in niche or cat not in broad
+            reserved_stores[store] -= 1
+        else:
+            available = [i for i, d in enumerate(rows)
+                         if i not in used and d.get("status") != "dead"]
+            # Preserve the unlocked group without changing who was picked.
+            unlocked = [i for i in available if not rows[i].get("locked")]
+            available = unlocked or available
+            without_photos = [i for i in available if not rows[i].get("image_url")]
+            if options.get("prefer_photos") and missing_photo and without_photos:
+                available = without_photos
+            chosen = available[0]
+            for relaxation in range(4):
+                eligible = []
+                for i in available:
+                    d = rows[i]
+                    cat = d.get("category") or "other"
+                    store = str(d.get("store") or "").strip().lower()
+                    is_niche = cat in niche or cat not in broad
+                    if relaxation < 3 and is_niche and niche_count + reserved_niche >= niche_cap:
+                        continue
+                    if relaxation < 2 and stores.get(store, 0) + reserved_stores.get(store, 0) >= store_cap:
+                        continue
+                    if relaxation < 1 and cat == last and run >= run_cap:
+                        continue
+                    next_row = rows[slot + 1] if slot + 1 < min(24, len(rows)) else {}
+                    if relaxation < 1 and next_row.get("status") == "dead" \
+                            and (next_row.get("category") or "other") == cat \
+                            and (run + 1 if cat == last else 1) >= run_cap:
+                        continue
+                    eligible.append(i)
+                if eligible:
+                    photos = [i for i in eligible if rows[i].get("image_url")]
+                    chosen = (photos if options.get("prefer_photos") and photos else eligible)[0]
+                    break
+        d = rows[chosen]
+        cat = d.get("category") or "other"
+        store = str(d.get("store") or "").strip().lower()
+        niche_count += cat in niche or cat not in broad
+        stores[store] = stores.get(store, 0) + 1
+        run = run + 1 if cat == last else 1
+        last = cat
+        picked.append(d)
+        used.add(chosen)
+        missing_photo = missing_photo or not d.get("image_url")
+    return picked + [d for i, d in enumerate(rows) if i not in used]
+
+
 def _age_hours(first_seen_at: str, now: datetime) -> float:
     dt = parse_iso(first_seen_at)
     if dt is None:

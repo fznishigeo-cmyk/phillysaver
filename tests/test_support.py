@@ -114,14 +114,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "1a9a5fbde0d694cac86caae2b2488a3e00e250aaffe12ca7bb1c0dd5ade36899"),
-    (False, 49, "5c76baa7e89ae19062b609243285f0f1fe4b4b79e9c7cddaa522c10fef00906f"),
-    (True, 0, "9d638765488d710262142efa061f4fad9005cc499beed8773d643a8ac27fffa1"),
-    (True, 49, "90322bec064da3cc3471b8ddf864afdd10613ad0018f69d17e186d59947ce1b0"),
+    (False, 0, "7ddccf7210a718f254edfd5e0d741550051107081f6b243a125cb130b53d0c5f"),
+    (False, 49, "5c5a76fb1ca4467536c81f22ae8951ade56d467dd771b92971ce1740e3f1780f"),
+    (True, 0, "955be54f014c3478d02fe745fe836293a0e920874dbe46871c6b7d58164fe167"),
+    (True, 49, "891fac6ee0d18876ace4a0828f81c13b29b536e5c91394099aeddd11c4a02e76"),
 ])
-def test_support_off_index_bytes_match_task029_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 029 changes shared flames and limits animation in both membership modes.
-    # These baselines retain inline gone cards; the version stays fixed.
+def test_support_off_index_bytes_match_task034_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 034 adds shared front-page functions in both membership modes.
+    # Exact snapshots still protect the support-off page; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     assert hashlib.sha256((out / "index.html").read_bytes()).hexdigest() == expected

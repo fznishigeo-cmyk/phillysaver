@@ -226,7 +226,8 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var openBand = () => "<aside>Join</aside>", num = x => x == null ? null : Number(x);
     var gridHtml = rows => {rendered.push(...rows); return "<div class=grid></div>";};
     '''.replace("SORT_KEY", json.dumps(sort_key)).replace("DIRECTION", str(direction))
-    script += '\n'.join(js_function(n) for n in ("sortVal", "cmp", "ordered", "placeGone"))
+    script += '\n'.join(js_function(n) for n in (
+        "sortVal", "cmp", "ordered", "frontPageView", "frontPageMix", "placeGone"))
     script += '\n' + copy_variant(js_function("render"), True, support)
     script += '\nrender(); console.log(JSON.stringify({rows:rendered, html:content.innerHTML}));'
     result = run_js(script, rows)

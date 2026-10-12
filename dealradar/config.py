@@ -121,6 +121,7 @@ class AppConfig:
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 24.0      # dead deals linger on the site this long
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
+    front_page: dict = field(default_factory=dict)  # All / fresh drops top-24 mix
     site_dir: str = "site"
     # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions
     # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)
@@ -295,6 +296,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.front_page = g("publish", "front_page", default={}) or {}
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
     tag = str(g("affiliate", "amazon_tag", default="") or "").strip()
