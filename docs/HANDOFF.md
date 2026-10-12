@@ -142,6 +142,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Front-page mix (Codex task 034, merged 2026-10-12):** config-driven top 24 on
+  All/fresh, static wall and best-today; other views, rotation and remaining
+  order preserved. Sparse supply relaxes caps instead of hiding deals.
+  Tests: 19 focused checks pass; full suite 1,597 passed, 7 existing Stripe
+  socket tests blocked by sandbox, 1 deselected. Full green run outside
+  sandbox remains. No commit or push.
 - **Sovrn links (Codex task 032, merged 2026-10-12; off until the redirect probe passes):** enabled retailer wrappers
   with tracking stripped and stable deal `cuid`; overrides win, Amazon/source
   links and emails keep their rules. Added Sovrn reporting and hourly guard.

@@ -27,6 +27,7 @@ import httpx
 import yaml
 
 from ..util import iso, parse_iso
+from ..rank import front_page_mix
 
 logger = logging.getLogger("dealradar.publish.seo")
 
@@ -211,9 +212,11 @@ def place_gone(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
-                deal_paths: dict[str, str] | None = None, now: datetime | None = None) -> str:
+                deal_paths: dict[str, str] | None = None, now: datetime | None = None,
+                front_page: dict | None = None) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
     free = place_gone([d for d in teaser if not d.get("locked")])
+    free = front_page_mix(free, front_page or {})
     more = max(0, len(free) - _STATIC_WALL_MAX)
     free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked")]
@@ -606,7 +609,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 
     open_access = is_open(cfg)
     paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
-    wall = static_wall(teaser, open_access, paths, now)
+    wall = static_wall(teaser, open_access, paths, now, cfg.front_page)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
@@ -646,7 +649,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
-                              '<div class="grid">' + ''.join(card_html(d, paths) for d in live[:30]) + '</div>',
+                              '<div class="grid">' + ''.join(card_html(d, paths) for d in front_page_mix(live, cfg.front_page)[:30]) + '</div>',
                               intro=intro)
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
     (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")

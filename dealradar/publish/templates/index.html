@@ -1066,7 +1066,7 @@ header{--accent-hover:#45d0bf}
       return { d: d, s: (state.newKeys[k] ? -1e9 : 0) + s + (d.image_url ? 0 : NO_PHOTO_H) };
     }).sort(function (a, b) { return a.s - b.s; }).map(function (x) { return x.d; });
   }
-  function ordered(rows) {
+  function ordered(rows, deferMix) {
     // The teaser's unlocked deals (the top picks) always lead; the blurred
     // stubs follow, each group dealt within itself, whatever the sort.
     var fresh = state.sortKey === "fresh";
@@ -1078,7 +1078,8 @@ header{--accent-hover:#45d0bf}
       open = freshOrder(open, locked.length > 0);
       locked = freshOrder(locked, false);
     }
-    return open.concat(locked);
+    rows = open.concat(locked);
+    return !deferMix && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows;
   }
 
   function storeHue(s) {
@@ -1349,6 +1350,74 @@ header{--accent-hover:#45d0bf}
     return '<div class="grid">' + deals.map(cardHtml).join("") + "</div>";
   }
 
+  function frontPageView() {
+    var options = (state.meta || {}).front_page;
+    return options && Object.keys(options).length > 0 && state.catTab === 0 &&
+      state.sortKey === "fresh" && state.sortDir === -1 &&
+      !document.getElementById("q").value.trim() &&
+      !document.getElementById("storesel").value &&
+      !(Number(document.getElementById("minpct").value) || 0) &&
+      !document.getElementById("srcsel").value;
+  }
+
+  // Match rank.front_page_mix: no random calls; input is already shuffled.
+  // Free picks lead and gone cards keep their slots. Sparse catalogs relax
+  // runs, then stores, then niche counts rather than hiding any deals.
+  function frontPageMix(rows, options) {
+    if (!options || !Object.keys(options).length) return rows;
+    var broad = options.broad_categories || [], niche = options.niche_categories || [];
+    var picked = [], used = new Set(), stores = new Map(), nicheCount = 0, last = "", run = 0, missingPhoto = false;
+    function category(d) { return d.category || "other"; }
+    function store(d) { return String(d.store || "").trim().toLowerCase(); }
+    function isNiche(d) { return niche.indexOf(category(d)) !== -1 || broad.indexOf(category(d)) === -1; }
+    var reservedNiche = 0, reservedStores = new Map();
+    rows.slice(0, 24).filter(function (d) { return d.status === "dead"; }).forEach(function (d) {
+      reservedNiche += isNiche(d) ? 1 : 0;
+      reservedStores.set(store(d), (reservedStores.get(store(d)) || 0) + 1);
+    });
+    for (var slot = 0; slot < Math.min(24, rows.length); slot++) {
+      var chosen;
+      if (rows[slot].status === "dead") {
+        chosen = slot;
+        reservedNiche -= isNiche(rows[slot]) ? 1 : 0;
+        reservedStores.set(store(rows[slot]), reservedStores.get(store(rows[slot])) - 1);
+      } else {
+        var available = rows.map(function (_, i) { return i; }).filter(function (i) {
+          return !used.has(i) && rows[i].status !== "dead";
+        });
+        var unlocked = available.filter(function (i) { return !rows[i].locked; });
+        available = unlocked.length ? unlocked : available;
+        var withoutPhotos = available.filter(function (i) { return !rows[i].image_url; });
+        if (options.prefer_photos && missingPhoto && withoutPhotos.length) available = withoutPhotos;
+        chosen = available[0];
+        for (var relaxation = 0; relaxation < 4; relaxation++) {
+          var eligible = available.filter(function (i) {
+            var d = rows[i], next = slot + 1 < 24 ? rows[slot + 1] : null;
+            return !(relaxation < 3 && isNiche(d) && nicheCount + reservedNiche >= options.max_niche_top) &&
+              !(relaxation < 2 && (stores.get(store(d)) || 0) + (reservedStores.get(store(d)) || 0) >= options.max_same_store_top) &&
+              !(relaxation < 1 && category(d) === last && run >= options.max_same_category_run) &&
+              !(relaxation < 1 && next && next.status === "dead" && category(next) === category(d) &&
+                (category(d) === last ? run + 1 : 1) >= options.max_same_category_run);
+          });
+          if (eligible.length) {
+            var photos = eligible.filter(function (i) { return !!rows[i].image_url; });
+            chosen = (options.prefer_photos && photos.length ? photos : eligible)[0];
+            break;
+          }
+        }
+      }
+      var d = rows[chosen], cat = category(d), shop = store(d);
+      nicheCount += isNiche(d) ? 1 : 0;
+      stores.set(shop, (stores.get(shop) || 0) + 1);
+      run = cat === last ? run + 1 : 1;
+      last = cat;
+      picked.push(d);
+      used.add(chosen);
+      missingPhoto = missingPhoto || !d.image_url;
+    }
+    return picked.concat(rows.filter(function (_, i) { return !used.has(i); }));
+  }
+
   function placeGone(rows) {
     var out = [], pending = [], nextGone = 8;
     rows.forEach(function (d) {
@@ -1369,7 +1438,7 @@ header{--accent-hover:#45d0bf}
     paintSources();
     var content = document.getElementById("content");
 <!--engagement-->    var engagementHtml = engagementLineHtml();
-<!--/engagement-->    var rows = state.deals.length ? ordered(filtered()) : [];
+<!--/engagement-->    var rows = state.deals.length ? ordered(filtered(), true) : [];
     traceFree = state.deals.some(isLocked);
     updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length) {
@@ -1387,7 +1456,13 @@ header{--accent-hover:#45d0bf}
         rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; }));
     }
     rows = placeGone(rows);
-    var split = rows.findIndex(function (d) { return num(d.pct_at_checkout) < alertFloor; });
+    var mixed = frontPageView();
+    if (mixed) rows = frontPageMix(rows, state.meta.front_page);
+    // The mixed first screen can draw from either tier; deeper rows keep
+    // their existing order and the below-alert-bar section.
+    var split = rows.findIndex(function (d, i) {
+      return (!mixed || i >= 24) && num(d.pct_at_checkout) < alertFloor;
+    });
     var headliners = split < 0 ? rows : rows.slice(0, split);
     var strong = split < 0 ? [] : rows.slice(split);
     var html = <!--engagement-->engagementHtml || <!--/engagement-->"", banded = false, remaining = state.shown;
@@ -1517,7 +1592,7 @@ header{--accent-hover:#45d0bf}
     }
     var head = headKeys(), was = cardOrder(), focus = rememberFocus();
     render();
-    for (var n = 0; reshuffle && state.sortKey === "fresh" && n < 3 &&
+    for (var n = 0; reshuffle && state.sortKey === "fresh" && !frontPageView() && n < 3 &&
          head.indexOf(",") !== -1 && headKeys() === head; n++) {
       state.seed = clock.lastSeed = state.seed + 1;
       render();

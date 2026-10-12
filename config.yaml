@@ -73,6 +73,13 @@ publish:
                                # Set it to the real gap between publishes (the
                                # */10 cron lands every 11-15 min); a publish later
                                # than this shows "Next drop soon" until it lands.
+  front_page:                 # All / fresh drops only; {} disables the mix.
+    broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
+    niche_categories: [auto, office, books_media, other]
+    max_niche_top: 2
+    max_same_category_run: 2
+    max_same_store_top: 8
+    prefer_photos: true
   site_dir: "site"
   custom_domain: "wowpriced.com"   # the site's one public address (canonical URLs, sitemap, IndexNow)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
