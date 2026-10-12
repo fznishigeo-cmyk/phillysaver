@@ -233,3 +233,19 @@ const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
 })().catch(e => { console.error(e); process.exitCode = 1; });
 '''
     subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_small_print_names_wowpriced_once_the_amazon_tag_is_set(db, cfg, tmp_path):
+    pages = ("about.html", "careers.html", "contact.html", "hacks.html", "how-it-works.html",
+             "privacy.html", "deals/electronics/index.html", "best-deals-today/index.html")
+    cfg.paywall_open_access = True
+    _render(db, cfg, tmp_path / "off")
+    for name in pages:  # no Store ID: the source-only line, unchanged
+        html = (tmp_path / "off" / name).read_text()
+        assert "source's affiliate links" in html and "As an Amazon Associate" not in html, name
+    cfg.affiliate_amazon_tag = "example-20"
+    _render(db, cfg, tmp_path / "on")
+    for name in pages:
+        html = (tmp_path / "on" / name).read_text()
+        assert "source's affiliate links" not in html, name
+        assert "As an Amazon Associate, wowpriced earns from qualifying purchases." in html, name

@@ -551,8 +551,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
                      DROP_MINUTES=str(int(cfg.drop_minutes)))
-    from .site import copy_variant
+    from .site import affiliate_copy, copy_variant
     template = copy_variant(template, open_access, bool(getattr(cfg, "support_enabled", False)))
+    template = affiliate_copy(template, getattr(cfg, "affiliate_amazon_tag", ""))
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
     live.sort(key=lambda d: order[d["dedupe_key"]])

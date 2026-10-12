@@ -190,6 +190,26 @@ JOIN_FORM = (
 )
 
 
+_SOURCE_ONLY_FOOTER = re.compile(r"Some outbound\s+links are the source's affiliate links\.")
+_SOURCE_ONLY_ABOUT = re.compile(
+    r"Some\s+of those links are the source's affiliate links\. That is how they keep the lights\s+on, and we think they earned it\.")
+AFFILIATE_FOOTER = ("Some outbound links are affiliate links: wowpriced or the source that found "
+                    "the deal may earn a commission, at no extra cost to you. As an Amazon "
+                    "Associate, wowpriced earns from qualifying purchases.")
+AFFILIATE_ABOUT = ("Some of those links are affiliate links, the source's or ours: wowpriced or "
+                   "the source may earn a commission, at no extra cost to you. As an Amazon "
+                   "Associate, wowpriced earns from qualifying purchases. That is how the site "
+                   "stays free.")
+
+
+def affiliate_copy(html: str, amazon_tag: str) -> str:
+    """With a Store ID set, the pages' small print says wowpriced may earn too
+    (FTC + Amazon Associates); without one it stays the source-only line."""
+    if not amazon_tag:
+        return html
+    return _SOURCE_ONLY_ABOUT.sub(AFFILIATE_ABOUT, _SOURCE_ONLY_FOOTER.sub(AFFILIATE_FOOTER, html))
+
+
 def copy_variant(html: str, open_access: bool, support: bool = False) -> str:
     """html with the wording for the current access mode only."""
     # Shared membership markup/scripts need not be duplicated in open/paywall.
@@ -413,6 +433,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if name == "index.html" and yearly > 0:
             html = html.replace("<strong>Membership — $9.99/month", f"<strong>Membership — $9.99/month or ${yearly:g}/year")
         html = copy_variant(html, open_access, support)
+        html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
         if support:
             html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
             html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
