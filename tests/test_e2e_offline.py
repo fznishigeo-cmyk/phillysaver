@@ -192,6 +192,8 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     # set ("$150 value" fake MSRP) -> suspect_msrp -> only 2 publish.
     assert summary["critic"] == {"judged": 3, "suspect": 1, "reused": 0, "calls": 1}
     assert summary["published"] == 2
+    assert summary["link_mix"]["source_post"] == 2
+    assert summary["link_mix"]["amazon_untagged_flag"] is False
     assert summary["telegram"]["dry_run"] is True
     assert summary["telegram"]["sent"] == 2
 

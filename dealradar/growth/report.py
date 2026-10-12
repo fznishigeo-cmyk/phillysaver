@@ -169,6 +169,19 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines += site_health.lines(data["site_health"])
 
     lines += ["", "== Money =="]
+    mix = data.get("site_health", {}).get("link_mix")
+    if mix is not None:
+        lines.append(f"Get deal links: {_n(mix['amazon_tagged'])} Amazon (tagged), "
+                     f"{_n(mix['other_store'])} other stores, {_n(mix['source_post'])} source posts, "
+                     f"{_n(mix['none'])} none")
+        lines.append("Other store hosts: " + (", ".join(
+            f"{host} {_n(n)}" for host, n in list(mix["by_store"].items())[:5]) or "none"))
+        if mix["amazon_untagged"] or mix["amazon_short"]:
+            lines.append(("⚠ " if mix["amazon_untagged_flag"] else "")
+                         + f"Amazon links: {_n(mix['amazon_untagged'])} untagged, "
+                         f"{_n(mix['amazon_short'])} short")
+    else:
+        lines.append("Get deal links: not available")
     if stores and "unavailable" not in stores:
         for key, label in (("yesterday", "yesterday"), ("window", f"last {days} days")):
             lines.append(f"Clicks out by store ({label}): total {_n(stores[key]['total'])}")

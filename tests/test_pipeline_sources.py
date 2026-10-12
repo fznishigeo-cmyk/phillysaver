@@ -1121,9 +1121,11 @@ class TestProductImageBackfill:
 
         summary = run(fast_lane=False)
         assert summary["product_images"] == 0
+        assert summary["link_mix"]["by_store"] == {"dickssportinggoods.com": 1}
         assert requests == []
         summary = run(fast_lane=True)
         assert summary["product_images"] == 1
+        assert summary["link_mix"]["by_store"] == {"dickssportinggoods.com": 1}
         assert requests == ["/robots.txt", "/p/dsg-ultimate-backpack-5-0"]
         db = DB(db_path)
         assert db.get_deal("dicks")["image_url"] == \
