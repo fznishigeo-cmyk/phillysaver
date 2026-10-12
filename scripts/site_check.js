@@ -81,7 +81,7 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
   const pct = (n) => (alive.length ? Math.round((100 * n) / alive.length) : 0);
   const good = withPhoto.length - broken.length;
   say(`## Site check ${new Date().toISOString().slice(0, 16)}Z`);
-  say(`live deals ${alive.length}, cards on the page ${shown.cards}, clock "${shown.clock}", tagline "${shown.tagline}"`);
+  say(`live deals ${alive.length}, cards rendered ${shown.cards} of ${alive.length} live, clock "${shown.clock}", tagline "${shown.tagline}"`);
   say(`photos showing: ${good} (${pct(good)}%) | no photo: ${none.length} (${pct(none.length)}%) | broken: ${broken.length} (${pct(broken.length)}%)`);
   say(`first screens: ${shown.top} of the top 24 cards show a photo`);
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);

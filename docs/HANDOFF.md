@@ -109,6 +109,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **The wall loads as you scroll (Codex task 017, merged 2026-10-12):** the
+  home page renders 60 cards (PAGE_CARDS) and adds 60 when the "Show more
+  deals" box nears the viewport (IntersectionObserver, button fallback);
+  search, filters, sort and category reset it to 60, a drop keeps it; a
+  ticker click shows up to its card. "Just missed" appears once every live
+  card is shown. Verified in Chromium: desktop 7,234 px at open (was
+  ~150,000), no scroll jump, 0 errors.
 - **Yearly plan (Codex task 015, merged 2026-10-12, OFF until priced):**
   `paywall.yearly_price_usd` (0 = hidden; set 49 together with the Worker's
   `STRIPE_YEARLY_PRICE_ID`, then deploy the Worker). With it on, the dialog
