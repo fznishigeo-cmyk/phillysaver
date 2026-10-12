@@ -142,9 +142,18 @@ Keep this file current: whoever stops working updates it in their last commit.
   pills and calm buttons in both themes; all Join links now go to `/join`,
   with old home hashes redirected and the email-only form on `join.html`.
   Sitemap/IndexNow and hourly step 6 include it; membership bytes unchanged.
-  Validation: 44 focused checks passed; full suite: 1,467 passed, 7 existing
-  Stripe tests blocked by sandbox sockets, 1 deselected. Chromium also blocked;
-  full green run and visual verification remain. No commit or push.
+  Merge resolution preserves task 029's header observer/scroll fallback and
+  inline/footer suppression for plain `/join` links; both Node harness assertion
+  sets run. Validation: 28 support checks passed; full suite: 1,521 passed,
+  only 7 existing Stripe tests blocked by sandbox sockets, 1 deselected;
+  all `tests/*.cjs` passed through pytest wrappers. Full green run and visual
+  verification remain. Files resolved but unstaged (Git index is read-only in
+  this sandbox). No commit or push.
+- **Calmer wall (Codex task 029, merged 2026-10-12):** flames need 2+
+  signals; phone Join yields to the visible header (observer + scroll fallback),
+  banner and inline/footer asks; only the ticker loops. Tests: 1,463 passed,
+  7 existing socket tests blocked by sandbox, 1 deselected. Chromium blocked too;
+  full green run and visual check remain. No commit or push.
 - **Greyed inline gone deals (Codex task 027, merged 2026-10-12):** post/expiry
   signals queue API rechecks; Woot reuses its feed, with no extra requests.
   Confirmed deaths alone publish as gone, inline and inert for 24 hours;
@@ -153,6 +162,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   Validation: 1,438 passed, 7 existing Stripe tests blocked by sandbox sockets,
   1 deselected; 52 focused checks (including idempotency) passed. No commit
   or push. Remaining: full green run outside this sandbox, review and merge.
+- **Category sorting + Beauty/Health supply (Codex task 028, merged 2026-10-12):** cached
+  Keepa root names override titles/reuse; indexed title answers retry only
+  missing items; `recategorized_v2` repairs live categories once and resumes
+  after spend caps. Named focus pages keep the token reserve and share the
+  Amazon post cap. API shapes checked against official docs; full pytest:
+  1,475 passed, 7 existing Stripe tests blocked by sandbox socket permissions,
+  1 deselected. Live API verification remains. No commit or push.
 - **Store and price pages (Codex task 023, merged 2026-10-12):**
   `/stores/<slug>/` ("Amazon deals today": stores with 15+ public live
   deals, top 12; one page per slug, so "Macy's"/"Macys" share a page) and

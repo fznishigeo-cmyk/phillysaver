@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -55,6 +55,7 @@ class KeepaBudget:
     tokens_left: float | None = None
     refill_rate: float | None = None   # tokens per minute
     seen_at: datetime | None = None
+    db: Any = field(default=None, repr=False, compare=False)  # roots from already-paid products
 
     @classmethod
     def load(cls, db) -> KeepaBudget:
@@ -62,16 +63,16 @@ class KeepaBudget:
         missing or unreadable."""
         raw = db.meta_get(META_KEY) if db is not None else None
         if not raw:
-            return cls()
+            return cls(db=db)
         try:
             d = json.loads(raw)
         except ValueError:
-            return cls()
+            return cls(db=db)
         if not isinstance(d, dict):
-            return cls()
+            return cls(db=db)
         return cls(tokens_left=_num(d.get("tokens_left")),
                    refill_rate=_num(d.get("refill_rate")),
-                   seen_at=util.parse_iso(d.get("seen_at")))
+                   seen_at=util.parse_iso(d.get("seen_at")), db=db)
 
     def save(self, db) -> None:
         if db is None or self.seen_at is None:

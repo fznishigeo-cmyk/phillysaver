@@ -159,18 +159,14 @@ header .drop,header .dhole{background:#18252c}
         background:linear-gradient(105deg,transparent 30%,var(--sweep) 50%,transparent 70%);
         transform:translateX(-100%);animation:sweep .9s ease-out forwards}
 .card.enter{animation:enter .6s ease-out}
-/* The hairline: one faint dash runs each card's frame. It runs all the
-   time on the cards that matter right now (a visitor's free deals this
-   drop, a member's new arrivals) and only under the pointer elsewhere;
-   still when motion is reduced. */
+/* The hairline: one faint dash makes three laps on free picks, new
+   arrivals and hovered cards, then rests; still when motion is reduced. */
 .trace{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
 .trace rect{fill:none;stroke:color-mix(in srgb,var(--fg) 30%,transparent);stroke-width:2;
             stroke-dasharray:.14 .86;stroke-dashoffset:1;opacity:0;transition:opacity .4s;
-            animation:trace 8s linear infinite;animation-play-state:paused}
+            animation:trace 8s linear 3;animation-play-state:paused}
 .card.lit .trace rect{opacity:1;stroke:color-mix(in srgb,var(--accent) 70%,transparent);
                       animation-play-state:running}
-/* A member's new arrivals run three laps, then rest: no endless repaint. */
-.card.isnew.lit .trace rect{animation-iteration-count:3}
 @media (hover:hover){
   .card:not(.gone):hover .trace rect{opacity:1;animation-play-state:running}
 }
@@ -178,7 +174,7 @@ header .drop,header .dhole{background:#18252c}
 .freetag{display:flex;align-items:center;gap:6px;font:500 10px/1 ui-monospace,Menlo,Consolas,monospace;
          letter-spacing:.1em;text-transform:uppercase;color:var(--muted);opacity:.85}
 .freetag i{width:5px;height:5px;border-radius:999px;background:var(--accent);flex:none;
-           animation:beat 3.6s cubic-bezier(.45,0,.55,1) infinite}
+           animation:beat 3.6s cubic-bezier(.45,0,.55,1)}
 @keyframes beat{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,.25);opacity:1}
                 50%{box-shadow:0 0 0 3px rgba(14,117,105,0);opacity:.6}}
 @keyframes sweep{to{transform:translateX(100%)}}
@@ -311,7 +307,7 @@ footer .meta{font-size:11.5px}
 .footnav a{color:var(--fg)}
 .subbar{display:none}
 /* ---- the trial in the wall: a quiet tinted card between the free deals
-   and the locked ones; a slow, faint glow on its button only ---- */
+   and the locked ones; one faint glow on its button ---- */
 .trialband{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin:18px 0;
            padding:14px 18px;border-radius:14px;color:var(--fg);
            background:linear-gradient(100deg,color-mix(in srgb,var(--accent) 9%,var(--card)),var(--card) 70%);
@@ -322,7 +318,7 @@ footer .meta{font-size:11.5px}
 .trialband .pwbtn{font-size:14px;padding:9px 18px}
 .trialband .disc{flex:1 1 100%;margin:0;color:var(--muted)}
 /* "$0 today": the one price line next to a trial button on the main screen
-   (operator's call); a slow sheen crosses it, none when motion is reduced */
+   (operator's call); one sheen crosses it, none when motion is reduced */
 .zerotoday{position:relative;overflow:hidden;display:inline-flex;align-items:baseline;gap:5px;
            border:0;font-family:inherit;cursor:pointer;
            padding:4px 13px 4px 11px;border-radius:999px;font-size:13px;font-weight:700;
@@ -332,7 +328,7 @@ footer .meta{font-size:11.5px}
 .zerotoday b{font-size:19px;font-weight:800;line-height:1}
 .zerotoday::after{content:"";position:absolute;inset:0;transform:translateX(-130%);
                   background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.5) 50%,transparent 70%);
-                  animation:zeroshine 4.2s ease-in-out infinite}
+                  animation:zeroshine 4.2s ease-in-out}
 @keyframes zeroshine{0%,62%{transform:translateX(-130%)}100%{transform:translateX(130%)}}
 @media (prefers-reduced-motion: reduce){.zerotoday::after{display:none}}
 .zerotoday:hover{filter:brightness(1.08)}
@@ -341,13 +337,12 @@ footer .meta{font-size:11.5px}
 .paywall:has(#pwnote .zerotoday) .pwtext{flex:1 1 0}
 .paywall:has(#pwnote .zerotoday) .pwbtns{order:2}
 .paywall #pwnote:has(.zerotoday){flex:0 0 auto;order:1}
-.trialcta{animation:ctaglow 4.5s ease-in-out infinite}
+.trialcta{animation:ctaglow 4.5s ease-in-out}
 #subscribe.trialcta,.subbar.trialcta{animation:none}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
                    50%{box-shadow:0 0 0 4px rgba(14,117,105,.16)}}
 
-/* ---- the sources wall: where the deals come from, two quiet rows of
-   chips sliding in opposite directions (hover stops a row) ---- */
+/* ---- the sources wall: two still rows of chips, scrollable by hand ---- */
 .srcwall{margin:18px 0 6px;display:flex;flex-direction:column;gap:12px}
 .srchead{display:flex;justify-content:center}
 .srceye{display:inline-flex;align-items:center;gap:12px;font-size:11px;font-weight:700;
@@ -360,18 +355,14 @@ footer .meta{font-size:11.5px}
         z-index:2;pointer-events:none}
 .srcrows::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
 .srcrows::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
-.srcrow{overflow:hidden}
-.srctrack{display:flex;width:max-content;padding:2px 0;animation:srcslide 60s linear infinite;
-          will-change:transform}
-.srctrack.rev{animation-duration:72s;animation-direction:reverse}
-.srcrow:hover .srctrack,.srcwall.hiddentab .srctrack{animation-play-state:paused}
+.srcrow{overflow-x:auto}
+.srctrack{display:flex;width:max-content;padding:2px 0;animation:none}
 .srcchip{flex:none;display:inline-flex;align-items:center;gap:8px;margin-right:10px;
          padding:7px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);
          transition:border-color .4s,transform .4s}
 .srcchip:hover{border-color:color-mix(in srgb,var(--muted) 45%,var(--line))}
 .srcchip svg{width:16px;height:16px;display:block;color:var(--muted)}
 .srcchip span{font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--fg);white-space:nowrap}
-@keyframes srcslide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.srctrack{animation:none}}
 /* ---- the deal ticker: a stencilled notice band on worn plaster above the
    header; a torn mustard label, an ink band with a spray-dot texture and
@@ -620,7 +611,7 @@ header{--accent-hover:#45d0bf}
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
-<!--standard--><a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a><!--/standard--><!--support--><a id="subbar" class="subbar ready" href="/join">Join free</a><!--/support-->
+<!--standard--><a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a><!--/standard--><!--support--><a id="subbar" class="subbar ready" href="/join" hidden>Join free</a><!--/support-->
 </div>
 <!--standard--><div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
   <div class="mcard">
@@ -1296,7 +1287,7 @@ header{--accent-hover:#45d0bf}
     sites.forEach(function (site, i) { rows[i % 2].push(chip(site)); });
     ["srca", "srcb"].forEach(function (id, i) {
       var h = rows[i].join("");
-      document.getElementById(id).innerHTML = h + h;  // doubled: the half-width loop has no seam
+      document.getElementById(id).innerHTML = h;
     });
   }
 

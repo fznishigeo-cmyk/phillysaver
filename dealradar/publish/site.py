@@ -275,7 +275,20 @@ def _how(deal: dict[str, Any]) -> list[str]:
     return steps[:4]
 
 
-def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "") -> dict[str, Any]:
+def _override_key(url: str) -> str:
+    """"walmart.com/222918738": a store page's host and its last path segment
+    (the product id), so the slug and tracking query never matter."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return ""
+    host = (parts.hostname or "").lower().removeprefix("www.")
+    last = parts.path.rstrip("/").rsplit("/", 1)[-1]
+    return f"{host}/{last}" if host and last else ""
+
+
+def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
+                    overrides: dict[str, str] | None = None) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -306,6 +319,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "") -
     ours = bool(steps and amazon_tag and host in _AMAZON_HOSTS)
     url = post if steps and post and not ours else \
         store_link if canon else (credits[0]["url"] if credits else "")
+    if overrides and canon and url == store_link:
+        url = overrides.get(_override_key(canon), url)
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
@@ -386,7 +401,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     out.mkdir(parents=True, exist_ok=True)
 
     amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
-    serialized = [_serialize_deal(d, now, amazon_tag) for d in deals
+    overrides = getattr(cfg, "affiliate_link_overrides", {}) or {}
+    serialized = [_serialize_deal(d, now, amazon_tag, overrides) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
@@ -507,8 +523,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{ENGAGEMENT_SCRIPT}}", (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8"))
             html = html.replace("{{SURPRISE_HIDDEN}}", "" if engagement["surprise_me"] else "hidden")
         html = html.replace("{{HOT_EXPLANATION}}", (
-            " Flames mark real signals: one each for at least 60% off, confirmation by "
-            "two or more independent sources, and a first sighting less than two hours ago."
+            " Flames mark real signals: at least two are needed, from at least 60% off, "
+            "confirmation by two or more independent sources, and a first sighting less "
+            "than two hours ago. Two signals show two flames; all three show three."
         ) if engagement["hot_meter"] else "")
         html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
         if support:

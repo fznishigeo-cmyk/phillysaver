@@ -213,6 +213,19 @@ class TestAmazonAffiliateTag:
         walmart = dict(amazon, canonical_url="https://www.walmart.com/ip/1", store="Walmart")
         assert _serialize_deal(walmart, NOW, "wowpriced-20")["url"] == "https://slickdeals.net/f/1"
 
+    def test_link_override_sends_one_store_page_to_its_network_link(self):
+        """Sovrn onboarding (2026-10-12): one Walmart page's Get deal goes to
+        the operator's sovrn.co link; slug and tracking query never matter."""
+        from tests.test_publish_site import NOW, make_deal
+        from dealradar.config import load_config
+        o = {"walmart.com/222918738": "https://sovrn.co/168n3ev"}
+        d = make_deal(canonical_url="https://www.walmart.com/ip/BestOffice-Shelf/222918738?wmlspartner=x",
+                      store="Walmart", codes=[])
+        assert _serialize_deal(d, NOW, "wowpriced-20", o)["url"] == "https://sovrn.co/168n3ev"
+        other = dict(d, canonical_url="https://www.walmart.com/ip/111")
+        assert _serialize_deal(other, NOW, "wowpriced-20", o)["url"] == "https://www.walmart.com/ip/111"
+        assert load_config().affiliate_link_overrides == o
+
     def test_emails_never_carry_the_tag(self):
         from dealradar.publish import newsletter
         assert "tag=" not in newsletter._deal_url({"canonical_url": "https://www.amazon.com/dp/B0ABCDEF12"})
