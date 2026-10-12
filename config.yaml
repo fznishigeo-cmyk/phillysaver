@@ -394,8 +394,8 @@ growth:
   # about two years). Bump it when Meta announces its deprecation.
   meta_graph_version: "v24.0"
   meta_ad_account_id: ""                     # digits, with or without "act_"
-  meta_page_id: ""                           # Facebook Page ID (followers)
-  instagram_user_id: ""                      # Instagram professional account ID (followers)
+  meta_page_id: "1382622794936174"           # Facebook Page ID (followers): Wowpriced
+  instagram_user_id: "17841412621006331"     # Instagram professional account ID (followers): @wowpriced
   # Google Ads (secrets GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
   # GOOGLE_ADS_REFRESH_TOKEN; OAuth client in Cloud project wowpriced-511321).
   # Pinned API version: Google keeps each about a year; bump it when it is
