@@ -304,7 +304,10 @@ header .drop,header .dhole{background:#18252c}
 /* ---- sections ---- */
 .secth{font-size:17px;margin:28px 0 2px;padding-top:18px;border-top:1px solid var(--line)}
 .secth .meta{font-weight:400;display:inline}
-.more{padding:28px 0;text-align:center}
+.more{padding:28px 0;text-align:center;display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center}
+.totop{background:none;border:0;color:var(--muted);font:inherit;font-size:14px;cursor:pointer;padding:10px 12px;
+       text-decoration:underline;text-underline-offset:2px}
+.totop:hover,.totop:focus-visible{color:var(--fg)}
 .empty{color:var(--muted);padding:34px 0;text-align:center}
 .lockedlist{color:var(--muted);margin:10px 0;padding-left:20px}
 footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
@@ -350,7 +353,7 @@ footer .meta{font-size:11.5px}
 @keyframes ctaglow{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,0)}
                    50%{box-shadow:0 0 0 4px rgba(14,117,105,.16)}}
 
-/* ---- the sources wall: two still rows of chips, scrollable by hand ---- */
+/* ---- the sources wall: one still, centred cloud of chips ---- */
 .srcwall{margin:18px 0 6px;display:flex;flex-direction:column;gap:12px}
 .srchead{display:flex;justify-content:center}
 .srceye{display:inline-flex;align-items:center;gap:12px;font-size:11px;font-weight:700;
@@ -358,14 +361,11 @@ footer .meta{font-size:11.5px}
 .srceye::before,.srceye::after{content:"";width:32px;height:1px;
         background:linear-gradient(90deg,transparent,var(--muted))}
 .srceye::after{transform:scaleX(-1)}
-.srcrows{position:relative;display:flex;flex-direction:column;gap:10px}
-.srcrows::before,.srcrows::after{content:"";position:absolute;top:0;bottom:0;width:13%;
-        z-index:2;pointer-events:none}
-.srcrows::before{left:0;background:linear-gradient(90deg,var(--bg),transparent)}
-.srcrows::after{right:0;background:linear-gradient(270deg,var(--bg),transparent)}
-.srcrow{overflow-x:auto}
-.srctrack{display:flex;width:max-content;padding:2px 0;animation:none}
-.srcchip{flex:none;display:inline-flex;align-items:center;gap:8px;margin-right:10px;
+.srcrows{display:flex;flex-direction:column;gap:10px}
+.srcrow:has(.srctrack:empty){display:none}
+.srctrack{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;padding:2px 0;animation:none}
+.srcmore span{color:var(--muted)}
+.srcchip{flex:none;display:inline-flex;align-items:center;gap:8px;
          padding:7px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);
          transition:border-color .4s,transform .4s}
 .srcchip:hover{border-color:color-mix(in srgb,var(--muted) 45%,var(--line))}
@@ -717,6 +717,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // cards the last publish opened that were locked before (every drop
   // unlocks a new set of free deals for visitors).
   var PAGE_CARDS = 60;
+  // The All tab scrolls a little (one more page loads by itself), then
+  // "Show more deals" waits for a click, so the footer is reachable.
+  // Category tabs scroll without end (operator, 2026-10-12).
+  var AUTO_CARDS = 120;
   var moreObserver = null;
   var state = { shown: PAGE_CARDS, deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
                 sortKey: "fresh", sortDir: -1, catTab: 0,
@@ -1371,7 +1375,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     '<path d="M12 2l2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6z" fill="currentColor" stroke="none"/>',
     '<path d="M12 3v18M4.4 7.5l15.2 9M19.6 7.5l-15.2 9" stroke-width="1.8"/>'
   ];
-  var srcSig = "";
+  var srcSig = "", SRC_SHOWN = 16;
   function paintSources() {
     var sites = ((state.meta || {}).source_sites || []).filter(function (x) {
       return typeof x === "string" && /^[a-z0-9.-]+$/i.test(x);
@@ -1388,8 +1392,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         SRC_MARKS[hashStr(site) % SRC_MARKS.length] + "</svg><span>" + esc(site) + "</span></span>";
     }
-    var rows = [[], []];
-    sites.forEach(function (site, i) { rows[i % 2].push(chip(site)); });
+    // One centred cloud of the busiest sites; the rest are counted, not listed.
+    var rows = [sites.slice(0, SRC_SHOWN).map(chip), []];
+    if (sites.length > SRC_SHOWN) {
+      rows[0].push('<span class="srcchip srcmore"><span>+' + (sites.length - SRC_SHOWN) + " more</span></span>");
+    }
     ["srca", "srcb"].forEach(function (id, i) {
       var h = rows[i].join("");
       document.getElementById(id).innerHTML = h;
@@ -1627,7 +1634,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         "alert bar, still big savings</span></h2>" + grid(strong);
     }
     if (rows.length > state.shown) {
-      html += '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button></div>';
+      html += '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button>' +
+        '<button type="button" id="totop" class="totop">Back to top</button></div>';
     }
     content.innerHTML = html;
     // Keep the persistent CTA panel ahead of the load-more control.
@@ -1637,15 +1645,23 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var button = document.getElementById("moremore");<!--/support-->
     if (button) {
       button.addEventListener("click", showMore);
-      if ("IntersectionObserver" in window) {
-        if (!moreObserver) moreObserver = new IntersectionObserver(function (entries) {
-          entries.forEach(function (entry) {
-            if (entry.isIntersecting && document.body.contains(entry.target)) showMore();
-          });
-        }, { rootMargin: "1500px" });
-        moreObserver.observe(more);
-      }
+      armMore(more);
     }
+    var top = document.getElementById("totop");
+    if (top) top.addEventListener("click", function () {
+      window.scrollTo({top: 0, behavior: reduceMotion() ? "auto" : "smooth"});
+    });
+  }
+
+  function armMore(more) {
+    if (!("IntersectionObserver" in window)) return;
+    if (state.catTab === 0 && state.shown >= AUTO_CARDS) return;
+    if (!moreObserver) moreObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting && document.body.contains(entry.target)) showMore();
+      });
+    }, { rootMargin: "1500px" });
+    moreObserver.observe(more);
   }
 
   function showMore() {

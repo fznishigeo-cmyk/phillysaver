@@ -1611,16 +1611,21 @@ class TestWallPagination:
         assert body.index("var openBandHere") < body.index("list = list.slice")
         assert "if (openBandHere && list.length > 8)" in body
 
-    def test_button_and_optional_observer_load_more_without_a_drop(self, html):
+    def test_all_tab_scrolls_a_little_categories_scroll_on(self, html):
+        # Operator, 2026-10-12: All loads one more page by itself, then a click
+        # (the footer is reachable); category tabs scroll without end.
         body = _between(html, "function render() {", "// ---- reorganizing the wall")
         assert "rows.length > state.shown" in body
-        assert '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button></div>' in body
-        assert 'button.addEventListener("click", showMore)' in body
-        assert '"IntersectionObserver" in window' in body
-        assert "entry.isIntersecting && document.body.contains(entry.target)" in body
-        assert 'rootMargin: "1500px"' in body
-        assert "moreObserver.observe(more)" in body
+        assert ('<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button>'
+                in body) and '<button type="button" id="totop" class="totop">Back to top</button></div>' in body
+        assert 'button.addEventListener("click", showMore)' in body and "armMore(more);" in body
+        assert 'window.scrollTo({top: 0, behavior: reduceMotion() ? "auto" : "smooth"})' in body
         assert "moreObserver.disconnect()" in body
+        arm = _between(html, "function armMore(more)", "function showMore()")
+        assert "if (state.catTab === 0 && state.shown >= AUTO_CARDS) return;" in arm
+        assert "entry.isIntersecting && document.body.contains(entry.target)" in arm
+        assert 'rootMargin: "1500px"' in arm and "moreObserver.observe(more)" in arm
+        assert "var AUTO_CARDS = 120;" in html
         more = _between(html, "function showMore()", "// ---- reorganizing the wall")
         assert "state.shown += PAGE_CARDS;" in more and "render();" in more
         assert "rememberFocus()" in more and "restoreFocus" in more

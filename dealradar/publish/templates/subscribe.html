@@ -52,6 +52,7 @@ p{margin:0 0 14px}
 .btn.alt{background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:10px 22px;font-weight:500}
 .btn.alt:hover,.btn.alt:focus-visible{background:var(--accent);color:var(--accent-fg);filter:none;transform:none}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.pwbtns{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 8px}
 <!--/support-->p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
   text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
@@ -84,7 +85,7 @@ p{margin:0 0 14px}
 <!--/standard--><!--support-->  <h1>A quick, honest ask.</h1>
   <div id="notice" class="notice" style="display:none" role="status"></div>
   <p>{{SUPPORT_BODY}}</p>
-  {{SUPPORT_ACTION}}
+  <div class="pwbtns">{{SUPPORT_ACTION}}</div>
   {{SUPPORT_NOTE}}
   <h2>Join free: the best deals in your inbox</h2>
   <p><a class="btn alt" href="/join">Join free</a></p>
