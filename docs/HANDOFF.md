@@ -149,8 +149,12 @@ Keep this file current: whoever stops working updates it in their last commit.
   Fix: "other" is never reused; `recategorize_other` gives live "other" deals
   the cached Amazon root, then one Haiku title read each
   (`parse.recategorize_other_per_run: 120`, inside the caps; only a real
-  "other" answer is remembered as asked). Watch the site check's category
-  audit: "other" should fall within a couple of hours.
+  "other" answer is remembered as asked). Result: live "other" 1,195 (65%)
+  at 09:08 -> 218 (11%) at 11:58 UTC; beauty 27 -> 54, fashion 274 -> 520,
+  home 81 -> 319. Cut-off category replies are salvaged (claude_client
+  `_closed_objects`); rules now name shoes/clothing/jewelry and
+  lighting/mirrors/tools/plumbing; the asked-list key is `_v2` so old
+  "other" answers get one more read. Per run: 240 titles (~$0.005).
 - **Rich results + photo preconnect (Codex task 037, merged 2026-10-12):** live
   deal pages carry Product + Offer (price, InStock, seller = store,
   itemCondition from conditions; image only if https; brand if known);
