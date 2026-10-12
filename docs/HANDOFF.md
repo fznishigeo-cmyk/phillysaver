@@ -142,6 +142,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Keepa fits the 20 token/min plan (2026-10-12):** operator: stay on the
+  €49 plan; "amazon isnt like some bidding auction". Rechecks wanted ~23,000
+  tokens a day at 3 h (new) / 6 h (used, ~13 tokens each) for every deal and
+  starved the /deal feed (230 held back at 17:07). Cadence is now config
+  (`keepa.recheck_fresh_h: 4` for deals first seen in the last 24 h,
+  `recheck_new_h: 12`, `recheck_used_h: 24`); a suspect's confirming read
+  goes first. Watch `price_recheck.tokens_short` fall and Keepa new posts rise.
 - **Top picks landing (Codex task 042, shipped 2026-10-12):** config-driven
   quality/freshness score and strict caps select up to 120; public `pick`/`ps`
   drive All, static home, photo preconnects and best-today. Browser re-deals

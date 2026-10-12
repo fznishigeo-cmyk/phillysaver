@@ -253,13 +253,14 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
     return pairs, stats
 
 
-#: Hours between live price re-checks of the same Amazon deal (a dead
-#: deal is off the wall within this long, and a batch is one Keepa call).
-_RECHECK_EVERY_H = 3.0
-#: The same for a used/open-box deal: its recheck carries an offers scan
-#: (up to verify.USED_RECHECK_TOKENS per ASIN instead of 1), so it comes
-#: round half as often.
-_RECHECK_EVERY_USED_H = 6.0
+#: Hours between live price re-checks of the same Amazon deal live in
+#: config.yaml (keepa.recheck_*): fresh deals most often, older ones less,
+#: used/open-box least (its recheck carries an offers scan, up to
+#: verify.USED_RECHECK_TOKENS per ASIN instead of 1). Operator, 2026-10-12:
+#: stay on the 20 token/min plan; prices do not move by the minute.
+#: Retry window for a used deal whose offers scan answered without a
+#: verdict.
+_RETRY_USED_H = 6.0
 #: Retry window for a new-condition deal whose recheck answered without a
 #: verdict (Keepa data older than the deal's price): 1 token, so hourly.
 _RETRY_NEW_H = 1.0
@@ -1068,8 +1069,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     deadline: float | None = None) -> dict[str, Any]:
     """The 'click the page before publishing' gate, via Keepa's licensed API
     (we never scrape retailer pages): every about-to-publish Amazon deal
-    gets its LIVE price checked at most once per _RECHECK_EVERY_H hours,
-    a hundred deals per Keepa call (_RECHECK_EVERY_USED_H for used/open-box,
+    gets its LIVE price checked at most once per cfg.keepa_recheck_* hours,
+    a hundred deals per Keepa call (keepa_recheck_used_h for used/open-box,
     whose batches carry an offers scan: KEEPA_OFFERS_BATCH deals per call
     at up to USED_RECHECK_TOKENS each). A moved price means the deal is
     over: status dead + 'price_moved' flag — the site shows it marked dead,
@@ -1098,7 +1099,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         # review finding, a used deal whose offers scan kept saying "no
         # opinion" was re-scanned (13 tokens) on every 10-minute run.
         tried = util.parse_iso(deal.get("recheck_tried_at") or "")
-        wait = _RECHECK_EVERY_USED_H if used else _RETRY_NEW_H
+        wait = _RETRY_USED_H if used else _RETRY_NEW_H
         return tried is not None and now - tried < timedelta(hours=wait)
 
     if not cfg.feature_flags.get("keepa"):
@@ -1116,7 +1117,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 and deal.get("gone_suspect_at") == util.iso(now):
             continue  # a post/expiry queues the first API reading for the next run
         used = is_used_deal(deal)
-        every = _RECHECK_EVERY_USED_H if used else _RECHECK_EVERY_H
+        seen = util.parse_iso(deal.get("first_seen_at") or "")
+        fresh = seen is not None and \
+            now - seen < timedelta(hours=cfg.keepa_recheck_fresh_window_h)
+        every = cfg.keepa_recheck_used_h if used else \
+            cfg.keepa_recheck_fresh_h if fresh else cfg.keepa_recheck_new_h
         if deal.get("gone_suspect_at"):
             every = _CONFIRM_GONE_H  # a suspect is asked again soon
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
@@ -1136,11 +1141,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 and _revivable(deal, now) and not tried_recently(deal, True) \
                 and rank.is_publishable(dict(deal, status="alive"), cfg)[0]:
             due_used.append(deal)
-    # Longest-unchecked first (never-checked leading): when demand outgrows
-    # the token plan the shortfall spreads across every deal instead of the
-    # newest rows never being rechecked at all (live review finding).
-    due.sort(key=lambda d: d.get("price_rechecked_at") or "")
-    due_used.sort(key=lambda d: d.get("price_rechecked_at") or "")
+    # A suspect's confirming reading first, then longest-unchecked (never-
+    # checked leading): when demand outgrows the token plan the shortfall
+    # spreads across every deal instead of the newest rows never being
+    # rechecked at all (live review finding).
+    def order(d: dict[str, Any]) -> tuple[bool, str]:
+        return (not d.get("gone_suspect_at"), d.get("price_rechecked_at") or "")
+    due.sort(key=order)
+    due_used.sort(key=order)
 
     def apply(deal: dict[str, Any], verdict: bool | None,
               had_photo: bool = True, answered: bool = False) -> None:

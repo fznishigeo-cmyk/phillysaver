@@ -1318,6 +1318,10 @@ class TestCarefulDeath:
                      image="")
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        # The 3 h / 6 h cadence this test was written for (config.yaml
+        # keepa.recheck_* now says 4/12/24 h; the mechanism is the same).
+        cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0
+        cfg.keepa_recheck_used_h = 6.0
         calls = []
 
         def fake_recheck(deals, _cfg, budget=None, used_offers=True):
@@ -1343,6 +1347,10 @@ class TestCarefulDeath:
                      last=(NOW - timedelta(hours=1)).isoformat())
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        # The 3 h / 6 h cadence this test was written for (config.yaml
+        # keepa.recheck_* now says 4/12/24 h; the mechanism is the same).
+        cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0
+        cfg.keepa_recheck_used_h = 6.0
         calls = []
 
         def fake_recheck(deals, _cfg, budget=None, used_offers=True):

@@ -189,6 +189,13 @@ keepa:
                                    # the rest DEEP (90-day list; its page window
                                    # rotates across pulls via db meta keepa_deep_page)
   reserve_tokens: 300              # never start an extra page below this
+  # Live price re-checks (hours between checks of one deal). Operator,
+  # 2026-10-12: stay on the 20 token/min plan (~28,800 tokens/day). At 3 h /
+  # 6 h every deal, rechecks wanted ~23,000 a day and starved the deal feed.
+  recheck_fresh_h: 4               # deals first seen in the last recheck_fresh_window_h
+  recheck_fresh_window_h: 24
+  recheck_new_h: 12                # older new-condition deals (1 token each)
+  recheck_used_h: 24               # used/open-box (offers scan, up to 13 tokens each)
   focus_categories: ["Beauty & Personal Care", "Health & Household"]  # empty = off
   # NEW posts (not yet content-hashed: each costs an LLM parse, a critic
   # call and a keepa_check) emitted per pull; posts already handled ride

@@ -233,6 +233,13 @@ class AppConfig:
     keepa_warehouse_max_new_posts_per_pull: int = 20
     keepa_warehouse_min_drop_pct: float = 45.0  # used price vs honest new price
     keepa_warehouse_min_new_price: float = 25.0
+    # Live price re-check cadence, hours (config.yaml keepa.recheck_*):
+    # deals first seen within recheck_fresh_window_h, older new-condition
+    # deals, and used/open-box deals (an offers scan, ~13 tokens each).
+    keepa_recheck_fresh_h: float = 3.0
+    keepa_recheck_fresh_window_h: float = 24.0
+    keepa_recheck_new_h: float = 3.0
+    keepa_recheck_used_h: float = 6.0
     keepa_sweep_enabled: bool = True          # warehouse sweep on idle tokens
     keepa_sweep_asins_per_pull: int = 100
     keepa_sweep_reserve_tokens: float = 400.0  # kept on top of reserve_tokens
@@ -455,6 +462,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "warehouse_min_drop_pct", default=cfg.keepa_warehouse_min_drop_pct))
     cfg.keepa_warehouse_min_new_price = float(g(
         "keepa", "warehouse_min_new_price", default=cfg.keepa_warehouse_min_new_price))
+    for name in ("recheck_fresh_h", "recheck_fresh_window_h", "recheck_new_h", "recheck_used_h"):
+        attr = "keepa_" + name
+        setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
     cfg.keepa_sweep_asins_per_pull = max(1, int(g(

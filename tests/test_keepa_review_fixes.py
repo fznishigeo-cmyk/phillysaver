@@ -106,7 +106,7 @@ class TestFairOrder:
     def test_longest_unchecked_used_deals_go_first(self, tmp_path, monkeypatch):
         db = DB(tmp_path / "state.db")
         # Inserted newest-checked first, so rowid order is the wrong order.
-        _seed(db, "url|recent001", stamp=util.iso(NOW - timedelta(hours=7)))
+        _seed(db, "url|recent001", stamp=util.iso(NOW - timedelta(hours=25)))
         _seed(db, "url|older0001", stamp=util.iso(NOW - timedelta(hours=30)))
         _seed(db, "url|never0001")
         seen = []
@@ -354,3 +354,43 @@ def test_prune_never_removes_a_live_deal_for_its_age(tmp_path):
     left = {d["dedupe_key"] for d in db.all_deals()}
     assert left == {"live_old", "dead_recently"}
     db.close()
+
+
+class TestRecheckCadenceFitsThePlan:
+    """Operator, 2026-10-12: stay on the 20 token/min plan; prices do not move
+    by the minute. Fresh deals every 4 h, older ones 12 h, used 24 h
+    (config.yaml keepa.recheck_*), a suspect's confirmation first."""
+
+    def test_tiers_and_suspects_first(self, tmp_path, monkeypatch):
+        db = DB(tmp_path / "state.db")
+        iso = util.iso
+        for key, used, seen, last in (
+                ("url|fresh0001", False, NOW - timedelta(hours=5), NOW - timedelta(hours=5)),
+                ("url|older0001", False, NOW - timedelta(hours=40), NOW - timedelta(hours=5)),
+                ("url|olddue001", False, NOW - timedelta(hours=40), NOW - timedelta(hours=13)),
+                ("url|used00001", True, NOW - timedelta(hours=40), NOW - timedelta(hours=7)),
+                ("url|useddue01", True, NOW - timedelta(hours=40), NOW - timedelta(hours=25))):
+            _seed(db, key, used=used, stamp=iso(last))
+            row = db.get_deal(key)
+            db.update_deal(key, payload=dict(row, first_seen_at=iso(seen)))
+        row = db.get_deal("url|older0001")
+        db.update_deal("url|older0001", payload=dict(
+            row, gone_suspect_at=iso(NOW - timedelta(hours=2)),
+            price_rechecked_at=iso(NOW - timedelta(hours=2))))
+        checked = []
+
+        def fake(deals, _cfg, budget=None, used_offers=True):
+            checked.extend(d["dedupe_key"] for d in deals)
+            return {d["dedupe_key"]: True for d in deals}
+
+        monkeypatch.setattr(verify, "recheck_amazon_prices", fake)
+        cfg = _cfg()
+        assert (cfg.keepa_recheck_fresh_h, cfg.keepa_recheck_new_h,
+                cfg.keepa_recheck_used_h) == (4.0, 12.0, 24.0)
+        pipeline._recheck_prices(db, cfg, NOW)
+        # The suspect leads, then longest-unchecked: the overdue old deal
+        # (13 h > 12 h), the fresh one (5 h > 4 h); the old one checked 5 h
+        # ago and the used one 7 h ago wait.
+        assert checked == ["url|older0001", "url|olddue001", "url|fresh0001",
+                           "url|useddue01"]
+        db.close()
