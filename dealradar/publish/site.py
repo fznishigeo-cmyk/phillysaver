@@ -503,8 +503,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{ENGAGEMENT_SCRIPT}}", (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8"))
             html = html.replace("{{SURPRISE_HIDDEN}}", "" if engagement["surprise_me"] else "hidden")
         html = html.replace("{{HOT_EXPLANATION}}", (
-            " Flames mark real signals: one each for at least 60% off, confirmation by "
-            "two or more independent sources, and a first sighting less than two hours ago."
+            " Flames mark real signals: at least two are needed, from at least 60% off, "
+            "confirmation by two or more independent sources, and a first sighting less "
+            "than two hours ago. Two signals show two flames; all three show three."
         ) if engagement["hot_meter"] else "")
         html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
         if support:

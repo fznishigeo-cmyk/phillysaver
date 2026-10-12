@@ -198,6 +198,18 @@ const cold=row('cold',{pct_at_checkout:59,badge:'history-checked',first_seen_at:
 assert.equal(h.ctx.hotSignals(cold).length,0); assert.equal(h.ctx.hotHtml(cold),'');
 for (const changes of [{pct_at_checkout:60},{badge:'corroborated'},{first_seen_at:new Date(NOW-7199999).toISOString()}]) {
   assert.equal(h.ctx.hotSignals({...cold,...changes}).length,1);
+  assert.equal(h.ctx.hotHtml({...cold,...changes}),'');
+  assert.ok(!h.ctx.cardHtml({...cold,...changes}).includes('hotmeter'));
+}
+for (const changes of [
+  {pct_at_checkout:60,badge:'corroborated'},
+  {pct_at_checkout:60,first_seen_at:new Date(NOW-7199999).toISOString()},
+  {badge:'corroborated',first_seen_at:new Date(NOW-7199999).toISOString()}
+]) {
+  const deal = {...cold,...changes}, signals = h.ctx.hotSignals(deal);
+  assert.equal(signals.length,2);
+  assert.ok(h.ctx.hotHtml(deal).includes('<span aria-hidden="true">🔥🔥</span>'));
+  assert.ok(h.ctx.hotHtml(deal).includes('aria-label="Hot: '+signals.join(', ')+'"'));
 }
 assert.equal(h.ctx.hotSignals(row('a')).length,3);
 assert.equal(h.ctx.hotSignals(row('future',{pct_at_checkout:0,badge:'',first_seen_at:new Date(NOW+1).toISOString()})).length,0);

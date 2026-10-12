@@ -1362,8 +1362,16 @@ class TestEyeCatchers:
         foot = html[html.index("<footer>"):html.index("</footer>")]
         assert 'id="srcwall"' in foot and "Deals found across" in foot
         paint = _between(html, "function paintSources(", "// ---- the deal ticker ----")
-        assert "/^[a-z0-9.-]+$/i.test(x)" in paint and "h + h" in paint
+        assert "/^[a-z0-9.-]+$/i.test(x)" in paint
+        assert 'document.getElementById(id).innerHTML = h;' in paint and "h + h" not in paint
         assert ".srctrack{animation:none}" in html
+
+    def test_only_the_ticker_loops_and_reduced_motion_stops_it(self, html):
+        css = _between(html, "<style>", "</style>")
+        looping = re.findall(r"([^{}]+)\{([^{}]*\binfinite\b[^{}]*)\}", css)
+        assert len(looping) == 1 and looping[0][0].strip() == ".tkstrip"
+        reduced = _between(css, "@media (prefers-reduced-motion: reduce){\n  .trialcta", "\n}")
+        assert ".tkstrip{animation:none}" in reduced
 
 
 def test_trial_copy_names_the_price(db, cfg, tmp_path):
@@ -1682,6 +1690,9 @@ def test_engagement_switches_reach_public_and_member_meta(db, cfg, tmp_path, mod
     cfg.engagement = public["meta"]["engagement"]
     explanation = (tmp_path / "how-it-works.html").read_text()
     assert ("Flames mark real signals:" in explanation) is cfg.engagement["hot_meter"]
+    if cfg.engagement["hot_meter"]:
+        assert "at least two are needed" in explanation
+        assert "Two signals show two flames; all three show three." in explanation
 
 
 def test_engagement_published_logic_offline(db, cfg, tmp_path):

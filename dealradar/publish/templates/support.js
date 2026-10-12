@@ -32,6 +32,12 @@
     catch (e) { /* fine */ }
     open();
   }
+  function inView(el, edge) {
+    if (!el || el.hidden) return false;
+    var rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rect.bottom > (edge || 0) &&
+      rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+  }
   function refresh(m) {
     if (m) meta = m;
     var link = String((meta.support || {}).link || "");
@@ -53,9 +59,13 @@
     // The header is sticky on desktop and scrolls away on phones: measure
     // from the viewport top, or the header's bottom while it is on screen.
     var edge = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
-    panel.hidden = dismissed || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
+    // Let the inline form and footer ask speak for themselves.
+    var otherAsk = Array.from(document.querySelectorAll(
+      "#content .joinform, footer [data-join], footer [data-support], footer [data-support-monthly]"
+    )).some(function (el) { return inView(el, edge); });
+    panel.hidden = dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
     var bar = document.getElementById("subbar");
-    if (bar) bar.hidden = !panel.hidden;
+    if (bar) bar.hidden = !panel.hidden || otherAsk || inView(document.getElementById("subscribe"));
   }
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-join]")) { e.preventDefault(); open(); }
@@ -114,6 +124,10 @@
     requestAnimationFrame(function () { queued = false; refresh(); });
   }, {passive: true});
   window.addEventListener("resize", function () { refresh(); });
+  var subscribe = document.getElementById("subscribe");
+  if (subscribe && "IntersectionObserver" in window) {
+    new IntersectionObserver(function () { refresh(); }).observe(subscribe);
+  }
   window.addEventListener("hashchange", fromHash);
   window.wpSupport = {open: open, fromHash: fromHash, refresh: refresh, form: form};
   if (!document.getElementById("content")) {

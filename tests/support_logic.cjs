@@ -4,10 +4,12 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const code = fs.readFileSync(process.argv[2], 'utf8');
 const home = fs.readFileSync(process.argv[3], 'utf8');
-function harness({blocked = false, stored = '', now = 1000, panelPresent = true} = {}) {
+function harness({blocked = false, stored = '', now = 1000, panelPresent = true, observer = true} = {}) {
   const handlers = {}, storage = new Map([['wp.support.dismissed', stored]]);
   let boundary = 200, count = 12, response = {status: 200, json: async () => ({ok:true})};
-  let request, event, openFocus = false;
+  let request, event, openFocus = false, headerTop = 20, askTop = 900, askPresent = false, observed, intersect;
+  const rect = top => ({top, bottom:top+40, left:0, right:100, width:100, height:40});
+  const otherAsk = {getBoundingClientRect: () => rect(askTop)};
   const input = {value: ' user@example.com ', focus() { document.activeElement = input; }};
   const btn = {disabled: false, focus() { document.activeElement = btn; }};
   const closer = {disabled: false, offsetParent: {}, focus() { document.activeElement = closer; }};
@@ -16,14 +18,17 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   const form = {matches: s => s === '.joinform', querySelector(s) {
     return s.includes('input') ? input : s.includes('button') ? btn : msg;
   }};
-  const opener = {offsetParent: {}, focus() { openFocus = true; document.activeElement = opener; }};
+  const opener = {offsetParent: {}, getBoundingClientRect: () => rect(headerTop),
+    focus() { openFocus = true; document.activeElement = opener; }};
   const modal = {hidden: true, querySelector: () => input, querySelectorAll: () => [closer, input, btn]};
   const panel = {hidden: true}, bar = {}, support = {}, note = {};
   const document = {
     activeElement: opener, body: {style: {}, contains: () => true},
     getElementById(id) { return {authmodal: modal, paywall: panelPresent ? panel : null, subscribe: opener, subbar:bar, content:{}}[id]; },
     querySelector: () => ({getBoundingClientRect: () => ({bottom: 100})}),
-    querySelectorAll: selector => selector === "[data-support]" ? [support] : selector === "[data-support-note]" ? [note] : Array.from({length: count}, () => ({getBoundingClientRect: () => ({bottom: boundary})})),
+    querySelectorAll: selector => selector === "[data-support]" ? [support] : selector === "[data-support-note]" ? [note]
+      : selector.startsWith("#content .joinform") ? (askPresent ? [otherAsk] : [])
+      : Array.from({length: count}, () => ({getBoundingClientRect: () => ({bottom: boundary})})),
     addEventListener: (type, cb) => { handlers[type] = cb; }
   };
   const ctx = {
@@ -32,8 +37,15 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
       setItem(k,v) {if (blocked) throw Error('blocked'); storage.set(k,v);}},
     Date:{now: () => now}, requestAnimationFrame: f => f(),
     fetch: async (url, opts) => {request = {url, ...opts}; if (response instanceof Error) throw response; return response;},
-    window:{wpTrack: (name, params) => {event = {name, params};}, addEventListener:(type, cb) => {handlers[type] = cb;}}
+    window:{innerHeight:800, innerWidth:390, wpTrack: (name, params) => {event = {name, params};},
+      addEventListener:(type, cb) => {handlers[type] = cb;}}
   };
+  if (observer) {
+    ctx.IntersectionObserver = ctx.window.IntersectionObserver = class {
+      constructor(cb) {intersect = cb;}
+      observe(el) {observed = el;}
+    };
+  }
   vm.runInNewContext(code, ctx);
   ctx.window.wpSupport.refresh({api_url:'https://api.test/', support:{link:'https://buy.stripe.com/test_support'}});
   const click = selector => handlers.click({target:{closest: s => s === selector}, preventDefault(){}});
@@ -49,11 +61,19 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   }
   return {ctx, modal, panel, bar, support, note, input, btn, closer, msg, opener, storage, handlers, click, key, submit,
     boundary: n => boundary = n, count: n => count = n, request: () => request, event: () => event,
+    header: n => headerTop = n, ask: n => {askPresent = true; askTop = n;}, otherAsk,
+    observed: () => observed, intersect: () => intersect(),
     openerFocused: () => openFocus};
 }
 (async () => {
   let h = harness();
   assert.equal(h.panel.hidden, true); // before the eighth card
+  assert.equal(h.bar.hidden, true); // header Join is visible
+  assert.equal(h.observed(), h.opener);
+  h.header(-39); h.intersect(); assert.equal(h.bar.hidden, true); // even partly visible
+  h.header(-40); h.intersect(); assert.equal(h.bar.hidden, false);
+  h.header(20); h.intersect(); assert.equal(h.bar.hidden, true); // scrolling back
+  h.header(-40); h.intersect();
   assert.equal(h.support.href, "https://buy.stripe.com/test_support");
   assert.equal(h.support.hidden, false);
   h.ctx.window.wpSupport.refresh({api_url:"https://api.test", support:{link:"https://evil.test"}});
@@ -100,6 +120,21 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true}
   h = harness({blocked:true}); h.boundary(90); h.ctx.window.wpSupport.refresh(); assert.equal(h.panel.hidden,false);
   h.click('[data-support-close]'); assert.equal(h.panel.hidden,true);
   await h.submit({status:200,json:async()=>({ok:true})}); assert.equal(h.event().name,'sign_up');
+  for (const observer of [true, false]) {
+    h = harness({observer});
+    assert.equal(h.bar.hidden, true);
+    h.header(-40); h.handlers.scroll(); assert.equal(h.bar.hidden, false);
+    h.boundary(90); h.handlers.scroll();
+    assert.equal(h.panel.hidden, false); assert.equal(h.bar.hidden, true);
+    // The inline Join form and footer links suppress both sticky asks.
+    h.ask(400); h.handlers.scroll();
+    assert.equal(h.panel.hidden, true); assert.equal(h.bar.hidden, true);
+    h.ask(900); h.handlers.scroll(); assert.equal(h.panel.hidden, false);
+    h.click('[data-support-close]'); assert.equal(h.bar.hidden, false);
+    h.ask(400); h.handlers.scroll(); assert.equal(h.bar.hidden, true);
+    h.ask(900); h.handlers.resize(); assert.equal(h.bar.hidden, false);
+    h.header(20); h.handlers.scroll(); assert.equal(h.bar.hidden, true);
+  }
   // Exercise the actual grid function: the inline offer follows eight
   // cards even when the alert-floor split puts fewer than eight on top.
   const start = home.indexOf('    var beforeBand = 8;'), end = home.indexOf('    if (headliners.length)', start);
