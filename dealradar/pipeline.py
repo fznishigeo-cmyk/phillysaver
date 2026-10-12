@@ -19,7 +19,7 @@ from itertools import chain, zip_longest
 from typing import Any
 from urllib.parse import urlsplit
 
-from . import util
+from . import rank, util
 from .config import AppConfig, load_config, load_sources
 from .db import DB
 from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
@@ -683,16 +683,19 @@ def _site_of(url: str) -> str:
 
 
 def _resolve_short_links(db: DB, fetcher, deadline: float | None,
-                         cfg: AppConfig, *, stats: dict | None = None) -> int:
-    """Resolve photo-less redirect links once, newest first, keeping identity."""
+                         cfg: AppConfig, *, stats: dict | None = None,
+                         deals: list[dict[str, Any]] | None = None) -> int:
+    """Resolve photo-less redirect links once, newest first, keeping identity.
+    deals: the deals to consider (run() passes the site's, so the per-run
+    cap is spent on deals visitors see); None = every deal."""
     from .dedupe import _DEAL_FIELDS
     from .http_client import extract_asin, is_challenge_url, resolve_redirects
 
     resolved = tried = 0
     now = util.now_utc()
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
-    for deal in sorted(db.all_deals(), key=lambda d: str(d.get("first_seen_at") or ""),
-                       reverse=True):
+    for deal in sorted(db.all_deals() if deals is None else deals,
+                       key=lambda d: str(d.get("first_seen_at") or ""), reverse=True):
         if deal.get("image_url") or deal.get("link_shared") or \
                 "link_resolve_tried" in (deal.get("flags") or []):
             continue
@@ -747,12 +750,13 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
     return resolved
 
 
-def _photo_gap_summary(db: DB, redirects: dict) -> tuple[dict, str]:
-    """Only host/count diagnostics: no item names, paths or query strings."""
+def _photo_gap_summary(deals: list[dict[str, Any]], redirects: dict) -> tuple[dict, str]:
+    """Only host/count diagnostics: no item names, paths or query strings.
+    deals: the live deals on the site."""
     from collections import Counter
 
     hosts = Counter()
-    for deal in db.all_deals(status="alive"):
+    for deal in deals:
         if not deal.get("image_url"):
             try:
                 host = (urlsplit(deal.get("canonical_url") or "").hostname or "").lower()
@@ -1396,7 +1400,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["redirects"] = {"resolved": 0, "tried": 0}
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
-                                 stats=summary["redirects"])
+                                 stats=summary["redirects"],
+                                 deals=rank.site_deals(db, cfg, now))
             if fast_lane else 0)
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
@@ -1438,7 +1443,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # summary (private to the repository), never the public site.
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
         if fast_lane:
-            summary["photo_gaps"], photo_lines = _photo_gap_summary(db, summary["redirects"])
+            summary["photo_gaps"], photo_lines = _photo_gap_summary(
+                [d for d in rank.site_deals(db, cfg, now) if d.get("status") == "alive"],
+                summary["redirects"])
             log.info("%s", photo_lines.rstrip())
             if step_summary:
                 try:

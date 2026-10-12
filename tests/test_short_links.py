@@ -209,7 +209,8 @@ def test_photo_gap_diagnostics_count_alive_only_and_top_ten(setup):
     PhotoFixture._seed(db, "photo", "https://with-photo.com/private", image="https://images.example/x.jpg")
     PhotoFixture._seed(db, "dead", "https://dead.com/private",
                        died_at=util.iso(util.now_utc()))
-    gaps, lines = pipeline._photo_gap_summary(db, {"resolved": 2, "tried": 3})
+    gaps, lines = pipeline._photo_gap_summary(db.all_deals(status="alive"),
+                                              {"resolved": 2, "tried": 3})
     assert gaps["alive_without_photo"] == 13
     assert len(gaps["by_canonical_host"]) == 10
     assert gaps["by_canonical_host"]["host0.com"] == 2
@@ -282,3 +283,13 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
     assert len(db.all_deals()) == 1
     assert db.get_deal("stable")["image_url"] == "https://images.example/product.jpg"
     db.close()
+
+
+def test_only_the_given_deals_are_considered(setup):
+    """run() passes the site's deals: the cap goes to deals visitors see."""
+    db, cfg, fetcher, calls, targets = setup
+    PhotoFixture._seed(db, "shown", "https://a.co/shown")
+    PhotoFixture._seed(db, "hidden", "https://a.co/hidden")
+    pipeline._resolve_short_links(db, fetcher, None, cfg,
+                                  deals=[db.get_deal("shown")])
+    assert calls == ["https://a.co/shown"]
