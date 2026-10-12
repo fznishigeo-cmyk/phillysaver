@@ -31,11 +31,8 @@ header a{color:#9fe6da}
 .back{font-size:14px;text-decoration:none}
 .back:hover{text-decoration:underline}
 .wrap{position:relative;max-width:1000px;margin:0 auto;padding:80px 24px;isolation:isolate;overflow:hidden}
-.wrap::before{content:"";position:absolute;z-index:-1;top:120px;left:calc(50% + 180px);
-  width:240px;height:300px;border:1px solid var(--accent);border-radius:120px 120px 24px 120px;
-  background:color-mix(in srgb,var(--accent) 6%,transparent);opacity:.25;transform:rotate(18deg)}
 {{JOIN_STYLE}}
-@media (max-width:640px){.wrap{padding:40px 16px}.wrap::before{display:none}
+@media (max-width:640px){.wrap{padding:40px 16px}
   .joincard{padding:28px 24px}.hrow{padding:16px;gap:12px}.back{font-size:13px}h1{font-size:27px}}
 p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
   text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}

@@ -28,24 +28,61 @@ def test_shared_card_and_phone_cap(tmp_path):
         html = re.search(r'<section class="joincard".*?</section>', html, re.S)[0]
         html = re.sub(r'<button[^>]*data-join-close.*?</button>', '', html)
         return re.sub(r'\s+', ' ', html.replace('h2', 'h1')).strip()
-    # Same component; on /join itself the email field starts open.
-    assert 'class="joinchoice" type="button" hidden' in join
-    assert '<div id="join-email-fields">' in join and '<div id="join-email-fields" hidden>' in home
-    opened = lambda html: html.replace(' type="button" hidden', ' type="button"').replace(
-        '<div id="join-email-fields">', '<div id="join-email-fields" hidden>')
-    assert card(home) == card(opened(join))
+    # Step one is identical on /join and in the prompt/header popover.
+    assert card(home) == card(join)
     assert 'id="join-prompt" class="joinoverlay" hidden' in home
     assert 'role="dialog" aria-modal="true"' in home
     assert 'id="join-prompt"' not in join
     for html in (home, join):
         assert 'id="join-google" class="joingoogle" hidden' in html
         assert 'Continue with Apple' not in html
-        assert 'height:48px' in html and 'border-radius:10px' in html
-        assert 'By joining you agree to our' in html
+        assert '<div id="join-email-fields" hidden>' in html
+        assert 'placeholder="Email"' in html and 'disabled>Continue</button>' in html
+        assert 'id="join-back"' in html and "What's your email?" in html
+        assert '<span aria-hidden="true">@</span> Continue with email' in html
+        assert 'height:52px' in html and 'height:56px' in html and 'border-radius:999px' in html
+        assert '.joingoogle{' in html and re.search(r'\.joingoogle\{[^}]*border-radius:12px', html)
+        assert 'By continuing, you agree to wowpriced\'s <a href="/privacy.html">privacy policy</a>.' in html
+        assert '<p id="join-description">The day\'s best deals in one email. Free.</p>' in html
+        assert 'width:360px' in html and 'background:transparent' in html
     css = re.search(r'@media \(max-width:640px\)\{\s*\.joinoverlay.*?\n\}', home, re.S)[0]
     assert 'align-items:flex-end' in css
     assert 'max-height:45vh;max-height:45dvh;overflow:auto' in css
     assert 'body.style.overflow' not in home  # page scrolling is never locked
+    assert '.joinpopup{display:flex;align-items:center;justify-content:center' in home
+    assert '.joinpopup>[role="dialog"]{position:static;width:480px' in home
+    assert re.search(r'\.joinpopup #join-title\{[^}]*font-size:28px;font-weight:700', home)
+    assert re.search(r'\.joinpopup #join-title span\{[^}]*font-size:44px;font-weight:800;color:var\(--accent\)', home)
+    assert re.search(r'\.joinpopup \.joinclose\{[^}]*width:40px;height:40px[^}]*border:1px[^}]*border-radius:50%', home)
+    assert '.joinpopup .pwbtn{height:56px}' in home
+    # Email precedes Google in DOM order as well as the modal's visual order.
+    markup = re.search(r'<section class="joincard".*?</section>', home, re.S)[0]
+    assert markup.index('id="join-email-fields"') < markup.index('id="join-google-or"') < markup.index('id="join-google"')
+
+
+def test_shared_footer_signup_markup(tmp_path):
+    from tests.test_publish_site import make_deal
+
+    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True), [make_deal()])
+    footers = []
+    for path in out.rglob("*.html"):
+        html = path.read_text()
+        if '<footer>' not in html or path.name == '404.html':
+            continue
+        footer = re.search(r'<footer>(.*?)</footer>', html, re.S)[1]
+        signup = re.search(r'<section id="footer-signup".*?</section>', footer, re.S)[0]
+        footers.append(signup)
+        assert footer.index('id="footer-signup"') < footer.index('<nav')
+        assert '<h2 id="footer-signup-title">Sign up for the latest deals</h2>' in signup
+        assert '<form class="joinform" data-join-footer>' in signup
+        assert 'type="email" placeholder="Email address" autocomplete="email" required' in signup
+        assert '<button type="submit" aria-label="Sign up">' in signup
+        assert 'By subscribing you agree to our <a href="/privacy.html">privacy policy</a>.' in signup
+        assert 'role="status" hidden>Thank you for signing up!</p>' in signup
+        assert 'height:48px' in html and 'border-radius:12px' in html and 'width:48px;height:48px;border:0;border-radius:50%' in html
+        assert html.count('window.wpSupport =') == 1
+    assert len(footers) >= 20  # home, info pages and the generated hub/deal pages
+    assert len(set(footers)) == 1
 
 
 @pytest.mark.parametrize("prompt", [True, False])
@@ -56,7 +93,8 @@ def test_join_switches(tmp_path, prompt):
     assert cfg.join_prompt is prompt and cfg.join_prompt_delay_s == 29 and cfg.join_apple is False
     out, doc, _, _ = render(tmp_path, cfg)
     assert doc["meta"]["join"] == {"prompt": prompt, "prompt_delay_s": 29, "apple": False}
-    assert ('id="join-prompt"' in (out / "index.html").read_text()) is prompt
+    # Disabling the automatic prompt leaves the manually opened header card available.
+    assert 'id="join-prompt"' in (out / "index.html").read_text()
     assert 'Continue with email' in (out / "join.html").read_text()
     config.write_text('join:\n  prompt_delay_s: -1\n')
     assert load_config(config).join_prompt_delay_s == 15

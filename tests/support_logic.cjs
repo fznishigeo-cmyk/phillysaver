@@ -13,7 +13,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
   const input = {value: ' user@example.com '};
   const btn = {disabled: false};
   const msg = {hidden: true, setAttribute(k,v) {this[k] = v;}};
-  const form = {matches: s => s === '.joinform', querySelector(s) {
+  const form = {matches: s => s === '.joinform', hasAttribute: () => false, querySelector(s) {
     return s.includes('input') ? input : s.includes('button') ? btn : msg;
   }};
   const opener = {href:'/join', getBoundingClientRect: () => rect(headerTop)};
@@ -126,7 +126,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
   assert.ok(band.openBand().includes('<a class="pwbtn alt" href="/join">Join free</a>'));
   assert.equal(band.openBand().includes('<form'), false);
   for (const observer of [true, false]) for (const selector of [
-    '#content .trialband', 'footer a[href="/join"]', 'footer [data-support]', 'footer [data-support-monthly]'
+    '#content .trialband', 'footer a[href="/join"]', 'footer [data-support]', 'footer [data-support-monthly]', '#footer-signup'
   ]) {
     h = harness({observer});
     assert.equal(h.bar.hidden, true);

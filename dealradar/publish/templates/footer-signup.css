@@ -1,0 +1,18 @@
+.footersignup{max-width:480px;margin:0 0 24px;padding:20px;background:var(--card);
+  border:1px solid var(--line);border-radius:16px;color:var(--fg)}
+.footersignup [hidden],.footersignup[hidden]{display:none!important}
+.footersignup h2{margin:0 0 16px;font-size:20px;font-weight:700;line-height:1.3}
+.footersignup .joinform{display:block;margin:0}
+.footeremail{display:flex;gap:8px}
+.footeremail input{box-sizing:border-box;min-width:0;width:100%;height:48px;padding:12px 16px;
+  border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);font:inherit;font-size:16px}
+.footeremail button{flex:none;width:48px;height:48px;border:0;border-radius:50%;
+  background:var(--accent);color:var(--accent-fg);font-size:26px;cursor:pointer}
+.footeremail button:disabled{opacity:.6;cursor:default}
+.footersignup .footerlegal{margin:12px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.footersignup [data-join-message]{margin:8px 0;font-size:14px}
+.footersignup .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.footersignup :focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.footersignup a{text-decoration:underline;text-underline-offset:2px}
+#footer-signup-success{margin:0;font-size:16px;font-weight:600;color:var(--fg)}
+.footersignup .footerlegal{text-wrap:balance}

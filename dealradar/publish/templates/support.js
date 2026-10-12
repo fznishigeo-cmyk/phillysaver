@@ -6,20 +6,120 @@
   var prompt = document.getElementById("join-prompt"), started = Date.now();
   var SHOWN = "wp.join.promptUntil", JOINED = "wp.join.joined";
   var engaged = false, shown = false, joined = false, timer = null, previousFocus;
-  var googleLoading = false, googleBusy = false;
+  var googleLoading = false, googleBusy = false, emailBusy = false, successTimer = null;
+  var popup = false, footer = document.getElementById("footer-signup");
   var onJoinPage = /^\/join(?:\.html)?\/?$/.test(location.pathname);
   function promptOpen() { return prompt && !prompt.hidden; }
+  function emailReady(input) {
+    input = input || document.getElementById("join-email");
+    return input && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value.trim());
+  }
+  function updateContinue() {
+    var fields = document.getElementById("join-email-fields");
+    if (fields) fields.querySelector('button[type="submit"]').disabled = emailBusy || !emailReady();
+  }
+  function step(email) {
+    var title = document.getElementById("join-title");
+    title.textContent = email ? "What's your email?" : "Join wowpriced";
+    title.className = email ? "joinemailtitle" : "";
+    document.getElementById("join-step-one").hidden = email;
+    document.getElementById("join-description").hidden = email;
+    document.getElementById("join-email-fields").hidden = !email;
+    document.getElementById("join-email-choice").setAttribute("aria-expanded", String(email));
+    updateContinue();
+    document.getElementById(email ? "join-email" : "join-email-choice").focus({preventScroll: true});
+  }
+  function focusCard() {
+    var id = !document.getElementById("join-success").hidden ? "join-title"
+      : !document.getElementById("join-email-fields").hidden ? "join-email" : "join-email-choice";
+    document.getElementById(id).focus({preventScroll: true});
+  }
+  function positionPrompt() {
+    if (!promptOpen()) return;
+    var dialog = prompt.querySelector('[role="dialog"]');
+    dialog.setAttribute("aria-modal", !popup && window.innerWidth > 640 ? "false" : "true");
+    var subscribe = document.getElementById("subscribe");
+    if (subscribe) {
+      var rect = subscribe.getBoundingClientRect();
+      prompt.style.setProperty("--join-top", Math.max(16, rect.bottom + 8) + "px");
+      prompt.style.setProperty("--join-right", Math.max(16, window.innerWidth - rect.right) + "px");
+    }
+  }
+  function openPrompt(manual) {
+    popup = !manual;
+    shown = true;
+    previousFocus = document.activeElement;
+    prompt.hidden = false;
+    prompt.className = popup ? "joinoverlay joinpopup" : "joinoverlay";
+    document.getElementById("join-success").hidden = true;
+    document.getElementById("join-legal").hidden = false;
+    document.getElementById("join-google-message").hidden = true;
+    document.getElementById("join-email-fields").querySelector("[data-join-message]").hidden = true;
+    var fields = document.getElementById("join-email-fields");
+    var title = document.getElementById("join-title");
+    var description = document.getElementById("join-description");
+    fields.querySelector("label").textContent = popup ? "Email address" : "Email";
+    document.getElementById("join-email").placeholder = popup ? "Email address" : "Email";
+    fields.querySelector('button[type="submit"]').textContent = popup ? "Get the deals" : "Continue";
+    document.getElementById("join-email-choice").hidden = popup;
+    document.getElementById("join-back").hidden = popup;
+    document.getElementById("join-google-or").hidden = !popup || document.getElementById("join-google").hidden;
+    description.textContent = popup ? "The day's best verified deals in one free email. Unsubscribe anytime."
+      : "The day's best deals in one email. Free.";
+    document.getElementById("join-legal").innerHTML = popup
+      ? 'By joining, you agree to get deal emails from wowpriced. See our <a href="/privacy.html">privacy policy</a>.'
+      : 'By continuing, you agree to wowpriced\'s <a href="/privacy.html">privacy policy</a>.';
+    if (popup) {
+      title.innerHTML = 'Save up to <span>90% OFF</span>';
+      title.className = "";
+      description.hidden = false;
+      document.getElementById("join-step-one").hidden = false;
+      fields.hidden = false;
+      updateContinue();
+      focusCard();
+    } else step(false);
+    positionPrompt();
+    // The join card takes the banner's place: one ask per page view.
+    if (panel) panel.hidden = true;
+    var bar = document.getElementById("subbar");
+    if (bar) bar.hidden = true;
+    track("signup_prompt_shown");
+    loadGoogle();
+  }
   function rememberJoin(method) {
     joined = true;
     try { localStorage.setItem(JOINED, "1"); } catch (e) { /* remembered for this page */ }
+    if (footer && method !== "footer") footer.hidden = true;
     track("sign_up", {method: method});
   }
   function closePrompt() {
     if (!promptOpen()) return;
+    if (successTimer !== null) { clearTimeout(successTimer); successTimer = null; }
     prompt.hidden = true;
     track("signup_prompt_closed");
     if (previousFocus && previousFocus.isConnected) previousFocus.focus({preventScroll: true});
     refresh();
+  }
+  function joinedCard(method) {
+    rememberJoin(method);
+    var success = document.getElementById("join-success");
+    if (!success || (!onJoinPage && !promptOpen())) return;
+    document.getElementById("join-step-one").hidden = true;
+    document.getElementById("join-email-fields").hidden = true;
+    document.getElementById("join-description").hidden = true;
+    document.getElementById("join-legal").hidden = true;
+    success.hidden = false;
+    document.getElementById("join-deals").hidden = !onJoinPage;
+    var title = document.getElementById("join-title");
+    title.textContent = "You're on the list.";
+    title.className = "";
+    title.setAttribute("tabindex", "-1");
+    title.focus({preventScroll: true});
+    successTimer = setTimeout(function () {
+      successTimer = null;
+      if (onJoinPage) location.replace("/");
+      else closePrompt();
+    }, onJoinPage ? 1500 : 1800);
   }
   function maybePrompt() {
     if (!prompt || onJoinPage || promptOpen() || shown || joined || document.hidden ||
@@ -39,16 +139,7 @@
       localStorage.setItem(SHOWN, until);
       if (localStorage.getItem(SHOWN) !== until) return;
     } catch (e) { return; }
-    shown = true;
-    previousFocus = document.activeElement;
-    prompt.hidden = false;
-    // The weekly prompt takes the banner's place: one ask per page view.
-    if (panel) panel.hidden = true;
-    document.getElementById("join-email-choice").focus({preventScroll: true});
-    var bar = document.getElementById("subbar");
-    if (bar) bar.hidden = true;
-    track("signup_prompt_shown");
-    loadGoogle();
+    openPrompt();
   }
   function loadGoogle() {
     var box = document.getElementById("join-google");
@@ -66,6 +157,7 @@
           shape: "rectangular", width: Math.min(400, document.getElementById("join-email-choice").clientWidth ||
             document.getElementById("join-email-fields").clientWidth || 280)});
         box.hidden = false;
+        document.getElementById("join-google-or").hidden = !popup;
       } catch (e) { box.hidden = true; }
     };
     document.head.appendChild(script);
@@ -95,7 +187,7 @@
       }).then(function (j) {
         if (j.ok !== true) throw new Error("subscribe");
         msg.textContent = "You're on the list. When our deals email starts, we'll send you one email to confirm first.";
-        rememberJoin("google");
+        joinedCard("google");
       }).catch(function () {
         msg.textContent = "Google sign-up is unavailable right now. Please continue with email or try again.";
         msg.setAttribute("role", "alert");
@@ -103,6 +195,8 @@
   }
   try { dismissed = Number(localStorage.getItem(KEY)) > Date.now(); }
   catch (e) { /* storage blocked: dismissal lasts for this page view */ }
+  try { joined = Boolean(localStorage.getItem(JOINED)); }
+  catch (e) { /* joins still work without storage */ }
   function track(name, params) {
     try { if (typeof window.wpTrack === "function") window.wpTrack(name, params); }
     catch (e) { /* never in the way */ }
@@ -118,6 +212,8 @@
   }
   function refresh(m) {
     if (m) meta = m;
+    if (footer) footer.hidden = joined && document.getElementById("footer-signup-success").hidden;
+    positionPrompt();
     var link = String((meta.support || {}).link || "");
     if (!/^https:\/\/buy\.stripe\.com\/[^\s<>"'\\]+$/.test(link)) link = "";
     document.querySelectorAll("[data-support]").forEach(function (el) {
@@ -140,7 +236,7 @@
     var edge = header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
     // Let the inline and footer asks speak for themselves.
     var otherAsk = Array.from(document.querySelectorAll(
-      '#content .trialband, #content .joinform, footer a[href="/join"], footer [data-support], footer [data-support-monthly]'
+      '#content .trialband, #content .joinform, footer a[href="/join"], footer [data-support], footer [data-support-monthly], #footer-signup'
     )).some(function (el) { return inView(el, edge); });
     panel.hidden = shown || dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
     var bar = document.getElementById("subbar");
@@ -148,12 +244,23 @@
     maybePrompt();
   }
   document.addEventListener("click", function (e) {
-    if (e.target.closest("#join-email-choice")) {
-      document.getElementById("join-email-fields").hidden = false;
-      document.getElementById("join-email-choice").setAttribute("aria-expanded", "true");
-      document.getElementById("join-email").focus();
+    if (prompt && window.innerWidth > 640 && e.target.closest("#subscribe") &&
+        !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.button) {
+      e.preventDefault();
+      engaged = true;
+      if (promptOpen()) closePrompt();
+      else {
+        try { localStorage.setItem(SHOWN, String(Date.now() + WEEK)); } catch (err) { /* manual joins need no storage */ }
+        openPrompt(true);
+      }
+      return;
     }
-    if (prompt && (e.target === prompt || e.target.closest("[data-join-close]"))) closePrompt();
+    if (e.target.closest("#join-email-choice")) {
+      step(true);
+    }
+    if (e.target.closest("#join-back")) step(false);
+    if (promptOpen() && (!prompt.querySelector('[role="dialog"]').contains(e.target) ||
+        e.target.closest("[data-join-close]"))) closePrompt();
     if (e.target.closest("#cattabs a, #controls select, #controls input")) {
       engaged = true;
       refresh();
@@ -167,6 +274,9 @@
       refresh();
     }
   });
+  document.addEventListener("input", function (e) {
+    if (e.target.id === "join-email") updateContinue();
+  });
   document.addEventListener("submit", function (e) {
     var el = e.target;
     if (!el.matches(".joinform")) return;
@@ -175,7 +285,12 @@
     var msg = el.querySelector("[data-join-message]");
     function say(text, error) { msg.textContent = text; msg.hidden = false; msg.setAttribute("role", error ? "alert" : "status"); }
     var api = String(meta.api_url || "").replace(/\/+$/, "");
+    if (emailBusy) return;
+    if (!emailReady(input)) {
+      say("Please enter a valid email address.", true); return;
+    }
     if (!api) { say("Sign-up is unavailable right now. Please try again soon.", true); return; }
+    emailBusy = true;
     btn.disabled = true;
     msg.hidden = true;
     fetch(api + "/subscribe", {
@@ -184,8 +299,15 @@
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (r.status === 200 && j.ok === true) {
-          say("You're on the list. When our deals email starts, we'll send you one email to confirm first.", false);
-          rememberJoin("email");
+          if (el.hasAttribute("data-join-footer")) {
+            el.hidden = true;
+            document.getElementById("footer-signup-success").hidden = false;
+            rememberJoin("footer");
+            if (promptOpen()) closePrompt();
+          } else {
+            say("You're on the list. When our deals email starts, we'll send you one email to confirm first.", false);
+            joinedCard("email");
+          }
         } else {
           say(r.status === 429 ? "Too many tries. Please try again in an hour."
             : r.status === 400 ? "Please enter a valid email address."
@@ -193,7 +315,7 @@
         }
       });
     }).catch(function () { say("Couldn't reach the server. Please check your connection and try again.", true); })
-      .then(function () { btn.disabled = false; });
+      .then(function () { emailBusy = false; btn.disabled = false; updateContinue(); });
   });
   window.addEventListener("scroll", function () {
     if (window.scrollY >= window.innerHeight) engaged = true;
@@ -220,13 +342,17 @@
       }
     });
     document.addEventListener("focusin", function (e) {
-      if (promptOpen() && !prompt.contains(e.target)) document.getElementById("join-email-choice").focus();
+      if (promptOpen() && !prompt.contains(e.target)) focusCard();
     });
     document.addEventListener("visibilitychange", function () { refresh(); });
-    window.addEventListener("storage", function (e) {
-      if (e.key === JOINED && e.newValue) { joined = true; closePrompt(); }
-    });
   }
+  window.addEventListener("storage", function (e) {
+    if (e.key === JOINED && e.newValue) {
+      joined = true;
+      if (footer) footer.hidden = true;
+      closePrompt();
+    }
+  });
   window.addEventListener("resize", function () { refresh(); });
   var subscribe = document.getElementById("subscribe");
   if (subscribe && "IntersectionObserver" in window) {
@@ -235,6 +361,7 @@
   window.addEventListener("hashchange", fromHash);
   window.wpSupport = {fromHash: fromHash, refresh: refresh};
   fromHash();
+  if (footer) footer.hidden = joined;
   if (!document.getElementById("content")) {
     fetch("/deals.json?t=" + Date.now(), {cache: "no-store"})
       .then(function (r) { return r.json(); }).then(function (d) { refresh(d.meta || {}); }).catch(function () {});

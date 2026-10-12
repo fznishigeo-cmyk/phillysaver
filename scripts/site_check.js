@@ -172,6 +172,21 @@ async function walk(page, doc, device) {
       const response = await readSite("join"), body = await response.text();
       check(response.status === 200, `Join HTTP ${response.status}`);
       check(/<input\b[^>]*type=["']email["']/i.test(body), "Join page missing email field");
+      check(body.includes('id="join-step-one"') && body.includes('id="join-email-fields" hidden'),
+        "Join page must start on step one");
+      if (await page.evaluate(() => innerWidth > 640)) {
+        try {
+          await page.locator("#subscribe").click();
+          await page.locator("#join-prompt").waitFor({ state: "visible" });
+          await page.locator("#join-email-choice").click();
+          await page.locator('#join-email-fields input[type="email"]').waitFor({ state: "visible" });
+          check(await page.locator('#join-email-fields button[type="submit"]').isDisabled(),
+            "Continue must be disabled without an email");
+          await page.locator("#join-back").click();
+          await page.locator("#join-email-choice").waitFor({ state: "visible" });
+        } finally { await page.keyboard.press("Escape"); }
+        await page.locator("#join-prompt").waitFor({ state: "hidden" });
+      }
       return;
     }
     try {
