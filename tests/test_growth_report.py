@@ -37,7 +37,8 @@ GADS_ENV = {"GOOGLE_ADS_CLIENT_ID": "123-fake.apps.googleusercontent.com",
             "GOOGLE_ADS_REFRESH_TOKEN": "1//FAKE-REFRESH-TOKEN"}
 GADS_TOKEN = "ya29.FAKE-ADS-ACCESS-TOKEN"
 
-ENV_NAMES = (*GADS_ENV, "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
+ENV_NAMES = (*GADS_ENV, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",
+             "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
              "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "TELEGRAM_CHANNEL_ID",
              "GITHUB_STEP_SUMMARY")
@@ -53,12 +54,23 @@ GA4_RESPONSE = {"reports": [
         {"dimensionValues": [{"value": "sign_up"}, {"value": "yesterday"}], "metricValues": [{"value": "61"}]},
         {"dimensionValues": [{"value": "sign_up"}, {"value": "window"}], "metricValues": [{"value": "402"}]},
         {"dimensionValues": [{"value": "start_trial"}, {"value": "window"}], "metricValues": [{"value": "77"}]},
-        {"dimensionValues": [{"value": "deal_click"}, {"value": "yesterday"}], "metricValues": [{"value": "9001"}]}]},
+        {"dimensionValues": [{"value": "deal_click"}, {"value": "yesterday"}], "metricValues": [{"value": "9001"}]},
+        {"dimensionValues": [{"value": "support_click"}, {"value": "yesterday"}], "metricValues": [{"value": "12"}]},
+        {"dimensionValues": [{"value": "support_click"}, {"value": "window"}], "metricValues": [{"value": "45"}]}]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
         {"dimensionValues": [{"value": "facebook / paid"}], "metricValues": [{"value": "1200"}]}]},
     {"dimensionHeaders": [{"name": "landingPage"}], "rows": [
         {"dimensionValues": [{"value": "/secret-landing-page.html"}], "metricValues": [{"value": "3100"}]}]},
+]}
+
+STORES_RESPONSE = {"reports": [
+    {"dimensionHeaders": [{"name": "customEvent:store"}], "rows": [
+        {"dimensionValues": [{"value": "Amazon"}], "metricValues": [{"value": str(count)}]},
+        {"dimensionValues": [{"value": "Target"}], "metricValues": [{"value": "1"}]}],
+     "totals": [{"dimensionValues": [{"value": "RESERVED_TOTAL"}],
+                 "metricValues": [{"value": str(total)}]}]}
+    for count, total in ((8000, 9001), (18000, 20001))
 ]}
 
 SC_TOTAL = {"rows": [{"clicks": 834521.0, "impressions": 9123456.0, "ctr": 0.0914, "position": 17.26}]}
@@ -163,6 +175,8 @@ class FakeApis:
                                              "token_type": "Bearer"})
         if host == "analyticsdata.googleapis.com":
             assert auth == f"Bearer {GOOGLE_TOKEN}"
+            if json.loads(request.content)["requests"][0].get("dimensions") == [{"name": "customEvent:store"}]:
+                return httpx.Response(200, json=STORES_RESPONSE)
             return httpx.Response(200, json=GA4_RESPONSE)
         if host == "searchconsole.googleapis.com":
             assert auth == f"Bearer {GOOGLE_TOKEN}"
@@ -378,14 +392,16 @@ def test_ga4_request_and_parsing():
         {"startDate": "7daysAgo", "endDate": "yesterday", "name": "window"}]
     assert [m["name"] for m in totals["metrics"]] == ["sessions", "totalUsers", "newUsers"]
     assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == [
-        "sign_up", "begin_checkout", "start_trial", "deal_click"]
+        "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
     assert out["yesterday"] == {"sessions": 812345, "totalUsers": 731942, "newUsers": 640217,
-                                "sign_up": 61, "begin_checkout": 0, "start_trial": 0, "deal_click": 9001}
+                                "sign_up": 61, "begin_checkout": 0, "start_trial": 0, "deal_click": 9001,
+                                "support_click": 12}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
+    assert out["window"]["support_click"] == 45
     assert out["sources"] == [("google / organic", 2500), ("facebook / paid", 1200)]
     assert out["pages"] == [("/secret-landing-page.html", 3100)]
 
@@ -479,9 +495,9 @@ def test_stripe_mrr_mixed_plans_and_missing_prices():
 
 @pytest.mark.parametrize("google_, meta_, stripe_, ok", [
     (False, False, True, {"stripe"}),
-    (True, False, False, {"ga4", "search_console", "sitemap"}),
+    (True, False, False, {"ga4", "ga4_stores", "search_console", "sitemap"}),
     (False, True, False, {"meta_ads", "facebook", "instagram"}),
-    (True, True, True, {"ga4", "search_console", "sitemap", "meta_ads", "facebook", "instagram", "stripe"}),
+    (True, True, True, {"ga4", "ga4_stores", "search_console", "sitemap", "meta_ads", "facebook", "instagram", "stripe"}),
 ])
 def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, caplog,
                                                      google_, meta_, stripe_, ok):
@@ -493,7 +509,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     ok = ok | {"site_health"}
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
-    assert set(data) == ok
+    assert set(data) == ok | {"subscribers"}
     if not google_:
         assert "ga4: skipped (GOOGLE_SA_JSON not set)" in caplog.messages
         assert not {"oauth2.googleapis.com", "analyticsdata.googleapis.com"} & fake.hosts()
@@ -595,7 +611,9 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     assert msg["chat_id"] == ADMIN_CHAT  # the admin chat, never the channel
     lines = msg["text"].splitlines()
     assert lines[0] == "Growth report for Sat Oct 10, 2026: yesterday / last 7 days"
-    assert lines[2:8] == [
+    assert lines[2:10] == [
+        "Sessions: 812,345 / 5,120,333",
+        "Clicks out yesterday: 9,001",
         "Visitors: 731,942 / 4,410,777",
         "Sign-ups: 61 / 402",
         "Trials started: 1 / 2",            # Stripe, the source of truth

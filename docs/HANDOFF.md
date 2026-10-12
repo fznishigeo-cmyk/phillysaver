@@ -133,6 +133,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Money report and Amazon guard (Codex task 022, merged 2026-10-12):**
+  morning report adds yesterday/window top-10 store clicks and totals,
+  `support_click`, and Join free totals/new-yesterday from KV metadata only
+  (no values or addresses in output); Cloudflare secrets are wired into the
+  workflow. Desktop hourly step 10 checks every Amazon deal URL's tag and
+  disclosure using the existing deals.json fetch. Full suite: 1,303 passed,
+  1 deselected; 7 existing Stripe deploy tests fail because the sandbox
+  forbids their localhost sockets (`PermissionError`). Re-run those in an
+  environment allowing sockets; live API access/custom-dimension registration
+  remain to be verified. No commit or push made.
 - **Hourly site check walks the site like a visitor (Codex task 018, merged
   2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
   (cards, clock, tagline, no JS errors), load-more, a category tab and back,
