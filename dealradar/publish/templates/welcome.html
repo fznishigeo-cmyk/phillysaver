@@ -51,17 +51,17 @@ p{margin:0 0 14px}
 <body>
 <div class="wrap"><div class="card">
   <p class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
-  <h1>You're in 🎉</h1>
-  <div class="claim" id="claim" hidden></div>
+  <!--standard--><h1>You're in 🎉</h1><!--/standard--><!--support--><h1>Thanks for being here.</h1><!--/support-->
+  <!--standard--><div class="claim" id="claim" hidden></div><!--/standard--><!--support--><!--/support-->
   <p><!--paywall-->Every deal on the wall is yours now — up to 90% off, fake "list prices" removed, Amazon prices
      re-checked live — with new deals every {{DROP_MINUTES}} minutes. Bookmark the live wall:<!--/paywall--><!--open-->Thanks for joining. Bookmark the live wall — up to 90% off, fake "list prices"
-     removed, Amazon prices re-checked live — with new deals every {{DROP_MINUTES}} minutes:<!--/open--></p>
+     removed, Amazon prices re-checked live — with new deals every {{DROP_MINUTES}} minutes:<!--/open--><!--support-->Every deal stays free for everyone. Thanks for supporting our work or joining the free deals email, starting soon. Bookmark the live wall for new deals every {{DROP_MINUTES}} minutes.<!--/support--></p>
   <p><a class="btn" href="./">Open the deal wall</a></p>
-  <p class="muted" id="portal" style="display:none">Manage your
+<!--standard-->  <p class="muted" id="portal" style="display:none">Manage your
      membership any time: <a id="portallink" rel="noopener">billing portal</a>.</p>
-  <p class="muted">Questions? Use the <a href="contact.html">contact page</a>.</p>
+<!--/standard--><!--support--><!--/support-->  <p class="muted">Questions? Use the <a href="contact.html">contact page</a>.</p>
 </div></div>
-<script>
+<!--standard--><script>
 "use strict";
 // Stripe Checkout (the Worker's free-trial checkout and the Payment Link)
 // sends the payer here with ?session_id={CHECKOUT_SESSION_ID}
@@ -213,6 +213,6 @@ p{margin:0 0 14px}
                 "then come back to this page: your payment is remembered on this device until then.");
     }).catch(function () {});
 })();
-</script>
+</script><!--/standard--><!--support--><!--/support-->
 </body>
 </html>

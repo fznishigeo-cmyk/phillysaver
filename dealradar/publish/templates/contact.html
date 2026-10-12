@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
-<meta name="description" content="How to reach wowpriced: general questions, membership and billing, requests from deal sources and retailers, and reporting a dead deal.">
+<meta name="description" content="How to reach wowpriced: general questions, <!--standard-->membership and billing<!--/standard--><!--support-->the email list and support payments<!--/support-->, requests from deal sources and retailers, and reporting a dead deal.">
 <title>Contact wowpriced</title>
 <link rel="canonical" href="{{SITE_URL}}/contact.html">
 <style>
@@ -79,7 +79,7 @@ footer p{margin:0 0 8px}
      you money. All welcome.</p>
 </div>
 
-<h2>Membership and billing</h2>
+<!--standard--><h2>Membership and billing</h2>
 <p>Billing runs through Stripe. Cancel anytime online with "Manage membership" at the
    bottom of the home page; it also changes your card and shows your
    invoices.<span class="mailalt"> Or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> about anything
@@ -88,7 +88,10 @@ footer p{margin:0 0 8px}
    <a id="portallink" rel="noopener">billing portal</a>.</p>
 <p><!--paywall-->Eight top deals on the wall stay free whether or not you are a member, a new eight at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, member or not.<!--/open--></p>
 
-<h2>Deal sources and retailers</h2>
+<!--/standard--><!--support--><h2>Email list and support payments</h2>
+<p>Join free for the deals email, starting soon. Unsubscribe anytime. Stripe handles optional one-time support payments. For email-list or payment questions, write to us using the address above.</p>
+
+<!--/support--><h2>Deal sources and retailers</h2>
 <p>If we credit your site or link to your store, thank you; you are the reason the
    wall exists. We honor robots.txt on every host, and we crawl a site more fully
    only with written permission from its owner. We also keep that permission on
@@ -122,7 +125,7 @@ footer p{margin:0 0 8px}
     <a href="contact.html">Contact</a>
     <a href="/privacy.html">Privacy</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p>
+  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/#join">Join free</a></p><!--/support-->
   <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Some outbound
      links are the source's affiliate links.</p>
 </footer>
@@ -145,7 +148,7 @@ document.querySelectorAll(".mailalt").forEach(function (el) {
 // The membership button (into the home page's sign-up and card-up-front
 // trial, never the Payment Link) and the billing-portal link come from
 // deals.json meta; both stay hidden when the operator has not set them.
-fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+<!--standard-->fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
     var m = (d && d.meta) || {};
@@ -158,7 +161,7 @@ fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
       document.getElementById("portallink").href = m.portal_url;
       document.getElementById("portalline").style.display = "";
     }
-  }).catch(function () {});
+  }).catch(function () {});<!--/standard--><!--support--><!--/support-->
 </script>
 </body>
 </html>

@@ -33,7 +33,8 @@ def _stub(deal: dict[str, Any]) -> dict[str, Any]:
 def is_open(cfg) -> bool:
     """True when every visitor gets every deal in full: the paywall off, or
     open access (config.yaml paywall.open_access)."""
-    return not getattr(cfg, "paywall_enabled", False) \
+    return bool(getattr(cfg, "support_enabled", False)) \
+        or not getattr(cfg, "paywall_enabled", False) \
         or bool(getattr(cfg, "paywall_open_access", False))
 
 

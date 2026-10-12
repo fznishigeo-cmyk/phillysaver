@@ -8,12 +8,30 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 
 from .models import SourceConfig
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def support_link(value: str) -> str:
+    """Accept only Stripe's hosted Payment Links; never echo a rejected URL."""
+    value = str(value or "").strip()
+    try:
+        url = urlsplit(value)
+        if (value.startswith("https://buy.stripe.com/") and url.netloc == "buy.stripe.com"
+                and url.path.startswith("/") and len(url.path) > 1
+                and not re.search(r'[\s<>"\'\\]', value)):
+            return value
+    except ValueError:
+        pass
+    if value:
+        logging.getLogger(__name__).warning("support.payment_link invalid; Support buttons hidden")
+    return ""
+
 
 # Secret names (environment variables only; never read from files, never committed).
 SECRET_NAMES = [
@@ -167,6 +185,9 @@ class AppConfig:
     paywall_yearly_price_usd: float = 0.0  # page copy only; 0 hides yearly
     paywall_api_url: str = ""          # Worker base URL ("" = no upload, no UI)
     paywall_google_client_id: str = "" # public OAuth client ID ("" hides Google)
+    # -- free site: email sign-up and optional one-time support --
+    support_enabled: bool = False     # absent block preserves membership pages
+    support_payment_link: str = ""
     # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
     newsletter_enabled: bool = True
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
@@ -334,6 +355,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.paywall_yearly_price_usd = max(0.0, float(g("paywall", "yearly_price_usd", default=0) or 0))
     cfg.paywall_api_url = str(g("paywall", "api_url", default="") or "").strip().rstrip("/")
     cfg.paywall_google_client_id = str(g("paywall", "google_client_id", default="") or "").strip()
+    cfg.support_enabled = bool(g("support", "enabled", default=False))
+    cfg.support_payment_link = support_link(g("support", "payment_link", default=""))
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
     cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
     cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))

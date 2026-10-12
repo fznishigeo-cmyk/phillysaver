@@ -380,6 +380,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
                      DROP_MINUTES=str(int(cfg.drop_minutes)))
+    from .site import copy_variant
+    template = copy_variant(template, open_access, bool(getattr(cfg, "support_enabled", False)))
     floor = int(getattr(cfg, "seo_hub_min_items", 10))
     listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
     for label, group, slug in CATGROUPS[1:]:

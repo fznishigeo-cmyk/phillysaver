@@ -47,6 +47,19 @@ payload to the Cloudflare Worker, which serves it only to members.
 
 ## Config (`config.yaml`)
 
+**Free site/support mode (operator, 2026-10-12):** `support.enabled: true`
+overrides the access switches and selects `<!--support-->` copy instead
+of `<!--open-->` or `<!--paywall-->`. Shared legacy markup/scripts use
+`<!--standard-->` and remain in both legacy modes. All deals are public,
+the free-8 rotation pauses, and trial/account UI is replaced by email-only
+Join free (`POST {api_url}/subscribe`, `{email}`), plus optional one-time
+support. `support.payment_link` accepts only `https://buy.stripe.com/...`;
+empty or invalid hides Support buttons and payment disclosures. Public
+and member payloads carry `meta.support = {enabled, link}`. Support buys
+nothing extra and is not tax-deductible. Membership/Stripe subscription
+paths remain available when support is disabled. Newsletter sending,
+including confirmations, stays disabled until the operator launches it.
+
 ```yaml
 paywall:
   enabled: true

@@ -195,6 +195,10 @@ members:
   timezone: "America/New_York"
   max_deals_per_email: 200   # ~46 KB of HTML at 200: under Gmail's ~102 KB clipping
 
+support:
+  enabled: true        # free site: Join free + Support; trial/membership UI hidden
+  payment_link: ""     # one-time, pay-what-you-want Stripe Payment Link; empty hides Support
+
 paywall:
   # Visitors and free accounts see the top teaser_count deals in full; every
   # other live deal is a locked stub on the public site. The full payload is
