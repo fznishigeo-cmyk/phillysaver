@@ -52,6 +52,23 @@ def _check(resp: Any, context: str = "") -> None:
                                                   context.strip()) if p))
 
 
+def _manager_accounts(client: Any, version: str, manager_id: str, headers: dict) -> str:
+    """"; under the manager: ...7972 ENABLED, ..." (last four digits and
+    status only), or "" when the manager cannot be asked."""
+    try:
+        resp = client.post(SEARCH.format(version, manager_id), headers=headers, json={
+            "query": "SELECT customer_client.id, customer_client.status, customer_client.manager "
+                     "FROM customer_client WHERE customer_client.level <= 1"})
+        if resp.status_code != 200:
+            return ""
+        rows = resp.json().get("results") or []
+    except Exception:  # a diagnostic only: never the reason the section fails
+        return ""
+    found = [f"...{str(c.get('id', ''))[-4:]} {c.get('status', '?')}"
+             for r in rows for c in [r.get("customerClient") or {}] if not c.get("manager")]
+    return "; under the manager: " + (", ".join(found[:6]) or "none")
+
+
 def access_token(client: Any, client_id: str, client_secret: str, refresh_token: str) -> str:
     resp = client.post(TOKEN_URL, data={"grant_type": "refresh_token", "client_id": client_id,
                                         "client_secret": client_secret,
@@ -91,6 +108,9 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
     while True:
         body = {"query": query, **({"pageToken": page} if page else {})}
         resp = client.post(SEARCH.format(version, customer_id), headers=headers, json=body)
+        if resp.status_code >= 400 and login_customer_id:  # which account is off, by status
+            context = context[:-1] + _manager_accounts(client, version, login_customer_id,
+                                                       headers) + ")"
         _check(resp, context)
         doc = resp.json()
         rows += doc.get("results") or []

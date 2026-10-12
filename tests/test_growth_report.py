@@ -853,3 +853,27 @@ def test_google_ads_steps_down_from_a_version_google_does_not_serve(cfg, monkeyp
     assert status["google_ads"] == "ok"
     assert seen[:3] == ["v26", "v25", "v24"] and set(seen[3:]) == {"v24"}
     assert "google_ads: API v24" in caplog.messages
+
+
+def test_google_ads_error_names_the_managers_accounts_by_status(cfg, monkeypatch, caplog):
+    for k, v in GADS_ENV.items():
+        monkeypatch.setenv(k, v)
+
+    def handler(request):
+        path = request.url.path
+        if path == "/v26/customers/4976667972/googleAds:search":
+            return httpx.Response(403, json={"error": {"status": "PERMISSION_DENIED", "details": [
+                {"errors": [{"errorCode": {"authorizationError": "CUSTOMER_NOT_ENABLED"}}]}]}})
+        if path == "/v26/customers/5861019939/googleAds:search":
+            assert "customer_client" in json.loads(request.content)["query"]
+            return httpx.Response(200, json={"results": [
+                {"customerClient": {"id": "5861019939", "status": "ENABLED", "manager": True}},
+                {"customerClient": {"id": "4976667972", "status": "SETUP_IN_PROGRESS"}},
+                {"customerClient": {"id": "1112223333", "status": "ENABLED"}}]})
+        return FakeApis()(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        _, status = report.collect(gads_cfg(cfg), NOW, client)
+    assert status["google_ads"] == "error"
+    assert any(m.endswith("under the manager: ...7972 SETUP_IN_PROGRESS, ...3333 ENABLED)")
+               for m in caplog.messages), caplog.messages
