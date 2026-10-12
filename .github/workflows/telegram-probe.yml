@@ -1,0 +1,71 @@
+name: Telegram bot probe (manual)
+
+# Checks the Telegram secrets without posting to the channel: the bot key
+# works (bot username), the admin chat gets one "connected" message, and
+# the bot is an admin of the channel with permission to post. Prints names
+# and yes/no only, never the key.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask Telegram what the bot can do
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+          tok = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          admin = os.environ.get("TELEGRAM_ADMIN_CHAT_ID", "").strip()
+          channel = os.environ.get("TELEGRAM_CHANNEL_ID", "").strip()
+          if not tok:
+              print("TELEGRAM_BOT_TOKEN is empty or missing"); raise SystemExit(1)
+          def call(method, **params):
+              url = f"https://api.telegram.org/bot{tok}/{method}"
+              data = urllib.parse.urlencode(params).encode() if params else None
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=20) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  try:
+                      return json.load(e)
+                  except ValueError:
+                      return {"ok": False, "error_code": e.code}
+          ok = True
+          me = call("getMe")
+          bot = (me.get("result") or {})
+          print(f"bot: @{bot.get('username')}" if me.get("ok") else
+                f"bot key: NOT OK ({me.get('error_code')}: {me.get('description', '')})")
+          ok = ok and bool(me.get("ok"))
+          if admin:
+              r = call("sendMessage", chat_id=admin,
+                       text="wowpriced: alerts are connected. You'll get problems and reports here.")
+              print("admin chat: message sent" if r.get("ok") else
+                    f"admin chat: NOT OK ({r.get('error_code')}: {r.get('description', '')}) - "
+                    "open your bot in Telegram and press Start first")
+              ok = ok and bool(r.get("ok"))
+          else:
+              print("admin chat: TELEGRAM_ADMIN_CHAT_ID not set yet")
+          if channel and me.get("ok"):
+              chat = call("getChat", chat_id=channel)
+              c = chat.get("result") or {}
+              print(f"channel: {c.get('title')} (@{c.get('username')}, {c.get('type')})" if chat.get("ok") else
+                    f"channel: NOT FOUND ({chat.get('error_code')}: {chat.get('description', '')})")
+              member = call("getChatMember", chat_id=channel, user_id=bot.get("id"))
+              m = member.get("result") or {}
+              can_post = m.get("status") == "administrator" and m.get("can_post_messages", False)
+              print(f"bot in channel: {m.get('status')}; can post: {'yes' if can_post else 'NO'}")
+              ok = ok and bool(chat.get("ok")) and can_post
+          else:
+              print("channel: TELEGRAM_CHANNEL_ID not set yet")
+          print("PROBE OK" if ok else "PROBE NOT OK: see the lines above")
+          raise SystemExit(0 if ok else 1)
+          PY
