@@ -108,9 +108,15 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
     while True:
         body = {"query": query, **({"pageToken": page} if page else {})}
         resp = client.post(SEARCH.format(version, customer_id), headers=headers, json=body)
-        if resp.status_code >= 400 and login_customer_id:  # which account is off, by status
-            context = context[:-1] + _manager_accounts(client, version, login_customer_id,
-                                                       headers) + ")"
+        if resp.status_code >= 400:  # where the ad account sits: each reachable account's
+            # last four digits and the accounts under it, by status
+            parts = []
+            for name in sorted(names)[:4]:
+                cid = name.split("/")[-1]
+                under = _manager_accounts(client, version, cid, {**headers, "login-customer-id": cid})
+                parts.append(f"...{cid[-4:]}" + (under.replace("; under the manager:", " holds:")
+                                                  if under else ""))
+            context = context[:-1] + "; reachable: " + "; ".join(parts) + ")"
         _check(resp, context)
         doc = resp.json()
         rows += doc.get("results") or []

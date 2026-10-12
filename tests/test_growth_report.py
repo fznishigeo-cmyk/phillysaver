@@ -798,9 +798,10 @@ def test_google_ads_skipped_without_its_secrets_or_account(cfg, monkeypatch, cap
                 "details": [{"errors": [{"errorCode": {"authorizationError": "USER_PERMISSION_DENIED"},
                                          "message": "customer 4976667972 <b>x</b>"}]}]}},
      'google_ads: error HTTP 403 PERMISSION_DENIED USER_PERMISSION_DENIED "secret" '
-     "(sign-in reaches 2 account(s); ad account listed: yes; manager listed: yes)"),
+     "(sign-in reaches 2 account(s); ad account listed: yes; manager listed: yes; "
+     "reachable: ...7972; ...9939)"),
     ("googleads.googleapis.com", 502, None, "google_ads: error HTTP 502 (sign-in reaches 2 "
-     "account(s); ad account listed: yes; manager listed: yes)"),
+     "account(s); ad account listed: yes; manager listed: yes; reachable: ...7972; ...9939)"),
 ])
 def test_google_ads_errors_log_only_googles_codes(cfg, monkeypatch, caplog, host, code, body, logged):
     for k, v in GADS_ENV.items():
@@ -875,5 +876,5 @@ def test_google_ads_error_names_the_managers_accounts_by_status(cfg, monkeypatch
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         _, status = report.collect(gads_cfg(cfg), NOW, client)
     assert status["google_ads"] == "error"
-    assert any(m.endswith("under the manager: ...7972 SETUP_IN_PROGRESS, ...3333 ENABLED)")
-               for m in caplog.messages), caplog.messages
+    assert any(m.endswith("reachable: ...7972; ...9939 holds: ...7972 SETUP_IN_PROGRESS, "
+                          "...3333 ENABLED)") for m in caplog.messages), caplog.messages
