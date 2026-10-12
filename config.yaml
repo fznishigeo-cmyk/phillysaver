@@ -91,6 +91,10 @@ affiliate:
   # onboarding (2026-10-12): its first-click check needs a click from our site.
   link_overrides:
     "walmart.com/222918738": "https://sovrn.co/168n3ev"
+  # Sovrn Commerce (2026-10-12, site under review): the site's PUBLIC link
+  # key (it is part of every Sovrn link visitors click; not a secret). Used
+  # once codex task 032 ships; the reporting "secret key" never goes here.
+  sovrn_key: "c0a58b09d5a8dd07d82f219b19338a02"
   disclosure: >-
     Disclosure: some links are affiliate links; wowpriced or the deal source may
     earn a commission when you buy, at no extra cost to you. As an Amazon
