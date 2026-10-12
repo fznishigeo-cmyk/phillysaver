@@ -27,3 +27,13 @@ for (const value of ['""', "''", "", '"wowpriced-20"', "'wowpriced-20'", "wowpri
     value.includes(tag) ? tag : "");
 }
 assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
+
+// Network links (Sovrn onboarding) are reported, never a failure.
+{
+  const {overrideLinks, overrideNote} = require("../scripts/site_check_logic.cjs");
+  const cfg = 'affiliate:\n  amazon_tag: "x-20"\n  link_overrides:\n    "walmart.com/1": "https://sovrn.co/abc"\n\nseo:\n';
+  assert.deepEqual(overrideLinks(cfg), ["https://sovrn.co/abc"]);
+  assert.equal(overrideNote({deals: [{status: "alive", url: "https://sovrn.co/abc"}]}, ["https://sovrn.co/abc"]), "sovrn.co/abc live");
+  assert.equal(overrideNote({deals: [{status: "dead", url: "https://sovrn.co/abc"}]}, ["https://sovrn.co/abc"]), "sovrn.co/abc not on a live deal");
+  assert.equal(overrideNote({deals: []}, []), "");
+}

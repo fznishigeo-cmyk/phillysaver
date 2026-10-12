@@ -31,4 +31,17 @@ function checkAmazonTag(doc, tag) {
   return {ok: true, badLinks: 0};
 }
 
-module.exports = {amazonTag, checkAmazonTag};
+// affiliate.link_overrides values in config.yaml (network onboarding links,
+// e.g. Sovrn's first-click check): which of them a live deal carries now.
+function overrideLinks(config) {
+  const block = config.match(/^  link_overrides:\s*\n((?:    [^\n]*\n)*)/m);
+  return block ? [...block[1].matchAll(/:\s*"(https:[^"]+)"/g)].map((m) => m[1]) : [];
+}
+
+function overrideNote(doc, links) {
+  if (!links.length) return "";
+  const live = new Set((doc.deals || []).filter((d) => d.status === "alive").map((d) => d.url));
+  return links.map((l) => `${l.replace(/^https:\/\//, "")} ${live.has(l) ? "live" : "not on a live deal"}`).join(", ");
+}
+
+module.exports = {amazonTag, checkAmazonTag, overrideLinks, overrideNote};
