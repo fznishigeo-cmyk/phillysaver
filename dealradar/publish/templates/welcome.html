@@ -19,12 +19,13 @@
 </script>
 <style>
 :root{ color-scheme: light dark;
-  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
   --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4; --warn:#b45309; }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
          --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff; --warn:#fbbf24; } }
 *{box-sizing:border-box}
+input::placeholder{color:var(--muted);opacity:1}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:var(--link)}
@@ -46,6 +47,8 @@ p{margin:0 0 14px}
 .linkbtn{background:none;border:0;padding:0;margin:0;color:var(--link);font:inherit;
          font-weight:700;cursor:pointer}
 .linkbtn:hover{text-decoration:underline}
+p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
 </head>
 <body>

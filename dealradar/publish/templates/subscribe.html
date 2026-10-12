@@ -10,14 +10,15 @@
 <link rel="canonical" href="{{SITE_URL}}/subscribe.html">
 <style>
 :root{ color-scheme: light dark;
-  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
   --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
   --good:#107a3d; --bad:#b42318; }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
          --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
          --good:#3fce7c; --bad:#ff7a6b; } }
 *{box-sizing:border-box}
+input::placeholder{color:var(--muted);opacity:1}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:var(--link)}
@@ -51,7 +52,9 @@ p{margin:0 0 14px}
 .btn.alt{background:transparent;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:10px 22px;font-weight:500}
 .btn.alt:hover,.btn.alt:focus-visible{background:var(--accent);color:var(--accent-fg);filter:none;transform:none}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-<!--/support--></style>
+<!--/support-->p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+</style>
 </head>
 <body>
 <div class="wrap">

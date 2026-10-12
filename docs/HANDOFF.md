@@ -142,6 +142,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Lighthouse polish (Codex task 035, merged 2026-10-12):** contrast and
+  link underlines on every page (ratios in
+  `docs/codex-tasks/035-lighthouse-polish-note.md`), hidden h2s for heading
+  order, first four card images high-priority, ticker band reserved and
+  built after paint. Review kept the fixed card media heights (150/118px:
+  static and live walls share them, so no shift and no taller cards) and
+  kept gone cards visibly greyed (grey surface, faded photo, muted text at
+  >= 4.7:1) per the operator. Local Lighthouse (mobile): accessibility 100
+  on home, best-today, hub, deal and /join; home performance 84 -> 88,
+  CLS 0.053 -> 0.001.
 - **Join card (Codex task 033, merged 2026-10-12):** one card on `/join` (email
   field open) and as a weekly prompt on the home page (`join.prompt`,
   `join.prompt_delay_s` ≥ 15, `join.apple: false`). Prompt rules: 15 s + one

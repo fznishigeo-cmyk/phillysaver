@@ -20,32 +20,35 @@
 <style>
 :root{
   color-scheme: light dark;
-  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#616a75; --line:#e2e6eb;
-  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
-  --flag:#d9480f; --flag-fg:#ffffff; --cond:#b7791f; --cond-fg:#ffffff;
-  --good:#107a3d; --hist:#1d5fd1; --unv:#6b7280; --dead:#b42318;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
+  --tile-fg:#0d1014; --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --flag:#cc420c; --flag-fg:#ffffff; --cond:#94621a; --cond-fg:#ffffff;
+  --good:#107a3d; --hist:#1d5fd1; --unv:#656c79; --dead:#b42318; --dead-fg:#fff;
   --sweep:rgba(14,117,105,.16);
   --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#9aa3ad; --line:#2a313a;
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
          --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
          --flag:#ff6b3d; --flag-fg:#2b0e02; --cond:#f2b544; --cond-fg:#3a2503;
-         --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b;
+         --good:#3fce7c; --hist:#79a8ff; --unv:#98a2b0; --dead:#ff7a6b; --dead-fg:#2b0e02;
          --sweep:rgba(47,179,164,.2);
          --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
 }
 *{box-sizing:border-box}
+input::placeholder{color:var(--muted);opacity:1}
 body{margin:0;background:var(--bg);color:var(--fg);
      font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
 a{color:var(--link);text-decoration:none}
 a:hover{text-decoration:underline}
 .wrap{max-width:1200px;margin:0 auto;padding:0 16px 48px}
 [hidden]{display:none!important}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+         clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 /* ---- header: an ink bar in both themes. Everything inside it (dial,
    tabs, links) re-themes through the variables redefined here. ---- */
-header{--card:#0f1b22; --fg:#f3f7f8; --muted:#9db0ba; --line:rgba(255,255,255,.13);
+header{--card:#0f1b22; --fg:#f3f7f8; --muted:#9fb2bc; --line:rgba(255,255,255,.13);
        --chip:rgba(255,255,255,.065); --link:#9fe6da; --accent:#2fc4b2; --accent-fg:#04201c;
        --good:#45d68a;
        position:sticky;top:0;z-index:20;color:var(--fg);
@@ -171,7 +174,7 @@ header .drop,header .dhole{background:#18252c}
 }
 @keyframes trace{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 .freetag{display:flex;align-items:center;gap:6px;font:500 10px/1 ui-monospace,Menlo,Consolas,monospace;
-         letter-spacing:.1em;text-transform:uppercase;color:var(--muted);opacity:.85}
+         letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .freetag i{width:5px;height:5px;border-radius:999px;background:var(--accent);flex:none;
            animation:beat 3.6s cubic-bezier(.45,0,.55,1)}
 @keyframes beat{0%,100%{box-shadow:0 0 0 0 rgba(14,117,105,.25);opacity:1}
@@ -183,16 +186,21 @@ header .drop,header .dhole{background:#18252c}
 .media img{max-width:88%;max-height:88%;object-fit:contain}
 .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
     padding:12px;text-align:center}
-.ph span{font-size:22px;font-weight:800;letter-spacing:.3px;color:rgba(255,255,255,.95);
-    text-shadow:0 1px 2px rgba(0,0,0,.15);line-height:1.2}
+.ph span{font-size:22px;font-weight:800;letter-spacing:.3px;color:var(--tile-fg);
+    line-height:1.2}
 .flag{position:absolute;top:8px;left:8px;background:var(--flag);color:var(--flag-fg);
       font-size:13px;font-weight:800;padding:3px 9px;border-radius:7px}
 .condtag{position:absolute;top:8px;right:8px;background:var(--cond);color:var(--cond-fg);
          font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
-.gonetag{position:absolute;inset:auto 8px 8px auto;background:var(--dead);color:#fff;
+.gonetag{position:absolute;inset:auto 8px 8px auto;background:var(--dead);color:var(--dead-fg);
          font-size:11px;font-weight:800;letter-spacing:.4px;padding:3px 8px;border-radius:7px}
-.card.gone{opacity:.55;cursor:default;animation:none}
-.card.gone .media img{filter:grayscale(1)}
+.card.gone{cursor:default;animation:none;background:var(--chip)}
+.card.gone .media{background:var(--chip)}
+.card.gone .body{color:var(--muted)}
+.card.gone .media img,.card.gone .ph{filter:grayscale(1)}
+.card.gone .media img{opacity:.45}
+.card.gone .flag,.card.gone .condtag{background:var(--line);color:var(--muted)}
+.card.gone .badge{color:var(--muted)}
 .body{padding:11px 13px 13px;display:flex;flex-direction:column;gap:7px;flex:1}
 .pricerow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .now{font-size:21px;font-weight:800}
@@ -378,6 +386,7 @@ footer .meta{font-size:11.5px}
       background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.07) 0 38%,#0000 60%),
                        repeating-linear-gradient(84deg,rgba(0,0,0,.12) 0 1px,#0000 1px 5px)}
 }
+.tk.pending .tkband{visibility:hidden}
 .tkband{position:relative;display:flex;align-items:stretch;max-width:1168px;margin:0 auto;
         min-height:34px;background:var(--tk-band);color:var(--tk-on);border-radius:2px;
         overflow:hidden;cursor:pointer}
@@ -395,10 +404,10 @@ footer .meta{font-size:11.5px}
 .tkstrip{display:flex;width:max-content;height:100%;animation:tkscroll var(--tk-dur,60s) linear infinite}
 .tkband:hover .tkstrip,.tkband.paused .tkstrip,.tkband.hiddentab .tkstrip{animation-play-state:paused}
 @keyframes tkscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.tkitem{display:flex;align-items:center;gap:9px;padding:0 22px;white-space:nowrap;opacity:.92;
+.tkitem{display:flex;align-items:center;gap:9px;padding:0 22px;white-space:nowrap;
         border-right:1px solid color-mix(in srgb,var(--tk-on) 14%,transparent)}
 .tkitem i{width:6px;height:6px;border-radius:2px;flex:none;opacity:.85}
-.tkitem s{text-decoration:none;font:500 11px/1 var(--tk-mono);letter-spacing:.06em;opacity:.65}
+.tkitem s{text-decoration:none;font:500 11px/1 var(--tk-mono);letter-spacing:.06em}
 .tkitem span{font:500 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}
 .tkitem b{font:600 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.01em}
 .tkpause{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:2;border:0;
@@ -483,8 +492,6 @@ footer .meta{font-size:11.5px}
 .support{position:sticky}
 <!--/support--><!--engagement-->
 .engagement-line{color:var(--muted);font-size:12.5px;line-height:1.5;margin:14px 0 0;overflow-wrap:anywhere}
-.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
-         clip:rect(0,0,0,0);white-space:nowrap;border:0}
 #surprise{background:var(--chip);color:var(--muted);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;cursor:pointer}
 #surprise:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .visit-new,.hotmeter{color:var(--muted);font-size:11px;letter-spacing:.02em}
@@ -550,10 +557,12 @@ header{--accent-hover:#45d0bf}
   .brand a{gap:6px}
   .hrow{column-gap:6px}
 }
+p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
 </head>
 <body>
-<section id="ticker" class="tk" aria-label="Live deals" hidden>
+<section id="ticker" class="tk pending" aria-label="Live deals" {{TICKER_HIDDEN}}>
   <div class="tkband" id="tkband">
     <div class="tklabel" aria-hidden="true">Live deals</div>
     <div class="tkrun"><div class="tkstrip" id="tkstrip" aria-hidden="true"></div></div>
@@ -1197,7 +1206,7 @@ header{--accent-hover:#45d0bf}
   // The hairline (see .trace): every live card carries it; "lit" ones run
   // it all the time: a visitor's free deals while locked ones are on the
   // wall (traceFree, set by render), else a member's new arrivals.
-  var traceFree = false;
+  var traceFree = false, cardImageIndex = 0;
   // Each card's dash sits at its own point of the lap (seeded by its key)
   // so the lit cards never run in lockstep, and the phase follows the wall
   // clock so a re-render (a keystroke in search) never snaps it back.
@@ -1230,7 +1239,8 @@ header{--accent-hover:#45d0bf}
       (d.image_url ? ";display:none" : "");
     var media = "";
     if (d.image_url) {
-      media += '<img loading="lazy" referrerpolicy="no-referrer" src="' + esc(d.image_url) +
+      var imageAttrs = cardImageIndex++ < 4 ? 'fetchpriority="high" loading="eager"' : 'loading="lazy" decoding="async"';
+      media += '<img ' + imageAttrs + ' referrerpolicy="no-referrer" src="' + esc(d.image_url) +
         '" alt="' + esc(d.item) + '" onerror="this.style.display=\'none\';' +
         "this.nextElementSibling.style.display='flex'\">";
     }
@@ -1419,11 +1429,25 @@ header{--accent-hover:#45d0bf}
                html: text, plain: "-" + pct + "% " + plain };
     });
   }
+  var tickerPending = false;
   function paintTicker() {
+    if (tickerPending) return;
+    tickerPending = true;
+    // Yield a paint before building and measuring the scrolling strip.
+    requestAnimationFrame(function () {
+      setTimeout(function () {
+        var run = function () { tickerPending = false; paintTickerNow(); };
+        if (window.requestIdleCallback) window.requestIdleCallback(run, {timeout:1000});
+        else setTimeout(run, 0);
+      }, 0);
+    });
+  }
+  function paintTickerNow() {
     var box = document.getElementById("ticker"), items = tickerItems();
     var sig = items.map(function (it) { return it.key + "|" + it.html; }).join("\n");
     if (sig === tickerSig) return;
     tickerSig = sig;
+    box.classList.remove("pending");
     box.hidden = items.length < 3;
     if (box.hidden) return;
     var strip = document.getElementById("tkstrip");
@@ -1530,6 +1554,7 @@ header{--accent-hover:#45d0bf}
     if (moreObserver) moreObserver.disconnect();
     paintTicker();
     paintSources();
+    cardImageIndex = 0;
     var content = document.getElementById("content");
 <!--engagement-->    var engagementHtml = engagementLineHtml();
 <!--/engagement-->    var rows = state.deals.length ? ordered(filtered(), true) : [];
@@ -1589,7 +1614,7 @@ header{--accent-hover:#45d0bf}
       return (beforeBand ? gridHtml(list.slice(0, beforeBand)) : "") + openBand() + gridHtml(list.slice(beforeBand));
     }
 <!--/support-->    if (headliners.length) {
-      html += grid(headliners);
+      html += '<h2 class="secth sr-only">Verified deals right now</h2>' + grid(headliners);
     } else {
       html += '<p class="empty">No deals above the ' +
         (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +

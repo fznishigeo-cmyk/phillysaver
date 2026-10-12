@@ -176,7 +176,7 @@ def test_static_and_js_gone_card_is_inert(hours, label):
     d = _serialize_deal(make_deal(status="dead", death="confirmed", died_at=iso(NOW - timedelta(hours=hours))), NOW)
     script = '''
     var d = JSON.parse(require("fs").readFileSync(0,"utf8"));
-    var state = {newKeys:{}}, TIER_LABEL = {};
+    var state = {newKeys:{}}, TIER_LABEL = {}, cardImageIndex = 0;
     var isLocked = () => false, isNew = () => false, lit = () => false, isFreePick = () => false;
     var dealKey = d => d.key, storeHue = () => 0, num = x => x == null ? null : Number(x);
     var esc = x => String(x == null ? "" : x).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
