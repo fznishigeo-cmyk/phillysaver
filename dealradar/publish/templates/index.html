@@ -820,6 +820,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // hundred with a "+" (operator, 2026-10-12: "1,400+ live deals", never
   // the exact number).
   function roughCount(n) {
+    // Shown counts top out at "1,000+" however many are live (operator,
+    // 2026-10-12): a steady number, not one that climbs every run.
+    if (n >= 1000) return "1,000+";
     return n < 100 ? String(n) : (Math.floor(n / 100) * 100).toLocaleString("en-US") + "+";
   }
   // The open (unlocked, live) cards' keys.
@@ -847,7 +850,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     document.getElementById("tagline").textContent =
       tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
 <!--engagement-->    renderEngagement();
-<!--/engagement-->    document.title = "wowpriced — " + tagline;
+<!--/engagement-->    // The browser tab keeps the short <title> "wowpriced — verified deals";
+    // the floor made it cut off mid-number (operator, 2026-10-12).
     // Footer line: the FTC disclosure, from meta.disclosure verbatim, never
     // hardcoded in this template. Run times and counts are the operator's
     // (Actions summary), not visitors' (operator, 2026-10-12).

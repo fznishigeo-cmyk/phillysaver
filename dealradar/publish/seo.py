@@ -254,7 +254,8 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
     if free:
         html += '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>"
     if more:
-        n = f"{more // 100 * 100:,}+" if more >= 100 else str(more)  # never the exact count
+        n = ("1,000+" if more >= 1000 else f"{more // 100 * 100:,}+"  # never the exact count
+             if more >= 100 else str(more))
         html += (f'<p class="meta">{n} more deal{"" if more == 1 else "s"} on the live '
                  "wall and in the categories above.</p>")
     if stubs:
@@ -727,7 +728,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     best_path = "/best-deals-today/"
     best_title = f"Best deals today ({_date(now, full=True)}) | wowpriced"
     n = sum(d.get("status") == "alive" for d in teaser)
-    count = f"{n // 100 * 100:,}+" if n >= 100 else str(n)
+    # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
+    count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
     best_rows = front_page_mix(live, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
@@ -741,7 +743,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     for path, (name, rows) in browse_pages.items():
         heading = f"{name} deals today" if path in stores else f"{name} today"
         title = f"{heading} ({_date(now, full=True)}) | wowpriced"
-        count = f"{len(rows) // 100 * 100:,}+" if len(rows) >= 100 else str(len(rows))
+        count = ("1,000+" if len(rows) >= 1000 else f"{len(rows) // 100 * 100:,}+"
+                 if len(rows) >= 100 else str(len(rows)))
         pcts = [float(d["pct_at_checkout"]) for d in rows if d.get("pct_at_checkout") is not None]
         intro = f"{count} live deals right now"
         if path in stores and pcts:

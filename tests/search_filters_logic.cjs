@@ -117,7 +117,7 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   ctx.state.deals=Array.from({length:1637},()=>ninja);
   // The published metadata renderer sets the rounded live count placeholder.
   vm.runInContext(snippet('    var live = state.deals.filter', '    document.getElementById("tagline").textContent'),ctx);
-  assert.equal(element('q').placeholder,'Search 1,600+ deals');
+  assert.equal(element('q').placeholder,'Search 1,000+ deals');
   ctx.state.deals=payload.deals;
   handlers['window:pageshow']({persisted:false}); await flush(); assert.equal(requests.length,0);
   handlers['window:pageshow']({persisted:true}); await flush();

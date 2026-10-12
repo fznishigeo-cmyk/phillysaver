@@ -1400,7 +1400,8 @@ def test_visitors_see_a_rounded_deal_count(db, cfg, tmp_path):
     assert "var total = roughCount(dealTotal())" in html
     assert "all \" + dealTotal()" not in html and "+ dealTotal() +" not in html
     alive = [{"status": "alive", "item": f"x{i}", "pct": 50} for i in range(seo._STATIC_WALL_MAX + 1432)]
-    assert "1,400+ more deals on the live wall" in seo.static_wall(alive, True)
+    assert "1,000+ more deals on the live wall" in seo.static_wall(alive, True)
+    assert "400+ more deals on the live wall" in seo.static_wall(alive[:seo._STATIC_WALL_MAX + 432], True)
 
 
 def test_fresh_drops_lead_with_photos(db, cfg, tmp_path):
@@ -1750,3 +1751,21 @@ def test_surprise_event_dispatch_and_private_fields_stay_local(tmp_path):
     assert any(event[:2] == ["event", "surprise_click"] for event in events["dataLayer"])
     assert any(event[:2] == ["trackCustom", "SurpriseClick"] for event in events["fbq"])
     assert "private" not in result.stdout and "lastVisit" not in result.stdout
+
+
+def test_tab_title_stays_short():
+    """Operator, 2026-10-12: the tab cut off at "40-"; it says only this."""
+    html = (Path(__file__).resolve().parents[1] / "dealradar/publish/templates/index.html").read_text()
+    assert "<title>wowpriced — verified deals</title>" in html
+    assert "document.title" not in html
+
+
+def test_shown_counts_top_out_at_1000():
+    """Operator, 2026-10-12: "1,000+ live deals" and keep it that way."""
+    import subprocess
+    html = (Path(__file__).resolve().parents[1] / "dealradar/publish/templates/index.html").read_text()
+    start = html.index("  function roughCount(n) {")
+    fn = html[start:html.index("\n  }\n", start) + 4]
+    js = fn + "console.log([42, 140, 999, 1000, 2140, 9000].map(roughCount).join('|'));"
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout.strip()
+    assert out == "42|100+|900+|1,000+|1,000+|1,000+"

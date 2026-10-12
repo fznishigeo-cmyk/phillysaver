@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Install Playwright Chromium
@@ -68,7 +68,7 @@ jobs:
         run: node scripts/lighthouse_summary.js lighthouse-reports/home.json lighthouse-reports/hub.json lighthouse-reports/deal.json lighthouse-reports/best-today.json
       - name: Upload Lighthouse reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: lighthouse-reports
           path: lighthouse-reports/*.json

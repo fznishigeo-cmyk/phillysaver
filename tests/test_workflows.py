@@ -103,7 +103,7 @@ def test_browser_artifacts_survive_failed_checks(workflow, name, artifact_path):
     assert doc["permissions"] == {"contents": "read"}
     steps = single_job(doc)["steps"]
     upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))
-    assert upload["uses"] == "actions/upload-artifact@v4"
+    assert upload["uses"] == "actions/upload-artifact@v6"
     assert upload["if"] == "always()"
     assert upload["with"] == {"name": name, "path": artifact_path, "retention-days": 3}
 
@@ -115,7 +115,7 @@ def test_lighthouse_schedule_versions_pages_and_gate():
     assert "workflow_dispatch" in on
     steps = single_job(doc)["steps"]
     node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
-    assert node["uses"] == "actions/setup-node@v4" and str(node["with"]["node-version"]) == "20"
+    assert node["uses"] == "actions/setup-node@v5" and str(node["with"]["node-version"]) == "20"
     body = "\n".join(run_commands(doc))
     for needle in ("playwright@1.48.2", "npx playwright install --with-deps chromium",
                    "npx --yes lighthouse@12.6.1", "CHROME_PATH=", "chromium.executablePath()",
@@ -174,10 +174,10 @@ def test_hourly_shape() -> None:
     steps = job["steps"]
     uses = [s.get("uses", "") for s in steps]
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout@"))
-    assert checkout["uses"] == "actions/checkout@v4"
+    assert checkout["uses"] == "actions/checkout@v5"
     assert checkout["with"]["fetch-depth"] == 0
     setup = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
-    assert setup["uses"] == "actions/setup-python@v5"
+    assert setup["uses"] == "actions/setup-python@v6"
     assert str(setup["with"]["python-version"]) == "3.12"
     assert setup["with"]["cache"] == "pip"
 
@@ -264,7 +264,7 @@ def test_deploy_subscribe_worker_shape() -> None:
     }
     steps = job["steps"]
     node = next(s for s in steps if s.get("uses", "").startswith("actions/setup-node@"))
-    assert node["uses"] == "actions/setup-node@v4"
+    assert node["uses"] == "actions/setup-node@v5"
     assert str(node["with"]["node-version"]) == "20"
 
     body = "\n".join(run_commands(doc))

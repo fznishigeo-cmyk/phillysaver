@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "091605037b0d16d46cc57453b018760f059d8ce1ea370bb01b70e9b2339d209d"),
-    (False, 49, "bd63a6c4a491bf7ae247dec990869ef045c65f4c4fb3b5976edcdd9d81ff3ce6"),
-    (True, 0, "a4208eedc6f2dc7611c38940391e97dabcaa142e753f8257a1ce2d30a9f97b28"),
-    (True, 49, "7fe70c6dd27785274b915075c2ba745ca496c12ffba30420e11888de945be8eb"),
+    (False, 0, "71e3d2bcbb035dda6678b94af25a4cae3383e72e0ed952736023dcb56496450a"),
+    (False, 49, "f328d9ba4307e4f3244115f404801e43b3c16fc2431af275b0d666aa1e030339"),
+    (True, 0, "2f95acbae49423a77f08bf1120776d6e16765b2d45d23134f415dd87a8e6cfed"),
+    (True, 49, "686aee82992afa451855beebc73a56fc3a6e79ccf199b27b991f61abf8f20100"),
 ])
 def test_support_off_index_bytes_match_task035_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Keep task 035's baseline after removing task 037's head-only hint.

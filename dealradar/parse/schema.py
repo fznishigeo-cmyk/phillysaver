@@ -190,6 +190,18 @@ class LLMDeal(BaseModel):
                 return None
         return v
 
+    @field_validator("product_url")
+    @classmethod
+    def _bare_url(cls, v: str) -> str:
+        # Posts show links as "anchor text (https://...)"; a model that
+        # copies the whole thing gets just the URL (live, 2026-10-12).
+        v = v.strip()
+        if v.startswith(("http://", "https://")):
+            return v
+        m = re.search(r"\((https?://[^\s()]+)\)\s*$", v) or \
+            re.search(r"https?://[^\s()]+", v)
+        return m.group(m.lastindex or 0) if m else v
+
     @field_validator("online_only")
     @classmethod
     def _norm_online_only(cls, v: str) -> str:

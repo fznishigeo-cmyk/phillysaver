@@ -67,6 +67,13 @@ class TestLLMModels:
         with pytest.raises(ValidationError):
             LLMDeal(store="Amazon")  # item missing entirely
 
+    def test_product_url_copied_with_its_anchor_text_keeps_the_url(self):
+        url = "https://slickdeals.net/click?lno=30&trd=amazon%20com%20dp%20B07GQR6SDW"
+        for raw, want in ((f"amazon.com ({url})", url), (f" {url} ", url),
+                          (f"Buy here {url}", url), ("amazon.com", "amazon.com"),
+                          ("", "")):
+            assert LLMDeal(item="Widget", store="Amazon", product_url=raw).product_url == want
+
     def test_vocabulary_fields_normalize_instead_of_rejecting(self):
         # Out-of-vocabulary values collapse to safe defaults (a strict Literal
         # schema was rejected by the structured-output API as too complex, and
