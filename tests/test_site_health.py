@@ -149,9 +149,52 @@ def test_section_runs_without_secrets_and_logs_only_status(clock, monkeypatch, c
     assert status["site_health"] == ("error" if fail else "ok")
     assert [r.message for r in caplog.records if r.name == "dealradar.growth" and r.message.startswith("site_health:")] == [expected]
     assert "private-token" not in caplog.text and "private response" not in caplog.text
+    _, text = report.build_report(AppConfig(), data, status, NOW.date())
+    if fail:
+        assert text.count("Get deal links: not available") == 1
+    else:
+        assert "Get deal links: 0 Amazon (tagged), 0 other stores, 0 source posts, 1 none" in text
     if not fail:
-        _, text = report.build_report(AppConfig(), data, status, NOW.date())
         assert text.index("== Site health ==") < text.index("Sections:")
+
+
+def test_money_link_mix_reuses_live_json_and_lists_top_five_hosts(clock):
+    tag = "our-store-20"
+    post = "https://source.example/private-post"
+    deals = [
+        deal(url=f"https://www.amazon.com/dp/X?tag={tag}"),
+        deal(url="https://amazon.com/dp/Y?tag=someone-20"),
+        deal(url="https://amzn.to/private-short"),
+        deal(url=post, credits=[{"url": post}], needs_steps=True),
+        deal(),
+    ]
+    deals += [deal(url=f"https://www.store{i}.example/private-product")
+              for i in range(7) for _ in range(7 - i)]
+    deals += [dict(status="dead", alive=False, url="https://dead.example/"),
+              dict(status="alive", locked=True, url="https://locked.example/")]
+    fake = PublicSite(deals)
+    cfg = AppConfig(custom_domain="shop.example", affiliate_amazon_tag=tag)
+    with httpx.Client(transport=httpx.MockTransport(fake)) as client:
+        health = site_health.check(client, cfg, NOW)
+    assert health["link_mix"]["other_store"] == 28
+    assert health["link_mix"]["amazon_untagged_flag"] is True
+    _, text = report.build_report(cfg, {"site_health": health}, {"site_health": "ok"}, NOW.date())
+    money = text.split("== Money ==\n")[1]
+    assert money.startswith("Get deal links: 1 Amazon (tagged), 28 other stores, 1 source posts, 1 none\n")
+    assert money.splitlines()[1] == (
+        "Other store hosts: store0.example 7, store1.example 6, store2.example 5, "
+        "store3.example 4, store4.example 3")
+    assert "⚠ Amazon links: 1 untagged, 1 short" in money
+    assert "store5.example" not in money and "store6.example" not in money
+    assert "private-" not in text and "someone-20" not in text
+    assert sum(req.url.path == "/deals.json" for req, _ in fake.requests) == 1
+    assert all(req.url.host == "shop.example" for req, _ in fake.requests)
+
+
+def test_money_link_mix_missing_site_is_one_line():
+    _, text = report.build_report(AppConfig(), {}, {"site_health": "skipped"}, NOW.date())
+    assert text.count("Get deal links: not available") == 1
+    assert "Other store hosts:" not in text and "Amazon links:" not in text
 
 
 def test_get_fallback_honors_robots(clock):

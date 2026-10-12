@@ -12,6 +12,7 @@ import hashlib
 import logging
 import re
 import shutil
+from collections import Counter
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -97,6 +98,42 @@ def rewrite_affiliate(url: str, amazon_tag: str = "") -> str:
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
     query.append(("tag", amazon_tag))
     return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "") -> dict[str, Any]:
+    """Count public live Get deal destinations, without fetching or rewriting.
+
+    Pass the configured Store ID to distinguish our tag from another source's.
+    Locked stubs and ended deals have no live public Get deal link to count.
+    """
+    counts = dict.fromkeys(("amazon_tagged", "amazon_untagged", "amazon_short",
+                            "source_post", "other_store", "none"), 0)
+    stores: Counter[str] = Counter()
+    for deal in deals:
+        if deal.get("locked") or not deal.get("alive", deal.get("status") == "alive"):
+            continue
+        url = deal.get("url") or ""
+        try:
+            parts = urlsplit(url)
+            host = (parts.hostname or "").lower().removeprefix("www.")
+        except ValueError:
+            host = ""
+        if not host or parts.scheme not in ("http", "https"):
+            bucket = "none"
+        elif host in {"amazon.com", "smile.amazon.com"}:
+            ours = bool(amazon_tag and parts.scheme == "https"
+                        and ("tag", amazon_tag) in parse_qsl(parts.query))
+            bucket = "amazon_tagged" if ours else "amazon_untagged"
+        elif host in {"amzn.to", "a.co", "link.amazon"}:
+            bucket = "amazon_short"
+        elif any(url == c.get("url") for c in deal.get("credits") or []):
+            bucket = "source_post"
+        else:
+            bucket = "other_store"
+            stores[host] += 1
+        counts[bucket] += 1
+    return {**counts, "by_store": dict(sorted(stores.items(), key=lambda x: (-x[1], x[0]))[:10]),
+            "amazon_untagged_flag": bool(amazon_tag and counts["amazon_untagged"])}
 
 
 def _headline(deal: dict[str, Any]) -> str:
@@ -512,4 +549,5 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 len(serialized), locked_count, out)
     return {"published": len(serialized), "out_dir": str(out),
+            "link_mix": link_mix(teaser, amazon_tag),
             "full_payload": full_doc, "health": health_doc}

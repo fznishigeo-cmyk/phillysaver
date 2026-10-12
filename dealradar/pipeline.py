@@ -1614,6 +1614,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        summary["link_mix"] = site_res.get("link_mix", {})
         # Source health is the operator's only: the run's GitHub Actions
         # summary (private to the repository), never the public site.
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")

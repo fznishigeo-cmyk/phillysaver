@@ -11,7 +11,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
-from dealradar.publish.site import _serialize_deal, render_site, rewrite_affiliate
+from dealradar.publish.site import _serialize_deal, link_mix, render_site, rewrite_affiliate
 from dealradar.util import iso
 
 NOW = datetime(2026, 10, 9, 14, 0, 0, tzinfo=timezone.utc)
@@ -184,6 +184,24 @@ def test_dead_deal_serialized_as_not_alive(db, cfg, tmp_path):
                 deals=[make_deal(status="dead")], last_run=None)
     doc = json.loads((out / "deals.json").read_text(encoding="utf-8"))
     assert doc["deals"][0]["alive"] is False
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_link_mix_counts_only_public_live_payload(db, cfg, tmp_path, closed):
+    cfg.affiliate_amazon_tag = "our-store-20"
+    cfg.paywall_enabled = closed
+    cfg.paywall_teaser_count = 1
+    out = tmp_path / "site"
+    result = render_site(db, cfg, NOW, out_dir=out, deals=[
+        make_deal(dedupe_key="amazon", canonical_url="https://amazon.com/dp/X", codes=[]),
+        make_deal(dedupe_key="post"),
+        make_deal(dedupe_key="dead", status="dead"),
+    ])
+    doc = json.loads((out / "deals.json").read_text())
+    assert result["link_mix"] == link_mix(doc["deals"], cfg.affiliate_amazon_tag)
+    assert result["link_mix"]["amazon_tagged"] == 1
+    assert result["link_mix"]["source_post"] == (0 if closed else 1)
+    assert "link_mix" not in doc["meta"]
 
 
 def test_zero_deals_still_writes_valid_json_and_templates(db, cfg, tmp_path):

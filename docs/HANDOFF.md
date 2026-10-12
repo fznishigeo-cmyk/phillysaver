@@ -140,6 +140,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   hourly checks added. Suite: 1,368 passed; 7 existing Stripe workflow tests
   fail because this sandbox denies local server sockets. Re-run unrestricted
   before merge; no commit or push made.
+- **Get deal link mix (Codex task 024, local; not committed or pushed):**
+  fast/hourly summaries count all six live public link buckets, top 10
+  other-store hosts and missing Amazon tags. Morning Money reuses the live
+  deals.json for counts/top 5 hosts, or one unavailable line. Offline tests
+  cover totals, filtering and output (253 focused passed); full suite:
+  1,379 passed, 7 existing Stripe workflow tests blocked by sandbox socket
+  permissions, 1 deselected. Full green verification and review/merge remain.
 - **AI spend under $6/day (Codex task 020, merged 2026-10-12):** the critic
   judges up to `parse.critic_batch_size` (8) deals per Sonnet call with
   reasons cut to 120 characters, and reuses a stored verdict for the same
