@@ -40,6 +40,7 @@ class _APIError(Exception):
     def __init__(self, status: int | None = None, code: int | None = None, where: str = "",
                  reason: str = ""):
         self.status = status
+        self.code = code
         text = f"HTTP {status}" if status is not None else "request failed"
         if code is not None:
             text += f" code {code}"
@@ -193,28 +194,60 @@ def _access_token(db, cfg, api: _API, now: datetime) -> str | None:
     return auth.get("access_token")
 
 
+_BOARD_NAME_TAKEN = 58  # "You already have a board with this name!"
+
+
+def _same_name(a: str, b: str) -> bool:
+    return " ".join(str(a or "").split()).casefold() == " ".join(str(b or "").split()).casefold()
+
+
+def _find_board(api: _API, headers: dict, name: str, privacy: str = "") -> dict | None:
+    bookmark = None
+    seen = set()
+    while True:
+        params = {"bookmark": bookmark} if bookmark else {}
+        if privacy:
+            params["privacy"] = privacy
+        try:
+            data = api.request("GET", "/boards", headers=headers, params=params)
+        except _APIError:
+            if privacy:
+                return None  # the extra privacy filter is a best-effort second look
+            raise
+        board = next((b for b in data.get("items", []) if _same_name(b.get("name"), name)), None)
+        if board:
+            return board
+        bookmark = data.get("bookmark")
+        if not bookmark:
+            return None
+        if bookmark in seen:
+            raise _APIError()
+        seen.add(bookmark)
+
+
 def _board(db, cfg, api: _API, headers: dict) -> str:
     name = cfg.pinterest.get("board_name", "Deals up to 90% off")
     environment = _environment(cfg)
     board = _meta(db, "pinterest_board")
     if board.get("name") == name and board.get("environment") == environment and board.get("id"):
         return board["id"]
-    bookmark = None
-    seen = set()
-    while True:
-        data = api.request("GET", "/boards", headers=headers,
-                           params={"bookmark": bookmark} if bookmark else {})
-        board = next((b for b in data.get("items", []) if b.get("name") == name), None)
-        if board:
-            break
-        bookmark = data.get("bookmark")
-        if not bookmark:
+    board = _find_board(api, headers, name)
+    if not board:
+        try:
             board = api.request("POST", "/boards", headers=headers,
                                 json={"name": name, "privacy": "PUBLIC"})
-            break
-        if bookmark in seen:
-            raise _APIError()
-        seen.add(bookmark)
+        except _APIError as error:
+            if error.code != _BOARD_NAME_TAKEN:
+                raise
+            # Pinterest says the name is taken but the default listing does not
+            # show it (a secret board, or one made outside this environment):
+            # look through every board, else use a clearly related name.
+            board = _find_board(api, headers, name, privacy="ALL")
+            if not board:
+                alt = f"{name} (wowpriced)"
+                board = _find_board(api, headers, alt) or api.request(
+                    "POST", "/boards", headers=headers, json={"name": alt, "privacy": "PUBLIC"})
+                log.info("pinterest: board name taken but not listed; using %r", alt)
     board_id = str(board["id"])
     db.meta_set("pinterest_board", json.dumps({
         "id": board_id, "name": name, "environment": environment,

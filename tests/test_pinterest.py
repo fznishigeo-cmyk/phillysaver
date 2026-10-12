@@ -371,3 +371,33 @@ def test_error_names_status_code_endpoint_and_a_masked_reason(monkeypatch):
     with pytest.raises(pinterest._APIError) as caught:
         api.request("POST", "/oauth/token", data={"code": "c"})
     assert str(caught.value) == "HTTP 400 code 58 (POST /oauth/token)"
+
+
+@pytest.mark.parametrize("hidden_board_listed", [True, False])
+def test_board_name_taken_but_unlisted_finds_it_or_uses_a_related_name(db, cfg, hidden_board_listed):
+    seed_auth(db)
+    published(db, cfg)
+    calls = []
+    default_handler = api_handler(db, calls)
+
+    def handle(request):
+        if request.url.path == "/v5/boards" and request.method == "GET":
+            calls.append(request)
+            if request.url.params.get("privacy") == "ALL" and hidden_board_listed:
+                return httpx.Response(200, json={"items": [{"id": "board-secret",
+                                                            "name": " deals UP to 90% off "}]})
+            return httpx.Response(200, json={"items": []})
+        if request.url.path == "/v5/boards":
+            calls.append(request)
+            name = json.loads(request.content)["name"]
+            if name == "Deals up to 90% off":
+                return httpx.Response(400, json={"code": 58, "message": "Try a different name."})
+            assert name == "Deals up to 90% off (wowpriced)"
+            return httpx.Response(201, json={"id": "board-alt"})
+        return default_handler(request)
+
+    assert pinterest.post(db, cfg, transport=httpx.MockTransport(handle), now=NOW) == 0
+    board = json.loads(db.meta_get("pinterest_board"))
+    assert board["id"] == ("board-secret" if hidden_board_listed else "board-alt")
+    assert board["name"] == cfg.pinterest["board_name"]
+    assert len(json.loads(db.meta_get("pinterest_posted"))) == 2
