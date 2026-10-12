@@ -152,6 +152,19 @@ Keep this file current: whoever stops working updates it in their last commit.
   an address). Hourly site check step 10 (desktop): every https amazon.com
   deal URL carries exactly one `tag=<affiliate.amazon_tag>` and the
   disclosure has the Amazon Associates line.
+- **Deal pages + Best deals today (Codex task 021, merged 2026-10-12):**
+  every public live deal gets `/deal/<slug>-<id8>/` (id8 = sha256 of the
+  dedupe key; the path is remembered in db meta `seo_deal_paths`, so a
+  renamed item keeps its URL; cap `seo.deal_pages_max` 3000, best rank
+  first): facts only, no images, the regular price labeled by who stated it
+  (`_basis_label`: Keepa's 90-day average, else "as stated by <source>"),
+  Get deal with the deals.json URL (tagged) and the disclosure under it,
+  6 related same-hub deals in key order (stable bytes while the wall
+  re-ranks), JSON-LD Product/Offer. Ended deals keep a noindex page until
+  their row is deleted. `/best-deals-today/` lists the top 30. Static card
+  titles link to deal pages; the sitemap and IndexNow list alive pages; the
+  hourly check reads one deal page and best-today. Verified in Chromium
+  (desktop + phone, 0 errors).
 - **Hourly site check walks the site like a visitor (Codex task 018, merged
   2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
   (cards, clock, tagline, no JS errors), load-more, a category tab and back,

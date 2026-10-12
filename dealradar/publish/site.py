@@ -461,7 +461,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
               "contact.html", "careers.html", "privacy.html"]
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
-    seo.publish(db, cfg, now, out, teaser, site_url, public)
+    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")

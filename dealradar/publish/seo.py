@@ -1,12 +1,11 @@
-"""Search engines: the server-rendered public wall, the category hubs
-(/deals/<slug>/), the 404 page, Cloudflare's _headers, sitemap.xml and the
-IndexNow due-list.
+"""Search engines: the public wall, category hubs, deal landing pages,
+Best deals today, the 404 page, Cloudflare's _headers, sitemap and IndexNow.
 
-Every public byte here comes from the teaser render_site already built
+Live deal facts come from the teaser render_site already built
 (docs/paywall.md): free deals in full, locked deals only as a count and a %
 range, never a name, price, link or photo. Static HTML carries no images at
-all. Nothing here adds a DB row: the hub stats only read, and IndexNow keeps
-one meta key.
+all. Ended pages retain previously public facts until the row is deleted.
+Hub stats only read; IndexNow and the stable deal paths each keep a meta key.
 """
 
 from __future__ import annotations
@@ -16,8 +15,10 @@ import json
 import logging
 import math
 import re
+import shutil
 import statistics
-from datetime import datetime, timedelta
+import unicodedata
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -112,7 +113,7 @@ def _store_hue(store: str) -> int:
     return h
 
 
-def card_html(d: dict[str, Any]) -> str:
+def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None) -> str:
     """One free or dead deal as the wall draws it (index.html cardHtml), with
     the store tile in place of the photo: item, store, price, was-price, %
     off, badge, product link and the "via Source" credit links. Never called
@@ -138,7 +139,9 @@ def card_html(d: dict[str, Any]) -> str:
         price += f' <s>${float(d["regular_price"]):.2f}</s>'
     if not dead and d.get("abs_savings") is not None:
         price += f' <span class="save">save ${float(d["abs_savings"]):.2f}</span>'
-    title = (f'<a href="{e(url)}" rel="sponsored noopener">{e(d.get("item"))}</a>'
+    page = (deal_paths or {}).get(str(d.get("key") or "")[:8])
+    title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page else
+             f'<a href="{e(url)}" rel="sponsored noopener">{e(d.get("item"))}</a>'
              if url else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip">{e(store)}</span>'
@@ -180,7 +183,8 @@ def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
     return f"{n} more deal{'' if n == 1 else 's'} {where}{rng}, members only"
 
 
-def static_wall(teaser: list[dict[str, Any]], open_access: bool = False) -> str:
+def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
+                deal_paths: dict[str, str] | None = None) -> str:
     """index.html's #content as plain HTML at publish time (the page's
     script replaces it with the live wall): the free deals (the top
     _STATIC_WALL_MAX), one line per store for the locked ones, and the dead
@@ -199,7 +203,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False) -> str:
         return html + '<p class="empty">No qualifying deals right now</p>'
     html += '<h2 class="secth">Verified deals right now</h2>'
     if free:
-        html += '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>"
+        html += '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>"
     if more:
         n = f"{more // 100 * 100:,}+" if more >= 100 else str(more)  # never the exact count
         html += (f'<p class="meta">{n} more deal{"" if more == 1 else "s"} on the live '
@@ -214,7 +218,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False) -> str:
                            for k, v in rows) + "</ul>")
     if dead:
         html += ('<h2 class="secth missed">Just missed</h2><div class="grid">'
-                 + "".join(card_html(d) for d in dead) + "</div>")
+                 + "".join(card_html(d, deal_paths) for d in dead) + "</div>")
     return html
 
 
@@ -276,7 +280,8 @@ def _hub_copy(cfg) -> dict[str, dict[str, str]]:
 
 def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               rows: list[dict[str, Any]], stats: dict[str, Any], indexable: bool,
-              site_url: str, open_access: bool = False) -> str:
+              site_url: str, open_access: bool = False,
+              deal_paths: dict[str, str] | None = None) -> str:
     """One hub: its copy, our 7-day numbers, the category's free deals (the
     top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
@@ -290,12 +295,12 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
             if n else "No deal in this category passed our checks in the last 7 days.")
     if open_access:
         deals = "<h2>Deals right now</h2>" + (
-            '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>" if free else
+            '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>" if free else
             '<p class="muted">No deal in this category right now; new deals land at every '
             'drop on <a href="/">the live wall</a>.</p>')
     else:
         deals = "<h2>Free right now</h2>" + (
-            '<div class="grid">' + "".join(card_html(d) for d in free) + "</div>" if free else
+            '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>" if free else
             '<p class="muted">No free deal in this category right now; the free deals change '
             'at every drop on <a href="/">the live wall</a>.</p>')
     if more:
@@ -304,10 +309,174 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
     if stubs:
         deals += f'<p class="muted">{escape(_locked_line(stubs, f"in {label}"))}.</p>'
     return _fill(template, TITLE=escape(copy["title"]), DESCRIPTION=escape(copy["description"]),
+                 PAGE_TITLE=escape(copy["title"] + " — wowpriced"),
+                 CANONICAL=escape(f"{site_url}/deals/{slug}/"), EXTRA_HEAD="", TABS="",
                  ROBOTS="" if indexable else '<meta name="robots" content="noindex">\n',
                  SITE_URL=site_url, SLUG=slug, INTRO=escape(copy["intro"]),
                  STATS=f'<div class="box"><p>{line}</p></div>', DEALS=deals,
                  HUB_LINKS=_hub_links())
+
+
+def deal_path(item: str, id8: str) -> str:
+    """ASCII words, cut at a word within 60 characters; identity is the hash."""
+    ascii_item = unicodedata.normalize("NFKD", item).encode("ascii", "ignore").decode().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_item).strip("-")
+    if len(slug) > 60:
+        slug = slug[:61].rsplit("-", 1)[0] if "-" in slug[:61] else ""
+    return f"/deal/{slug or 'deal'}-{id8}/"
+
+
+def _date(dt: datetime, full: bool = False) -> str:
+    dt = dt.astimezone(timezone.utc)
+    return f"{dt.strftime('%B' if full else '%b')} {dt.day}, {dt.year}"
+
+
+def _landing_page(template: str, title: str, heading: str, description: str,
+                  path: str, site_url: str, content: str, *, dead: bool = False,
+                  extra_head: str = "", intro: str = "") -> str:
+    return _fill(template, TITLE=escape(heading), PAGE_TITLE=escape(title),
+                 DESCRIPTION=escape(description), CANONICAL=escape(site_url + path),
+                 ROBOTS='<meta name="robots" content="noindex">\n' if dead else "",
+                 EXTRA_HEAD=extra_head, INTRO=escape(intro), STATS="", DEALS=content,
+                 TABS='<nav class="hrow" aria-label="categories">' + tabs_html() + '</nav>',
+                 HUB_LINKS=_hub_links())
+
+
+def _basis_label(d: dict[str, Any]) -> str:
+    """What the regular price is, from who reported it: never a bare "list
+    price" the deal did not claim (Keepa's basis is its 90-day average)."""
+    first = str(((d.get("credits") or [{}])[0] or {}).get("name") or "")
+    used = bool({"used", "open_box"} & set(d.get("conditions") or []))
+    if first == "Keepa":
+        return "new price tracked by Keepa" if used else "90-day average on Amazon, tracked by Keepa"
+    if used:
+        return f"new-condition price, as stated by {first}" if first else "new-condition price"
+    return f"as stated by {first}" if first else "as stated by the source"
+
+
+def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[dict[str, Any]]:
+    """Up to 6 live deals from the same hub, the ones that follow this deal in
+    key order: stable while the wall re-ranks, so a page only changes when a
+    neighbour comes or goes (fewer re-uploads and IndexNow resubmissions)."""
+    ring = sorted((r for r in live if r.get("key") != d.get("key") and in_group(r, group)),
+                  key=lambda r: str(r.get("key")))
+    after = [r for r in ring if str(r.get("key")) > str(d.get("key"))]
+    return (after + [r for r in ring if str(r.get("key")) < str(d.get("key"))])[:6]
+
+
+def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
+               disclosure: str, live: list[dict[str, Any]], paths: dict[str, str]) -> str:
+    dead = d.get("status") == "dead"
+    item, store = str(d.get("item") or ""), str(d.get("store") or "")
+    pct = _pct(d["pct_at_checkout"]) if d.get("pct_at_checkout") is not None else None
+    suffix = f" — {pct}% off at {store} | wowpriced" if pct is not None else f" at {store} | wowpriced"
+    title = item[:max(0, 70 - len(suffix))].rstrip() + suffix
+    # Use the category's hub; Used & Open-Box is a condition hub, not a category.
+    label, group, slug = next((g for g in CATGROUPS[2:] if in_group(d, g[1])), CATGROUPS[-1])
+    hub = f'<a href="{hub_href(slug)}">{escape(label)} deals</a>'
+    content = '<p class="ended"><strong>This deal has ended</strong></p>' if dead else ""
+    content += (f'<div class="ph" style="background:hsl({_store_hue(store)},42%,62%)" '
+                f'aria-hidden="true"><span>{escape((store or "deal")[:18])}</span></div>'
+                f'<p>Store: {escape(store)}</p>')
+    facts = [f"at {store}"]
+    if d.get("final_price") is not None:
+        price = f'{float(d["final_price"]):.2f}'
+        content += f'<p>Sale price: <strong>${price}</strong></p>'
+        facts.insert(0, f"${price}")
+    if d.get("regular_price") is not None:
+        regular = f'{float(d["regular_price"]):.2f}'
+        basis = _basis_label(d)
+        content += f'<p>Regular price: ${regular} ({escape(basis)})</p>'
+        facts.append(f"regular price ${regular} ({basis})")
+    if pct is not None:
+        content += f'<p>{pct}% off'
+        content += (f' · save ${float(d["abs_savings"]):.2f}'
+                    if d.get("abs_savings") is not None else "") + '</p>'
+    conds = [str(c).replace("_", " ") for c in d.get("conditions") or []]
+    if conds:
+        content += '<p>Condition: ' + escape(", ".join(conds)) + '</p>'
+    badge = d.get("badge") or "unverified"
+    explanation = {"history-checked": "The price was checked against price history.",
+                   "corroborated": "Two or more independent sources confirmed this price."}
+    content += (f'<p>{_TIER_LABEL.get(badge, "single source")}: '
+                f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
+    if d.get("needs_steps"):
+        content += '<div class="how"><h2>How to get this price</h2>'
+        content += '<ol>' + ''.join(f'<li>{escape(str(s))}</li>' for s in d.get("how") or []) + '</ol>'
+        content += ''.join(f'<p>Code: <code>{escape(str(c))}</code></p>' for c in d.get("codes") or [])
+        if not (d.get("how") or d.get("codes")):
+            content += '<p>The steps are in the deal post.</p>'
+        content += '</div>'
+    seen = parse_iso(d.get("first_seen_at") or "")
+    if seen:
+        content += f'<p>First seen: <time datetime="{iso(seen)}">{_date(seen)}</time> (UTC)</p>'
+    credits = ', '.join(
+        f'<a href="{escape(_http(c.get("url")))}" rel="noopener">{escape(str(c.get("name") or ""))}</a>'
+        if _http(c.get("url")) else escape(str(c.get("name") or ""))
+        for c in d.get("credits") or [])
+    content += f'<p>Sources: {credits}</p>'
+    url = _http(d.get("url"))
+    if not dead and url:
+        content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener">Get deal</a>'
+                    f'<p class="disclosure">{escape(disclosure)}</p>')
+    content += f'<p>Browse {hub}.</p>'
+    related = [] if dead else _related(d, live, group)
+    if related:
+        content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
+            card_html(r, paths) for r in related) + '</div>'
+    product: dict[str, Any] = {"@context": "https://schema.org", "@type": "Product", "name": item}
+    if not dead and d.get("final_price") is not None:
+        product["offers"] = {"@type": "Offer", "price": f'{float(d["final_price"]):.2f}',
+                             "priceCurrency": "USD", "availability": "https://schema.org/InStock",
+                             "url": site_url + path}
+    ld = '<script type="application/ld+json">' + json.dumps(product).replace('<', '\\u003c') + '</script>'
+    return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
+                         '<div class="deal-detail">' + content + '</div>', dead=dead, extra_head=ld)
+
+
+def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
+                source_deals: list[dict[str, Any]]) -> tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]:
+    """Remember paths even through locked rotations; retain ended rows until deletion."""
+    from .site import _serialize_deal
+
+    try:
+        previous = json.loads(db.meta_get("seo_deal_paths") or "{}")
+    except ValueError:
+        previous = {}
+    previous = previous if isinstance(previous, dict) else {}
+    # State, not the output directory: deployments start with a fresh site folder.
+    raw = {hashlib.sha256(str(d["dedupe_key"]).encode()).hexdigest()[:8]: d
+           for d in db.all_deals() + source_deals}
+    remembered = {k: p for k, p in previous.items() if k in raw and isinstance(p, str)
+                  and re.fullmatch(r"/deal/[a-z0-9-]+-" + re.escape(k) + r"/", p)}
+    public = {str(d.get("key") or "")[:8]: d for d in teaser if not d.get("locked")}
+    # source_deals is in rank order; teaser rotation may move free picks forward.
+    live = [public[k] for k in raw if k in public and public[k].get("status") == "alive"]
+    order = {hashlib.sha256(str(d["dedupe_key"]).encode()).hexdigest()[:8]: i
+             for i, d in enumerate(source_deals)}
+    live.sort(key=lambda d: order.get(d["key"][:8], len(order)))
+    cap = int(getattr(cfg, "seo_deal_pages_max", 3000))
+    rows = live[:cap]
+    logger.info("seo: %d live deal pages; %d left out by seo.deal_pages_max", len(rows), max(0, len(live) - cap))
+    for k, d in raw.items():
+        if d.get("status") == "dead" and (k in remembered or k in public):
+            if k not in public:
+                d = dict(d, sightings=db.sightings_for(d["id"]))
+            rows.append(public.get(k) or _serialize_deal(d, now))
+    paths, lastmods = {}, {}
+    for d in rows:
+        k = d["key"][:8]
+        paths[k] = remembered.setdefault(k, deal_path(str(d.get("item") or ""), k))
+        lastmods[paths[k]] = raw[k].get("price_since") or d.get("first_seen_at") or ""
+    db.meta_set("seo_deal_paths", json.dumps(remembered, sort_keys=True))
+    wanted = {p.split('/')[2] for p in paths.values()}
+    for folder in (out / "deal").glob("*"):
+        if folder.name not in wanted:
+            if folder.is_dir():
+                shutil.rmtree(folder)
+            else:
+                folder.unlink()
+    return paths, rows, lastmods
 
 
 def _newest(rows: list[dict[str, Any]]) -> str:
@@ -360,14 +529,16 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
 
 
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
-            site_url: str, public: list[str]) -> None:
+            site_url: str, public: list[str], meta: dict[str, Any],
+            source_deals: list[dict[str, Any]]) -> None:
     """The search-engine side of a publish, into out: the static wall and
     tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
     sitemap.xml and the IndexNow due-list (beside out, never in it)."""
     from .paywall import is_open
 
     open_access = is_open(cfg)
-    wall = static_wall(teaser, open_access)
+    paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
+    wall = static_wall(teaser, open_access, paths)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
@@ -382,13 +553,37 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                      DROP_MINUTES=str(int(cfg.drop_minutes)))
     from .site import copy_variant
     template = copy_variant(template, open_access, bool(getattr(cfg, "support_enabled", False)))
+    live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
+    order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
+    live.sort(key=lambda d: order[d["dedupe_key"]])
+    landing_pages = {}
+    for d in deal_rows:
+        path = paths[d["key"][:8]]
+        html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths)
+        folder = out / path.strip("/")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "index.html").write_text(html, encoding="utf-8")
+        if d.get("status") == "alive":
+            landing_pages[path] = html
+    best_path = "/best-deals-today/"
+    best_title = f"Best deals today ({_date(now, full=True)}) | wowpriced"
+    n = sum(d.get("status") == "alive" for d in teaser)
+    count = f"{n // 100 * 100:,}+" if n >= 100 else str(n)
+    intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
+    best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
+                              intro, best_path, site_url,
+                              '<div class="grid">' + ''.join(card_html(d, paths) for d in live[:30]) + '</div>',
+                              intro=intro)
+    (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
+    (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")
+    landing_pages[best_path] = best_html
     floor = int(getattr(cfg, "seo_hub_min_items", 10))
     listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
     for label, group, slug in CATGROUPS[1:]:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
         indexable = stats[slug]["count"] >= floor
         html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
-                         site_url, open_access)
+                         site_url, open_access, paths)
         (out / "deals" / slug).mkdir(parents=True, exist_ok=True)
         (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
         if indexable:
@@ -409,6 +604,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     urls += "".join(f"  <url><loc>{escape(site_url)}/deals/{slug}/</loc>"
                     + (f"<lastmod>{lastmod}</lastmod>" if lastmod else "") + "</url>\n"
                     for slug, lastmod, _html in listed)
+    assert len(public) + len(listed) + len(landing_pages) <= 50_000
+    for path in landing_pages:
+        lastmod = lastmods.get(path, "")
+        urls += (f"  <url><loc>{escape(site_url + path)}</loc>"
+                 + (f"<lastmod>{escape(lastmod)}</lastmod>" if lastmod else "") + "</url>\n")
     (out / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
@@ -417,6 +617,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         pages = {f"{site_url}/{p}": wall if p == "" else (out / p).read_text(encoding="utf-8")
                  for p in public}
         pages.update({f"{site_url}/deals/{slug}/": html for slug, _lastmod, html in listed})
+        pages.update({site_url + path: html for path, html in landing_pages.items()})
         due = indexnow_due(db, cfg, now, pages)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(pages))

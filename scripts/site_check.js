@@ -177,6 +177,10 @@ async function walk(page, doc, device) {
         const response = await readSite(path), body = await response.text();
         check(response.status === 200, `HTTP ${response.status}`);
         if (kind === "html") check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+        if (kind === "deal") {
+          check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+          check(/<a\b[^>]*href=["']https?:\/\/[^"']+["'][^>]*>Get deal<\/a>/i.test(body), "missing Get deal link");
+        }
         // XML and plain text have no HTML title.
         if (kind === "xml") check(/<urlset\b/.test(body), "invalid sitemap");
         if (kind === "text") check(/User-agent:/i.test(body), "invalid robots.txt");
@@ -193,6 +197,11 @@ async function walk(page, doc, device) {
       .slice(0, 3);
     if (hubs.length < 3) problems.push("fewer than 3 category hubs in sitemap");
     for (const hub of hubs) await read(hub);
+    const deal = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim())
+      .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } });
+    if (deal) await read(deal, "deal");
+    else problems.push("no deal page in sitemap");
+    await read("best-deals-today/", "deal");
     check(!problems.length, problems.join("; "));
   });
   await step(9, "Publish freshness", async () => {
