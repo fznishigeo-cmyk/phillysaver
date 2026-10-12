@@ -17,6 +17,7 @@ CORE_DOMAINS = [
     "www.reddit.com",         # reddit OAuth token
     "oauth.reddit.com",       # reddit listings
     "api.telegram.org",       # bot sends (channel + admin alerts)
+    "graph.facebook.com",     # Facebook Page + Instagram posting
     "graph.threads.net",      # threads (feature-flagged)
     "api.woot.com",
     "meh.com",
@@ -123,6 +124,19 @@ def cmd_pinterest(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_meta(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .db import DB
+    from .publish import meta
+
+    cfg = load_config(args.config)
+    db = DB(args.db)
+    try:
+        return meta.post(db, cfg)
+    finally:
+        db.close()
+
+
 def cmd_domains(args: argparse.Namespace) -> int:
     """Print the outbound hostnames the pipeline needs (network allowlist helper)."""
     from .config import load_sources
@@ -195,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
         if command == "pinterest-connect":
             sp.add_argument("--code", required=True)
         sp.set_defaults(fn=cmd_pinterest)
+
+    sp = sub.add_parser("meta-post", help="post published top picks to Facebook and Instagram")
+    common(sp)
+    sp.set_defaults(fn=cmd_meta)
 
     sp = sub.add_parser("domains", help="print outbound hostnames for allowlists")
     sp.set_defaults(fn=cmd_domains)

@@ -142,6 +142,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Facebook/Instagram poster (Codex task 046, 2026-10-12):** `meta-post`
+  runs after Pinterest in hourly.yml; one social-state commit covers both.
+  `social.meta` in config.yaml: both networks start in **draft** (Facebook
+  only fetches the Page token; Instagram creates and checks a container but
+  never publishes; drafts are logged and kept in meta `meta_drafts`). Flip
+  `mode: live` per network after the operator approves the drafts. Live:
+  Facebook photo posts 4/day, Instagram 3/day at `hours_utc`; no prices,
+  `#ad` last. A rejected image goes to `meta_failed`; throttle/permission
+  codes never do. Token: secret `META_SYSTEM_TOKEN` (never-expiring system
+  user); `.github/workflows/meta-probe.yml` checks it read-only.
 - **Groupon-style footer + 300-card Trending (Codex task 045, 2026-10-12):**
   operator: "like groupon ... the other stuff tiny and in grey". One shared
   footer (`templates/site-footer.html/.css`) on every page: the sign-up box,

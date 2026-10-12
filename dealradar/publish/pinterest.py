@@ -9,17 +9,16 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 
 import httpx
 
 from .. import util
 from ..config import get_secret
+from .social import _candidates, _word_trim, _without_prices
 
 log = logging.getLogger(__name__)
 API_BASES = {
@@ -196,20 +195,6 @@ def _board(db, cfg, api: _API, headers: dict) -> str:
     return board_id
 
 
-def _word_trim(text: str, limit: int) -> str:
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[:limit + 1].rsplit(" ", 1)[0] if " " in text[:limit + 1] else ""
-
-
-def _without_prices(text: str) -> str:
-    # Item names can contain a quoted price or a gift-card denomination.
-    text = re.sub(r"(?:[$£€]\s*[\d,.]+|\bUSD\s*[\d,.]+|[\d,.]+\s*USD\b)", "", text,
-                  flags=re.IGNORECASE)
-    return " ".join(text.replace("$", "").split())
-
-
 def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
     item = _without_prices(str(deal.get("item") or ""))
     store = _without_prices(str(deal.get("store") or ""))
@@ -226,25 +211,6 @@ def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
         "alt_text": str(deal.get("item") or ""),
         "media_source": {"source_type": "image_url", "url": deal["image_url"]},
     }
-
-
-def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
-    out = Path(cfg.site_dir)
-    deals = json.loads((out / "deals.json").read_text())["deals"]
-    paths = _meta(db, "seo_deal_paths")
-    candidates = []
-    for deal in deals:
-        if (deal.get("locked") or deal.get("status") != "alive" or not deal.get("pick")
-                or not deal.get("dedupe_key") or deal["dedupe_key"] in posted):
-            continue
-        image = urlsplit(deal.get("image_url") or "")
-        path = paths.get(str(deal.get("key") or "")[:8], "")
-        if (image.scheme != "https" or not image.hostname
-                or not re.fullmatch(r"/deal/[a-z0-9-]+/", path)
-                or not (out / path.strip("/") / "index.html").is_file()):
-            continue
-        candidates.append((deal, path))
-    return sorted(candidates, key=lambda row: row[0]["pick"])
 
 
 def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:

@@ -344,6 +344,23 @@ social:
     pins_per_run: 2               # hourly lane
     daily_max: 20                 # per UTC day
     disclosure: "#ad"             # last word of every description
+  meta:                           # Facebook Page + Instagram (operator, 2026-10-12)
+    enabled: true
+    graph_base: "https://graph.facebook.com/v26.0"
+    page_id: "1382622794936174"   # Wowpriced (public id, not a secret)
+    ig_user_id: "17841412621006331"  # @wowpriced
+    disclosure: "#ad"
+    facebook:
+      mode: draft                 # draft | live
+      posts_per_run: 1
+      daily_max: 4                # per UTC day
+      hours_utc: [13, 17, 21, 1]  # live only: 9am 1pm 5pm 9pm New York (EDT)
+    instagram:
+      mode: draft                 # draft | live
+      posts_per_run: 1
+      daily_max: 3
+      hours_utc: [14, 19, 23]     # live only: 10am 3pm 7pm New York (EDT)
+      hashtags: "#deals #savings #wowpriced"
 
 digest:
   hour_local: 8                # 08:00 America/New_York

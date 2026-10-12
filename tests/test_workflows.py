@@ -245,13 +245,22 @@ def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
     assert steps[post]["id"] == "pinterest"
     assert steps[post]["env"] == {"PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
                                    "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}"}
-    commit = steps[post + 1]
+    meta = steps[post + 1]
+    assert meta == {
+        "name": "Post top deals to Facebook and Instagram", "id": "meta",
+        "continue-on-error": True, "env": {"META_SYSTEM_TOKEN": "${{ secrets.META_SYSTEM_TOKEN }}"},
+        "run": "python -m dealradar meta-post",
+    }
+    commit = steps[post + 2]
     assert commit is steps[-1]
     assert commit["run"] == "bash scripts/commit_state.sh"
     assert commit["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
-    assert commit["if"] == "${{ !cancelled() && steps.pinterest.outcome != 'skipped' }}"
+    assert commit["name"] == "Commit social state to data branch"
+    assert commit["if"] == ("${{ !cancelled() && (steps.pinterest.outcome != 'skipped' "
+                            "|| steps.meta.outcome != 'skipped') }}")
     assert "continue-on-error" not in commit
     assert not any("pinterest-post" in s.get("run", "") for s in single_job(load_workflow(FAST))["steps"])
+    assert not any("meta-post" in s.get("run", "") for s in single_job(load_workflow(FAST))["steps"])
 
 
 def test_fast_shape() -> None:

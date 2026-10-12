@@ -115,9 +115,16 @@ jobs:
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
         run: python -m dealradar pinterest-post
 
-      - name: Commit Pinterest state to data branch
+      - name: Post top deals to Facebook and Instagram
+        id: meta
+        continue-on-error: true
+        env:
+          META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
+        run: python -m dealradar meta-post
+
+      - name: Commit social state to data branch
         # Persist partial successes and refreshed tokens even if posting fails.
-        if: ${{ !cancelled() && steps.pinterest.outcome != 'skipped' }}
+        if: ${{ !cancelled() && (steps.pinterest.outcome != 'skipped' || steps.meta.outcome != 'skipped') }}
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/commit_state.sh
