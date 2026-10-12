@@ -141,7 +141,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/standard--><!--support--><h2>Join free and support our work</h2>
 <div class="card"><p>Every deal stays free. <a href="/join">Join free</a> for the best deals by email, starting soon. You can also <a href="subscribe.html">support our work</a> with a one-time payment of any amount; it buys nothing extra.</p></div>
 
-<!--/support--><h2>FAQ</h2>
+<!--/support--><p>Every deal links to the seller (or, when it needs extra steps, to the post that explains how) and credits the source that found it. Prices are quoted from the source word-for-word, fake "list prices" are removed, and Amazon prices are re-checked live.</p>
+
+<h2>FAQ</h2>
 <h3>Why was a deal gone within minutes?</h3>
 <p>Because the good ones are good. A 70% off price error or a deep clearance markdown
    gets found by a lot of people at once, and stock runs out. We re-check prices and
@@ -169,20 +171,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <p>It is the percent off at checkout, before any rebate. If a deal depends on a rebate
    to hit its price, the card says so.</p>
 </main>
-<footer>
-  <nav class="fnav" aria-label="site pages">
-    <a href="./">Home</a>
-    <a href="about.html">About</a>
-    <a href="how-it-works.html">How it works</a>
-    <a href="hacks.html">Deal hacks</a>
-    <a href="careers.html">Work with us</a>
-    <a href="contact.html">Contact</a>
-    <a href="/privacy.html">Privacy</a>
-  </nav>
-  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/join">Join free</a></p><!--/support-->
-  <p>Every deal links to the seller (or, when it needs extra steps, to the post that explains how) and credits the source that found it. Some outbound
-     links are the source's affiliate links.</p>
-</footer>
+{{SITE_FOOTER}}
 </div>
 <script>
 "use strict";
@@ -194,6 +183,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   .then(function (d) {
     if (d && d.meta && d.meta.api_url) {
       var sub = document.getElementById("subscribe");
+      if (!sub) return;
       sub.href = "./#signup";
       sub.style.display = "";
     }

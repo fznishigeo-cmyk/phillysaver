@@ -389,11 +389,29 @@ def test_browser_top_blocks_new_arrivals_default_and_autoload(tmp_path, cfg, db,
     assert results[0] == results[2]
     assert results[0]["ordered"][:12] != results[1]["ordered"][:12]
     assert results[3]["ordered"][0] == "k5" and results[3]["ordered"][12] == "k17"
+    source += [dict(key=f"extra{i}", status="alive", category="home", store="Amazon",
+                    pct_at_checkout=90, first_seen_at="2026-10-09T13:00:00Z") for i in range(250)]
     cases = [dict(rows=source, options=options, state={"sortKey": "top", "shown": shown, "catTab": tab})
-             for tab, shown in ((0, 60), (0, 120), (0, 180), (2, 120))]
+             for tab, shown in ((0, 60), (0, 120), (0, 180), (0, 240), (0, 300), (0, 360), (1, 300), (3, 300))]
     results = browser(tmp_path, cfg, db, cases)
-    assert [r["observed"] for r in results] == [1, 0, 0, 1]
-    assert [len(r["rendered"]) for r in results[:2]] == [60, 120]
+    assert [r["observed"] for r in results] == [1, 1, 1, 1, 0, 0, 1, 1]
+    assert [len(r["rendered"]) for r in results] == [60, 120, 180, 240, 300, 360, 300, 300]
+    assert set(results[4]["rendered"][:120]) == {f"k{i}" for i in range(120)}
+    assert results[4]["rendered"][120:150] == results[0]["ordered"][120:150]
+
+
+def test_trending_rest_is_newest_first_after_picks(tmp_path, cfg, db, options):
+    source = js_pick_rows()[:120] + [
+        dict(key="older-photo", status="alive", pct_at_checkout=90,
+             first_seen_at="2026-10-09T10:00:00Z", image_url="https://img.example/a.jpg"),
+        dict(key="newest-no-photo", status="alive", pct_at_checkout=60,
+             first_seen_at="2026-10-09T14:00:00Z"),
+        dict(key="middle-photo", status="alive", pct_at_checkout=80,
+             first_seen_at="2026-10-09T12:00:00Z", image_url="https://img.example/a.jpg"),
+    ]
+    result = browser(tmp_path, cfg, db, [dict(rows=source, options=options, state={"sortKey": "top"})])[0]
+    assert set(result["ordered"][:120]) == {f"k{i}" for i in range(120)}
+    assert result["ordered"][120:] == ["newest-no-photo", "middle-photo", "older-photo"]
 
 
 @pytest.mark.parametrize("view", [{"state": {"catTab": 2}}, {"controls": {"q": "deal"}},

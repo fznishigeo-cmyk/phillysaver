@@ -61,6 +61,8 @@ def site_template_version() -> str:
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
     html = re.sub(r"<!--support-->.*?<!--/support-->", "", html, flags=re.S)
     data = html.replace("<!--standard-->", "").replace("<!--/standard-->", "").encode()
+    data += (TEMPLATES_DIR / "site-footer.html").read_bytes()
+    data += (TEMPLATES_DIR / "site-footer.css").read_bytes()
     return hashlib.sha256(data).hexdigest()[:12]
 
 
@@ -281,24 +283,31 @@ JOIN_FORM = (
 )
 
 
-def signup_footer(html: str) -> str:
-    """Add the shared email-only footer in support mode."""
-    if "<footer>" not in html:
+def site_footer(html: str, now: datetime, disclosure: str, support: bool,
+                account: bool = False) -> str:
+    """One footer for root and nested pages, with the configured disclosure."""
+    if "{{SITE_FOOTER}}" not in html:
         return html
-    html = html.replace("<footer>", "<footer>\n" + (TEMPLATES_DIR / "footer-signup.html").read_text(encoding="utf-8"), 1)
-    html = html.replace("</style>", (TEMPLATES_DIR / "footer-signup.css").read_text(encoding="utf-8") + "</style>", 1)
-    if "window.wpSupport =" not in html:
+    footer = (TEMPLATES_DIR / "site-footer.html").read_text(encoding="utf-8")
+    footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=escape(disclosure),
+                       FOOTER_SIGNUP=(TEMPLATES_DIR / "footer-signup.html").read_text(encoding="utf-8") if support else "",
+                       ACCOUNT_FOOTER=(
+                           '<span id="footterms" hidden></span><p id="acctfoot" class="meta" hidden>Your account: '
+                           '<button type="button" id="billing" class="linkbtn">Manage membership</button></p>'
+                       ) if account else "")
+    html = html.replace("{{SITE_FOOTER}}", footer)
+    css = (TEMPLATES_DIR / "site-footer.css").read_text(encoding="utf-8")
+    if support:
+        css += (TEMPLATES_DIR / "footer-signup.css").read_text(encoding="utf-8")
+    html = html.replace("</style>", css + "</style>", 1)
+    if support and "window.wpSupport =" not in html:
         script = (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8")
         html = html.replace("</body>", "<script>" + script + "</script>\n</body>", 1)
     return html
 
 
-_SOURCE_ONLY_FOOTER = re.compile(r"Some outbound\s+links are the source's affiliate links\.")
 _SOURCE_ONLY_ABOUT = re.compile(
     r"Some\s+of those links are the source's affiliate links\. That is how they keep the lights\s+on, and we think they earned it\.")
-AFFILIATE_FOOTER = ("Some outbound links are affiliate links: wowpriced or the source that found "
-                    "the deal may earn a commission, at no extra cost to you. As an Amazon "
-                    "Associate, wowpriced earns from qualifying purchases.")
 AFFILIATE_ABOUT = ("Some of those links are affiliate links, the source's or ours: wowpriced or "
                    "the source may earn a commission, at no extra cost to you. As an Amazon "
                    "Associate, wowpriced earns from qualifying purchases. That is how the site "
@@ -306,11 +315,11 @@ AFFILIATE_ABOUT = ("Some of those links are affiliate links, the source's or our
 
 
 def affiliate_copy(html: str, amazon_tag: str) -> str:
-    """With a Store ID set, the pages' small print says wowpriced may earn too
+    """With a Store ID set, the about copy says wowpriced may earn too
     (FTC + Amazon Associates); without one it stays the source-only line."""
     if not amazon_tag:
         return html
-    return _SOURCE_ONLY_ABOUT.sub(AFFILIATE_ABOUT, _SOURCE_ONLY_FOOTER.sub(AFFILIATE_FOOTER, html))
+    return _SOURCE_ONLY_ABOUT.sub(AFFILIATE_ABOUT, html)
 
 
 def copy_variant(html: str, open_access: bool, support: bool = False) -> str:
@@ -502,6 +511,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "join-card.css").read_bytes()
                 + (TEMPLATES_DIR / "footer-signup.html").read_bytes()
                 + (TEMPLATES_DIR / "footer-signup.css").read_bytes()
+                + (TEMPLATES_DIR / "site-footer.html").read_bytes()
+                + (TEMPLATES_DIR / "site-footer.css").read_bytes()
                 + str(cfg.join_prompt).encode() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
@@ -594,8 +605,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                     f'<span>Yearly ${yearly:g}</span></label></fieldset>'
                 )
             html = html.replace("{{PLAN_CHOICES_" + place.upper() + "}}", choices)
-        if name == "index.html" and yearly > 0:
-            html = html.replace("<strong>Membership — $9.99/month", f"<strong>Membership — $9.99/month or ${yearly:g}/year")
         html = copy_variant(html, open_access, support)
         html = re.sub(r"<!--engagement-->(.*?)<!--/engagement-->",
                       lambda m: m.group(1) if cfg.engagement else "", html, flags=re.S)
@@ -611,17 +620,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if support:
             html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
             html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
-            html = html.replace("{{SUPPORT_PAGE_LABEL}}", "Join &amp; support" if link else "Join free")
-            html = html.replace("{{SUPPORT_PAGE_URL}}", "subscribe.html" if link else "/join")
             html = html.replace("{{SUPPORT_ACTION}}", (
                 f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
                 'target="_blank" rel="noopener">' + ("Support once" if monthly else "Support our work")
                 + '</a>' if link else "") + (
                 f'<a class="pwbtn btn" data-support-monthly href="{escape(monthly, quote=True)}" '
                 'target="_blank" rel="noopener">Support monthly</a>' if monthly else ""))
-            html = html.replace("{{SUPPORT_FOOT_LINK}}", (
-                f'<a data-support href="{escape(link, quote=True)}" target="_blank" '
-                'rel="noopener"><strong>Support our work</strong></a> · ' if link else ""))
             html = html.replace("{{SUPPORT_NOTE}}", (
                 f'<p class="disc muted" data-support-note>{SUPPORT_NOTE_MONTHLY if monthly else SUPPORT_NOTE}</p>'
                 if link else ""))
@@ -636,7 +640,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 'aria-labelledby="join-title" aria-describedby="join-description" tabindex="-1">'
                 + card + '</div></div>'))
             html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
-            html = signup_footer(html)
+        html = site_footer(html, now, meta["disclosure"], support,
+                           account=name == "index.html" and not support)
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

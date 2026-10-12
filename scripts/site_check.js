@@ -73,6 +73,27 @@ async function guardPage(page) {
 }
 function check(ok, reason) { if (!ok) throw new Error(reason); }
 
+function checkFooter(html, meta) {
+  const footers = [...html.matchAll(/<footer>([\s\S]*?)<\/footer>/g)];
+  check(footers.length === 1, "expected one shared footer");
+  const footer = footers[0][1], year = new Date(meta.generated_at).getUTCFullYear();
+  check(footer.includes(`© ${year} wowpriced`), "missing footer copyright");
+  const nav = (footer.match(/<nav id="footerlinks"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || "";
+  const links = [...nav.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(m => [m[1], m[2]]);
+  check(JSON.stringify(links) === JSON.stringify([
+    ["/about.html", "About"], ["/how-it-works.html", "How it works"], ["/hacks.html", "Deal hacks"],
+    ["/careers.html", "Work with us"], ["/contact.html", "Contact"],
+    ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"]
+  ]), "footer link line changed");
+  const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
+  check(footer.includes("We search the top deal sites and stores for hours every day, so you don't have to."),
+    "missing footer search note");
+  check(footer.includes(`<span id="metaline">${escape(meta.disclosure || "")}</span>`), "footer disclosure changed");
+  check(!/wowpriced is free for everyone\.|Once: any amount|Membership —|Every deal links to the seller/.test(footer),
+    "old footer copy remains");
+  if ((meta.support || {}).enabled) check(footer.includes('id="footer-signup"'), "missing footer signup");
+}
+
 async function walk(page, doc, device) {
   const results = [], errors = [];
   let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "", dealPage = "";
@@ -93,8 +114,7 @@ async function walk(page, doc, device) {
     html = await response.text();
     check(!/keepa/i.test(html + JSON.stringify(doc)), "private Amazon source in published data");
     check(!/srcwall|srcsel/.test(html), "source wall or filter still present");
-    check(html.includes("We search the top deal sites and stores for hours every day, so you don't have to."),
-      "missing footer search note");
+    checkFooter(html, doc.meta || {});
     await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
       null, { timeout: STEP_TIMEOUT_MS });
     await page.waitForTimeout(1000);
@@ -213,7 +233,10 @@ async function walk(page, doc, device) {
       try {
         const response = await readSite(path), body = await response.text();
         check(response.status === 200, `HTTP ${response.status}`);
-        if (kind === "html") check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+        if (kind === "html") {
+          check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
+          checkFooter(body, doc.meta || {});
+        }
         // XML and plain text have no HTML title.
         if (kind === "xml") check(/<urlset\b/.test(body), "invalid sitemap");
         if (kind === "text") check(/User-agent:/i.test(body), "invalid robots.txt");
@@ -285,6 +308,7 @@ async function walk(page, doc, device) {
       await page.screenshot({ path: `shots/${device}-${name}.png`, fullPage: true });
       check(response && response.status() === 200, `HTTP ${response && response.status()}`);
       const body = await response.text();
+      checkFooter(body, doc.meta || {});
       check(/<title\b[^>]*>\s*[^<]+<\/title>/i.test(body), "missing title");
       check(/<a\b[^>]*href=["']https?:\/\/[^"']+["'][^>]*>Get deal<\/a>/i.test(body), "missing Get deal link");
     });

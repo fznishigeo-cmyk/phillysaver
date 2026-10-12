@@ -67,7 +67,7 @@ def test_shared_footer_signup_markup(tmp_path):
     footers = []
     for path in out.rglob("*.html"):
         html = path.read_text()
-        if '<footer>' not in html or path.name == '404.html':
+        if '<footer>' not in html:
             continue
         footer = re.search(r'<footer>(.*?)</footer>', html, re.S)[1]
         signup = re.search(r'<section id="footer-signup".*?</section>', footer, re.S)[0]

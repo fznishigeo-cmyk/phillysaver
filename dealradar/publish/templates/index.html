@@ -627,26 +627,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   <div class="pwbtns">{{SUPPORT_ACTION}}<a class="pwbtn alt" href="/join">Join free</a></div>
   {{SUPPORT_NOTE}}
 </div>
-<!--/support--><footer>
-<!--standard-->  <p><!--paywall--><strong>Membership — $9.99/month:</strong> every deal on the wall, new deals every
-     {{DROP_MINUTES}} minutes.<!--/paywall--><!--open--><strong>Membership — $9.99/month.</strong><!--/open-->
-     <span id="footterms">7-day free trial for new members. $0 today.</span>
-     <!--paywall-->Eight deals stay free for everyone, new at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with new deals every {{DROP_MINUTES}} minutes.<!--/open--></p>
-<!--/standard--><!--support-->  <p>wowpriced is free for everyone. {{SUPPORT_FOOT_LINK}}<a href="/join"><strong>Join free</strong></a></p>{{SUPPORT_NOTE}}
-<!--/support-->  <p>Every deal links to the seller (or, when it needs extra steps, to the post that explains how) and credits the source that found it. Prices are
-     quoted from the source word-for-word, fake "list prices" are removed, and Amazon
-     prices are re-checked live.</p>
-  <p class="searchnote">We search the top deal sites and stores for hours every day, so you don't have to.</p>
-<!--standard-->  <p id="acctfoot" class="meta" hidden>Your account:
-    <button type="button" id="billing" class="linkbtn">Manage membership</button></p>
-<!--/standard--><!--support--><!--/support-->  <nav class="footnav" aria-label="site pages">
-    <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
-    <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
-    <a href="contact.html">Contact</a> · <!--standard--><a href="subscribe.html">Membership</a><!--/standard--><!--support--><a href="{{SUPPORT_PAGE_URL}}">{{SUPPORT_PAGE_LABEL}}</a><!--/support--> ·
-    <a href="/privacy.html">Privacy</a>
-  </nav>
-  <p id="metaline" class="meta">Loading&hellip;</p>
-</footer>
+<!--/support-->{{SITE_FOOTER}}
 <!--standard--><a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a><!--/standard--><!--support--><a id="subbar" class="subbar ready" href="/join" hidden>Join free</a><!--/support-->
 </div>
 <!--standard--><div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
@@ -693,10 +674,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // cards the last publish opened that were locked before (every drop
   // unlocks a new set of free deals for visitors).
   var PAGE_CARDS = 60;
-  // The All tab scrolls a little (one more page loads by itself), then
+  // Trending auto-loads up to 300 cards, then
   // "Show more deals" waits for a click, so the footer is reachable.
-  // Category tabs scroll without end (operator, 2026-10-12).
-  var AUTO_CARDS = 120;
+  // All deals and category tabs scroll without end (operator, 2026-10-12).
+  var AUTO_CARDS = 300;
   var moreObserver = null;
   var state = { shown: PAGE_CARDS, deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
                 sortKey: "top", sortDir: -1, catTab: 0,
@@ -1138,7 +1119,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     if (frontPageView()) {
       var picks = rows.filter(function (d) { return d.pick != null; });
       picks.sort(function (a, b) { return a.pick - b.pick; });
-      return blockDeal(picks).concat(fresh.filter(function (d) { return d.pick == null; }));
+      var rest = fresh.filter(function (d) { return d.pick == null; });
+      rest.sort(function (a, b) {
+        return (Date.parse(b.first_seen_at || "") || 0) - (Date.parse(a.first_seen_at || "") || 0);
+      });
+      return blockDeal(picks).concat(rest);
     }
     var scored = fresh.filter(function (d) { return d.ps != null; });
     scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });
@@ -1811,9 +1796,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       "/year, renews yearly until you cancel. " + cancelLine();
     return "Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine();
   }
-  // The main screen's one line next to a trial button (panel, band,
-  // footer): just "$0 today" (the operator's call). The footer's own line
-  // names the $9.99/month, and the full terms sit in the dialog next to the
+  // The main screen's one line next to a trial button (panel, band): just
+  // "$0 today" (the operator's call). The full terms sit in the dialog next to the
   // button that starts checkout, and on Stripe's page.
   function shortNote(o) {
     if (!o.trial && chosenPlan() === "year") return yearlyMoney() + "/year, renews yearly.";

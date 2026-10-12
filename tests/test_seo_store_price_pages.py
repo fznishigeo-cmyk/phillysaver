@@ -85,6 +85,7 @@ def test_store_floor_cap_and_stable_tie_order(db, cfg, tmp_path):
 def test_store_content_count_median_wall_order_and_support(db, cfg, tmp_path, n, count):
     cfg.support_enabled = True
     cfg.affiliate_amazon_tag = "example-20"
+    cfg.affiliate_disclosure = load_config().affiliate_disclosure
     deals = _rows("Amazon", n)
     for i, d in enumerate(deals):
         d["pct_at_checkout"] = 70 if i < n // 2 else 91
@@ -100,7 +101,7 @@ def test_store_content_count_median_wall_order_and_support(db, cfg, tmp_path, n,
     assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in deals[:60]]
     assert 'href="https://www.amazon.com/dp/B012345678?tag=example-20"' in html
     assert "As an Amazon Associate, wowpriced earns from qualifying purchases." in html
-    assert "Join free" in html and "free trial" not in html and "members only" not in html
+    assert "Sign up for the latest deals" in html and "free trial" not in html and "members only" not in html
     browse = html.split('<h2>More categories</h2>')[1].split('</main>')[0]
     assert '<strong>Stores</strong>: <a href="/stores/walmart/">Walmart</a>' in browse
     assert 'href="/stores/amazon/"' not in browse
@@ -128,7 +129,7 @@ def test_price_inclusive_filter_floor_and_card_limit(db, cfg, tmp_path):
         assert f'<h1>Deals under ${n} today</h1>' in html
         assert f'<link rel="canonical" href="https://wowpriced.com/deals/under-{n}/">' in html
         assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in selected[:60]]
-        assert "Join free" in html and "members only" not in html and "free trial" not in html
+        assert "Sign up for the latest deals" in html and "members only" not in html and "free trial" not in html
     _render(db, cfg, tmp_path, low)
     assert not list((tmp_path / "deals").glob("under-*"))
     assert not any(p.startswith("/deals/under-") for p in _sitemap_paths(tmp_path))
@@ -198,7 +199,7 @@ def test_site_check_selects_real_hubs_first_store_and_under_25():
 const assert = require("node:assert/strict"), fs = require("node:fs");
 const source = fs.readFileSync("scripts/site_check.js", "utf8");
 const code = "await step(8," + source.split("await step(8,")[1].split("await step(9,")[0];
-const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", code);
+const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "checkFooter", "doc", code);
 (async () => {
   for (const listed of [false, true]) {
     for (const failure of ["", "store-http", "store-title", "price-http", "price-title"]) {
@@ -219,7 +220,7 @@ const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", 
         return {status: selected && failure.endsWith("http") ? 503 : 200, text: async () => body};
       };
       const execute = () => run(async (n, name, action) => action(), read,
-        (ok, reason) => { if (!ok) throw new Error(reason); });
+        (ok, reason) => { if (!ok) throw new Error(reason); }, () => {}, {meta:{}});
       if (failure) await assert.rejects(execute, /HTTP 503|missing title/);
       else await execute();
       for (const hub of ["electronics", "pets", "home-kitchen"]) assert(requests.includes(`/deals/${hub}/`));

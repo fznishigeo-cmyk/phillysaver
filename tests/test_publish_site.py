@@ -238,7 +238,7 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     # The FTC line must come from deals.json meta at render time, not be baked in.
     assert "disclosure" in html
     assert "m.disclosure" in html or "meta.disclosure" in html
-    assert DISCLOSURE not in html
+    assert DISCLOSURE in html
     # Required UI affordances live in the template.
     assert "No qualifying deals right now" in html
     assert 'rel="sponsored noopener"' in html
@@ -380,7 +380,7 @@ class TestLiveHomePage:
         assert html.index('id="metaline"') > html.index("<footer>")
         assert 'getElementById("metaline").textContent = m.disclosure || "";' in html
         assert "Last run" not in html
-        assert DISCLOSURE not in html
+        assert DISCLOSURE in html
 
 
 class TestContentPages:
@@ -402,11 +402,11 @@ class TestContentPages:
             assert "<title>" in html and 'name="description"' in html, name
             assert "prefers-color-scheme" in html, name
             assert "<script src=" not in html and 'rel="stylesheet"' not in html, name
-            # Footer links every content page, Home, and the Subscribe button.
+            # The shared footer links every content page with absolute paths.
             for other in self.PAGES:
-                assert f'href="{other}"' in html, (name, other)
+                assert f'href="/{other}"' in html, (name, other)
             assert 'href="./"' in html, name
-            assert "Start 7-day free trial" in html, name
+            assert "Join &amp; support" in html, name
             # Membership starts in the home page's sign-up and trial flow;
             # no content page links the Payment Link.
             assert '"./#signup"' in html and "api_url" in html, name
@@ -442,7 +442,7 @@ class TestSiteNavigation:
         html = (tmp_path / "index.html").read_text(encoding="utf-8")
         for page in ("about.html", "how-it-works.html", "hacks.html",
                      "careers.html", "contact.html"):
-            assert f'href="{page}"' in html
+            assert f'href="/{page}"' in html
             assert (tmp_path / page).exists()
 
     def test_no_page_hardcodes_the_old_floor(self, db, cfg, tmp_path):
@@ -584,7 +584,7 @@ class TestNoDailyEmail:
         render_site(db, cfg, NOW, out_dir=tmp_path)
         html = (tmp_path / "index.html").read_text(encoding="utf-8")
         assert 'id="nlform"' not in html and 'name="email"' not in html.replace('type="email"', "")
-        assert '<a href="subscribe.html">Membership</a>' in html
+        assert '<a href="/subscribe.html">Join &amp; support</a>' in html
         assert "workers.dev" not in html
 
 
@@ -1064,8 +1064,8 @@ class TestTrialCtasAreHonest:
         assert '"Subscribe — $9.99/month, renews monthly until you cancel. " + cancelLine()' in html
         panel = _between(html, "function updatePaywall(", "function repaintPanel(")
         # The main screen (panel, band) says only "$0 today" next to a trial
-        # button, never "cancel" (operator's call); the footer line opens
-        # with "Membership — $9.99/month"; the dialog that starts checkout
+        # button, never "cancel" (operator's call); the shared footer has
+        # no membership pitch. The dialog that starts checkout
         # keeps every term, and Stripe's page repeats them.
         assert 'var note = (mode === "out" || buy) && !blk ? shortNote(o) : ""' in panel
         assert 'pn.innerHTML = note ? noteHtml(o) : ""' in panel
@@ -1075,14 +1075,14 @@ class TestTrialCtasAreHonest:
         # the trial), like the trial button beside it.
         assert '<button type="button" class="zerotoday" data-cta="1" ' in short
         assert 'if (e.target.closest(".zerotoday")) nextStep();' in html
-        assert "<strong>Membership — $9.99/month:</strong>" in html
+        assert "<strong>Membership — $9.99/month:</strong>" not in html
         assert "card" not in short.lower()  # operator call: no "Card required" on the main screen
         assert "cancel" not in short.lower()
         assert 'disc.textContent = o.note;' in _between(html, "function paintStep2(", "function setMode(")
         mode = _between(html, "function setMode(", "function openAuth(")
         assert 'disc.textContent = up ? o.note : ""' in mode   # the sign-up step
         assert 'id="authdisc" class="disc"' in html
-        assert 'getElementById("footterms").textContent' in html   # the footer
+        assert 'getElementById("footterms").textContent' in html   # retained hidden hook
 
     def test_zero_trial_days_mean_no_trial(self, pages):
         html = pages["index.html"]
@@ -1510,8 +1510,8 @@ class TestOpenAccess:
                           "the wall stays free"):
                 assert stale not in text.lower(), (name, stale)
         home = " ".join(pages["index.html"].split())
-        assert "Every deal on the wall is open to everyone right now" in home
-        assert "Membership — $9.99/month." in home and 'id="footterms"' in home
+        assert "Every deal on the wall" in pages["subscribe.html"]
+        assert "Membership — $9.99/month." not in home and 'id="footterms"' in home
         assert "OPEN-ITEM-5" in home  # the static wall carries every deal
         assert "<h1>Membership</h1>" in pages["subscribe.html"]
         assert "Start 7-day free trial" in pages["subscribe.html"]
@@ -1527,7 +1527,7 @@ class TestOpenAccess:
             assert "<!--paywall-->" not in html and "<!--open-->" not in html, p.name
             assert "open to everyone right now" not in html, p.name
         home = " ".join((out / "index.html").read_text(encoding="utf-8").split())
-        assert "Eight deals stay free for everyone, new at every drop." in home
+        assert "Eight deals stay free for everyone, new at every drop." not in home
 
     def test_static_pages_cap_the_cards(self, db, cfg, tmp_path):
         from dealradar.publish import seo
@@ -1594,9 +1594,8 @@ class TestWallPagination:
         assert body.index("var openBandHere") < body.index("list = list.slice")
         assert "if (openBandHere && list.length > 8)" in body
 
-    def test_all_tab_scrolls_a_little_categories_scroll_on(self, html):
-        # Operator, 2026-10-12: All loads one more page by itself, then a click
-        # (the footer is reachable); category tabs scroll without end.
+    def test_trending_scrolls_to_300_other_tabs_scroll_on(self, html):
+        # Trending reaches 300 before a click; All deals and categories scroll without end.
         body = _between(html, "function render() {", "// ---- reorganizing the wall")
         assert "rows.length > state.shown" in body
         assert ('<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button>'
@@ -1608,7 +1607,7 @@ class TestWallPagination:
         assert "if (state.catTab === 0 && state.shown >= AUTO_CARDS) return;" in arm
         assert "entry.isIntersecting && document.body.contains(entry.target)" in arm
         assert 'rootMargin: "1500px"' in arm and "moreObserver.observe(more)" in arm
-        assert "var AUTO_CARDS = 120;" in html
+        assert "var AUTO_CARDS = 300;" in html
         more = _between(html, "function showMore()", "// ---- reorganizing the wall")
         assert "state.shown += PAGE_CARDS;" in more and "render();" in more
         assert "rememberFocus()" in more and "restoreFocus" in more

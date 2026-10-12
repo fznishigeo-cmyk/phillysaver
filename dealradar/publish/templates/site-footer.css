@@ -1,0 +1,12 @@
+footer{color:var(--muted);margin-top:34px;border-top:1px solid var(--line);padding:20px 0 12px;text-align:left}
+footer #footerlinks{font-size:13px;line-height:1.6;letter-spacing:normal;text-transform:none}
+footer #footerlinks a{display:inline-block;color:var(--muted);text-decoration:none}
+footer #footerlinks a:hover,footer #footerlinks a:focus-visible{text-decoration:underline;text-underline-offset:2px}
+footer #footerlinks a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+footer .footerfine{max-width:900px;margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.6}
+footer #acctfoot{margin:8px 0 0;font-size:11px}
+footer #acctfoot[hidden]{display:none!important}
+@media (max-width:640px){
+  footer #footerlinks{text-align:center}
+  footer #footerlinks a{min-height:44px;padding:12px 2px}
+}

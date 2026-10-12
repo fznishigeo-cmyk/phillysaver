@@ -97,7 +97,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
     assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
     assert "Emails are stored by our Cloudflare Worker and used only for the deals email." in (out / "privacy.html").read_text()
-    for name, count in (("index.html", 2), ("subscribe.html", 1)):
+    for name, count in (("index.html", 1), ("subscribe.html", 1)):
         html = (out / name).read_text()
         assert "A quick, honest ask." in html and BODY in html
         assert 'href="/join">Join free</a>' in html
@@ -108,7 +108,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
         for match in re.finditer(r'<a[^>]*data-support[^>]*>', html):
             assert 'target="_blank" rel="noopener"' in match.group()
             assert NOTE in html[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
-    assert "wowpriced is free for everyone." in home
+    assert "wowpriced is free for everyone." not in home
     assert 'track("support_click", {plan: "once"})' in home and 'joinedCard("email")' in home
     assert 'fetch(api + "/subscribe"' in home and 'JSON.stringify({email: input.value.trim()})' in home
     assert 'try { dismissed = Number(localStorage.getItem(KEY))' in home
@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "a0f1640fe9bd8d949b3c4b034c238e02a667355a19c5fba1642f739fb40b9c6d"),
-    (False, 49, "53d216c0c21b174716e3456e6f8a989c6566cda4cae2653e9724d95077360ccc"),
-    (True, 0, "2aa049b4c0d47a4988886c1bc6df79ed2cde6ad1279b61d7ac2b5603f19f711e"),
-    (True, 49, "1ef32f2b65b784f297694ab2aa66da2a6d4f20679feacbad0c2be33ec8e2d60c"),
+    (False, 0, "19ab676297ada2597064819facfe0eadb73c38d85578567e26619fcf5817ba0b"),
+    (False, 49, "27c6eba50e174ca9b8afd1c70b2d5e189acbd83f1d3c794e28716825cceb3c2b"),
+    (True, 0, "16562cbf10f7113519af2c418f307143eab868c9342d27c03e0bfd04db12ecf5"),
+    (True, 49, "0fb2a18e161ccafe7e2018fb04a92204545315fbf02c430b86e7e12023ecd235"),
 ])
-def test_support_off_index_bytes_match_task042_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 042 changes the default ordering in all modes; keep the shared
+def test_support_off_index_bytes_match_task045_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 045 changes the footer and scroll limit in all modes; keep the shared
     # baseline without task 037's head-only hint.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
@@ -238,7 +238,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     assert "The day's best deals in one email. Free." in join
     assert '<h1 id="join-title">Join wowpriced</h1>' in join
     assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email"' in join
-    assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 1
+    assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 2
     assert site.JOIN_FORM in join and EMAIL_LINE in join
     assert '<a href="/privacy.html">privacy policy</a>' in join
     assert "max-width:480px" in join and "border-radius:12px" in join
@@ -258,7 +258,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
                 assert 'href="/join"' in attrs, path
         if path.name not in {"join.html", "index.html"}:
             assert 'id="join-email"' not in visible, path
-            assert ('<form class="joinform" data-join-footer>' in visible) == ('<footer>' in visible and path.name != '404.html'), path
+            assert ('<form class="joinform" data-join-footer>' in visible) == ('<footer>' in visible), path
     home = (out / "index.html").read_text()
     for selector in ('id="subscribe"', 'id="subbar"', 'class="pwbtn alt"'):
         assert re.search(r'<a ' + selector + r'[^>]*href="/join"', home)

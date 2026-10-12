@@ -169,7 +169,7 @@ def test_best_today_order_date_links_count_and_repeat_bytes(db, cfg, tmp_path):
     hub = (tmp_path / "deals/electronics/index.html").read_text()
     assert all(f'<h3 class="title"><a href="{_path(d)}">' in hub for d in deals[:60])
     for page in [html, _page(tmp_path, _path(deals[0])).read_text()]:
-        assert "Join free" in page and "free trial" not in page and "members only" not in page
+        assert "Sign up for the latest deals" in page and "free trial" not in page and "members only" not in page
     # Deal bytes depend on data, not on the run time; best-today changes at UTC midnight.
     before = {str(p.relative_to(tmp_path)): p.read_bytes() for p in (tmp_path / 'deal').rglob('*.html')}
     sitemap = (tmp_path / 'sitemap.xml').read_bytes()
@@ -212,7 +212,7 @@ const source = fs.readFileSync("scripts/site_check.js", "utf8");
 const code = "let dealPage; await step(8," + source.split("await step(8,")[1].split("await step(9,")[0] +
   source.slice(source.indexOf('  for (const [name, url] of [["deal", dealPage]'),
     source.indexOf("  // Include errors from every interaction"));
-const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "page", "SITE", "SITE_URL", "device", code);
+const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "page", "SITE", "SITE_URL", "device", "checkFooter", "doc", code);
 const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
   "/deals/electronics/", "/deals/pets/", "/deals/home-kitchen/", "/best-deals-today/"]
   .map(p => `<url><loc>https://wowpriced.com${p}</loc></url>`).join("") + '</urlset>';
@@ -232,7 +232,7 @@ const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
       (ok, reason) => { if (!ok) throw new Error(reason); },
       {goto: async url => {const r = await read(url); return {status: () => r.status, text: r.text};},
         screenshot: async options => shots.push(options)},
-      "https://wowpriced.com/", new URL("https://wowpriced.com/"), "desktop");
+      "https://wowpriced.com/", new URL("https://wowpriced.com/"), "desktop", () => {}, {meta:{}});
     assert.deepEqual(problems, missing ? ["missing Get deal link"] : []);
     assert(requests.includes("/deal/first-12345678/"));
     assert(requests.includes("/best-deals-today/"));
@@ -254,10 +254,12 @@ def test_small_print_names_wowpriced_once_the_amazon_tag_is_set(db, cfg, tmp_pat
              "privacy.html", "deals/electronics/index.html", "best-deals-today/index.html")
     cfg.paywall_open_access = True
     _render(db, cfg, tmp_path / "off")
-    for name in pages:  # no Store ID: the source-only line, unchanged
+    for name in pages:  # no Store ID: the configured FTC disclosure
         html = (tmp_path / "off" / name).read_text()
-        assert "source's affiliate links" in html and "As an Amazon Associate" not in html, name
+        assert cfg.ftc_disclosure in html and "As an Amazon Associate" not in html, name
     cfg.affiliate_amazon_tag = "example-20"
+    from dealradar.config import load_config
+    cfg.affiliate_disclosure = load_config().affiliate_disclosure
     _render(db, cfg, tmp_path / "on")
     for name in pages:
         html = (tmp_path / "on" / name).read_text()

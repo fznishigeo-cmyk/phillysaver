@@ -195,20 +195,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
    around the same idea: a deal is a real price that is far enough under a real
    price. Everything else is a sign on an end cap.</p>
 </main>
-<footer>
-  <nav class="fnav" aria-label="site pages">
-    <a href="./">Home</a>
-    <a href="about.html">About</a>
-    <a href="how-it-works.html">How it works</a>
-    <a href="hacks.html">Deal hacks</a>
-    <a href="careers.html">Work with us</a>
-    <a href="contact.html">Contact</a>
-    <a href="/privacy.html">Privacy</a>
-  </nav>
-  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/join">Join free</a></p><!--/support-->
-  <p>Every deal links to the seller (or, when it needs extra steps, to the post that explains how) and credits the source that found it. Some outbound
-     links are the source's affiliate links.</p>
-</footer>
+{{SITE_FOOTER}}
 </div>
 <script>
 "use strict";
@@ -220,6 +207,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   .then(function (d) {
     if (d && d.meta && d.meta.api_url) {
       var sub = document.getElementById("subscribe");
+      if (!sub) return;
       sub.href = "./#signup";
       sub.style.display = "";
     }

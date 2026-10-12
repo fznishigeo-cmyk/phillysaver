@@ -696,6 +696,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
     sitemap.xml and the IndexNow due-list (beside out, never in it)."""
     from .paywall import is_open
+    from .site import affiliate_copy, copy_variant, site_footer
 
     open_access = is_open(cfg)
     paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
@@ -706,7 +707,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall,
               IMAGE_PRECONNECTS=_image_preconnects(teaser, site_url, cfg.front_page),
               TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
-    (out / "404.html").write_text(_fill((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
+    support = bool(getattr(cfg, "support_enabled", False))
+    not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
+                            now, meta["disclosure"], support)
+    (out / "404.html").write_text(_fill(not_found,
                                         HUB_LINKS=_hub_links(),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
@@ -714,11 +718,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
                      DROP_MINUTES=str(int(cfg.drop_minutes)))
-    from .site import affiliate_copy, copy_variant, signup_footer
-    template = copy_variant(template, open_access, bool(getattr(cfg, "support_enabled", False)))
+    template = copy_variant(template, open_access, support)
     template = affiliate_copy(template, getattr(cfg, "affiliate_amazon_tag", ""))
-    if getattr(cfg, "support_enabled", False):
-        template = signup_footer(template)
+    template = site_footer(template, now, meta["disclosure"], support)
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
     live.sort(key=lambda d: order[d["dedupe_key"]])

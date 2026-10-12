@@ -142,6 +142,15 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Groupon-style footer + 300-card Trending (Codex task 045, 2026-10-12):**
+  operator: "like groupon ... the other stuff tiny and in grey". One shared
+  footer (`templates/site-footer.html/.css`) on every page: the sign-up box,
+  one grey line "© year wowpriced · About · How it works · Deal hacks · Work
+  with us · Contact · Join & support · Privacy", then 11px fine print (the
+  search line + the config disclosure, unchanged words, AA contrast). Support
+  terms live on the support page; the seller-link explanation on How it
+  works. Trending: 120 picks then newest, auto-load to 300; other tabs
+  endless. Reviewed in Chromium (desktop + phone).
 - **Pinterest poster (Codex task 044, shipped 2026-10-12):** app "wowpriced
   deals" (ID 1623198, Trial access: sandbox only, Pins visible to us). Connect
   once: `python -m dealradar pinterest-auth-url` -> operator approves -> the

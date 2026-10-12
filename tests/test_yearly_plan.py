@@ -36,13 +36,13 @@ def test_yearly_config_and_public_member_meta(tmp_path, setting, expected):
             assert f'<fieldset id="{place}plans" class="plans">' in html
             assert f'name="{place}plan" value="month" checked' in html
             assert f'name="{place}plan" value="year"' in html
-        assert "Membership — $9.99/month or $49/year" in html
+        assert "Membership — $9.99/month or $49/year" not in html
         assert ".plans label:focus-within" in html
         assert "min-height:48px" in html
     else:
         assert '<fieldset id="panelplans"' not in html
         assert '<fieldset id="dialogplans"' not in html
-        assert "<strong>Membership — $9.99/month:</strong>" in html
+        assert "<strong>Membership — $9.99/month:</strong>" not in html
         assert " or $49/year" not in html
 
 
