@@ -142,6 +142,13 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Telegram channel picks (Codex task 047, 2026-10-12):** the public
+  channel posts published picks only, once per deal, price-free (deal-page
+  link, `#ad` last, link preview on); `telegram.channel` caps 1/run,
+  24/New York day, 30-minute gap, 08:00-22:59 local, and `min_age_minutes:
+  20` so the linked page is already live (the fast lane posts before its own
+  deploy). Admin and email paths unchanged. Nothing posts until the operator
+  adds `TELEGRAM_CHANNEL_ID` (bot token alone = admin alerts only).
 - **Facebook/Instagram poster (Codex task 046, 2026-10-12):** `meta-post`
   runs after Pinterest in hourly.yml; one social-state commit covers both.
   `social.meta` in config.yaml: both networks start in **draft** (Facebook

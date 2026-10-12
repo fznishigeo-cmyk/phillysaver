@@ -235,6 +235,13 @@ telegram:
   messages_per_minute: 15
   resend_price_drop_pct: 10    # re-alert only if price drops >=10% more
   dry_run: false               # true forces log-only even if credentials exist
+  channel:                     # public deals channel (operator, 2026-10-12)
+    posts_per_run: 1           # fast lane runs every 10 min
+    daily_max: 24              # per America/New_York day
+    min_gap_minutes: 30        # between two channel posts
+    hours_local: [8, 23]       # post only from 08:00 to 22:59 New York
+    min_age_minutes: 20        # deal page already live from an earlier deploy
+    disclosure: "#ad"
 
 members:
   # The paid product with no server of our own: Stripe hosts checkout (a

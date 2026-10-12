@@ -165,6 +165,7 @@ class AppConfig:
     telegram_messages_per_minute: int = 15
     resend_price_drop_pct: float = 10.0
     telegram_dry_run: bool = False
+    telegram_channel: dict[str, Any] = field(default_factory=dict)
     digest_hour_local: int = 8
     digest_timezone: str = "America/New_York"
     digest_recipient: str = ""
@@ -381,6 +382,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.telegram_messages_per_minute = int(g("telegram", "messages_per_minute", default=cfg.telegram_messages_per_minute))
     cfg.resend_price_drop_pct = float(g("telegram", "resend_price_drop_pct", default=cfg.resend_price_drop_pct))
     cfg.telegram_dry_run = bool(g("telegram", "dry_run", default=cfg.telegram_dry_run))
+    cfg.telegram_channel = g("telegram", "channel", default={}) or {}
 
     cfg.digest_hour_local = int(g("digest", "hour_local", default=cfg.digest_hour_local))
     cfg.digest_timezone = g("digest", "timezone", default=cfg.digest_timezone)

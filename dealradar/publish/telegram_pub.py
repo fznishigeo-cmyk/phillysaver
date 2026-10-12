@@ -1,23 +1,27 @@
 """Telegram channel alerts via the official Bot API (sendMessage).
 
 Idempotency anchors:
-- db.last_alert(key, 'telegram') decides whether a deal deserves a (re)send.
-- alerts_sent(channel, dedup_token) is UNIQUE; the token encodes key|price|tier
-  so identical re-runs never send twice.
-Only extracted facts + a link + source credit ever leave this module.
+- db.last_alert(key, 'telegram') excludes deals already posted, including
+  alerts recorded before the channel switched to curated picks.
+- alerts_sent(channel, dedup_token) is UNIQUE; the token encodes key|channel.
+The channel carries price-free facts and a live wowpriced deal-page link.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from ..config import get_secret
+from ..util import parse_iso
 from .site import rewrite_affiliate
+from .social import _candidates, _word_trim, _without_prices
 
 logger = logging.getLogger("dealradar.publish.telegram")
 
@@ -35,8 +39,18 @@ def tier_rank(tier: str) -> int:
 _TIER_WORDS = {"corroborated": "2+ sources", "history-checked": "price history"}
 
 
-def format_message(deal: dict[str, Any]) -> str:
-    """'ITEM — $FINAL (PCT% off[, TIER]) at STORE · conditions · via SOURCE · URL'."""
+def format_message(deal: dict[str, Any], path: str | None = None,
+                   disclosure: str = "#ad") -> str:
+    """Price-free channel copy with a deal path; preserve the email format otherwise."""
+    if path is not None:
+        item = _word_trim(_without_prices(str(deal.get("item") or "")), 120)
+        store = _without_prices(str(deal.get("store") or ""))
+        pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
+        disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
+        return (f"{pct}% off {item} at {store}\n"
+                f"Verified by wowpriced: https://wowpriced.com{path}\n"
+                f"{disclosure}")
+
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
@@ -62,24 +76,13 @@ def format_message(deal: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
-def _should_send(deal: dict[str, Any], last: dict[str, Any] | None,
-                 resend_price_drop_pct: float) -> bool:
-    if last is None:
-        return True  # first sighting of a published deal
-    final = float(deal.get("final_price") or 0.0)
-    last_price = last.get("price_at_send")
-    if last_price is not None:
-        threshold = float(last_price) * (1.0 - resend_price_drop_pct / 100.0)
-        if final <= threshold + 1e-9:  # an EXACTLY-10% drop must resend
-            return True
-    tier = deal.get("verify_tier") or "unverified"
-    return tier_rank(tier) > tier_rank(last.get("tier_at_send") or "")
+def _should_send(last: dict[str, Any] | None) -> bool:
+    return last is None  # channel posts each deal once, regardless of price or tier
 
 
-def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = None,
-                dry_run: bool | None = None, http_client: Any = None,
+def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_client: Any = None,
                 sleep_fn: Any = None, deadline: float | None = None) -> dict[str, Any]:
-    """Alert the channel about new/improved deals. Returns {sent, skipped, dry_run}.
+    """Post capped public picks to the channel. Returns {sent, skipped, dry_run}.
 
     Dry-run semantics: an EXPLICIT dry run (the ``dry_run`` argument or
     ``cfg.telegram_dry_run``) records alerts like a real send, so repeated test
@@ -90,11 +93,6 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
     ``deadline`` (time.monotonic) stops the send loop; unsent alerts are not
     recorded and therefore retry next run.
     """
-    if deals is None:
-        from dealradar import rank  # lazy: sibling module, avoid import at load
-
-        deals = rank.published_deals(db, cfg, now)
-
     token = get_secret("TELEGRAM_BOT_TOKEN")
     channel = get_secret("TELEGRAM_CHANNEL_ID")
     explicit_dry = bool(dry_run) if dry_run is not None else bool(cfg.telegram_dry_run)
@@ -102,10 +100,44 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
     dry = explicit_dry or creds_missing
     record_in_dry = explicit_dry  # fallback dry runs must not consume alerts
 
+    now = now.astimezone(timezone.utc)
+    zone = ZoneInfo("America/New_York")
+    local = now.astimezone(zone)
+    settings = cfg.telegram_channel
+    start, end = settings.get("hours_local", [8, 23])
+    result = {"sent": 0, "skipped": 0, "dry_run": dry}
+    if not int(start) <= local.hour < int(end):
+        return result
+
+    alerts = db.conn.execute(
+        "SELECT deal_key, sent_at FROM alerts_sent WHERE channel='telegram'"
+    ).fetchall()
+    sent_at = [at for row in alerts if (at := parse_iso(row["sent_at"]))]
+    today = sum(at.astimezone(zone).date() == local.date() for at in sent_at)
+    cap = min(max(0, int(settings.get("posts_per_run", 1))),
+              max(0, int(settings.get("daily_max", 24)) - today))
+    gap_seconds = max(0.0, float(settings.get("min_gap_minutes", 30))) * 60
+    if not cap or (sent_at and (now - max(sent_at)).total_seconds() < gap_seconds):
+        return result
+    posted = {row["deal_key"]: True for row in alerts}
+    try:
+        candidates = _candidates(db, cfg, posted)
+    except (OSError, ValueError, KeyError, TypeError):
+        logger.warning("telegram: published picks unreadable; nothing posted this run")
+        return result
+    # The pipeline posts before this run's deploy: only link pages that an
+    # earlier deploy already put live, so Telegram's preview never 404s.
+    min_age = float(settings.get("min_age_minutes", 20)) * 60
+    if min_age > 0:
+        candidates = [(deal, path) for deal, path in candidates
+                      if (seen := parse_iso(deal.get("first_seen_at") or "")) is not None
+                      and (now - seen).total_seconds() >= min_age]
+    candidates = candidates[:cap]
+
     if sleep_fn is None:
         sleep_fn = time.sleep
     limit = max(1, int(cfg.telegram_messages_per_minute))
-    interval = 60.0 / limit
+    interval = max(1.0, cfg.min_host_interval_s, 60.0 / limit)
 
     sent = 0
     skipped = 0
@@ -113,23 +145,27 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
     client = http_client
     created_client = False
     try:
-        for deal in deals:
+        for deal, path in candidates:
+            # A positive gap defers the next pick to a later run; never wait
+            # minutes inside the pipeline. A zero gap permits capped batches.
+            if sent >= cap or (sent and gap_seconds > 0):
+                break
             if deadline is not None and time.monotonic() >= deadline:
                 logger.warning("run deadline reached; %d alerts deferred to next run",
-                               len(deals) - sent - skipped)
+                               len(candidates) - sent - skipped)
                 break
             key = deal.get("dedupe_key", "")
             final = float(deal.get("final_price") or 0.0)
-            tier = deal.get("verify_tier") or "unverified"
+            tier = deal.get("badge") or "unverified"
             last = db.last_alert(key, "telegram")
-            if not _should_send(deal, last, cfg.resend_price_drop_pct):
+            if not _should_send(last):
                 skipped += 1
                 continue
-            dedup_token = f"{key}|{final:.2f}|{tier}"
+            dedup_token = f"{key}|telegram"
             if db.alert_exists("telegram", dedup_token):
                 skipped += 1  # idempotent re-run: already sent exactly this alert
                 continue
-            msg = format_message(deal)
+            msg = format_message(deal, path, settings.get("disclosure", "#ad"))
             if dry:
                 logger.info("TELEGRAM DRY-RUN: %s", msg)
                 print(f"TELEGRAM DRY-RUN: {msg}")
@@ -144,11 +180,13 @@ def send_alerts(db, cfg, now: datetime, *, deals: list[dict[str, Any]] | None = 
                 created_client = True
             if real_posts > 0:
                 sleep_fn(interval)  # <= telegram_messages_per_minute
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             real_posts += 1
             resp = client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": channel, "text": msg,
-                      "disable_web_page_preview": True},
+                      "disable_web_page_preview": False},
             )
             if resp.status_code != 200:
                 logger.error("telegram send failed (%s) for %s; will retry next run",

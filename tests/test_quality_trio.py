@@ -1518,6 +1518,11 @@ class TestCarefulDeath:
         """(keys in the alert/publish set, keys shown ALIVE on the site,
         Telegram alerts sent)."""
         from dealradar.publish.telegram_pub import send_alerts
+        from dealradar.publish.site import render_site
+        from pathlib import Path
+
+        cfg.site_dir = str(Path(db.path).parent / "site")
+        render_site(db, cfg, now)  # channel candidates come from the published picks
         alerts = {d["dedupe_key"] for d in rank.published_deals(db, cfg, now)}
         alive_on_site = {d["dedupe_key"] for d in rank.site_deals(db, cfg, now)
                          if d["status"] == "alive"}

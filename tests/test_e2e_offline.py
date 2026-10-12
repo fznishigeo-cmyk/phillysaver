@@ -6,7 +6,9 @@ Telegram dry-run -> re-run idempotency. No network, no real sleeping.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -18,6 +20,7 @@ from dealradar.models import SourceConfig
 
 FIX = Path(__file__).parent / "fixtures"
 ROBOTS = "User-agent: *\nAllow: /\n"
+NOW = datetime(2026, 10, 9, 14, 0, 0, tzinfo=timezone.utc)
 
 
 def _handler(request: httpx.Request) -> httpx.Response:
@@ -164,9 +167,21 @@ class _FakeClaudeClient:
 
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
+    monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
                 "DEALS_CLAUDE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
+    fetch_all = pipeline._fetch_all
+
+    def fetch_with_photos(*args, **kwargs):
+        posts, errors = fetch_all(*args, **kwargs)
+        # Recorded retailer photos make both public picks channel-eligible.
+        return [dataclasses.replace(
+            post, image_url=("https://images.example/airfryer.jpg" if "Ninja Foodi" in post.title
+                             else "https://images.example/headphones.jpg" if "X200" in post.title
+                             else "")) for post in posts], errors
+
+    monkeypatch.setattr(pipeline, "_fetch_all", fetch_with_photos)
     site_dir = tmp_path / "site"
     db_path = tmp_path / "state.db"
     cfg_path = tmp_path / "config.yaml"
@@ -176,6 +191,8 @@ def env(tmp_path, monkeypatch):
     # end-to-end run exercises the structured path; production keeps it off.
     text = text.replace("retries_on_invalid_json: 2",
                         "retries_on_invalid_json: 2\n  structured_output: true")
+    # Every offline deal is first seen in this run; skip the page-age gate.
+    text = text.replace("min_age_minutes: 20", "min_age_minutes: 0")
     cfg_path.write_text(text)
     return {"db": str(db_path), "cfg": str(cfg_path), "site": site_dir}
 
@@ -208,10 +225,12 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert summary["link_mix"]["source_post"] == 2
     assert summary["link_mix"]["amazon_untagged_flag"] is False
     assert summary["telegram"]["dry_run"] is True
-    assert summary["telegram"]["sent"] == 2
+    assert summary["telegram"]["sent"] == 1
 
     out = capsys.readouterr().out
-    assert "TELEGRAM DRY-RUN:" in out
+    assert out.count("TELEGRAM DRY-RUN:") == 1
+    assert "Verified by wowpriced: https://wowpriced.com/deal/" in out
+    assert "\n#ad" in out
 
     deals_json = json.loads((env["site"] / "deals.json").read_text())
     assert deals_json["meta"]["disclosure"]
@@ -294,8 +313,13 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
 
 def test_rerun_is_idempotent(env, capsys):
     first = _run(env)
-    assert first["telegram"]["sent"] == 2
+    assert first["telegram"]["sent"] == 1
+    db = DB(env["db"])
+    before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+              for table in ("deals", "sightings", "price_history", "alerts_sent")}
+    db.close()
     second = _run(env)
+    assert second["run_key"] == first["run_key"]
     assert second["posts_new"] == 0          # content hashes already known
     assert second["telegram"]["sent"] == 0   # alerts_sent dedup
     assert second["published"] == 2          # same deals, no duplicates
@@ -306,7 +330,11 @@ def test_rerun_is_idempotent(env, capsys):
     n_deals = conn.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
     n_sight = conn.execute("SELECT COUNT(*) FROM sightings").fetchone()[0]
     n_hist = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
+    after = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+             for table in before}
+    (token,) = conn.execute("SELECT dedup_token FROM alerts_sent WHERE channel='telegram'").fetchone()
     conn.close()
+    assert after == before and token.endswith("|telegram")
     # 4 distinct deals total (patio excluded), 5 sightings (fryer has 2), stable across reruns
     assert n_deals == 4
     assert n_sight == 5
