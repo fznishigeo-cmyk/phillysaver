@@ -37,11 +37,19 @@ async function siteRequest(photo = false) {
   await pending;
 }
 async function readSite(path) {
-  const url = new URL(path, SITE);
-  if (url.origin !== SITE_URL.origin) throw new Error("off-site URL");
-  await siteRequest();
-  // Do not follow redirects to a retailer, source, or login wall.
-  return fetch(url, { cache: "no-store", redirect: "manual", signal: AbortSignal.timeout(15000) });
+  let url = new URL(path, SITE);
+  // Follow the site's own redirects (Cloudflare Pages sends /about.html to
+  // /about with a 308); never one that leaves the site.
+  for (let hop = 0; hop < 3; hop++) {
+    if (url.origin !== SITE_URL.origin) throw new Error("off-site URL");
+    await siteRequest();
+    const response = await fetch(url, { cache: "no-store", redirect: "manual",
+                                        signal: AbortSignal.timeout(15000) });
+    const next = response.headers.get("location");
+    if (![301, 302, 303, 307, 308].includes(response.status) || !next) return response;
+    url = new URL(next, url);
+  }
+  throw new Error("too many redirects");
 }
 async function guardPage(page) {
   page.setDefaultTimeout(STEP_TIMEOUT_MS);
