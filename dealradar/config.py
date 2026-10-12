@@ -327,6 +327,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     # The link key lives in the GitHub secret SOVRN_API_KEY (operator's call);
     # config affiliate.sovrn_key is only a local fallback.
     key = get_secret("SOVRN_API_KEY") or str(g("affiliate", "sovrn_key", default="") or "")
+    # Forgive a pasted key's stray spaces, quotes or capitals.
+    key = key.strip().strip("\"'").strip().lower()
     if key and not re.fullmatch(r"[0-9a-f]{32}", key):
         logging.getLogger("dealradar.config").warning("affiliate.sovrn_key ignored: not a public link key")
         key = ""

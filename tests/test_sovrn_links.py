@@ -91,13 +91,21 @@ def test_disabled_or_invalid_key_leaves_url_untouched(enabled, key):
     assert rewrite_affiliate(url, sovrn_enabled=enabled, sovrn_key=key) == url
 
 
-@pytest.mark.parametrize("key", ["bad-key-PRIVATE", KEY.upper(), "x" * 31, "f" * 33, " " + KEY])
+@pytest.mark.parametrize("key", ["bad-key-PRIVATE", "x" * 31, "f" * 33, KEY[:-1] + "g"])
 def test_config_invalid_key_warns_without_echoing_it(tmp_path, caplog, key):
     path = tmp_path / "config.yaml"
     path.write_text(f'affiliate:\n  sovrn_enabled: true\n  sovrn_key: "{key}"\n')
     cfg = load_config(path)
     assert cfg.affiliate_sovrn_key == ""
     assert "affiliate.sovrn_key ignored" in caplog.text and key not in caplog.text
+
+
+@pytest.mark.parametrize("pasted", [KEY.upper(), " " + KEY + " ", "'" + KEY + "'", KEY + "\n"])
+def test_config_forgives_a_pasted_keys_spaces_quotes_and_capitals(tmp_path, monkeypatch, pasted):
+    monkeypatch.setenv("SOVRN_API_KEY", pasted)
+    path = tmp_path / "config.yaml"
+    path.write_text("affiliate:\n  sovrn_enabled: true\n")
+    assert load_config(path).affiliate_sovrn_key == KEY
 
 
 def test_config_switch_and_valid_key(tmp_path, caplog):

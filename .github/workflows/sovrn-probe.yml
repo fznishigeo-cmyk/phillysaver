@@ -21,9 +21,16 @@ jobs:
         run: |
           python3 - <<'PY'
           import os, re, urllib.error, urllib.parse, urllib.request
-          key = os.environ.get("SOVRN_API_KEY", "").strip()
+          raw = os.environ.get("SOVRN_API_KEY", "")
+          key = raw.strip().strip("\"'").strip().lower()
           if not re.fullmatch(r"[0-9a-f]{32}", key):
-              print("SOVRN_API_KEY missing or not a link key"); raise SystemExit(1)
+              # The shape only, never a character of the value.
+              print(f"SOVRN_API_KEY is not a link key: {len(raw)} characters "
+                    f"({len(key)} after trimming); letters/digits only: {key.isalnum()}; "
+                    f"0-9/a-f only: {all(c in '0123456789abcdef' for c in key)}; "
+                    f"has spaces inside: {' ' in key}")
+              print("Expected: the 32-character API key from Sovrn > Commerce > Settings (not the Secret key)")
+              raise SystemExit(1)
           target = "https://www.walmart.com/ip/222918738"
           url = ("https://redirect.viglink.com?key=" + key + "&u="
                  + urllib.parse.quote(target, safe="") + "&cuid=probe")
