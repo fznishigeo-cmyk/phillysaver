@@ -14,7 +14,9 @@ from typing import Any
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SEARCH = "https://googleads.googleapis.com/{}/customers/{}/googleAds:search"
+ACCESSIBLE = "https://googleads.googleapis.com/{}/customers:listAccessibleCustomers"
 _CODE = re.compile(r"[A-Za-z_]{1,64}")
+_WORDS = re.compile(r"[^A-Za-z ,.'()-]+")  # a message keeps words only: no digits, ids or tokens
 
 
 class GoogleAdsError(Exception):
@@ -31,15 +33,20 @@ def _codes(resp: Any) -> str:
     found = [err] if isinstance(err, str) else []  # OAuth: {"error": "invalid_grant"}
     if isinstance(err, dict):
         found.append(err.get("status") or "")
+        note = " ".join(_WORDS.sub(" ", str(err.get("message") or "")).split())[:140]
         for detail in err.get("details") or []:
             for e in detail.get("errors") or []:
                 found += [v for v in (e.get("errorCode") or {}).values() if isinstance(v, str)]
-    return " ".join(dict.fromkeys(c for c in found if _CODE.fullmatch(c)))
+    codes = " ".join(dict.fromkeys(c for c in found if _CODE.fullmatch(c)))
+    if isinstance(err, dict) and note:
+        codes += f' "{note}"'
+    return codes
 
 
-def _check(resp: Any) -> None:
+def _check(resp: Any, context: str = "") -> None:
     if resp.status_code >= 400:
-        raise GoogleAdsError(f"HTTP {resp.status_code} {_codes(resp)}".strip())
+        raise GoogleAdsError(" ".join(p for p in (f"HTTP {resp.status_code}", _codes(resp),
+                                                  context.strip()) if p))
 
 
 def access_token(client: Any, client_id: str, client_secret: str, refresh_token: str) -> str:
@@ -55,6 +62,14 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
     """Spend, impressions, clicks and conversions for yesterday and
     start..yesterday (the ad account's time zone)."""
     headers = {"Authorization": f"Bearer {token}"}
+    # Which accounts this sign-in reaches: yes/no only, so a failed search
+    # says whether the account or the manager is the one missing.
+    seen = client.get(ACCESSIBLE.format(version), headers=dict(headers))
+    _check(seen)
+    names = set(seen.json().get("resourceNames") or [])
+    context = (f" (sign-in reaches {len(names)} account(s); ad account listed: "
+               f"{'yes' if 'customers/' + customer_id in names else 'no'}; manager listed: "
+               f"{'yes' if login_customer_id and 'customers/' + login_customer_id in names else 'no'})")
     if login_customer_id:
         headers["login-customer-id"] = login_customer_id
     query = ("SELECT segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks, "
@@ -65,7 +80,7 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
     while True:
         body = {"query": query, **({"pageToken": page} if page else {})}
         resp = client.post(SEARCH.format(version, customer_id), headers=headers, json=body)
-        _check(resp)
+        _check(resp, context)
         doc = resp.json()
         rows += doc.get("results") or []
         page = doc.get("nextPageToken") or ""

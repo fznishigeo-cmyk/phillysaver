@@ -191,6 +191,9 @@ class FakeApis:
             return httpx.Response(200, json={"data": page, "has_more": i + 4 < len(self.subs)})
         if host == "googleads.googleapis.com":
             assert auth == f"Bearer {GADS_TOKEN}"
+            if path == "/v26/customers:listAccessibleCustomers":
+                return httpx.Response(200, json={"resourceNames": ["customers/5861019939",
+                                                                   "customers/4976667972"]})
             assert path == "/v26/customers/4976667972/googleAds:search"
             assert request.headers["login-customer-id"] == "5861019939"
             assert "developer-token" not in request.headers
@@ -794,15 +797,17 @@ def test_google_ads_skipped_without_its_secrets_or_account(cfg, monkeypatch, cap
      {"error": {"code": 403, "message": "secret 7316642", "status": "PERMISSION_DENIED",
                 "details": [{"errors": [{"errorCode": {"authorizationError": "USER_PERMISSION_DENIED"},
                                          "message": "customer 4976667972 <b>x</b>"}]}]}},
-     "google_ads: error HTTP 403 PERMISSION_DENIED USER_PERMISSION_DENIED"),
-    ("googleads.googleapis.com", 502, None, "google_ads: error HTTP 502"),
+     'google_ads: error HTTP 403 PERMISSION_DENIED USER_PERMISSION_DENIED "secret" '
+     "(sign-in reaches 2 account(s); ad account listed: yes; manager listed: yes)"),
+    ("googleads.googleapis.com", 502, None, "google_ads: error HTTP 502 (sign-in reaches 2 "
+     "account(s); ad account listed: yes; manager listed: yes)"),
 ])
 def test_google_ads_errors_log_only_googles_codes(cfg, monkeypatch, caplog, host, code, body, logged):
     for k, v in GADS_ENV.items():
         monkeypatch.setenv(k, v)
 
     def handler(request):
-        if request.url.host == host:
+        if request.url.host == host and not request.url.path.endswith("listAccessibleCustomers"):
             return (httpx.Response(code, json=body) if body is not None
                     else httpx.Response(code, text=f"oops {GADS_TOKEN}"))
         return FakeApis()(request)
