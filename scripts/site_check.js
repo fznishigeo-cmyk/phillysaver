@@ -152,7 +152,8 @@ async function walk(page, doc, device) {
     check(url.protocol === "https:" && name && name !== "wowpriced.com" &&
       !name.endsWith(".wowpriced.com") && name !== SITE_URL.hostname, "invalid or own-site deal URL");
   });
-  await step(6, "Trial dialog / Escape", async () => {
+  const support = Boolean(((doc.meta || {}).support || {}).enabled);
+  await step(6, support ? "Join dialog / Escape" : "Trial dialog / Escape", async () => {
     try {
       await page.locator("#subscribe").click();
       await page.locator("#authmodal").waitFor({ state: "visible" });
@@ -160,8 +161,9 @@ async function walk(page, doc, device) {
     } finally { await page.keyboard.press("Escape"); }
     await page.locator("#authmodal").waitFor({ state: "hidden" });
   });
-  await step(7, "Yearly choice", async () => {
-    if (Number((doc.meta || {}).yearly_price_usd) > 0) {
+  const plansExpected = !support && Number((doc.meta || {}).yearly_price_usd) > 0;
+  await step(7, plansExpected ? "Yearly choice" : "Yearly choice (n/a)", async () => {
+    if (plansExpected) {
       check(/<input\b[^>]*value=["']year["'][^>]*>/i.test(html) && /Yearly/.test(html),
         "missing Yearly plan choice in page source");
     }

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
-<meta name="description" content="How to use the wowpriced deal wall: tabs, the Used and Open-Box pillar, search, sorting, badges, the floors, the Next drop countdown, the Just missed strip, and membership.">
+<meta name="description" content="How to use the wowpriced deal wall: tabs, the Used and Open-Box pillar, search, sorting, badges, the floors, the Next drop countdown, the Just missed strip, <!--standard-->and membership.<!--/standard--><!--support-->and the free deals email.<!--/support-->">
 <title>How to use wowpriced</title>
 <link rel="canonical" href="{{SITE_URL}}/how-it-works.html">
 <style>
@@ -122,9 +122,9 @@ footer p{margin:0 0 8px}
 <p>At the bottom of the wall is a row of deals that died in the last 48 hours, each
    marked GONE. It is there for two reasons. It shows you what kind of deals come
    through, and it shows you how fast they leave. If you keep finding yourself in
-   that strip, <!--paywall-->the membership below fixes it.<!--/paywall--><!--open-->keep a tab open: it refreshes itself at every drop.<!--/open--></p>
+   that strip, <!--paywall-->the membership below fixes it.<!--/paywall--><!--open-->keep a tab open: it refreshes itself at every drop.<!--/open--><!--support-->keep a tab open: it refreshes itself at every drop.<!--/support--></p>
 
-<h2>Membership</h2>
+<!--standard--><h2>Membership</h2>
 <div class="card">
   <p><!--paywall-->Eight top deals on the wall are free for everyone, a new eight at every drop.
      Membership is $9.99 a month: it unlocks every deal on the wall, with new deals
@@ -135,7 +135,10 @@ footer p{margin:0 0 8px}
      or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></span>.</p>
 </div>
 
-<h2>FAQ</h2>
+<!--/standard--><!--support--><h2>Join free and support our work</h2>
+<div class="card"><p>Every deal stays free. <a href="/#join">Join free</a> for the best deals by email, starting soon. You can also <a href="subscribe.html">support our work</a> with a one-time payment of any amount; it buys nothing extra.</p></div>
+
+<!--/support--><h2>FAQ</h2>
 <h3>Why was a deal gone within minutes?</h3>
 <p>Because the good ones are good. A 70% off price error or a deep clearance markdown
    gets found by a lot of people at once, and stock runs out. We re-check prices and
@@ -173,7 +176,7 @@ footer p{margin:0 0 8px}
     <a href="contact.html">Contact</a>
     <a href="/privacy.html">Privacy</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p>
+  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/#join">Join free</a></p><!--/support-->
   <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Some outbound
      links are the source's affiliate links.</p>
 </footer>
@@ -183,7 +186,7 @@ footer p{margin:0 0 8px}
 // Membership starts on the home page: a free account, then the card-up-
 // front trial (docs/paywall.md). The button appears once deals.json names
 // the account service; the Payment Link is never linked from here.
-fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+<!--standard-->fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
     if (d && d.meta && d.meta.api_url) {
@@ -191,7 +194,7 @@ fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
       sub.href = "./#signup";
       sub.style.display = "";
     }
-  }).catch(function () {});
+  }).catch(function () {});<!--/standard--><!--support--><!--/support-->
 // No configured contact email: the publisher leaves the address empty,
 // so the "or email" wording goes with it.
 document.querySelectorAll(".mailalt").forEach(function (el) {

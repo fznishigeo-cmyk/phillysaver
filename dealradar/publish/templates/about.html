@@ -125,14 +125,15 @@ footer p{margin:0 0 8px}
 </div>
 
 <h2>The promise</h2>
-<p><!--paywall-->Eight top deals on the wall are free for everyone, a new eight at every drop. The
+<!--standard--><p><!--paywall-->Eight top deals on the wall are free for everyone, a new eight at every drop. The
    $9.99 a month membership unlocks every deal on the wall, with new deals every {{DROP_MINUTES}}
    minutes. It starts<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with
    new deals every {{DROP_MINUTES}} minutes. Membership is $9.99 a month. It starts<!--/open--> with a 7-day free trial (card
    required), then $9.99/month, renews monthly until you cancel. Cancel anytime
    online<span class="mailalt"> or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></span>. That is the
    whole business. No ads dressed up as deals, no pop-ups, no spin.</p>
-<p>We spent a long time helping stores make prices look good. We would rather help
+<!--/standard--><!--support--><p>Every deal is free for everyone, with new deals every {{DROP_MINUTES}} minutes. Join free for the best deals by email, starting soon, or <a href="subscribe.html">support our work</a> with a one-time payment of any amount.</p>
+<!--/support--><p>We spent a long time helping stores make prices look good. We would rather help
    you find the ones that actually are.</p>
 </main>
 <footer>
@@ -145,7 +146,7 @@ footer p{margin:0 0 8px}
     <a href="contact.html">Contact</a>
     <a href="/privacy.html">Privacy</a>
   </nav>
-  <p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p>
+  <!--standard--><p><a id="subscribe" class="getdeal" style="display:none">Start 7-day free trial</a></p><!--/standard--><!--support--><p><a class="getdeal" href="/#join">Join free</a></p><!--/support-->
   <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Some outbound
      links are the source's affiliate links.</p>
 </footer>
@@ -155,7 +156,7 @@ footer p{margin:0 0 8px}
 // Membership starts on the home page: a free account, then the card-up-
 // front trial (docs/paywall.md). The button appears once deals.json names
 // the account service; the Payment Link is never linked from here.
-fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
+<!--standard-->fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
   .then(function (r) { return r.json(); })
   .then(function (d) {
     if (d && d.meta && d.meta.api_url) {
@@ -163,7 +164,7 @@ fetch("deals.json?t=" + Date.now(), {cache: "no-store"})
       sub.href = "./#signup";
       sub.style.display = "";
     }
-  }).catch(function () {});
+  }).catch(function () {});<!--/standard--><!--support--><!--/support-->
 // No configured contact email: the publisher leaves the address empty,
 // so the "or email" wording goes with it.
 document.querySelectorAll(".mailalt").forEach(function (el) {

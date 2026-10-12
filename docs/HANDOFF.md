@@ -59,56 +59,23 @@ Keep this file current: whoever stops working updates it in their last commit.
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
-- **Open access (2026-10-11, for "a month or two"):** every visitor sees
-  every deal in full, nothing blurred (`config.yaml paywall.open_access:
-  true`). Sign-up, the trial button, "$0 today" and Log in are unchanged.
-  Pages show their open wording (no "members only", no "unlock"); never
-  add copy saying the trial is support. To bring the paywall back, set
-  `open_access: false`: the free-8 rotation resumes where it paused.
-- **Free 8** (while the paywall is closed): every drop unlocks 8 completely new deals; none is free twice
-  until every live deal has had a turn (state.db meta `teaser_recent`). A
-  drop is a new publish on a `publish.drop_minutes` (15) clock: one that
-  lands early waits for its mark; when the mark comes first, the clock says
-  "Next drop soon" and the page waits for it; it never re-deals the same 8.
-- **Brand:** a tilted teal tile whose "w" doubles as a price-drop zigzag,
-  with a gold spark (inline SVG, also the favicon), and the "wowpriced"
-  wordmark. The home header is an ink bar in both themes; top right: drop
-  dial, "Log in" pill, trial button with a gold "$0 today" chip.
-- **Cards:** the hairline runs on the free 8, on a member's new arrivals, and
-  on hover. There is a deal ticker at the top and a sources wall at the bottom.
-- **Get deal:** a deal whose price needs steps (a code, a coupon to clip,
-  Subscribe & Save, a rebate, or an in-cart / targeted / new-customer /
-  multi-buy / in-store condition) links to the source post that explains
-  them, and its card shows "How to get this price" with tap-to-copy codes.
-  A plain-price deal links straight to the product (publish/site.py
-  `_needs_steps`).
-- **No customer emails at all.** Membership is website access only.
-  - `members.email_enabled: false` and `newsletter.enabled: false` in
-    config.yaml; the code paths stay, switched off.
-  - No page offers or promises an email. `subscribe.html` is a plain
-    membership page; old email links land there with a short note.
-- **"$0 today":** next to a trial button on the main screen the only price
-  line is a "$0 today" badge. The footer opens with "Membership —
-  $9.99/month", and the full terms stay in the dialog and on Stripe's page.
-- **Cancel wording:** no "cancel" reminders on the main screen. "Manage
-  membership" sits in the footer only. The full auto-renewal terms stay in
-  the checkout dialog, on Stripe's page, on the welcome page and on the help
-  pages (legal requirement).
-- **Deals stay until genuinely over.** A live deal is never removed for its
-  age (Amazon "used - like new" offers last until someone buys them). A
-  deal dies only when:
-  - its stated expiry passes;
-  - its source post says it ended or sold out;
-  - a live price check (Keepa offers, the Woot API) finds it gone.
-  Dead deals are deleted 14 days after they die.
-- **No trial reminder emails.** Members cancel by emailing
-  hello@wowpriced.com or through Stripe's portal.
-- **LLM spend:**
-  - $15/day until 2026-10-14; it then falls back to $6/day by itself.
-  - The goal is $6/day.
-  - Never skip the critic for Keepa deals: a review showed inflated bases.
-
-## In flight
+- **Free site + optional support (Codex task 019, LIVE 2026-10-12):**
+  `support.enabled: true` replaces the membership pitch (operator: people
+  won't pay; affiliate is the income). Every deal is free. **Join free**
+  (header, phone bar, a box after 8 cards, footer) collects only an email
+  through the Worker's `POST /subscribe` (unconfirmed until the deals email
+  launches, about a month out; `newsletter.enabled` also gates the one
+  confirmation email each address gets first). **Support our work**: a
+  closable banner after the 8th card (closed for 7 days, guarded storage)
+  with the operator's copy, a one-time pay-what-you-want Stripe Payment Link
+  (`support.payment_link`, only `https://buy.stripe.com/...`; empty = Join
+  only) and the small print "for-profit business: not tax-deductible, buys
+  nothing extra". All membership code stays; `support.enabled: false`
+  restores the previous pages byte-for-byte. Verified in Chromium (desktop +
+  phone): wall renders, Join posts `{"email"}` and shows the confirmation,
+  banner appears/closes/stays closed, no membership wording, 0 errors. Two
+  fixes found in that check: an `offer()` stub (the ticker called it; the
+  wall stayed empty) and the banner edge on phones (the header scrolls away).
 - **Hourly site check walks the site like a visitor (Codex task 018, merged
   2026-10-12):** `site-check.yml` (hourly) on desktop and phone: home loads
   (cards, clock, tagline, no JS errors), load-more, a category tab and back,

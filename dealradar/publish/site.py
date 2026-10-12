@@ -13,11 +13,12 @@ import logging
 import re
 import shutil
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from ..config import redact_secrets
+from ..config import redact_secrets, support_link
 from ..util import iso, parse_iso
 from . import seo
 from .paywall import is_open, split_teaser, teaser_memory
@@ -63,10 +64,14 @@ def util_now():
 
 
 def site_template_version() -> str:
-    """Short hash of the home page template: changes with every template
-    edit, so a visitor's cached page knows a newer one was published."""
+    """Short hash of the standard home template, preserving its version
+    when only the optional support variant changes."""
     import hashlib
-    data = (TEMPLATES_DIR / "index.html").read_bytes()
+    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    # Adding the support switch leaves the standard page, including its
+    # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
+    html = re.sub(r"<!--support-->.*?<!--/support-->", "", html, flags=re.S)
+    data = html.replace("<!--standard-->", "").replace("<!--/standard-->", "").encode()
     return hashlib.sha256(data).hexdigest()[:12]
 
 
@@ -151,15 +156,32 @@ _CONDITION_HOW = {
 }
 
 
-#: A page's two wordings: <!--paywall-->...<!--/paywall--> while deals are
-#: locked, <!--open-->...<!--/open--> while every deal is open. The other
-#: one never reaches the published page (nor a crawler).
-_VARIANT_RE = re.compile(r"<!--(paywall|open)-->(.*?)<!--/\1-->", re.S)
+#: Support wins over open/paywall. Shared membership-only regions use
+#: <!--standard--> so the two legacy variants need not duplicate them.
+_VARIANT_RE = re.compile(r"<!--(paywall|open|support)-->(.*?)<!--/\1-->", re.S)
+_STANDARD_RE = re.compile(r"<!--standard-->(.*?)<!--/standard-->", re.S)
+SUPPORT_BODY = (
+    "wowpriced is free for everyone: no paywall, no ads. Every day we check thousands "
+    "of prices so you only see real deals. If wowpriced saved you money, please chip "
+    "in whatever it's worth to you. Most people never do. If you can, you keep it free for everyone."
+)
+SUPPORT_NOTE = (
+    "One-time payment, any amount, through Stripe. wowpriced is a for-profit business: "
+    "support is not tax-deductible and buys nothing extra; every deal stays free."
+)
+JOIN_FORM = (
+    '<form class="joinform"><label>Email <input name="email" type="email" '
+    'autocomplete="email" required></label><button type="submit" class="pwbtn btn">Join free</button>'
+    '<p class="meta muted">The best deals by email. Free. Unsubscribe anytime.</p>'
+    '<p data-join-message role="status" hidden></p></form>'
+)
 
 
-def copy_variant(html: str, open_access: bool) -> str:
+def copy_variant(html: str, open_access: bool, support: bool = False) -> str:
     """html with the wording for the current access mode only."""
-    keep = "open" if open_access else "paywall"
+    # Shared membership markup/scripts need not be duplicated in open/paywall.
+    html = _STANDARD_RE.sub(lambda m: "" if support else m.group(1), html)
+    keep = "support" if support else ("open" if open_access else "paywall")
     return _VARIANT_RE.sub(lambda m: m.group(2) if m.group(1) == keep else "", html)
 
 
@@ -287,10 +309,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         recent = []
     teaser, locked_count = split_teaser(serialized, cfg, recent)
     open_access = is_open(cfg)
+    support = bool(getattr(cfg, "support_enabled", False))
+    link = support_link(getattr(cfg, "support_payment_link", ""))
     if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
     # The mode changes the published wording: a flip reloads open tabs.
     site_version = site_template_version() + ("-open" if open_access else "")
+    if support:
+        data = ((TEMPLATES_DIR / "index.html").read_bytes()
+                + (TEMPLATES_DIR / "support.js").read_bytes() + link.encode())
+        site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -328,6 +356,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Every deal in full for everyone: the page's sign-up copy drops
         # "unlock" (nothing is locked).
         "open_access": open_access,
+        "support": {"enabled": support, "link": link},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
         "source_sites": _source_sites(serialized),
@@ -366,7 +395,21 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{PLAN_CHOICES_" + place.upper() + "}}", choices)
         if name == "index.html" and yearly > 0:
             html = html.replace("<strong>Membership — $9.99/month", f"<strong>Membership — $9.99/month or ${yearly:g}/year")
-        (out / name).write_text(copy_variant(html, open_access), encoding="utf-8")
+        html = copy_variant(html, open_access, support)
+        if support:
+            html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
+            html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
+            html = html.replace("{{SUPPORT_PAGE_LABEL}}", "Join &amp; support" if link else "Join free")
+            html = html.replace("{{SUPPORT_ACTION}}", (
+                f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
+                'target="_blank" rel="noopener">Support our work</a>' if link else ""))
+            html = html.replace("{{SUPPORT_FOOT_LINK}}", (
+                f'<a data-support href="{escape(link, quote=True)}" target="_blank" '
+                'rel="noopener"><strong>Support our work</strong></a> · ' if link else ""))
+            html = html.replace("{{SUPPORT_NOTE}}", f'<p class="disc muted" data-support-note>{SUPPORT_NOTE}</p>' if link else "")
+            html = html.replace("{{JOIN_FORM}}", JOIN_FORM)
+            html = html.replace("{{JOIN_FORM_JSON}}", json.dumps(JOIN_FORM))
+        (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
     index = (out / "index.html").read_text(encoding="utf-8")

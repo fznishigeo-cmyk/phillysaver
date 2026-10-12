@@ -258,7 +258,11 @@ def head_snippet(cfg) -> str:
                        ("pinterest_tag_id", _PINTEREST), ("bing_uet_id", _UET)):
         if key in ids:
             blocks.append(block % {"id": js(key)})
-    script = f"<script>\n{_HEAD}{''.join(blocks)}{_DISPATCH}</script>\n" if blocks else ""
+    dispatch = _DISPATCH
+    if getattr(cfg, "support_enabled", False):
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    support_click: { metaCustom: "SupportClick", tiktok: "ClickButton", uet: "support_click" },')
+    script = f"<script>\n{_HEAD}{''.join(blocks)}{dispatch}</script>\n" if blocks else ""
     if not metas and not script:
         return ""
     return f"{_START}\n{''.join(metas)}{script}{_END}\n"

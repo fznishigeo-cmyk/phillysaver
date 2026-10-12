@@ -482,7 +482,18 @@ footer .meta{font-size:11.5px}
   .dtag,.dtick,.dtick path{transition:none}
   .card{transition:none}
 }
-</style>
+<!--support-->
+.supporttext{flex:1 1 100%;padding-right:28px}
+.supporttext h2{font-size:18px;margin:0 0 6px}
+.supporttext p{margin:0;font-size:14px;line-height:1.45}
+.support{position:sticky}
+.joinform{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.joinform label{flex:1 1 180px}
+.joinform input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+.joinform p{flex:1 1 100%;margin:0}
+.mcard .joinform{flex-wrap:nowrap}
+.mcard .joinform>*{flex:0 1 auto}
+<!--/support--></style>
 </head>
 <body>
 <section id="ticker" class="tk" aria-label="Live deals" hidden>
@@ -510,14 +521,15 @@ footer .meta{font-size:11.5px}
       <span class="droplbl">Next drop in</span>
       <span id="countdown" class="dropt">-:--</span>
     </div>
-    <span id="account" class="acct" hidden>
+<!--standard-->    <span id="account" class="acct" hidden>
       <button type="button" id="loginlink" class="linkbtn" data-auth="login">Log in</button>
       <span id="acctin" class="in" hidden><span id="acctemail" class="email"></span>
         <button type="button" id="logout" class="linkbtn">Log out</button></span>
     </span>
     <a id="subscribe" class="getdeal trialcta" href="#signup" style="display:none">
       Start 7-day free trial</a>
-  </div>
+<!--/standard--><!--support-->    <a id="subscribe" class="getdeal" href="#join" data-join>Join free</a>
+<!--/support-->  </div>
   <p id="sincevisit" class="since" hidden></p>
   <nav id="cattabs" aria-label="category tabs">{{CAT_TABS}}</nav>
 </header>
@@ -536,7 +548,7 @@ footer .meta{font-size:11.5px}
   <select id="srcsel" aria-label="source filter"><option value="">all sources</option><option value="@2">&#10003; confirmed by 2+ sources</option></select>
 </div>
 <div id="content">{{STATIC_WALL}}</div>
-<div id="paywall" class="paywall" hidden>
+<!--standard--><div id="paywall" class="paywall" hidden>
   <p class="pwtext"></p>
   {{PLAN_CHOICES_PANEL}}
   <div class="pwbtns">
@@ -552,12 +564,19 @@ footer .meta{font-size:11.5px}
   <a id="pwfb" class="pwbtn alt" rel="noopener" hidden>Subscribe now &mdash; $9.99/month</a>
   <p id="pwfbnote" class="disc" hidden></p>
 </div>
-<footer>
-  <p><!--paywall--><strong>Membership — $9.99/month:</strong> every deal on the wall, new deals every
+<!--/standard--><!--support--><div id="paywall" class="paywall support" hidden>
+  <button type="button" class="mx" data-support-close aria-label="Dismiss support banner">✕</button>
+  <div class="supporttext"><h2>A quick, honest ask.</h2><p>{{SUPPORT_BODY}}</p></div>
+  <div class="pwbtns">{{SUPPORT_ACTION}}<button type="button" class="pwbtn alt" data-join>Join free</button></div>
+  {{SUPPORT_NOTE}}
+</div>
+<!--/support--><footer>
+<!--standard-->  <p><!--paywall--><strong>Membership — $9.99/month:</strong> every deal on the wall, new deals every
      {{DROP_MINUTES}} minutes.<!--/paywall--><!--open--><strong>Membership — $9.99/month.</strong><!--/open-->
      <span id="footterms">7-day free trial for new members. $0 today.</span>
      <!--paywall-->Eight deals stay free for everyone, new at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, with new deals every {{DROP_MINUTES}} minutes.<!--/open--></p>
-  <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Prices are
+<!--/standard--><!--support-->  <p>wowpriced is free for everyone. {{SUPPORT_FOOT_LINK}}<a href="#join" data-join><strong>Join free</strong></a></p>{{SUPPORT_NOTE}}
+<!--/support-->  <p>Every deal links to the seller (or, when it needs a code or coupon, to the post that explains how) and credits the source that found it. Prices are
      quoted from the source word-for-word, fake "list prices" are removed, and Amazon
      prices are re-checked live.</p>
   <div id="srcwall" class="srcwall" role="img" hidden>
@@ -567,19 +586,19 @@ footer .meta{font-size:11.5px}
       <div class="srcrow"><div class="srctrack rev" id="srcb"></div></div>
     </div>
   </div>
-  <p id="acctfoot" class="meta" hidden>Your account:
+<!--standard-->  <p id="acctfoot" class="meta" hidden>Your account:
     <button type="button" id="billing" class="linkbtn">Manage membership</button></p>
-  <nav class="footnav" aria-label="site pages">
+<!--/standard--><!--support--><!--/support-->  <nav class="footnav" aria-label="site pages">
     <a href="about.html">About</a> · <a href="how-it-works.html">How it works</a> ·
     <a href="hacks.html">Deal hacks</a> · <a href="careers.html">Work with us</a> ·
-    <a href="contact.html">Contact</a> · <a href="subscribe.html">Membership</a> ·
+    <a href="contact.html">Contact</a> · <!--standard--><a href="subscribe.html">Membership</a><!--/standard--><!--support--><a href="subscribe.html">{{SUPPORT_PAGE_LABEL}}</a><!--/support--> ·
     <a href="/privacy.html">Privacy</a>
   </nav>
   <p id="metaline" class="meta">Loading&hellip;</p>
 </footer>
-<a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a>
+<!--standard--><a id="subbar" class="subbar trialcta" href="#signup">Start 7-day free trial</a><!--/standard--><!--support--><a id="subbar" class="subbar ready" href="#join" data-join>Join free</a><!--/support-->
 </div>
-<div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
+<!--standard--><div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
   <div class="mcard">
     <button type="button" id="authclose" class="mx" aria-label="Close">&times;</button>
     <h2 id="authtitle">Create your free account</h2>
@@ -609,7 +628,15 @@ footer .meta{font-size:11.5px}
     </div>
   </div>
 </div>
-<div id="toast" class="toast" role="status" hidden></div>
+<!--/standard--><!--support--><div id="authmodal" class="modal" role="dialog" aria-modal="true" aria-labelledby="authtitle" hidden>
+  <div class="mcard">
+    <button type="button" class="mx" data-join-close aria-label="Close">✕</button>
+    <h2 id="authtitle">Join free</h2>
+    {{JOIN_FORM}}
+  </div>
+</div>
+<script>{{SUPPORT_SCRIPT}}</script>
+<!--/support--><div id="toast" class="toast" role="status" hidden></div>
 <script>
 "use strict";
 (function () {
@@ -749,7 +776,7 @@ footer .meta{font-size:11.5px}
     // hardcoded in this template. Run times and counts are the operator's
     // (Actions summary), not visitors' (operator, 2026-10-12).
     document.getElementById("metaline").textContent = m.disclosure || "";
-    // Account menu (docs/paywall.md): only once a Worker is configured.
+<!--standard-->    // Account menu (docs/paywall.md): only once a Worker is configured.
     var me = state.me, on = !!apiUrl(m);
     document.getElementById("account").hidden = !on;
     document.getElementById("loginlink").hidden = !!me;
@@ -773,7 +800,8 @@ footer .meta{font-size:11.5px}
     document.getElementById("acctfoot").hidden = !(on && hasBilling());
     document.getElementById("footterms").textContent =
       (offer().trial ? trialDays() + "-day free trial for new members. " : "") + shortNote(offer());
-    syncSubbar();
+<!--/standard--><!--support-->    window.wpSupport.refresh(m);
+<!--/support-->    syncSubbar();
   }
 
   // ---- the drop clock ----
@@ -1331,7 +1359,7 @@ footer .meta{font-size:11.5px}
     }
     var html = "", banded = false, remaining = state.shown;
     // The first grid with locked cards gets the trial band ahead of them.
-    function grid(list) {
+<!--standard-->    function grid(list) {
       var openBandHere = openAccess() && !banded && canJoin() && list.length > 8;
       list = list.slice(0, remaining);
       remaining -= list.length;
@@ -1346,7 +1374,17 @@ footer .meta{font-size:11.5px}
       var open = list.filter(function (d) { return !isLocked(d); });
       return (open.length ? gridHtml(open) : "") + trialBand() + gridHtml(shut);
     }
-    if (headliners.length) {
+<!--/standard--><!--support-->    var beforeBand = 8;
+    function grid(list) {
+      list = list.slice(0, remaining);
+      remaining -= list.length;
+      if (!list.length) return "";
+      if (banded) return gridHtml(list);
+      if (list.length <= beforeBand) { beforeBand -= list.length; return gridHtml(list); }
+      banded = true;
+      return (beforeBand ? gridHtml(list.slice(0, beforeBand)) : "") + openBand() + gridHtml(list.slice(beforeBand));
+    }
+<!--/support-->    if (headliners.length) {
       html += grid(headliners);
     } else {
       html += '<p class="empty">No deals above the ' +
@@ -1375,7 +1413,8 @@ footer .meta{font-size:11.5px}
     var miss = content.querySelector(".missed");
     var more = content.querySelector(".more");
     if (miss || more) content.insertBefore(panel, miss || more); else content.appendChild(panel);
-    var button = document.getElementById("moremore");
+<!--standard-->    var button = document.getElementById("moremore");<!--/standard--><!--support-->    window.wpSupport.refresh(state.meta);
+    var button = document.getElementById("moremore");<!--/support-->
     if (button) {
       button.addEventListener("click", showMore);
       if ("IntersectionObserver" in window) {
@@ -1487,7 +1526,7 @@ footer .meta{font-size:11.5px}
     return changed;
   }
 
-  // ---- paywall (docs/paywall.md, "Page behavior") ----
+<!--standard-->  // ---- paywall (docs/paywall.md, "Page behavior") ----
   // The static site only ever holds the teaser: the top deals in full and
   // every other live deal as a locked stub. A free account sees the same
   // teaser; every deal unlocks only with a Stripe subscription (a card on
@@ -2245,7 +2284,42 @@ footer .meta{font-size:11.5px}
   panel.querySelector("#pwnote").addEventListener("click", function (e) {
     if (e.target.closest(".zerotoday")) nextStep();
   });
-  // The ticker: a locked deal takes the next step; a free one scrolls to
+<!--/standard--><!--support-->  var auth = { checking: false };
+  var panel = document.getElementById("paywall");
+  function isLocked(d) { return d.locked === true; }
+  function isMember() { return false; }
+  function unknownMembership() { return false; }
+  function token() { return ""; }
+  function apiUrl(m) { return String((m || state.meta || {}).api_url || "").replace(/\/+$/, ""); }
+  function openAccess() { return true; }
+  function openNudge() { return false; }
+  function canJoin() { return true; }
+  function lockLabel() { return ""; }
+  // Shared code (the ticker) still asks for the offer: none to make here.
+  function offer() { return { trial: false, days: 0, lapsed: false, btn: "Join free", note: "" }; }
+  function nextStep() { window.wpSupport.open(); }
+  function openFromHash() { window.wpSupport.fromHash(); }
+  function memberDeals() { return Promise.resolve(null); }
+  function showDeals() {}
+  function openBand() { return '<div class="trialband"><p class="tbtext"><strong>Join free: the best deals in your inbox</strong></p>' + window.wpSupport.form + '</div>'; }
+  function trialBand() { return openBand(); }
+  function syncSubbar() { window.wpSupport.refresh(state.meta); }
+  function updatePaywall() { window.wpSupport.refresh(state.meta); }
+  document.getElementById("content").addEventListener("click", function (e) {
+    var code = e.target.closest(".card .code[data-code]");
+    if (code) {
+      var c = code.getAttribute("data-code");
+      try { navigator.clipboard.writeText(c).then(function () { toast("Code " + c + " copied"); }, function () { toast("Code: " + c); }); }
+      catch (err) { toast("Code: " + c); }
+    }
+    var go = e.target.closest('.card a[rel~="sponsored"]');
+    if (go) {
+      var k = go.closest(".card").getAttribute("data-key");
+      var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });
+    }
+  });
+<!--/support-->  // The ticker: a locked deal takes the next step; a free one scrolls to
   // its card and flashes it. PAUSE (or hover) stops the scroll.
   document.getElementById("tkband").addEventListener("click", function (e) {
     if (e.target.closest("#tkpause")) return;
