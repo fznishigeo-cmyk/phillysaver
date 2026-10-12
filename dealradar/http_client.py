@@ -179,7 +179,7 @@ def challenge_target(url: str) -> str:
     return target
 
 
-_TRACKER_PARAMS = {"cc.dealsofamerica.com": "url"}
+_TRACKER_PARAMS = {"cc.dealsofamerica.com": "url", "click.linksynergy.com": "murl"}
 
 
 def tracker_target(url: str) -> str:

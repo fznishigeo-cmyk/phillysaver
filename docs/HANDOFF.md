@@ -109,6 +109,14 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Amazon links from posts (Codex task 016, merged 2026-10-12):** for live
+  site deals with no photo and no product link (or Amazon without an ASIN),
+  the fast lane fetches the first credited post politely (robots, official-
+  feed-only policy, 40 posts per run, 10 short links per post), takes the
+  page's single Amazon link (or, in a roundup, the uniquely best anchor
+  match covering 60% of the item's words), sets canonical + ASIN and lifts
+  the photo flags so Keepa fills the photo. One attempt per deal
+  (`post_link_tried`); only the link is stored. Rakuten `murl` decodes.
 - **Yearly plan (Codex task 015, merged 2026-10-12, OFF until priced):**
   `paywall.yearly_price_usd` (0 = hidden; set 49 together with the Worker's
   `STRIPE_YEARLY_PRICE_ID`, then deploy the Worker). With it on, the dialog
