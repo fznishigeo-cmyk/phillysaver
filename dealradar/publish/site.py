@@ -273,7 +273,7 @@ SUPPORT_NOTE_MONTHLY = (
 )
 JOIN_FORM = (
     '<form class="joinform"><label for="join-email">Email</label><input id="join-email" name="email" type="email" '
-    'autocomplete="email" required><button type="submit" class="pwbtn btn">Join free</button>'
+    'placeholder="Email" autocomplete="email" required><button type="submit" class="pwbtn btn" disabled>Continue</button>'
     '<p class="meta muted">One email with the best deals. Unsubscribe anytime.</p>'
     '<p data-join-message role="status" hidden></p></form>'
 )
@@ -605,16 +605,13 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             card = (TEMPLATES_DIR / "join-card.html").read_text(encoding="utf-8")
             card = card.replace("{{JOIN_FORM}}", JOIN_FORM)
             card = card.replace("{{JOIN_HEADING}}", "h1" if name == "join.html" else "h2")
-            if name == "join.html":  # the visitor chose to join: the email field is already open
-                card = card.replace('class="joinchoice" type="button"', 'class="joinchoice" type="button" hidden')
-                card = card.replace('<div id="join-email-fields" hidden>', '<div id="join-email-fields">')
             card = card.replace("{{JOIN_CLOSE}}", '' if name == "join.html" else (
                 '<button type="button" class="joinclose" data-join-close aria-label="Close sign-up prompt">✕</button>'))
             html = html.replace("{{JOIN_CARD}}", card)
             html = html.replace("{{JOIN_PROMPT}}", (
                 '<div id="join-prompt" class="joinoverlay" hidden><div role="dialog" aria-modal="true" '
                 'aria-labelledby="join-title" aria-describedby="join-description" tabindex="-1">'
-                + card + '</div></div>' if cfg.join_prompt else ""))
+                + card + '</div></div>'))
             html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself

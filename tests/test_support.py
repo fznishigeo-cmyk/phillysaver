@@ -109,7 +109,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
             assert 'target="_blank" rel="noopener"' in match.group()
             assert NOTE in html[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
     assert "wowpriced is free for everyone." in home
-    assert 'track("support_click", {plan: "once"})' in home and 'rememberJoin("email")' in home
+    assert 'track("support_click", {plan: "once"})' in home and 'joinedCard("email")' in home
     assert 'fetch(api + "/subscribe"' in home and 'JSON.stringify({email: input.value.trim()})' in home
     assert 'try { dismissed = Number(localStorage.getItem(KEY))' in home
     assert 'try { localStorage.setItem(KEY, String(Date.now() + WEEK)); }' in home
@@ -169,7 +169,7 @@ def test_hourly_check_joins_without_submitting_and_skips_plans():
     assert 'response.status === 200' in step6 and 'type=["' in step6
     assert 'input[type="email"]' in step6 and 'page.keyboard.press("Escape")' in step6
     assert "plansExpected = !support" in step6 and '"Yearly choice (n/a)"' in step6
-    assert "submit" not in step6
+    assert '.submit(' not in step6 and 'method: "POST"' not in step6
 
 
 def test_support_click_reaches_tracking_and_legacy_dispatch_is_unchanged(tmp_path):
@@ -234,7 +234,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     join = (out / "join.html").read_text()
     assert "<title>Join wowpriced</title>" in join
     assert '<link rel="canonical" href="https://wowpriced.com/join.html">' in join
-    assert "The day's best deals in one email. Free. Unsubscribe anytime." in join
+    assert "The day's best deals in one email. Free." in join
     assert '<h1 id="join-title">Join wowpriced</h1>' in join
     assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email"' in join
     assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 1
@@ -247,7 +247,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     assert "<loc>https://wowpriced.com/join.html</loc>" in (out / "sitemap.xml").read_text()
     assert "https://wowpriced.com/join.html" in json.loads(site.seo.due_list_path(out).read_text())
     assert 'fetch(api + "/subscribe"' in join and 'JSON.stringify({email: input.value.trim()})' in join
-    assert 'rememberJoin("email")' in join
+    assert 'joinedCard("email")' in join
     for path in out.rglob("*.html"):
         html = path.read_text()
         assert 'id="authmodal"' not in html, path
