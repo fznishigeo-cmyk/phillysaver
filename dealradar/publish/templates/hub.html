@@ -6,8 +6,9 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0e7569">
 <meta name="description" content="{{DESCRIPTION}}">
-{{ROBOTS}}<title>{{TITLE}} — wowpriced</title>
-<link rel="canonical" href="{{SITE_URL}}/deals/{{SLUG}}/">
+{{ROBOTS}}<title>{{PAGE_TITLE}}</title>
+<link rel="canonical" href="{{CANONICAL}}">
+{{EXTRA_HEAD}}
 <style>
 :root{
   color-scheme: light dark;
@@ -83,6 +84,9 @@ p{margin:0 0 14px}
 .getdeal{display:inline-block;background:var(--accent);color:var(--accent-fg)!important;
          font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px;flex:0 0 auto}
 .getdeal:hover{text-decoration:none;filter:brightness(1.08)}
+.deal-detail>.ph{position:static;height:90px;border-radius:14px}
+.deal-detail>.getdeal{font-size:18px;padding:14px 28px}
+.deal-detail>.how{font-size:16px}
 .credit{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;
         text-overflow:ellipsis;white-space:nowrap}
 .credit a{color:var(--muted);text-decoration:underline}
@@ -111,7 +115,7 @@ footer p{margin:0 0 8px}
     <p class="brand"><a href="/" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
     <span class="tag">verified deals · refreshed every {{DROP_MINUTES}} minutes</span>
   </div>
-</header>
+{{TABS}}</header>
 <div class="wrap">
 <main>
 <h1>{{TITLE}}</h1>

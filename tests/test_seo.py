@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import timedelta
@@ -175,7 +176,7 @@ def test_404_page_and_cloudflare_headers(db, cfg, tmp_path):
     assert "Allow: /\n" in robots and "deals.json" not in robots
 
 
-def test_two_renders_of_the_same_data_write_the_same_sitemap(db, cfg, tmp_path):
+def test_rotating_teaser_changes_only_deal_page_sitemap_entries(db, cfg, tmp_path):
     _seed_week(db, 3)
     _render(db, cfg, tmp_path / "a")
     _render(db, cfg, tmp_path / "b")
@@ -183,7 +184,10 @@ def test_two_renders_of_the_same_data_write_the_same_sitemap(db, cfg, tmp_path):
              if not d.get("locked")} for x in "ab")
     assert a and not a & b  # the free picks rotated between the two publishes...
     sitemap = (tmp_path / "a" / "sitemap.xml").read_bytes()
-    assert sitemap == (tmp_path / "b" / "sitemap.xml").read_bytes()  # ...the sitemap did not
+    other = (tmp_path / "b" / "sitemap.xml").read_bytes()
+    without_deals = lambda xml: re.sub(rb"  <url><loc>https://wowpriced.com/deal/.*?</url>\n", b"", xml)
+    assert without_deals(sitemap) == without_deals(other)  # hub dates remain stable
+    assert sitemap != other  # only the newly unlocked deals get pages
     text = sitemap.decode()
     assert "<url><loc>https://wowpriced.com/about.html</loc></url>" in text
     assert "<url><loc>https://wowpriced.com/</loc></url>" in text
@@ -206,13 +210,19 @@ def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
     assert due() == []  # the same publish again lists nothing
     more = _deals() + [make_deal(dedupe_key="new", item="ZZNEW", category="electronics")]
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=1))
-    assert due() == []  # changed, but inside the interval
+    new_url = "https://wowpriced.com" + seo.deal_path("ZZNEW", "11507a0e")
+    assert due() == [new_url]  # new page is due immediately; changes wait
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=7))
-    assert set(due()) == {"https://wowpriced.com/", "https://wowpriced.com/deals/electronics/"}
+    changed = {"https://wowpriced.com/", "https://wowpriced.com/deals/electronics/",
+               "https://wowpriced.com/best-deals-today/"}
+    changed.update("https://wowpriced.com" + seo.deal_path(d["item"],
+                   hashlib.sha256(d["dedupe_key"].encode()).hexdigest()[:8])
+                   for d in _deals() if d["category"] == "electronics")
+    assert set(due()) == changed
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=14))
-    assert due() == []  # unchanged since the last listing
+    assert due() == ["https://wowpriced.com/best-deals-today/"]  # crossed UTC midnight
     sent = json.loads(db.meta_get("indexnow_sent"))
-    assert set(sent) == set(first)
+    assert set(sent) == set(first) | {new_url}
 
 
 def test_indexnow_hub_dipping_under_its_floor_keeps_its_interval(db, cfg):
