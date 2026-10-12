@@ -43,6 +43,7 @@ SECRET_NAMES = [
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
     "NEWSLETTER_SECRET",  # bearer token for the Worker: /list (newsletter) and /api/publish (paywall)
+    "PINTEREST_APP_ID", "PINTEREST_APP_SECRET",
 ]
 
 
@@ -221,6 +222,7 @@ class AppConfig:
     newsletter_top_n: int = 10         # deals per email, picked once a day by the parse model
     # -- tracking: public analytics/ad tag IDs, validated in publish/tracking.py --
     tracking: dict[str, str] = field(default_factory=dict)
+    pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -323,6 +325,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                     default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.front_page = g("publish", "front_page", default={}) or {}
+    cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
     tag = str(g("affiliate", "amazon_tag", default="") or "").strip()

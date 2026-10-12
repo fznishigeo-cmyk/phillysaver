@@ -106,3 +106,18 @@ jobs:
         # and a failure never fails the run.
         continue-on-error: true
         run: python -m dealradar indexnow
+
+      - name: Post top deals to Pinterest
+        id: pinterest
+        continue-on-error: true
+        env:
+          PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+          PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+        run: python -m dealradar pinterest-post
+
+      - name: Commit Pinterest state to data branch
+        # Persist partial successes and refreshed tokens even if posting fails.
+        if: ${{ !cancelled() && steps.pinterest.outcome != 'skipped' }}
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/commit_state.sh

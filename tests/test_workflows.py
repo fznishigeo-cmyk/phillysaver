@@ -25,6 +25,7 @@ DEPLOY_WORKER = WORKFLOWS / "deploy-subscribe-worker.yml"
 GROWTH = WORKFLOWS / "growth-report.yml"
 LIGHTHOUSE = WORKFLOWS / "lighthouse.yml"
 SITE_CHECK = WORKFLOWS / "site-check.yml"
+PINTEREST_CONNECT = WORKFLOWS / "pinterest-connect.yml"
 WORKER_DIR = ROOT / "cloudflare" / "subscribe-worker"
 SCRIPT = ROOT / "scripts" / "commit_state.sh"
 RESTORE = ROOT / "scripts" / "restore_state.sh"
@@ -89,7 +90,7 @@ def assert_cloudflare_is_the_only_host(doc: dict) -> None:
 
 
 def test_all_workflows_parse() -> None:
-    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH, LIGHTHOUSE, SITE_CHECK):
+    for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH, LIGHTHOUSE, SITE_CHECK, PINTEREST_CONNECT):
         assert p.is_file(), p
         load_workflow(p)
 
@@ -196,6 +197,61 @@ def test_hourly_shape() -> None:
     renamed = {"SOVRN_API_KEY": "${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}"}
     for name, value in run_step["env"].items():
         assert value == renamed.get(name, "${{ secrets.%s }}" % name)
+
+
+def test_pinterest_connect_masks_code_and_serializes_encrypted_state(tmp_path):
+    doc = load_workflow(PINTEREST_CONNECT)
+    assert workflow_on(doc) == {"workflow_dispatch": {"inputs": {
+        "code": {"description": "Pinterest authorization code", "required": True, "type": "string"},
+    }}}
+    assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
+    assert doc["permissions"] == {"contents": "write"}
+    steps = single_job(doc)["steps"]
+    first = steps[0]
+    assert "env" not in first
+    assert '::add-mask::%s' in first["run"] and '"$code"' in first["run"]
+    assert '.inputs.code' in first["run"] and '"$GITHUB_EVENT_PATH"' in first["run"]
+    assert "%25" in first["run"] and "%0D" in first["run"] and "%0A" in first["run"]
+    assert "${{ inputs.code }}" not in "\n".join(run_commands(doc))
+    restore = next(i for i, s in enumerate(steps) if s.get("run") == "bash scripts/restore_state.sh")
+    connect = next(i for i, s in enumerate(steps) if "pinterest-connect --code" in s.get("run", ""))
+    commit = next(i for i, s in enumerate(steps) if s.get("run") == "bash scripts/commit_state.sh")
+    assert restore < connect < commit
+    assert steps[connect]["run"] == 'python -m dealradar pinterest-connect --code "$PINTEREST_CODE"'
+    assert_state_steps_get_the_key(steps)
+    env = steps[connect]["env"]
+    assert env == {"PINTEREST_CODE": "${{ inputs.code }}",
+                   "PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
+                   "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}"}
+    assert {key for s in steps for key in s.get("env", {})} == {
+        "PINTEREST_CODE", "PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "STATE_DB_KEY"}
+    checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["fetch-depth"] == 0
+    # Nothing interpolates the code into a command or an unmasked env listing.
+    # Workflow command delimiters are escaped before GitHub consumes the mask.
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"inputs": {"code": "fake-code%\r\nend"}}))
+    result = subprocess.run(["bash", "-e", "-c", first["run"]],
+                            env={**os.environ, "GITHUB_EVENT_PATH": str(event)},
+                            capture_output=True, text=True, check=True)
+    assert result.stdout == "::add-mask::fake-code%25%0D%0Aend\n"
+
+
+def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
+    steps = single_job(load_workflow(HOURLY))["steps"]
+    deploy = next(i for i, s in enumerate(steps) if s.get("name") == "Deploy site to Cloudflare Pages")
+    post = next(i for i, s in enumerate(steps) if s.get("run") == "python -m dealradar pinterest-post")
+    assert post > deploy and steps[post]["continue-on-error"] is True
+    assert steps[post]["id"] == "pinterest"
+    assert steps[post]["env"] == {"PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
+                                   "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}"}
+    commit = steps[post + 1]
+    assert commit is steps[-1]
+    assert commit["run"] == "bash scripts/commit_state.sh"
+    assert commit["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert commit["if"] == "${{ !cancelled() && steps.pinterest.outcome != 'skipped' }}"
+    assert "continue-on-error" not in commit
+    assert not any("pinterest-post" in s.get("run", "") for s in single_job(load_workflow(FAST))["steps"])
 
 
 def test_fast_shape() -> None:

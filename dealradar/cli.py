@@ -21,6 +21,7 @@ CORE_DOMAINS = [
     "api.woot.com",
     "meh.com",
     "api.indexnow.org",       # python -m dealradar indexnow
+    "api-sandbox.pinterest.com", "api.pinterest.com",
 ]
 
 
@@ -102,6 +103,26 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     return run(load_config(args.config), db_path=args.db)
 
 
+def cmd_pinterest(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .db import DB
+    from .publish import pinterest
+
+    cfg = load_config(args.config)
+    if args.command == "pinterest-auth-url":
+        url = pinterest.auth_url(cfg)
+        if url:
+            print(url)
+        return 0
+    db = DB(args.db)
+    try:
+        if args.command == "pinterest-connect":
+            return pinterest.connect(db, cfg, args.code)
+        return pinterest.post(db, cfg)
+    finally:
+        db.close()
+
+
 def cmd_domains(args: argparse.Namespace) -> int:
     """Print the outbound hostnames the pipeline needs (network allowlist helper)."""
     from .config import load_sources
@@ -163,6 +184,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="daily private growth report (operator email / Telegram admin)")
     common(sp)
     sp.set_defaults(fn=cmd_growth_report)
+
+    for command, help_text in (
+        ("pinterest-auth-url", "print the Pinterest authorization URL"),
+        ("pinterest-connect", "connect Pinterest once using an authorization code"),
+        ("pinterest-post", "post published top picks to Pinterest"),
+    ):
+        sp = sub.add_parser(command, help=help_text)
+        common(sp)
+        if command == "pinterest-connect":
+            sp.add_argument("--code", required=True)
+        sp.set_defaults(fn=cmd_pinterest)
 
     sp = sub.add_parser("domains", help="print outbound hostnames for allowlists")
     sp.set_defaults(fn=cmd_domains)

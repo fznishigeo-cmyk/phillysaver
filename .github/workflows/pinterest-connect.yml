@@ -1,0 +1,62 @@
+# One-time OAuth exchange. Tokens are saved only in encrypted data-branch state.
+name: connect Pinterest
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: Pinterest authorization code
+        required: true
+        type: string
+
+concurrency:
+  group: dealradar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  connect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mask authorization code
+        # Read the event file: an env input would be printed before masking.
+        run: |
+          code="$(jq -r '.inputs.code' "$GITHUB_EVENT_PATH")"
+          code="${code//'%'/'%25'}"
+          code="${code//$'\r'/'%0D'}"
+          code="${code//$'\n'/'%0A'}"
+          printf '::add-mask::%s\n' "$code"
+
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        run: pip install -e .
+
+      - name: Restore state from data branch
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/restore_state.sh
+
+      - name: Connect Pinterest
+        env:
+          PINTEREST_CODE: ${{ inputs.code }}
+          PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
+          PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
+        run: python -m dealradar pinterest-connect --code "$PINTEREST_CODE"
+
+      - name: Commit state to data branch
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/commit_state.sh

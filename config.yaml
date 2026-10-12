@@ -335,6 +335,16 @@ tracking:
   pinterest_domain_verify: "a24dd8688b84862029ffdb65db755ed9"  # p:domain_verify (32 hex characters)
   facebook_domain_verification: ""  # facebook-domain-verification
 
+social:
+  pinterest:
+    enabled: true
+    environment: sandbox          # sandbox (Trial access) | production
+    redirect_uri: "https://wowpriced.com/"
+    board_name: "Deals up to 90% off"
+    pins_per_run: 2               # hourly lane
+    daily_max: 20                 # per UTC day
+    disclosure: "#ad"             # last word of every description
+
 digest:
   hour_local: 8                # 08:00 America/New_York
   timezone: "America/New_York"

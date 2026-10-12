@@ -142,6 +142,16 @@ Keep this file current: whoever stops working updates it in their last commit.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Pinterest poster (Codex task 044, shipped 2026-10-12):** app "wowpriced
+  deals" (ID 1623198, Trial access: sandbox only, Pins visible to us). Connect
+  once: `python -m dealradar pinterest-auth-url` -> operator approves -> the
+  code from `https://wowpriced.com/?code=...` goes into the "connect Pinterest"
+  workflow (masks it, stores rotating tokens in encrypted state meta
+  `pinterest_auth`). hourly.yml posts 2 top picks per run after deploy (20 per
+  UTC day), https photo + live deal page only, "% off" and no prices, "#ad"
+  last; `pinterest_posted` makes it idempotent. Standard access (public Pins)
+  needs a screen recording; then `social.pinterest.environment: production`
+  and connect again (sandbox tokens do not work in production).
 - **Keepa fits the 20 token/min plan (2026-10-12):** operator: stay on the
   €49 plan; "amazon isnt like some bidding auction". Rechecks wanted ~23,000
   tokens a day at 3 h (new) / 6 h (used, ~13 tokens each) for every deal and
