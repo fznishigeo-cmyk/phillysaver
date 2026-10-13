@@ -426,7 +426,7 @@ def test_admin_path_unchanged_despite_channel_caps_and_hours(db, cfg, monkeypatc
     [(_, payload)] = client.posts
     assert payload["chat_id"] == "999888" and payload["disable_web_page_preview"] is True
     assert payload["text"] == "dealradar admin warnings:\n5 sources tripped"
-    assert db.alert_exists("admin", "2026-10-09T06|admin")
+    assert db.conn.execute("SELECT 1 FROM alerts_sent WHERE channel='admin' AND dedup_token LIKE ?", ("2026-10-09|%|admin",)).fetchone() is not None
 
 
 def test_only_deals_whose_page_an_earlier_deploy_put_live(db, cfg, monkeypatch):

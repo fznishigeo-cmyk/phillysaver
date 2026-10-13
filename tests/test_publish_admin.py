@@ -13,7 +13,10 @@ from dealradar.db import DB
 from dealradar.publish.admin_alerts import check_and_alert
 
 NOW = datetime(2026, 10, 9, 14, 0, 0, tzinfo=timezone.utc)
-HOUR_TOKEN = "2026-10-09T14|admin"
+def admin_sent(db, day="2026-10-09"):
+    """An admin alert is recorded for that day (token: day|text hash|admin)."""
+    return db.conn.execute("SELECT 1 FROM alerts_sent WHERE channel='admin' "
+                           "AND dedup_token LIKE ?", (day + "|%|admin",)).fetchone() is not None
 
 
 class FakeHttpClient:
@@ -88,7 +91,7 @@ def test_low_volume_warns_and_posts_to_admin_chat(db, cfg, monkeypatch):
     assert payload["chat_id"] != "@publicchannel"  # ...never the channel
     assert payload["disable_web_page_preview"] is True
     assert "low volume: 10 vs 7-day avg 100.0" in payload["text"]
-    assert db.alert_exists("admin", HOUR_TOKEN)
+    assert admin_sent(db)
 
 
 def test_items_at_threshold_do_not_warn(db, cfg, monkeypatch):
@@ -112,7 +115,7 @@ def test_tripped_sources_trigger_at_threshold(db, cfg, monkeypatch):
     _, payload = client.posts[0]
     assert payload["chat_id"] == "999888"
     assert "5 sources tripped" in payload["text"]
-    assert db.alert_exists("admin", HOUR_TOKEN)
+    assert admin_sent(db)
 
 
 def test_all_quiet_returns_empty_and_sends_nothing(db, cfg, monkeypatch):
@@ -123,7 +126,7 @@ def test_all_quiet_returns_empty_and_sends_nothing(db, cfg, monkeypatch):
     warnings = check_and_alert(db, cfg, NOW, items_fetched=80, http_client=client)
     assert warnings == []
     assert client.posts == []
-    assert not db.alert_exists("admin", HOUR_TOKEN)
+    assert not admin_sent(db)
 
 
 # ---------------------------------------------------------------- idempotency
@@ -141,6 +144,14 @@ def test_idempotent_within_same_hour(db, cfg, monkeypatch):
     second = check_and_alert(db, cfg, later, items_fetched=10, http_client=client)
     assert second == ["low volume: 10 vs 7-day avg 100.0"]
     assert len(client.posts) == 1  # no second POST
+    # Hours later the same day, same warnings: still nothing (once a day).
+    third = check_and_alert(db, cfg, NOW + timedelta(hours=6), items_fetched=10, http_client=client)
+    assert third == first and len(client.posts) == 1
+    # A changed warning goes out at once; a new day repeats the old one.
+    check_and_alert(db, cfg, NOW + timedelta(hours=6), items_fetched=5, http_client=client)
+    assert len(client.posts) == 2
+    check_and_alert(db, cfg, NOW + timedelta(days=1), items_fetched=10, http_client=client)
+    assert len(client.posts) == 3
 
 
 # ---------------------------------------------------------------- credentials
@@ -157,7 +168,7 @@ def test_missing_creds_logs_only_but_still_records(db, cfg, caplog):
     assert client.posts == []  # no HTTP call without credentials
     assert any("no credentials" in r.getMessage() for r in caplog.records)
     # Still recorded, so the hour stays idempotent.
-    assert db.alert_exists("admin", HOUR_TOKEN)
+    assert admin_sent(db)
 
 
 def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
@@ -167,8 +178,8 @@ def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
     warnings = check_and_alert(db, cfg, NOW, items_fetched=10, http_client=failing)
     assert warnings == ["low volume: 10 vs 7-day avg 100.0"]
     assert len(failing.posts) == 1
-    assert not db.alert_exists("admin", HOUR_TOKEN)  # retry stays possible
+    assert not admin_sent(db)  # retry stays possible
     ok = FakeHttpClient(status_code=200)
     check_and_alert(db, cfg, NOW, items_fetched=10, http_client=ok)
     assert len(ok.posts) == 1
-    assert db.alert_exists("admin", HOUR_TOKEN)
+    assert admin_sent(db)

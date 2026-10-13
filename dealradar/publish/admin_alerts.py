@@ -1,12 +1,15 @@
 """Admin alerting: low fetch volume and tripped-source warnings.
 
 Warnings go to a SEPARATE admin chat (TELEGRAM_ADMIN_CHAT_ID) via the same
-bot token. Without credentials the warnings are logged only. Idempotent per
-hour via alerts_sent('admin', '<YYYY-MM-DDTHH>|admin').
+bot token. Without credentials the warnings are logged only. The same
+warnings go out at most once a day (operator, 2026-10-13: hourly repeats were
+noise); a change in the warnings (e.g. 11 -> 12 sources tripped) goes out at
+once. Idempotent via alerts_sent('admin', '<YYYY-MM-DD>|<hash of text>|admin').
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 from typing import Any
@@ -20,7 +23,7 @@ logger = logging.getLogger("dealradar.publish.admin")
 
 def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
                     http_client: Any = None, kind: str = "hourly") -> list[str]:
-    """Compute health warnings and alert the admin chat (at most once/hour).
+    """Compute health warnings and alert the admin chat (same text: once a day).
 
     The low-volume check runs only for hourly runs: a 15-minute fast-lane run
     fetches a handful of fast_lane sources by design and would false-alarm
@@ -37,9 +40,10 @@ def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
     if not warnings:
         return []
 
-    dedup_token = now.strftime("%Y-%m-%dT%H") + "|admin"
+    digest = hashlib.sha256("\n".join(warnings).encode()).hexdigest()[:12]
+    dedup_token = f"{now.strftime('%Y-%m-%d')}|{digest}|admin"
     if db.alert_exists("admin", dedup_token):
-        logger.info("admin alert already handled this hour: %s", "; ".join(warnings))
+        logger.info("admin alert already sent today: %s", "; ".join(warnings))
         return warnings
 
     text = "dealradar admin warnings:\n" + "\n".join(warnings)
