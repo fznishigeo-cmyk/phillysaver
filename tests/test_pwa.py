@@ -44,10 +44,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "fb74708818a748663efa0a58f20a7b9e13e0657d68ab8465c5abab8bf715c74a"),
-    ("open", "c07cdd5552392e93acefcc3099d7a554cafbdb8244a33adc663a06a71e3a0bc5"),
-    ("support", "60765f90af5f48d2bbbb352e11cea800ea950a20400caeb7e82af2d1f48d1109"),
-    ("shipped", "58294777e06781756a5831b9b3e05d55d71a30dd1d541a38dfc7971fb071100a"),
+    ("membership", "09faa24f0ac60185f05262553dc7e80240df5d66e3d05f7e82ab5958a882b560"),
+    ("open", "37af119632dba4ad624b0b0d763c642576d0195cb9d95c2660a27c41c71e8f6e"),
+    ("support", "9c91d584767cbf39211b77c4d55289c28f069a5db8ca0a94f9d107103c25be31"),
+    ("shipped", "331e0ed467459b0a7f3ea31e4eba76d6d3ecd857f1398f71245571d191d38ff6"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Task 076 updates all four trees: shared phone target CSS changes
@@ -156,7 +156,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "60765f90af5f48d2bbbb352e11cea800ea950a20400caeb7e82af2d1f48d1109"
+    assert tree_hash(out) == "9c91d584767cbf39211b77c4d55289c28f069a5db8ca0a94f9d107103c25be31"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

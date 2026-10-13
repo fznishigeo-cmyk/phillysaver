@@ -76,4 +76,51 @@
   }
   scope.addEventListener("click", click);
   scope.addEventListener("auxclick", click);
+
+  // A grid's last row is never left half-empty (operator, 2026-10-13: "two
+  // squares are missing"), whatever the screen width. Cards split by a band
+  // (the Join free strip after the first deals) borrow the next grid's first
+  // cards; a list's real end gets one tile spanning the gap. No deal hidden.
+  function columns(grid) {
+    return getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length;
+  }
+  function fillRows() {
+    var grids = [].slice.call(scope.querySelectorAll(".grid"));
+    grids.forEach(function (grid, i) {
+      var cards = grid.querySelectorAll(":scope > .card");
+      var fill = grid.querySelector(":scope > .gridfill");
+      var cols = columns(grid);
+      var gap = cols > 1 && cards.length ? (cols - cards.length % cols) % cols : 0;
+      var next = grids[i + 1];
+      if (gap && next && next.parentNode === grid.parentNode && columns(next) === cols) {
+        var lend = next.querySelectorAll(":scope > .card");
+        if (lend.length > gap) {
+          if (fill) fill.remove();
+          for (var k = 0; k < gap; k++) grid.appendChild(lend[k]);
+          return;
+        }
+      }
+      if (!gap) { if (fill) fill.remove(); return; }
+      if (fill && fill === grid.lastElementChild && fill.style.gridColumn === "span " + gap) return;
+      if (!fill) {
+        fill = document.createElement("div");
+        fill.className = "gridfill";
+        fill.innerHTML = '<p>Looking for more?</p><a href="/best-deals-today/">Today\'s best deals &rarr;</a>' +
+          '<a href="/join">Get deals by email: Join free</a>';
+      }
+      fill.style.gridColumn = "span " + gap;
+      grid.appendChild(fill);
+    });
+  }
+  var pending = false;
+  function schedule() {
+    if (pending) return;
+    pending = true;
+    (window.requestAnimationFrame || setTimeout)(function () { pending = false; fillRows(); });
+  }
+  if (typeof MutationObserver === "function" && typeof getComputedStyle === "function") {
+    new MutationObserver(schedule).observe(scope, {childList: true, subtree: true});
+    if (window.addEventListener) window.addEventListener("resize", schedule);
+    schedule();
+  }
 })();
