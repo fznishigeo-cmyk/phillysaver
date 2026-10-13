@@ -1917,7 +1917,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 recorded += 1
         summary["posts_new"] = recorded
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days,
-                 post_parses_days=cfg.post_parses_days)
+                 post_parses_days=cfg.post_parses_days, llm_calls_days=cfg.llm_calls_days,
+                 run_stats_days=cfg.run_stats_days, http_cache_days=cfg.http_cache_days,
+                 outgoing_days=cfg.outgoing_days)
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             try:
@@ -1944,6 +1946,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         finally:
             fetcher.close()
             db.close()
+            try:
+                summary["state_db_bytes"] = os.path.getsize(db.path)
+                log.info("state.db bytes: %d", summary["state_db_bytes"])
+            except OSError:
+                pass  # a measurement must never mask the run's own outcome
 
 
 def validate_only(*, db_path: str = "state.db", config_path: str | None = None,

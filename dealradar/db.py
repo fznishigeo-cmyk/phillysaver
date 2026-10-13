@@ -13,6 +13,7 @@ Full post text is NEVER stored here — only extracted facts, links, and credit.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import statistics
 from contextlib import closing
@@ -25,6 +26,8 @@ from urllib.parse import urlsplit
 from .models import RawPost
 from .conditions import normalize_conditions
 from .util import iso, now_utc, parse_iso
+
+log = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -839,7 +842,9 @@ class DB:
         self.conn.commit()
 
     def prune(self, now: datetime, *, posts_seen_days: int = 30,
-              deals_days: int = 14, post_parses_days: int = 2) -> None:
+              deals_days: int = 14, post_parses_days: int = 2,
+              llm_calls_days: int = 35, run_stats_days: int = 60,
+              http_cache_days: int = 30, outgoing_days: int = 60) -> None:
         self.conn.execute(
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),
@@ -860,4 +865,47 @@ class DB:
             " COALESCE(NULLIF(json_extract(payload, '$.died_at'), ''), last_seen_at) < ?",
             (iso(now - timedelta(days=deals_days)),),
         )
+        # Both call timestamps and every per-day reservation must be old.
+        # Even a zero/negative retention cannot erase today's or tomorrow's
+        # cap; reserved calls and their reservations are never removed.
+        today = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = min(iso(now - timedelta(days=llm_calls_days)), iso(today))
+        old_calls = (
+            "SELECT call_key FROM llm_calls WHERE status IN ('settled','released','uncertain')"
+            " AND started_at < ? AND COALESCE(billed_at,started_at) < ?"
+            " AND NOT EXISTS (SELECT 1 FROM llm_reservations r"
+            " WHERE r.call_key=llm_calls.call_key AND r.day >= ?)")
+        params = (cutoff, cutoff, cutoff[:10])
+        self.conn.execute("DELETE FROM llm_reservations WHERE call_key IN (" + old_calls + ")", params)
+        self.conn.execute("DELETE FROM llm_calls WHERE call_key IN (" + old_calls + ")", params)
+        self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
+                          (iso(now - timedelta(days=run_stats_days)),))
+        self.conn.execute("DELETE FROM http_cache WHERE fetched_at < ?",
+                          (iso(now - timedelta(days=http_cache_days)),))
+        # Only failed attempts expire. A `sent` row is the record that a live
+        # deal (which can stay up for months) was already posted; dropping it
+        # could let a channel post the same deal again.
+        self.conn.execute(
+            "DELETE FROM outgoing WHERE status = 'rejected'"
+            " AND COALESCE(finished_at,started_at) < ?",
+            (iso(now - timedelta(days=outgoing_days)),))
         self.conn.commit()
+
+        pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
+        free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
+        if free * 10 > pages:
+            try:
+                busy, _, _ = self.conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
+                if busy:
+                    raise sqlite3.OperationalError("WAL checkpoint busy")
+                self.conn.execute("VACUUM")
+            except sqlite3.OperationalError as e:
+                # Compaction is an optimisation: never fail the run for it.
+                log.warning("state compaction deferred (%s): pages=%d, free=%d", e, pages, free)
+            else:
+                after = self.conn.execute("PRAGMA page_count").fetchone()[0]
+                after_free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
+                log.info("state compacted: pages=%d->%d, free=%d->%d", pages, after, free, after_free)
+        counts = [self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                  for table in ("price_history", "alerts_sent")]
+        log.info("state rows: price_history=%d alerts_sent=%d", *counts)

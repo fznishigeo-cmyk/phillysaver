@@ -190,6 +190,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Lighter state (Codex task 060, finished by Claude after Codex hit
+  "model at capacity", 2026-10-13):** `state.db.enc` was 52 MB, pushed every
+  run, past GitHub's 50 MB warning (hard limit 100 MB). Now gzip (`-n -6`)
+  before encryption; restore reads old and new snapshots and still fails
+  closed; the first save after deploy migrates once. VACUUM after prune when
+  free pages > 10% (a locked VACUUM logs and is skipped, never fails a run).
+  Retention: settled LLM calls 35 d (pending and today/tomorrow kept), run
+  stats 60 d, HTTP validators 30 d, REJECTED outgoing 60 d; sent delivery
+  records are kept so a long-lived deal is never posted twice. Do not revert
+  `scripts/state_crypt.sh` alone: old code cannot read a gzip snapshot.
 - **AI value (Codex task 059 + review, 2026-10-13):** live 24 h sample: $7.32,
   Sonnet (critic + second opinion) 47% of spend on 8.5% of calls, three
   Slickdeals feeds 58% of extract spend, ~88% of extracted deals below floor.

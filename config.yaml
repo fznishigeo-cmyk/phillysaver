@@ -452,6 +452,13 @@ retention:
   # encrypted state.db that is pushed to the data branch every run.
   post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
+  # Settled/released/uncertain calls and their per-day reservations: enough
+  # for 7-day reports and an audit margin; caps need today and tomorrow only.
+  # Pending calls and today's/tomorrow's ledger rows always survive.
+  llm_calls_days: 35
+  run_stats_days: 60         # two months of run health; reports use the latest 7 days
+  http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
+  outgoing_days: 60          # failed (rejected) attempts only; sent records and pending guards never expire
 
 feature_flags:
   threads: false               # off until app review passes

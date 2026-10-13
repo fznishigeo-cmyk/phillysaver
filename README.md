@@ -158,8 +158,15 @@ supports manual dispatch):
   after every run by `scripts/commit_state.sh`, squashed monthly, **never on
   main**. The commit messages carry `[skip ci]`. The repository is public, so
   with the `STATE_DB_KEY` repository secret set the branch holds only
-  `state.db.enc` (`scripts/state_crypt.sh`); `scripts/restore_state.sh`
-  decrypts it before each run and fails the run rather than start empty.
+  `state.db.enc`: deterministic gzip (`gzip -n -6`) before AES-256-CBC
+  encryption with PBKDF2 (`scripts/state_crypt.sh`). The key stays in the
+  environment. `scripts/restore_state.sh` also reads older snapshots that
+  encrypted SQLite directly; the next save migrates them once. A missing or
+  wrong key, corrupt gzip, or non-SQLite plaintext fails the run rather than
+  start empty. Unchanged decompressed bytes add no commit. After retention
+  cleanup only, SQLite is vacuumed when free pages exceed 10% of all pages,
+  with a WAL checkpoint first. Saves log plaintext/encrypted byte counts;
+  run summaries report `state_db_bytes` after SQLite closes.
 - Keep hourly runs under ~3 min of runner time (the job has a hard
   `timeout-minutes: 15`; internal budget is 8 min). The run budget in
   `config.yaml` (`fetch.run_budget_s`) is the knob.
@@ -221,4 +228,9 @@ Honored **by design**, not by configuration:
 - Idempotent re-runs: posts dedupe on a content hash (`posts_seen`), alerts on
   UNIQUE tokens (`alerts_sent`) — running the same hour twice adds no rows and
   re-sends nothing.
-- Retention: posts 30 days, deals 14 days (`python -m dealradar prune`).
+- Retention (`config.yaml retention:`, also `python -m dealradar prune`):
+  posts 30 days, cached parses 2 days, dead deals 14 days after death;
+  completed LLM calls/reservations 35 days, run stats 60 days, HTTP validators
+  30 days, failed (rejected) outgoing attempts 60 days. Sent delivery records,
+  pending calls/deliveries and today's/tomorrow's UTC spend ledger survive. Price history and alert
+  dedupe records are kept indefinitely; their row counts are logged.

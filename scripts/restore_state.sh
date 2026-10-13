@@ -39,7 +39,7 @@ if git -C "$REPO_DIR" cat-file -e origin/data:state.db.enc 2>/dev/null; then
   if ! state_decrypt "$enc" "$REPO_DIR/state.db" 2>/dev/null \
      || [[ "$(head -c 15 "$REPO_DIR/state.db" 2>/dev/null)" != "SQLite format 3" ]]; then
     rm -f "$REPO_DIR/state.db"
-    log "could not decrypt state.db.enc: STATE_DB_KEY is not the key it was written with"
+    log "could not decrypt or validate state.db.enc (wrong key or corrupt state): refusing to start empty"
     exit 1
   fi
   log "state restored (decrypted)"

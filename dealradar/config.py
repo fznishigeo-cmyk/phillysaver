@@ -275,6 +275,10 @@ class AppConfig:
     posts_seen_days: int = 30
     post_parses_days: int = 2
     deals_days: int = 14
+    llm_calls_days: int = 35
+    run_stats_days: int = 60
+    http_cache_days: int = 30
+    outgoing_days: int = 60
     feature_flags: dict[str, bool] = field(default_factory=dict)
 
     def resolved_user_agent(self) -> str:
@@ -533,6 +537,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.post_parses_days = int(g("retention", "post_parses_days", default=cfg.post_parses_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))
+    cfg.llm_calls_days = int(g("retention", "llm_calls_days", default=cfg.llm_calls_days))
+    cfg.run_stats_days = int(g("retention", "run_stats_days", default=cfg.run_stats_days))
+    cfg.http_cache_days = int(g("retention", "http_cache_days", default=cfg.http_cache_days))
+    cfg.outgoing_days = int(g("retention", "outgoing_days", default=cfg.outgoing_days))
     cfg.feature_flags = g("feature_flags", default={}) or {}
     from .source_policy import grant_active
     primary, backup = load_sources()

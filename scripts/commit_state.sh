@@ -87,11 +87,11 @@ report_is_fresh() {
 }
 
 same_state() {
-  # The committed ciphertext still decrypts to this run's state.db. Encryption
-  # salts every write, so comparing ciphertexts would commit on every run.
+  # Compare decompressed SQLite bytes, since encryption salts every write.
+  # Legacy uncompressed snapshots migrate once, even with unchanged state.
   local plain rc
   plain="$(mktemp)"
-  state_decrypt "$WORKTREE/state.db.enc" "$plain" 2>/dev/null && cmp -s "$plain" "$REPO_DIR/state.db"
+  state_decrypt "$WORKTREE/state.db.enc" "$plain" require-gzip 2>/dev/null && cmp -s "$plain" "$REPO_DIR/state.db"
   rc=$?
   rm -f "$plain"
   return "$rc"
@@ -119,6 +119,7 @@ fi
 STAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
   commit --quiet -m "state: $STAMP [skip ci]"
+log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTREE/state.db.enc")"
 
 # Push to the data branch only — never main. Retry up to 4 times on failure
 # (a concurrent run may have pushed first) with exponential backoff. A rebase
@@ -152,6 +153,7 @@ for delay in 2 4 8 16 0; do
     STAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
       commit --quiet -m "state: $STAMP [skip ci]"
+    log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTREE/state.db.enc")"
   fi
 done
 

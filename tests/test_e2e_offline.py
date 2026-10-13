@@ -216,6 +216,7 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
 
     assert summary["items_fetched"] == 5
     assert summary["posts_new"] == 5
+    assert summary["state_db_bytes"] == Path(env["db"]).stat().st_size > 0
     # config.yaml pins parse.model; unset it falls back to the cheapest-model
     # heuristic (covered in test_claude_client).
     assert summary["parse"]["parser"] == "claude-haiku-5-5"
@@ -294,6 +295,45 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     for private in ("Ninja Foodi", "Chef Pro Knife", "FRYDAY", "$29.99", "BEGIN POST"):
         assert private not in md
     assert "spend_by_kind" not in last_run and "extract_by_source" not in last_run
+
+
+def test_pipeline_uses_configured_state_retention(env):
+    import yaml
+    from datetime import timedelta
+
+    cfg_path = Path(env["cfg"])
+    cfg = yaml.safe_load(cfg_path.read_text())
+    for name in ("llm_calls_days", "run_stats_days", "http_cache_days", "outgoing_days"):
+        cfg["retention"][name] = 1
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    at = NOW - timedelta(days=3)
+    db = DB(env["db"])
+    db.start_run("old", "fast", at)
+    db.store_validators("https://old.example/feed", '"old"', "", at)
+    for status in ("settled", "reserved"):
+        db.reserve_llm_call("old-" + status, "old", "fixture", .1, at,
+                            {at.date().isoformat(): 1}, 1)
+        if status == "settled":
+            db.settle_llm_call("old-" + status, .01, at)
+    for status in ("sent", "rejected", "pending"):
+        assert db.claim_outgoing("test", "old-" + status, "old", at)
+        if status != "pending":
+            db.finish_outgoing("test", "old-" + status, at, rejected=status == "rejected")
+    db.close()
+
+    summary = _run(env)
+
+    assert summary["state_db_bytes"] == Path(env["db"]).stat().st_size > 0
+    db = DB(env["db"])
+    assert not db.conn.execute("SELECT 1 FROM run_stats WHERE run_key='old'").fetchone()
+    assert db.get_validators("https://old.example/feed") == ("", "")
+    assert not db.conn.execute("SELECT 1 FROM llm_calls WHERE call_key='old-settled'").fetchone()
+    assert db.conn.execute("SELECT status FROM llm_calls WHERE call_key='old-reserved'").fetchone()[0] == "reserved"
+    assert not db.conn.execute(
+        "SELECT 1 FROM outgoing WHERE dedup_token='old-rejected'").fetchone()
+    assert db.outgoing_exists("test", "old-sent")  # never re-post a live deal
+    assert db.outgoing_exists("test", "old-pending")
+    db.close()
 
 
 def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, monkeypatch, tmp_path):

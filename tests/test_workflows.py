@@ -5,10 +5,12 @@ local temporary git repositories (file:// remotes), never the network.
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 from pathlib import Path
@@ -649,6 +651,70 @@ def decrypt(blob: bytes, tmp_path: Path, key: str = KEY) -> bytes:
     subprocess.run(["bash", "-c", '. "$0"; state_decrypt "$1" "$2"', str(CRYPT), str(enc), str(out)],
                    check=True, capture_output=True, env={**os.environ, "STATE_DB_KEY": key})
     return out.read_bytes()
+
+
+def openssl_payload(data: bytes, *, decrypt: bool = False) -> bytes:
+    """Read/write the cipher's raw payload, including pre-gzip fixtures."""
+    return subprocess.run(
+        ["openssl", "enc", "-d" if decrypt else "-e", "-aes-256-cbc",
+         "-pbkdf2", "-iter", "200000", "-md", "sha256", "-pass", "env:STATE_DB_KEY"],
+        input=data, check=True, capture_output=True,
+        env={**os.environ, "STATE_DB_KEY": KEY}).stdout
+
+
+def seed_encrypted_state(repo: Path, payload: bytes) -> None:
+    _git(repo, "checkout", "--orphan", "encrypted-fixture")
+    _git(repo, "rm", "--force", "hello.txt")
+    (repo / "state.db.enc").write_bytes(openssl_payload(payload))
+    _git(repo, "add", "state.db.enc")
+    _git(repo, "commit", "-m", "encrypted state fixture")
+    _git(repo, "push", "origin", "HEAD:data")
+    _git(repo, "checkout", "main")
+
+
+def test_old_encrypted_state_migrates_once_and_restores_identically(repo: Path,
+                                                                  tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture.db"
+    with sqlite3.connect(fixture) as conn:
+        conn.execute("CREATE TABLE facts(item TEXT, price REAL)")
+        conn.executemany("INSERT INTO facts VALUES (?, ?)", [("Widget", 12.5)] * 100)
+    plain = fixture.read_bytes()
+    seed_encrypted_state(repo, plain)
+
+    assert run_script(repo, RESTORE, key=KEY).returncode == 0
+    assert (repo / "state.db").read_bytes() == plain
+    res = run_script(repo, key=KEY)  # Even unchanged legacy bytes migrate once.
+    assert res.returncode == 0, res.stderr + res.stdout
+    blob = branch_blob(repo, "state.db.enc")
+    packed = openssl_payload(blob, decrypt=True)
+    expected = subprocess.run(["gzip", "-n", "-6", "-c"], input=plain,
+                              check=True, capture_output=True).stdout
+    assert packed == expected
+    assert gzip.decompress(packed) == plain
+    assert f"state.db {len(plain)} -> state.db.enc {len(blob)}" in res.stdout
+
+    (repo / "state.db").unlink()
+    assert run_script(repo, RESTORE, key=KEY).returncode == 0
+    assert (repo / "state.db").read_bytes() == plain
+    res = run_script(repo, key=KEY)
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "no-op" in res.stdout
+    assert branch_blob(repo, "state.db.enc") == blob
+    assert _git(repo, "rev-list", "--count", "origin/data") == "2"
+
+
+@pytest.mark.parametrize("payload", [
+    b"not a SQLite database",
+    gzip.compress(SQLITE_V1, mtime=0)[:-3],
+    gzip.compress(SQLITE_V1, mtime=0)[:-1] + b"\xff",
+    gzip.compress(b"not a SQLite database", mtime=0),
+], ids=["non-sqlite", "truncated-gzip", "corrupt-gzip", "gzip-non-sqlite"])
+def test_restore_invalid_encrypted_payload_fails_closed(repo: Path, payload: bytes) -> None:
+    seed_encrypted_state(repo, payload)
+    (repo / "state.db").write_bytes(SQLITE_V2)
+    res = run_script(repo, RESTORE, key=KEY)
+    assert res.returncode == 1
+    assert not (repo / "state.db").exists()
 
 
 def test_state_scripts_static() -> None:
