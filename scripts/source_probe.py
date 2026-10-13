@@ -80,40 +80,66 @@ def outline(body: bytes | None, limit: int = 6) -> list[str]:
     reader needs to follow a changed page layout. Never prints page text."""
     from html.parser import HTMLParser
 
+    VOID = {"br", "img", "input", "meta", "link", "hr", "source"}
+    DEAL = re.compile(r"^(https?://[^/]+)?/(deals?|product|item)s?/")
+
     class Outline(HTMLParser):
-        def __init__(self):
+        def __init__(self, record=()):
             super().__init__(convert_charrefs=True)
-            self.stack, self.cards, self.dollar = [], [], []
+            self.stack, self.ords, self.n = [], [], 0
+            self.cards, self.dollar, self.found = [], [], []
+            self.record, self.depth, self.inside = set(record), None, []
 
         def handle_starttag(self, tag, attrs):
             a = dict(attrs)
+            self.n += 1
             label = tag + "".join("." + c for c in (a.get("class") or "").split()[:3])
             if a.get("aria-label") and "$" in a["aria-label"]:
                 label += "[aria-label has $]"
-            if tag not in {"br", "img", "input", "meta", "link", "hr", "source"}:
+            if self.depth is None and self.n in self.record:
+                self.depth = len(self.stack)
+                self.inside.append(f"-- container: " + " > ".join(self.stack[-2:] + [label]))
+            elif self.depth is not None and len(self.inside) < 120:
+                self.inside.append("  " * (len(self.stack) - self.depth) + label
+                                   + (" href" if a.get("href") else ""))
+            if tag not in VOID:
                 self.stack.append(label)
+                self.ords.append(self.n)
             href = a.get("href") or ""
-            if tag == "a" and re.match(r"^(https?://[^/]+)?/(deals?|product|item)s?/", href):
+            if tag == "a" and DEAL.match(href):
                 if len(self.cards) < limit:
                     self.cards.append(" > ".join(self.stack[-5:]) + f"  href={urlsplit(href).path[:60]}")
+                if len(self.found) < 2 and len(self.ords) >= 3 and self.ords[-3] not in self.found:
+                    self.found.append(self.ords[-3])  # the deal link's grandparent
 
         def handle_endtag(self, tag):
             for i in range(len(self.stack) - 1, -1, -1):
                 if self.stack[i].split(".")[0].split("[")[0] == tag:
-                    del self.stack[i:]
+                    del self.stack[i:], self.ords[i:]
                     break
+            if self.depth is not None and len(self.stack) <= self.depth:
+                self.depth = None
 
         def handle_data(self, data):
             if "$" in data and len(self.dollar) < limit:
                 self.dollar.append(" > ".join(self.stack[-4:]))
+            if self.depth is not None and data.strip() and self.inside:
+                mark = " <$>" if "$" in data else " <text>"
+                if not self.inside[-1].endswith(mark):
+                    self.inside[-1] += mark
 
-    p = Outline()
+    html = (body or b"")[:600000].decode("utf-8", "replace")
     try:
-        p.feed((body or b"")[:600000].decode("utf-8", "replace"))
+        first = Outline()
+        first.feed(html)
+        second = Outline(first.found)
+        second.feed(html)
     except Exception as e:  # an outline never fails the probe
         return [f"outline failed: {type(e).__name__}"]
-    return (["deal links:"] + ["  " + c for c in p.cards]
-            + ["elements with a $ amount:"] + ["  " + d for d in p.dollar])
+    return (["deal links:"] + ["  " + c for c in first.cards]
+            + ["elements with a $ amount:"] + ["  " + d for d in first.dollar]
+            + ["deal containers (structure only; <text>/<$> mark content, never shown):"]
+            + second.inside)
 
 
 def verdict(r: dict) -> str:
