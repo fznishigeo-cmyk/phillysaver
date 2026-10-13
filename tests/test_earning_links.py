@@ -159,3 +159,16 @@ def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_a
              make_deal(dedupe_key="non-earning", canonical_url="https://cc.dealsofamerica.com/click")]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
     assert hashlib.sha256((tmp_path / "site/deals.json").read_bytes()).hexdigest() == expected
+
+
+@pytest.mark.parametrize("condition", ["used", "open_box", "refurbished"])
+def test_social_channels_never_post_used_items(tmp_path, db, condition):
+    """A one-unit used item is gone after the first click (operator, 2026-10-13)."""
+    cfg = load_config()
+    cfg.site_dir = str(tmp_path / "site")
+    published(db, cfg, [candidate("used-one", 1, conditions=[condition]),
+                        candidate("new-one", 2, conditions=["online_only"])])
+    for module in (pinterest, meta, telegram_pub):
+        assert [d["dedupe_key"] for d, _ in module._candidates(db, cfg, {})] == ["new-one"]
+    cfg.social_exclude_conditions = []
+    assert [d["dedupe_key"] for d, _ in social._candidates(db, cfg, {})] == ["used-one", "new-one"]

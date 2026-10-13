@@ -105,6 +105,10 @@ publish:
       cheap_below: 5.0
       steps_factor: 0.8
       no_earn_factor: 0.5
+      # One-unit used / open-box / refurbished items sell out to the first
+      # buyer and the rest think the site is fake (operator, 2026-10-13): they
+      # stay on the wall (Used tab) but are never top picks.
+      exclude_conditions: [used, open_box, refurbished]
       max_same_store: 40
       max_same_brand: 3
       max_same_category: 24
@@ -348,6 +352,9 @@ tracking:
 
 social:
   require_earning_link: true
+  # Never post a used / open-box / refurbished item anywhere social (often
+  # one unit: gone for everyone after the first click). Operator, 2026-10-13.
+  exclude_conditions: [used, open_box, refurbished]
   pinterest:
     enabled: true
     environment: sandbox          # sandbox (Trial access) | production

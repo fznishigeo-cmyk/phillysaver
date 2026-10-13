@@ -1522,6 +1522,11 @@ class TestCarefulDeath:
         from pathlib import Path
 
         cfg.site_dir = str(Path(db.path).parent / "site")
+        # These are Warehouse (used) units: social posts skip used items
+        # (operator, 2026-10-13); this helper counts alertability, so lift that.
+        cfg.social_exclude_conditions = []
+        cfg.front_page = dict(cfg.front_page, top_picks=dict(
+            cfg.front_page["top_picks"], exclude_conditions=[]))
         render_site(db, cfg, now)  # channel candidates come from the published picks
         alerts = {d["dedupe_key"] for d in rank.published_deals(db, cfg, now)}
         alive_on_site = {d["dedupe_key"] for d in rank.site_deals(db, cfg, now)

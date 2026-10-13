@@ -253,6 +253,11 @@ def test_pick_score_math_and_factors(cfg, options):
     assert pick_score(dict(deal, store=" WALMART "), cfg, NOW) == pytest.approx(quality)
     old = dict(deal, first_seen_at="2026-10-08T02:00:00Z")
     assert pick_score(old, cfg, NOW) == pytest.approx(quality / 2)
+    # One-unit used items sell out to the first buyer: never a top pick
+    # (operator, 2026-10-13); with the exclusion off the old factor applies.
+    for condition in ("used", "open_box", "refurbished"):
+        assert pick_score(dict(deal, conditions=[condition]), cfg, NOW) is None
+    cfg.front_page = dict(options, top_picks=dict(options["top_picks"], exclude_conditions=[]))
     for condition in ("used", "open_box"):
         assert pick_score(dict(deal, conditions=[condition]), cfg, NOW) == pytest.approx(quality * .9)
     assert pick_score(dict(deal, final_price=4.99), cfg, NOW) == pytest.approx(quality * .8)
@@ -265,6 +270,7 @@ def test_pick_score_math_and_factors(cfg, options):
     assert pick_score(simple, cfg, NOW) == pytest.approx(quality)
     assert pick_score(dict(simple, stack_steps=["Use code SAVE10", "Clip the coupon"],
                            conditions=["used"], final_price=4), cfg, NOW) == pytest.approx(quality * .8 * .9 * .8)
+    cfg.front_page = options
     # Every score knob comes from config, including both weighted terms.
     cfg.front_page = dict(options, top_picks=dict(options["top_picks"], pct_weight=2,
                                                 dollars_weight=0, brand_bonus=10))

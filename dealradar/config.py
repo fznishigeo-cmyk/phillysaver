@@ -227,6 +227,8 @@ class AppConfig:
     pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
     meta: dict[str, Any] = field(default_factory=dict)  # social.meta
     social_require_earning_link: bool = True
+    social_exclude_conditions: list[str] = field(
+        default_factory=lambda: ["used", "open_box", "refurbished"])
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -332,6 +334,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
     cfg.social_require_earning_link = bool(g("social", "require_earning_link", default=True))
+    cfg.social_exclude_conditions = [str(c) for c in (g("social", "exclude_conditions",
+        default=cfg.social_exclude_conditions) or [])]
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
     tag = str(g("affiliate", "amazon_tag", default="") or "").strip()
