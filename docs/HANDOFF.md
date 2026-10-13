@@ -166,9 +166,9 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## Pending approvals (track until done; the "Keys + approvals tracker" routine nudges)
-- **eBay Partner Network:** applied 2026-10-13, under review. No reply 24 h
-  after → operator emails EPNHelp@ebay.com. Approved → Campaign ID (10
-  digits, public) → wire eBay links (no EPN support in code yet).
+- **eBay Partner Network:** APPROVED 2026-10-13, campaign 5339221823
+  (`affiliate.ebay_campaign_id`): every https ebay.com Get deal link carries
+  our EPN parameters (`rewrite_affiliate`), bucket `ebay_epn`, earns.
 - **eBay developer API** (`EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET`), **Best Buy
   API** (`BESTBUY_API_KEY`): pending.
 - **Sovrn:** links tracked; full approval pending, then direct deposit and

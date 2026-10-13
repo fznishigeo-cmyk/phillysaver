@@ -143,6 +143,7 @@ class AppConfig:
     affiliate_link_overrides: dict = field(default_factory=dict)
     affiliate_competitor_tracker_hosts: list[str] = field(default_factory=list)
     affiliate_repair_competitor_trackers: bool = False
+    affiliate_ebay_campaign_id: str = ""  # eBay Partner Network, 10 digits ("" = off)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_deal_pages_max: int = 3000
@@ -350,6 +351,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         if re.fullmatch(r"[a-z0-9.-]+", str(host).strip().lower())]
     cfg.affiliate_repair_competitor_trackers = bool(
         g("affiliate", "repair_competitor_trackers", default=False))
+    campid = str(g("affiliate", "ebay_campaign_id", default="") or "").strip()
+    if campid and not re.fullmatch(r"[0-9]{10}", campid):
+        logging.getLogger("dealradar.config").warning("affiliate.ebay_campaign_id ignored: not 10 digits")
+        campid = ""
+    cfg.affiliate_ebay_campaign_id = campid
     cfg.affiliate_sovrn_enabled = bool(g("affiliate", "sovrn_enabled", default=False))
     # The link key lives in the GitHub secret SOVRN_API_KEY (operator's call);
     # config affiliate.sovrn_key is only a local fallback.

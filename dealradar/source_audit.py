@@ -266,7 +266,8 @@ def _audit(db, cfg, now, *, sources, transport, sleep_fn):
                                         cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
                                         sovrn_key=cfg.affiliate_sovrn_key,
                                         sovrn_enabled=cfg.affiliate_sovrn_enabled,
-                                        competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts)
+                                        competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+                                        ebay_campid=cfg.affiliate_ebay_campaign_id)
                 live += 1
                 credited += _carries_credit(public["url"], deal, configured, sightings)
             tripped = db.is_tripped(source.name, now)

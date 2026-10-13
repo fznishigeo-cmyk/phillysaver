@@ -69,6 +69,9 @@ def site_template_version() -> str:
 _AMAZON_HOSTS = {"amazon.com", "www.amazon.com", "smile.amazon.com"}
 _AMAZON_NETWORK_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
 _SOVRN_HOSTS = {"redirect.viglink.com", "sovrn.co"}
+_EBAY_HOSTS = {"ebay.com", "www.ebay.com"}
+#: eBay Partner Network (US) tracking: these replace any already in the link.
+_EPN_PARAMS = ("mkcid", "mkrid", "siteid", "campid", "customid", "toolid", "mkevt")
 _AFFILIATE_PARAMS = {
     "irgwc", "afsrc", "sourceid", "veh", "wmlspartner", "affiliates_ad_id",
     "campaign_id", "sharedid", "clickid", "irclickid", "cjevent", "cjdata",
@@ -111,11 +114,14 @@ def _deal_source_hosts() -> set[str]:
 def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
                       sovrn_enabled: bool = False, cuid: str = "",
                       credit_urls: list[str] | None = None,
-                      competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> str:
+                      competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
+                      ebay_campid: str = "") -> str:
     """The one place outbound links are rewritten (nothing else may).
 
     With the operator's Amazon Associates Store ID (config affiliate.amazon_tag)
     an https amazon.com link carries tag=<id>, replacing any tag already in it;
+    with the eBay Partner Network campaign ID (affiliate.ebay_campaign_id) an
+    https ebay.com link carries our EPN parameters, replacing any in it;
     eligible other retailers use Sovrn after removing affiliate tracking.
     Emails pass neither a tag nor a Sovrn key, leaving their links unchanged.
     """
@@ -131,6 +137,15 @@ def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
     if amazon_tag and host in _AMAZON_HOSTS:
         query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
         query.append(("tag", amazon_tag))
+        return urlunsplit(parts._replace(query=urlencode(query)))
+    if re.fullmatch(r"[0-9]{10}", ebay_campid) and host in _EBAY_HOSTS:
+        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
+                 if k.lower() not in _EPN_PARAMS]
+        query += [("mkcid", "1"), ("mkrid", "711-53200-19255-0"), ("siteid", "0"),
+                  ("campid", ebay_campid)]
+        if re.fullmatch(r"[A-Za-z0-9]{1,32}", cuid):
+            query.append(("customid", cuid))
+        query += [("toolid", "10001"), ("mkevt", "1")]
         return urlunsplit(parts._replace(query=urlencode(query)))
     if not sovrn_enabled or not re.fullmatch(r"[0-9a-f]{32}", sovrn_key):
         return url
@@ -157,7 +172,8 @@ def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
 
 
 def _link_destination(deal: dict[str, Any], amazon_tag: str,
-                      competitor_tracker_hosts: list[str] | tuple[str, ...]) -> tuple[str, str, bool]:
+                      competitor_tracker_hosts: list[str] | tuple[str, ...],
+                      ebay_campid: str = "") -> tuple[str, str, bool]:
     """Classify the final Get deal URL once for earning checks and counts."""
     url = deal.get("url") or ""
     try:
@@ -177,34 +193,40 @@ def _link_destination(deal: dict[str, Any], amazon_tag: str,
         bucket = "source_post"
     elif host in _SOVRN_HOSTS:
         bucket = "sovrn"
+    elif host == "ebay.com" and ebay_campid and ("campid", ebay_campid) in parse_qsl(parts.query):
+        bucket = "ebay_epn"
     else:
         bucket = "other_store"
     earns = (parts.scheme == "https" and not is_competitor_tracker_host(host, competitor_tracker_hosts)
-             and (bucket in {"amazon_tagged", "sovrn"} or (bucket == "amazon_short" and ours)))
+             and (bucket in {"amazon_tagged", "sovrn", "ebay_epn"}
+                  or (bucket == "amazon_short" and ours)))
     return bucket, host, earns
 
 
 def earning_link(deal: dict[str, Any], amazon_tag: str = "", *,
-                 competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> bool:
+                 competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
+                 ebay_campid: str = "") -> bool:
     """Whether this deal's final Get deal destination credits our affiliate link."""
-    return _link_destination(deal, amazon_tag, competitor_tracker_hosts)[2]
+    return _link_destination(deal, amazon_tag, competitor_tracker_hosts, ebay_campid)[2]
 
 
 def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "", *,
-             competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
+             competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
+             ebay_campid: str = "") -> dict[str, Any]:
     """Count public live Get deal destinations, without fetching or rewriting.
 
     Pass the configured Store ID to distinguish our tag from another source's.
     Locked stubs and ended deals have no live public Get deal link to count.
     """
     counts = dict.fromkeys(("amazon_tagged", "amazon_untagged", "amazon_short",
-                            "source_post", "sovrn", "other_store", "none",
+                            "source_post", "sovrn", "ebay_epn", "other_store", "none",
                             "earning", "not_earning"), 0)
     stores: Counter[str] = Counter()
     for deal in deals:
         if deal.get("locked") or not deal.get("alive", deal.get("status") == "alive"):
             continue
-        bucket, host, earns = _link_destination(deal, amazon_tag, competitor_tracker_hosts)
+        bucket, host, earns = _link_destination(deal, amazon_tag, competitor_tracker_hosts,
+                                                ebay_campid)
         if bucket == "other_store":
             stores[host] += 1
         counts[bucket] += 1
@@ -402,7 +424,8 @@ def _override_key(url: str) -> str:
 def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
                     overrides: dict[str, str] | None = None, *,
                     sovrn_key: str = "", sovrn_enabled: bool = False,
-                    competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
+                    competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
+                    ebay_campid: str = "") -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -422,7 +445,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
                                    sovrn_enabled=sovrn_enabled, cuid=key,
                                    credit_urls=[c["url"] for c in credits],
-                                   competitor_tracker_hosts=competitor_tracker_hosts) if canon else ""
+                                   competitor_tracker_hosts=competitor_tracker_hosts,
+                                   ebay_campid=ebay_campid) if canon else ""
     override = (overrides or {}).get(_override_key(canon)) if canon else None
     # Get deal goes to the store when it earns (operator, 2026-10-12): any
     # Amazon deal with our tag, and simple code deals at a store with a
@@ -435,7 +459,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     if override:
         store_link = override
     earning = earning_link({"url": store_link, "credits": credits}, amazon_tag,
-                           competitor_tracker_hosts=competitor_tracker_hosts)
+                           competitor_tracker_hosts=competitor_tracker_hosts,
+                           ebay_campid=ebay_campid)
     amazon = bool(amazon_tag and host in _AMAZON_HOSTS)
     ours = amazon or (earning and _simple_code_deal(deal))
     url = post if steps and post and not ours else \
@@ -450,7 +475,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "brand": deal.get("brand", ""),
         "url": url,
         "earns": earning_link({"url": url, "credits": credits}, amazon_tag,
-                              competitor_tracker_hosts=competitor_tracker_hosts),
+                              competitor_tracker_hosts=competitor_tracker_hosts,
+                              ebay_campid=ebay_campid),
         "image_url": deal.get("image_url") or "",
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
@@ -524,7 +550,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     serialized = [_serialize_deal(d, now, amazon_tag, overrides,
                                  sovrn_key=cfg.affiliate_sovrn_key,
                                  sovrn_enabled=cfg.affiliate_sovrn_enabled,
-                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts) for d in deals
+                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+                                 ebay_campid=cfg.affiliate_ebay_campaign_id) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
     scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now)
@@ -748,5 +775,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 len(serialized), locked_count, out)
     return {"published": len(serialized), "out_dir": str(out),
             "link_mix": link_mix(teaser, amazon_tag,
-                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts),
+                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+                                 ebay_campid=cfg.affiliate_ebay_campaign_id),
             "full_payload": full_doc, "health": health_doc}

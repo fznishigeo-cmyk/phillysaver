@@ -167,7 +167,8 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
         earns = _serialize_deal(deal, now, cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
                                 sovrn_key=cfg.affiliate_sovrn_key,
                                 sovrn_enabled=cfg.affiliate_sovrn_enabled,
-                                competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts)["earns"]
+                                competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+                                ebay_campid=cfg.affiliate_ebay_campaign_id)["earns"]
     if not earns:
         quality *= options.get("no_earn_factor", 0.5)
     return quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
