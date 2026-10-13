@@ -98,6 +98,7 @@ sources:
     site: https://dealradar.cc/
     method: html
     url: https://dealradar.cc/
+    enabled: false   # probe 2026-10-13: script-rendered page, no feed; its newsletter covers it
     region: US
     allowed_html: true
     fast_lane: false
@@ -248,6 +249,7 @@ sources:
     site: https://www.howtoshopforfree.net/
     method: rss
     url: https://www.howtoshopforfree.net/
+    enabled: false   # probe 2026-10-13: script-rendered page, no feed; its newsletter covers it
     region: US
     allowed_html: true
     fast_lane: false
