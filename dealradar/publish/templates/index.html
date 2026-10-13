@@ -1373,8 +1373,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
     if (d.status === "dead") media += '<span class="gonetag">' + esc(goneText(d)) + "</span>";
-<!--saved-->    media += savedButtonHtml(d);
-<!--/saved-->    if (d.spotlight) media += '<span class="today-ribbon">Today only · ' + esc(d.spotlight.source) + '</span>';
+    if (d.spotlight) media += '<span class="today-ribbon">Today only · ' + esc(d.spotlight.source) + '</span>';
     if (isNew(d) && !d.spotlight) media += '<span class="newtag">NEW</span>';
     return media;
   }
@@ -1409,7 +1408,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var media = mediaHtml(d);<!--engagement-->
     if (!d.spotlight && newSinceVisit(d)) media += '<span class="visit-new">NEW<span class="sr-only"> since your last visit</span></span>';
 <!--/engagement-->
-
+<!--saved-->    media += savedButtonHtml(d);  // the heart sits in the photo's corner
+<!--/saved-->
     var price = d.final_price != null
       ? '<span class="now">$' + Number(d.final_price).toFixed(2) + "</span>" : "";
     var priceOnly = d.spotlight && d.pct_at_checkout == null;
