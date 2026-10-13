@@ -225,3 +225,22 @@ def test_api_errors_log_no_credentials(db, cfg, monkeypatch, caplog, operation, 
         assert "https://" not in caplog.text
     finally:
         f.close()
+
+
+def test_a_gzip_api_answer_is_decoded_once(db, cfg):
+    """Keepa always answers gzip; the rebuilt response must not decode again
+    (live 2026-10-13: every Keepa call failed with DecodingError)."""
+    import gzip
+    body = gzip.compress(json.dumps({"products": [], "tokensLeft": 9}).encode())
+    def handle(req):
+        if req.url.path == "/robots.txt":
+            return httpx.Response(404)
+        return httpx.Response(200, content=body, headers={
+            "Content-Encoding": "gzip", "Content-Type": "application/json"})
+    f = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handle), sleep_fn=lambda _: None)
+    try:
+        resp = f.api_get("https://api.keepa.com/product", params={"key": "synthetic"},
+                         max_attempts=1, respect_robots=False)
+        assert resp.status_code == 200 and resp.json() == {"products": [], "tokensLeft": 9}
+    finally:
+        f.close()

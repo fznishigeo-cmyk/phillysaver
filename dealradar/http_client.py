@@ -381,7 +381,12 @@ class PoliteFetcher:
             raise RuntimeError("robots_disallowed")
         if result.status == 0:
             raise httpx.RequestError(result.error, request=req)
-        return httpx.Response(result.status, headers=headers,
+        # The body was already decoded while streaming: a Content-Encoding
+        # header left on the rebuilt response would decode it a second time
+        # (live 2026-10-13: Keepa always answers gzip -> DecodingError).
+        kept = [(k, v) for k, v in (headers or httpx.Headers()).multi_items()
+                if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")]
+        return httpx.Response(result.status, headers=kept,
                               content=result.body or b"", request=req)
 
     def check_image(self, url: str, *, deadline: float | None = None
