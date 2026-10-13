@@ -77,7 +77,7 @@ class StrictFetcher(FakeFetcher):
 def make_source(**kw) -> SourceConfig:
     defaults: dict = dict(
         name="kcl_wall_amazon", method="api", adapter="kcl_wall",
-        url=WALL_URL, allowed_html=True,
+        url=WALL_URL, site="https://thekrazycouponlady.com/", allowed_html=True,
         crawl_permission="operator reports written email permission from KCL",
     )
     defaults.update(kw)

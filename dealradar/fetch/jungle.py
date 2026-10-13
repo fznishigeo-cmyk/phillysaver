@@ -60,7 +60,7 @@ class JungleAdapter(SourceAdapter):
     @staticmethod
     def fetch_deals(source, fetcher, now, deadline=None):
         kw = {}
-        if override := _permission_host(source):
+        if override := _permission_host(source, getattr(fetcher, "cfg", None)):
             kw["robots_override_host"] = override
         res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)
         if res.not_modified or res.status == 304:

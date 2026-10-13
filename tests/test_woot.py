@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from dealradar.config import AppConfig, load_config
+from tests.http_helpers import api_transport
 from dealradar.db import DB
 from dealradar.fetch.woot import USED_MARKER, WootAdapter
 from dealradar.models import SourceConfig
@@ -82,7 +83,7 @@ def _adapter(payload, calls=None):
         return httpx.Response(200, json=payload)
 
     return WootAdapter(http_client=httpx.Client(
-        transport=httpx.MockTransport(handler)))
+        transport=api_transport(handler)), sleep_fn=lambda _: None)
 
 
 def test_deep_used_discounts_map_first_and_junk_never(cfg, caplog):

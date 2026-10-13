@@ -572,7 +572,7 @@ def test_commit_state_noop_without_state_db(repo: Path) -> None:
 
 def test_commit_state_creates_orphan_data_branch(repo: Path) -> None:
     (repo / "state.db").write_bytes(b"sqlite-bytes-v1")
-    res = run_script(repo)
+    res = run_script(repo, key=KEY)
     assert res.returncode == 0, res.stderr + res.stdout
     assert origin_branches(repo) == {"main", "data"}
 
@@ -586,7 +586,7 @@ def test_commit_state_creates_orphan_data_branch(repo: Path) -> None:
     assert re.fullmatch(r"state: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z \[skip ci\]",
                         subject)
     files = _git(repo, "ls-tree", "--name-only", "origin/data")
-    assert files.splitlines() == ["state.db"]
+    assert files.splitlines() == ["state.db.enc"]
     # main untouched; worktree cleaned up.
     assert "hello.txt" in _git(repo, "ls-tree", "--name-only", "origin/main")
     assert not (repo / ".state-worktree").exists()
@@ -594,8 +594,8 @@ def test_commit_state_creates_orphan_data_branch(repo: Path) -> None:
 
 def test_commit_state_noop_when_unchanged(repo: Path) -> None:
     (repo / "state.db").write_bytes(b"sqlite-bytes-v1")
-    assert run_script(repo).returncode == 0
-    res = run_script(repo)  # identical bytes -> nothing to commit
+    assert run_script(repo, key=KEY).returncode == 0
+    res = run_script(repo, key=KEY)  # identical bytes -> nothing to commit
     assert res.returncode == 0, res.stderr
     assert "no-op" in res.stdout
     _git(repo, "fetch", "origin", "data")
@@ -604,15 +604,15 @@ def test_commit_state_noop_when_unchanged(repo: Path) -> None:
 
 def test_commit_state_appends_and_includes_report(repo: Path) -> None:
     (repo / "state.db").write_bytes(b"sqlite-bytes-v1")
-    assert run_script(repo).returncode == 0
+    assert run_script(repo, key=KEY).returncode == 0
     (repo / "state.db").write_bytes(b"sqlite-bytes-v2")
     (repo / "sources_report.md").write_text("# report\n")
-    res = run_script(repo)
+    res = run_script(repo, key=KEY)
     assert res.returncode == 0, res.stderr + res.stdout
     _git(repo, "fetch", "origin", "data")
     assert _git(repo, "rev-list", "--count", "origin/data") == "2"
     files = set(_git(repo, "ls-tree", "--name-only", "origin/data").splitlines())
-    assert files == {"state.db", "sources_report.md"}
+    assert files == {"state.db.enc", "sources_report.md"}
     assert not (repo / ".state-worktree").exists()
 
 
@@ -621,6 +621,18 @@ def test_commit_state_appends_and_includes_report(repo: Path) -> None:
 KEY = "correct horse battery staple"
 SQLITE_V1 = b"SQLite format 3\x00" + b"member deal: secret-link-v1 " * 8
 SQLITE_V2 = b"SQLite format 3\x00" + b"member deal: secret-link-v2 " * 8
+
+
+def seed_legacy_state(repo: Path, data: bytes) -> None:
+    """Create an old-format local fixture without invoking production writes."""
+    _git(repo, "checkout", "--orphan", "legacy-data")
+    _git(repo, "rm", "--force", "hello.txt")
+    (repo / "state.db").write_bytes(data)
+    _git(repo, "add", "state.db")
+    _git(repo, "commit", "-m", "legacy state fixture")
+    _git(repo, "push", "origin", "HEAD:data")
+    _git(repo, "checkout", "main")
+    (repo / "state.db").write_bytes(data)
 
 
 def branch_blob(repo: Path, path: str) -> bytes:
@@ -668,9 +680,7 @@ def test_commit_state_encrypted_noop_when_unchanged(repo: Path) -> None:
 
 
 def test_commit_state_moves_a_clear_branch_to_encrypted(repo: Path, tmp_path: Path) -> None:
-    (repo / "state.db").write_bytes(SQLITE_V1)
-    res = run_script(repo)  # no key yet: today's behaviour, with a warning
-    assert res.returncode == 0 and "::warning::" in res.stdout
+    seed_legacy_state(repo, SQLITE_V1)
     (repo / "state.db").write_bytes(SQLITE_V2)
     (repo / "sources_report.md").write_text("# report\n")
     assert run_script(repo, key=KEY).returncode == 0
@@ -701,8 +711,7 @@ def test_restore_state_without_a_data_branch(repo: Path) -> None:
 
 
 def test_restore_state_reads_a_clear_branch(repo: Path) -> None:
-    (repo / "state.db").write_bytes(SQLITE_V1)
-    assert run_script(repo).returncode == 0
+    seed_legacy_state(repo, SQLITE_V1)
     (repo / "state.db").unlink()
     res = run_script(repo, RESTORE)
     assert res.returncode == 0, res.stderr

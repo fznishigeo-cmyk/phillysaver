@@ -22,6 +22,7 @@ from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, ur
 
 from ..config import load_sources, redact_secrets, support_link
 from ..rank import pick_score, top_picks
+from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from . import seo
 from .paywall import is_open, split_teaser, teaser_memory
@@ -133,6 +134,8 @@ def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
         return url
     host = (parts.hostname or "").lower()
     if parts.scheme != "https" or not host:
+        return url
+    if is_competitor_tracker_host(host, competitor_tracker_hosts):
         return url
     if amazon_tag and host in _AMAZON_HOSTS:
         query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
@@ -425,7 +428,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
                     overrides: dict[str, str] | None = None, *,
                     sovrn_key: str = "", sovrn_enabled: bool = False,
                     competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
-                    ebay_campid: str = "") -> dict[str, Any]:
+                    ebay_campid: str = "", cfg=None) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -438,6 +441,12 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     # deal that needs steps links there too: the product page alone shows
     # a higher price, the post says how to get this one.
     canon = deal.get("canonical_url") or ""
+    posted = deal.get("link_as_posted") or ""
+    protected_link = next((u for u in (posted, canon) if u and
+                           is_competitor_tracker_host(host_of(u), competitor_tracker_hosts)), "")
+    protected = bool(protected_link)
+    if protected:
+        canon = protected_link
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)
@@ -456,7 +465,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         host = (urlsplit(canon).hostname or "").lower() if canon.startswith("https://") else ""
     except ValueError:
         host = ""
-    if override:
+    if override and not protected:
         store_link = override
     earning = earning_link({"url": store_link, "credits": credits}, amazon_tag,
                            competitor_tracker_hosts=competitor_tracker_hosts,
@@ -465,6 +474,11 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     ours = amazon or (earning and _simple_code_deal(deal))
     url = post if steps and post and not ours else \
         store_link if canon else (credits[0]["url"] if credits else "")
+    if protected:
+        url = canon
+    image = deal.get("image_url") or ""
+    if not source_image_allowed(image, deal.get("sightings") or [], cfg):
+        image = ""
     return {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
@@ -477,7 +491,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "earns": earning_link({"url": url, "credits": credits}, amazon_tag,
                               competitor_tracker_hosts=competitor_tracker_hosts,
                               ebay_campid=ebay_campid),
-        "image_url": deal.get("image_url") or "",
+        "image_url": image,
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
         "pct_at_checkout": deal.get("pct_at_checkout"),
@@ -551,7 +565,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                  sovrn_key=cfg.affiliate_sovrn_key,
                                  sovrn_enabled=cfg.affiliate_sovrn_enabled,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
-                                 ebay_campid=cfg.affiliate_ebay_campaign_id) for d in deals
+                                 ebay_campid=cfg.affiliate_ebay_campaign_id,
+                                 cfg=cfg) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
     scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now)

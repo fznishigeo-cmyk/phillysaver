@@ -52,6 +52,13 @@ def get_secret(name: str) -> str:
     return os.environ.get(name, "").strip()
 
 
+def error_summary(exc: Exception) -> str:
+    """A log-safe error type and HTTP status, without exception text."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    return type(exc).__name__ + (f" HTTP {status}" if isinstance(status, int) else "")
+
+
 def redact_secrets(text: str) -> str:
     """Scrub secrets from text that may be persisted or published.
 
@@ -506,6 +513,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))
     cfg.feature_flags = g("feature_flags", default={}) or {}
+    from .source_policy import grant_active
+    primary, backup = load_sources()
+    affected = sum(bool(s.crawl_permission) and not grant_active(s, cfg)
+                   for s in primary + backup if s.enabled)
+    if affected:
+        logging.getLogger(__name__).warning(
+            "monthly membership price invalidates %d source grants; "
+            "robots bypass and source images disabled", affected)
     return cfg
 
 

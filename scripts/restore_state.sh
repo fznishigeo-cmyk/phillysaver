@@ -16,7 +16,17 @@ REPO_DIR="$(git rev-parse --show-toplevel)"
 
 log() { printf '[restore_state] %s\n' "$*"; }
 
-git -C "$REPO_DIR" fetch origin data || true
+if git -C "$REPO_DIR" ls-remote --exit-code --heads origin refs/heads/data >/dev/null; then
+  git -C "$REPO_DIR" fetch origin refs/heads/data:refs/remotes/origin/data
+else
+  remote_status=$?
+  if [[ "$remote_status" -ne 2 ]] || git -C "$REPO_DIR" rev-parse --verify --quiet origin/data >/dev/null; then
+    log "could not establish remote state: refusing to start empty"
+    exit 1
+  fi
+  log "no prior state"
+  exit 0
+fi
 
 if git -C "$REPO_DIR" cat-file -e origin/data:state.db.enc 2>/dev/null; then
   if [[ -z "${STATE_DB_KEY:-}" ]]; then
@@ -37,5 +47,6 @@ elif git -C "$REPO_DIR" cat-file -e origin/data:state.db 2>/dev/null; then
   git -C "$REPO_DIR" cat-file blob origin/data:state.db > "$REPO_DIR/state.db"
   log "state restored"
 else
-  log "no prior state"
+  log "data branch contains no state: refusing to start empty"
+  exit 1
 fi

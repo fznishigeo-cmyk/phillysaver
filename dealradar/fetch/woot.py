@@ -23,8 +23,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -33,6 +32,7 @@ import httpx
 from .. import util
 from ..config import AppConfig, get_secret
 from ..db import DB
+from ..http_client import api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..models import RawPost, SourceConfig
 from ..verify import (CONFIRM_GONE_H, _price_hidden_by_promo,
@@ -218,21 +218,6 @@ class WootAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn  # kept for interface symmetry (single call per run)
 
-    @contextmanager
-    def _client(self, cfg: AppConfig) -> Iterator[httpx.Client]:
-        if self._http is not None:
-            yield self._http
-            return
-        client = httpx.Client(
-            headers={"User-Agent": cfg.resolved_user_agent()},
-            timeout=cfg.request_timeout_s,
-            follow_redirects=True,
-        )
-        try:
-            yield client
-        finally:
-            client.close()
-
     def fetch_posts(
         self,
         source: SourceConfig,
@@ -242,18 +227,18 @@ class WootAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher unused: this adapter manages its own authenticated client.
         # db (when given) tells which posts the pipeline has already seen.
         key = get_secret("WOOT_API_KEY")
         if not key:
             raise AdapterNotConfigured("woot api key missing")
 
-        with self._client(cfg) as client:
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
             _check_deadline(deadline)
             # The key travels ONLY in the x-api-key header: query-string keys
             # end up inside httpx error messages and from there could leak
             # into recorded (published) source errors.
-            resp = client.get(FEED_URL, headers={"x-api-key": key})
+            resp = client.api_get(FEED_URL, headers={"x-api-key": key}, deadline=deadline,
+                                  respect_robots=False)  # keyed API
             resp.raise_for_status()
             payload = resp.json()
 

@@ -58,6 +58,7 @@ import httpx
 from ..config import get_secret
 from .email_digest import smtp_connect
 from .site import rewrite_affiliate
+from .email_policy import email_credits, email_deal
 
 log = logging.getLogger("dealradar.publish.newsletter")
 
@@ -159,14 +160,6 @@ def _deal_url(deal: dict[str, Any]) -> str:
     return (sightings[0].get("source_url") or "") if sightings else ""
 
 
-def _credit(deal: dict[str, Any]) -> tuple[str, str]:
-    sightings = deal.get("sightings") or []
-    if not sightings:
-        return "", ""
-    return (sightings[0].get("source_name") or "",
-            sightings[0].get("source_url") or "")
-
-
 def _row_html(deal: dict[str, Any]) -> str:
     esc = html_lib.escape
     url = _deal_url(deal)
@@ -174,7 +167,6 @@ def _row_html(deal: dict[str, Any]) -> str:
     final = deal.get("final_price")
     reg = deal.get("regular_price")
     pct = deal.get("pct_at_checkout")
-    src_name, src_url = _credit(deal)
     cell = "padding:12px 0;border-bottom:1px solid #e2e6eb;vertical-align:top"
 
     thumb = ""
@@ -197,7 +189,7 @@ def _row_html(deal: dict[str, Any]) -> str:
         actions += (f'<a href="{esc(url)}" style="display:inline-block;background:#0e7569;'
                     'color:#ffffff;font-weight:700;padding:7px 12px;border-radius:8px;'
                     'text-decoration:none">Get deal</a> ')
-    if src_name:
+    for src_name, src_url in email_credits(deal):
         via = (f'<a href="{esc(src_url)}" style="color:#616a75">{esc(src_name)}</a>'
                if src_url else esc(src_name))
         actions += f'<span style="color:#616a75;font-size:12px">via {via}</span>'
@@ -213,7 +205,7 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
     """(subject, text_body, html_body) for the day's email, built ONCE for
     everyone: both bodies carry UNSUB_PLACEHOLDER, swapped per subscriber at
     send time. Facts, links and credit only."""
-    deals = deals[:_top_n(cfg)]
+    deals = [email_deal(d, cfg) for d in deals[:_top_n(cfg)]]
     brand = _brand(cfg)
     domain = getattr(cfg, "custom_domain", "") or ""
     site = f"https://{domain}/" if domain else ""
@@ -242,15 +234,14 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
         if d.get("pct_at_checkout") is not None:
             bits.append(f"{d['pct_at_checkout']:.0f}% off")
         line = (f"{i}. {d.get('item') or ''} — "
-                + (f"${final:,.2f}" if final is not None else "$?")
+                + ("" if d["email_hide_price"] else f"${final:,.2f}" if final is not None else "$?")
                 + (f" ({', '.join(bits)})" if bits else "")
                 + f" at {d.get('store') or ''}")
         lines.append(line)
         url = _deal_url(d)
         if url:
             lines.append(f"   Get deal: {url}")
-        src_name, src_url = _credit(d)
-        if src_name:
+        for src_name, src_url in email_credits(d):
             lines.append(f"   via {src_name}" + (f": {src_url}" if src_url else ""))
         lines.append("")
     if cta:

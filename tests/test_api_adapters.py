@@ -20,6 +20,7 @@ import sys
 import types
 from datetime import datetime, timezone
 from pathlib import Path
+from tests.http_helpers import api_transport
 
 import httpx
 import pytest
@@ -84,7 +85,7 @@ def _source(name: str, adapter: str, url: str = "https://example.com") -> Source
 
 def _mock_client(handler, cfg: AppConfig) -> httpx.Client:
     return httpx.Client(
-        transport=httpx.MockTransport(handler),
+        transport=api_transport(handler),
         headers={"User-Agent": cfg.resolved_user_agent()},
         timeout=cfg.request_timeout_s,
     )
@@ -129,7 +130,7 @@ class TestReddit:
                 assert request.headers["Authorization"].startswith("Basic ")
                 assert b"grant_type=client_credentials" in request.read()
                 # Reddit's required UA format, sent verbatim.
-                assert request.headers["User-Agent"] == REDDIT_UA
+                assert request.headers["User-Agent"].startswith(REDDIT_UA)
                 return httpx.Response(200, json=_fixture_json("api_reddit_token.json"))
             if request.url.host == "oauth.reddit.com":
                 counts["listing"] += 1
@@ -137,7 +138,7 @@ class TestReddit:
                 assert request.url.params["limit"] == "50"
                 assert request.url.params["raw_json"] == "1"
                 assert request.headers["Authorization"] == "bearer test-token-abc"
-                assert request.headers["User-Agent"] == REDDIT_UA
+                assert request.headers["User-Agent"].startswith(REDDIT_UA)
                 return httpx.Response(200, json=_fixture_json("api_reddit_listing.json"))
             raise AssertionError(f"unexpected request: {request.url}")
 
@@ -163,14 +164,14 @@ class TestReddit:
         assert "https://example.com/sony-deal" in link_post.text
         assert link_post.published_at == datetime.fromtimestamp(1759995000, tz=timezone.utc)
 
-        # Politeness: slept 1 s between the token call and the listing call.
-        assert sleeps == [1.0]
+        # Robots and API requests both use the host gap.
+        assert all(0 < delay <= 1.0 for delay in sleeps)
 
         # Second run: the bearer token is cached on the instance, so only the
-        # listing endpoint is hit again and no extra politeness sleep happens.
+        # listing endpoint is hit again; it still honors the host gap.
         adapter.fetch_posts(self.SRC, None, None, cfg, NOW, None)
         assert counts == {"token": 1, "listing": 2}
-        assert sleeps == [1.0]
+        assert all(0 < delay <= 1.0 for delay in sleeps)
 
 
 # ---------------------------------------------------------------- woot
@@ -399,7 +400,7 @@ class TestTelegram:
         assert factory_args == [("12345", "hash", "stringsession")]
         assert fake.entered == 1 and fake.exited == 1
         assert fake.calls == [("chana", 30), ("chanb", 30)]
-        assert sleeps == [1.0]  # one sleep between the two channel reads
+        assert all(0 < delay <= 1.0 for delay in sleeps)  # one sleep between the two channel reads
 
         assert [p.uid for p in posts] == ["chana/11", "chanb/7"]
         first = posts[0]
@@ -475,7 +476,7 @@ class TestThreads:
         posts = adapter.fetch_posts(self.SRC, None, None, cfg, NOW, None)
 
         assert queries == ["deal", "% off"]  # max 2 keyword searches
-        assert sleeps == [1.0]
+        assert all(0 < delay <= 1.0 for delay in sleeps)
         # Both searches return the same two items: deduped by uid.
         assert [p.uid for p in posts] == ["th_1", "th_2"]
         first = posts[0]

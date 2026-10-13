@@ -151,7 +151,7 @@ class TestMemberEmail:
         raw = msg.as_string()
         assert "a@x.com" not in raw and "b@x.com" not in raw  # no address leaks
         text = msg.get_payload()[0].get_payload(decode=True).decode("utf-8")
-        assert "Item k1" in text and "$9.99" in text and "91% off" in text
+        assert "Item k1" in text and "$9.99" not in text and "91% off" in text
         assert "Live wall: https://wowpriced.com/" in text
         assert "Manage membership: https://billing.stripe.com/p/login/x" in text
 

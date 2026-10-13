@@ -22,6 +22,7 @@ from ..config import get_secret
 from ..util import parse_iso
 from .site import rewrite_affiliate
 from .social import _candidates, _word_trim, _without_prices, social_title
+from .email_policy import email_credits, email_deal
 
 logger = logging.getLogger("dealradar.publish.telegram")
 
@@ -51,6 +52,7 @@ def format_message(deal: dict[str, Any], path: str | None = None,
                 f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n"
                 f"{disclosure}")
 
+    deal = email_deal(deal)
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
@@ -58,17 +60,17 @@ def format_message(deal: dict[str, Any], path: str | None = None,
     tier = _TIER_WORDS.get(deal.get("verify_tier") or "", "")
     head = f"{pct_s}, {tier}" if tier else pct_s
     parts = [
-        f"{deal.get('item', '')} — {price} ({head}) at {deal.get('store', '')}"
+        f"{deal.get('item', '')} — "
+        + ("" if deal["email_hide_price"] else price + " ")
+        + f"({head}) at {deal.get('store', '')}"
     ]
     conditions = [c for c in (deal.get("conditions") or []) if c]
     if conditions:
         parts.append(", ".join(conditions))
-    sightings = deal.get("sightings") or []
-    if sightings:
-        first = sightings[0]
-        via = f"via {first.get('source_name', '')}"
-        if first.get("source_url"):
-            via = f"{via} {first['source_url']}"
+    for name, url in email_credits(deal):
+        via = f"via {name}"
+        if url:
+            via = f"{via} {url}"
         parts.append(via)
     product_url = rewrite_affiliate(deal.get("canonical_url") or "")
     if product_url:

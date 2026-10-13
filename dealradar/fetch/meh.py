@@ -17,8 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -26,6 +25,7 @@ import httpx
 
 from ..config import AppConfig, get_secret
 from ..db import DB
+from ..http_client import api_fetcher
 from ..errors import DeadlineExceeded
 from ..models import RawPost, SourceConfig
 from .base import SourceAdapter
@@ -73,21 +73,6 @@ class MehAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn  # kept for interface symmetry (single call per run)
 
-    @contextmanager
-    def _client(self, cfg: AppConfig) -> Iterator[httpx.Client]:
-        if self._http is not None:
-            yield self._http
-            return
-        client = httpx.Client(
-            headers={"User-Agent": cfg.resolved_user_agent()},
-            timeout=cfg.request_timeout_s,
-            follow_redirects=True,
-        )
-        try:
-            yield client
-        finally:
-            client.close()
-
     def fetch_posts(
         self,
         source: SourceConfig,
@@ -97,14 +82,14 @@ class MehAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher/db unused: this adapter manages its own authenticated client.
         key = get_secret("MEH_API_KEY")
         if not key:
-            return self._fetch_public_feed(source, cfg, now, deadline)
+            return self._fetch_public_feed(source, fetcher, db, cfg, now, deadline)
 
-        with self._client(cfg) as client:
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
             _check_deadline(deadline)
-            resp = client.get(CURRENT_URL, params={"apikey": key})
+            resp = client.api_get(CURRENT_URL, params={"apikey": key}, deadline=deadline,
+                                  respect_robots=False)  # keyed API
             resp.raise_for_status()
             payload = resp.json()
 
@@ -145,6 +130,8 @@ class MehAdapter(SourceAdapter):
     def _fetch_public_feed(
         self,
         source: SourceConfig,
+        fetcher: Any,
+        db: DB,
         cfg: AppConfig,
         now: datetime,
         deadline: float | None,
@@ -152,9 +139,9 @@ class MehAdapter(SourceAdapter):
         """Keyless path: Meh's official public JSON Feed (feed.json)."""
         from .. import util  # html_to_text / parse_feed_date
 
-        with self._client(cfg) as client:
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
             _check_deadline(deadline)
-            resp = client.get(PUBLIC_FEED_URL)
+            resp = client.api_get(PUBLIC_FEED_URL, deadline=deadline)
             resp.raise_for_status()
             payload = resp.json()
 

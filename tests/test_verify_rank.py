@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from tests.http_helpers import mock_keepa_get, api_transport
+
 import pytest
 
 from dealradar import dedupe, rank, util, verify
@@ -249,7 +251,7 @@ def test_keepa_cross_check_waits_for_tokens(tmp_path, monkeypatch) -> None:
                        "tokensLeft": 41, "refillRate": 5},
             request=httpx.Request("GET", url))
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    mock_keepa_get(monkeypatch, fake_get)
     db.meta_set(META_KEY, json.dumps({
         "tokens_left": 5, "refill_rate": 5, "seen_at": util.iso(NOW)}))
     assert verify.assign_tier(db, deal, cfg, NOW) == "unverified"

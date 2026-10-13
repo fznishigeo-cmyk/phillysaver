@@ -175,7 +175,7 @@ def test_robots_blocked_host_is_tried_once(setup):
         assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
     finally:
         fetcher.close()
-    assert requests == ["https://zdcs.link/click/123", "https://zdcs.link/robots.txt"]
+    assert requests == ["https://zdcs.link/robots.txt"]
 
 
 def test_newest_first(setup, monkeypatch):

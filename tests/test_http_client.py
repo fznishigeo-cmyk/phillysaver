@@ -265,7 +265,7 @@ def test_robots_transport_error_disallows_host(tmp_path):
     fetcher.close()
 
 
-def test_head_skips_robots_check(tmp_path):
+def test_head_honors_robots_check(tmp_path):
     clock, router = FakeClock(), Router()
     router.add("GET", "https://closed.example/robots.txt",
                lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /\n"))
@@ -273,10 +273,10 @@ def test_head_skips_robots_check(tmp_path):
                lambda r: httpx.Response(200))
     fetcher, _, _ = make_fetcher(tmp_path, router, clock)
     res = fetcher.head("https://closed.example/page")
-    assert res.status == 200
-    assert res.blocked_by_robots is False
-    # robots.txt was never consulted for the HEAD.
-    assert router.count("GET", "https://closed.example/robots.txt") == 0
+    assert res.status == 0
+    assert res.blocked_by_robots is True
+    assert router.count("GET", "https://closed.example/robots.txt") == 1
+    assert router.count("HEAD", "https://closed.example/page") == 0
     fetcher.close()
 
 
@@ -401,7 +401,7 @@ def test_transport_error_returns_status_0_never_raises(tmp_path):
                                  min_host_interval_s=0.0, max_retries=2)
     res = fetcher.get("https://noconn.example/feed")
     assert res.status == 0
-    assert "ConnectError" in res.error and "boom" in res.error
+    assert res.error == "ConnectError"
     assert res.blocked_by_robots is False
     assert router.count("GET", "https://noconn.example/feed") == 2
     fetcher.close()
@@ -576,8 +576,9 @@ def test_resolve_redirects_follows_head_chain(tmp_path):
                                  min_host_interval_s=0.0)
     out = resolve_redirects(fetcher, "https://short.ly/abc")
     assert out == "https://store.example.com/final?id=9"
-    assert {r.method for r in router.requests} == {"HEAD"}
-    assert len(router.requests) == 3
+    assert {r.method for r in router.requests} == {"HEAD", "GET"}
+    assert sum(r.method == "HEAD" for r in router.requests) == 3
+    assert sum(r.url.path == "/robots.txt" for r in router.requests) == 2
     fetcher.close()
 
 
@@ -626,7 +627,8 @@ def test_resolve_redirects_hop_cap(tmp_path):
     out = resolve_redirects(fetcher, "https://loop.example/a", max_hops=3)
     # a -> b -> a -> b: exactly 3 hops performed, then we stop where we are.
     assert out == "https://loop.example/b"
-    assert len(router.requests) == 3
+    assert sum(r.method == "HEAD" for r in router.requests) == 3
+    assert router.count("GET", "https://loop.example/robots.txt") == 1
     fetcher.close()
 
 
@@ -738,7 +740,8 @@ def test_resolve_redirects_stops_before_a_bot_wall(tmp_path, product, wall):
     fetcher, _, _ = make_fetcher(tmp_path, router, clock, min_host_interval_s=0.0)
     out = resolve_redirects(fetcher, "https://short.ly/w")
     assert out == canonicalize_url(product)
-    assert len(router.requests) == 2  # the short link and the product only
+    assert sum(r.method == "HEAD" for r in router.requests) == 2
+    assert not any(str(r.url) == wall for r in router.requests)
     fetcher.close()
 
 

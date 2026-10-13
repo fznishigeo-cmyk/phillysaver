@@ -5,11 +5,14 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import httpx
+from tests.http_helpers import mock_keepa_get, api_transport
+
 import pytest
 
 from dealradar import verify
 from dealradar.config import load_config
 from dealradar.db import DB
+from dealradar.http_client import PoliteFetcher
 from dealradar.fetch.keepa import KeepaDealsAdapter, _Pull, _product_row
 from dealradar.keepa_budget import KeepaBudget
 from dealradar.keepa_categories import NAMES_META, ROOTS_META, category_from_name, cached_meta, root_id
@@ -53,7 +56,7 @@ def test_unknown_root_sentinels_have_no_opinion():
 
 
 def pull_for(db, tokens, handler, **over):
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = PoliteFetcher(db, load_config(), transport=api_transport(handler), sleep_fn=lambda _: None)
     budget = KeepaBudget(tokens_left=tokens, refill_rate=0, seen_at=NOW, db=db)
     data = dict(client=client, key="offline", budget=budget, db=db, now=NOW,
                 deadline=None, reserve=300, interval_s=1, margin_s=30,
@@ -77,12 +80,13 @@ def test_category_names_batch_cache_forever_and_feed_shared_budget(tmp_path):
             "tokensLeft": 310 - len(calls), "refillRate": 0})
     pull = pull_for(db, 310, handler)
     sleeps = []
-    pull.sleep = sleeps.append
+    pull.client._sleep = sleeps.append
     adapter = KeepaDealsAdapter()
     ids = [str(i) for i in range(1, 13)]
     adapter._lookup_categories(pull, ids)
     assert list(map(len, calls)) == [10, 2]
-    assert sleeps == [1]
+    assert len(sleeps) == 1  # the second category request waits the host gap
+    assert all(0 < delay <= 1 for delay in sleeps)
     pull.budget.save(db)
     assert KeepaBudget.load(db).available(NOW) == 308
     assert len(cached_meta(db, NAMES_META)) == 12
@@ -162,7 +166,7 @@ def test_product_root_survives_row_conversion_and_existing_product_calls(tmp_pat
     post = KeepaDealsAdapter._map_warehouse_row(row, SRC, NOW,
                                                category_names={"101": "Beauty & Personal Care"})
     assert post.structured["category"] == "beauty"
-    monkeypatch.setattr(httpx, "get", lambda *a, **kw: httpx.Response(
+    mock_keepa_get(monkeypatch, lambda *a, **kw: httpx.Response(
         200, json={"products": [product]}, request=httpx.Request("GET", "https://api.keepa.com/product")))
     verify.keepa_products("offline", [product["asin"]], 1, KeepaBudget.load(db))
     assert cached_meta(db, ROOTS_META) == {product["asin"]: "101"}
@@ -315,10 +319,11 @@ def focus_fetch(db, monkeypatch, *, tokens=500, categories=None, now=NOW, cached
         body.update(tokensLeft=remaining, refillRate=0)
         return httpx.Response(200, json=body)
     monkeypatch.setenv("KEEPA_KEY", "offline")
-    adapter = KeepaDealsAdapter(http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    adapter = KeepaDealsAdapter(http_client=httpx.Client(transport=api_transport(handler)),
                                 sleep_fn=sleeps.append)
     posts = adapter.fetch_posts(SRC, None, db, cfg, now, None)
-    assert sleeps == [cfg.min_host_interval_s] * (len(calls) - 1)
+    assert len(sleeps) == len(calls) - 1  # keyed API: no robots.txt request
+    assert all(0 < delay <= cfg.min_host_interval_s for delay in sleeps)
     return calls, posts
 
 

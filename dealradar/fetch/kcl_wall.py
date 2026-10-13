@@ -369,7 +369,7 @@ class KclWallAdapter(SourceAdapter):
         deadline: float | None,
     ) -> list[RawPost]:
         kw = {}
-        override = _permission_host(source)
+        override = _permission_host(source, cfg)
         if override:
             kw["robots_override_host"] = override
         res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)

@@ -185,7 +185,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         meta += f'<span class="chip">{e(c).replace("_", " ")}</span>'
     credits = ", ".join(
         f'via <a href="{e(_http(c.get("url")))}" rel="noopener">{e(c.get("name"))}</a>'
-        if not dead and _http(c.get("url")) else f"via {e(c.get('name'))}"
+        if _http(c.get("url")) else f"via {e(c.get('name'))}"
         for c in d.get("credits") or [])
     how = ""
     if not dead and d.get("needs_steps"):  # url is the source post that explains the steps
@@ -196,8 +196,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
     actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener">Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
-    disabled = ' aria-disabled="true"' if dead else ""
-    return (f'<article class="card{" gone" if dead else ""}"{disabled}>'
+    return (f'<article class="card{" gone" if dead else ""}">'
             f'<div class="media">{media}</div><div class="body">'
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
             f'<h3 class="title">{title}</h3>'

@@ -22,11 +22,14 @@ from __future__ import annotations
 import logging
 import math
 import re
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
-from .config import get_secret
+from .config import get_secret, error_summary, load_config
+from .db import DB
+from .http_client import PoliteFetcher
 from .keepa_budget import (MIN_FOR_RECHECK, KeepaBudget, describe_429,
                            response_payload)
 from .util import iso, parse_iso
@@ -52,7 +55,8 @@ KEEPA_CHECKS_PER_PASS = 25
 
 
 def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
-                keepa_calls: dict[str, int] | None = None) -> str:
+                keepa_calls: dict[str, int] | None = None, *,
+                fetcher: PoliteFetcher | None = None) -> str:
     """Compute the verification tier for one deal row dict."""
     since = now - timedelta(hours=cfg.corroborate_window_h)
     if db.distinct_sources_within(deal["id"], since) >= 2:
@@ -84,7 +88,8 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
         if not budget.allows(MIN_FOR_RECHECK, now):
             return "unverified"  # retried on a later re-tiering
         answered: dict[str, bool] = {}
-        verdict = keepa_check(deal, cfg, budget=budget, answered=answered)
+        verdict = keepa_check(deal, cfg, budget=budget, answered=answered,
+                             fetcher=fetcher)
         budget.save(db)
         if verdict is not None or answered.get("yes"):
             # Settled: a verdict, or Keepa answered with no Amazon average
@@ -98,11 +103,11 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
     return "unverified"
 
 
-def refresh_tiers(db, cfg, now: datetime) -> None:
+def refresh_tiers(db, cfg, now: datetime, *, fetcher: PoliteFetcher | None = None) -> None:
     """Recompute and persist verify_tier for every alive deal."""
     keepa_calls: dict[str, int] = {}
     for deal in db.all_deals(status="alive"):
-        tier = assign_tier(db, deal, cfg, now, keepa_calls=keepa_calls)
+        tier = assign_tier(db, deal, cfg, now, keepa_calls=keepa_calls, fetcher=fetcher)
         if tier != deal.get("verify_tier"):
             log.info("deal %s tier %s -> %s", deal["dedupe_key"],
                      deal.get("verify_tier"), tier)
@@ -315,9 +320,15 @@ KEEPA_OFFERS_BATCH = 20
 USED_RECHECK_TOKENS = 1 + 6 * math.ceil(RECHECK_OFFERS / 10)
 
 
+@lru_cache(maxsize=1)
+def _standalone_keepa_fetcher() -> PoliteFetcher:
+    return PoliteFetcher(DB(":memory:"), load_config())
+
+
 def keepa_products(key: str, asins: list[str], stats: int,
                    budget: KeepaBudget | None,
-                   offers: int | None = None) -> dict[str, dict[str, Any]] | None:
+                   offers: int | None = None, *,
+                   fetcher: PoliteFetcher | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs (KEEPA_OFFERS_BATCH
     with ``offers``): ``{asin: product}`` (an ASIN Keepa does not know is
     simply absent), or None on a 429 (the token bucket is empty — it
@@ -325,16 +336,17 @@ def keepa_products(key: str, asins: list[str], stats: int,
     a verdict). ``offers`` asks for that many live marketplace offers per
     product (pricier). Every response body, the 429 included, feeds the
     shared token budget when given."""
-    import httpx
-
     asins = [a for a in asins if a][
         :KEEPA_BATCH if offers is None else KEEPA_OFFERS_BATCH]
     params: dict[str, Any] = {"key": key, "domain": 1,
                               "asin": ",".join(asins), "stats": stats}
     if offers is not None:
         params["offers"] = offers
-    resp = httpx.get("https://api.keepa.com/product", params=params,
-                     timeout=30)
+    fetcher = fetcher if fetcher is not None else _standalone_keepa_fetcher()
+    # Keyed API (robots.txt is for crawlers); a 429 is an empty token bucket,
+    # answered next pass, so it is not retried here.
+    resp = fetcher.api_get("https://api.keepa.com/product", params=params,
+                           max_attempts=1, respect_robots=False)
     payload = response_payload(resp)
     if budget is not None:
         budget.note(payload)
@@ -362,9 +374,10 @@ def keepa_products(key: str, asins: list[str], stats: int,
 
 
 def _keepa_product(key: str, asin: str, stats: int,
-                   budget: KeepaBudget | None) -> dict[str, Any] | None:
+                   budget: KeepaBudget | None, *,
+                   fetcher: PoliteFetcher | None = None) -> dict[str, Any] | None:
     """One product, via the batch call (kept for the single-ASIN callers)."""
-    products = keepa_products(key, [asin], stats, budget)
+    products = keepa_products(key, [asin], stats, budget, fetcher=fetcher)
     if products is None:
         return None
     return products.get(asin, {})
@@ -523,7 +536,8 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | No
 
 def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                           budget: KeepaBudget | None = None,
-                          used_offers: bool = True
+                          used_offers: bool = True, *,
+                          fetcher: PoliteFetcher | None = None
                           ) -> dict[str, bool | None]:
     """Live price verdicts for many Amazon deals in as few Keepa calls as
     possible (KEEPA_BATCH ASINs per call): ``{dedupe_key: verdict}`` per
@@ -553,10 +567,10 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
             chunk = wanted[start:start + per_call]
             try:
                 products = keepa_products(key, [a for a, _ in chunk], 1,
-                                          budget, offers=offers)
+                                          budget, offers=offers, fetcher=fetcher)
             except Exception as e:  # transport, schema drift
                 log.warning("price recheck batch of %d failed: %s",
-                            len(chunk), e)
+                            len(chunk), error_summary(e))
                 continue
             if products is None:
                 continue  # 429: the bucket is empty, try a later pass
@@ -569,7 +583,8 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
 
 
 def recheck_amazon_price(deal: dict[str, Any], cfg,
-                         budget: KeepaBudget | None = None) -> bool | None:
+                         budget: KeepaBudget | None = None, *,
+                         fetcher: PoliteFetcher | None = None) -> bool | None:
     """One deal's live price verdict (see judge_live_price); None = no
     opinion (flag/key off, no ASIN/price, tokens exhausted, or the API
     failed). The pipeline uses the batched recheck_amazon_prices."""
@@ -582,18 +597,19 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
     if not asin or final is None:
         return None
     try:
-        product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget)
+        product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget, fetcher=fetcher)
         if product is None:
             return None  # 429: the bucket is empty, try a later pass
         return judge_live_price(deal, product)
     except Exception as e:  # tokens exhausted, transport, schema drift
-        log.warning("price recheck failed for %s: %s", asin, e)
+        log.warning("price recheck failed for %s: %s", asin, error_summary(e))
         return None
 
 
 def keepa_check(deal: dict[str, Any], cfg,
                 budget: KeepaBudget | None = None,
-                answered: dict[str, bool] | None = None) -> bool | None:
+                answered: dict[str, bool] | None = None, *,
+                fetcher: PoliteFetcher | None = None) -> bool | None:
     """Optional Keepa price-history cross-check (feature-flagged).
 
     Returns None (no opinion) unless cfg.feature_flags['keepa'] is on AND the
@@ -619,7 +635,7 @@ def keepa_check(deal: dict[str, Any], cfg,
     if not asin or final is None:
         return None
     try:
-        product = _keepa_product(key, asin, 90, budget)
+        product = _keepa_product(key, asin, 90, budget, fetcher=fetcher)
         if product is None:
             return None  # 429: the bucket is empty, no opinion
         if answered is not None:
@@ -642,5 +658,5 @@ def keepa_check(deal: dict[str, Any], cfg,
                  asin, float(final), avg, verdict)
         return verdict
     except Exception as e:  # tokens exhausted, transport, schema drift
-        log.warning("keepa check failed for %s: %s", asin, e)
+        log.warning("keepa check failed for %s: %s", asin, error_summary(e))
         return None

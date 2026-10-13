@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
+from tests.http_helpers import mock_keepa_get, api_transport
+
 import pytest
 
 from dealradar import verify
@@ -40,7 +42,7 @@ def cfg() -> AppConfig:
 
 
 def _mock_client(handler, cfg: AppConfig) -> httpx.Client:
-    return httpx.Client(transport=httpx.MockTransport(handler),
+    return httpx.Client(transport=api_transport(handler),
                         headers={"User-Agent": cfg.resolved_user_agent()})
 
 
@@ -494,8 +496,7 @@ class TestKeepaVerify:
                 }]},
                 request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(verify.httpx if hasattr(verify, "httpx") else httpx,
-                            "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         deal = self._deal()
         assert verify.keepa_check(deal, cfg) is True
         # Free ride on the same response: the product's first image.
@@ -511,7 +512,7 @@ class TestKeepaVerify:
                 200, json={"products": [{"stats": {"avg90": [3999]}}]},
                 request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         assert verify.keepa_check(self._deal(), cfg) is False
 
     def test_no_key_or_flag_means_no_opinion(self, cfg):
@@ -529,7 +530,7 @@ class TestKeepaVerify:
         monkeypatch.setenv("KEEPA_KEY", "kkey")
         cfg.feature_flags["keepa"] = True
         req = httpx.Request("GET", "https://api.keepa.com/product")
-        monkeypatch.setattr(httpx, "get", lambda *a, **k: httpx.Response(
+        mock_keepa_get(monkeypatch, lambda *a, **k: httpx.Response(
             429, json={"tokensLeft": -1, "refillIn": 5000, "refillRate": 5},
             request=req))
         budget = KeepaBudget()
@@ -539,7 +540,7 @@ class TestKeepaVerify:
             assert verify.recheck_amazon_price(deal, cfg, budget=budget) is None
         assert "429" in caplog.text and "refillIn=5000ms" in caplog.text
         assert budget.tokens_left == -1 and budget.refill_rate == 5
-        monkeypatch.setattr(httpx, "get", lambda *a, **k: httpx.Response(
+        mock_keepa_get(monkeypatch, lambda *a, **k: httpx.Response(
             200, json={"products": [{"stats": {"current": [2999, -1],
                                                "avg90": [14999]}}],
                        "tokensLeft": 44, "refillRate": 5},
@@ -621,7 +622,8 @@ class TestKeepaPaging:
                               + [("deep", p) for p in range(8)]
                               + [("amazon", p) for p in range(1, 6)]
                               + [("query", 0)])
-        assert slept == [cfg.min_host_interval_s] * 18
+        assert len(slept) == 18  # every request after the first waits the host gap
+        assert all(0 < delay <= cfg.min_host_interval_s for delay in slept)
         assert db.meta_get("keepa_deep_page") == "8"
         assert db.meta_get("keepa_last_fetch_at") is not None
         db.close()

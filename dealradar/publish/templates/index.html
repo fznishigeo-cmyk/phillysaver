@@ -1279,7 +1279,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     // Source credit is required on every card.
     var credits = (d.credits || []).map(function (c) {
-      return dead || !c.url ? "via " + esc(c.name)
+      return !c.url ? "via " + esc(c.name)
         : 'via <a href="' + esc(c.url) + '" rel="noopener">' + esc(c.name) + "</a>";
     }).join(", ");
     // A deal that needs steps (code, coupon, Subscribe & Save, rebate...)
@@ -1303,7 +1303,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
       (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '"' +
-      (dead ? ' aria-disabled="true"' : "") + '>' +
+      '>' +
       '<div class="media">' + media + "</div>" +
       '<div class="body">' +
       (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +

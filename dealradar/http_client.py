@@ -3,8 +3,8 @@
 Politeness contract (config.yaml -> fetch):
 - ``cfg.resolved_user_agent()`` is sent on every request, robots.txt included.
 - robots.txt is fetched at most once per host per fetcher lifetime and cached
-  in memory. HTTP 4xx for robots.txt => everything allowed; 5xx or a transport
-  error => the host is treated as DISALLOWED for this run (conservative).
+  in memory. An absent robots.txt (404/410) allows requests; other errors
+  disallow the host for this run (conservative).
 - At most one request per ``cfg.min_host_interval_s`` per host across ALL
   requests, robots fetches included.
 - Up to ``cfg.max_retries`` attempts on 429 / 5xx / transport errors with
@@ -19,18 +19,20 @@ Politeness contract (config.yaml -> fetch):
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import random
 import re
 import time
 import urllib.robotparser
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import replace
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
-from .config import AppConfig
+from .config import AppConfig, error_summary
 from .db import DB
 from .errors import DeadlineExceeded
 from .models import FetchResult
@@ -222,6 +224,7 @@ class PoliteFetcher:
         cfg: AppConfig,
         *,
         transport: httpx.BaseTransport | None = None,
+        http_client: httpx.Client | None = None,
         sleep_fn: Callable[[float], None] | None = None,
         clock: Callable[[], float] | None = None,
     ) -> None:
@@ -232,7 +235,8 @@ class PoliteFetcher:
         # Redirects are ALWAYS followed manually (see _request_with_retries)
         # so every hop target gets its own robots.txt check and per-host rate
         # limit — httpx's internal following would bypass both.
-        self._client = httpx.Client(
+        self._owns_client = http_client is None
+        self._client = http_client or httpx.Client(
             transport=transport,
             follow_redirects=False,
             timeout=httpx.Timeout(cfg.request_timeout_s),
@@ -241,6 +245,7 @@ class PoliteFetcher:
         # host -> RobotFileParser, or True (allow all) / False (disallow all)
         self._robots: dict[str, urllib.robotparser.RobotFileParser | bool] = {}
         self._last_request_at: dict[str, float] = {}
+        self._api_bodies: dict[str, bytes] = {}
 
     # ------------------------------------------------------------- public API
 
@@ -272,7 +277,7 @@ class PoliteFetcher:
         override = (robots_override_host or "").strip().lower() or None
         if not self._host_overridden(url, override) \
                 and not self._robots_allowed(url):
-            logger.info("robots.txt disallows GET %s", url)
+            logger.info("robots.txt disallows GET")
             return FetchResult(
                 url=url, final_url=url, status=0, body=None,
                 error="robots_disallowed", blocked_by_robots=True,
@@ -303,23 +308,81 @@ class PoliteFetcher:
         *,
         headers: Mapping[str, str] | None = None,
         deadline: float | None = None,
+        robots_override_host: str | None = None,
     ) -> FetchResult:
-        """Polite HEAD.
-
-        HEAD requests deliberately SKIP the robots.txt check: a HEAD transfers
-        response metadata only (status + headers, never page content), so it
-        does not crawl anything robots.txt protects. Robots rules are enforced
-        on any GET that follows (see :func:`resolve_redirects`). Rate limits,
-        retries, the User-Agent and the deadline all still apply.
-        """
+        """Polite HEAD, with the same host-only grant policy as GET."""
         result, _ = self._request_with_retries(
             "HEAD", url, dict(headers or {}), deadline=deadline,
             conditional=False, follow_redirects=True, read_body=False,
+            robots_override_host=robots_override_host,
         )
         return result
 
     def close(self) -> None:
-        self._client.close()
+        if self._owns_client:
+            self._client.close()
+
+    def api_get(self, url: str, *, params=None, headers=None, deadline=None,
+                max_attempts=None, respect_robots: bool = True) -> httpx.Response:
+        """An API response through the same robots, pacing and retry policy.
+
+        ``respect_robots=False`` is only for an official API we hold a key or
+        token for (Keepa, Woot, Meh, Threads, Reddit): robots.txt governs
+        crawling web pages, and those hosts' robots.txt disallow the very
+        endpoints their API terms license to keyed clients. Pacing, retries,
+        the User-Agent and credential-safe logging still apply.
+
+        Validators persist under an opaque key; response bodies stay in memory.
+        A fresh run re-fetches a 304 unconditionally when its body is unavailable.
+        """
+        req = httpx.Request("GET", url, params=params, headers=headers)
+        target = str(req.url)
+        cache_key = "api:" + hashlib.sha256(target.encode()).hexdigest()
+        hdrs = dict(headers or {})
+        etag, modified = self.db.get_validators(cache_key)
+        if etag:
+            hdrs["If-None-Match"] = etag
+        if modified:
+            hdrs["If-Modified-Since"] = modified
+        result, resp_headers = self._request_with_retries(
+            "GET", target, hdrs, deadline=deadline, conditional=True,
+            follow_redirects=True, read_body=True, validator_key=cache_key,
+            max_attempts=max_attempts, keep_error_body=True,
+            respect_robots=respect_robots)
+        if result.status == 304 and cache_key not in self._api_bodies:
+            result, resp_headers = self._request_with_retries(
+                "GET", target, dict(headers or {}), deadline=deadline,
+                conditional=True, follow_redirects=True, read_body=True,
+                validator_key=cache_key, max_attempts=max_attempts,
+                keep_error_body=True, respect_robots=respect_robots)
+        if result.status == 304 and cache_key in self._api_bodies:
+            result = replace(result, status=200, body=self._api_bodies[cache_key])
+        elif 200 <= result.status < 300 and result.body is not None:
+            self._api_bodies[cache_key] = result.body
+        return self._api_response(req, result, resp_headers)
+
+    def api_post(self, url: str, *, data=None, auth=None, headers=None,
+                 deadline=None, respect_robots: bool = True) -> httpx.Response:
+        """OAuth token requests share the host gap (robots as in ``api_get``)."""
+        req = httpx.Request("POST", url, data=data, headers=headers)
+        hdrs = dict(req.headers)
+        if auth is not None:
+            encoded = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+            hdrs["Authorization"] = "Basic " + encoded
+        result, resp_headers = self._request_with_retries(
+            "POST", url, hdrs, deadline=deadline, conditional=False,
+            follow_redirects=False, read_body=True, content=req.content,
+            keep_error_body=True, respect_robots=respect_robots)
+        return self._api_response(req, result, resp_headers)
+
+    @staticmethod
+    def _api_response(req, result, headers) -> httpx.Response:
+        if result.blocked_by_robots:
+            raise RuntimeError("robots_disallowed")
+        if result.status == 0:
+            raise httpx.RequestError(result.error, request=req)
+        return httpx.Response(result.status, headers=headers,
+                              content=result.body or b"", request=req)
 
     def check_image(self, url: str, *, deadline: float | None = None
                     ) -> tuple[FetchResult, str]:
@@ -344,7 +407,7 @@ class PoliteFetcher:
 
     # ---------------------------------------------------------------- robots
 
-    def _robots_allowed(self, url: str) -> bool:
+    def _robots_allowed(self, url: str, user_agent: str | None = None) -> bool:
         parts = urlsplit(url)
         host = parts.netloc.lower()
         if not host:
@@ -355,7 +418,7 @@ class PoliteFetcher:
         entry = self._robots[host]
         if isinstance(entry, bool):
             return entry
-        return entry.can_fetch(self.cfg.resolved_user_agent(), url)
+        return entry.can_fetch(user_agent or self.cfg.resolved_user_agent(), url)
 
     def _load_robots(
         self, scheme: str, netloc: str
@@ -368,18 +431,19 @@ class PoliteFetcher:
                 robots_url,
                 timeout=ROBOTS_TIMEOUT_S,
                 headers={"User-Agent": self.cfg.resolved_user_agent()},
+                follow_redirects=False,
             )
         except Exception as exc:  # transport error -> conservative disallow
             logger.warning(
-                "robots.txt fetch failed for %s (%s: %s); host disallowed this run",
-                netloc, type(exc).__name__, exc,
+                "robots.txt fetch failed (%s); host disallowed this run",
+                error_summary(exc),
             )
             return False
         if 200 <= resp.status_code < 300:
             parser = urllib.robotparser.RobotFileParser()
             parser.parse(resp.text.splitlines())
             return parser
-        if 400 <= resp.status_code < 500:
+        if resp.status_code in (404, 410):
             logger.debug("robots.txt HTTP %d for %s; everything allowed",
                          resp.status_code, netloc)
             return True
@@ -441,7 +505,10 @@ class PoliteFetcher:
         robots_override_host: str | None = None,
         max_attempts: int | None = None,
         timeout_s: float | None = None,
-        respect_robots: bool = False,
+        respect_robots: bool = True,
+        validator_key: str | None = None,
+        content: bytes | None = None,
+        keep_error_body: bool = False,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Polite manual hop loop around the per-URL attempt loop.
 
@@ -456,16 +523,23 @@ class PoliteFetcher:
         """
         current = url
         hdrs = dict(headers)
+        user_agent = self._user_agent(hdrs)
         hop_cap = REDIRECT_HOP_CAP if follow_redirects else 0
         for hop in range(hop_cap + 1):
             self._check_deadline(deadline)
-            if respect_robots and not self._robots_allowed(current):
+            if is_challenge_url(current):
+                return (FetchResult(url=url, final_url=current, status=0,
+                                    body=None, error="challenge_page"), None)
+            if (respect_robots
+                    and not self._host_overridden(current, robots_override_host)
+                    and not self._robots_allowed(current, user_agent)):
                 return (FetchResult(url=url, final_url=current, status=0,
                                     body=None, error="robots_disallowed",
                                     blocked_by_robots=True), None)
             result, resp_headers = self._attempt_url(
                 method, current, hdrs, deadline=deadline, read_body=read_body,
-                max_attempts=max_attempts, timeout_s=timeout_s)
+                max_attempts=max_attempts, timeout_s=timeout_s,
+                content=content, keep_error_body=keep_error_body)
             status = result.status
             location = (resp_headers.get("Location", "")
                         if resp_headers is not None else "")
@@ -473,17 +547,20 @@ class PoliteFetcher:
                     and hop < hop_cap):
                 nxt = urljoin(current, location)
                 if is_challenge_url(nxt):
-                    logger.info("%s redirects to a bot wall; not followed", current)
+                    logger.info("redirect points to a bot wall; not followed")
                     return (FetchResult(url=url, final_url=nxt, status=0,
                                         body=None, error="challenge_page"),
                             resp_headers)
-                if ((method == "GET" or respect_robots)
+                if (respect_robots
                         and not self._host_overridden(nxt, robots_override_host)
-                        and not self._robots_allowed(nxt)):
-                    logger.info("robots.txt disallows redirect target %s", nxt)
+                        and not self._robots_allowed(nxt, user_agent)):
+                    logger.info("robots.txt disallows redirect target")
                     return (FetchResult(url=url, final_url=nxt, status=0,
                                         body=None, error="robots_disallowed",
                                         blocked_by_robots=True), resp_headers)
+                if urlsplit(current).netloc.lower() != urlsplit(nxt).netloc.lower():
+                    hdrs = {k: v for k, v in hdrs.items() if k.lower() not in
+                            ("authorization", "x-api-key", "cookie")}
                 current = nxt
                 hdrs = {k: v for k, v in hdrs.items() if k.lower() not in
                         ("if-none-match", "if-modified-since")}
@@ -493,7 +570,7 @@ class PoliteFetcher:
                 etag = resp_headers.get("ETag", "")
                 last_modified = resp_headers.get("Last-Modified", "")
                 if etag or last_modified:
-                    self.db.store_validators(url, etag, last_modified,
+                    self.db.store_validators(validator_key or url, etag, last_modified,
                                              now_utc())
             if current != url:
                 result = replace(result, url=url)
@@ -511,6 +588,8 @@ class PoliteFetcher:
         read_body: bool,
         max_attempts: int | None = None,
         timeout_s: float | None = None,
+        content: bytes | None = None,
+        keep_error_body: bool = False,
     ) -> tuple[FetchResult, httpx.Headers | None]:
         """Run the retry loop for ONE url (no redirect following)."""
         host = urlsplit(url).netloc.lower()
@@ -521,11 +600,11 @@ class PoliteFetcher:
             try:
                 resp, body = self._send(method, url, headers,
                                         read_body=read_body,
-                                        timeout_s=timeout_s)
+                                        timeout_s=timeout_s, content=content)
             except httpx.HTTPError as exc:
-                error = f"{type(exc).__name__}: {exc}".strip().rstrip(":")
-                logger.warning("%s %s failed (attempt %d/%d): %s",
-                               method, url, attempt + 1, attempts, error)
+                error = error_summary(exc)
+                logger.warning("%s failed (attempt %d/%d): %s",
+                               method, attempt + 1, attempts, error)
                 if attempt + 1 < attempts:
                     self._backoff(attempt, None, deadline)
                     continue
@@ -537,14 +616,14 @@ class PoliteFetcher:
                                     status=304, body=None, not_modified=True),
                         resp.headers)
             if status == 429 or 500 <= status <= 599:
-                logger.warning("%s %s -> HTTP %d (attempt %d/%d)",
-                               method, url, status, attempt + 1, attempts)
+                logger.warning("%s -> HTTP %d (attempt %d/%d)",
+                               method, status, attempt + 1, attempts)
                 if attempt + 1 < attempts:
                     self._backoff(attempt, resp.headers.get("Retry-After"),
                                   deadline)
                     continue
                 return (FetchResult(url=url, final_url=str(resp.url),
-                                    status=status, body=None,
+                                    status=status, body=body if keep_error_body else None,
                                     error=f"http_{status}"), resp.headers)
             # Final response: 2xx, 3xx (caller decides), or a non-429 4xx.
             error = f"http_{status}" if status >= 400 else ""
@@ -561,12 +640,15 @@ class PoliteFetcher:
         *,
         read_body: bool,
         timeout_s: float | None = None,
+        content: bytes | None = None,
     ) -> tuple[httpx.Response, bytes | None]:
         req_headers = dict(headers)
-        req_headers["User-Agent"] = self.cfg.resolved_user_agent()
+        user_agent = self._user_agent(req_headers)
+        req_headers = {k: v for k, v in req_headers.items() if k.lower() != "user-agent"}
+        req_headers["User-Agent"] = user_agent
         extra = {"timeout": timeout_s} if timeout_s else {}
         with self._client.stream(method, url, headers=req_headers,
-                                 follow_redirects=False, **extra) as resp:
+                                 content=content, follow_redirects=False, **extra) as resp:
             body: bytes | None = None
             if (read_body and method != "HEAD"
                     and resp.status_code not in (204, 304)):
@@ -576,16 +658,21 @@ class PoliteFetcher:
                     chunks.append(chunk)
                     total += len(chunk)
                     if total >= MAX_BODY_BYTES:
-                        logger.info("body for %s capped at %d bytes",
-                                    url, MAX_BODY_BYTES)
+                        logger.info("response body capped at %d bytes", MAX_BODY_BYTES)
                         break
                 body = b"".join(chunks)[:MAX_BODY_BYTES]
             return resp, body
 
+    def _user_agent(self, headers: Mapping[str, str]) -> str:
+        ua = next((v for k, v in headers.items() if k.lower() == "user-agent"), "")
+        if ua and self.cfg.contact_email not in ua:
+            return ua + f" (contact: {self.cfg.contact_email})"
+        return ua or self.cfg.resolved_user_agent()
+
     # ---------------------------------------------------------- redirect hops
 
     def _redirect_hop(
-        self, url: str, deadline: float | None, *, respect_robots: bool = False
+        self, url: str, deadline: float | None, *, respect_robots: bool = True
     ) -> tuple[FetchResult, str]:
         """One redirect hop: HEAD first, on 403/405/501 fall back to GET.
 
@@ -603,7 +690,7 @@ class PoliteFetcher:
         if result.status in _HEAD_FALLBACK_STATUSES:
             self._check_deadline(deadline)
             if not self._robots_allowed(url):
-                logger.info("robots.txt disallows GET fallback for %s", url)
+                logger.info("robots.txt disallows GET fallback")
                 return (FetchResult(url=url, final_url=url, status=0,
                                     body=None, error="robots_disallowed",
                                     blocked_by_robots=True), "")
@@ -617,13 +704,30 @@ class PoliteFetcher:
         return result, location
 
 
+@contextmanager
+def api_fetcher(fetcher, db, cfg, *, http_client=None, sleep_fn=None):
+    """Use the run's polite client; standalone adapters get the same policy."""
+    if fetcher is not None:
+        yield fetcher
+        return
+    memory = DB(":memory:") if db is None else None
+    client = PoliteFetcher(db if db is not None else memory, cfg,
+                           http_client=http_client, sleep_fn=sleep_fn)
+    try:
+        yield client
+    finally:
+        client.close()
+        if memory is not None:
+            memory.close()
+
+
 def resolve_redirects(
     fetcher: PoliteFetcher,
     url: str,
     max_hops: int = 5,
     *,
     deadline: float | None = None,
-    respect_robots: bool = False,
+    respect_robots: bool = True,
 ) -> str:
     """Resolve an affiliate/shortener redirect chain to a canonical URL.
 
@@ -655,13 +759,12 @@ def resolve_redirects(
                 break
             nxt = urljoin(current, location)
             if is_challenge_url(nxt):
-                logger.info("%s redirects to a bot wall; kept as the product URL",
-                            current)
+                logger.info("redirect points to a bot wall; kept as the product URL")
                 break
             current = nxt
     except DeadlineExceeded:
         raise
-    except Exception:
-        logger.exception("resolve_redirects(%s) failed; returning last known URL",
-                         url)
+    except Exception as exc:
+        logger.warning("redirect resolution failed (%s); returning last known URL",
+                       error_summary(exc))
     return canonicalize_url(current)

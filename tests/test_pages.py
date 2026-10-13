@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -25,10 +26,11 @@ def source(name):
                 "morningsave": "https://morningsave.com/",
                 "jungle_deals": "https://www.jungle.deals/api/get-top-deals"}
         return SourceConfig(name, "api" if name == "jungle_deals" else "html",
-                            urls[name], adapter=name, allowed_html=True)
+                            urls[name], adapter=name, allowed_html=True,
+                            site=f"https://{urlsplit(urls[name]).netloc}/")
     return SourceConfig(name, "html", f"https://www.{name}.com/" +
                         ("deals" if name == "bradsdeals" else ""),
-                        adapter=name, allowed_html=True)
+                        adapter=name, allowed_html=True, site=f"https://www.{name}.com/")
 
 
 def body(name):

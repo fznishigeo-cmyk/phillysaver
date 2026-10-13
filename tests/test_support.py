@@ -116,15 +116,15 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "b4b49bd682360e14ae54b733d6be8a05effd179c99bc702cb1e890c069421e63"),
-    (False, 49, "1128b117eeec97b0bd86994056fb96bd198a527cd4b192dcd48d46ee583b81ea"),
-    (True, 0, "982a00ae611a53ab6cc4847649734f1af3af1432bcc4fc265c1cf228ca27dd09"),
-    (True, 49, "0c16062bfabb6435c66f90dd644c5a4e52952c5d1128cf5bb47d531bba676f1c"),
+    (False, 0, "188f39e622fd54658a4168921e28cc152fca8ebe25a9c82dff9a3e5a1a579ac4"),
+    (False, 49, "5e2a3143c2c706bfe8e15a13824816bb6ed5c2b0a72c3ad31053edc47efdb108"),
+    (True, 0, "b789744fad54ddffa11bb5b57dace3255631ccac49772db050a0e92df51445b2"),
+    (True, 49, "bcdb200a867515bb224fcfcfc60a9be7c60f77a2a107ba9859852aae3e7c4782"),
 ])
 def test_support_off_index_bytes_match_task049_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 048 adds Clarity masking in all modes; keep the shared
     # baseline without task 037's head-only hint.
-    # Task 049 changes deal payloads; these empty-page bytes stay unchanged.
+    # Task 053 keeps gone-card source credits active in both access modes.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

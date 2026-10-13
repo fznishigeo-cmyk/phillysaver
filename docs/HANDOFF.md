@@ -180,6 +180,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Partner credit + politeness (Codex task 053, 2026-10-13):** robots.txt
+  now gates every request to a web page, HEAD and redirect hops included
+  (robots.txt errors other than 404/410 disallow; the permission bypass is
+  the granted source's own site host only, and lapses with a conditional
+  grant when the monthly price reaches $19.99). Official keyed APIs (Keepa,
+  Woot, Meh, Threads, Reddit) skip robots.txt by design: it governs crawling,
+  and those hosts disallow the endpoints their API terms license (robots
+  probe 2026-10-13); they keep our User-Agent, host pacing and status-only
+  logs. A source-hosted image appears only with its grant and credit link,
+  never on social; trackers on `competitor_tracker_hosts` are never
+  rewritten; emails list every source credit and show no Amazon price;
+  credentials never reach logs; state is never committed unencrypted.
 - **Source coverage audit (Codex task 052, 2026-10-13):** `python -m
   dealradar source-audit` (workflow `source-audit.yml`, manual + Monday
   13:17 UTC, read-only state, never commits) probes each enabled source once

@@ -25,7 +25,8 @@ import feedparser
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from dealradar.config import load_config, load_sources  # noqa: E402
+from dealradar.config import error_summary, load_config, load_sources  # noqa: E402
+from dealradar.fetch.rss import _permission_host  # noqa: E402
 from dealradar.db import DB  # noqa: E402
 from dealradar.http_client import PoliteFetcher  # noqa: E402
 
@@ -67,7 +68,7 @@ def probe(fetcher: PoliteFetcher, url: str, override: str | None) -> dict:
     try:
         res = fetcher.get(url, conditional=False, **kw)
     except Exception as e:  # a probe never fails the job
-        return {"url": url, "status": 0, "error": f"{type(e).__name__}: {e}"[:160]}
+        return {"url": url, "status": 0, "error": error_summary(e)}
     return {"url": url, "final": res.final_url, "status": res.status,
             "error": (res.error or "")[:160], "robots": res.blocked_by_robots,
             "bytes": len(res.body or b""), "entries": feed_entries(res.body),
@@ -109,7 +110,7 @@ def main() -> int:
             if name in unknown:
                 continue
             src = by_name[name]
-            override = urlsplit(src.url).netloc.lower() if src.crawl_permission else None
+            override = _permission_host(src, cfg)
             first = probe(fetcher, src.url, override)
             tried = [first]
             if not first.get("entries") and first["status"] in (200, 404):

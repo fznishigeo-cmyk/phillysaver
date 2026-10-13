@@ -90,4 +90,4 @@ def test_all_networks_remove_prices_even_from_fallbacks_and_disclosures():
                        ("$", "£", "€", "USD", "19.99", "30", "40", "50", "100", "60",
                         "9.99", "12.34", "56.78", "B0C1234XYZ"))
         assert all(text.endswith("#ad") for text in texts[:3] + [pin["description"]])
-        assert pin["alt_text"] == item
+        assert pin["alt_text"] == pinterest._without_prices(item)

@@ -190,7 +190,7 @@ class PageAdapter(SourceAdapter):
                 enriched.append(post)
                 continue
             kw = {}
-            if override := _permission_host(source):
+            if override := _permission_host(source, getattr(fetcher, "cfg", None)):
                 kw["robots_override_host"] = override
             res = fetcher.get(post.url, conditional=False, deadline=deadline, **kw)
             if res.status != 200 or res.blocked_by_robots or not res.body:
@@ -222,7 +222,7 @@ class PageAdapter(SourceAdapter):
         if source.adapter not in PAGE_ADAPTERS:
             raise ValueError(f"unknown page adapter {source.adapter!r}")
         kw = {}
-        if override := _permission_host(source):
+        if override := _permission_host(source, getattr(fetcher, "cfg", None)):
             kw["robots_override_host"] = override
         res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)
         if res.not_modified or res.status == 304:

@@ -8,6 +8,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 
+from tests.http_helpers import mock_keepa_get, api_transport
+
 import pytest
 
 from dealradar import pipeline, rank
@@ -620,10 +622,10 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         monkeypatch.setenv("KEEPA_KEY", "kkey")
         deal = {"asin": "B0TESTASIN1", "final_price": 29.99, "conditions": []}
-        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+        mock_keepa_get(monkeypatch, lambda *a, **k:
                             self._stats_response([2999, 3105, -1]))
         assert verify.recheck_amazon_price(deal, cfg) is True
-        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+        mock_keepa_get(monkeypatch, lambda *a, **k:
                             self._stats_response([9999, 10500, -1]))
         assert verify.recheck_amazon_price(deal, cfg) is False
 
@@ -646,7 +648,7 @@ class TestPriceRecheck:
         plain = {"asin": "B0TESTASIN1", "final_price": 9.99,
                  "regular_price": 19.99, "codes": [], "conditions": [],
                  "stack_steps": ["50% off sale"]}
-        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+        mock_keepa_get(monkeypatch, lambda *a, **k:
                             self._stats_response([1999, -1, -1]))
         assert verify.recheck_amazon_price(coded, cfg) is True
         assert verify.recheck_amazon_price(clipped, cfg) is True
@@ -654,7 +656,7 @@ class TestPriceRecheck:
         # means the sale ended.
         assert verify.recheck_amazon_price(plain, cfg) is False
         # Listing climbed past the regular price: the coupon deal is gone too.
-        monkeypatch.setattr(httpx, "get", lambda *a, **k:
+        mock_keepa_get(monkeypatch, lambda *a, **k:
                             self._stats_response([2499, -1, -1]))
         assert verify.recheck_amazon_price(coded, cfg) is False
 
@@ -675,7 +677,7 @@ class TestPriceRecheck:
                     "stats": {"current": [2999, 3105, -1]}}]},
                 request=httpx.Request("GET", "https://api.keepa.com/product"))
 
-        monkeypatch.setattr(httpx, "get", resp)
+        mock_keepa_get(monkeypatch, resp)
         deal = {"asin": "B0TESTASIN1", "final_price": 29.99, "conditions": []}
         assert verify.recheck_amazon_price(deal, cfg) is True
         assert deal["image_url"] == \
@@ -719,13 +721,13 @@ class TestPriceRecheck:
         used_deal = {"asin": "B0TESTASIN1", "final_price": 12.07,
                      "conditions": ["used", "limited_qty"]}
         current = [8155, 8155, -1, -1, -1, -1, -1, -1, -1, 1207]
-        monkeypatch.setattr(httpx, "get",
+        mock_keepa_get(monkeypatch,
                             lambda *a, **k: self._stats_response(current))
         assert verify.recheck_amazon_price(used_deal, cfg) is True
         # Warehouse slot empty in a stats-only record: Keepa refreshes it
         # only on an offers scan, so that is no opinion, never "sold".
         gone = [8155, 8155, -1, -1, -1, -1, -1, -1, -1, -1]
-        monkeypatch.setattr(httpx, "get",
+        mock_keepa_get(monkeypatch,
                             lambda *a, **k: self._stats_response(gone))
         assert verify.recheck_amazon_price(used_deal, cfg) is None
 
@@ -747,7 +749,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["asin"] for d in deals)
             return {d["dedupe_key"]: False for d in deals}
 
@@ -804,7 +806,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             for deal in deals:
                 calls.append(deal["dedupe_key"])
                 deal["image_url"] = "https://m.media-amazon.com/images/I/new.jpg"
@@ -837,7 +839,7 @@ class TestPriceRecheck:
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=False):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=False, fetcher=None):
             for deal in deals:
                 deal["image_url"] = "https://m.media-amazon.com/images/I/p.jpg"
             return {deal["dedupe_key"]: None for deal in deals}
@@ -879,7 +881,7 @@ class TestPriceRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["dedupe_key"] for d in deals)
             budget.note({"tokensLeft": 20, "refillRate": 5}, NOW)
             return {d["dedupe_key"]: True for d in deals}
@@ -1007,7 +1009,7 @@ class TestBatchedRecheck:
                               "stats": {"current": [1000 if n % 2 else 5000, -1, -1]}})
             return self._stats_response(prods)
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         budget = KeepaBudget()
         verdicts = verify.recheck_amazon_prices(deals, cfg, budget=budget)
         assert seen == [100, 50]
@@ -1034,7 +1036,7 @@ class TestBatchedRecheck:
         cfg.feature_flags["keepa"] = True
         calls = []
         monkeypatch.setattr(verify, "recheck_amazon_prices",
-                            lambda deals, _c, budget=None, used_offers=True: (
+                            lambda deals, _c, budget=None, used_offers=True, fetcher=None: (
                                 calls.extend(deals),
                                 {d["dedupe_key"]: True for d in deals})[1])
         stats = pipeline._recheck_prices(db, cfg, NOW, deadline=_time.monotonic() - 1)
@@ -1259,7 +1261,7 @@ class TestCarefulDeath:
             return httpx.Response(200, json={"products": prods},
                                   request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         deals = [{"dedupe_key": "n1", "asin": "B0NEW00001", "final_price": 10.0,
                   "conditions": []},
                  {"dedupe_key": "u1", "asin": "B0USED0001", "final_price": 10.0,
@@ -1293,7 +1295,7 @@ class TestCarefulDeath:
                 "stats": {"current": [89900, 89900] + [-1] * 8}}]},
                 request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert sent[0]["offers"] == 20
         assert stats["checked"] == 0 and stats["dead"] == 0
@@ -1324,7 +1326,7 @@ class TestCarefulDeath:
         cfg.keepa_recheck_used_h = 6.0
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.append((sorted(d["dedupe_key"] for d in deals), used_offers))
             return {d["dedupe_key"]: True for d in deals}
 
@@ -1353,7 +1355,7 @@ class TestCarefulDeath:
         cfg.keepa_recheck_used_h = 6.0
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.append(([d["dedupe_key"] for d in deals], used_offers))
             return {d["dedupe_key"]: True for d in deals}
 
@@ -1383,7 +1385,7 @@ class TestCarefulDeath:
         cfg.feature_flags["keepa"] = True
         sizes, floor = [], []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             sizes.append(len(deals))
             left = budget.available(NOW) - 13 * len(deals)
             floor.append(left)
@@ -1424,7 +1426,7 @@ class TestCarefulDeath:
         cfg.feature_flags["keepa"] = True
         sizes = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             sizes.append(len(deals))
             budget.note({"tokensLeft": budget.available(NOW) - len(deals),
                          "refillRate": 0}, NOW)
@@ -1476,7 +1478,7 @@ class TestCarefulDeath:
                 {"asin": a, "stats": {"current": [-1] * 9 + [2500]}}
                 for a in asins]}, request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert sent == [(20, 20), (10, 20)]
         assert stats["used_checked"] == 30
@@ -1580,7 +1582,7 @@ class TestCarefulDeath:
         cfg.feature_flags["keepa"] = True
         calls = []
 
-        def fake_recheck(deals, _cfg, budget=None, used_offers=True):
+        def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["dedupe_key"] for d in deals)
             return {d["dedupe_key"]: True for d in deals}
 
@@ -1626,7 +1628,7 @@ class TestCarefulDeath:
                 "tokensLeft": 500, "refillRate": 20},
                 request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
 
         def reading(tokens):
             db.meta_set(META_KEY, json.dumps({
@@ -1718,7 +1720,7 @@ class TestCarefulDeath:
                 answer, asin="B0BKQSDF5C")]},
                 request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", fake_get)
+        mock_keepa_get(monkeypatch, fake_get)
         assert sight(449.51, 55.05, NOW)["revived"] is False
         # Two readings an hour apart (first: suspect, second: dead).
         suspect_at = NOW + timedelta(minutes=23)
@@ -1775,7 +1777,7 @@ class TestCarefulDeath:
         t1 = NOW + timedelta(minutes=83)
         gone = {"asin": "B0BKQSDF5C", "offers": [_offer(1, 99999)],
                 "liveOffersOrder": [0], "stats": {"lastOffersUpdate": _km(t1)}}
-        monkeypatch.setattr(httpx, "get", lambda url, params=None, timeout=None:
+        mock_keepa_get(monkeypatch, lambda url, params=None, timeout=None:
                             httpx.Response(200, json={"products": [gone]},
                                            request=httpx.Request("GET", url)))
         sight("keepa_amazon_drops", NOW)

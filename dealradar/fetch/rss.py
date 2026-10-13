@@ -392,16 +392,17 @@ def _needs_enrichment(body_html: str, body_text: str) -> bool:
     )
 
 
-def _permission_host(source) -> str | None:
+def _permission_host(source, cfg=None) -> str | None:
     """Host whose robots.txt the operator's WRITTEN permission overrides.
 
     Only set for sources carrying crawl_permission in sources.yaml (the
     correspondence stays on the operator's file); only ever the source's
     own host.
     """
-    if not getattr(source, "crawl_permission", ""):
+    from ..source_policy import grant_active
+    if not getattr(source, "crawl_permission", "") or not grant_active(source, cfg):
         return None
-    return urlsplit(source.url).netloc.lower() or None
+    return urlsplit(source.site).netloc.lower() or None
 
 
 class RssAdapter(SourceAdapter):
@@ -417,7 +418,9 @@ class RssAdapter(SourceAdapter):
         deadline: Any = None,
     ) -> list[RawPost]:
         kw = {}
-        override = _permission_host(source)
+        from ..source_policy import image_granted
+        override = _permission_host(source, cfg)
+        images = image_granted(source, cfg)
         if override:  # only sources with documented written permission
             kw["robots_override_host"] = override
         res = fetcher.get(source.url, conditional=True, deadline=deadline, **kw)
@@ -468,20 +471,20 @@ class RssAdapter(SourceAdapter):
                 published_at=published_at,
                 fetched_at=now,
                 image_url=(_first_image(body_html)
-                           if source.image_permission else ""),
+                           if images else ""),
                 photos=(post_photos(body_html, url, title)
-                        if source.image_permission else PostPhotos()),
+                        if images else PostPhotos()),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
                 # An image-granted source whose excerpt carried no picture
                 # is worth the one article fetch for its og:image alone.
-                want_image = source.image_permission and not post.image_url
+                want_image = images and not post.image_url
                 if ((_needs_enrichment(body_html, body_text) or want_image)
                         and not db.post_is_known(post.content_hash)):
                     enriched = self._enrich(post, fetcher, deadline,
                                             want_image=want_image,
-                                            images=source.image_permission)
+                                            images=images)
                     if enriched is not None:
                         post = enriched
             posts.append(post)

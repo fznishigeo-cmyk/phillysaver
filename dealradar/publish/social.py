@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from ..source_policy import host_of, sources_for_url
+
 
 def _word_trim(text: str, limit: int) -> str:
     text = " ".join(text.split())
@@ -88,6 +90,11 @@ def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
                 or set(deal.get("conditions") or []) & set(cfg.social_exclude_conditions)):
             continue
         image = urlsplit(deal.get("image_url") or "")
+        if sources_for_url(deal.get("image_url") or "") or any(
+                (host := host_of(c.get("url") or "")) and image.hostname
+                and (image.hostname == host or image.hostname.endswith("." + host))
+                for c in deal.get("credits") or []):
+            continue
         path = paths.get(str(deal.get("key") or "")[:8], "")
         if (image.scheme != "https" or not image.hostname
                 or not re.fullmatch(r"/deal/[a-z0-9-]+/", path)

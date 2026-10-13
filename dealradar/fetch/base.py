@@ -13,7 +13,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 
-from ..config import AppConfig, redact_secrets
+from ..config import AppConfig, redact_secrets, error_summary
 from ..db import DB
 from ..errors import AdapterDisabled, AdapterNotConfigured, DeadlineExceeded
 from ..http_client import PoliteFetcher
@@ -116,7 +116,8 @@ def run_source(
         logger.warning("source %s: deadline exceeded", source.name)
         return _record_failure("deadline")
     except Exception as exc:
-        logger.exception("source %s: adapter failed", source.name)
+        error = error_summary(exc)
+        logger.warning("source %s: adapter failed (%s)", source.name, error)
         return _record_failure(str(exc)[:200])
 
     db.record_source_result(

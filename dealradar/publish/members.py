@@ -29,6 +29,7 @@ import httpx
 from ..config import get_secret
 from ..util import iso, parse_iso
 from .telegram_pub import format_message
+from .email_policy import email_line_html
 
 log = logging.getLogger("dealradar.publish.members")
 
@@ -120,8 +121,10 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     portal = getattr(cfg, "portal_url", "") or ""
     if portal:
         footer.append(f"Manage membership: {portal}")
+    if cfg.ftc_disclosure:
+        footer.append(cfg.ftc_disclosure)
     text_body = "\n".join(lines) + "\n\n" + "\n".join(footer) + "\n"
-    items = "\n".join(f"<li>{html_lib.escape(line)}</li>" for line in lines)
+    items = "\n".join(f"<li>{email_line_html(line, d)}</li>" for d, line in zip(deals, lines))
     foot_html = "<br>".join(html_lib.escape(f) for f in footer)
     html_body = (f"<html><body><ul>\n{items}\n</ul>"
                  f"<p>{foot_html}</p></body></html>")

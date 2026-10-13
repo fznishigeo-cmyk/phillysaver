@@ -958,7 +958,7 @@ class TestProductImageBackfill:
             assert db.get_deal(key)["flags"] == []
         db.close()
 
-    def test_unlisted_sellers_and_woot_get_photos_after_known_retailers(
+    def test_unlisted_sellers_follow_known_retailers_and_source_hosts_are_skipped(
             self, tmp_path, monkeypatch):
         db = DB(tmp_path / "state.db")
         links = ["https://www.revolve.com/dress/dp/123",
@@ -974,11 +974,12 @@ class TestProductImageBackfill:
             for link in links})
         monkeypatch.setattr(pipeline, "_PRODUCT_IMAGE_PER_RUN", 2)
         assert pipeline._backfill_product_images(db, fetcher, None) == 2
-        assert fetcher.calls == links[3:]
+        assert fetcher.calls == [links[3], links[0]]
         monkeypatch.setattr(pipeline, "_PRODUCT_IMAGE_PER_RUN", 40)
-        assert pipeline._backfill_product_images(db, fetcher, None) == 3
-        assert fetcher.calls == links[3:] + links[:3]
-        assert all(d["image_url"] == photo for d in db.all_deals())
+        assert pipeline._backfill_product_images(db, fetcher, None) == 2
+        assert fetcher.calls == [links[3]] + links[:3]
+        assert all(d["image_url"] == photo for d in db.all_deals() if d["dedupe_key"] != "d4")
+        assert not db.get_deal("d4").get("image_url")
         assert pipeline._backfill_product_images(db, fetcher, None) == 0
         db.close()
 

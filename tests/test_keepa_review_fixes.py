@@ -10,6 +10,8 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime, timedelta, timezone
 
+from tests.http_helpers import mock_keepa_get, api_transport
+
 from dealradar import dedupe, pipeline, util, verify
 from dealradar.config import load_config
 from dealradar.db import DB
@@ -52,7 +54,7 @@ class TestInconclusiveWaitsItsWindow:
         _seed(db, "url|stuck0001")
         calls = []
 
-        def fake(deals, _cfg, budget=None, used_offers=True):
+        def fake(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["dedupe_key"] for d in deals)
             return {d["dedupe_key"]: None for d in deals}  # answered, no verdict
 
@@ -75,7 +77,7 @@ class TestInconclusiveWaitsItsWindow:
         _seed(db, "url|miss00001")
         calls = []
 
-        def fake(deals, _cfg, budget=None, used_offers=True):
+        def fake(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["dedupe_key"] for d in deals)
             return {}  # 429 / transport: no entry at all
 
@@ -91,7 +93,7 @@ class TestInconclusiveWaitsItsWindow:
         _seed(db, "url|newd00001", used=False)
         calls = []
 
-        def fake(deals, _cfg, budget=None, used_offers=True):
+        def fake(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             calls.extend(d["dedupe_key"] for d in deals)
             return {d["dedupe_key"]: None for d in deals}
 
@@ -111,7 +113,7 @@ class TestFairOrder:
         _seed(db, "url|never0001")
         seen = []
 
-        def fake(deals, _cfg, budget=None, used_offers=True):
+        def fake(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             seen.append([d["dedupe_key"] for d in deals])
             return {d["dedupe_key"]: True for d in deals}
 
@@ -146,7 +148,7 @@ class TestTierCrossCheck:
                                              "tokensLeft": 500, "refillRate": 20},
                                   request=httpx.Request("GET", url))
 
-        monkeypatch.setattr(httpx, "get", get)
+        mock_keepa_get(monkeypatch, get)
         cfg = _cfg()
         verify.refresh_tiers(db, cfg, NOW)
         verify.refresh_tiers(db, cfg, NOW + timedelta(minutes=10))
@@ -160,7 +162,7 @@ class TestTierCrossCheck:
             _seed(db, f"url|bound{i:04d}", used=False)
         calls = []
         monkeypatch.setattr(verify, "keepa_check",
-                            lambda deal, cfg, budget=None, answered=None:
+                            lambda deal, cfg, budget=None, answered=None, fetcher=None:
                             calls.append(deal["dedupe_key"]) or None)
         verify.refresh_tiers(db, _cfg(), NOW)
         assert len(calls) == verify.KEEPA_CHECKS_PER_PASS
@@ -379,7 +381,7 @@ class TestRecheckCadenceFitsThePlan:
             price_rechecked_at=iso(NOW - timedelta(hours=2))))
         checked = []
 
-        def fake(deals, _cfg, budget=None, used_offers=True):
+        def fake(deals, _cfg, budget=None, used_offers=True, fetcher=None):
             checked.extend(d["dedupe_key"] for d in deals)
             return {d["dedupe_key"]: True for d in deals}
 

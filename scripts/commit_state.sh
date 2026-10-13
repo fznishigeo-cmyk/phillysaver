@@ -8,7 +8,7 @@
 #   * STATE_DB_KEY set                        -> commits state.db.enc only
 #     (scripts/state_crypt.sh) and removes any unencrypted state.db: the
 #     repository is public and state.db holds every member deal
-#   * branch encrypted but no STATE_DB_KEY    -> refuses, exit 1
+#   * state.db but no STATE_DB_KEY           -> refuses, exit 1
 #   * origin/data missing                     -> creates it as an orphan branch
 #   * push races (concurrent runs)            -> up to 4 retries, backoff 2 4 8 16 s
 #
@@ -35,6 +35,11 @@ if [[ ! -f "$REPO_DIR/state.db" ]]; then
   exit 0
 fi
 
+if [[ -z "${STATE_DB_KEY:-}" ]]; then
+  log "STATE_DB_KEY is not set: refusing to commit state.db unencrypted"
+  exit 1
+fi
+
 cleanup() {
   git -C "$REPO_DIR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
   rm -rf "$WORKTREE"
@@ -45,7 +50,15 @@ trap cleanup EXIT
 # Clear any stale worktree left behind by an earlier interrupted run.
 cleanup
 
-git -C "$REPO_DIR" fetch origin "$BRANCH" || true
+if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null; then
+  git -C "$REPO_DIR" fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+else
+  remote_status=$?
+  if [[ "$remote_status" -ne 2 ]] || git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
+    log "could not establish remote state: refusing to create a new data branch"
+    exit 1
+  fi
+fi
 
 if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
   git -C "$REPO_DIR" worktree add "$WORKTREE" "origin/$BRANCH" >/dev/null
@@ -85,20 +98,11 @@ same_state() {
 }
 
 stage_state() {
-  if [[ -n "${STATE_DB_KEY:-}" ]]; then
-    if ! { [[ -f "$WORKTREE/state.db.enc" ]] && same_state; }; then
-      state_encrypt "$REPO_DIR/state.db" "$WORKTREE/state.db.enc"
-    fi
-    git -C "$WORKTREE" add state.db.enc
-    git -C "$WORKTREE" rm --quiet --ignore-unmatch state.db
-  elif [[ -f "$WORKTREE/state.db.enc" ]]; then
-    log "the data branch is encrypted but STATE_DB_KEY is not set: refusing to commit state.db unencrypted"
-    return 1
-  else
-    printf '::warning::state.db is committed unencrypted to a public branch; add the STATE_DB_KEY repository secret\n'
-    cp "$REPO_DIR/state.db" "$WORKTREE/state.db"
-    git -C "$WORKTREE" add state.db
+  if ! { [[ -f "$WORKTREE/state.db.enc" ]] && same_state; }; then
+    state_encrypt "$REPO_DIR/state.db" "$WORKTREE/state.db.enc"
   fi
+  git -C "$WORKTREE" add state.db.enc
+  git -C "$WORKTREE" rm --quiet --ignore-unmatch state.db
   if report_is_fresh; then
     cp "$REPO_DIR/sources_report.md" "$WORKTREE/sources_report.md"
     git -C "$WORKTREE" add sources_report.md
@@ -134,7 +138,7 @@ for delay in 2 4 8 16 0; do
   fi
   log "push failed — re-snapshotting from the moved tip and retrying in ${delay}s"
   sleep "$delay"
-  git -C "$REPO_DIR" fetch origin "$BRANCH" || true
+  git -C "$REPO_DIR" fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
     git -C "$REPO_DIR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
     rm -rf "$WORKTREE"

@@ -37,7 +37,8 @@ def db(tmp_path):
 
 
 def source(name="partner", **kwargs):
-    return SourceConfig(name=name, method="rss", url=f"https://{name}.example/feed/", **kwargs)
+    return SourceConfig(name=name, method="rss", site=f"https://{name}.example/",
+                        url=f"https://{name}.example/feed/", **kwargs)
 
 
 def feed(n=1, age=0, *, dated=True):
@@ -310,7 +311,7 @@ def test_official_api_status_and_missing_key(db, cfg, monkeypatch):
     meh = SourceConfig("meh", "api", "https://meh.com/", adapter="meh")
     rows, _ = probe(db, cfg, [meh], lambda _: httpx.Response(403))
     assert rows[0]["http"] == "403" and rows[0]["cause"] == "HTTP 403"
-    assert rows[0]["access"] == "official API"
+    assert rows[0]["access"] == "robots"
     monkeypatch.delenv("WOOT_API_KEY", raising=False)
     woot = SourceConfig("woot", "api", "https://www.woot.com/", adapter="woot")
     rows, requests = probe(db, cfg, [woot])

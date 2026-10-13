@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -20,6 +19,7 @@ import httpx
 from .. import util
 from ..config import AppConfig, get_secret
 from ..db import DB
+from ..http_client import api_fetcher
 from ..errors import AdapterDisabled, AdapterNotConfigured, DeadlineExceeded
 from ..models import RawPost, SourceConfig
 from .base import SourceAdapter
@@ -47,21 +47,6 @@ class ThreadsAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn
 
-    @contextmanager
-    def _client(self, cfg: AppConfig) -> Iterator[httpx.Client]:
-        if self._http is not None:
-            yield self._http
-            return
-        client = httpx.Client(
-            headers={"User-Agent": cfg.resolved_user_agent()},
-            timeout=cfg.request_timeout_s,
-            follow_redirects=True,
-        )
-        try:
-            yield client
-        finally:
-            client.close()
-
     def fetch_posts(
         self,
         source: SourceConfig,
@@ -71,7 +56,6 @@ class ThreadsAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher/db unused: this adapter manages its own authenticated client.
         if not cfg.feature_flags.get("threads"):
             raise AdapterDisabled("threads flag off (pending app review)")
         token = get_secret("THREADS_TOKEN")
@@ -83,19 +67,18 @@ class ThreadsAdapter(SourceAdapter):
 
         posts: list[RawPost] = []
         seen_uids: set[str] = set()
-        with self._client(cfg) as client:
-            for i, keyword in enumerate(keywords):
-                if i:
-                    self._sleep(1.0)  # <=1 request/s between keyword searches
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
+            for keyword in keywords:
                 _check_deadline(deadline)
-                resp = client.get(
+                resp = client.api_get(
                     SEARCH_URL,
                     params={
                         "q": keyword,
                         "search_type": "TOP",
                         "fields": FIELDS,
                         "access_token": token,
-                    },
+                    }, deadline=deadline,
+                    respect_robots=False,  # keyed Graph API
                 )
                 resp.raise_for_status()
                 for item in resp.json().get("data") or []:

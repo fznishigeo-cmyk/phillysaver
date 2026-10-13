@@ -60,12 +60,12 @@ def _feed_ok(body: bytes) -> bool:
 
 
 def _validate_feed_source(
-    source: SourceConfig, fetcher: Any, deadline: float | None = None
+    source: SourceConfig, fetcher: Any, deadline: float | None = None, cfg=None
 ) -> tuple[str, str, SourceConfig | None]:
     """(status, detail, active_config|None) for an rss/html source."""
     from .rss import _permission_host
     kw = {}
-    override = _permission_host(source)
+    override = _permission_host(source, cfg)
     if override:  # only sources with documented written permission
         kw["robots_override_host"] = override
     res = fetcher.get(source.url, conditional=False, deadline=deadline, **kw)
@@ -138,7 +138,7 @@ def _validate_one(
             return "dead", str(exc), None
         return "live", source.url, source
     if source.method in ("rss", "html"):
-        return _validate_feed_source(source, fetcher, deadline)
+        return _validate_feed_source(source, fetcher, deadline, cfg)
     if source.method == "api":
         status, detail = _validate_api_source(source, cfg)
         return status, detail, source if status == "live" else None

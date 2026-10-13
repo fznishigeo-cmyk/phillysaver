@@ -75,7 +75,7 @@ def _reason(error: str) -> str:
 class _ProbeFetcher(PoliteFetcher):
     """Same polite client, with unconditional probes and count-only metadata."""
     def begin(self, source):
-        self.granted_host = _permission_host(source)
+        self.granted_host = _permission_host(source, self.cfg)
         self.statuses = []
         self.permission_used = False
         self.robots_blocked = False
@@ -94,6 +94,13 @@ class _ProbeFetcher(PoliteFetcher):
         if result.error:
             self.error = _reason(result.error)
         return result
+
+    def _api_response(self, req, result, headers):
+        self.statuses.append(result.status)
+        self.robots_blocked |= result.blocked_by_robots
+        if result.error:
+            self.error = _reason(result.error)
+        return super()._api_response(req, result, headers)
 
 
 def _table_exists(db, name):

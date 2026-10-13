@@ -268,7 +268,7 @@ def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
         "title": _word_trim(f"{pct}% off {item}", 100),
         "description": description,
         "link": "https://wowpriced.com" + path,
-        "alt_text": str(deal.get("item") or ""),
+        "alt_text": _without_prices(str(deal.get("item") or "")),
         "media_source": {"source_type": "image_url", "url": deal["image_url"]},
     }
 

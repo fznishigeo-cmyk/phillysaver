@@ -313,7 +313,7 @@ def test_title_description_word_limits_prices_and_disclosure():
     assert len(pin["title"].removeprefix("80% off ")) <= 70
     assert pin["title"].split()[-1] in {"Fantastic", "product"}
     assert pin["description"].endswith("verified by wowpriced. #ad")
-    assert pin["alt_text"] == item
+    assert pin["alt_text"] == pinterest._without_prices(item)
     assert "$" not in pin["title"] + pin["description"]
     short = pinterest.pin_payload(candidate("price", 1, item="Gift card $19.99 USD 50 100 USD"), "/deal/gift/", "b", "#ad")
     assert short["title"] == "80% off Gift card"

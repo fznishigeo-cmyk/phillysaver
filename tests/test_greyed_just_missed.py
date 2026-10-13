@@ -172,7 +172,7 @@ def test_python_and_js_placement(pattern):
 
 
 @pytest.mark.parametrize("hours,label", [(0.5, "gone just now"), (2.5, "gone 3h ago"), (24, "gone 24h ago")])
-def test_static_and_js_gone_card_is_inert(hours, label):
+def test_static_and_js_gone_card_keeps_only_credit_links_active(hours, label):
     d = _serialize_deal(make_deal(status="dead", death="confirmed", died_at=iso(NOW - timedelta(hours=hours))), NOW)
     script = '''
     var d = JSON.parse(require("fs").readFileSync(0,"utf8"));
@@ -185,11 +185,14 @@ def test_static_and_js_gone_card_is_inert(hours, label):
     script += '\n'.join(js_function(n) for n in ("usedTag", "goneText", "mediaHtml", "cardHtml"))
     script += '\nconsole.log(JSON.stringify(cardHtml(d)));'
     for html in (seo.card_html(d, {d["key"][:8]: "/deal/lamp/"}, NOW), run_js(script, d)):
-        assert 'aria-disabled="true"' in html
+        assert 'class="card gone' in html
+        assert 'aria-disabled="true"' not in html
         assert "Just missed · " + label in html
-        assert not re.search(r"<(?:a|button|input)\b|tabindex=|onclick=", html)
+        assert not re.search(r"<(?:button|input)\b|tabindex=|onclick=", html)
+        assert re.findall(r'<a href="([^"]+)"', html) == [
+            "https://slickdeals.net/f/1", "https://hip2save.com/p/2"]
         assert "Get deal" not in html
-        assert "via Slickdeals" in html
+        assert "via Slickdeals" in re.sub(r"<[^>]+>", "", html)
 
 
 def test_ticker_and_search_use_liveness_correctly():
@@ -251,8 +254,8 @@ def test_static_wall_inline_spacing_and_other_pages_live_only(db, tmp_path):
     wall = html.split('<div id="content"', 1)[1].split('<div id="paywall"', 1)[0]
     cards = re.findall(r'<article\b.*?</article>', wall, re.S)
     assert len(cards) == 48
-    assert all('aria-disabled' not in c for c in cards[:8])
-    assert all(sum('aria-disabled' in c for c in cards[i:i + 8]) <= 1 for i in range(len(cards)))
+    assert all('class="card gone' not in c for c in cards[:8])
+    assert all(sum('class="card gone' in c for c in cards[i:i + 8]) <= 1 for i in range(len(cards)))
     assert '<h2 class="secth missed"' not in html
     for page in (tmp_path / "site").rglob("index.html"):
         if page == tmp_path / "site/index.html" or page.parent.parent.name == "deal":

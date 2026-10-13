@@ -32,8 +32,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -41,8 +40,9 @@ from typing import Any
 import httpx
 
 from .. import util
-from ..config import AppConfig, get_secret
+from ..config import AppConfig, get_secret, error_summary
 from ..db import DB
+from ..http_client import PoliteFetcher, api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
                             response_payload)
@@ -351,7 +351,7 @@ class _TokensShort(Exception):
 class _Pull:
     """One pull's shared paging state."""
 
-    client: httpx.Client
+    client: PoliteFetcher
     key: str
     budget: KeepaBudget
     db: DB | None
@@ -408,21 +408,6 @@ class KeepaDealsAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn  # politeness gap between /deal pages
 
-    @contextmanager
-    def _client(self, cfg: AppConfig) -> Iterator[httpx.Client]:
-        if self._http is not None:
-            yield self._http
-            return
-        client = httpx.Client(
-            headers={"User-Agent": cfg.resolved_user_agent()},
-            timeout=cfg.request_timeout_s,
-            follow_redirects=True,
-        )
-        try:
-            yield client
-        finally:
-            client.close()
-
     def fetch_posts(
         self,
         source: SourceConfig,
@@ -432,7 +417,6 @@ class KeepaDealsAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher unused: this adapter manages its own authenticated client.
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
@@ -491,7 +475,7 @@ class KeepaDealsAdapter(SourceAdapter):
         deep_sel = _selection(PRICE_TYPE_WAREHOUSE, WAREHOUSE_DELTA_PCT,
                               DATE_RANGE_90D, SORT_ABS_DROP, WAREHOUSE_MAX_RANK)
         complete = False
-        with self._client(cfg) as client:
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
             pull = _Pull(client=client, key=key, budget=budget, db=db,
                          now=now, deadline=deadline,
                          reserve=cfg.keepa_reserve_tokens,
@@ -677,7 +661,7 @@ class KeepaDealsAdapter(SourceAdapter):
                 refused = isinstance(e, RuntimeError) or (
                     isinstance(e, httpx.HTTPStatusError)
                     and e.response.status_code < 500)
-                log.warning("keepa %s p%d: %s; %s", label, page, e,
+                log.warning("keepa %s p%d: %s; %s", label, page, error_summary(e),
                             "treating it as the end of the list" if refused
                             else "paging stops, retried next pull")
                 if not refused:
@@ -741,10 +725,11 @@ class KeepaDealsAdapter(SourceAdapter):
         the minute and costs nothing: a deferral, never a source failure
         for the breaker), RuntimeError on an in-body error, and httpx
         errors as they come."""
-        if pull.requests:
-            pull.sleep(pull.interval_s)  # <= 1 request/second/host
         pull.requests += 1
-        resp = pull.client.get(url, params=params)
+        # Keyed API (robots.txt is for crawlers); a 429 is an empty token
+        # bucket, deferred to the next pull, so it is not retried here.
+        resp = pull.client.api_get(url, params=params, deadline=pull.deadline,
+                                   max_attempts=1, respect_robots=False)
         payload = response_payload(resp)
         pull.budget.note(payload, pull.now)
         if resp.status_code == 429:
@@ -756,7 +741,7 @@ class KeepaDealsAdapter(SourceAdapter):
         if isinstance(payload, dict) and payload.get("error"):
             # Keepa reports some failures in-body on a 200: surface them as a
             # source failure instead of silently "mapping 0 posts".
-            raise RuntimeError(f"keepa api error: {payload['error']}")
+            raise RuntimeError("keepa api error")
         return payload
 
     def _query_rows(self, pull: _Pull, selection: dict[str, Any],
@@ -858,7 +843,7 @@ class KeepaDealsAdapter(SourceAdapter):
             refused = isinstance(e, RuntimeError) or (
                 isinstance(e, httpx.HTTPStatusError)
                 and e.response.status_code < 500)
-            log.warning("keepa %s: %s; %s", label, e,
+            log.warning("keepa %s: %s; %s", label, error_summary(e),
                         "wrapping to page 0" if refused and page
                         else "retried next pull")
             if refused and page and pull.db is not None:
@@ -885,7 +870,7 @@ class KeepaDealsAdapter(SourceAdapter):
                 return
             except (RuntimeError, httpx.HTTPError) as e:
                 log.warning("keepa %s: product check failed (%s); retried "
-                            "next pull", label, e)
+                            "next pull", label, error_summary(e))
                 return
             tokens_left = (body.get("tokensLeft") if isinstance(body, dict)
                            else None)

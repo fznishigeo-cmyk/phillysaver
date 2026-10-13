@@ -22,7 +22,8 @@ NOW = datetime(2026, 10, 11, 17, tzinfo=timezone.utc)
 BODY = (Path(__file__).parent / 'fixtures/pages/jungle_deals.json').read_bytes()
 SOURCE = SourceConfig('jungle_deals', 'api',
                       'https://www.jungle.deals/api/get-top-deals',
-                      adapter='jungle_deals', crawl_permission='Written grant')
+                      adapter='jungle_deals', site='https://www.jungle.deals/',
+                      crawl_permission='Written grant')
 
 
 def result(status=200, body=BODY, robots=False, not_modified=False):

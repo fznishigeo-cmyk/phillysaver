@@ -2,20 +2,19 @@
 
 Policy (sources.yaml): registered-app OAuth only. The token comes from the
 ``client_credentials`` grant; listings are read from ``oauth.reddit.com`` with
-Reddit's required User-Agent format (the ``REDDIT_USER_AGENT`` secret, sent
-verbatim). We stay far below Reddit's 100 req/min cap: one listing call per
+Reddit's required User-Agent format (``REDDIT_USER_AGENT``, with our contact
+email appended). We stay far below Reddit's 100 req/min cap: one listing call per
 subreddit per run, with an injectable ``sleep_fn`` keeping us at <=1 req/s.
 
-The adapter manages its own authenticated httpx client, so the injected
-``fetcher`` is ignored. ``RawPost.text`` is transient and never persisted.
+OAuth and listings use the shared polite fetcher, including robots checks
+and the host gap. ``RawPost.text`` is transient and never persisted.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,6 +23,7 @@ import httpx
 from .. import util
 from ..config import AppConfig, get_secret
 from ..db import DB
+from ..http_client import PoliteFetcher, api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..models import RawPost, SourceConfig
 from .base import SourceAdapter
@@ -54,32 +54,19 @@ class RedditAdapter(SourceAdapter):
         self._token: str = ""
         self._token_expires_at: float = 0.0  # time.monotonic() deadline
 
-    @contextmanager
-    def _client(self, cfg: AppConfig, ua: str) -> Iterator[httpx.Client]:
-        if self._http is not None:
-            yield self._http
-            return
-        client = httpx.Client(
-            headers={"User-Agent": ua},
-            timeout=cfg.request_timeout_s,
-            follow_redirects=True,
-        )
-        try:
-            yield client
-        finally:
-            client.close()
-
     def _ensure_token(
-        self, client: httpx.Client, client_id: str, client_secret: str, ua: str
+        self, client: PoliteFetcher, client_id: str, client_secret: str, ua: str,
+        deadline: float | None = None,
     ) -> tuple[str, bool]:
         """Return (bearer_token, fetched_now). Caches token + expiry."""
         if self._token and time.monotonic() < self._token_expires_at:
             return self._token, False
-        resp = client.post(
+        resp = client.api_post(
             TOKEN_URL,
             auth=(client_id, client_secret),
             data={"grant_type": "client_credentials"},
-            headers={"User-Agent": ua},
+            headers={"User-Agent": ua}, deadline=deadline,
+            respect_robots=False,  # official OAuth API
         )
         resp.raise_for_status()
         payload = resp.json()
@@ -99,24 +86,21 @@ class RedditAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
-        # fetcher/db unused: this adapter manages its own authenticated client.
         client_id = get_secret("REDDIT_CLIENT_ID")
         client_secret = get_secret("REDDIT_CLIENT_SECRET")
         ua = get_secret("REDDIT_USER_AGENT")
         if not client_id or not client_secret or not ua:
             raise AdapterNotConfigured("reddit credentials missing")
 
-        with self._client(cfg, ua) as client:
+        with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
             _check_deadline(deadline)
-            token, fetched_now = self._ensure_token(client, client_id, client_secret, ua)
-            if fetched_now:
-                # Two consecutive calls (token + listing): stay at <=1 req/s.
-                self._sleep(1.0)
+            token, _ = self._ensure_token(client, client_id, client_secret, ua, deadline)
             _check_deadline(deadline)
             listing_url = source.url + ".json?limit=50&raw_json=1"
-            resp = client.get(
+            resp = client.api_get(
                 listing_url,
                 headers={"Authorization": f"bearer {token}", "User-Agent": ua},
+                deadline=deadline, respect_robots=False,  # official OAuth API
             )
             resp.raise_for_status()
             payload = resp.json()

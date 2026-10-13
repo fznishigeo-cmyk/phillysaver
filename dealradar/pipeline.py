@@ -100,7 +100,8 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
                 refreshed.append(dataclasses.replace(
                     s, crawl_permission=cur.crawl_permission,
                     image_permission=cur.image_permission,
-                    allowed_html=cur.allowed_html, fast_lane=cur.fast_lane))
+                    allowed_html=cur.allowed_html, fast_lane=cur.fast_lane,
+                    site=cur.site))
         # Sources added to sources.yaml since the last validation join the run
         # set immediately (a dead guess just fails politely and is culled at
         # the next daily revalidation) — "add a source" works on the next run.
@@ -325,7 +326,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     from .fetch.rss import _first_image, _og_image, _permission_host, post_photos
     from .product_images import _names_no_product, link_identity, pick_photo, single_product
 
-    granted = {s.name: s for s in sources if s.image_permission}
+    from .source_policy import image_granted
+    granted = {s.name: s for s in sources if image_granted(s, cfg)}
     if not granted:
         return 0
     done = 0
@@ -388,7 +390,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
                 continue  # unflagged: the next pass fetches it
             src = granted[sighting["source_name"]]
             kw = {}
-            host = _permission_host(src)
+            host = _permission_host(src, cfg)
             if host:
                 kw["robots_override_host"] = host
             try:
@@ -773,7 +775,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             break
         try:
             target = resolve_redirects(fetcher, link, cfg.redirect_max_hops,
-                                       deadline=deadline, respect_robots=tracker)
+                                       deadline=deadline)
         except DeadlineExceeded:
             break
         tried += 1
@@ -962,6 +964,7 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     from .dedupe import _DEAL_FIELDS
     from .http_client import is_challenge_url, tracker_target
     from .product_images import _names_no_product
+    from .source_policy import sources_for_url, source_image_allowed
 
     found = tried = 0
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
@@ -987,7 +990,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
             continue
         if parts.scheme != "https" or not host \
                 or host in _SHORT_LINK_HOSTS \
-                or any(t in host for t in _PRODUCT_IMAGE_SKIP_HOSTS):
+                or any(t in host for t in _PRODUCT_IMAGE_SKIP_HOSTS) \
+                or sources_for_url(link):
             continue
         if _names_no_product(link) or is_challenge_url(link):
             # A category, search or sale page shows no one product (its
@@ -1005,7 +1009,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
             break  # out of time mid-fetch: stays unflagged for the next run
         tried += 1
         image = ""
-        if res.status == 200 and res.body and not res.blocked_by_robots:
+        if (res.status == 200 and res.body and not res.blocked_by_robots
+                and not sources_for_url(res.final_url or link)):
             page = res.body.decode("utf-8", errors="replace")
             # First declared share image that is not junk; a "//cdn/..."
             # URL is resolved to https, attribute entities are decoded.
@@ -1013,7 +1018,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
                      for pat in _PRODUCT_IMAGE_META for c in pat.findall(page))
             image = next((c for c in cands
                           if not urlsplit(c).path.lower().endswith(".svg")
-                          and not _PRODUCT_IMAGE_JUNK.search(c)), "")
+                          and not _PRODUCT_IMAGE_JUNK.search(c)
+                          and source_image_allowed(c, deal.get("sightings") or [], cfg)), "")
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         flags = list(payload.get("flags") or [])
         flags.append("product_image_tried")
@@ -1127,7 +1133,7 @@ def _revive_used_price_moved(db: DB, now: datetime) -> int:
 
 def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     image_backfill: bool = True,
-                    deadline: float | None = None) -> dict[str, Any]:
+                    deadline: float | None = None, *, fetcher=None) -> dict[str, Any]:
     """The 'click the page before publishing' gate, via Keepa's licensed API
     (we never scrape retailer pages): every about-to-publish Amazon deal
     gets its LIVE price checked at most once per cfg.keepa_recheck_* hours,
@@ -1279,7 +1285,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             batch = group[i:i + size]
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
-                                             used_offers=not is_photo)
+                                             used_offers=not is_photo, fetcher=fetcher)
             if is_photo:
                 stats["image_backfill"] += len(batch)
             for deal in batch:
@@ -1655,7 +1661,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["deals_upserted"] = deals_upserted
 
         # ---- verify tiers + dead marking ----
-        refresh_tiers(db, cfg, now)
+        refresh_tiers(db, cfg, now, fetcher=fetcher)
         summary["marked_dead"] = mark_expired_dead(db, cfg, now)
         record_deaths()
 
@@ -1706,7 +1712,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # the slack; the hourly's tail is for the critic and publishing.
         summary["price_recheck"] = _recheck_prices(
             db, cfg, now, image_backfill=fast_lane,
-            deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
+            deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 

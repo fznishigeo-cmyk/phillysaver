@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 from ..config import get_secret
 from ..util import clamp_window_24h, parse_iso
 from .telegram_pub import format_message
+from .email_policy import email_line_html
 
 logger = logging.getLogger("dealradar.publish.email")
 
@@ -34,13 +35,15 @@ def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, 
         line = "no qualifying deals in the last 24 h"
         text_body = line + "\n"
         html_body = (
-            "<html><body><p>" + html_lib.escape(line) + "</p></body></html>"
+            "<html><body><p>" + html_lib.escape(line) + "</p><p>"
+            + html_lib.escape(cfg.ftc_disclosure) + "</p></body></html>"
         )
-        return subject, text_body, html_body
+        return subject, text_body + cfg.ftc_disclosure + "\n", html_body
     lines = [format_message(d) for d in deals]
-    text_body = "\n".join(lines) + "\n"
-    items = "\n".join(f"<li>{html_lib.escape(line)}</li>" for line in lines)
-    html_body = f"<html><body><ul>\n{items}\n</ul></body></html>"
+    text_body = "\n".join(lines) + "\n\n" + cfg.ftc_disclosure + "\n"
+    items = "\n".join(f"<li>{email_line_html(line, d)}</li>" for d, line in zip(deals, lines))
+    html_body = (f"<html><body><ul>\n{items}\n</ul>"
+                 f"<p>{html_lib.escape(cfg.ftc_disclosure)}</p></body></html>")
     return subject, text_body, html_body
 
 
