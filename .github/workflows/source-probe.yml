@@ -9,6 +9,10 @@ name: source probe (read-only)
 on:
   workflow_dispatch:
     inputs:
+      outline:
+        description: "Also print a structure-only layout outline (tags/classes; no page text)"
+        required: false
+        default: ""
       sources:
         description: "Comma-separated source names from sources.yaml"
         required: true
@@ -31,4 +35,5 @@ jobs:
       - name: Probe the sources
         env:
           SOURCE_NAMES: ${{ inputs.sources }}
+          SOURCE_OUTLINE: ${{ inputs.outline }}
         run: python scripts/source_probe.py

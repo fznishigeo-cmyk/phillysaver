@@ -75,6 +75,47 @@ def probe(fetcher: PoliteFetcher, url: str, override: str | None) -> dict:
             "firewall": firewall(res.body), "body": res.body}
 
 
+def outline(body: bytes | None, limit: int = 6) -> list[str]:
+    """Structure only (tags, classes, link paths, whether a $ appears): what a
+    reader needs to follow a changed page layout. Never prints page text."""
+    from html.parser import HTMLParser
+
+    class Outline(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack, self.cards, self.dollar = [], [], []
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            label = tag + "".join("." + c for c in (a.get("class") or "").split()[:3])
+            if a.get("aria-label") and "$" in a["aria-label"]:
+                label += "[aria-label has $]"
+            if tag not in {"br", "img", "input", "meta", "link", "hr", "source"}:
+                self.stack.append(label)
+            href = a.get("href") or ""
+            if tag == "a" and re.match(r"^(https?://[^/]+)?/(deals?|product|item)s?/", href):
+                if len(self.cards) < limit:
+                    self.cards.append(" > ".join(self.stack[-5:]) + f"  href={urlsplit(href).path[:60]}")
+
+        def handle_endtag(self, tag):
+            for i in range(len(self.stack) - 1, -1, -1):
+                if self.stack[i].split(".")[0].split("[")[0] == tag:
+                    del self.stack[i:]
+                    break
+
+        def handle_data(self, data):
+            if "$" in data and len(self.dollar) < limit:
+                self.dollar.append(" > ".join(self.stack[-4:]))
+
+    p = Outline()
+    try:
+        p.feed((body or b"")[:600000].decode("utf-8", "replace"))
+    except Exception as e:  # an outline never fails the probe
+        return [f"outline failed: {type(e).__name__}"]
+    return (["deal links:"] + ["  " + c for c in p.cards]
+            + ["elements with a $ amount:"] + ["  " + d for d in p.dollar])
+
+
 def verdict(r: dict) -> str:
     if r.get("robots"):
         return "robots.txt disallows (no permission on file for this host)"
@@ -150,6 +191,10 @@ def main() -> int:
             lines.append(f"| {name} | {t['url']} | {t['status']} | {t.get('final', '')} | "
                          f"{t.get('bytes', 0)} | {verdict(t)} |")
     lines += ["", "</details>", ""]
+    if os.environ.get("SOURCE_OUTLINE"):
+        # Layout outline for HTML readers (structure only; no page text).
+        for name, _perm, first, _best, _tried in rows:
+            lines += [f"### {name} layout", "", "```"] + outline(first.get("body")) + ["```", ""]
     report = "\n".join(lines)
     print(report)
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
