@@ -202,6 +202,17 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   state before each outgoing post/email (not before each LLM call: that
   serialized every call behind a git push; the ledger rides the end-of-run
   save).
+- **Phone feel polish (Codex task 058 + review, 2026-10-13):** 44px hit areas
+  (small links keep their look; a transparent ::after extends the target),
+  12px small-text floor, one chip row with a fade, readable source credits,
+  native input hints (`enterkeyhint`, `inputmode`), no double-tap delay.
+  Local phone audit (150 synthetic deals, iPhone 14): text under 12px 277 -> 0;
+  card height 410 -> 373px; Get deal 37 -> 44px tall; no control steals
+  another's tap. Desktop unchanged (pixel diff = clock/ticker only). Review
+  dropped `viewport-fit=cover`: the safe-area padding lives in the <=640px
+  rules, so a landscape iPhone (wider than 640px) would have put content under
+  the notch. The env() paddings stay and read 0 until cover is added with
+  landscape padding.
 - **Top-of-page refresh (Codex task 057 + phone pass, 2026-10-13):** operator
   ("the top is sleepy; wake people up"): bright aqua header with a white
   search field, one amber accent (drop clock, Join free, active tab, % badges),

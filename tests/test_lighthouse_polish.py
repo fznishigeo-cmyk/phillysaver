@@ -43,6 +43,32 @@ def themes(html):
     return css, (light, dark)
 
 
+def phone_blocks(css):
+    blocks = []
+    for match in re.finditer(r'@media \(max-width:(640|520|899|360)px\)\{', css):
+        depth, end = 1, match.end()
+        while depth:
+            depth += (css[end] == '{') - (css[end] == '}')
+            end += 1
+        blocks.append((int(match[1]), css[match.end():end - 1]))
+    return blocks
+
+
+def phone_rule(css, selector):
+    # Collect repeated phone declarations in cascade order, including the
+    # shared Join/footer CSS appended by the publisher.
+    rules = []
+    for width, block in phone_blocks(css):
+        if width != 640:
+            continue
+        block = re.sub(r'/\*.*?\*/', '', block, flags=re.S)
+        for selectors, declarations in re.findall(r'([^{}]+)\{([^{}]*)\}', block):
+            if selector in [s.strip() for s in selectors.split(',')]:
+                rules.append(declarations)
+    assert rules, selector
+    return ';'.join(rules)
+
+
 class Outline(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -185,6 +211,106 @@ def test_body_links_have_underlines_and_buttons_keep_their_style(published):
             assert '.joincard a{color:var(--accent);text-decoration:underline;' in html
 
 
+def test_phone_controls_and_small_links_have_44px_hit_areas(published):
+    css, _ = themes((published / 'index.html').read_text())
+    for selector in ('button:not(.code):not(.tkpause)', 'input:not([type="radio"])',
+                     'select', '.getdeal', '.cattab', '.zerotoday', '.plans label', '.toast'):
+        declarations = phone_rule(css, selector)
+        assert 'min-height:44px' in declarations and 'min-width:44px' in declarations, selector
+    assert 'height:44px' in phone_rule(css, '#minpct')
+    assert 'padding-block:0' in phone_rule(css, '#controls label')
+    assert 'width:44px;height:44px;top:2px' in phone_rule(css, '#clearsearch')
+    assert 'min-height:48px' in phone_rule(css, '.subbar.ready')
+    assert 'min-height:36px' in phone_rule(css, '.code')
+    assert 'margin:4px 4px 4px 0' in phone_rule(css, '.code')
+    link = 'a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)'
+    for selector in (link + '::after', '.code::after', '.tkpause::after'):
+        declarations = phone_rule(css, selector)
+        assert 'content:"";position:absolute' in declarations
+        assert 'left:50%;top:50%;transform:translate(-50%,-50%)' in declarations
+        assert 'min-height:44px' in declarations and 'min-width:44px' in declarations
+    assert 'min-height:44px' in phone_rule(css, '.tkband')  # don't clip PAUSE's target
+    assert 'min-height:44px' in phone_rule(css, '.tkitem')
+    assert 'opacity:1' in phone_rule(css, '.tkpause')
+    # A min-height on the 2-line clamp would show a sliver of line 3.
+    assert 'min-height' not in phone_rule(css, '.title a')
+    assert '-webkit-line-clamp:2' in phone_rule(css, '.title a')
+    assert 'overflow:visible;white-space:normal' in phone_rule(css, '.credit')
+    assert 'outline:2px solid var(--accent);outline-offset:3px' in css
+    assert '@media (prefers-reduced-motion: reduce)' in css and '.tkstrip{animation:none}' in css
+
+
+def test_phone_type_never_drops_below_12px(published):
+    css, _ = themes((published / 'index.html').read_text())
+    blocks = phone_blocks(css)
+    assert {width for width, _ in blocks} == {640, 520, 899, 360}
+    for width, block in blocks:
+        sizes = re.findall(r'\bfont(?:-size)?\s*:\s*[^;{}]*?([\d.]+)px\b', block)
+        assert all(float(size) >= 12 for size in sizes), (width, sizes)
+    for selector in ('.tag', '.secth', '.chip', '.badge', '.credit', '.newtag', '.condtag',
+                     '.gonetag', '.freetag', '.visit-new', '.hotmeter', '.tklabel', '.tkitem s',
+                     '.tkpause', '#subscribe[data-zero]::after', 'body footer .meta',
+                     'body footer .footerfine', 'body footer #acctfoot'):
+        assert 'font-size:12px' in phone_rule(css, selector)
+    # Specificity must beat the shared footer's later, desktop 11px rules.
+    assert 'footer .footerfine{' in css and 'font-size:11px' in css
+
+
+def test_phone_native_controls_and_safe_area_clearance(published):
+    home = (published / 'index.html').read_text()
+    css, _ = themes(home)
+    # Safe-area padding lives in the phone rules; cover would put a
+    # landscape iPhone's content (wider than 640px) under the notch.
+    assert 'viewport-fit=cover' not in home
+    assert '-webkit-text-size-adjust:100%' in phone_rule(css, 'html')
+    assert 'padding-top:env(safe-area-inset-top)' in phone_rule(css, 'body')
+    for selector in ('a', 'button', 'input', 'select', '[role="button"]', '[role="tab"]',
+                     '.card.locked', '.tkitem', '.toast'):
+        declarations = phone_rule(css, selector)
+        assert 'touch-action:manipulation' in declarations
+        assert '-webkit-tap-highlight-color:rgba(14,117,105,.18)' in declarations
+    for selector in ('.subbar.ready', '.paywall'):
+        declarations = phone_rule(css, selector)
+        assert re.search(r'padding:[^;]*env\(safe-area-inset-bottom\)', declarations)
+        for edge in ('left', 'right'):
+            assert f'env(safe-area-inset-{edge})' in declarations
+    assert 'env(safe-area-inset-bottom)' in phone_rule(css, '.wrap')
+    assert 'top:calc(14px + env(safe-area-inset-top))' in phone_rule(css, '.toast')
+    for edge in ('left', 'right'):
+        assert f'env(safe-area-inset-{edge})' in phone_rule(css, '.toast')
+    if 'class="joincard"' in home:
+        assert 'env(safe-area-inset-bottom)' in phone_rule(css, '.joinoverlay .joincard')
+    search = re.search(r'<input id="q"[^>]+>', home)[0]
+    minimum = re.search(r'<input id="minpct"[^>]+>', home)[0]
+    assert 'enterkeyhint="search"' in search and 'autocomplete="off"' in search
+    assert 'inputmode="numeric"' in minimum and 'autocomplete="off"' in minimum
+    assert 'font-size:16px' in phone_rule(css, '#controls #minpct')
+    tabs = phone_rule(css, '#cattabs')
+    assert 'flex-wrap:nowrap;overflow-x:auto' in tabs
+    assert 'scroll-snap-type:x proximity' in tabs and 'mask-image:' in tabs
+
+
+def test_phone_chips_clip_to_one_row_while_store_and_credit_stay_visible(published):
+    home = (published / 'index.html').read_text()
+    css, _ = themes(home)
+    row = phone_rule(css, '.metarow')
+    assert 'flex-wrap:nowrap;overflow:hidden' in row
+    assert '-webkit-mask-image:linear-gradient(' in row and 'mask-image:linear-gradient(' in row
+    assert 'flex:0 0 auto' in phone_rule(css, '.metarow>*')
+    assert 'max-width:100%' in phone_rule(css, '.metarow .storechip')
+    assert 'display:none' not in phone_rule(css, '.metarow .storechip')
+    # The original desktop rule still wraps; only the phone blocks clip it.
+    assert '.metarow{display:flex;flex-wrap:wrap;' in css
+    static = home.split('<div id="content" data-clarity-unmask="true">')[1].split('<div id="paywall"')[0]
+    cards = re.findall(r'<article class="card">(.*?)</article>', static, re.S)
+    assert cards
+    for card in cards:
+        assert re.search(r'<div class="metarow"><span class="chip storechip">(Target|Walmart)</span>', card)
+        for required in ('class="now"', 'class="flag"', 'class="getdeal"', 'class="credit"', 'via '):
+            assert required in card
+    assert 'var metarow = \'<span class="chip storechip">\'' in home
+
+
 def test_static_and_live_media_share_reserved_geometry(published):
     home = (published / 'index.html').read_text()
     css, _ = themes(home)
@@ -208,6 +334,7 @@ def test_live_image_priority_and_ticker_after_paint(published, tmp_path):
                             capture_output=True, text=True)
     rendered = json.loads(result.stdout)
     assert_outline('<h1>Home</h1>' + rendered['wall'], 'live wall')
+    assert rendered['wall'].count('<div class="metarow"><span class="chip storechip">Target</span>') == 18
     images = re.findall(r'<img\s+([^>]+)>', rendered['wall'])
     assert len(images) == 18
     for i, attrs in enumerate(images):

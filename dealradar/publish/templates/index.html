@@ -443,7 +443,7 @@ footer .meta{font-size:11.5px}
   .dial{--d:34px;--w:4px}
   .droplbl{font-size:12.5px}
   .dropt{font-size:20px}
-  .tag{order:2;flex-basis:100%;font-size:10.5px;border-left:0;padding-left:0}
+  .tag{order:2;flex-basis:100%;font-size:12px;border-left:0;padding-left:0}
   #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
   .since{padding:0 12px 2px;font-size:12px}
   /* Phones swipe: one row of categories (desktop keeps the wrap, where a
@@ -453,7 +453,7 @@ footer .meta{font-size:11.5px}
            -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);
            mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
   #cattabs::-webkit-scrollbar{display:none}
-  .cattab{min-height:40px;scroll-snap-align:start}
+  .cattab{min-height:44px;min-width:44px;scroll-snap-align:start}
   /* 16px stops iOS zooming the page when a filter is tapped. */
   #controls #storesel,#controls #sortsel,#controls #minpct,#controls label{font-size:16px}
   #controls{gap:6px;scrollbar-width:none;padding-right:28px;
@@ -462,11 +462,11 @@ footer .meta{font-size:11.5px}
   #controls::-webkit-scrollbar{display:none}
   #controls select{flex:none;max-width:220px}
   #controls label{flex:none}
-  .wrap{padding:0 12px 84px}
+  .wrap{padding:0 12px calc(84px + env(safe-area-inset-bottom))}
   .acct{order:4;flex-basis:100%;justify-content:center;font-size:12.5px;margin-top:2px}
   .acct,.acct .in{flex-wrap:wrap;white-space:normal;justify-content:center;row-gap:2px}
   .acct .email{max-width:100%}
-  .paywall{bottom:8px;padding:10px 12px;gap:6px 10px}
+  .paywall{bottom:8px;padding:10px max(12px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));gap:6px 10px}
   .pwtext{flex-basis:100%;font-size:14px}
   .pwtext .meta{font-size:12.5px}
   .pwbtns{flex:1 1 100%}
@@ -477,6 +477,7 @@ footer .meta{font-size:11.5px}
   .footnav a{display:inline-block;padding:5px 0}
   .subbar.ready{display:flex;position:fixed;left:12px;right:12px;bottom:12px;z-index:30;
     justify-content:center;align-items:center;min-height:48px;border-radius:12px;
+    padding:12px max(12px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
     background:var(--accent);color:var(--accent-fg);font-weight:800;font-size:15px;
     text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 }
@@ -485,13 +486,13 @@ footer .meta{font-size:11.5px}
   .media{height:118px}
   .now{font-size:18px}
   .ph span{font-size:17px}
-  .getdeal{padding:9px 11px;font-size:12.5px}
+  .getdeal{padding:9px 8px;font-size:12.5px}
   #subscribe.getdeal{font-size:13.5px;justify-content:center}
   .tk{padding:5px 8px}
-  .tklabel{padding:0 16px 0 10px;font-size:11px}
-  .tkpause{font-size:11px;padding:6px 10px}
-  .freetag{font-size:11px}
-  .tag{font-size:11px}
+  .tklabel{padding:0 16px 0 10px;font-size:12px}
+  .tkpause{font-size:12px;padding:6px 10px}
+  .freetag{font-size:12px}
+  .tag{font-size:12px}
   .tkitem{padding:0 16px}
   .tbtext{font-size:16px}
   .title{font-size:13.5px}
@@ -582,6 +583,44 @@ header{--accent-hover:var(--warm)}
   .brand a{gap:6px}
   .hrow{column-gap:6px}
 }
+/* Phone hit areas and small type, after the shared variant/header styles. */
+@media (max-width:640px){
+  html{-webkit-text-size-adjust:100%}
+  body{padding-top:env(safe-area-inset-top)}
+  a,button,input,select,[role="button"],[role="tab"],.card.locked,.tkitem,.toast{
+    touch-action:manipulation;-webkit-tap-highlight-color:rgba(14,117,105,.18)}
+  button:not(.code):not(.tkpause),input:not([type="radio"]),select,
+  .getdeal,.cattab,.zerotoday,.plans label,.toast{min-width:44px;min-height:44px}
+  .getdeal{display:inline-flex;align-items:center;justify-content:center}
+  #controls label{padding-block:0}
+  #minpct{height:44px}
+  #controls #surprise,.mcard input,.joincard input{font-size:16px}
+  #clearsearch{width:44px;height:44px;top:2px}
+  /* Small links retain their visual size; their transparent target can
+     extend into the surrounding space. Credits must not clip that area. */
+  a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab),.code{position:relative}
+  a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)::after,.code::after,.tkpause::after{
+    content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:100%;height:100%;min-width:44px;min-height:44px}
+  .title:has(a){display:block}
+  .title a{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .credit{overflow:visible;white-space:normal;overflow-wrap:anywhere;flex:1;line-height:1.5}
+  .credit a{display:inline-block;max-width:100%}
+  .code{min-height:36px;min-width:44px;margin:4px 4px 4px 0}
+  .tkband,.tkitem{min-height:44px}
+  .tkpause{opacity:1}
+  .metarow{flex-wrap:nowrap;overflow:hidden;
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent);
+    mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
+  .metarow>*{flex:0 0 auto}
+  .metarow .storechip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .tag,.secth,.chip,.badge,.credit,.newtag,.condtag,.gonetag,.freetag,.visit-new,.hotmeter,
+  .tklabel,.tkitem s,.tkpause,#subscribe[data-zero]::after,
+  body footer .meta,body footer .footerfine,body footer #acctfoot{font-size:12px}
+  .supporttext{padding-right:44px}
+  .toast{top:calc(14px + env(safe-area-inset-top));
+    padding:10px max(18px,env(safe-area-inset-right)) 10px max(18px,env(safe-area-inset-left))}
+}
 p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
   text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
 </style>
@@ -602,7 +641,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     <div class="search" role="search" data-clarity-mask="true">
       <div class="searchfield">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="m12 12 5 5"/></svg>
-        <input id="q" type="search" data-clarity-mask="true" placeholder="Search deals" aria-label="Search deals" aria-describedby="searchcount">
+        <input id="q" type="search" data-clarity-mask="true" placeholder="Search deals" aria-label="Search deals" aria-describedby="searchcount" enterkeyhint="search" autocomplete="off">
         <button id="clearsearch" type="button" aria-label="Clear search" hidden>✕</button>
       </div>
       <p id="searchcount" role="status" aria-live="polite"></p>
@@ -648,7 +687,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     <option value="age:1">sort: newest first</option>
   </select>
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
-<!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0"></label>
+<!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0" inputmode="numeric" autocomplete="off"></label>
 </div>
 <div id="content" data-clarity-unmask="true">{{STATIC_WALL}}</div>
 <!--standard--><div id="paywall" class="paywall" data-clarity-mask="true" hidden>
@@ -1323,7 +1362,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       : esc(d.item);
 
     var tier = d.badge || "unverified";
-    var metarow = '<span class="chip">' + esc(d.store || "") + "</span>";
+    var metarow = '<span class="chip storechip">' + esc(d.store || "") + "</span>";
     if (TIER_LABEL[tier]) {
       metarow += '<span class="badge tier-' + esc(tier) + '">' + TIER_LABEL[tier] + "</span>";
     }

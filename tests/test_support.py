@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "3267a96d47450c0fc807788f0a3c9bc2c4f7cdbb927728a018417f77d56e5e56"),
-    (False, 49, "fe8825154e3e7a740a009bebdbf82ccea7608dd9098ea63b6705f40600b1891d"),
-    (True, 0, "c4b81ced0c6b70e99888b8f04dca4d1e7ba934b2cc5f80e8ad8a5c06dfbc90cc"),
-    (True, 49, "61595c68ebce6f5a8c578eea2deee12417a2a97f1dc9de5eb856c6c95e43bdf5"),
+    (False, 0, "3c6c1b625c1b58be0dd13fcf6aa535dfc94734bd30c10db277f317ab2f0eee1d"),
+    (False, 49, "8a54790690357bd5f151f4ea1299d7b5204a174299f138df4023a2587b2572da"),
+    (True, 0, "8927c683401d58f1cf0ad9522662134d61421979811d0da35a4de4ee33d5a9c7"),
+    (True, 49, "01c745d09d228cda8bfd5f6ca0b2e06c60b0ac6d889ee5cbb41897d8e20151a7"),
 ])
-def test_support_off_index_bytes_match_task057_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 057 refreshes the shared design in every access mode. Snapshot
+def test_support_off_index_bytes_match_task058_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 058 polishes the shared phone styles in every access mode. Snapshot
     # the actual output without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

@@ -88,6 +88,22 @@ def test_wide_grid_preserves_card_room_and_small_screen_rules():
     assert ".cattab::before" in home and ".cattab:focus-visible" in home
 
 
+def test_static_phone_card_keeps_store_price_steps_and_source_credit():
+    card = seo.card_html(dict(key="phone", store="Amazon", item="A two-line product title",
+                             status="alive", url="https://amazon.com/dp/B012345678",
+                             final_price=10, regular_price=50, pct_at_checkout=80,
+                             abs_savings=40, badge="history-checked", conditions=["subscribe_save"],
+                             needs_steps=True, codes=["SAVE10"], how=["Clip the coupon"],
+                             credits=[dict(name="Hip2Save", url="https://hip2save.com/deal")]))
+    assert '<div class="metarow"><span class="chip storechip">Amazon</span>' in card
+    assert 'class="badge tier-history-checked"' in card
+    assert 'class="chip">subscribe save</span>' in card
+    for required in ('class="now">$10.00', 'class="flag">-80%', '>Get deal</a>',
+                     'How to get this price:', 'class="code">SAVE10', 'class="credit">via '):
+        assert required in card
+    assert '<a href="https://hip2save.com/deal" rel="noopener">Hip2Save</a>' in card
+
+
 @pytest.mark.parametrize("name", ["index", "about", "how-it-works", "subscribe", "join", "privacy", "hub"])
 def test_design_templates_add_no_external_urls(name):
     template = (ROOT / f"dealradar/publish/templates/{name}.html").read_text()

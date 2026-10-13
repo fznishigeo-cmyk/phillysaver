@@ -179,7 +179,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
              f'<a href="{e(url)}" rel="sponsored noopener">{e(d.get("item"))}</a>'
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
-    meta = f'<span class="chip">{e(store)}</span>'
+    meta = f'<span class="chip storechip">{e(store)}</span>'
     if tier in _TIER_LABEL:
         meta += f'<span class="badge tier-{e(tier)}">{_TIER_LABEL[tier]}</span>'
     for c in [c for c in conds if c not in ("used", "open_box")][:2]:
