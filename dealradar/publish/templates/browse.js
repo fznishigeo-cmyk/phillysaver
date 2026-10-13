@@ -103,6 +103,9 @@
     try { sessionStorage.setItem(BROWSE_KEY, JSON.stringify(browseMemory)); } catch (e) { /* tab-only fallback */ }
     try {
       if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+      // An OAuth return (?code=...&state=...) keeps its address: the
+      // operator copies the code from the address bar (Pinterest connect).
+      if (/[?&]code=[^&]/.test(location.search || "")) return;
       if (push || historyBrowseId() !== browseId || (location.pathname || "/") + (location.search || "") !== snapshot.url) {
         history[push ? "pushState" : "replaceState"](Object.assign({}, history.state, {wpBrowse: browseId}), "", snapshot.url + (location.hash || ""));
       }

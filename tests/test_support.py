@@ -117,10 +117,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "cf23824367fe0cbe3dd03176b6fc2efca12a843fb92ea1bb3bdd520863e235c6"),
-    (False, 49, "c4344bff2f0b474815e9a0b01757e2b042ec52697f4cc5a8bc080c4c87965a17"),
-    (True, 0, "69412f9e03046166575da131e2b6f050a023ac4c47e0e7e835f7fa2e63bdbfce"),
-    (True, 49, "21f86a16cf915fe719e49ba8f58b438e0af32e8b1ae5ea1cae4e63629c22b242"),
+    (False, 0, "da8c9ed5a0d68f21dccba9a295dc57fdd6b08cf893fec44eb0bcbaf0c74f3c1a"),
+    (False, 49, "d47444205f44342235b400d6988cc3b23bada4ab9f8601b21b71406643172258"),
+    (True, 0, "885443415faa14be4b0c8accac1aa1bade8dc8bc2fed0101375889448bad968c"),
+    (True, 49, "9a992df90b404cfe9b85875bf97a2045b96f581802bdfcc02529f557df413847"),
 ])
 def test_support_off_index_bytes_match_task076_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 076 changes only phone hit-area CSS in all four home modes.

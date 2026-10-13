@@ -282,5 +282,9 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
     assert.equal(again.ctx.savedDeals.view,false);assert.equal(again.el('filterfields').disabled,false);
     assert(again.keys().length>2);
   }
+  // A Pinterest OAuth return keeps ?code= in the address bar for copying.
+  const oauth=harness({search:'?code=abc123&state=demo'});
+  oauth.apply({maxprice:'12'});oauth.fire('window:pagehide');
+  assert.equal(oauth.ctx.location.search,'?code=abc123&state=demo');
   console.log('price/eligibility intersections, private browsing history, current-fact restoration and sheet controls passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});
