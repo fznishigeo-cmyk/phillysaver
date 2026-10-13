@@ -1477,3 +1477,43 @@ def test_traffic_uses_the_configured_window_and_excludes_today(cfg, monkeypatch)
     assert data["bing"]["window"]["clicks"] == 1324690
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "last 3 days 1,700,555" in text
+
+
+@pytest.mark.parametrize("values", [
+    {"pending": 0, "received": 0, "key_pending": 0, "failed": 0, "oldest_pending_hours": 0.0},
+    {"pending": 7, "received": 12, "key_pending": 2, "failed": 3, "oldest_pending_hours": 6.25},
+    {"pending": None, "received": None, "key_pending": None, "failed": None,
+     "oldest_pending_hours": None, "unavailable": "receipt history unavailable"},
+])
+def test_indexnow_report_rows_show_receipts_zero_and_unavailable(cfg, values):
+    from dealradar.publish.indexnow import METRICS
+
+    _, text = report.build_report(cfg, {"indexnow": values}, {}, date(2026, 10, 10))
+    for name in METRICS:
+        expected = "unavailable" if values[name] is None else str(values[name])
+        assert f"indexnow.{name}: {expected}" in text
+    assert "receipt does not promise indexing" in text
+    assert "key_pending is included in received" in text
+    assert "Google instant indexing" not in text
+
+
+def test_indexnow_growth_collection_reads_receipts_without_writing_snapshot(cfg, tmp_path):
+    from dealradar.db import DB
+    from dealradar.publish import indexnow
+
+    cfg.custom_domain, cfg.seo_indexnow_key = "wowpriced.com", "0123456789abcdef"
+    path = tmp_path / "receipts.db"
+    database = DB(path)
+    indexnow.indexnow_due(database, cfg, NOW, {})
+    database.close()
+    before = path.read_bytes()
+    with client_for(FakeApis()) as client:
+        data, status = report.collect(cfg, NOW, client, db_path=path)
+    assert status["indexnow"] == "ok"
+    assert data["indexnow"] == dict.fromkeys(indexnow.METRICS, 0)
+    assert path.read_bytes() == before
+    with client_for(FakeApis()) as client:
+        data, status = report.collect(cfg, NOW, client, db_path=tmp_path / "missing.db")
+    assert status["indexnow"] == "skipped"
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "indexnow.received: unavailable" in text

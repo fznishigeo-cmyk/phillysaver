@@ -82,6 +82,7 @@ jobs:
         run: bash scripts/commit_state.sh
 
       - name: Deploy site to Cloudflare Pages
+        id: deploy
         # The site's only host (wowpriced.com and www point at this project;
         # GitHub Pages was retired 2026-10-11: its terms bar commercial
         # sites). A failed deploy turns the run red; state is already
@@ -108,12 +109,20 @@ jobs:
           echo "Cloudflare Pages: ${url:-see log}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tell search engines what changed (IndexNow)
-        # After the deploys, so the pages and the key file are live. Posts
-        # the URLs this run's publish found changed (Bing, Yahoo, DuckDuckGo
-        # and Yandex share IndexNow); logs counts and the HTTP status only,
-        # and a failure never fails the run.
+        id: indexnow
+        # Receipt only after this run's pages and key file were deployed.
+        if: ${{ success() && steps.pipeline.outcome == 'success' && steps.deploy.outcome == 'success' }}
         continue-on-error: true
-        run: python -m dealradar indexnow
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: python -m dealradar indexnow --deployed --run-key "$DEALRADAR_RUN_KEY"
+
+      - name: Commit IndexNow receipts to data branch
+        # Save receipts, key validation pending, and retries even after failure.
+        if: ${{ !cancelled() && steps.indexnow.outcome != 'skipped' }}
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/commit_state.sh
 
       - name: Post top deals to Pinterest
         id: pinterest

@@ -295,13 +295,23 @@ def test_fast_shape() -> None:
 @pytest.mark.parametrize("path", [HOURLY, FAST])
 def test_indexnow_step_runs_after_every_deploy_and_never_fails_the_run(path: Path) -> None:
     steps = single_job(load_workflow(path))["steps"]
-    step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar indexnow")
+    step = next(s for s in steps if s.get("id") == "indexnow")
     assert step["continue-on-error"] is True
-    assert "env" not in step  # needs no secret: the key is public by design
+    assert step["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert step["run"] == 'python -m dealradar indexnow --deployed --run-key "$DEALRADAR_RUN_KEY"'
+    assert step["if"] == ("${{ success() && steps.pipeline.outcome == 'success' "
+                          "&& steps.deploy.outcome == 'success' }}")
     at = steps.index(step)
     for i, s in enumerate(steps):
         if s.get("uses", "").startswith("actions/deploy-pages@") or "pages deploy site" in s.get("run", ""):
             assert i < at, (path.name, s.get("name"))
+            assert s["id"] == "deploy"
+    save = steps[at + 1]
+    assert save["run"] == "bash scripts/commit_state.sh"
+    assert save["if"] == "${{ !cancelled() && steps.indexnow.outcome != 'skipped' }}"
+    assert save["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert "continue-on-error" not in save
+    assert single_job(load_workflow(path))["env"]["DEALRADAR_DURABLE_STATE"] == "1"
 
 
 def test_squash_shape() -> None:
@@ -643,6 +653,59 @@ def branch_blob(repo: Path, path: str) -> bytes:
     _git(repo, "fetch", "origin", "data")
     return subprocess.run(["git", "cat-file", "blob", f"origin/data:{path}"], cwd=repo,
                           check=True, capture_output=True).stdout
+
+
+@pytest.mark.parametrize("status", [200, 202, 429])
+def test_indexnow_receipts_and_retries_survive_encrypted_state_restore(repo, monkeypatch, status):
+    import httpx
+    from dealradar.db import DB
+    from dealradar.publish import indexnow
+    from tests.test_indexnow_receipts import NOW, client_for, stage
+    from dealradar.config import AppConfig
+
+    cfg = AppConfig(custom_domain="wowpriced.com", seo_indexnow_key="0123456789abcdef0123456789abcdef",
+                    seo_indexnow_min_hours=0, site_dir=str(repo / "site"))
+    monkeypatch.delenv("DEALRADAR_DURABLE_STATE", raising=False)
+    local_checkpoint = indexnow.checkpoint_state
+    # Exercise the actual encrypted git checkpoint against a file:// origin.
+    def checkpoint(db):
+        local_checkpoint(db)
+        result = run_script(repo, key=KEY)
+        assert result.returncode == 0, result.stderr
+        decrypt(branch_blob(repo, "state.db.enc"), repo.parent)
+        snapshot = DB(repo.parent / "out.db", read_only=True)
+        try:
+            assert snapshot.indexnow_batch(indexnow.INDEXNOW_ENDPOINT, "run-1")["status"] == "sending"
+            assert all(r["received_at"] is None for r in snapshot.indexnow_pages().values())
+        finally:
+            snapshot.close()
+
+    monkeypatch.setattr(indexnow, "checkpoint_state", checkpoint)
+    database = DB(repo / "state.db")
+    stage(database, cfg)
+    client, seen = client_for(status, robots=403)
+    with client:
+        assert indexnow.submit_indexnow(database, cfg, client, deployed=True,
+                                       run_key="run-1", now=NOW) == (0 if status in (200, 202) else 1)
+    before = [tuple(r) for r in database.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
+    database.close()
+    result = run_script(repo, key=KEY)
+    assert result.returncode == 0, result.stderr
+    assert _git(repo, "ls-tree", "--name-only", "origin/data") == "state.db.enc"
+    (repo / "state.db").unlink()
+    result = run_script(repo, RESTORE, key=KEY)
+    assert result.returncode == 0, result.stderr
+    database = DB(repo / "state.db")
+    try:
+        assert [tuple(r) for r in database.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")] == before
+        assert database.indexnow_batch(indexnow.INDEXNOW_ENDPOINT, "run-1")["http_status"] == status
+        with httpx.Client(transport=httpx.MockTransport(
+                lambda _: pytest.fail("restored run must not make another request"))) as rerun_client:
+            assert indexnow.submit_indexnow(database, cfg, rerun_client, deployed=True,
+                                           run_key="run-1", now=NOW) == (0 if status in (200, 202) else 1)
+        assert len([r for r in seen if r.method == "POST"]) == 1
+    finally:
+        database.close()
 
 
 def decrypt(blob: bytes, tmp_path: Path, key: str = KEY) -> bytes:

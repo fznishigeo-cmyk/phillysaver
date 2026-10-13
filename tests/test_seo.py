@@ -15,7 +15,7 @@ import yaml
 
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
-from dealradar.publish import seo
+from dealradar.publish import indexnow, seo
 from dealradar.publish.site import render_site
 from tests.test_publish_site import NOW, make_deal
 
@@ -216,11 +216,14 @@ def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
     assert "https://wowpriced.com/deals/pets/" not in first      # noindex hub
     assert not (out / seo.INDEXNOW_FILE).exists()                # never on the site
     _render(db, cfg, out)
-    assert due() == []  # the same publish again lists nothing
+    assert due() == first  # discovery is still pending until a receipt
+    assert db.meta_get("indexnow_sent") is None
+    _receive(db, first)
     more = _deals() + [make_deal(dedupe_key="new", item="ZZNEW", category="electronics")]
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=1))
     new_url = "https://wowpriced.com" + seo.deal_path("ZZNEW", "11507a0e")
     assert due() == [new_url]  # new page is due immediately; changes wait
+    _receive(db, [new_url], NOW + timedelta(hours=1))
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=7))
     changed = {"https://wowpriced.com/", "https://wowpriced.com/deals/electronics/",
                "https://wowpriced.com/best-deals-today/"}
@@ -228,33 +231,44 @@ def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
                    hashlib.sha256(d["dedupe_key"].encode()).hexdigest()[:8])
                    for d in _deals() if d["category"] == "electronics")
     assert set(due()) == changed
+    _receive(db, due(), NOW + timedelta(hours=7))
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=14))
-    assert due() == []  # crossing midnight alone changes no substantive facts
-    sent = json.loads(db.meta_get("indexnow_sent"))
-    assert set(sent) == set(first) | {new_url}
+    assert due() == []  # crossing midnight alone changes no substantive facts (task 070)
+    assert set(db.indexnow_pages()) == set(first) | {new_url}
+
+
+def _receive(db, urls, now=NOW, status=200):
+    versions = {url: db.indexnow_pages()[url]["content_hash"] for url in urls}
+    run_key = now.isoformat()
+    assert db.indexnow_claim(indexnow.INDEXNOW_ENDPOINT, run_key, versions, now,
+                            {url: now.isoformat() for url in urls})
+    db.indexnow_finish(indexnow.INDEXNOW_ENDPOINT, run_key, now, status)
 
 
 def test_indexnow_hub_dipping_under_its_floor_keeps_its_interval(db, cfg):
     hub = "https://wowpriced.com/deals/pets/"
     due = lambda minutes, pages: seo.indexnow_due(db, cfg, NOW + timedelta(minutes=minutes), pages)
     assert due(0, {hub: "3 deals"}) == [hub]
-    assert due(10, {}) == []                 # noindex: out of the list for a while
-    assert due(20, {hub: "4 deals"}) == []   # back with new content, inside the 6 h
+    _receive(db, [hub])
+    assert due(10, {hub: "noindex"}) == []  # noindex change waits for the receipt interval
+    assert db.indexnow_pages()[hub]["pending_since"] is not None
+    assert due(20, {hub: "4 deals"}) == []
     assert due(7 * 60, {hub: "4 deals"}) == [hub]
-    assert due(14 * 60, {}) == []
-    assert hub not in json.loads(db.meta_get("indexnow_sent"))  # gone past its interval
+    _receive(db, [hub], NOW + timedelta(hours=7))
+    assert due(14 * 60, {}) == [hub]  # removal is also due, not forgotten
+    assert db.indexnow_pages()[hub]["content_hash"] == "removed"
 
 
-def test_indexnow_relists_an_unchanged_url_after_the_resubmit_days(db, cfg):
-    # The listing is recorded at publish time, before the POST; if that POST
-    # fails, a page that never changes must still come back.
+def test_indexnow_relists_an_unchanged_received_url_after_the_resubmit_days(db, cfg):
     about = "https://wowpriced.com/about.html"
     cfg.seo_indexnow_resubmit_days = 7
     due = lambda hours: seo.indexnow_due(db, cfg, NOW + timedelta(hours=hours), {about: "same"})
     assert due(0) == [about]
+    _receive(db, [about])
     assert due(7) == [] and due(30) == [] and due(144) == []
     assert due(7 * 24) == [about]
-    cfg.seo_indexnow_resubmit_days = 0  # off: unchanged URLs are never listed again
+    _receive(db, [about], NOW + timedelta(days=7))
+    cfg.seo_indexnow_resubmit_days = 0
     assert due(60 * 24) == []
 
 
@@ -276,49 +290,56 @@ def _cli_config(tmp_path) -> Path:
     return path
 
 
-def _mock_client(monkeypatch, status=200):
+def _mock_client(monkeypatch, status=200, key=""):
     seen, real = [], httpx.Client
 
     def handler(request):
         seen.append(request)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.method == "GET":
+            return httpx.Response(200, text=key)
         return httpx.Response(status)
 
-    monkeypatch.setattr(seo.httpx, "Client",
+    monkeypatch.setattr(indexnow.httpx, "Client",
                         lambda **kw: real(transport=httpx.MockTransport(handler)))
     return seen
 
 
-def test_cli_posts_the_due_list_to_indexnow(tmp_path, monkeypatch, caplog):
+def test_cli_posts_only_the_deployed_batch_and_reports_receipt(tmp_path, monkeypatch, caplog, capsys):
     from dealradar.cli import main
 
     cfg_path = _cli_config(tmp_path)
-    key = load_config(cfg_path).seo_indexnow_key
-    assert re.fullmatch(r"[0-9a-f]{32}", key)
-    urls = ["https://wowpriced.com/", "https://wowpriced.com/deals/electronics/"]
-    (tmp_path / seo.INDEXNOW_FILE).write_text(json.dumps(urls))
-    seen = _mock_client(monkeypatch, 202)
+    cfg = load_config(cfg_path)
+    db_path = tmp_path / "cli.db"
+    database = DB(db_path)
+    render_site(database, cfg, NOW, deals=[], last_run={"run_key": "cli-run"})
+    urls = json.loads(seo.due_list_path(cfg.site_dir).read_text())
+    database.close()
+    seen = _mock_client(monkeypatch, 202, cfg.seo_indexnow_key)
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
     with caplog.at_level("INFO"):
-        assert main(["indexnow", "--config", str(cfg_path)]) == 0
-    (req,) = seen
-    assert str(req.url) == "https://api.indexnow.org/indexnow" and req.method == "POST"
+        assert main(["indexnow", "--config", str(cfg_path), "--db", str(db_path),
+                     "--deployed", "--run-key", "cli-run"]) == 0
+    (req,) = [r for r in seen if r.method == "POST"]
+    assert str(req.url) == "https://api.indexnow.org/indexnow"
     assert req.headers["content-type"] == "application/json; charset=utf-8"
     assert json.loads(req.content) == {
-        "host": "wowpriced.com", "key": key,
-        "keyLocation": f"https://wowpriced.com/{key}.txt", "urlList": urls}
-    # Public Actions logs: counts and the status only.
-    assert "2 URL(s) submitted, HTTP 202" in caplog.text
-    assert "deals/electronics" not in caplog.text and key not in caplog.text
+        "host": "wowpriced.com", "key": cfg.seo_indexnow_key,
+        "keyLocation": f"https://wowpriced.com/{cfg.seo_indexnow_key}.txt", "urlList": sorted(urls)}
+    assert f"{len(urls)} URL(s), HTTP 202 (receipt)" in caplog.text
+    assert "deals/electronics" not in caplog.text and cfg.seo_indexnow_key not in caplog.text
+    assert '"key_pending":' in capsys.readouterr().out
+    assert "indexnow.oldest_pending_hours: 0.0" in (tmp_path / "summary.md").read_text()
 
 
-def test_cli_sends_nothing_when_nothing_is_due_and_fails_on_a_refusal(tmp_path, monkeypatch):
+def test_cli_without_a_successful_deploy_never_posts(tmp_path, monkeypatch):
     from dealradar.cli import main
 
     cfg_path = _cli_config(tmp_path)
     seen = _mock_client(monkeypatch, 403)
-    assert main(["indexnow", "--config", str(cfg_path)]) == 0  # no due-list yet
-    (tmp_path / seo.INDEXNOW_FILE).write_text("[]")
-    assert main(["indexnow", "--config", str(cfg_path)]) == 0
-    assert seen == []
+    args = ["indexnow", "--config", str(cfg_path), "--db", str(tmp_path / "cli.db")]
+    assert main(args) == 0
     (tmp_path / seo.INDEXNOW_FILE).write_text(json.dumps(["https://wowpriced.com/"]))
-    assert main(["indexnow", "--config", str(cfg_path)]) == 1  # 403: the key file is not live
-    assert len(seen) == 1
+    assert main(args) == 0  # a stray/legacy due-list cannot prove deployment
+    assert seen == []

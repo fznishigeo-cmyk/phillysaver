@@ -16,7 +16,7 @@ from dealradar.config import load_config
 from dealradar.publish import seo
 from dealradar.publish.site import render_site
 from tests.test_publish_site import NOW, make_deal
-from tests.test_seo import ROOT, cfg, db, _deals, _render
+from tests.test_seo import ROOT, cfg, db, _deals, _render, _receive
 
 
 def _path(d):
@@ -197,6 +197,7 @@ def test_first_observed_facts_are_lastmod_and_new_page_indexnow_once(db, cfg, tm
     due = lambda: json.loads(seo.due_list_path(tmp_path).read_text())
     assert "https://wowpriced.com" + _path(d) in due()
     assert "https://wowpriced.com/best-deals-today/" in due()
+    _receive(db, due())
     _render(db, cfg, tmp_path, [d])
     assert due() == []
 

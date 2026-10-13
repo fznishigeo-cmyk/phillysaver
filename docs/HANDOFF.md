@@ -190,6 +190,23 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **IndexNow receipts (Codex task 072, 2026-10-13; shipped after review):** found
+  early "sent" stamps even on deploy/POST failure (retries delayed a week),
+  no persisted receipt/202 key state, no batch cap, and lost ended/removal
+  URLs. SQLite now separates pending versions from exact 200/202 receipts,
+  with run/final-file/deploy gates, durable claims, 10,000/run cap, bounded
+  15–360 min endpoint/URL retry and polite key rechecks. Both workflows save
+  outcomes; five `indexnow.*` counts appear in run/private growth reports
+  (receipt does not promise indexing). `seo.py` only: moved IndexNow
+  helpers/imports, passed the output folder, added retained ended pages to
+  discovery; sitemap/audit and task 071 UI untouched. Full
+  `.venv/bin/python -m pytest -q`: **2,700 passed, 1 deselected**; only seven
+  existing socket-creation failures (`Operation not permitted`) in
+  `tests/test_workflows.py::test_deploy_checks_the_yearly_price_with_stripe`
+  (six `change0`–`change5` cases) and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  Remaining: those checks outside this sandbox and live deploy/key/200–202
+  verification. Shipped after review.
 - **SEO audit (Codex task 070, 2026-10-13; shipped after review):** final HTML is
   audited on every publish; current visible offers gate indexing. Compact
   fact fingerprints (35-day absent-URL retention, 50k cap) stabilize lastmod;
@@ -867,5 +884,5 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 8. Open legal question from the SEO review: six subreddits come through
    Reddit's Data API into a paid product; Reddit's terms want a separate
    agreement for commercial use. Operator decision.
-9. IndexNow records a URL as sent at publish time, before the POST; a failed
-   POST is retried within a week (`seo.indexnow_resubmit_days`).
+9. IndexNow's early sent accounting is addressed by task 072 above;
+   review and deployment remain pending.

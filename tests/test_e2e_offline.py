@@ -395,12 +395,28 @@ def test_audit_tracks_evidence_rejects_without_storing_rejected_content(env, mon
 
 
 def test_rerun_is_idempotent(env, capsys):
+    from dealradar.config import load_config
+    from dealradar.publish import indexnow
+
     first = _run(env)
     assert first["telegram"]["sent"] == 1
     db = DB(env["db"])
+    cfg = load_config(env["cfg"])
+    requests = []
+
+    def receipt(request):
+        requests.append(request)
+        return httpx.Response(200)
+
+    with httpx.Client(transport=httpx.MockTransport(receipt)) as client:
+        assert indexnow.submit_indexnow(db, cfg, client, deployed=True,
+                                       run_key=first["run_key"], now=NOW) == 0
+    assert len(requests) == 1
     before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-              for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts")}
+              for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts",
+                            "indexnow_pages", "indexnow_batches")}
     audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
+    receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
     db.close()
     second = _run(env)
     assert second["run_key"] == first["run_key"]
@@ -408,6 +424,13 @@ def test_rerun_is_idempotent(env, capsys):
     assert second["telegram"]["sent"] == 0   # alerts_sent dedup
     assert second["published"] == 2          # same deals, no duplicates
     assert second["critic"]["judged"] == 0   # verdicts persisted; no re-spend
+    db = DB(env["db"])
+    with httpx.Client(transport=httpx.MockTransport(receipt)) as client:
+        assert indexnow.submit_indexnow(db, cfg, client, deployed=True,
+                                       run_key=second["run_key"], now=NOW) == 0
+    assert len(requests) == 1
+    assert [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")] == receipts_before
+    db.close()
 
     import sqlite3
     conn = sqlite3.connect(env["db"])
@@ -424,7 +447,7 @@ def test_rerun_is_idempotent(env, capsys):
     assert n_deals == 4
     assert n_sight == 5
     assert n_hist == 5
-    # The re-run lists nothing new for IndexNow (inside seo.indexnow_min_hours).
+    # Receipt, rather than publishing the due-list, suppresses this re-run.
     assert json.loads((env["site"].parent / "indexnow_urls.json").read_text()) == []
 
 

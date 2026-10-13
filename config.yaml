@@ -195,10 +195,12 @@ seo:
   # the site serves it at /<key>.txt to prove the domain is ours.
   indexnow_key: "89b51421654dec4627eb3ed0290d59b2"
   indexnow_min_hours: 6        # a changed URL is resubmitted at most this often
-  # A URL counts as submitted once a publish lists it (before the POST runs),
-  # so an unchanged URL is listed again after this many days: a failed POST
-  # heals within a week instead of never. 0 = never relist unchanged URLs.
+  # Periodic reminders start from an actual receipt. Failures retry separately.
+  # 0 = never relist unchanged received URLs.
   indexnow_resubmit_days: 7
+  indexnow_batch_size: 10000  # protocol maximum; one POST per run/endpoint
+  indexnow_retry_initial_minutes: 15
+  indexnow_retry_max_minutes: 360  # bounded exponential retry, including Retry-After
 
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }

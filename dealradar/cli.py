@@ -91,12 +91,27 @@ def cmd_prune(args: argparse.Namespace) -> int:
 
 
 def cmd_indexnow(args: argparse.Namespace) -> int:
-    """Submit the URLs the last publish found changed to IndexNow (runs after
-    the deploy steps; logs counts and the HTTP status only)."""
+    """Record receipts for an explicitly successful deployment of this run."""
     from .config import load_config
-    from .publish.seo import submit_indexnow
+    from .db import DB
+    from .publish.indexnow import metrics, submit_indexnow, summary_lines
+    from .util import now_utc
+    import os
 
-    return submit_indexnow(load_config(args.config))
+    cfg, db = load_config(args.config), DB(args.db)
+    try:
+        result = submit_indexnow(db, cfg, deployed=args.deployed, run_key=args.run_key)
+        values = metrics(db, cfg, now_utc())
+        print(json.dumps({"indexnow": values}))
+        if path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            try:
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write("\n" + "\n".join(summary_lines(values)) + "\n")
+            except OSError:
+                logging.getLogger(__name__).warning("indexnow: summary unavailable")
+        return result
+    finally:
+        db.close()
 
 
 def cmd_growth_report(args: argparse.Namespace) -> int:
@@ -206,7 +221,9 @@ def main(argv: list[str] | None = None) -> int:
     sp.set_defaults(fn=cmd_prune)
 
     sp = sub.add_parser("indexnow", help="submit the last publish's changed URLs to IndexNow")
-    sp.add_argument("--config", default=None)
+    common(sp)
+    sp.add_argument("--deployed", action="store_true", help="this run's site deployment succeeded")
+    sp.add_argument("--run-key", default=None, help="published run key (or DEALRADAR_RUN_KEY)")
     sp.set_defaults(fn=cmd_indexnow)
     sp = sub.add_parser("growth-report",
                         help="daily private growth report (operator email / Telegram admin)")

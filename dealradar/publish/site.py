@@ -25,7 +25,7 @@ from ..config import AppConfig, load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import pwa, seo, seo_audit
+from . import indexnow, pwa, seo, seo_audit
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -608,6 +608,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     out = Path(out_dir) if out_dir is not None else Path(cfg.site_dir)
     out.mkdir(parents=True, exist_ok=True)
+    # A partial render must not leave the previous run's deployment manifest.
+    indexnow.manifest_path(out).unlink(missing_ok=True)
 
     amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
     overrides = getattr(cfg, "affiliate_link_overrides", {}) or {}
@@ -890,6 +892,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     apply_tracking(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
+    indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"))
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)

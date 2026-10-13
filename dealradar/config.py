@@ -170,7 +170,10 @@ class AppConfig:
     seo_lastmod_retention_days: int = 35  # absent URLs; current URLs are retained
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
-    seo_indexnow_resubmit_days: float = 7.0  # unchanged URLs listed again (0 = never)
+    seo_indexnow_resubmit_days: float = 7.0  # unchanged received URLs (0 = never)
+    seo_indexnow_batch_size: int = 10000  # protocol maximum
+    seo_indexnow_retry_initial_minutes: float = 15.0
+    seo_indexnow_retry_max_minutes: float = 360.0
     tier_boost: dict[str, float] = field(default_factory=dict)
     abs_savings_weight: float = 0.1
     condition_penalty: float = 2.0
@@ -440,6 +443,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                                   default=cfg.seo_indexnow_min_hours)))
     cfg.seo_indexnow_resubmit_days = max(0.0, float(g("seo", "indexnow_resubmit_days",
                                                       default=cfg.seo_indexnow_resubmit_days)))
+    cfg.seo_indexnow_batch_size = max(1, min(10000, int(g(
+        "seo", "indexnow_batch_size", default=cfg.seo_indexnow_batch_size))))
+    cfg.seo_indexnow_retry_initial_minutes = max(1.0, float(g(
+        "seo", "indexnow_retry_initial_minutes", default=cfg.seo_indexnow_retry_initial_minutes)))
+    cfg.seo_indexnow_retry_max_minutes = max(cfg.seo_indexnow_retry_initial_minutes, float(g(
+        "seo", "indexnow_retry_max_minutes", default=cfg.seo_indexnow_retry_max_minutes)))
 
     cfg.tier_boost = g("ranking", "tier_boost", default={}) or {}
     cfg.abs_savings_weight = float(g("ranking", "abs_savings_weight", default=cfg.abs_savings_weight))

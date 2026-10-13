@@ -5,7 +5,8 @@ Live deal facts come from the teaser render_site already built
 (docs/paywall.md): free deals in full, locked deals only as a count and a %
 range, never a name, price, link or photo. Static HTML carries no images at
 all. Ended pages retain previously public facts until the row is deleted.
-Hub stats only read; IndexNow, stable deal paths and fact fingerprints keep meta keys.
+Hub stats only read; stable deal paths and fact fingerprints keep meta keys; IndexNow
+receipts live in their own tables (publish/indexnow.py).
 """
 
 from __future__ import annotations
@@ -25,7 +26,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-import httpx
 import yaml
 
 from ..savings import display_pct
@@ -33,6 +33,7 @@ from ..util import iso, parse_iso
 from ..rank import pick_order
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
 from . import seo_audit
+from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
 
@@ -106,13 +107,6 @@ https://:version.:project.pages.dev/*
 /join
   Cache-Control: no-cache
 """
-
-#: meta key: {url: [content hash, iso time]} as last listed for IndexNow.
-_INDEXNOW_META = "indexnow_sent"
-#: The due-list, written next to the site folder (never inside it).
-INDEXNOW_FILE = "indexnow_urls.json"
-INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow"
-_KEY_RE = re.compile(r"[A-Za-z0-9-]{8,128}")
 
 
 def in_group(deal: dict[str, Any], group: Any) -> bool:
@@ -695,46 +689,6 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     return paths, rows, lastmods
 
 
-def due_list_path(site_dir: str | Path) -> Path:
-    return Path(site_dir).resolve().parent / INDEXNOW_FILE
-
-
-def _listed_at(prev: Any) -> datetime | None:
-    return parse_iso(str(prev[1])) if isinstance(prev, list) and len(prev) == 2 else None
-
-
-def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
-    """The URLs whose content (what a crawler sees) changed since they were
-    last listed, once seo.indexnow_min_hours have passed since that listing;
-    a new URL is due at once. One meta key holds each URL's listed hash and
-    time. The listing is recorded before the POST (state.db is committed
-    before the deploys), so an unchanged URL is listed again after
-    seo.indexnow_resubmit_days: a failed POST is not lost for good."""
-    try:
-        sent = json.loads(db.meta_get(_INDEXNOW_META) or "{}")
-    except ValueError:
-        sent = {}
-    sent = sent if isinstance(sent, dict) else {}
-    wait = timedelta(hours=float(getattr(cfg, "seo_indexnow_min_hours", 6.0)))
-    redo = timedelta(days=float(getattr(cfg, "seo_indexnow_resubmit_days", 7.0)))
-    due, keep = [], {}
-    for url, content in pages.items():
-        h = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-        prev, last = sent.get(url), _listed_at(sent.get(url))
-        if last is not None and (now - last < wait
-                                 or (prev[0] == h and not (redo and now - last >= redo))):
-            keep[url] = prev
-        else:
-            due.append(url)
-            keep[url] = [h, iso(now)]
-    # A URL out of the list for now (a hub dipping under its floor) keeps its
-    # entry through its interval, so coming back does not make it new.
-    for url, prev in sent.items():
-        last = _listed_at(prev)
-        if url not in keep and last is not None and now - last < wait:
-            keep[url] = prev
-    db.meta_set(_INDEXNOW_META, json.dumps(keep, sort_keys=True))
-    return due
 
 
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
@@ -883,39 +837,16 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
         f"{urls}</urlset>\n", encoding="utf-8")
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if _KEY_RE.fullmatch(key):
-        contents = {site_url + path: wall if path == "/" else
-                    (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
-                            path.lstrip("/"))).read_text(encoding="utf-8") for path in indexable}
-        due = indexnow_due(db, cfg, now, contents)
+        def _read(path: str) -> str:
+            return wall if path == "/" else (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
+                                                   path.lstrip("/"))).read_text(encoding="utf-8")
+        contents = {site_url + path: _read(path) for path in indexable}
+        # Ended deal pages (noindex, out of the sitemap) still tell engines
+        # they changed (task 072).
+        contents.update({site_url + path: _read(path) for path in emitted
+                         if path.startswith("/deal/") and site_url + path not in contents
+                         and (out / path.strip("/") / "index.html").exists()})
+        due = indexnow_due(db, cfg, now, contents, site_dir=out)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))
     return pages
-
-
-def submit_indexnow(cfg, http_client: Any = None) -> int:
-    """POST the due-list the last publish wrote to IndexNow (Bing, Yahoo,
-    DuckDuckGo, Yandex share it). 0 when accepted or nothing is due; logs
-    counts and the HTTP status only."""
-    host, key = getattr(cfg, "custom_domain", ""), getattr(cfg, "seo_indexnow_key", "")
-    try:
-        urls = json.loads(due_list_path(cfg.site_dir).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        urls = []
-    if not (host and key and isinstance(urls, list) and urls):
-        logger.info("indexnow: nothing to submit")
-        return 0
-    body = {"host": host, "key": key, "keyLocation": f"https://{host}/{key}.txt",
-            "urlList": urls}
-    client = http_client or httpx.Client(timeout=20)
-    try:
-        resp = client.post(INDEXNOW_ENDPOINT, content=json.dumps(body).encode("utf-8"),
-                           headers={"Content-Type": "application/json; charset=utf-8",
-                                    "User-Agent": cfg.resolved_user_agent()})
-    except httpx.HTTPError as e:
-        logger.warning("indexnow: %d URL(s) not submitted (%s)", len(urls), type(e).__name__)
-        return 1
-    finally:
-        if http_client is None:
-            client.close()
-    logger.info("indexnow: %d URL(s) submitted, HTTP %d", len(urls), resp.status_code)
-    return 0 if resp.status_code in (200, 202) else 1

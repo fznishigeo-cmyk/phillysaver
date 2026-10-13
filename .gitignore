@@ -19,3 +19,4 @@ dist/
 
 # IndexNow due-list written by each publish (python -m dealradar indexnow)
 indexnow_urls.json
+indexnow_publish.json

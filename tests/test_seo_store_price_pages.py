@@ -12,7 +12,7 @@ import yaml
 from dealradar.config import load_config
 from dealradar.publish import seo
 from tests.test_publish_site import NOW, make_deal
-from tests.test_seo import ROOT, cfg, db, _render
+from tests.test_seo import ROOT, cfg, db, _render, _receive
 from tests.test_seo_deal_pages import _page, _path
 
 
@@ -172,6 +172,7 @@ def test_sitemap_indexnow_stable_bytes_and_removal(db, cfg, tmp_path):
         lastmod = NOW.isoformat()  # baseline observed at publish, not inferred from sightings
         assert f'<loc>https://wowpriced.com{path}</loc><lastmod>{lastmod}</lastmod>' in sitemap
         assert "https://wowpriced.com" + path in due
+    _receive(db, due)
     snapshots = {p: _page(out, p).read_bytes() for p in paths}
     _render(db, cfg, out, deals, now=NOW + timedelta(hours=4))
     assert snapshots == {p: _page(out, p).read_bytes() for p in paths}
@@ -185,7 +186,10 @@ def test_sitemap_indexnow_stable_bytes_and_removal(db, cfg, tmp_path):
     assert _store_paths(out) == set()
     assert not any(p.startswith("/stores/") for p in _sitemap_paths(out))
     assert '<strong>Stores</strong>' not in _page(out, "/best-deals-today/").read_text()
-    assert not any("/stores/" in u for u in json.loads(seo.due_list_path(out).read_text()))
+    # Removed pages remain pending for a deployed removal notification; the
+    # last successful receipt still throttles this deliberately earlier clock.
+    removed = [r for url, r in db.indexnow_pages().items() if "/stores/" in url]
+    assert removed and all(r["removed"] and r["pending_since"] for r in removed)
     cfg.seo_price_pages = []
     _render(db, cfg, out, deals[:14])
     assert not list((out / "deals").glob("under-*"))

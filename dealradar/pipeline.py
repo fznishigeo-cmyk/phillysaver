@@ -1883,6 +1883,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         })
         summary["published"] = site_res.get("published", 0)
         summary["seo_audit"] = site_res.get("seo_audit", {})
+        from .publish.indexnow import metrics as indexnow_metrics
+        summary["indexnow"] = indexnow_metrics(db, cfg, now)
         try:
             yield_counts = ai_yield.record_public(db, cfg, util.now_utc(), run_key,
                                                  ai_yield.public_keys(site_res, cfg))

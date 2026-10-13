@@ -26,6 +26,7 @@ from ..db import DB
 from ..fetch.newsletter import unknown_sender_counts, unknown_sender_text
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
+from ..publish import indexnow
 from ..util import now_utc
 from . import bing, cloudflare_traffic, google, google_ads, meta, site_health, stripe_stats, subscribers
 
@@ -69,6 +70,14 @@ def _newsletter_senders(db_path) -> dict:
         db.close()
 
 
+def _indexnow(db_path, cfg, now: datetime) -> dict:
+    db = DB(db_path, read_only=True)
+    try:
+        return indexnow.metrics(db, cfg, now)
+    finally:
+        db.close()
+
+
 def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dict]:
     """(section -> data, section -> 'ok' | 'skipped' | 'error')."""
     tz = ZoneInfo(cfg.timezone)
@@ -98,6 +107,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
         # Only an explicit snapshot (the CLI passes --db): never a stray local file.
         "ai_yield": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                      lambda: _ai_yield(db_path, cfg, now)),
+        "indexnow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                     lambda: _indexnow(db_path, cfg, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -170,6 +181,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                 continue
             if name == "subscribers":
                 data[name] = {"unavailable": _error(e)}
+            if name == "indexnow":
+                data[name] = {**dict.fromkeys(indexnow.METRICS), "unavailable": "state snapshot unavailable"}
             detail = (type(e).__name__ if name == "site_health" else
                       str(e) if isinstance(e, (google.ServiceAccountError, google_ads.GoogleAdsError))
                       else _error(e))
@@ -248,6 +261,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
 
     if "site_health" in data:
         lines += site_health.lines(data["site_health"])
+    lines += ["", *indexnow.summary_lines(data.get("indexnow") or {
+        **dict.fromkeys(indexnow.METRICS), "unavailable": "state snapshot unavailable"})]
 
     lines += ["", "== Money =="]
     mix = data.get("site_health", {}).get("link_mix")

@@ -51,7 +51,7 @@ python -m dealradar validate-sources   # live-validate sources, write sources_re
 python -m dealradar digest             # force the daily-digest check now
 python -m dealradar prune              # retention cleanup (posts 30 d, deals 14 d)
 python -m dealradar domains            # print outbound hostnames (allowlist helper)
-python -m dealradar indexnow           # submit the last publish's changed URLs to IndexNow
+python -m dealradar indexnow --deployed --run-key "<published run key>"  # after a successful deploy
 python -m dealradar growth-report      # daily PRIVATE growth report to the operator (growth-report.yml)
 ```
 

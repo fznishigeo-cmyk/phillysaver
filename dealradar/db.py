@@ -249,6 +249,28 @@ CREATE TABLE IF NOT EXISTS ai_prefilter_posts (
 CREATE INDEX IF NOT EXISTS idx_ai_prefilter_at ON ai_prefilter_posts(first_seen_at);
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS indexnow_pages (
+    url TEXT PRIMARY KEY,
+    content_hash TEXT NOT NULL,
+    pending_since TEXT,
+    received_hash TEXT,
+    received_at TEXT,
+    key_pending INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    retry_at TEXT,
+    removed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS indexnow_batches (
+    endpoint TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    versions TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'sending',
+    http_status INTEGER,
+    PRIMARY KEY(endpoint, run_key)
+);
 """
 
 
@@ -888,6 +910,87 @@ class DB:
             " shadow_killed_critic_kept=shadow_killed_critic_kept+? WHERE day=?",
             (*counts, now.astimezone(timezone.utc).date().isoformat()))
         self.conn.commit()
+
+    # ---------------- IndexNow receipts ----------------
+
+    def indexnow_pages(self) -> dict[str, dict[str, Any]]:
+        return {r["url"]: dict(r) for r in self.conn.execute("SELECT * FROM indexnow_pages")}
+
+    def indexnow_discover(self, versions: dict[str, str], now: datetime,
+                         resubmit_days: float) -> None:
+        """Discovery creates pending work, never a receipt. Old listed-at meta
+        is deliberately not migrated into receipts: no POST proved it."""
+        previous = self.indexnow_pages()
+        stamp = iso(now)
+        with self.conn:
+            for url, version in versions.items():
+                row = previous.get(url)
+                removed = int(version == "removed")
+                if row is None:
+                    self.conn.execute(
+                        "INSERT INTO indexnow_pages(url,content_hash,pending_since,removed) VALUES (?,?,?,?)",
+                        (url, version, stamp, removed))
+                    continue
+                changed = row["content_hash"] != version
+                received = parse_iso(row["received_at"] or "")
+                relist = (resubmit_days > 0 and not removed and received is not None
+                          and now - received >= timedelta(days=resubmit_days))
+                if changed and version == row["received_hash"] and not relist:
+                    self.conn.execute(
+                        "UPDATE indexnow_pages SET content_hash=?,pending_since=NULL,"
+                        " attempts=0,failed=0,retry_at=NULL,removed=? WHERE url=?",
+                        (version, removed, url))
+                elif changed or (relist and row["pending_since"] is None):
+                    self.conn.execute(
+                        "UPDATE indexnow_pages SET content_hash=?,pending_since=COALESCE(pending_since,?),"
+                        " removed=? WHERE url=?", (version, stamp, removed, url))
+
+    def indexnow_batch(self, endpoint: str, run_key: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM indexnow_batches WHERE endpoint=? AND run_key=?",
+            (endpoint, run_key)).fetchone()
+        return dict(row) if row else None
+
+    def indexnow_claim(self, endpoint: str, run_key: str, versions: dict[str, str],
+                       now: datetime, retries: dict[str, str]) -> bool:
+        """Freeze one exact POST per endpoint/run, including a retry reservation
+        in case the runner stops without recording the response."""
+        with self.conn:
+            result = self.conn.execute(
+                "INSERT OR IGNORE INTO indexnow_batches(endpoint,run_key,versions,started_at) VALUES (?,?,?,?)",
+                (endpoint, run_key, json.dumps(versions, sort_keys=True), iso(now)))
+            if result.rowcount != 1:
+                return False
+            for url, version in versions.items():
+                self.conn.execute(
+                    "UPDATE indexnow_pages SET attempts=attempts+1,retry_at=?"
+                    " WHERE url=? AND content_hash=? AND pending_since IS NOT NULL",
+                    (retries[url], url, version))
+        return True
+
+    def indexnow_finish(self, endpoint: str, run_key: str, now: datetime,
+                        status: int | None, retries: dict[str, str] | None = None) -> None:
+        """Only the frozen batch's versions can acquire a receipt. Finishing
+        twice is a no-op, including when newer content was discovered meanwhile."""
+        batch = self.indexnow_batch(endpoint, run_key)
+        if not batch or batch["status"] != "sending":
+            return
+        accepted = status in (200, 202)
+        with self.conn:
+            self.conn.execute(
+                "UPDATE indexnow_batches SET status=?,http_status=? WHERE endpoint=? AND run_key=?",
+                ("received" if accepted else "failed", status, endpoint, run_key))
+            for url, version in json.loads(batch["versions"]).items():
+                if accepted:
+                    self.conn.execute(
+                        "UPDATE indexnow_pages SET received_hash=?,received_at=?,key_pending=?,"
+                        " pending_since=NULL,attempts=0,failed=0,retry_at=NULL WHERE url=? AND content_hash=?",
+                        (version, iso(now), int(status == 202), url, version))
+                else:
+                    self.conn.execute(
+                        "UPDATE indexnow_pages SET failed=1,retry_at=COALESCE(?,retry_at)"
+                        " WHERE url=? AND content_hash=? AND pending_since IS NOT NULL",
+                        ((retries or {}).get(url), url, version))
 
     # ---------------- meta / retention ----------------
 
