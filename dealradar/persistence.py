@@ -1,14 +1,23 @@
 """Persist pre-call reservations before a production runner can lose them."""
 
 import hashlib
+import logging
 import os
+import signal
 import sqlite3
 import subprocess
+import time
 from contextlib import closing
 from pathlib import Path
 
 from .config import ROOT, get_secret
 from .util import iso
+
+log = logging.getLogger(__name__)
+
+# commit_state.sh retries a raced push with 2+4+8+16 s of backoff plus a
+# fetch each time; 60 s timed out live (2026-10-13 hourly Pinterest step).
+CHECKPOINT_TIMEOUT_S = 150
 
 
 def delivery_run_key(now, run_key: str | None = None) -> str:
@@ -20,15 +29,20 @@ def message_id(channel: str, token: str) -> str:
 
 
 def prepare_delivery(db, channel: str, token: str, now, run_key: str | None = None) -> bool:
+    if getattr(db, "checkpoint_failed", False):
+        return False  # one failed save stops every send in this process
     if not db.claim_outgoing(channel, token, delivery_run_key(now, run_key), now):
         return False
     try:
         checkpoint_state(db)
-    except Exception:
+    except Exception as e:
         # No remote request was made. A failed pre-send checkpoint is a
-        # definite rejection locally, rather than an uncertain delivery.
+        # definite rejection locally (retried next run), not an uncertain
+        # delivery; skip the send instead of failing the caller's step.
         db.finish_outgoing(channel, token, now, rejected=True)
-        raise
+        db.checkpoint_failed = True
+        log.warning("%s: state checkpoint failed (%s); no sends this run", channel, e)
+        return False
     return True
 
 
@@ -43,6 +57,18 @@ def checkpoint_state(db) -> None:
         return
     if not get_secret("STATE_DB_KEY") or Path(db.path).resolve() != ROOT / "state.db":
         raise OSError("encrypted state checkpoint is unavailable")
-    subprocess.run(["bash", str(ROOT / "scripts/commit_state.sh")], cwd=ROOT,
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                   timeout=60)
+    started = time.monotonic()
+    proc = subprocess.Popen(["bash", str(ROOT / "scripts/commit_state.sh")], cwd=ROOT,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            start_new_session=True)
+    try:
+        code = proc.wait(timeout=CHECKPOINT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        # Kill the script's git children too: an orphaned push would race
+        # the workflow's end-of-run save in the same worktree.
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait()
+        raise OSError(f"state checkpoint timed out after {CHECKPOINT_TIMEOUT_S}s")
+    if code:
+        raise OSError(f"state checkpoint failed (exit {code})")
+    log.info("state checkpoint saved in %.1fs", time.monotonic() - started)

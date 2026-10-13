@@ -201,7 +201,10 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   state even when the pipeline step fails, and check-point the encrypted
   state before each outgoing post/email (not before each LLM call: that
   serialized every call behind a git push; the ledger rides the end-of-run
-  save).
+  save). Live fix the same day: a raced checkpoint timed out at 60 s and
+  crashed the Pinterest step; the limit is now 150 s, a timeout kills the
+  script's git children, and a failed checkpoint skips that send (retried
+  next run) and stops sends for the process instead of failing the step.
 - **Phone feel polish (Codex task 058 + review, 2026-10-13):** 44px hit areas
   (small links keep their look; a transparent ::after extends the target),
   12px small-text floor, one chip row with a fade, readable source credits,

@@ -557,16 +557,54 @@ def test_encrypted_checkpoint_contains_the_claim_before_remote_send(tmp_path, mo
     monkeypatch.setenv('STATE_DB_KEY', 'synthetic-checkpoint-key')
     monkeypatch.setattr(persistence, 'ROOT', tmp_path)
     saved = []
-    def save(command, **kwargs):
-        assert command == ['bash', str(tmp_path / 'scripts/commit_state.sh')]
-        assert kwargs['check'] and kwargs['cwd'] == tmp_path
-        with sqlite3.connect(tmp_path / 'state.db') as snapshot:
-            saved.append(snapshot.execute("SELECT status FROM outgoing").fetchone()[0])
-    monkeypatch.setattr(persistence.subprocess, 'run', save)
+    class Save:
+        def __init__(self, command, **kwargs):
+            assert command == ['bash', str(tmp_path / 'scripts/commit_state.sh')]
+            assert kwargs['cwd'] == tmp_path and kwargs['start_new_session']
+            with sqlite3.connect(tmp_path / 'state.db') as snapshot:
+                saved.append(snapshot.execute("SELECT status FROM outgoing").fetchone()[0])
+        def wait(self, timeout=None):
+            return 0
+    monkeypatch.setattr(persistence.subprocess, 'Popen', Save)
     assert persistence.prepare_delivery(db, 'telegram', 'same', AUDIT_NOW)
     assert saved == ['pending']
     assert not persistence.prepare_delivery(db, 'telegram', 'same', AUDIT_NOW)
     db.close()
+
+
+def test_slow_checkpoint_skips_sends_kills_its_git_and_retries_next_run(tmp_path, monkeypatch):
+    import subprocess
+    from dealradar import persistence
+    db = DB(tmp_path / 'state.db')
+    monkeypatch.setenv('DEALRADAR_DURABLE_STATE', '1')
+    monkeypatch.setenv('STATE_DB_KEY', 'synthetic-checkpoint-key')
+    monkeypatch.setattr(persistence, 'ROOT', tmp_path)
+    started, killed = [], []
+    class Hang:
+        pid = 4242
+        def __init__(self, command, **kwargs):
+            started.append(command)
+        def wait(self, timeout=None):
+            if timeout is not None and not killed:
+                raise subprocess.TimeoutExpired('commit_state.sh', timeout)
+            return -9
+    monkeypatch.setattr(persistence.subprocess, 'Popen', Hang)
+    monkeypatch.setattr(persistence.os, 'killpg', lambda pid, sig: killed.append(pid))
+    # No exception reaches the sender, nothing is sent, the whole group dies.
+    assert not persistence.prepare_delivery(db, 'pinterest', 'first', AUDIT_NOW)
+    assert killed == [4242]
+    assert db.conn.execute("SELECT status FROM outgoing WHERE dedup_token='first'").fetchone()[0] == 'rejected'
+    # Later sends in the same process stop at once: no claim, no second wait.
+    assert not persistence.prepare_delivery(db, 'pinterest', 'second', AUDIT_NOW)
+    assert len(started) == 1
+    assert db.conn.execute("SELECT COUNT(*) FROM outgoing WHERE dedup_token='second'").fetchone()[0] == 0
+    db.close()
+    # The next run may claim the rejected delivery again.
+    reopened = DB(tmp_path / 'state.db')
+    monkeypatch.setattr(persistence.subprocess, 'Popen',
+                        lambda *a, **k: type('Done', (), {'wait': lambda self, timeout=None: 0})())
+    assert persistence.prepare_delivery(reopened, 'pinterest', 'first', AUDIT_NOW)
+    reopened.close()
 
 
 def test_independent_matching_sources_can_still_corroborate(audit_db, audit_cfg):
