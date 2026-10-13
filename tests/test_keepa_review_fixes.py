@@ -309,11 +309,11 @@ def test_daily_cap_boost_expires_on_its_own():
 
 
 def test_shipped_config_boost_is_bounded():
-    """The shipped boost is the operator's $15 and ends on 2026-10-14."""
+    """The operator's $15 boost ended early on 2026-10-13: $6 a day from then."""
     cfg = load_config()
     assert cfg.spend_cap_usd_per_day == 6.0
     assert cfg.spend_cap_boost_usd_per_day == 15.0
-    assert cfg.spend_cap_boost_until == "2026-10-14"
+    assert cfg.spend_cap_boost_until == "2026-10-13"
 
 
 def test_pipeline_parses_with_the_boosted_cap(tmp_path, monkeypatch):

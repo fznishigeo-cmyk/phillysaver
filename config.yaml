@@ -28,11 +28,12 @@ parse:
   max_chars_per_post: 6000
   spend_cap_usd_per_run: 0.50          # abort parsing gracefully when hit
   spend_cap_usd_per_day: 6.00          # hard daily ceiling across ALL runs (UTC day)
-  # Operator-approved temporary raise (2026-10-11): $15/day for 3 days while
-  # the used/open-box backlog drains, then back to the $6 base automatically
-  # (the boost applies only to UTC days before spend_cap_boost_until).
+  # Operator-approved temporary raise (2026-10-11): $15/day while the
+  # used/open-box backlog drained. Ended early on 2026-10-13 (operator: "I
+  # can't get more than the $6 spend per day"); the boost applies only to
+  # UTC days before spend_cap_boost_until.
   spend_cap_boost_usd_per_day: 15.00
-  spend_cap_boost_until: "2026-10-14"
+  spend_cap_boost_until: "2026-10-13"
   spend_pacing: true
   spend_pacing_headroom_hours: 2
   retries_on_invalid_json: 2
