@@ -33,7 +33,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     addEventListener(type, cb) {this.listeners[type] = cb;},
     setAttribute(k,v) {this.attributes[k]=v;}, removeAttribute(k) {delete this.attributes[k];}, focus() {this.focused=true;}});
   for (const id of ['tagline','surprise','content','savedview','savedtools','savedall','savedclear','savedstatus',
-                    'storesel','sortsel','minpct','q','clearsearch','searchcount']) elements[id] = makeElement();
+                    'storesel','sortsel','minpct','q','clearsearch','searchcount','filtertoggle','filterfields']) elements[id] = makeElement();
   const lineIds = ['engagementline','visitstreak','engagementsep','weeklyfinds'];
   function readLine(html) {
     for (const id of lineIds) delete elements[id];
@@ -302,6 +302,8 @@ assert.equal(h.elements.savedview.attributes['aria-pressed'],'true');
 assert.equal(h.elements.savedview.textContent,'Saved (2)');
 assert.equal(h.elements.content.attributes['data-clarity-mask'],'true');
 assert.equal(h.elements.storesel.disabled,true);
+assert.equal(h.elements.filtertoggle.disabled,true);
+assert.equal(h.elements.filterfields.disabled,true);
 h.ctx.setSavedView(true); h.ctx.render(); h.ctx.render();
 assert.equal(h.events.length,eventCount+1); // One view event per user opening, never per render.
 h.click(row('a')); assert.equal(h.events.at(-1).name,'saved_deal_click');

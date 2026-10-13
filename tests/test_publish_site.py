@@ -1626,16 +1626,18 @@ class TestWallPagination:
     def test_filters_sort_and_category_reset_but_publishes_do_not(self, html):
         reset = _between(html, "function resetWall()", "// Easy sorting:")
         assert "state.shown = PAGE_CARDS;" in reset and "render();" in reset
-        assert '["storesel", "minpct"]' in reset
+        assert 'finishBrowseAction("store", true)' in reset
         search = _between(reset, "function updateSearch()", "function clearSearch()")
         assert "resetWall();" in search
         assert 'searchTimer = setTimeout(updateSearch, 150)' in reset
-        assert 'el.addEventListener("input", resetWall)' in reset
-        assert 'el.addEventListener("change", resetWall)' in reset
+        assert 'getElementById("minpct").addEventListener("input", function () { resetWall();' in reset
+        assert 'finishBrowseAction("minimum", false)' in reset
+        action = _between(html, "function finishBrowseAction(", "function navigationMethod(")
+        assert "resetWall();" in action
         sort = _between(html, 'sortsel.addEventListener("change"', "(function restoreSort()")
-        assert "resetWall();" in sort
+        assert 'finishBrowseAction("sort", true)' in sort
         tabs = _between(html, "function renderTabs()", "function filtered(")
-        assert "state.shown = PAGE_CARDS;" in tabs
+        assert 'finishBrowseAction("category", true)' in tabs
         publish = _between(html, "function applyPublish(", "function loadData(")
         assert "state.shown" not in publish and "resetWall" not in publish
 

@@ -23,7 +23,7 @@ const results = cases.map(c => {
     JITTER_H:3, NO_PHOTO_H:12, AUTO_CARDS:Number(home.match(/var AUTO_CARDS = (\d+);/)[1]), moreObserver:null, panel:{},
     CATGROUPS:[['Trending', null, ''], ['All deals', null, ''], ['Used & Open-Box', 'USED', 'used-open-box'],
                ['Home & Kitchen', ['home', 'kitchen'], 'home-kitchen']],
-    filtered:()=>c.rows, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
+    filtered:()=>c.rows, eligibilityActive:()=>false, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
     cardHtml:d=>`<i data-key="${d.key}"></i>`

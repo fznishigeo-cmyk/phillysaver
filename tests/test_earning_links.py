@@ -152,7 +152,7 @@ def test_all_social_channels_share_earning_gate(tmp_path, db, require):
 ])
 def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_access, expected):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
+    monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
     cfg = AppConfig(paywall_enabled=True, paywall_open_access=open_access,
                     paywall_teaser_count=1, affiliate_amazon_tag=TAG,
                     affiliate_competitor_tracker_hosts=TRACKERS)

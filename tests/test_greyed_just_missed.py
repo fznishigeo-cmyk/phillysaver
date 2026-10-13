@@ -201,6 +201,7 @@ def test_ticker_and_search_use_liveness_correctly():
     var state = {deals: JSON.parse(require("fs").readFileSync(0,"utf8")), catTab:0};
     var TICKER_MAX = 16, CATGROUPS = [["Trending", null, ""]];
     var num = Number, isLocked = () => false, offer = () => ({}), esc = String, dealKey = d => d.key;
+    var matchesEligibility = () => true; // Eligibility intersections have their own published-page harness.
     var values = {q:"Lamp 0", storesel:"", minpct:""};
     var document = {getElementById: id => ({value: values[id]})};
     ''' + '\n'.join(js_function(n) for n in (

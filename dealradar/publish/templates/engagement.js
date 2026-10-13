@@ -332,7 +332,7 @@
       ? "Saved on this device. Clearing site data removes your saved list."
       : "Saved in this tab only. Your browser blocked storage; this list will not persist.";
     if (status.textContent !== message) status.textContent = message;
-    ["storesel", "sortsel", "minpct", "surprise"].forEach(function (id) {
+    ["storesel", "sortsel", "minpct", "surprise", "filtertoggle", "filterfields"].forEach(function (id) {
       var el = document.getElementById(id);
       if (el) el.disabled = savedDeals.view || (id === "surprise" && !surpriseRows().length);
     });

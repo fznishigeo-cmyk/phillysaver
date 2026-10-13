@@ -26,7 +26,8 @@ SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
 PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
                   "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered",
                   "install_offer_shown": "install_offer_shown", "install_accepted": "install_accepted",
-                  "standalone_session": "standalone_session"}
+                  "standalone_session": "standalone_session",
+                  "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 DEAL_PAGE_COUNTS = ("deal_detail_views", "deal_detail_outbound_clicks", "deal_code_copies")
@@ -171,6 +172,45 @@ def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:
             "total": int(float(totals[0]["metricValues"][0]["value"])) if totals else 0,
             "stores": [(d.get("customEvent:store", ""), m[0]) for d, m in _rows(result)],
         }
+    return out
+
+
+def ga4_deal_sessions(client: Any, token: str, property_id: str, days: int) -> dict:
+    """GA4's session rate, per device, rather than clicks divided by sessions.
+
+    The documented sessionKeyEventRate metric requires deal_click to be a
+    registered key event. Its absence must not turn event counts into a rate.
+    https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema
+    """
+    metric = "sessionKeyEventRate:deal_click"
+    resp = client.post(GA4_URL.format(quote(property_id, safe="")), json={"requests": [{
+        "dateRanges": [{"startDate": "yesterday", "endDate": "yesterday", "name": "yesterday"},
+                       {"startDate": f"{days}daysAgo", "endDate": "yesterday", "name": "window"}],
+        "dimensions": [{"name": "deviceCategory"}],
+        "metrics": [{"name": "sessions"}, {"name": metric}], "limit": 20,
+    }]}, headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code == 400:
+        return {"unavailable": "GA4 session rate unavailable; register deal_click as a key event"}
+    resp.raise_for_status()
+    result = resp.json()["reports"][0]
+    dimensions = {h.get("name") for h in result.get("dimensionHeaders", [])}
+    metrics = [h.get("name") for h in result.get("metricHeaders", [])]
+    if not {"deviceCategory", "dateRange"} <= dimensions or metrics != ["sessions", metric]:
+        return {"unavailable": "device session data not returned"}
+    out: dict[str, Any] = {"yesterday": {}, "window": {}}
+    for row in result.get("rows", []):
+        dims = dict(zip([h["name"] for h in result["dimensionHeaders"]],
+                        [v.get("value", "") for v in row.get("dimensionValues", [])]))
+        device, period = dims.get("deviceCategory"), dims.get("dateRange")
+        if device not in ("mobile", "desktop", "tablet") or period not in out:
+            continue
+        values = row.get("metricValues", [])
+        if len(values) != 2:
+            return {"unavailable": "device session data not returned"}
+        sessions, rate = float(values[0]["value"]), float(values[1]["value"])
+        if not sessions.is_integer() or sessions < 0 or not 0 <= rate <= 1:
+            return {"unavailable": "invalid device session data"}
+        out[period][device] = {"sessions": int(sessions), "rate": rate if sessions else None}
     return out
 
 

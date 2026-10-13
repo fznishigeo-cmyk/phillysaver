@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
 from ..savings import display_pct
-from ..config import load_sources, redact_secrets, support_link
+from ..config import AppConfig, load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
@@ -54,7 +54,7 @@ def util_now():
     return now_utc()
 
 
-def site_template_version() -> str:
+def site_template_version(price_presets: list[int] | None = None) -> str:
     """Short hash of the standard home template, preserving its version
     when only the optional support variant changes."""
     import hashlib
@@ -66,6 +66,10 @@ def site_template_version() -> str:
     data += (TEMPLATES_DIR / "site-footer.html").read_bytes()
     data += (TEMPLATES_DIR / "site-footer.css").read_bytes()
     data += (TEMPLATES_DIR / "deal-actions.js").read_bytes()
+    browse = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
+    browse = re.sub(r"<!--saved-->.*?<!--/saved-->", "", browse, flags=re.S)
+    presets = AppConfig().seo_price_pages if price_presets is None else price_presets
+    data += browse.replace("{{PRICE_PRESETS}}", json.dumps(presets)).encode()
     return hashlib.sha256(data).hexdigest()[:12]
 
 
@@ -626,7 +630,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
     # The mode changes the published wording: a flip reloads open tabs.
-    site_version = site_template_version() + ("-open" if open_access else "")
+    browse_script = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
+    price_presets = sorted({n for n in cfg.seo_price_pages if type(n) is int and n > 0})
+    browse_script = browse_script.replace("{{PRICE_PRESETS}}", json.dumps(price_presets))
+    site_version = site_template_version(price_presets) + ("-open" if open_access else "")
     if support:
         data = ((TEMPLATES_DIR / "index.html").read_bytes()
                 + (TEMPLATES_DIR / "support.js").read_bytes()
@@ -637,7 +644,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "site-footer.html").read_bytes()
                 + (TEMPLATES_DIR / "site-footer.css").read_bytes()
                 + (TEMPLATES_DIR / "deal-actions.js").read_bytes()
-                + str(cfg.join_prompt).encode() + link.encode() + monthly.encode())
+                + str(cfg.join_prompt).encode() + link.encode() + monthly.encode() + browse_script.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
@@ -731,6 +738,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
+        if name == "index.html":
+            html = html.replace("{{BROWSE_SCRIPT}}", browse_script)
+            html = html.replace("{{PRICE_OPTIONS}}", "".join(
+                f'<option value="{n}">Under ${n}</option>' for n in price_presets))
         yearly = meta["yearly_price_usd"]
         for place in ("panel", "dialog"):
             choices = ""

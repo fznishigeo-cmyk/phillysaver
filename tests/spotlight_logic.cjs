@@ -40,13 +40,14 @@ const ctx = {Date:FixedDate, state:{meta:doc.meta, deals:doc.deals, spotlight:do
   openAccess:()=>true, canJoin:()=>false, rememberFocus:()=>null, restoreFocus(){}, offer:()=>({})};
 vm.createContext(ctx);
 for (const [a,b] of [
+  ['  // ---- browse filters and return state ----', '  function paintEligibility()'],
   ['  function storeKey(', '  function cmp('],
   ['  function cmp(', '  function storeHue('],
   ['  function storeHue(', '  // ---- the deal ticker ----'],
   ['  var TICKER_MAX', '  var tickerPending'],
   ['  function gridHtml(', '  function showMore('],
   ['  function tick()', '  setInterval(tick'],
-  ['  function refreshStores()', '  // ---- publishes:']
+  ['  function refreshStores()', '  // ---- browse filters and return state ----']
 ]) vm.runInContext(fragment(a,b), ctx);
 const spot = doc.spotlight[0], unknown = spot.pct_at_checkout == null;
 const keys = () => [...html.matchAll(/data-key="([^"]+)"/g)].map(m=>m[1]);

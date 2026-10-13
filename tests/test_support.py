@@ -116,15 +116,15 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "26991faf91b0d5567b93a6ca14a061c057f4e063845b1ca2059f8a2946258a8d"),
-    (False, 49, "2b129b6fde60d69ee5609630f527012d9fb31260d065af4537931f9a5c6610aa"),
-    (True, 0, "706e9daa1ca73e925d6bc289b7a450dee6664c1d49f6b6dffdb99e6590c88595"),
-    (True, 49, "948063278c325c42824580f993402abf58756519a6fa17065ebbba18d1297285"),
+    (False, 0, "7ab93241e68d8eefd4a6924c9038f57b834d231c285cf8cdc729a3e89fec241f"),
+    (False, 49, "dac46e5c18a02167ab1f955a60b0d0a630a8809c354ac3adc8790d2478de31a9"),
+    (True, 0, "20a3ca0f2366cb87e509841808f1a5ecaa4594269eba8f152b91f91bfbf40584"),
+    (True, 49, "4f613039e19ceaf32c1ff94c1165836410e78fc8ca693cae6b2c504f54a03807"),
 ])
-def test_support_off_index_bytes_match_task068_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 068 adds shared titles/actions in every access mode. Snapshot
+def test_support_off_index_bytes_match_task065_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 065 adds shared filters and tab browsing state in every access mode. Snapshot
     # the actual output without task 037's head-only hint or a moving version.
-    monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
+    monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     html = (out / "index.html").read_bytes()
     hint = b'<link rel="preconnect" href="https://m.media-amazon.com">\n'

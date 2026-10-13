@@ -464,6 +464,40 @@ def test_disabled_or_dormant_saved_events_are_not_registered(support, enabled):
     assert "savedMethods" not in head_snippet(cfg)
 
 
+@pytest.mark.parametrize("ids", [SAMPLE, {"ga4_measurement_id": SAMPLE["ga4_measurement_id"]},
+                                 {"meta_pixel_id": SAMPLE["meta_pixel_id"]}])
+def test_filter_and_back_events_are_ga4_only_with_bounded_method(tmp_path, ids):
+    methods = {"filter_apply": ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"],
+               "filter_empty": ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"],
+               "back_restore": ["back", "reload", "history"]}
+    calls = [[event, {"method": method, "query": "PRIVATE-QUERY", "maxprice": "PRIVATE-PRICE",
+                      "price": 23.45, "threshold": 80, "item": "PRIVATE-ITEM", "key": "PRIVATE-KEY",
+                      "store": "PRIVATE-STORE", "category": "PRIVATE-CATEGORY", "url": "https://private.test/"}]
+             for event, values in methods.items() for method in values]
+    invalid = [[event, params] for event in methods
+               for params in [{}, {"method": "PRIVATE-QUERY"}, {"method": "save"}, {"method": 7},
+                              {"method": "constructor"}, {"method": ["sheet"]}]]
+    (tmp_path / "snippet.js").write_text(_script(head_snippet(AppConfig(tracking=ids))))
+    (tmp_path / "harness.cjs").write_text(HARNESS)
+    scenarios = {"open": {"calls": calls + invalid}, "gpc": {"gpc": True, "calls": calls},
+                 "out": {"storage": {"wp.adsOptOut": "1"}, "calls": calls},
+                 "denied": {"blocked": True, "calls": calls}, "baseline": {}}
+    (tmp_path / "scenarios.json").write_text(json.dumps(scenarios))
+    result = subprocess.run(["node", "harness.cjs", "snippet.js", "scenarios.json"], cwd=tmp_path,
+                            capture_output=True, text=True, check=True)
+    out = json.loads(result.stdout)
+    for name in ("open", "gpc", "out", "denied"):
+        observed = [e for e in (out[name]["dataLayer"] or []) if e[0] == "event"]
+        expected = [["event", event, {"method": params["method"], "send_to": ids["ga4_measurement_id"]}]
+                    for event, params in calls] if "ga4_measurement_id" in ids else []
+        assert observed == expected
+        if name in ("open", "denied"):
+            assert all(out[name][tag] == out["baseline"][tag] for tag in ("fbq", "ttq", "pintrk", "uetq"))
+        else:
+            assert all(out[name][tag] is None for tag in ("fbq", "ttq", "pintrk", "uetq"))
+    assert "PRIVATE" not in result.stdout and "23.45" not in result.stdout and "private.test" not in result.stdout
+
+
 class MaskedMarkup(HTMLParser):
     def __init__(self):
         super().__init__()

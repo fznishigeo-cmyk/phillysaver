@@ -64,7 +64,8 @@ GA4_RESPONSE = {"reports": [
           for event, counts in (("home_load_attempt", (400, 2500)), ("first_load_failed", (12, 100)),
                                 ("static_fallback_shown", (11, 94)), ("first_load_recovered", (5, 45)),
                                 ("install_offer_shown", (8, 51)), ("install_accepted", (2, 9)),
-                                ("standalone_session", (3, 17)))
+                                ("standalone_session", (3, 17)),
+                                ("filter_apply", (38, 300)), ("filter_empty", (7, 80)), ("back_restore", (21, 180)))
           for period, count in zip(("yesterday", "window"), counts)]]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
@@ -113,6 +114,13 @@ DEAL_PAGES_RESPONSE = {"reports": [{
                  ("deal_click", "mobile", "/best-deals-today/", "window", 3),
                  ("deal_click", "mobile", "/privacy.html", "window", 999)]]}]
 }
+DEAL_SESSIONS_RESPONSE = {"reports": [{
+    "dimensionHeaders": [{"name": "deviceCategory"}, {"name": "dateRange"}],
+    "metricHeaders": [{"name": "sessions"}, {"name": "sessionKeyEventRate:deal_click"}],
+    "rows": [{"dimensionValues": [{"value": device}, {"value": period}],
+              "metricValues": [{"value": str(sessions)}, {"value": str(rate)}]}
+             for device, sessions, rate in [("mobile", 100, .25), ("desktop", 50, .4), ("tablet", 0, 0)]
+             for period in ("yesterday", "window")]}]}
 
 SC_TOTAL = {"rows": [{"clicks": 834521.0, "impressions": 9123456.0, "ctr": 0.0914, "position": 17.26}]}
 SC_QUERIES = {"rows": [{"keys": ["private <b>query</b> phrase"], "clicks": 300.0, "impressions": 4000.0,
@@ -232,6 +240,8 @@ class FakeApis:
             if len(queries) == 1:
                 if dims == [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath")]:
                     return httpx.Response(200, json=DEAL_PAGES_RESPONSE)
+                if dims == [{"name": "deviceCategory"}]:
+                    return httpx.Response(200, json=DEAL_SESSIONS_RESPONSE)
                 if dims == [{"name": "eventName"}]:
                     return httpx.Response(200, json=PRODUCT_RESPONSE)
                 if dims == [{"name": "newVsReturning"}]:
@@ -472,7 +482,8 @@ def test_ga4_request_and_parsing():
     assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == [
         "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
-        "install_offer_shown", "install_accepted", "standalone_session"]
+        "install_offer_shown", "install_accepted", "standalone_session",
+        "filter_apply", "filter_empty", "back_restore"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
@@ -480,7 +491,8 @@ def test_ga4_request_and_parsing():
                                 "sign_up": 61, "begin_checkout": 0, "start_trial": 0, "deal_click": 9001,
                                 "support_click": 12, "home_load_attempt": 400, "first_load_failed": 12,
                                 "static_fallback_shown": 11, "first_load_recovered": 5,
-                                "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3}
+                                "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
+                                "filter_apply": 38, "filter_empty": 7, "back_restore": 21}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
@@ -838,15 +850,21 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
         "yesterday": {"home_load_attempts": 400, "first_load_failures": 12,
                       "static_fallback_shown": 11, "first_load_recoveries": 5,
                       "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
-                      "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8},
+                      "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8,
+                      "filter_apply": 38, "filter_empty": 7, "back_restore": 21},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
                    "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17,
-                   "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None}}
-    # Main totals/events/sources/pages + store query; load counts add no request.
-    # The two single queries are the saved-deal events and new/returning (task 066).
+                   "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None,
+                   "filter_apply": 300, "filter_empty": 80, "back_restore": 180},
+        "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
+                                   "desktop": {"sessions": 50, "rate": .4},
+                                   "tablet": {"sessions": 0, "rate": None}}
+                          for period in ("yesterday", "window")}}
+    # Main totals/events/sources/pages + store query; load and feature counts add no request.
+    # Single queries: saved-deal events, new/returning (066), deal pages (068), device sessions (065).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
-    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1]
+    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
                  "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45",
@@ -854,7 +872,10 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                  "product.standalone_session: 3 / 17",
                  "product.deal_detail_views: 100 / 40", "product.deal_detail_outbound_clicks: 25 / 60",
                  "yesterday mobile/deal: 100 views, 25 outbound actions, actions/view 25.0%",
-                 "window desktop/deal: 40 views, 60 outbound actions, actions/view 150.0%"):
+                 "window desktop/deal: 40 views, 60 outbound actions, actions/view 150.0%",
+                 "product.filter_apply: 38 / 300", "product.filter_empty: 7 / 80", "product.back_restore: 21 / 180",
+                 "mobile: 25.0% of 100 sessions / 25.0% of 100 sessions",
+                 "tablet: unavailable (0 sessions) / unavailable (0 sessions)"):
         assert line in text and line not in caplog.text
     assert "Install offers and acceptances are actions" in text and "not retained users" in text
     assert "actions, not purchases" in text and "private-product" not in text + caplog.text
@@ -893,8 +914,8 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))) as client:
         data, status = report.collect(cfg, NOW, client)
     assert status["ga4"] == status["product"] == "ok"
-    assert all(period[name] == 0 for period in data["product"].values() for name in google.PRODUCT_EVENTS)
-    assert all(period[name] is None for period in data["product"].values() for name in google.DEAL_PAGE_COUNTS)
+    assert all(data["product"][period][name] == 0 for period in ("yesterday", "window") for name in google.PRODUCT_EVENTS)
+    assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.DEAL_PAGE_COUNTS)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
     for event in ("install_offer_shown", "install_accepted", "standalone_session"):
@@ -951,6 +972,54 @@ def test_deal_page_api_failure_preserves_other_product_counts(cfg, monkeypatch, 
     assert data["product"]["yesterday"]["deal_detail_views"] is None
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "Device/page-family actions: unavailable" in text and "PRIVATE" not in text + caplog.text
+
+
+def test_device_get_deal_rate_uses_ga4_session_metric():
+    fake = FakeApis()
+    with client_for(fake) as client:
+        data = google.ga4_deal_sessions(client, GOOGLE_TOKEN, "987654", 3)
+    query = json.loads(fake.requests[0].content)["requests"][0]
+    assert query["dimensions"] == [{"name": "deviceCategory"}]
+    assert query["metrics"] == [{"name": "sessions"}, {"name": "sessionKeyEventRate:deal_click"}]
+    assert "dimensionFilter" not in query  # An event filter is not a session segment.
+    assert query["dateRanges"][1]["startDate"] == "3daysAgo"
+    assert data["yesterday"]["mobile"] == {"sessions": 100, "rate": .25}
+    assert data["window"]["tablet"] == {"sessions": 0, "rate": None}
+
+
+@pytest.mark.parametrize("failure", ["key_event", "permission", "transport", "json", "shape", "invalid"])
+def test_unavailable_session_rate_keeps_filter_counts_private(cfg, monkeypatch, caplog, failure):
+    monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+    monkeypatch.setattr(google, "access_token", lambda *_: GOOGLE_TOKEN)
+    fake = FakeApis()
+
+    def handler(request):
+        if request.url.host == "analyticsdata.googleapis.com":
+            query = json.loads(request.content)["requests"][0]
+            if query.get("dimensions") == [{"name": "deviceCategory"}]:
+                if failure == "transport":
+                    raise httpx.ConnectError("PRIVATE-QUERY-23.45", request=request)
+                if failure == "json":
+                    return httpx.Response(200, text="PRIVATE-QUERY-23.45")
+                if failure == "shape":
+                    return httpx.Response(200, json={"reports": [{}]})
+                if failure == "invalid":
+                    response = json.loads(json.dumps(DEAL_SESSIONS_RESPONSE))
+                    response["reports"][0]["rows"][0]["metricValues"][1]["value"] = "1.5"
+                    return httpx.Response(200, json=response)
+                return httpx.Response(400 if failure == "key_event" else 403,
+                                      json={"error": {"message": "PRIVATE-QUERY-23.45"}})
+        return fake(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["product"] == "ok"
+    assert data["product"]["yesterday"]["filter_apply"] == 38
+    assert "unavailable" in data["product"]["deal_sessions"]
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "Sessions with Get deal by device: unavailable" in text
+    assert "PRIVATE" not in text + caplog.text and "23.45" not in text + caplog.text
+    assert "0.0%" not in next(line for line in text.splitlines() if line.startswith("Sessions with Get deal"))
 
 
 def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, monkeypatch):

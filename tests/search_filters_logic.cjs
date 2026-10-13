@@ -12,18 +12,21 @@ const snippet = (start, end) => {
 const handlers = {}, timers = new Map(), elements = {};
 let timerID = 0, now = 0, renders = 0, reloads = 0, requests = [], response = payload, fail = false;
 function element(id) {
-  return elements[id] ||= {value:'', hidden:false, textContent:'', innerHTML:'', options:[],
+  return elements[id] ||= {value:'', hidden:false, textContent:'', innerHTML:'', options:[], disabled:false,
     addEventListener(type, fn) { handlers[id + ':' + type] = fn; },
     appendChild(opt) {this.options.push(opt);}, remove(i) {this.options.splice(i, 1);},
+    setAttribute(){}, reportValidity:()=>true,
+    get selectedIndex() {return this.options.findIndex(o=>o.value===this.value);},
+    set selectedIndex(i) {this.value=this.options[i].value;},
     focus() {this.focused = true;}, querySelectorAll() {return [];}, scrollIntoView(options) {this.scrolled = options;}};
 }
 element('storesel').options.push({value:''});
 const session = new Map(), saved = new Map();
 const ctx = {URL, URLSearchParams, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:'old'}, PAGE_CARDS:60,
-  CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]),
+  CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]), cardEls:()=>[], track(){}, activeSpotlight:()=>[],
   document:{hidden:false, getElementById:element, createElement:()=>({}),
     addEventListener(type, fn) {handlers['document:'+type] = fn;}},
-  window:{addEventListener(type, fn) {handlers['window:'+type] = fn;}},
+  window:{innerHeight:844, scrollY:0, scrollTo(){}, addEventListener(type, fn) {handlers['window:'+type] = fn;}},
   Date:class extends Date {constructor(){super(now);} static now(){return now;}},
   setTimeout(fn, delay) {timers.set(++timerID, {fn, delay}); return timerID;},
   clearTimeout(id) {timers.delete(id);},
@@ -65,9 +68,9 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
   let renders=0, firstAdoptions=0, memberRequests=0;
   function el(id) {
     if (['moremore','totop'].includes(id)) return null;
-    return els[id] ||= {value:'', innerHTML:'', textContent:'', hidden:false, disabled:false,
+    return els[id] ||= {value:'', innerHTML:'', textContent:'', hidden:false, disabled:false, options:[{value:''}],
       addEventListener(type, fn) {listeners[id+':'+type]=fn;},
-      querySelectorAll:()=>[], appendChild(){}, focus(){},
+      querySelectorAll:()=>[], appendChild(){}, focus(){}, setAttribute(){}, reportValidity:()=>true,
       querySelector(selector) {return selector === '.card' && /<article class="card/.test(this.innerHTML) ? {} : null;}};
   }
   el('content').innerHTML=staticDeals ? staticWall : '<p class="empty">No qualifying deals right now</p>';
@@ -79,10 +82,11 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
     clock:{tag:'old-tag', waiting:0, step:900000, phase:0, lastSeed:null}, auth:{checking:false}, moreObserver:null,
     document:{hidden:false, getElementById:el,
       addEventListener(type, fn) {listeners['document:'+type]=fn;}},
-    window:{wpTrack:(...args)=>events.push(args), wpSupport:{refresh(){}},
+    window:{innerHeight:844, scrollY:0, scrollTo(){}, wpTrack:(...args)=>events.push(args), wpSupport:{refresh(){}},
       addEventListener(type, fn) {listeners['window:'+type]=fn;}},
     localStorage:{getItem:()=>null, setItem(){}}, location:{search:''},
-    setTimeout:()=>1, clearTimeout(){}, setInterval(fn, delay) {intervals.push({fn,delay});},
+    setTimeout:()=>1, clearTimeout(){}, requestAnimationFrame:fn=>fn(), cardEls:()=>[],
+    setInterval(fn, delay) {intervals.push({fn,delay});},
     dataKey:m=>m.generated_at || '', dealKey:d=>d.key, keySet:ds=>Object.fromEntries(ds.map(d=>[d.key,true])),
     openKeys:ds=>Object.fromEntries(ds.filter(d=>!d.locked).map(d=>[d.key,true])),
     maybeReloadForNewVersion(){}, syncClock(){}, markIndex:()=>1,
@@ -110,12 +114,15 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
     }
   };
   c.panel=el('paywall');
+  c.sortsel=el('sortsel');
+  c.applySort=v=>{const [key, dir]=v.split(':'); c.state.sortKey=key; c.state.sortDir=Number(dir);};
   vm.createContext(c);
   for (const [a,b] of [
     ['  function esc(s)', '  function sortVal'],
     ['  function renderTabs()', '  function filtered('],
     ['  function render()', '  function showMore()'],
     ['  function resetWall()', '  // Easy sorting:'],
+    ['  // ---- browse filters and return state ----', '  // ---- /browse filters and return state ----'],
     ['  function fetchPublish()', '  // While a drop waits,']
   ]) vm.runInContext(snippet(a,b),c);
   if (!support) vm.runInContext(snippet('  function memberDeals(fresh)', '  function syncSubbar()'),c);
@@ -304,7 +311,7 @@ async function checkFirstLoad() {
   // Opening the actual link in another tab overrides a remembered sort.
   element('storesel').value=''; ctx.state.sortKey='price';
   ctx.location.search='?store=amazon&sort=top';
-  vm.runInContext(snippet('      var browse =', '      renderTabs();'),ctx);
+  ctx.initBrowse();
   assert.equal(element('storesel').value,'amazon'); assert.equal(ctx.state.sortKey,'top');
   ctx.state.deals.pop(); ctx.refreshStores(); assert.equal(element('amazon-strip').hidden,true);
   element('storesel').value='';

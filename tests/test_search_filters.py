@@ -67,3 +67,36 @@ def test_static_and_live_deal_page_journeys_offline(tmp_path, support):
     result = subprocess.run(["node", str(Path(__file__).with_name("deal_pages_logic.cjs")), str(out)],
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('support,open_access', [(False, False), (False, True), (True, True)])
+def test_price_eligibility_browse_history_and_return(tmp_path, support, open_access):
+    cfg = AppConfig(support_enabled=support, paywall_open_access=open_access,
+                    engagement={'saved_deals': True} if support else {}, seo_price_pages=[10, 25, 50],
+                    custom_domain='wowpriced.com')
+    out, _, _, _ = render(tmp_path, cfg, [make_deal()])
+    home = (out / 'index.html').read_text()
+    assert '<dialog id="filtersheet" aria-labelledby="filtertitle" data-clarity-mask="true">' in home
+    assert 'aria-haspopup="dialog" aria-controls="filtersheet" aria-expanded="false"' in home
+    assert '#filterform input,#filterform select{font-size:16px;min-height:44px}' in home
+    assert 'filterSheet.showModal()' in home and 'filterSheet.addEventListener("close"' in home
+    assert '<link rel="canonical" href="https://wowpriced.com/">' in home
+    assert '?price=' not in (out / 'sitemap.xml').read_text()
+    result = subprocess.run(['node', str(Path(__file__).with_name('browse_logic.cjs')),
+                             str(out / 'index.html'), str(out / 'deals.json')], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_home_presets_reuse_price_page_configuration(tmp_path):
+    cfg = AppConfig(seo_price_pages=[15, 35], support_enabled=True)
+    out, doc, _, _ = render(tmp_path, cfg)
+    home = (out / 'index.html').read_text()
+    assert 'var PRICE_PRESETS = [15, 35];' in home
+    assert '<option value="15">Under $15</option>' in home
+    assert '<option value="35">Under $35</option>' in home
+    assert '<option value="25">' not in home
+    old_version = doc['meta']['site_version']
+    cfg.seo_price_pages = []
+    out, doc, _, _ = render(tmp_path, cfg)
+    assert 'var PRICE_PRESETS = [];' in (out / 'index.html').read_text()
+    assert doc['meta']['site_version'] != old_version

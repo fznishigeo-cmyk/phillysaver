@@ -203,6 +203,9 @@ _DISPATCH = """\
     first_load_recovered: { ga4Only: true },
     deal_detail_view: { ga4Only: true, methods: ["deal"] },
     deal_code_copy: { ga4Only: true, methods: ["home", "deal", "category", "store", "price", "best_today"] },
+    filter_apply: { ga4Only: true, methods: ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"] },
+    filter_empty: { ga4Only: true, methods: ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"] },
+    back_restore: { ga4Only: true, methods: ["back", "reload", "history"] },
     sign_up: { meta: "CompleteRegistration", tiktok: "CompleteRegistration", pin: "signup", uet: "sign_up" },
     begin_checkout: { meta: "InitiateCheckout", tiktok: "InitiateCheckout", uet: "begin_checkout" },
     start_trial: { meta: "StartTrial", tiktok: "Subscribe", pin: "checkout", uet: "subscribe" },
@@ -212,6 +215,10 @@ _DISPATCH = """\
     var ev = EVENTS[name];
     if (!ev) return;
     var p = {};
+    if (ev.methods) {
+      if (!params || ev.methods.indexOf(params.method) === -1) return;
+      p.method = params.method;
+    }
     ["store", "category", "method"].forEach(function (k) {
       var v = params && params[k];
       if (!ev.ga4Only && typeof v === "string" && v) p[k] = v.slice(0, 60);

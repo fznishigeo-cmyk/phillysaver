@@ -169,6 +169,40 @@ header .dhole{background:var(--chip)}
 #controls label{font-size:13px;color:var(--muted);display:flex;gap:5px;align-items:center;
   background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
 #controls label input[type=number]{border:none;padding:0;background:transparent}
+#filtertoggle{display:none;flex:none;white-space:nowrap}
+#filterform fieldset{display:flex;align-items:center;gap:8px;margin:0;padding:0;border:0}
+#desktopfilters{flex:none}
+#filterform label{display:flex;align-items:center;gap:5px;min-height:44px;white-space:nowrap;padding:0;border:0;background:transparent}
+#filterform input,#filterform select{font-size:16px;min-height:44px}
+#filterform input[type=number]{width:100px}
+#filterform label input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--card)}
+#filterform input[type=checkbox]{min-width:20px;min-height:20px;width:20px;height:20px;margin:0;accent-color:var(--accent)}
+#filterform button,#filtertoggle,#filterclose{min-width:44px;min-height:44px;padding:8px 12px;
+  border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+#filterapply{background:var(--accent)!important;color:var(--accent-fg)!important}
+#filterform :focus-visible,#filtertoggle:focus-visible,#filterclose:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#filtersheet{border:1px solid var(--line);border-radius:16px 16px 0 0;background:var(--card);color:var(--fg);
+  top:auto;bottom:0;margin:0;width:100%;max-width:none;max-height:85vh;padding:16px;overflow-y:auto}
+#filtersheet::backdrop{background:rgba(0,0,0,.45)}
+.filterheading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.filterheading h2{margin:0;font-size:20px}
+@media (max-width:640px){
+  #filtertoggle{display:block}
+  #desktopfilters{display:none}
+  #filterform fieldset{flex-wrap:wrap;gap:10px}
+  #filterform label{display:flex;align-items:center;gap:8px;flex:1 1 100%;font-size:16px}
+  #filterform select,#filterform input[type=number]{margin-left:auto;width:160px;max-width:55%;padding:8px;
+    border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+  #filterform button{flex:1}
+  #filtersheet{padding-bottom:max(16px,env(safe-area-inset-bottom))}
+}
+/* Desktop: the filter controls wrap to a second line instead of hiding
+   Apply/Clear off the edge, and match the height of the other controls. */
+@media (min-width:641px){
+  #controls{flex-wrap:wrap;overflow-x:visible}
+  #desktopfilters #filterform input,#desktopfilters #filterform select,#desktopfilters #filterform button{
+    min-height:36px;font-size:13px}
+}
 
 /* ---- card grid ---- */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(235px,1fr));
@@ -720,7 +754,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <div class="wrap">
 <div id="controls">
 <!--saved-->  <button id="savedview" type="button" aria-pressed="false" aria-controls="content" hidden>Saved (0)</button>
-<!--/saved-->  <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
+<!--/saved-->  <button id="filtertoggle" type="button" aria-haspopup="dialog" aria-controls="filtersheet" aria-expanded="false" disabled>Filters</button>
+  <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
   <select id="sortsel" aria-label="sort order">
     <option value="top:-1">sort: top picks</option>
     <option value="fresh:-1">sort: fresh drops</option>
@@ -731,7 +766,21 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   </select>
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0" inputmode="numeric" autocomplete="off"></label>
+  <div id="desktopfilters">
+    <form id="filterform" data-clarity-mask="true">
+      <fieldset id="filterfields" disabled><legend class="sr-only">Price and eligibility filters</legend>
+        <label>Price <select id="pricepreset" data-clarity-mask="true"><option value="">Any price</option>{{PRICE_OPTIONS}}</select></label>
+        <label>Max $ <input id="maxprice" type="number" data-clarity-mask="true" min="0" step="0.01" inputmode="decimal" autocomplete="off" enterkeyhint="done"></label>
+        <label><input id="newonly" type="checkbox" data-clarity-mask="true">New condition only</label>
+        <label><input id="plainonly" type="checkbox" data-clarity-mask="true">No extra steps</label>
+        <button id="filterapply" type="submit">Apply</button><button id="filterclear" type="button">Clear</button>
+      </fieldset>
+    </form>
+  </div>
 </div>
+<dialog id="filtersheet" aria-labelledby="filtertitle" data-clarity-mask="true">
+  <div class="filterheading"><h2 id="filtertitle">Filter deals</h2><button id="filterclose" type="button" aria-label="Close filters">✕</button></div>
+</dialog>
 <!--saved--><div id="savedtools" class="saved-tools" hidden>
   <p id="savedstatus" role="status" aria-live="polite">Saved on this device.</p>
   <button id="savedall" type="button" hidden>All deals</button>
@@ -1176,9 +1225,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--saved-->        savedDeals.view = false;
         renderSavedControls();
 <!--/saved-->        state.catTab = Number(b.getAttribute("data-i")) || 0;
-        state.shown = PAGE_CARDS;
         renderTabs();
-        render();
+        finishBrowseAction("category", true);
       });
     });
   }
@@ -1198,7 +1246,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         return false;
       }
       if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
-      return true;
+      return matchesEligibility(d);
     });
   }
 
@@ -1590,6 +1638,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       (state.sortKey === "fresh" || state.sortKey === "top") && state.sortDir === -1 &&
       !document.getElementById("q").value.trim() &&
       !document.getElementById("storesel").value &&
+      !eligibilityActive() &&
       !(Number(document.getElementById("minpct").value) || 0);
   }
 
@@ -1672,6 +1721,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     paintTicker();
     cardImageIndex = 0;
     var content = document.getElementById("content");
+    browseRows = [];
 <!--saved-->    renderSavedControls();
     if (savedOn() && savedDeals.view) {
       traceFree = false;
@@ -1683,6 +1733,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/saved-->    traceFree = state.deals.some(isLocked);
 <!--engagement-->    var engagementHtml = engagementLineHtml();
 <!--/engagement-->    var spotlight = activeSpotlight(), spotlightKeys = spotlight.map(dealKey);
+    browseRows = spotlight.slice();
     var spotlightHtml = spotlight.length ? '<div class="grid spotlight-grid">' + spotlight.map(cardHtml).join("") + '</div>' : '';
     var rows = state.deals.length ? ordered(filtered(), true).filter(function (d) {
       return spotlightKeys.indexOf(dealKey(d)) === -1;
@@ -1708,6 +1759,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     rows = placeGone(rows);
     var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
+    browseRows = spotlight.concat(rows);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.
     var split = rows.findIndex(function (d, i) {
@@ -1794,6 +1846,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // Keep the same seed and cards above; loading more is not a drop.
     state.shown += PAGE_CARDS;
     render();
+    rememberBrowse(false);
     if (onButton) {
       var next = document.getElementById("moremore");
       if (!next && cardEls()[count]) next = cardEls()[count].querySelector("a[href],button");
@@ -2728,6 +2781,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     renderSavedControls();
 <!--/saved-->    renderTabs();
     resetWall();
+    rememberBrowse(false);
+    browseSignature = actionSignature();
   }
   function clearSearch() {
     document.getElementById("q").value = "";
@@ -2745,11 +2800,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   });
   document.getElementById("clearsearch").addEventListener("click", clearSearch);
 
-  ["storesel", "minpct"].forEach(function (id) {
-    var el = document.getElementById(id);
-    el.addEventListener("input", resetWall);
-    el.addEventListener("change", resetWall);
-  });
+  document.getElementById("storesel").addEventListener("change", function () { finishBrowseAction("store", true); });
+  document.getElementById("minpct").addEventListener("input", function () { resetWall(); rememberBrowse(false); });
+  document.getElementById("minpct").addEventListener("change", function () { finishBrowseAction("minimum", false); });
 
   // A restored or long-hidden page refreshes even between drop marks.
   var hiddenAt = document.hidden ? Date.now() : null, returnRefresh = null;
@@ -2762,7 +2815,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return returnRefresh;
   }
   window.addEventListener("pageshow", function (e) {
-    if (e.persisted) refreshOnReturn();
+    if (e.persisted) restoreBrowseOnReturn();
   });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
@@ -2789,6 +2842,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/saved-->    document.getElementById("q").value = "";
     document.getElementById("storesel").value = "amazon";
     document.getElementById("minpct").value = "0";
+    clearEligibility();
     state.catTab = 0;
     sortsel.value = "top:-1";
     applySort(sortsel.value);
@@ -2799,13 +2853,13 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     e.preventDefault();
     selectAmazonDeals();
     renderTabs();
-    resetWall();
+    finishBrowseAction("amazon", true);
     document.getElementById("controls").scrollIntoView({behavior: reduceMotion() ? "auto" : "smooth", block: "start"});
   });
   sortsel.addEventListener("change", function () {
     applySort(this.value);
     lsSet(SORT_KEY, this.value);
-    resetWall();
+    finishBrowseAction("sort", true);
   });
   (function restoreSort() {
     var saved = lsGet(SORT_KEY);
@@ -2824,7 +2878,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     populateStores();
     sel.value = current;
     if (sel.selectedIndex === -1) sel.selectedIndex = 0;
+    if (!Array.prototype.some.call(sel.options, function (o) { return o.value === sel.value; })) sel.value = "";
   }
+
+  // ---- browse filters and return state ----
+  {{BROWSE_SCRIPT}}
+  // ---- /browse filters and return state ----
 
   // ---- publishes: first load, drops at the marks, late landings ----
   var TIMEOUT = {};
@@ -2912,12 +2971,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     if (first) {
       loadedOnce = true;
       populateStores();
-      var browse = new URLSearchParams(location.search);
-      if (browse.get("store") === "amazon" && browse.get("sort") === "top") selectAmazonDeals();
-      renderTabs();
       sinceLastVisit(deals);
       state.dropKeys = keySet(deals);
       state.seed = clock.lastSeed = markIndex(Date.now(), clock.phase, clock.step);
+      initBrowse();
+      renderTabs();
       setTimeout(openFromHash, 0);
     } else {
       refreshStores();
@@ -3042,6 +3100,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       auth.checking = !!(apiUrl(pub.meta) && token());
       applyPublish(pub, pub.deals);
       render();
+      restoreInitialBrowse();
       status.hidden = true;
       document.getElementById("load-message").textContent = "";
       if (loadEvents.first_load_failed) trackLoad("first_load_recovered");

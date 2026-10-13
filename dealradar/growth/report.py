@@ -182,6 +182,10 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
         for period in ("yesterday", "window"):
             detail = data.get("deal_pages", {}).get(period, {})
             data["product"][period].update({name: detail.get(name) for name in google.DEAL_PAGE_COUNTS})
+        try:
+            data["product"]["deal_sessions"] = google.ga4_deal_sessions(client, token(), cfg.growth_ga4_property_id, days)
+        except Exception:
+            data["product"]["deal_sessions"] = {"unavailable": "device session rate unavailable"}
     log.info("product: %s", status["product"])
     return data, status
 
@@ -318,6 +322,21 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     if product:
         lines += [f"product.{name}: " + _pair(_n, product["yesterday"][name], product["window"][name])
                   for name in google.PRODUCT_EVENTS]
+        sessions = product.get("deal_sessions") or {"unavailable": "device session data not returned"}
+        if "unavailable" in sessions:
+            lines.append("Sessions with Get deal by device: unavailable — " + sessions["unavailable"])
+        else:
+            lines.append("Sessions with Get deal by device (yesterday / window; GA4 session rate):")
+            for device in ("mobile", "desktop", "tablet"):
+                def session_rate(period):
+                    row = sessions.get(period, {}).get(device)
+                    if row is None:
+                        return "unavailable"
+                    if not row["sessions"]:
+                        return "unavailable (0 sessions)"
+                    return f"{row['rate']:.1%} of {_n(row['sessions'])} sessions"
+
+                lines.append(f"  {device}: " + _pair(session_rate, "yesterday", "window"))
     else:
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
     lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")

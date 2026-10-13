@@ -190,6 +190,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Phone filters + Back state (Codex task 065, 2026-10-13; shipped after review):**
+  configured `seo.price_pages` presets/custom ceiling, New condition and
+  No extra steps; native phone dialog with 44px controls/16px inputs and
+  inline desktop controls, disabled in Saved. Fixed store/category/sort/
+  preset/eligibility selections share a URL (Amazon route retained);
+  query, custom ceiling, min%, shown count, seed, Saved view and visible-card
+  anchor stay in guarded tab session state. Back/Forward/reload/bfcache use
+  current facts and nearby anchors when an offer disappears or no longer
+  qualifies. GA4-only bounded-method `filter_apply`, `filter_empty` and
+  `back_restore` counts join Product; device session rates use GA4's
+  `sessionKeyEventRate:deal_click` (requires `deal_click` registered as a key
+  event; unavailable data is reported without inference). Card title links
+  and outbound counting (068) unchanged. Full suite: **2,554 passed, 1
+  deselected**; only seven existing Stripe yearly-deploy tests failed at
+  sandbox socket creation (`Operation not permitted`): six cases of
+  `test_deploy_checks_the_yearly_price_with_stripe` and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`
+  in `tests/test_workflows.py`. Verify those outside the sandbox.
+  Chromium launch is sandbox-blocked (`Operation not permitted`):
+  own-site phone/desktop Back, focus/keyboard/Escape, dark mode and reduced
+  motion QA remain pending. 390x844 first-card top: before **unavailable**,
+  after **unavailable**; both measurements must be taken outside this sandbox.
+  Branch creation also hit read-only Git metadata. No commit or push.
 - **Deal pages from the wall (Codex task 068, 2026-10-13; shipped after review):**
   one page-selection pass before JSON adds remembered `deal_path` only for
   emitted public pages; live titles and the existing device-local Save use
