@@ -26,7 +26,7 @@ from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from . import seo
 from .paywall import is_open, split_teaser, teaser_memory
-from .credits import source_display_name
+from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -435,9 +435,10 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     if first_seen is not None:
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
     # One credit per source as shown: two feeds of one partner (Hip2Save and
-    # Hip2Save Amazon) read "via Hip2Save" once, with its first post's link.
+    # Hip2Save Amazon), or its feed and newsletter, read "via Hip2Save" once,
+    # with its first post's link.
     credits = []
-    for credit in (_credit(s) for s in (deal.get("sightings") or [])):
+    for credit in (_credit(s) for s in source_sightings(deal)):
         if all(credit["name"] != c["name"] for c in credits):
             credits.append(credit)
     status = deal.get("status", "alive")

@@ -5,12 +5,13 @@ from html import escape
 
 from ..http_client import extract_asin, tracker_target
 from ..source_policy import host_of, source_image_allowed
+from .credits import source_sightings
 from .social import _without_prices
 
 
 def email_credits(deal: dict) -> list[tuple[str, str]]:
-    return list(dict.fromkeys((s.get("source_name") or "", s.get("source_url") or "")
-                              for s in deal.get("sightings") or []))
+    return [(s.get("source_name") or "", s.get("source_url") or "")
+            for s in source_sightings(deal)]
 
 
 def email_line_html(line: str, deal: dict) -> str:

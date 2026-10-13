@@ -1,0 +1,10 @@
+Mozilla Public Suffix List (ICANN and private rules), offline snapshot.
+
+Source: https://github.com/publicsuffix/list/blob/823beb1425def931c8b0b170a6bc33b424c3f9b0/public_suffix_list.dat
+Imported from OpenJDK's public_suffix_list.dat, with its one-byte section
+markers removed, sorted and gzip-compressed (mtime=0). No rules changed.
+To update, replace the snapshot from publicsuffix/list and update this source.
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain
+one at https://mozilla.org/MPL/2.0/.

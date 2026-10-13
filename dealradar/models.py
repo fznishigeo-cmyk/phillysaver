@@ -37,7 +37,7 @@ class SourceConfig:
     image_permission: bool = False
     display_name: str = ""
     site: str = ""
-    newsletter_from: list[str] = field(default_factory=list)  # exact sender allow-list
+    newsletter_from: list[str] = field(default_factory=list)  # optional partner sender addresses
 
 
 @dataclass

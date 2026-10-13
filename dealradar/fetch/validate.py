@@ -122,8 +122,8 @@ def _validate_one(
         return "disabled", "disabled in sources.yaml", None
     if source.method == "email" and source.adapter == "newsletter":
         from .newsletter import inbox_configured
-        if not inbox_configured(cfg) or not source.newsletter_from:
-            return "needs_key", "missing inbox URL, NEWSLETTER_INBOX_TOKEN or newsletter_from", None
+        if not inbox_configured(cfg):
+            return "needs_key", "missing inbox URL or NEWSLETTER_INBOX_TOKEN", None
         return "live", "configured", source
     from .pages import PAGE_ADAPTERS
     if ((source.method == "html" and source.adapter in PAGE_ADAPTERS)

@@ -87,8 +87,9 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
         for s in stored:
             cur = by_name.get(s.name)
             if cur is None:
-                if any(p.name == s.name for p in primary):
-                    continue  # disabled in config now: drop from the run set
+                if (any(p.name == s.name for p in primary)
+                        or (s.method == "email" and s.adapter == "newsletter")):
+                    continue  # disabled/removed newsletter entry: drop from the run set
                 refreshed.append(s)  # backup-sourced entry: keep as stored
             elif s.name in failing:
                 refreshed.append(cur)
@@ -208,7 +209,12 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                 adapter = get_adapter(source, cfg, fast_lane=fast_lane)
                 if source.method == "email":
                     newsletter_inbox = adapter
-                    adapter.sources = sources
+                    # Match against the whole registry, including partners whose
+                    # paused/tripped web feeds are absent from this run's set.
+                    primary, backup = load_sources()
+                    configured = {s.name: s for s in primary + backup}
+                    configured.update({s.name: s for s in sources})
+                    adapter.sources = list(configured.values())
                     # Our private API shares the injected transport, but never
                     # the fetcher's body cache or partner crawl/enrichment.
                     adapter._http = fetcher._client
@@ -1584,6 +1590,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- fetch ----
         posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
                                          deadline, fast_lane)
+        inbox = getattr(fetcher, "newsletter_inbox", None)
+        if inbox is not None:
+            tz_by_source.update({s.name: s.tz for s in inbox.sources})
         record_deaths()
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors

@@ -23,6 +23,7 @@ import httpx
 
 from ..config import get_secret
 from ..db import DB
+from ..fetch.newsletter import unknown_sender_counts, unknown_sender_text
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..util import now_utc
@@ -46,6 +47,14 @@ def _critic_shadow(db_path, now: datetime) -> dict:
     try:
         return {"today": db.critic_shadow_counts(now),
                 "week": db.critic_shadow_counts(now, days=7)}
+    finally:
+        db.close()
+
+
+def _newsletter_senders(db_path) -> dict:
+    db = DB(db_path, read_only=True)
+    try:
+        return unknown_sender_counts(db)
     finally:
         db.close()
 
@@ -79,6 +88,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
         # Only an explicit snapshot (the CLI passes --db): never a stray local file.
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
+        "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                                lambda: _newsletter_senders(db_path)),
         "site_health": ([("publish.custom_domain", cfg.custom_domain)],
                         lambda: site_health.check(client, cfg, now)),
         "cloudflare_traffic": ([("CLOUDFLARE_OPS_TOKEN", cf_ops),
@@ -168,6 +179,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     ga, sc, sm, ads, gads, st = (data.get(k) for k in ("ga4", "search_console", "sitemap",
                                                        "meta_ads", "google_ads", "stripe"))
     lines = [f"Growth report for {yesterday:%a %b %d, %Y}: yesterday / last {days} days", ""]
+    if senders := data.get("partner_newsletters"):
+        lines += [unknown_sender_text(senders), ""]
 
     if ga:
         lines.append("Sessions: " + _pair(_n, ga["yesterday"]["sessions"], ga["window"]["sessions"]))

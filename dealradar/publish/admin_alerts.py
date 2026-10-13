@@ -5,18 +5,21 @@ bot token. Without credentials the warnings are logged only. The same
 warnings go out at most once a day (operator, 2026-10-13: hourly repeats were
 noise); a change in the warnings (e.g. 11 -> 12 sources tripped) goes out at
 once. Idempotent via alerts_sent('admin', '<YYYY-MM-DD>|<hash of text>|admin').
+Unknown newsletter senders use a separate UTC-day token, so changes to health
+warnings or sender counts cannot repeat their daily list.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from ..config import get_secret
+from ..fetch.newsletter import unknown_sender_counts, unknown_sender_text
 
 logger = logging.getLogger("dealradar.publish.admin")
 
@@ -37,33 +40,39 @@ def check_and_alert(db, cfg, now: datetime, *, items_fetched: int,
     tripped = db.tripped_count(now)
     if tripped >= cfg.tripped_sources_warn:
         warnings.append(f"{tripped} sources tripped")
-    if not warnings:
-        return []
-
     digest = hashlib.sha256("\n".join(warnings).encode()).hexdigest()[:12]
     dedup_token = f"{now.strftime('%Y-%m-%d')}|{digest}|admin"
-    if db.alert_exists("admin", dedup_token):
-        logger.info("admin alert already sent today: %s", "; ".join(warnings))
+    health_pending = bool(warnings) and not db.alert_exists("admin", dedup_token)
+    sender_token = now.astimezone(timezone.utc).date().isoformat()
+    senders = (unknown_sender_counts(db) if not db.alert_exists("admin_newsletters", sender_token)
+               else {})
+    if not health_pending and not senders:
         return warnings
 
-    text = "dealradar admin warnings:\n" + "\n".join(warnings)
+    lines = warnings.copy() if health_pending else []
+    if senders:
+        lines.append(unknown_sender_text(senders))
+        # Run summaries and public logs contain only a count, never addresses.
+        warnings.append(f"New newsletter senders to map: {len(senders)}")
+    text = "dealradar admin warnings:\n" + "\n".join(lines)
     token = get_secret("TELEGRAM_BOT_TOKEN")
     admin_chat = get_secret("TELEGRAM_ADMIN_CHAT_ID")
     if not (token and admin_chat):
         for w in warnings:
             logger.warning("admin alert (no credentials, log only): %s", w)
+    else:
+        status = send_admin_text(text, http_client=http_client)
+        if status != 200:
+            # NOT recorded -> retried on the next run.
+            logger.error("admin alert send failed (%s); will retry", status)
+            return warnings
+
+    if health_pending:
         db.record_alert(deal_key="admin", channel="admin",
                         dedup_token=dedup_token, now=now)
-        return warnings
-
-    status = send_admin_text(text, http_client=http_client)
-    if status != 200:
-        # NOT recorded -> retried on the next run this hour.
-        logger.error("admin alert send failed (%s); will retry", status)
-        return warnings
-
-    db.record_alert(deal_key="admin", channel="admin",
-                    dedup_token=dedup_token, now=now)
+    if senders:
+        db.record_alert(deal_key="admin", channel="admin_newsletters",
+                        dedup_token=sender_token, now=now)
     logger.info("admin alert sent: %s", "; ".join(warnings))
     return warnings
 

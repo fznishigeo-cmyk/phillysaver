@@ -6,12 +6,15 @@ Bodies and pending acknowledgements live in memory only. The pipeline calls
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
+from functools import lru_cache
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -26,10 +29,101 @@ from .pages import _Node, _Tree
 _ID = re.compile(r"msg:[0-9a-f]{64}\Z")
 _URL = re.compile(r"https?://[^\s<>\"']+")
 _PRICE = re.compile(r"\$\s?\d|\d\s?%")
+_HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+                   r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
+UNKNOWN_SENDERS_META_KEY = "newsletter:unknown_senders"
 _NAV = {"about", "contact", "privacy", "terms", "subscribe", "unsubscribe",
         "newsletter", "newsletters", "confirm", "preferences", "category",
         "tag", "author", "feed", "rss", "search", "page", "go", "out",
         "click", "track", "redirect", "link", "links", "recommends"}
+
+
+@lru_cache(maxsize=1)
+def _suffix_rules() -> set[str]:
+    # Bundled ICANN + private rules; no network or disk cache. License/source
+    # are in public_suffix_list.LICENSE and the compressed snapshot's header.
+    with gzip.open(Path(__file__).with_name("public_suffix_list.dat.gz"), "rt", encoding="utf-8") as f:
+        return {line.strip().encode("idna").decode("ascii").lower()
+                for line in f if line.strip() and not line.startswith("//")}
+
+
+def registrable_domain(host: str) -> str:
+    """PSL longest-match rule, including wildcard suffixes and exceptions."""
+    try:
+        host = host.removesuffix(".").encode("idna").decode("ascii").lower()
+    except UnicodeError:
+        return ""
+    if len(host) > 253 or not _HOST.fullmatch(host):
+        return ""
+    labels = host.split(".")
+    rules, suffix_labels = _suffix_rules(), 1
+    for i in range(len(labels)):
+        suffix = ".".join(labels[i:])
+        if "!" + suffix in rules:
+            suffix_labels = len(labels) - i - 1
+            break
+        if suffix in rules:
+            suffix_labels = max(suffix_labels, len(labels) - i)
+        if i and "*." + suffix in rules:
+            suffix_labels = max(suffix_labels, len(labels) - i + 1)
+    return ".".join(labels[-suffix_labels - 1:]) if len(labels) > suffix_labels else ""
+
+
+def match_sender(address: str, sources: list[SourceConfig]) -> SourceConfig | None:
+    """One permission partner, or unknown. Paused web feeds still receive mail."""
+    address = address.strip().lower()
+    domain = registrable_domain(address.rsplit("@", 1)[-1]) if "@" in address else ""
+    listed, by_domain = {}, {}
+    for partner in sources:
+        if not partner.crawl_permission or partner.method == "email":
+            continue
+        try:
+            own = registrable_domain(urlsplit(partner.site or partner.url).hostname or "")
+        except ValueError:
+            own = ""
+        if address and address in {s.strip().lower() for s in partner.newsletter_from}:
+            listed[partner.name] = partner
+        elif domain and domain == own:
+            by_domain[partner.name] = partner
+    # An address a partner lists is that partner's (two listing it: unknown).
+    if listed:
+        return next(iter(listed.values())) if len(listed) == 1 else None
+    # Every domain match is one site, so one partner with several feeds
+    # (Hip2Save, Southern Savers): its first entry, enabled ones first.
+    ranked = sorted(by_domain.values(), key=lambda p: not p.enabled)
+    return ranked[0] if ranked else None
+
+
+def _record_unknown_senders(db, messages: list[tuple[str, str]], now: datetime) -> None:
+    """Counts and dates only; opaque delivery IDs make failed ack retries harmless."""
+    if not messages:
+        return
+    state = json.loads(db.meta_get(UNKNOWN_SENDERS_META_KEY) or '{"senders":{},"messages":{}}')
+    day = now.astimezone(timezone.utc).date().isoformat()
+    cutoff = (now.astimezone(timezone.utc) - timedelta(days=7)).date().isoformat()
+    seen = {key: date for key, date in state["messages"].items() if date >= cutoff}
+    for key, address in messages:
+        if key in seen:
+            continue
+        sender = state["senders"].setdefault(address, {"count": 0, "last_seen": day})
+        sender["count"] += 1
+        sender["last_seen"] = max(day, sender["last_seen"])
+        seen[key] = day
+    state["messages"] = seen
+    db.meta_set(UNKNOWN_SENDERS_META_KEY, json.dumps(state, sort_keys=True))
+
+
+def unknown_sender_counts(db) -> dict[str, int]:
+    """Unmapped addresses and counts for private operator reports, never bodies."""
+    state = json.loads(db.meta_get(UNKNOWN_SENDERS_META_KEY) or '{"senders":{}}')
+    primary, backup = load_sources()
+    return {address: row["count"] for address, row in sorted(state["senders"].items())
+            if match_sender(address, primary + backup) is None}
+
+
+def unknown_sender_text(counts: dict[str, int]) -> str:
+    return "New newsletter senders to map: " + ", ".join(
+        f"{address or '(missing address)'} ({count})" for address, count in counts.items())
 
 
 def inbox_configured(cfg: AppConfig) -> bool:
@@ -146,7 +240,7 @@ class NewsletterAdapter(SourceAdapter):
         self._last_request = None
         self._fetcher = None
         self._loaded = False
-        self._posts: dict[str, list[RawPost]] = {}
+        self._posts: list[RawPost] = []
         self._pending: dict[str, list[RawPost]] = {}
 
     def _check(self, deadline):
@@ -213,8 +307,8 @@ class NewsletterAdapter(SourceAdapter):
                 client.close()
 
     def fetch_posts(self, source, fetcher, db, cfg, now, deadline):
-        if not inbox_configured(cfg) or not source.newsletter_from:
-            raise AdapterNotConfigured("newsletter inbox URL, token or sender missing")
+        if not inbox_configured(cfg):
+            raise AdapterNotConfigured("newsletter inbox URL or token missing")
         self._fetcher = fetcher
         if not self._loaded:
             self._posts.clear()
@@ -222,12 +316,7 @@ class NewsletterAdapter(SourceAdapter):
             configured = self.sources
             if configured is None:
                 primary, backup = load_sources()
-                configured = [s for s in primary + backup if s.name != source.name] + [source]
-            senders = {}
-            for partner in configured:
-                if partner.method == "email" and partner.adapter == "newsletter" and partner.enabled:
-                    for address in {s.strip().lower() for s in partner.newsletter_from}:
-                        senders.setdefault(address, []).append(partner)
+                configured = primary + backup
             cursor, messages = "", []
             for _ in range(cfg.newsletter_inbox_max_messages):
                 payload = self._request("GET", "/inbox", cfg, deadline, params={
@@ -244,21 +333,24 @@ class NewsletterAdapter(SourceAdapter):
                 if not next_cursor or len(messages) >= cfg.newsletter_inbox_max_messages:
                     break
                 cursor = next_cursor
+            unknown = []
             for message in messages:
                 self._check(deadline)
                 if not isinstance(message, dict) or not _ID.fullmatch(str(message.get("id") or "")):
                     raise RuntimeError("newsletter inbox invalid message id")
                 address = parseaddr(str(message.get("from") or ""))[1].lower()
-                matches = senders.get(address, [])
-                posts = email_posts(message, matches[0], now) if len(matches) == 1 else []
+                partner = match_sender(address, configured)
+                posts = email_posts(message, partner, now) if partner is not None else []
+                if partner is None:
+                    unknown.append((message["id"], address))
                 self._pending[message["id"]] = posts
-                if posts:
-                    self._posts.setdefault(matches[0].name, []).extend(posts)
+                self._posts.extend(posts)
+            _record_unknown_senders(db, unknown, now)
             self._loaded = True
-        return self._posts.get(source.name, [])
+        return self._posts
 
     def acknowledge(self, db, cfg, deadline=None):
-        """All parts must be durably handled; unknown/unusable mail is ignored."""
+        """All parts must be durably handled; unknown senders are already counted."""
         ready = [key for key, posts in self._pending.items()
                  if all(db.post_is_known(post.content_hash) for post in posts)]
         acknowledged = 0

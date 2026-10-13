@@ -5,6 +5,17 @@ from functools import lru_cache
 from ..config import load_sources
 
 
+def source_sightings(deal: dict) -> list[dict]:
+    """One public credit per partner, even across multiple posts/channels."""
+    seen, sightings = set(), []
+    for sighting in deal.get("sightings") or []:
+        name = sighting.get("source_name") or ""
+        if name not in seen:
+            seen.add(name)
+            sightings.append(sighting)
+    return sightings
+
+
 @lru_cache(maxsize=1)
 def _display_names() -> dict[str, str]:
     primary, backup = load_sources()

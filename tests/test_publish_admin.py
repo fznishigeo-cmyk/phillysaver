@@ -10,6 +10,7 @@ import pytest
 
 from dealradar.config import AppConfig
 from dealradar.db import DB
+from dealradar.fetch.newsletter import _record_unknown_senders
 from dealradar.publish.admin_alerts import check_and_alert
 
 NOW = datetime(2026, 10, 9, 14, 0, 0, tzinfo=timezone.utc)
@@ -183,3 +184,60 @@ def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
     check_and_alert(db, cfg, NOW, items_fetched=10, http_client=ok)
     assert len(ok.posts) == 1
     assert admin_sent(db)
+
+
+def test_unknown_sender_digest_once_a_day_despite_health_or_count_changes(db, cfg, monkeypatch, caplog):
+    set_admin_creds(monkeypatch)
+    _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], NOW)
+    client = FakeHttpClient()
+    warnings = check_and_alert(db, cfg, NOW, items_fetched=100, http_client=client)
+    assert warnings == ["New newsletter senders to map: 1"]
+    assert len(client.posts) == 1
+    assert "New newsletter senders to map: sender@unmapped.example (1)" in client.posts[0][1]["text"]
+    assert "sender@unmapped.example" not in caplog.text
+    later = NOW + timedelta(hours=1)
+    assert check_and_alert(db, cfg, later, items_fetched=100, http_client=client) == []
+    trip_sources(db, later, cfg.tripped_sources_warn)
+    check_and_alert(db, cfg, later, items_fetched=100, http_client=client)
+    assert len(client.posts) == 2
+    assert "5 sources tripped" in client.posts[-1][1]["text"]
+    assert "newsletter senders" not in client.posts[-1][1]["text"]
+    _record_unknown_senders(db, [("msg:" + "2" * 64, "second@unmapped.example")], later)
+    check_and_alert(db, cfg, later, items_fetched=100, http_client=client)
+    assert len(client.posts) == 2
+    check_and_alert(db, cfg, NOW + timedelta(days=1), items_fetched=100, http_client=client)
+    assert len(client.posts) == 3
+    assert "second@unmapped.example (1)" in client.posts[-1][1]["text"]
+    assert "sender@unmapped.example (1)" in client.posts[-1][1]["text"]
+    assert db.conn.execute("SELECT count(*) FROM alerts_sent WHERE channel='admin_newsletters'").fetchone()[0] == 2
+
+
+def test_failed_unknown_sender_digest_retries_before_marking_day(db, cfg, monkeypatch):
+    set_admin_creds(monkeypatch)
+    _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], NOW)
+    failed = FakeHttpClient(status_code=500)
+    check_and_alert(db, cfg, NOW, items_fetched=100, http_client=failed)
+    assert not db.alert_exists("admin_newsletters", NOW.date().isoformat())
+    client = FakeHttpClient()
+    check_and_alert(db, cfg, NOW, items_fetched=100, http_client=client)
+    assert db.alert_exists("admin_newsletters", NOW.date().isoformat())
+    check_and_alert(db, cfg, NOW, items_fetched=100, http_client=client)
+    assert len(client.posts) == 1
+
+
+def test_unknown_sender_no_credentials_logs_counts_only(db, cfg, caplog):
+    _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], NOW)
+    with caplog.at_level(logging.WARNING):
+        check_and_alert(db, cfg, NOW, items_fetched=100)
+    assert "New newsletter senders to map: 1" in caplog.text
+    assert "sender@unmapped.example" not in caplog.text
+
+
+def test_unknown_sender_day_uses_utc(db, cfg, monkeypatch):
+    set_admin_creds(monkeypatch)
+    local = datetime(2026, 10, 9, 23, 30, tzinfo=timezone(timedelta(hours=-4)))
+    _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], local)
+    client = FakeHttpClient()
+    check_and_alert(db, cfg, local, items_fetched=100, http_client=client)
+    check_and_alert(db, cfg, local.astimezone(timezone.utc), items_fetched=100, http_client=client)
+    assert len(client.posts) == 1
