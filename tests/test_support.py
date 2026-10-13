@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "3c6c1b625c1b58be0dd13fcf6aa535dfc94734bd30c10db277f317ab2f0eee1d"),
-    (False, 49, "8a54790690357bd5f151f4ea1299d7b5204a174299f138df4023a2587b2572da"),
-    (True, 0, "8927c683401d58f1cf0ad9522662134d61421979811d0da35a4de4ee33d5a9c7"),
-    (True, 49, "01c745d09d228cda8bfd5f6ca0b2e06c60b0ac6d889ee5cbb41897d8e20151a7"),
+    (False, 0, "4962f477017f11de92c6efa8fce4464d5689354e953ada79fca878c75222e32d"),
+    (False, 49, "70e1206ae2dbb3bc8d72a4babf62a67a12cb401369a705b61abee13f065a26a0"),
+    (True, 0, "2a9df5330e9d110de4ab5e082f909770a0367b8856fb8d6cfa11e5f1246a39e9"),
+    (True, 49, "123c314ff3baf67657f55e00c2a2fdbf1514b554e971182f0c2a1d47ec32ec3b"),
 ])
 def test_support_off_index_bytes_match_task058_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 058 polishes the shared phone styles in every access mode. Snapshot

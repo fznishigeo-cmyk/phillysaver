@@ -448,7 +448,7 @@ footer .meta{font-size:11.5px}
   .since{padding:0 12px 2px;font-size:12px}
   /* Phones swipe: one row of categories (desktop keeps the wrap, where a
      sideways strip needed click-and-drag), faded at the edge as the cue. */
-  #cattabs{padding:6px 12px 8px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
+  #cattabs{padding:4px 12px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
            scroll-snap-type:x proximity;scroll-padding-inline:12px;padding-right:28px;
            -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);
            mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
@@ -482,13 +482,15 @@ footer .meta{font-size:11.5px}
     text-decoration:none;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 }
 @media (max-width:520px){
-  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-top:8px}
   .media{height:118px}
   .now{font-size:18px}
   .ph span{font-size:17px}
   .getdeal{padding:9px 8px;font-size:12.5px}
   #subscribe.getdeal{font-size:13.5px;justify-content:center}
-  .tk{padding:5px 8px}
+  .tk{padding:3px 8px}
+  /* Desktop spacing above the first deal costs a phone screen ~24px. */
+  #controls{margin:8px 0 4px}
   .tklabel{padding:0 16px 0 10px;font-size:12px}
   .tkpause{font-size:12px;padding:6px 10px}
   .freetag{font-size:12px}

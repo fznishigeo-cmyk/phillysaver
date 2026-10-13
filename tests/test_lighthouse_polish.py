@@ -256,6 +256,19 @@ def test_phone_type_never_drops_below_12px(published):
     assert 'footer .footerfine{' in css and 'font-size:11px' in css
 
 
+def test_phone_spacing_above_the_first_deal_is_tight(published):
+    # Daily quality loop 2026-10-13: desktop margins cost a phone ~24px above
+    # the first deal (iPhone 14: 382 -> 358px). Desktop rules stay as they are.
+    home = (published / 'index.html').read_text()
+    css, _ = themes(home)
+    small = ''.join(block for width, block in phone_blocks(css) if width == 520)
+    assert '#controls{margin:8px 0 4px}' in small
+    assert '.tk{padding:3px 8px}' in small
+    assert 'gap:10px;margin-top:8px}' in small
+    assert phone_rule(css, '#cattabs').startswith('padding:4px 12px;')
+    assert '#controls{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;align-items:center;margin:16px 0 6px}' in css
+
+
 def test_phone_native_controls_and_safe_area_clearance(published):
     home = (published / 'index.html').read_text()
     css, _ = themes(home)
