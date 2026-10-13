@@ -100,8 +100,11 @@ def outline(body: bytes | None, limit: int = 6) -> list[str]:
                 self.depth = len(self.stack)
                 self.inside.append(f"-- container: " + " > ".join(self.stack[-2:] + [label]))
             elif self.depth is not None and len(self.inside) < 120:
+                href_path = urlsplit(a.get("href") or "").path
                 self.inside.append("  " * (len(self.stack) - self.depth) + label
-                                   + (" href" if a.get("href") else ""))
+                                   + (f" href={href_path[:60]}" if a.get("href") else "")
+                                   + (f" alt[{len(a['alt'])} chars]" if a.get("alt") else "")
+                                   + (f" title-attr[{len(a['title'])} chars]" if a.get("title") else ""))
             if tag not in VOID:
                 self.stack.append(label)
                 self.ords.append(self.n)
