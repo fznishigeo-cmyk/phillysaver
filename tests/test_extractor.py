@@ -179,6 +179,9 @@ class TestParsePosts:
         assert stats == {
             "posts_sent": 1, "deals_extracted": 1, "deals_dropped_evidence": 0,
             "second_opinions": 0, "spend_usd": 0.05,
+            "second_opinion": {"calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0},
+            "prefilter": {"would_skip": 0, "would_skip_publishable": 0},
+            "reused_posts": 0, "reused_deals": 0,
             "aborted_spend_cap": False,
             "processed_hashes": [posts[0].content_hash],
             "post_counts": {posts[0].content_hash: {"extracted": 1, "evidence": 0}},
@@ -196,7 +199,8 @@ class TestParsePosts:
 
     def test_max_posts_per_run_enforced_and_logged(self, caplog):
         parser = FakeParser(results=[[], [], []])
-        posts = [make_post(uid=f"p{i}") for i in range(3)]
+        posts = [make_post(uid=f"p{i}", text=f"Widget {i} was $20.00 now $10.00")
+                 for i in range(3)]
         with caplog.at_level("WARNING", logger="dealradar.parse.extractor"):
             _, stats = parse_posts(posts, parser, make_cfg(max_posts_per_run=2),
                                    NOW, {})
@@ -207,7 +211,8 @@ class TestParsePosts:
     def test_spend_cap_stops_immediately(self):
         parser = FakeParser(results=[[good_deal()], [good_deal()]],
                             raise_cap_at=1, spend_usd=0.5)
-        posts = [make_post(uid="p1"), make_post(uid="p2"), make_post(uid="p3")]
+        posts = [make_post(uid=f"p{i}", text=f"Widget {i} was $20.00 now $10.00")
+                 for i in range(3)]
         pairs, stats = parse_posts(posts, parser, make_cfg(), NOW, {})
         assert stats["aborted_spend_cap"] is True
         assert stats["posts_sent"] == 1

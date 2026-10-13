@@ -604,10 +604,13 @@ def test_failed_pipeline_run_keeps_email_pending_until_facts_are_handled(pipelin
     assert db.conn.execute("SELECT count(*) FROM posts_seen").fetchone()[0] == 0
     assert not inbox.acked and inbox.messages
     monkeypatch.setattr(site, "render_site", original)
-    assert run_pipeline(pipeline_env, inbox)["posts_new"] == 1
+    retry = run_pipeline(pipeline_env, inbox)
+    assert retry["posts_new"] == 1
+    assert retry["parse"]["reused_posts"] == 1
+    assert retry["spend_by_kind"]["extract"]["calls"] == 0
     assert not inbox.acked  # second part still deferred by max_posts_per_run
     assert run_pipeline(pipeline_env, inbox)["inbox_acknowledged"] == 1
-    assert len(db.all_deals()) == 2 and client.messages.reads == 3
+    assert len(db.all_deals()) == 2 and client.messages.reads == 2
 
 
 def test_inbox_deployment_is_manual_and_supplies_only_repository_secrets():

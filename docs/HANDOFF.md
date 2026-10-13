@@ -190,6 +190,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **AI value (Codex task 059 + review, 2026-10-13):** live 24 h sample: $7.32,
+  Sonnet (critic + second opinion) 47% of spend on 8.5% of calls, three
+  Slickdeals feeds 58% of extract spend, ~88% of extracted deals below floor.
+  Changes: prompt caching on static prefixes (priced per model: write 1.25x,
+  read 0.10x / Sonnet 0.05x; reservations price input at the write rate);
+  identical post text is read once across sources (facts only, evidence
+  re-verified per post; `retention.post_parses_days: 2` because every row
+  rides the 52 MB encrypted state push); second opinion only when the text
+  can clear the floor, with yield counters; below-floor prefilter ships
+  `shadow` (structured posts never count); per-source deals/publishable.
+  Watch in run summaries: `parse.reused_posts`, `second_opinion`,
+  `prefilter`, cache fields in spend; flip prefilter to `on` only if
+  `would_skip_publishable` stays ~0 for a few days.
 - **Money/math correctness (Codex tasks 054/054b, 2026-10-13):** audit 051
   findings 9-13, 16, 17, 19, 20, 22, 23: math inputs need verified evidence;
   Keepa deals publish only with a valid critic verdict; distinct product links

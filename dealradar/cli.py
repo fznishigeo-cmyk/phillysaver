@@ -81,7 +81,7 @@ def cmd_prune(args: argparse.Namespace) -> int:
     db = DB(args.db)
     try:
         db.prune(util.now_utc(), posts_seen_days=cfg.posts_seen_days,
-                 deals_days=cfg.deals_days)
+                 deals_days=cfg.deals_days, post_parses_days=cfg.post_parses_days)
         print("pruned")
         return 0
     finally:

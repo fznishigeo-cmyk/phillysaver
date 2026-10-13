@@ -119,6 +119,13 @@ CREATE TABLE IF NOT EXISTS posts_seen (
 );
 CREATE INDEX IF NOT EXISTS idx_posts_first_seen ON posts_seen(first_seen_at);
 
+CREATE TABLE IF NOT EXISTS post_parses (
+    text_fingerprint TEXT PRIMARY KEY,
+    deals TEXT NOT NULL,
+    parsed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_post_parses_at ON post_parses(parsed_at);
+
 CREATE TABLE IF NOT EXISTS deals (
     id INTEGER PRIMARY KEY,
     dedupe_key TEXT NOT NULL UNIQUE,
@@ -294,6 +301,24 @@ class DB:
             "SELECT first_seen_at FROM posts_seen WHERE content_hash=?", (content_hash,)
         ).fetchone()
         return parse_iso(row["first_seen_at"]) if row else None
+
+    def cached_post_parse(self, fingerprint: str, now: datetime,
+                          days: int) -> list[dict] | None:
+        """Source-independent LLM facts only; never the cleaned post text."""
+        row = self.conn.execute(
+            "SELECT deals FROM post_parses WHERE text_fingerprint=? AND parsed_at >= ?",
+            (fingerprint, iso(now - timedelta(days=days))),
+        ).fetchone()
+        return json.loads(row["deals"]) if row else None
+
+    def cache_post_parse(self, fingerprint: str, deals: list[dict], now: datetime) -> None:
+        self.conn.execute(
+            "INSERT INTO post_parses(text_fingerprint, deals, parsed_at) VALUES (?,?,?)"
+            " ON CONFLICT(text_fingerprint) DO UPDATE SET deals=excluded.deals,"
+            " parsed_at=excluded.parsed_at",
+            (fingerprint, json.dumps(deals), iso(now)),
+        )
+        self.conn.commit()
 
     # ---------------- deals ----------------
 
@@ -814,7 +839,7 @@ class DB:
         self.conn.commit()
 
     def prune(self, now: datetime, *, posts_seen_days: int = 30,
-              deals_days: int = 14) -> None:
+              deals_days: int = 14, post_parses_days: int = 2) -> None:
         self.conn.execute(
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),
@@ -822,6 +847,9 @@ class DB:
         self.conn.execute(
             "DELETE FROM source_audit_posts WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),))
+        self.conn.execute(
+            "DELETE FROM post_parses WHERE parsed_at < ?",
+            (iso(now - timedelta(days=post_parses_days)),))
         # Only DEAD deals are pruned, deals_days after they died. A live deal
         # is never removed for its age (operator call, 2026-10-11): Amazon
         # "used - like new" offers stay up until someone buys them, so a

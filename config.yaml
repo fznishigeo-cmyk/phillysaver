@@ -41,8 +41,10 @@ parse:
   # regardless of model, so one-at-a-time capped a run at ~27 posts; a pool
   # of 6 lifts that toward ~150 per run. Spend caps still bound the total.
   concurrency: 6
+  # Observe simple, plainly below-floor price pairs before enabling any skips.
+  prefilter_below_floor: shadow       # off | shadow | on
   # Second opinion: when the cheap model finds no deals in a post that smells
-  # like one (has $ amounts / percents), re-read it once with a stronger model.
+  # like one AND its stated numbers can clear min_pct, re-read it once.
   second_opinion_model: "claude-sonnet-5-5"
   max_second_opinions_per_run: 8
   # Deal critic: before a deal publishes, a stronger model judges whether its
@@ -62,10 +64,10 @@ parse:
   # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
   # the spend cap uses this table (USD per million tokens); unknown models use `default`.
   model_pricing_per_mtok:
-    default: { input: 1.00, output: 5.00 }
-    claude-haiku-5-5: { input: 0.10, output: 0.50 }
-    claude-haiku-4-5: { input: 1.00, output: 5.00 }
-    claude-sonnet-5-5: { input: 2.00, output: 10.00 }
+    default: { input: 1.00, output: 5.00, cache_write: 1.25, cache_read: 0.10 }
+    claude-haiku-5-5: { input: 0.10, output: 0.50, cache_write: 1.25, cache_read: 0.10 }
+    claude-haiku-4-5: { input: 1.00, output: 5.00, cache_write: 1.25, cache_read: 0.10 }
+    claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_write: 1.25, cache_read: 0.05 }
 
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
@@ -445,6 +447,10 @@ growth:
 
 retention:
   posts_seen_days: 30
+  # Cross-source parse reuse (task 059): the same post text shows up in
+  # several feeds within hours. Short on purpose: every row rides the
+  # encrypted state.db that is pushed to the data branch every run.
+  post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
 
 feature_flags:

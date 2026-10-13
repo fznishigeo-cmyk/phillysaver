@@ -121,15 +121,15 @@ def test_shadow_limit_priority_same_prompt_and_model_pricing(tmp_path, limit):
     db.close()
 
 
-@pytest.mark.parametrize("cap", [.003, .00301, .01])
+@pytest.mark.parametrize("cap", [.003, .00301, .01, .02])
 def test_shadow_skips_when_full_call_will_not_fit(tmp_path, cap):
     db = DB(tmp_path / "state.db")
     insert(db, deal())
     parser, msgs = parser_for(critic_shadow_batches_per_day=12)
     parser.run_cap_usd = cap
     # Small allowances cannot reserve even the real critic's full response.
-    assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == int(cap == .01)
-    expected = int(cap == .01)
+    assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == int(cap == .02)
+    expected = int(cap == .02)
     assert parser.spend_by_kind["critic_shadow"]["calls"] == expected
     assert db.critic_shadow_counts(NOW)["batches"] == expected
     assert parser.spend_usd <= cap

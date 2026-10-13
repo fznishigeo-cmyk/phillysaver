@@ -117,6 +117,7 @@ class AppConfig:
     # Extraction calls in flight at once. Parse throughput is bound by API
     # round-trip time, not tokens; a small pool multiplies posts-per-run.
     parse_concurrency: int = 1
+    prefilter_below_floor: str = "off"  # off | shadow | on
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
     second_opinion_model: str = ""      # "" disables the second-opinion pass
     max_second_opinions_per_run: int = 8
@@ -272,6 +273,7 @@ class AppConfig:
 
     # -- retention / flags --
     posts_seen_days: int = 30
+    post_parses_days: int = 2
     deals_days: int = 14
     feature_flags: dict[str, bool] = field(default_factory=dict)
 
@@ -320,6 +322,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
     cfg.parse_concurrency = max(1, int(g("parse", "concurrency", default=cfg.parse_concurrency)))
+    prefilter = g("parse", "prefilter_below_floor", default=cfg.prefilter_below_floor)
+    # YAML 1.1 reads unquoted on/off as booleans.
+    if isinstance(prefilter, bool):
+        prefilter = "on" if prefilter else "off"
+    cfg.prefilter_below_floor = str(prefilter)
+    if cfg.prefilter_below_floor not in {"off", "shadow", "on"}:
+        raise ValueError("parse.prefilter_below_floor must be off, shadow, or on")
     cfg.second_opinion_model = g("parse", "second_opinion_model", default="") or ""
     cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
     cfg.critic_model = g("parse", "critic_model", default="") or ""
@@ -522,6 +531,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "woot", "max_new_items_per_run", default=cfg.woot_max_new_items_per_run)))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
+    cfg.post_parses_days = int(g("retention", "post_parses_days", default=cfg.post_parses_days))
     cfg.deals_days = int(g("retention", "deals_days", default=cfg.deals_days))
     cfg.feature_flags = g("feature_flags", default={}) or {}
     from .source_policy import grant_active

@@ -67,6 +67,12 @@ def _strip_fences(text: str) -> str:
     return m.group(1) if m else text.strip()
 
 
+def _cached_system(text: str) -> list[dict]:
+    """A static prefix with the default five-minute cache lifetime."""
+    return [{"type": "text", "text": text,
+             "cache_control": {"type": "ephemeral"}}]
+
+
 def _salvage_truncated(text: str) -> str | None:
     """A JSON answer cut off by max_tokens still holds every deal object
     that closed before the cut. Return '{"deals": [<complete objects>]}'
@@ -228,12 +234,15 @@ class ClaudeParser:
         usage = getattr(resp, "usage", None)
         if usage is None:
             return 0.0
-        pricing_table = self.cfg.model_pricing_per_mtok or {}
-        pricing = (pricing_table.get(model or self.model)
-                   or pricing_table.get("default") or {})
+        pricing = self._pricing(model or self.model)
         in_rate = float(pricing.get("input", 0.0))
         out_rate = float(pricing.get("output", 0.0))
-        cost = (usage.input_tokens * in_rate + usage.output_tokens * out_rate) / 1e6
+        cost = (usage.input_tokens * in_rate
+                + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
+                * in_rate * pricing["cache_write"]
+                + (getattr(usage, "cache_read_input_tokens", 0) or 0)
+                * in_rate * pricing["cache_read"]
+                + usage.output_tokens * out_rate) / 1e6
         self._record_cost(cost, kind, source_name)
         return cost
 
@@ -245,22 +254,38 @@ class ClaudeParser:
             bucket["usd"] += cost
             if kind == "extract":
                 source = self.extract_by_source.setdefault(
-                    source_name or "unknown", {"calls": 0, "usd": 0.0})
+                    source_name or "unknown",
+                    {"calls": 0, "usd": 0.0, "deals": 0, "publishable": 0})
                 source["calls"] += 1
                 source["usd"] += cost
 
-    def _reserve(self, kwargs: dict) -> tuple[str, float]:
-        model = kwargs["model"]
-        pricing = (self.cfg.model_pricing_per_mtok.get(model)
-                   or self.cfg.model_pricing_per_mtok.get("default") or {})
+    def _pricing(self, model: str) -> dict:
+        table = self.cfg.model_pricing_per_mtok or {}
+        default = table.get("default") or {}
+        pricing = dict(table.get(model) or default)
+        for name, minimum in (("cache_write", 1.25), ("cache_read", 0.10)):
+            fallback = max(minimum, float(default.get(name, minimum)))
+            pricing[name] = (float(pricing.get(name, fallback))
+                             if model in table and model != "default" else fallback)
+        return pricing
+
+    def _cost_bound(self, kwargs: dict) -> float:
+        pricing = self._pricing(kwargs["model"])
         if not pricing.get("input") or not pricing.get("output"):
             raise SpendCapReached("cannot reserve LLM spend without model pricing")
         schema = kwargs.get("output_format")
         prompt = {"system": kwargs.get("system"), "messages": kwargs.get("messages"),
                   "schema": schema.model_json_schema() if schema else None}
         input_bound = len(json.dumps(prompt).encode("utf-8")) + 1024
-        bound = (input_bound * float(pricing["input"])
-                 + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
+        cached = any(isinstance(block, dict) and block.get("cache_control")
+                     for block in kwargs.get("system") or [])
+        multiplier = max(1.0, pricing["cache_write"], pricing["cache_read"]) if cached else 1.0
+        return (input_bound * float(pricing["input"]) * multiplier
+                + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
+
+    def _reserve(self, kwargs: dict) -> tuple[str, float]:
+        model = kwargs["model"]
+        bound = self._cost_bound(kwargs)
         key = uuid.uuid4().hex
         with self._spend_lock:
             if self.spend_usd + self._reserved_usd + bound > self.run_cap_usd:
@@ -375,7 +400,7 @@ class ClaudeParser:
         kwargs = dict(
                 model=used_model,
                 max_tokens=MAX_TOKENS,
-                system=SYSTEM_PROMPT,
+                system=_cached_system(SYSTEM_PROMPT),
                 messages=[{"role": "user", "content": user_prompt}],
                 output_format=LLMDeals,
         )
@@ -436,7 +461,7 @@ class ClaudeParser:
         attempts = 1 + max(0, int(self.cfg.retries_on_invalid_json))
         system = SYSTEM_PROMPT + _JSON_ONLY_SUFFIX
         kwargs = dict(model=model or self.model, max_tokens=MAX_TOKENS,
-                      system=system, messages=[{"role": "user", "content": user_prompt}])
+                      system=_cached_system(system), messages=[{"role": "user", "content": user_prompt}])
         try:
             create = self.client.messages.create
         except AttributeError:
@@ -515,25 +540,20 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
         return opinions
     kwargs = dict(
             model=model, max_tokens=100 + 80 * len(entries),
-            system=CRITIC_SYSTEM_PROMPT + (
+            system=_cached_system(CRITIC_SYSTEM_PROMPT + (
                 "\nJudge each indexed deal independently using all the rules above. "
                 "Return verdicts with their original index. Each reason must be "
-                "one short sentence of at most 120 characters."),
+                "one short sentence of at most 120 characters.")),
             messages=[{"role": "user", "content": json.dumps(entries)}],
             output_format=CriticVerdicts)
     if shadow:
         # Conservative admission: one token per UTF-8 byte of prompt/schema,
         # plus framing overhead and the entire output allowance. Never start
         # an optional call merely because a few cents remain below the cap.
-        pricing = (cfg.model_pricing_per_mtok.get(model)
-                   or cfg.model_pricing_per_mtok.get("default") or {})
+        pricing = parser._pricing(model)
         if not pricing.get("input") or not pricing.get("output"):
             return opinions
-        input_bound = len(json.dumps({
-            "system": kwargs["system"], "messages": kwargs["messages"],
-            "schema": CriticVerdicts.model_json_schema()}).encode("utf-8")) + 1024
-        cost_bound = (input_bound * float(pricing["input"])
-                      + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
+        cost_bound = parser._cost_bound(kwargs)
         if parser.spend_usd + cost_bound > parser.run_cap_usd:
             raise SpendCapReached("insufficient allowance for critic shadow")
         if reserve_shadow is None or not reserve_shadow():

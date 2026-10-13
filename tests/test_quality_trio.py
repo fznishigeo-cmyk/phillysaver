@@ -483,7 +483,7 @@ class TestSecondOpinion:
                             evidence=LLMEvidence(final_price_quote="now $10.00"))
         parser = SecondOpinionParser(cfg, first_pass=[[]],
                                      second_pass=[[rescued]])
-        posts = [_post(text="Huge deal! Widget sale now $10.00")]
+        posts = [_post(text="Huge deal! Widget sale now $10.00 (was $40)")]
         pairs, stats = parse_posts(posts, parser, cfg, NOW, {})
         assert stats["second_opinions"] == 1
         assert parser.calls == [None, "claude-sonnet-5-5"]
@@ -510,7 +510,7 @@ class TestSecondOpinion:
     def test_per_run_cap_respected(self):
         cfg = _socfg(max_second_opinions_per_run=2)
         posts = [_post(uid=f"u{i}", url=f"https://blog.example/p{i}",
-                       text=f"Flash sale #{i}: widget now $1{i}.00")
+                       text=f"Flash sale #{i}: widget now $1{i}.00 (was $80)")
                  for i in range(4)]
         parser = SecondOpinionParser(cfg, first_pass=[[], [], [], []])
         _, stats = parse_posts(posts, parser, cfg, NOW, {})

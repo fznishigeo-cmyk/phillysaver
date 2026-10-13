@@ -189,7 +189,7 @@ def test_keepa_matches_llm_path_and_verifies_with_no_extract(warehouse):
     assert stats["structured_parse"] == dict(posts=1, deals=1, dropped_evidence=0)
     assert stats["posts_sent"] == 0
     assert parser.spend_by_kind["extract"]["calls"] == 0
-    assert parser.extract_by_source[SRC.name] == dict(calls=0, usd=0.)
+    assert parser.extract_by_source[SRC.name] == dict(calls=0, usd=0., deals=1, publishable=0)
     assert 'Return ONLY a JSON array' in msgs.calls[0]["system"]
 
 

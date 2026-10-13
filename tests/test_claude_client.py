@@ -269,10 +269,10 @@ class TestParsePathAndSpend:
             FakeParseResponse(one_deal(), FakeUsage(1, 1)),
         ])
         parser = make_parser(messages, cfg=cfg)
-        from dealradar.parse.claude_client import MAX_TOKENS
+        from dealradar.parse.claude_client import MAX_TOKENS, _cached_system
         from dealradar.parse.schema import SYSTEM_PROMPT, build_user_prompt
 
-        kwargs = dict(model=parser.model, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+        kwargs = dict(model=parser.model, max_tokens=MAX_TOKENS, system=_cached_system(SYSTEM_PROMPT),
                       messages=[{"role": "user", "content": build_user_prompt("post one", META)}],
                       output_format=LLMDeals)
         reservation = parser._reserve(kwargs)
@@ -362,7 +362,7 @@ class TestJsonFallback:
         assert len(messages.create_calls) == 1
         assert parser.spend_usd > 0
         # fallback instructs JSON-only output
-        assert "JSON" in messages.create_calls[0]["system"]
+        assert "JSON" in messages.create_calls[0]["system"][0]["text"]
 
     def test_bad_request_on_parse_falls_back_to_create(self):
         messages = FakeMessagesWithParse(
@@ -391,7 +391,8 @@ class TestJsonFallback:
         assert parser.spend_usd == pytest.approx(3 * (10 * 0.10 + 10 * 0.50) / 1e6)
         assert parser.spend_by_kind["extract"] == {
             "calls": 3, "usd": pytest.approx(parser.spend_usd)}
-        assert parser.extract_by_source[META["source_name"]] == parser.spend_by_kind["extract"]
+        assert parser.extract_by_source[META["source_name"]] == {
+            **parser.spend_by_kind["extract"], "deals": 0, "publishable": 0}
 
     def test_type_slips_repaired_without_a_paid_reask(self):
         """Live: a third of Haiku's answers failed validation over trivia

@@ -45,10 +45,11 @@ def _spend_markdown(spend_by_kind: dict, extract_by_source: dict) -> str:
     for kind, stats in sorted(spend_by_kind.items()):
         lines.append(f"| {kind} | {stats['calls']} | {stats['usd']:.6f} |")
     lines.extend(["", "## Extraction spend by source", "",
-                  "| Source | Calls | USD |", "|---|---:|---:|"])
+                  "| Source | Calls | USD | Deals | Publishable |", "|---|---:|---:|---:|---:|"])
     for name, stats in sorted(extract_by_source.items()):
         name = name.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
-        lines.append(f"| {name} | {stats['calls']} | {stats['usd']:.6f} |")
+        lines.append(f"| {name} | {stats['calls']} | {stats['usd']:.6f} | "
+                     f"{stats.get('deals', 0)} | {stats.get('publishable', 0)} |")
     return "\n".join(lines) + "\n"
 
 
@@ -258,7 +259,9 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
 
     stats = {"posts_sent": 0, "deals_extracted": 0, "deals_dropped_evidence": 0,
              "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled",
-             "processed_hashes": []}
+             "processed_hashes": [], "reused_posts": 0, "reused_deals": 0,
+             "second_opinion": {"calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0},
+             "prefilter": {"would_skip": 0, "would_skip_publishable": 0}}
     if not new_posts or parser is None:
         return [], stats
     stats["parser"] = parser.model
@@ -1662,6 +1665,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             new_posts, parser, cfg, now, tz_by_source,
             deadline - _RESERVE_FOR_TAIL_S, db=db)
         summary["parse"] = pstats
+        summary["second_opinion"] = pstats.get("second_opinion", {
+            "calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0})
+        summary["prefilter"] = pstats.get("prefilter", {
+            "would_skip": 0, "would_skip_publishable": 0})
         summary["structured_parse"] = pstats.get("structured_parse", {
             "posts": 0, "deals": 0, "dropped_evidence": 0})
         processed = set(pstats.get("processed_hashes") or [])
@@ -1700,7 +1707,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                     payload = {k: stored.get(k) for k in _DEAL_FIELDS if k in stored}
                     payload["flags"] = list(stored.get("flags") or []) + ["newsletter"]
                     db.update_deal(res["dedupe_key"], payload=payload)
-            audit_outcomes.append((post, res["dedupe_key"]))
+            audit_outcomes.append((post, res["dedupe_key"], extracted, sav))
             if counts is not None and not res["is_new_deal"]:
                 counts["duplicate"] = counts.get("duplicate", 0) + 1
             deals_upserted += 1
@@ -1774,13 +1781,27 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         try:
             from .source_audit import gate_reason
             site_floor = min(cfg.min_pct, cfg.site_show_from_pct)
-            for post, key in audit_outcomes:
+            for post, key, extracted, sav in audit_outcomes:
                 counts = pstats.get("post_counts", {}).get(post.content_hash)
                 deal = db.get_deal(key)
                 if counts is None or deal is None:
                     continue
                 ok, reason = rank.is_publishable(deal, cfg, min_pct=site_floor)
-                if not ok:
+                if ok:
+                    # A merged row's better price cannot make a below-floor
+                    # sighting publishable in the source or shadow counters.
+                    candidate = dict(deal, final_price=sav.final_price,
+                                     pct_at_checkout=sav.pct_at_checkout,
+                                     abs_savings=sav.abs_savings,
+                                     online_only=extracted.online_only,
+                                     currency=extracted.currency, region=extracted.region,
+                                     conditions=extracted.conditions)
+                    if rank.is_publishable(candidate, cfg, min_pct=site_floor)[0]:
+                        if parser is not None and hasattr(parser, "extract_by_source"):
+                            parser.extract_by_source[post.source_name or "unknown"]["publishable"] += 1
+                        if counts.get("prefilter_would_skip"):
+                            summary["prefilter"]["would_skip_publishable"] += 1
+                else:
                     category = gate_reason(reason)
                     gate = {"below floor": "below_floor", "critic suspect": "critic"}.get(
                         category, category)
@@ -1894,7 +1915,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if post.via_email and post.content_hash in processed and db.record_post(post, now):
                 recorded += 1
         summary["posts_new"] = recorded
-        db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days)
+        db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days,
+                 post_parses_days=cfg.post_parses_days)
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             try:

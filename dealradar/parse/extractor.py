@@ -8,6 +8,7 @@ counted, never guessed.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import math
@@ -15,7 +16,7 @@ import re
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -252,15 +253,81 @@ def _end_of_date(year: int, month: int, day: int, tz: ZoneInfo) -> str:
 
 
 _DEAL_SMELL = re.compile(
-    r"(\$\s?\d|\d+\s?%)", re.IGNORECASE)
+    r"(\$\s?\d|\d+\s?(?:%|percent\b))", re.IGNORECASE)
 _DEAL_WORDS = re.compile(
-    r"\b(deal|sale|off|coupon|promo|clearance|discount|save|free)\b",
+    r"\b(deal|sale|off|coupon|promo|clearance|discount|save|free|was|reg(?:ular(?:ly)?)?|list|msrp)\b",
     re.IGNORECASE)
+_FREE_OFFER = re.compile(
+    r"\bfree\b(?!\s+(?:shipping|delivery|returns?|trials?)\b)|\$\s*0(?:\.0+)?(?![\d,]|\.\d)",
+    re.IGNORECASE)
+_POST_MONEY = re.compile(
+    r"\$\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)(?![\d,]|\.\d)")
+_POST_PCT = re.compile(r"(?<![\d.,])(\d+(?:\.\d+)?)\s*(?:%|percent\b)", re.I)
+_REGULAR_LABEL = re.compile(
+    r"\b(?:was|reg(?:ular(?:ly)?)?\.?|list|msrp)\s*(?:price\s*)?[:=]?\s*$", re.I)
+_FINAL_LABEL = re.compile(r"\b(?:now|sale|only|just|for)\s*(?:price\s*)?[:=]?\s*$", re.I)
+_EXTRA_SAVINGS = re.compile(
+    r"\b(?:coupons?|codes?|promo|clip\w*|extra|stack\w*|rebates?|subscri\w*|s\s*&\s*s)\b", re.I)
+_SENTENCE_BREAK = re.compile(r"\n|(?<!\breg)[.!?](?:\s+|$)", re.I)
 
 
 def _smells_like_deal(text: str) -> bool:
-    """A post with money/percent figures AND deal vocabulary."""
-    return bool(_DEAL_SMELL.search(text)) and bool(_DEAL_WORDS.search(text))
+    """Money/percent figures with deal vocabulary, or a free offer."""
+    return ((bool(_DEAL_SMELL.search(text)) and bool(_DEAL_WORDS.search(text)))
+            or bool(_FREE_OFFER.search(text)))
+
+
+def _price_pair_pct(first: float, second: float) -> float | None:
+    from ..savings import compute_savings
+
+    if not all(math.isfinite(v) for v in (first, second)):
+        return None
+    return compute_savings(ExtractedDeal(
+        item="", store="", source_name="", source_url="",
+        regular_price=max(first, second), final_price=min(first, second),
+    )).pct_at_checkout
+
+
+def _can_clear_floor(text: str, floor: float) -> bool:
+    """A stated signal for a useful second read; the publish gate still decides."""
+    if _FREE_OFFER.search(text) or any(
+            floor <= float(m.group(1)) <= 100 for m in _POST_PCT.finditer(text)):
+        return True
+    for sentence in _SENTENCE_BREAK.split(text):
+        prices = [float(m.group(1).replace(",", "")) for m in _POST_MONEY.finditer(sentence)]
+        for i, price in enumerate(prices):
+            for other in prices[i + 1:]:
+                pct = _price_pair_pct(price, other)
+                if pct is not None and pct >= floor:
+                    return True
+    return False
+
+
+def _below_floor_post(text: str, floor: float) -> bool:
+    """Only an unambiguous, single now/regular pair without extra savings."""
+    if _EXTRA_SAVINGS.search(text):
+        return False
+    prices = list(_POST_MONEY.finditer(text))
+    if len(prices) != 2:
+        return False
+    regular = [m for m in prices if _REGULAR_LABEL.search(text[:m.start()])]
+    if len(regular) != 1:
+        return False
+    reg = regular[0]
+    final = next(m for m in prices if m is not reg)
+    # The bare sale price in "$45 (reg $50)" is also an explicit pair.
+    label = _REGULAR_LABEL.search(text[:reg.start()])
+    bare_pair = final.end() <= label.start() and bool(re.fullmatch(
+        r"[\s,;(\[]*", text[final.end():label.start()]))
+    if not _FINAL_LABEL.search(text[:final.start()]) and not bare_pair:
+        return False
+    if _SENTENCE_BREAK.search(text[min(reg.end(), final.end()):max(reg.start(), final.start())]):
+        return False
+    now_price, reg_price = (float(m.group(1).replace(",", "")) for m in (final, reg))
+    if now_price > reg_price:
+        return False
+    pct = _price_pair_pct(now_price, reg_price)
+    return pct is not None and pct < floor - 10
 
 
 def _post_for_deals(post: RawPost, n_deals: int) -> RawPost:
@@ -293,13 +360,20 @@ def parse_posts(
     unrecorded and are retried on the next run instead of being lost.
     ``deadline`` is a time.monotonic() value; crossing it stops the loop.
     ``structured_parse`` counts API posts, verified deals and evidence drops;
-    ``db`` supplies stored categories for ASIN reuse, across all statuses.
+    ``reused_posts``/``reused_deals`` count cache reuse without paid calls.
+    ``second_opinion`` measures paid calls and evidence yield; ``prefilter``
+    measures candidates (the pipeline adds their post-gate publishable yield).
+    ``db`` supplies cached LLM facts and stored categories for ASIN reuse.
     """
     stats = {
         "posts_sent": 0,
         "deals_extracted": 0,
         "deals_dropped_evidence": 0,
         "second_opinions": 0,
+        "second_opinion": {"calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0},
+        "reused_posts": 0,
+        "reused_deals": 0,
+        "prefilter": {"would_skip": 0, "would_skip_publishable": 0},
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
         "processed_hashes": [],
@@ -321,21 +395,17 @@ def parse_posts(
     workers = max(1, int(getattr(cfg, "parse_concurrency", 1)))
     lock = threading.Lock()
 
-    def _extract(post: RawPost) -> tuple[RawPost, str, list]:
+    def _extract(post: RawPost, cleaned: str) -> tuple[list, bool]:
         """Worker: one post's LLM read(s); runs on a pool thread."""
-        if post.structured is not None:
-            return post, post.text, [LLMDeal.model_validate(post.structured)]
-        cleaned = clean_for_llm(post, cfg.max_chars_per_post)
         meta = {
             "source_name": post.source_name,
             "source_url": post.url,
             "title": post.title,
         }
         llm_deals = parser.extract(cleaned, meta, kind="extract")
-        # Second opinion: the cheap model found nothing, but the post
-        # plainly smells like a deal (prices/percents + deal words) —
-        # one re-read with a stronger model, budget- and count-capped.
-        if not llm_deals and so_model and _smells_like_deal(cleaned):
+        second_opinion = False
+        if (not llm_deals and so_model and _smells_like_deal(cleaned)
+                and _can_clear_floor(cleaned, cfg.min_pct)):
             with lock:
                 take = stats["second_opinions"] < so_cap
                 if take:
@@ -343,23 +413,35 @@ def parse_posts(
             if take:
                 llm_deals = parser.extract(cleaned, meta, model=so_model,
                                            kind="second_opinion")
-        return post, cleaned, llm_deals
+                second_opinion = True
+                with lock:
+                    stats["second_opinion"]["calls"] += 1
+        return llm_deals, second_opinion
 
-    def _record(post: RawPost, cleaned: str, llm_deals: list) -> None:
+    def _record(post: RawPost, cleaned: str, llm_deals: list, *, fingerprint: str,
+                reused: bool, second_opinion: bool, skipped: bool, would_skip: bool) -> None:
         """Main thread: evidence-verify and collect one parsed post."""
         structured = post.structured is not None
         if structured:
             stats["structured_parse"]["posts"] += 1
-            if hasattr(parser, "extract_by_source"):
-                parser.extract_by_source.setdefault(
-                    post.source_name, {"calls": 0, "usd": 0.0})
-        else:
+        elif reused:
+            stats["reused_posts"] += 1
+        elif not skipped:
             stats["posts_sent"] += 1
+        source = None
+        if hasattr(parser, "extract_by_source"):
+            source = parser.extract_by_source.setdefault(
+                post.source_name or "unknown",
+                {"calls": 0, "usd": 0.0, "deals": 0, "publishable": 0})
+        if second_opinion:
+            stats["second_opinion"]["deals_extracted"] += len(llm_deals)
         stats["processed_hashes"].append(post.content_hash)
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
         post = _post_for_deals(post, len(llm_deals))
         deals = [to_extracted(d, post, tz_name, now) for d in llm_deals]
         counts = {"extracted": len(deals), "evidence": 0}
+        if would_skip:
+            counts["prefilter_would_skip"] = True
         stats["post_counts"][post.content_hash] = counts
         # Every deal the LLM read, before evidence drops any: a dropped item
         # still names a photo and still shares a link (dedupe, pipeline).
@@ -378,8 +460,19 @@ def parse_posts(
                 )
                 continue
             pairs.append((post, deal))
+            if source is not None:
+                source["deals"] += 1
+            if reused:
+                stats["reused_deals"] += 1
+            if second_opinion:
+                stats["second_opinion"]["deals_passed_evidence"] += 1
             if structured:
                 stats["structured_parse"]["deals"] += 1
+        if (db is not None and not structured and not reused and not skipped
+                and not counts["evidence"]):
+            # Rejected output stays transient; only a complete evidence-backed
+            # parse (including a genuine empty answer) is saved as facts.
+            db.cache_post_parse(fingerprint, [d.model_dump(mode="json") for d in llm_deals], now)
 
     # Posts go out in batches of `workers` concurrent reads (throughput is
     # bound by API round-trip time, not tokens); results are collected in
@@ -387,6 +480,9 @@ def parse_posts(
     # a batch keeps the batch-mates that completed (they were paid for) and
     # stops submitting more; the rest stay unrecorded and retry next run.
     idx = 0
+    # Share each read's future, even within a concurrent batch. SQLite stays
+    # on the main thread; every source still verifies and records its own post.
+    reads: dict[str, Future | tuple[list, bool]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         while idx < len(posts) and not stats["aborted_spend_cap"]:
             if deadline is not None and time.monotonic() >= deadline:
@@ -396,10 +492,42 @@ def parse_posts(
                 break
             batch = posts[idx: idx + workers]
             idx += len(batch)
-            futures = [pool.submit(_extract, p) for p in batch]
-            for fut in futures:
+            jobs = []
+            for post in batch:
+                fingerprint = ""
+                reused = False
+                cleaned = (post.text if post.structured is not None
+                           else clean_for_llm(post, cfg.max_chars_per_post))
+                # Structured (API) posts cost nothing to read: never skip them.
+                would_skip = (post.structured is None
+                              and cfg.prefilter_below_floor != "off"
+                              and _below_floor_post(cleaned, cfg.min_pct))
+                if would_skip:
+                    stats["prefilter"]["would_skip"] += 1
+                skipped = would_skip and cfg.prefilter_below_floor == "on"
+                if skipped:
+                    read = ([], False)
+                elif post.structured is not None:
+                    read = ([LLMDeal.model_validate(post.structured)], False)
+                else:
+                    fingerprint = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
+                    if fingerprint in reads:
+                        read, reused = reads[fingerprint], True
+                    else:
+                        cached = (db.cached_post_parse(fingerprint, now, cfg.post_parses_days)
+                                  if db is not None else None)
+                        if cached is not None:
+                            read, reused = ([LLMDeal.model_validate(d) for d in cached], False), True
+                        else:
+                            read = pool.submit(_extract, post, cleaned)
+                        reads[fingerprint] = read
+                jobs.append((post, cleaned, fingerprint, read, reused, skipped, would_skip))
+            for post, cleaned, fingerprint, read, reused, skipped, would_skip in jobs:
                 try:
-                    _record(*fut.result())
+                    llm_deals, second_opinion = read.result() if isinstance(read, Future) else read
+                    _record(post, cleaned, llm_deals, fingerprint=fingerprint,
+                            reused=reused, second_opinion=second_opinion and not reused,
+                            skipped=skipped, would_skip=would_skip)
                 except SpendCapReached as e:
                     if not stats["aborted_spend_cap"]:
                         log.warning("spend cap reached, aborting parse: %s", e)
@@ -450,6 +578,9 @@ def parse_posts(
             stats["aborted_spend_cap"] = True
             log.warning("spend cap reached in category call; keeping accepted categories")
     stats["spend_usd"] = float(getattr(parser, "spend_usd", 0.0))
+    paid = getattr(parser, "spend_by_kind", {}).get("second_opinion")
+    if paid is not None:
+        stats["second_opinion"]["calls"] = paid["calls"]
     return pairs, stats
 
 
