@@ -150,12 +150,12 @@ supports manual dispatch):
 | `stripe-check.yml` | manual | Checks trial checkout against Stripe by creating and immediately expiring a Checkout Session, inspecting subscriptions and portal settings, and charging nothing. |
 | `stripe-setup.yml` | manual | Idempotently creates the membership product, monthly price, Payment Link, and customer-portal configuration in Stripe. |
 
-- Hourly, fast-lane, and monthly squash workflows share the concurrency group
+- Hourly, fast-lane, and daily squash workflows share the concurrency group
   `dealradar` with `cancel-in-progress: false`, so they queue and never overlap
   (state commits and maintenance cannot race); the growth report uses its
   own `growth-report` group.
 - `state.db` (and `sources_report.md`) live on the **`data` branch** — committed
-  after every run by `scripts/commit_state.sh`, squashed monthly, **never on
+  after every run by `scripts/commit_state.sh`, squashed daily, **never on
   main**. The commit messages carry `[skip ci]`. The repository is public, so
   with the `STATE_DB_KEY` repository secret set the branch holds only
   `state.db.enc`: deterministic gzip (`gzip -n -6`) before AES-256-CBC

@@ -308,12 +308,12 @@ def test_squash_shape() -> None:
     doc = load_workflow(SQUASH)
     assert doc["name"] == "squash data branch"
     on = workflow_on(doc)
-    assert on["schedule"] == [{"cron": "17 3 1 * *"}]
+    assert on["schedule"] == [{"cron": "17 3 * * *"}]  # daily: 7.2 GB after 2 days
     assert "workflow_dispatch" in on
     assert doc["permissions"] == {"contents": "write"}
     body = "\n".join(run_commands(doc))
     assert "git checkout --orphan" in body
-    assert "squash data branch (monthly)" in body
+    assert "squash data branch (daily)" in body
     assert "git push --force-with-lease=refs/heads/data:" in body
 
 

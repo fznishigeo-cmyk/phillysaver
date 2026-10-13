@@ -1,11 +1,13 @@
-# Monthly maintenance: the data branch gains ~720+ commits a month (one per
-# run). This squashes it to a single orphan commit holding the current tree so
-# the repository stays small. Touches ONLY the data branch — never main.
+# Daily maintenance: the data branch gains ~150 commits a day (every run plus
+# the pre-send checkpoints), each a fresh ~13 MB encrypted snapshot that git
+# cannot delta-compress. Monthly let the repository reach 7.2 GB (2026-10-13).
+# This squashes it to a single orphan commit holding the current tree so the
+# repository stays small. Touches ONLY the data branch — never main.
 name: squash data branch
 
 on:
   schedule:
-    - cron: '17 3 1 * *'  # 03:17 UTC on the 1st of each month
+    - cron: '17 3 * * *'  # 03:17 UTC daily (11:17pm New York)
   workflow_dispatch:
 
 permissions:
@@ -43,7 +45,7 @@ jobs:
           git checkout --detach origin/data
           git checkout --orphan data-squashed
           git add -A
-          git commit -m 'squash data branch (monthly)'
+          git commit -m 'squash data branch (daily)'
           # force-with-lease pinned to the tip we squashed: if any run pushed
           # state between our fetch and this push, abort instead of discarding
           # that state commit (next month's squash will get it).

@@ -126,7 +126,7 @@ log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTR
 # can never resolve two state.db commits (binary conflict every time), so each
 # retry RE-SNAPSHOTS instead: recreate the worktree at the moved tip, re-copy
 # this run's files on top, commit, push. Snapshot semantics: latest writer
-# wins, and every commit keeps full history on the branch until the monthly
+# wins, and every commit keeps full history on the branch until the daily
 # squash.
 pushed=0
 for delay in 2 4 8 16 0; do
