@@ -343,7 +343,7 @@ partner_newsletters:
   # Incoming partner emails only; customer newsletter.enabled stays off.
   # Paste the URL from "deploy newsletter inbox"; the bearer is the
   # NEWSLETTER_INBOX_TOKEN repository/Worker secret, never a config value.
-  inbox_url: ""
+  inbox_url: "https://wowpriced-newsletter-inbox.wowpriced.workers.dev"
   max_messages: 50           # bounded pull; unfinished messages retry next run
   max_response_bytes: 2097152
 
