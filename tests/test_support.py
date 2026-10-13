@@ -116,15 +116,16 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "188f39e622fd54658a4168921e28cc152fca8ebe25a9c82dff9a3e5a1a579ac4"),
-    (False, 49, "5e2a3143c2c706bfe8e15a13824816bb6ed5c2b0a72c3ad31053edc47efdb108"),
-    (True, 0, "b789744fad54ddffa11bb5b57dace3255631ccac49772db050a0e92df51445b2"),
-    (True, 49, "bcdb200a867515bb224fcfcfc60a9be7c60f77a2a107ba9859852aae3e7c4782"),
+    (False, 0, "48ec9e2562493ef31e5d89843dbfe10791ed8dbcbae8c67739cf85553d20aaff"),
+    (False, 49, "89db194a4776bc2792a359fd70b647740c42d2f25139948f3ccc6078fb717d05"),
+    (True, 0, "effefab710dfbca33d770a7fce884061e7b2b82074079ae9e493e0f6bda7f1c9"),
+    (True, 49, "661917169bee195fb30f720adafd68a58f4a03698359b22322532b0680805103"),
 ])
 def test_support_off_index_bytes_match_task049_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 048 adds Clarity masking in all modes; keep the shared
     # baseline without task 037's head-only hint.
     # Task 053 keeps gone-card source credits active in both access modes.
+    # 2026-10-13: each drop rotates a new window of picks to the top.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

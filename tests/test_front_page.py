@@ -387,15 +387,22 @@ def test_browser_top_blocks_new_arrivals_default_and_autoload(tmp_path, cfg, db,
     cases += [dict(rows=source, options=options, state={"sortKey": "top", "seed": 1,
                                                       "newKeys": {"k5": True, "k17": True, "rest0": True}})]
     results = browser(tmp_path, cfg, db, cases)
-    for result in results:
+    for result, seed in zip(results[:3], (1, 2, 1)):
+        # Each drop mark brings the next 24 picks to the top (operator,
+        # 2026-10-13: a drop must look new, not shuffled), dealt in blocks of 12.
+        turned = list(range(120))[seed * 24:] + list(range(120))[:seed * 24]
         assert result["defaultSort"] == "top"
         assert result["ordered"] == result["rendered"]
         for block in range(10):
-            assert set(result["ordered"][block * 12:(block + 1) * 12]) == {f"k{i}" for i in range(block * 12, (block + 1) * 12)}
+            assert set(result["ordered"][block * 12:(block + 1) * 12]) == {
+                f"k{i}" for i in turned[block * 12:(block + 1) * 12]}
         assert set(result["ordered"][120:]) == {f"rest{i}" for i in range(30)}
     assert results[0] == results[2]
-    assert results[0]["ordered"][:12] != results[1]["ordered"][:12]
-    assert results[3]["ordered"][0] == "k5" and results[3]["ordered"][12] == "k17"
+    # Consecutive drops share no deal in the top 24.
+    assert not set(results[0]["ordered"][:24]) & set(results[1]["ordered"][:24])
+    # Picks that arrived since the last drop lead it.
+    assert set(results[3]["ordered"][:2]) == {"k5", "k17"}
+    assert set(results[3]["ordered"][120:]) == {f"rest{i}" for i in range(30)}
     source += [dict(key=f"extra{i}", status="alive", category="home", store="Amazon",
                     pct_at_checkout=90, first_seen_at="2026-10-09T13:00:00Z") for i in range(250)]
     cases = [dict(rows=source, options=options, state={"sortKey": "top", "shown": shown, "catTab": tab})
@@ -460,3 +467,15 @@ def test_browser_all_deals_tab_is_everything_newest_first(tmp_path, cfg, db, opt
         dict(rows=source, options=options, state={"sortKey": "fresh", "catTab": 1, "shown": 120})])
     assert all_tab["ordered"] == fresh["ordered"]
     assert all_tab["observed"] == 1  # endless: auto-load keeps going past 120
+
+
+def test_one_credit_per_source_name():
+    """Two feeds of one partner read "via Hip2Save" once (live 2026-10-13)."""
+    from datetime import datetime, timezone
+    from dealradar.publish.site import _serialize_deal
+    deal = {"dedupe_key": "k", "sightings": [
+        {"source_name": "hip2save", "source_url": "https://hip2save.com/a"},
+        {"source_name": "slickdeals_frontpage", "source_url": "https://slickdeals.net/b"},
+        {"source_name": "hip2save_amazon", "source_url": "https://hip2save.com/c"}]}
+    credits = _serialize_deal(deal, datetime(2026, 10, 13, tzinfo=timezone.utc))["credits"]
+    assert [c["url"] for c in credits] == ["https://hip2save.com/a", "https://slickdeals.net/b"]

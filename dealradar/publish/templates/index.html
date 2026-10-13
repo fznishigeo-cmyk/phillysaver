@@ -1111,6 +1111,19 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     return out;
   }
+  // Each drop brings a different window of picks to the top (operator,
+  // 2026-10-13: a drop must look like new deals landing, not a reshuffle):
+  // the picks rotate by DROP_WINDOW at every drop mark, so each pick leads
+  // in turn, and picks that arrived since the last drop go first.
+  var DROP_WINDOW = 24;
+  function rotatePicks(picks, seed) {
+    var pages = Math.ceil(picks.length / DROP_WINDOW);
+    if (pages < 2) return picks;
+    var at = ((((seed | 0) % pages) + pages) % pages) * DROP_WINDOW;
+    var turned = picks.slice(at).concat(picks.slice(0, at));
+    return turned.filter(function (d) { return state.newKeys[dealKey(d)]; })
+      .concat(turned.filter(function (d) { return !state.newKeys[dealKey(d)]; }));
+  }
   function topOrder(rows) {
     var fresh = freshOrder(rows, false);
     // "All deals" (a tab with no filter after Trending): everything, newest first.
@@ -1123,7 +1136,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       rest.sort(function (a, b) {
         return (Date.parse(b.first_seen_at || "") || 0) - (Date.parse(a.first_seen_at || "") || 0);
       });
-      return blockDeal(picks).concat(rest);
+      return blockDeal(rotatePicks(picks, state.seed)).concat(rest);
     }
     var scored = fresh.filter(function (d) { return d.ps != null; });
     scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });

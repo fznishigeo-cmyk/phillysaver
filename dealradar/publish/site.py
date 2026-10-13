@@ -434,7 +434,12 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     age_hours: float | None = None
     if first_seen is not None:
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
-    credits = [_credit(s) for s in (deal.get("sightings") or [])]
+    # One credit per source as shown: two feeds of one partner (Hip2Save and
+    # Hip2Save Amazon) read "via Hip2Save" once, with its first post's link.
+    credits = []
+    for credit in (_credit(s) for s in (deal.get("sightings") or [])):
+        if all(credit["name"] != c["name"] for c in credits):
+            credits.append(credit)
     status = deal.get("status", "alive")
     # No resolved product URL -> link the deal to the source post that
     # reported it (which also carries the credit) rather than nothing. A
