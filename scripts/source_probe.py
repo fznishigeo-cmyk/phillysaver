@@ -123,6 +123,15 @@ def outline(body: bytes | None, limit: int = 6) -> list[str]:
         def handle_data(self, data):
             if "$" in data and len(self.dollar) < limit:
                 self.dollar.append(" > ".join(self.stack[-4:]))
+            # Also outline the block around the first visible price (skip
+            # scripts and menus): two levels above its price wrapper.
+            if ("$" in data and len(self.found) < 3 and not getattr(self, "priced", False)
+                    and not any(x.startswith(("script", "nav", "head")) for x in self.stack)):
+                wrap = next((i for i in range(len(self.stack) - 1, -1, -1)
+                             if "price" in self.stack[i] and not self.stack[i].startswith("span")), None)
+                if wrap is not None and wrap >= 2 and self.ords[wrap - 2] not in self.found:
+                    self.found.append(self.ords[wrap - 2])
+                    self.priced = True
             if self.depth is not None and data.strip() and self.inside:
                 mark = " <$>" if "$" in data else " <text>"
                 if not self.inside[-1].endswith(mark):
