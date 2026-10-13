@@ -758,8 +758,9 @@ class TestPriceRecheck:
         # asked again after _CONFIRM_GONE_H (operator: never show a deal
         # as expired that is not).
         stats = pipeline._recheck_prices(db, cfg, NOW)
-        assert stats == {"checked": 1, "dead": 0, "image_backfill": 0,
-                         "tokens_short": 0, "used_checked": 0, "suspect": 1}
+        expected = {"checked": 1, "dead": 0, "image_backfill": 0,
+                    "tokens_short": 0, "used_checked": 0, "suspect": 1}
+        assert {k: stats[k] for k in expected} == expected
         row = db.get_deal(d["dedupe_key"])
         assert row["status"] == "alive" and row["gone_suspect_at"]
         assert "price_moved" not in row["flags"]
@@ -792,7 +793,7 @@ class TestPriceRecheck:
         recent = (NOW - timedelta(hours=1)).isoformat()
         for key, img in (("url|a", ""),
                          ("url|b", "https://m.media-amazon.com/images/I/x.jpg")):
-            d = _deal_dict(dedupe_key=key, item=key)
+            d = _deal_dict(dedupe_key=key, item=key, store="Amazon")
             d["asin"] = "B0" + key[-1].upper() * 8
             d["image_url"] = img
             d["price_rechecked_at"] = recent
@@ -815,8 +816,9 @@ class TestPriceRecheck:
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|a"]                      # photo'd deal untouched
-        assert stats == {"checked": 1, "dead": 0, "image_backfill": 1,
-                         "tokens_short": 0, "used_checked": 0}
+        expected = {"checked": 1, "dead": 0, "image_backfill": 1,
+                    "tokens_short": 0, "used_checked": 0}
+        assert {k: stats[k] for k in expected} == expected
         assert db.get_deal("url|a")["image_url"].endswith("new.jpg")
         db.close()
 
@@ -827,7 +829,7 @@ class TestPriceRecheck:
         The photo is kept; the deal stays due for its price check."""
         from dealradar import verify
         db = DB(tmp_path / "state.db")
-        d = _deal_dict(dedupe_key="url|p", item="url|p")
+        d = _deal_dict(dedupe_key="url|p", item="url|p", store="Amazon")
         d["asin"] = "B0PPPPPPPP"
         d["image_url"] = ""
         db.insert_deal(dedupe_key="url|p", store=d["store"], item=d["item"],
@@ -867,7 +869,7 @@ class TestPriceRecheck:
         db = DB(tmp_path / "state.db")
         recent = (NOW - timedelta(hours=1)).isoformat()
         for key, last in (("url|photo", recent), ("url|due", "")):
-            d = _deal_dict(dedupe_key=key, item=key)
+            d = _deal_dict(dedupe_key=key, item=key, store="Amazon")
             d["asin"] = "B0" + key[-1].upper() * 8
             d["image_url"] = ""
             d["price_rechecked_at"] = last
@@ -897,8 +899,9 @@ class TestPriceRecheck:
         reading(30)
         stats = pipeline._recheck_prices(db, cfg, NOW)
         assert calls == ["url|due"]
-        assert stats == {"checked": 1, "dead": 0, "image_backfill": 0,
-                         "tokens_short": 1, "used_checked": 0}
+        expected = {"checked": 1, "dead": 0, "image_backfill": 0,
+                    "tokens_short": 1, "used_checked": 0}
+        assert {k: stats[k] for k in expected} == expected
         # The response's reading is persisted for the adapter / next run.
         assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 20
         # 5 tokens: nothing spends (both deals are now in-window photo calls).
@@ -1024,7 +1027,7 @@ class TestBatchedRecheck:
         from dealradar import verify
         db = DB(tmp_path / "state.db")
         for i in range(3):
-            d = _deal_dict(dedupe_key=f"url|{i}", item=f"deal {i}")
+            d = _deal_dict(dedupe_key=f"url|{i}", item=f"deal {i}", store="Amazon")
             d["asin"] = f"B0DEADLINE{i}"
             db.insert_deal(dedupe_key=d["dedupe_key"], store=d["store"],
                            item=d["item"], normalized_item=d["item"],
@@ -1066,7 +1069,7 @@ def _offer(condition: int, cents: int, ship: int = -1) -> dict:
 
 def _seed_amazon(db, key: str, asin: str, *, used: bool = False,
                  last: str = "", image: str = _IMG, **over) -> dict:
-    d = _deal_dict(dedupe_key=key, item=key, asin=asin, image_url=image,
+    d = _deal_dict(dedupe_key=key, item=key, store="Amazon", asin=asin, image_url=image,
                    conditions=["used", "open_box"] if used else [],
                    price_rechecked_at=last, **over)
     db.insert_deal(dedupe_key=key, store=d["store"], item=key,

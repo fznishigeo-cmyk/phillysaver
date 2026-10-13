@@ -296,12 +296,19 @@ class AppConfig:
     keepa_recheck_fresh_window_h: float = 24.0
     keepa_recheck_new_h: float = 3.0
     keepa_recheck_used_h: float = 6.0
-    # The All tab's top picks (what shoppers see first): new-condition
-    # Amazon picks re-checked at least this often, hours; 0 = off.
+    # The All tab's scored pick candidates: new-condition Amazon deals
+    # re-checked at least this often, hours; 0 = no accelerated cadence.
     keepa_recheck_top_h: float = 0.0
-    # A new-condition deal stays live while the listing is at most this
-    # many percent above the price we show.
+    # Fallback kill tolerance when the paid record cannot re-price a deal.
     keepa_recheck_tolerance_pct: float = 10.0
+    keepa_reprice_min_pct: float = 1.0
+    keepa_recheck_top_n: int = 200
+    keepa_recheck_wall_n: int = 300
+    keepa_recheck_wall_h: float = 2.0
+    keepa_pick_max_unconfirmed_h: float = 3.0
+    keepa_show_max_unconfirmed_h: float = 48.0
+    keepa_show_max_unconfirmed_used_h: float = 72.0
+    keepa_recheck_top_live: bool = False
     keepa_sweep_enabled: bool = True          # warehouse sweep on idle tokens
     keepa_sweep_asins_per_pull: int = 100
     keepa_sweep_reserve_tokens: float = 400.0  # kept on top of reserve_tokens
@@ -611,6 +618,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "recheck_top_h", default=cfg.keepa_recheck_top_h)))
     cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
         "keepa", "recheck_tolerance_pct", default=cfg.keepa_recheck_tolerance_pct)))
+    for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h",
+                 "show_max_unconfirmed_h", "show_max_unconfirmed_used_h"):
+        attr = "keepa_" + name
+        setattr(cfg, attr, max(0.0, float(g("keepa", name, default=getattr(cfg, attr)))))
+    for name in ("recheck_top_n", "recheck_wall_n"):
+        attr = "keepa_" + name
+        setattr(cfg, attr, max(0, int(g("keepa", name, default=getattr(cfg, attr)))))
+    cfg.keepa_recheck_top_live = bool(g(
+        "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
     cfg.keepa_sweep_asins_per_pull = max(1, int(g(

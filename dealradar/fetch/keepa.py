@@ -359,6 +359,54 @@ def _product_row(product: dict[str, Any]) -> dict[str, Any]:
             "image": _keepa_image_name(product)}
 
 
+def reprice_post(product: dict[str, Any], deal: dict[str, Any], cfg,
+                 now: datetime) -> RawPost | None:
+    """A correction from an already-paid record, even below the deal floors."""
+    from ..verify import _keepa_since_price, _price_hidden_by_promo, is_used_deal
+
+    if is_used_deal(deal) or _price_hidden_by_promo(deal) \
+            or _keepa_since_price(product.get("lastUpdate"), deal) is False:
+        return None
+    stats = product.get("stats")
+    if not isinstance(stats, dict):
+        return None
+    # Amazon's own price is what the shopper sees on the product page; a
+    # cheaper marketplace offer (shipping not included) would overstate it.
+    live = _price_at(stats.get("current"), PRICE_TYPE_AMAZON)
+    avg30 = _price_at(stats.get("avg30"), PRICE_TYPE_AMAZON)
+    avg90 = _price_at(stats.get("avg90"), PRICE_TYPE_AMAZON)
+    shown = deal.get("final_price")
+    if live is None or avg30 is None or avg90 is None or min(avg30, avg90) <= 0 \
+            or not isinstance(shown, (int, float)) or shown <= 0:
+        return None
+    if live == shown or abs(live - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct:
+        return None
+    # The same reference rule as the /deal lane (_amazon_basis): a List
+    # Price the item recently sold near, else the Typical-price stand-in.
+    regular = min(avg30, avg90)
+    label = "30-day average" if avg30 < avg90 else "90-day average"
+    listed = _price_at(stats.get("current"), PRICE_TYPE_LIST)
+    if listed and listed > regular \
+            and avg90 >= cfg.keepa_list_price_min_avg_ratio * listed:
+        regular, label = listed, "List Price"
+    asin, title = str(deal["asin"]).upper(), str(deal["item"])
+    lines = [title, f"On sale for ${live:,.2f} at Amazon.",
+             f"Regular price ({label} on Amazon): ${regular:,.2f}.",
+             "Sold online at Amazon.com (price tracked by Keepa).",
+             f"Product link: https://www.amazon.com/dp/{asin}"]
+    return RawPost(
+        source_name="keepa", uid=f"reprice:{deal['dedupe_key']}",
+        url=f"https://keepa.com/#!product/1-{asin}", title=title,
+        text="\n".join(lines), published_at=now, fetched_at=now,
+        hash_text="\n".join(lines) + f"\nReading: {product.get('lastUpdate')}",
+        structured={"item": title, "store": "Amazon", "online_only": "true",
+                    "product_url": f"https://www.amazon.com/dp/{asin}",
+                    "final_price": live, "regular_price": regular,
+                    "regular_price_basis": f"{label} on Amazon", "confidence": 1.0,
+                    "evidence": {"final_price_quote": lines[1],
+                                 "regular_price_quote": lines[2]}})
+
+
 def _selection(price_type: int, delta_pct: tuple[int, int], date_range: int,
                sort_type: int, max_rank: int) -> dict[str, Any]:
     """One /deal query (page 0); pages differ only in ``page``, as Keepa

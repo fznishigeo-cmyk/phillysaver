@@ -132,9 +132,15 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     return pct + boost + abs_bonus - cond_penalty - age_penalty
 
 
-def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
+def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
+               require_confirmation: bool = True) -> float | None:
     """Landing-page quality, with checkout effort and age factored in."""
     from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
+    from .verify import is_amazon_deal, price_confirmation_recent
+
+    if require_confirmation and is_amazon_deal(deal) and not price_confirmation_recent(
+            deal, now, cfg.keepa_pick_max_unconfirmed_h):
+        return None
 
     options = cfg.front_page.get("top_picks")
     conditions = set(normalize_conditions(deal.get("conditions")))
@@ -185,7 +191,8 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
         return []
     stores, brands, categories, twins = Counter(), Counter(), Counter(), Counter()
     picked, last, run = [], "", 0
-    for deal, _score in sorted(scored, key=lambda pair: pair[1], reverse=True):
+    for deal, _score in sorted((pair for pair in scored if pair[1] is not None),
+                               key=lambda pair: pair[1], reverse=True):
         if len(picked) >= picks["count"]:
             break
         store = str(deal.get("store") or "").strip().lower()
@@ -372,7 +379,7 @@ def published_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
     return out
 
 
-def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
+def site_deals(db, cfg, now: datetime, *, include_unconfirmed: bool = False) -> list[dict[str, Any]]:
     """The SITE set: every deal clearing the gates at the SITE floor
     (cfg.site_show_from_pct, never above cfg.min_pct), alive or recently
     dead (dead ones shown marked dead; the spec wants them visible on the
@@ -381,6 +388,7 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
     prunes dead rows cfg.deals_days after they died; a live deal is never
     removed for its age."""
     from datetime import timedelta
+    from .verify import price_unconfirmed
 
     site_floor = min(cfg.min_pct,
                      getattr(cfg, "site_show_from_pct", cfg.min_pct))
@@ -388,6 +396,8 @@ def site_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for status in ("alive", "dead"):
         for deal in db.all_deals(status=status):
+            if status == "alive" and not include_unconfirmed and price_unconfirmed(deal, cfg, now):
+                continue
             if status == "dead":
                 died = parse_iso(deal.get("died_at") or "")
                 # No stamp, or dead too long: off the page. A fresh death

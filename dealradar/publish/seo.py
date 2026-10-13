@@ -21,6 +21,7 @@ import statistics
 import unicodedata
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -200,6 +201,13 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip storechip">{e(store)}</span>'
+    # Right after the store, so the one-line phone row never clips it.
+    checked = parse_iso(d.get("checked_at") or "")
+    if checked is not None and not dead and checked <= (now or datetime.now(timezone.utc)):
+        minutes = int(((now or datetime.now(timezone.utc)) - checked).total_seconds() / 60)
+        age = f"{minutes}m" if minutes < 60 else f"{minutes // 60}h" if minutes < 1440 else f"{minutes // 1440}d"
+        meta += (f'<span class="chip price-checked" data-checked-at="{e(iso(checked))}">'
+                 f'<span class="pcl">price checked </span>{age} ago</span>')
     countdown = spotlight_time(spotlight.get("ends_at", ""), now or datetime.now(timezone.utc))
     if countdown:
         meta += (f'<span class="chip spotlight-time" data-ends-at="{e(spotlight["ends_at"])}">'
@@ -455,7 +463,7 @@ def _hub_copy(cfg) -> dict[str, dict[str, str]]:
 def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               rows: list[dict[str, Any]], stats: dict[str, Any], indexable: bool,
               site_url: str, open_access: bool = False,
-              deal_paths: dict[str, str] | None = None) -> str:
+              deal_paths: dict[str, str] | None = None, now: datetime | None = None) -> str:
     """One hub: its copy, our 7-day numbers, the category's free deals (the
     top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
@@ -469,12 +477,12 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
             if n else "No deal in this category passed our checks in the last 7 days.")
     if open_access:
         deals = "<h2>Deals right now</h2>" + (
-            '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>" if free else
+            '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>" if free else
             '<p class="muted">No deal in this category right now; new deals land at every '
             'drop on <a href="/">the live wall</a>.</p>')
     else:
         deals = "<h2>Free right now</h2>" + (
-            '<div class="grid">' + "".join(card_html(d, deal_paths) for d in free) + "</div>" if free else
+            '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>" if free else
             '<p class="muted">No free deal in this category right now; the free deals change '
             'at every drop on <a href="/">the live wall</a>.</p>')
     if more:
@@ -525,6 +533,8 @@ def _landing_page(template: str, title: str, heading: str, description: str,
 def _basis_label(d: dict[str, Any]) -> str:
     """What the regular price is, from who reported it: never a bare "list
     price" the deal did not claim (Keepa's basis is its 90-day average)."""
+    if d.get("regular_price_basis"):
+        return str(d["regular_price_basis"])
     first = str(((d.get("credits") or [{}])[0] or {}).get("name") or "")
     used = bool({"used", "open_box"} & set(d.get("conditions") or []))
     if first == "Amazon price drop":
@@ -560,6 +570,11 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     hub = f'<a href="{hub_href(slug)}">{escape(label)} deals</a>'
     content = '<p class="ended"><strong>This deal has ended</strong></p>' if dead else ""
     content += f'<p class="detail-store">Store: {escape(store)}</p>'
+    checked = parse_iso(d.get("checked_at") or "")
+    if checked is not None:
+        eastern = checked.astimezone(ZoneInfo("America/New_York"))
+        content += (f'<p class="detail-checked">Price checked '
+                    f'<time datetime="{iso(checked)}">{eastern.strftime("%b %d, %Y %I:%M %p")}</time> ET</p>')
     facts = [f"at {store}"]
     if d.get("final_price") is not None:
         price = f'{float(d["final_price"]):.2f}'
@@ -619,7 +634,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     related = [] if dead else _related(d, live, group)
     if related:
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
-            card_html(r, paths) for r in related) + '</div>'
+            card_html(r, paths, now) for r in related) + '</div>'
     ld = ""
     if not dead and d.get("final_price") is not None:
         conditions = set(d.get("conditions") or [])
@@ -760,7 +775,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     best_rows = pick_order(live, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
-                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in best_rows) + '</div>',
+                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths, now) for d in best_rows) + '</div>',
                               intro=intro, extra_head=_item_list(best_rows, paths, site_url),
                               indexable=len(best_rows) >= floors["best_today"])
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
@@ -778,7 +793,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         intro += "."
         page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
         html = _landing_page(page_template, title, heading, intro, path, site_url,
-                             '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
+                             '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths, now) for d in rows[:_HUB_MAX])
                              + '</div>', intro=intro, extra_head=_item_list(rows[:_HUB_MAX], paths, site_url),
                              indexable=min(len(rows), _HUB_MAX) >= floors["store" if path in stores else "price"])
         folder = out / path.strip("/")
@@ -796,7 +811,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
         indexable = min(sum(not d.get("locked") for d in rows), _HUB_MAX) >= floors["category"]
         html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
-                         site_url, open_access, paths)
+                         site_url, open_access, paths, now)
         (out / "deals" / slug).mkdir(parents=True, exist_ok=True)
         (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
         if indexable:

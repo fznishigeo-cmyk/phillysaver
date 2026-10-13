@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig
 from tests.test_publish_site import make_deal
-from tests.test_support import render
+from tests.test_support import NOW, render
 
 
 @pytest.mark.parametrize('support,open_access', [(False, False), (False, True), (True, True)])
@@ -24,6 +24,7 @@ def test_search_filters_and_refresh(tmp_path, support, open_access):
                  ('macys.com', 'Cotton Towel', 'home'),
              ])]
     deals[-1]['sightings'] = [{'source_name': 'dealnews', 'source_url': 'https://dealnews.com/123'}]
+    deals[2]['price_rechecked_at'] = NOW.isoformat()  # live Amazon price in the search fixture
     out, _, _, _ = render(tmp_path, AppConfig(support_enabled=support, paywall_open_access=open_access), deals)
     home = (out / 'index.html').read_text()
     assert home.count('id="q"') == 1

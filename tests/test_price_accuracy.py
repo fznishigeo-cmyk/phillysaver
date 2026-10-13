@@ -79,7 +79,7 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     # The new-condition pick is due after an hour and leads the never-
     # checked deal; a non-pick waits recheck_fresh_h, a used pick its
     # offers-scan cadence (13 tokens each).
-    assert calls == [["url|pick", "url|never"]]
+    assert calls == [["url|pick"], ["url|never"]]
     cfg.keepa_recheck_top_h = 0
     calls.clear()
     pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1, minutes=5))

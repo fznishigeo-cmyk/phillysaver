@@ -198,6 +198,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   only 7 known Stripe yearly-deploy tests fail on sandbox socket creation.
   Chromium EPERM leaves first-card before/after and visual/collision QA
   unmeasured; crowded credits may remain under 44px and are reported. No push.
+- **Price accuracy (Codex task 077, 2026-10-13; working tree only):** paid
+  Keepa product records now correct plain new Amazon prices in the same row
+  through evidence verification and savings.py (both Amazon averages required).
+  Existing critic verdicts/source credits stay; a correction adds no LLM call
+  or Keepa request and keeps the photo harvested from the same paid record.
+  Scored candidates (200) and the home wall (300) lead after suspects; new wall
+  cadence 2 h, used cadence unchanged. Picks require a confirmation within 3 h;
+  new/used prices older than 48/72 h are hidden until confirmed, never killed.
+  Run summaries include drift, planned/done classes, hidden counts and the
+  current publish's confirmation-age shares. Muted card clocks replace age;
+  deal pages show ET. Requested PWA/support/post-join snapshots regenerated.
+  Focused accuracy checks: **37 passed**, including the Node timestamp harness.
+  Final full suite: **2,825 passed, 1 deselected**, only the seven existing
+  Stripe yearly-deploy checks failed at socket creation (`Operation not permitted`):
+  `test_deploy_checks_the_yearly_price_with_stripe` (change0–change5) and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key` in
+  `tests/test_workflows.py`. A green full run needs those checks outside this
+  sandbox. Token estimates are in `docs/codex-tasks/077-price-accuracy.md`.
+  Git metadata is read-only, so
+  branch creation is unavailable here. No commit or push.
 - **Post-join support ask (Codex task 075, 2026-10-13):** card, `/join` and
   footer successes offer the existing Stripe choices/terms once; Not now/Escape/
   close return focus, remembered joins/supporters skip it, blocked storage allows

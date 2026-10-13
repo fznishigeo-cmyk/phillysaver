@@ -206,6 +206,7 @@ class Deal:
     pct_with_rebates: float | None = None
     abs_savings: float | None = None
     basis: str = ""
+    regular_price_basis: str = ""          # licensed Amazon average used by a reprice
     flags: list[str] = field(default_factory=list)
     codes: list[str] = field(default_factory=list)
     stack_steps: list[str] = field(default_factory=list)
@@ -226,6 +227,7 @@ class Deal:
     critic: dict[str, Any] | None = None
     # ISO UTC of the last live price re-check (Amazon deals, via Keepa).
     price_rechecked_at: str = ""
+    keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
     keepa_checked: bool = False           # the one-time Keepa cross-check ran
     # ISO UTC of the moment status flipped to 'dead' (site shows a dead deal
     # only briefly, as "just missed it" proof, then drops it).

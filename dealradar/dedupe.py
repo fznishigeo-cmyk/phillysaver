@@ -341,6 +341,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["pct_with_rebates"] = savings.pct_with_rebates
             payload["abs_savings"] = savings.abs_savings
             payload["basis"] = savings.basis
+            payload["regular_price_basis"] = (post.structured or {}).get("regular_price_basis", "")
             payload["flags"] = list(savings.flags)
             if not savings.computable:
                 payload["flags"].append("unbacked_price")
@@ -351,6 +352,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             # The prices the critic judged changed: its verdict is stale.
             if price_changed:
                 payload["critic"] = None
+                if existing.get("status") == "alive":
+                    payload["price_rechecked_at"] = ""
+                    payload["keepa_price_seen_at"] = ""
                 # Keepa data older than this update cannot judge the new price.
                 payload["price_since"] = util.iso(now)
             payload["price_published_at"] = util.iso(post_at)
@@ -471,6 +475,13 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                      post.source_name)
         log.info("merged deal %s (price_improved=%s)", key, price_improved)
 
+    if savings.computable and post.source_name.lower().startswith("keepa") \
+            and (is_new or current) and payload.get("final_price") == savings.final_price:
+        payload["keepa_price_seen_at"] = util.iso(now)
+        if (post.structured or {}).get("regular_price_basis"):
+            payload["regular_price_basis"] = post.structured["regular_price_basis"]
+        db.update_deal(key, payload=payload)
+
     if savings.final_price is not None:
         db.record_price(key, extracted.store, savings.final_price, now,
                         post.content_hash)
@@ -483,3 +494,55 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         "revived": revived,
         "payload": payload,
     }
+
+
+def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
+                     cfg, now: datetime) -> bool:
+    """Verify/compute a live correction and update this exact row, without intake.
+
+    This is a price reading, not a new sourced deal: keep the product's
+    existing critic verdict and source credits, and never queue an LLM call.
+    A suspect verdict/flag is retained, so a correction cannot launder it.
+    """
+    from .parse.extractor import verify_evidence
+    from .parse.schema import LLMDeal, to_extracted
+    from .savings import compute_savings
+    from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal
+
+    current = db.get_deal(deal["dedupe_key"])
+    if current is None or current.get("status") != "alive" or not is_amazon_deal(current) \
+            or is_used_deal(current) or _price_hidden_by_promo(current):
+        return False
+
+    extracted = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", now)
+    if not verify_evidence(extracted, post.text)[0]:
+        return False
+    savings = compute_savings(extracted)
+    if not savings.computable or savings.final_price is None:
+        return False
+    shown = current.get("final_price")
+    if not shown or shown == savings.final_price \
+            or abs(savings.final_price - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct:
+        return False  # double-apply does not touch the row or add history
+    payload = {k: v for k, v in current.items() if k not in ("id", "normalized_item")}
+    if not payload.get("image_url") and deal.get("image_url"):
+        payload["image_url"] = deal["image_url"]  # harvested from this paid response
+    for name in ("final_price", "regular_price", "pct_at_checkout", "pct_with_rebates",
+                 "abs_savings", "basis"):
+        payload[name] = getattr(savings, name)
+    payload["regular_price_basis"] = post.structured["regular_price_basis"]
+    obsolete = {"price_moved", "unbacked_price", "range", "unknown_shipping",
+                "rebate_dependent", "per_unit", "deferred_value"}
+    payload["flags"] = _union(savings.flags, [f for f in current.get("flags") or [] if f not in obsolete])
+    for name in ("stack_steps", "codes", "rebates", "deferred_value", "shipping_cost_or_threshold"):
+        payload[name] = getattr(extracted, name)
+    payload.update(price_since=util.iso(now), price_published_at=util.iso(now),
+                   price_rechecked_at=util.iso(now), recheck_tried_at="",
+                   gone_suspect_at="", death="", died_at="", verify_tier="unverified")
+    db.update_deal(deal["dedupe_key"], payload=payload, final_price=savings.final_price,
+                   pct_at_checkout=savings.pct_at_checkout, abs_savings=savings.abs_savings,
+                   replace_prices=True, verify_tier="unverified")
+    db.record_price(deal["dedupe_key"], current["store"], savings.final_price,
+                    now, post.content_hash)
+    deal.update(db.get_deal(deal["dedupe_key"]))
+    return True

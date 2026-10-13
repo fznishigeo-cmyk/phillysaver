@@ -320,7 +320,8 @@ def test_no_niche_card_on_the_first_screen():
 
 def pick_deal(**changes):
     return make_deal(**{"category": "home", "image_url": "https://img.example/photo.jpg",
-                        "first_seen_at": "2026-10-09T14:00:00Z", "codes": [], **changes})
+                        "first_seen_at": "2026-10-09T14:00:00Z",
+                        "price_rechecked_at": "2026-10-09T14:00:00Z", "codes": [], **changes})
 
 
 def test_pick_score_math_and_factors(cfg, options):

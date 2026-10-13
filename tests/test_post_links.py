@@ -10,7 +10,7 @@ from dealradar import pipeline, util
 from dealradar.config import AppConfig
 from dealradar.db import DB
 from dealradar.http_client import PoliteFetcher
-from tests.test_pipeline_sources import TestProductImageBackfill as PhotoFixture
+from tests.test_pipeline_sources import NOW, TestProductImageBackfill as PhotoFixture
 from tests.test_short_links import credit
 
 A = "B0GLP6BWD9"
@@ -209,6 +209,7 @@ def test_official_feed_only_policy_is_preserved(setup):
 
 
 def test_pipeline_fast_only_summary_and_keepa_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW)
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST", "DEALS_CLAUDE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     cfg_path = tmp_path / "config.yaml"

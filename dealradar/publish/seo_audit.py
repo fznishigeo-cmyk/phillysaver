@@ -204,6 +204,9 @@ class Page(HTMLParser):
                 return ["ended"]
             if node.has("spotlight-time"):
                 return [node.attrs.get("data-ends-at") or ""]
+            # A confirmation time is not a substantive change (no lastmod churn).
+            if node.has("price-checked") or node.has("detail-checked"):
+                return []
             # Site-wide browse navigation is not this page's offer set.
             if node.tag == "p" and any(isinstance(c, _Node) and c.tag == "strong"
                                       and c.text() in {"Stores", "By price"} for c in node.children):

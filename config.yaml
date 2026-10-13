@@ -247,12 +247,24 @@ keepa:
   recheck_new_h: 12                # older new-condition deals (1 token each)
   recheck_used_h: 24               # used/open-box (offers scan, up to 13 tokens each)
   # Accuracy (operator, 2026-10-13: the site showed $3.65 while Amazon
-  # showed $4.11). The top picks shoppers see first are re-checked hourly
-  # (new condition, 1 token each: at most ~120 tokens an hour) and lead
-  # every recheck queue; a listing more than recheck_tolerance_pct above
-  # the shown price ends the deal.
+  # showed $4.11). Correct plain new prices from the SAME paid reading,
+  # with both Amazon averages; otherwise retain the existing kill tolerance.
+  reprice_min_pct: 1
   recheck_top_h: 1
   recheck_tolerance_pct: 5
+  # Operator request, 2026-10-13: suspects, then scored pick candidates,
+  # then the first home cards, then the rest. Used cadence stays 24 h.
+  recheck_top_n: 200               # up to 200 new tokens/hour (overlap is checked once)
+  recheck_wall_n: 300              # up to 150 new tokens/hour before top overlap
+  recheck_wall_h: 2
+  # Operator request, 2026-10-13: feature only recently confirmed Amazon
+  # prices; hide stale prices until confirmed, without killing their rows.
+  pick_max_unconfirmed_h: 3
+  show_max_unconfirmed_h: 48
+  show_max_unconfirmed_used_h: 72
+  # Operator request, 2026-10-13: optional live top readings; default OFF.
+  # update=0 can cost 2 tokens/new ASIN; batches reserve that worst case.
+  recheck_top_live: false
   focus_categories: ["Beauty & Personal Care", "Health & Household"]  # empty = off
   # NEW posts (not yet content-hashed: each costs an LLM parse, a critic
   # call and a keepa_check) emitted per pull; posts already handled ride

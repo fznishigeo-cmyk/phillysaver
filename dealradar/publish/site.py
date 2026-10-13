@@ -22,7 +22,9 @@ from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, ur
 
 from ..savings import display_pct
 from ..config import AppConfig, load_sources, redact_secrets, support_link
-from ..rank import daily_spotlight, pick_score, top_picks
+from ..rank import daily_spotlight, pick_order, pick_score, top_picks
+from ..verify import (confirmed_age, is_amazon_deal, price_confirmed_at,
+                       price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from . import indexnow, pwa, seo, seo_audit
@@ -47,9 +49,10 @@ def _credit(sighting: dict[str, Any]) -> dict[str, str]:
 
 #: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
 _TEASER_META = "teaser_recent"
-#: db meta key: the top picks the last publish showed (the price recheck
-#: checks these first and most often; config keepa.recheck_top_h).
+#: Candidate keys by score BEFORE confirmation/caps: an unconfirmed deal
+#: must be able to earn a reading and become a pick on the next publish.
 PICKS_META = "published_picks"
+WALL_META = "published_wall"
 
 
 def util_now():
@@ -577,6 +580,11 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "age_hours": age_hours,
         "credits": credits,
     }
+    checked = price_confirmed_at(deal) if is_amazon_deal(deal) else None
+    if checked is not None and checked <= now:
+        public["checked_at"] = iso(checked)
+    if deal.get("regular_price_basis"):
+        public["regular_price_basis"] = deal["regular_price_basis"]
     if deal.get("spotlight"):
         public["spotlight"] = deal["spotlight"]
     return public
@@ -622,7 +630,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # The site shows qualifying deals that recently died too (marked dead);
         # alerts and the digest use rank.published_deals (alive only).
         spotlight_rows = db.all_deals(status="alive")
-        deals = rank.site_deals(db, cfg, now)
+        deals = rank.site_deals(db, cfg, now, include_unconfirmed=True)
     else:
         spotlight_rows = deals
     # A price-only offer has one home: the separate spotlight payload. It
@@ -640,10 +648,18 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                         sovrn_enabled=cfg.affiliate_sovrn_enabled,
                         competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                         ebay_campid=cfg.affiliate_ebay_campaign_id, cfg=cfg)
+    candidate_scores = [(d, value) for d in deals
+                        if (value := pick_score(d, cfg, now, require_confirmation=False)) is not None]
+    candidate_scores.sort(key=lambda pair: pair[1], reverse=True)
+    db.meta_set(PICKS_META, json.dumps([d["dedupe_key"] for d, _ in
+                                      candidate_scores[:cfg.keepa_recheck_top_n]]))
+    # Keep hidden candidates above so rechecks can bring them back by themselves.
+    deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)]
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
-    scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now)
+    scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
+                                       require_confirmation=False)
               for d in deals if d["dedupe_key"] in earns}
     for d in serialized:
         value = scores[d["dedupe_key"]]
@@ -666,10 +682,17 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]
     candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
-    picked = top_picks(candidates, cfg.front_page)
+    originals = {d["dedupe_key"]: d for d in deals}
+    confirmed_candidates = [(d, value) for d, value in candidates
+                            if not is_amazon_deal(originals[d["dedupe_key"]])
+                            or price_confirmation_recent(originals[d["dedupe_key"]], now,
+                                                         cfg.keepa_pick_max_unconfirmed_h)]
+    picked = top_picks(confirmed_candidates, cfg.front_page)
     for n, d in enumerate(picked, 1):
         d["pick"] = n
-    db.meta_set(PICKS_META, json.dumps([d["dedupe_key"] for d in picked]))
+    wall = seo.place_gone(pick_order(teaser, cfg.front_page))[:cfg.keepa_recheck_wall_n]
+    db.meta_set(WALL_META, json.dumps([d["dedupe_key"] for d in wall
+                                     if not d.get("locked") and d.get("status") == "alive"]))
     # Select once, before JSON is written: remembered URLs only for pages
     # this publish emits. Free rows share their objects with member rows;
     # locked stubs and member-only deals never gain a public path.
@@ -931,6 +954,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "confirmed_age": {
+                "top_candidates": confirmed_age([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
+                "wall": confirmed_age([originals[d["dedupe_key"]] for d in wall
+                                       if d.get("dedupe_key") in originals], now)},
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),

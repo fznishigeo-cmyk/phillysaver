@@ -280,6 +280,62 @@ def is_used_deal(deal: dict[str, Any]) -> bool:
     return bool(USED_CONDITIONS & set(normalize_conditions(deal.get("conditions"))))
 
 
+def is_amazon_deal(deal: dict[str, Any]) -> bool:
+    """Amazon prices only; an ASIN attached to another store is not enough."""
+    if woot_offer_url(deal):
+        return False
+    store = str(deal.get("store") or "").strip().lower()
+    try:
+        host = (urlsplit(deal.get("canonical_url") or "").hostname or "").lower()
+    except ValueError:
+        host = ""
+    return store.startswith("amazon") or host == "amazon.com" or host.endswith(".amazon.com")
+
+
+def price_confirmed_at(deal: dict[str, Any]) -> datetime | None:
+    """Last confirmation of the CURRENT price; a gone reading is no proof."""
+    if deal.get("gone_suspect_at") or deal.get("death"):
+        return None
+    since = parse_iso(deal.get("price_since") or "")
+    stamps = [parse_iso(deal.get(name) or "")
+              for name in ("price_rechecked_at", "keepa_price_seen_at")]
+    # Backward-compatible with rows ingested before keepa_price_seen_at.
+    for sighting in deal.get("sightings") or []:
+        if str(sighting.get("source_name") or "").lower().startswith("keepa") \
+                and sighting.get("final_price") == deal.get("final_price"):
+            stamps.append(parse_iso(sighting.get("seen_at") or ""))
+    if str(deal.get("source_name") or "").lower().startswith("keepa"):
+        stamps.append(parse_iso(deal.get("first_seen_at") or ""))
+    valid = [at for at in stamps if at is not None and (since is None or at >= since)]
+    return max(valid) if valid else None
+
+
+def price_confirmation_recent(deal: dict[str, Any], now: datetime, hours: float) -> bool:
+    at = price_confirmed_at(deal)
+    return at is not None and timedelta() <= now - at <= timedelta(hours=hours)
+
+
+def price_unconfirmed(deal: dict[str, Any], cfg, now: datetime) -> bool:
+    """Hide stale Amazon offers; never-read posts get only the initial grace."""
+    if not is_amazon_deal(deal):
+        return False
+    at = price_confirmed_at(deal) or parse_iso(deal.get("first_seen_at") or "")
+    hours = (cfg.keepa_show_max_unconfirmed_used_h if is_used_deal(deal)
+             else cfg.keepa_show_max_unconfirmed_h)
+    return at is None or at > now or now - at > timedelta(hours=hours)
+
+
+def confirmed_age(deals: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    """Shares of the whole Amazon set, including prices with no confirmation."""
+    amazon = [d for d in deals if is_amazon_deal(d) and d.get("status", "alive") == "alive"]
+    ages = [(now - at).total_seconds() / 3600 for d in amazon
+            if (at := price_confirmed_at(d)) is not None and at <= now]
+    return {"amazon": len(amazon), "unconfirmed": len(amazon) - len(ages),
+            **{f"within_{h}h": sum(age <= h for age in ages) / len(amazon)
+               if amazon else None for h in (1, 3, 12)},
+            "oldest_h": round(max(ages), 2) if ages else None}
+
+
 #: Keepa timestamps count minutes from 2011-01-01T00:00Z; that moment is
 #: this many minutes after the unix epoch.
 KEEPA_EPOCH_MINUTES = 21564000
@@ -343,6 +399,7 @@ def _standalone_keepa_fetcher() -> PoliteFetcher:
 def keepa_products(key: str, asins: list[str], stats: int,
                    budget: KeepaBudget | None,
                    offers: int | None = None, *,
+                   live: bool = False,
                    fetcher: PoliteFetcher | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs (KEEPA_OFFERS_BATCH
     with ``offers``): ``{asin: product}`` (an ASIN Keepa does not know is
@@ -357,6 +414,8 @@ def keepa_products(key: str, asins: list[str], stats: int,
                               "asin": ",".join(asins), "stats": stats}
     if offers is not None:
         params["offers"] = offers
+    if live:
+        params["update"] = 0
     fetcher = fetcher if fetcher is not None else _standalone_keepa_fetcher()
     # Keyed API (robots.txt is for crawlers); a 429 is an empty token bucket,
     # answered next pass, so it is not retried here.
@@ -551,9 +610,18 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
     return ok
 
 
+class PriceRechecks(dict):
+    """Verdict map carrying the same paid products for evidence and drift."""
+
+    def __init__(self):
+        super().__init__()
+        self.products: dict[str, dict[str, Any]] = {}
+
+
 def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                           budget: KeepaBudget | None = None,
                           used_offers: bool = True, *,
+                          live: bool = False,
                           fetcher: PoliteFetcher | None = None
                           ) -> dict[str, bool | None]:
     """Live price verdicts for many Amazon deals in as few Keepa calls as
@@ -565,7 +633,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     show a Warehouse unit sold); ``used_offers=False`` keeps every batch
     stats-only, where a used deal can only be confirmed. ``budget`` learns
     every response's token state."""
-    out: dict[str, bool | None] = {}
+    out = PriceRechecks()
     if not cfg.feature_flags.get("keepa"):
         return out
     key = get_secret("KEEPA_KEY")
@@ -583,8 +651,9 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
         for start in range(0, len(wanted), per_call):
             chunk = wanted[start:start + per_call]
             try:
+                options = {"live": True} if live else {}
                 products = keepa_products(key, [a for a, _ in chunk], 1,
-                                          budget, offers=offers, fetcher=fetcher)
+                                          budget, offers=offers, fetcher=fetcher, **options)
             except Exception as e:  # transport, schema drift
                 log.warning("price recheck batch of %d failed: %s",
                             len(chunk), error_summary(e))
@@ -595,6 +664,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                 product = products.get(asin)
                 if product is None:
                     continue
+                out.products[deal["dedupe_key"]] = product
                 out[deal["dedupe_key"]] = judge_live_price(
                     deal, product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
     return out

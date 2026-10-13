@@ -946,8 +946,9 @@ class TestDropClock:
         assert "clock.target = nextMarkAfter(now, clock.phase, clock.step);" in drop
         assert "lateUntil" not in html
         assert '" · updated "' in html and '" min ago"' in html
-        # One ticking interval for the whole page, plus the 5-minute fallback.
-        assert html.count("setInterval(") == 2
+        # Home uses its tick and fallback; the shared listing clock is guarded.
+        assert html.count("setInterval(") == 3
+        assert 'method !== "home" && scope.querySelector("[data-checked-at]")' in html
         assert "setInterval(tick, 1000)" in html
 
     def test_flip_and_reduced_motion(self, html):

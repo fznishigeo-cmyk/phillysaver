@@ -42,7 +42,7 @@ def test_missing_support_link_preserves_every_published_byte(tmp_path, monkeypat
     out, *_ = render(tmp_path, AppConfig(support_enabled=True, support_payment_link=link,
                                        support_monthly_link=monthly, tracking=SAMPLE), sample_deals())
     # Captured before task 075: HTML, JSON, sitemap, versions and tracking included.
-    assert tree_hash(out) == "1f3c9ed0188794d4b85641f94f02d6c9fc2b6019b1639aeab571c3673f296236"
+    assert tree_hash(out) == "fa2d9a395b09b5a09da2f09b32cd0cae1b88422008ac742194cbbd8e9bb3ed01"
     for path in out.rglob("*.html"):
         assert "support_ask_" not in path.read_text()
 

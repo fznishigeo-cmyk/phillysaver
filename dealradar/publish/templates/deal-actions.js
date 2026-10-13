@@ -15,6 +15,24 @@
     catch (e) { /* analytics never stops navigation or copying */ }
   }
   if (scope.querySelector("[data-deal-detail]")) track("deal_detail_view", {method: "deal"});
+  // Listing/related cards have no wall clock; keep their check age current.
+  if (method !== "home" && scope.querySelector("[data-checked-at]")) {
+    function paintChecked() {
+      var now = Date.now();
+      scope.querySelectorAll("[data-checked-at]").forEach(function (el) {
+        var at = Date.parse(el.getAttribute("data-checked-at")), elapsed = now - at;
+        if (!Number.isFinite(at) || elapsed < 0) return;
+        var minutes = Math.floor(elapsed / 60000);
+        var age = (minutes < 60 ? minutes + "m" : minutes < 1440
+          ? Math.floor(minutes / 60) + "h" : Math.floor(minutes / 1440) + "d") + " ago";
+        var tail = el.lastChild;  // the age after the "price checked" label
+        if (tail && tail.nodeType === 3 && el.firstChild !== tail) tail.nodeValue = age;
+        else el.textContent = "price checked " + age;
+      });
+    }
+    paintChecked();
+    setInterval(paintChecked, 60000);
+  }
   var clipboard = navigator.clipboard;
   scope.querySelectorAll("[data-copy-code]").forEach(function (button) {
     // The separate code text stays visible and selectable with or without JS.

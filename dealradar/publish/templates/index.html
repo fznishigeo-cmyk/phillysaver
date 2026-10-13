@@ -688,6 +688,8 @@ header{--accent-hover:var(--warm)}
   #minpct{height:44px}
   #controls #surprise,.mcard input,.joincard input{font-size:16px}
   #clearsearch{width:44px;height:44px;top:2px}
+  .price-checked .pcl{display:none}
+  .price-checked::before{content:"\2713\00a0"}
   .pwbtn{min-height:44px}
   /* Small links retain their visual size; their transparent target can
      extend into the surrounding space. Credits must not clip that area. */
@@ -1385,6 +1387,14 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return Math.round(h / 24) + "d ago";
   }
 
+  function priceCheckedText(checkedAt, now) {
+    var at = Date.parse(checkedAt), elapsed = now - at;
+    if (!Number.isFinite(at) || elapsed < 0) return "";
+    var minutes = Math.floor(elapsed / 60000);
+    return "price checked " + (minutes < 60 ? minutes + "m" : minutes < 1440
+      ? Math.floor(minutes / 60) + "h" : Math.floor(minutes / 1440) + "d") + " ago";
+  }
+
   function usedTag(d) {
     var conds = d.conditions || [];
     return conds.indexOf("open_box") !== -1 ? "OPEN BOX"
@@ -1494,6 +1504,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     var tier = d.badge || "unverified";
     var metarow = '<span class="chip storechip">' + esc(d.store || "") + "</span>";
+    // Right after the store, so the one-line phone row never clips it.
+    var checked = d.checked_at ? priceCheckedText(d.checked_at, Date.now()) : "";
+    if (checked && !d.spotlight) metarow += '<span class="chip price-checked" data-checked-at="' +
+      esc(d.checked_at) + '"><span class="pcl">price checked </span>' +
+      esc(checked.replace(/^price checked /, "")) + "</span>";
     var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
     if (countdown) metarow += '<span class="chip spotlight-time" data-ends-at="' +
       esc(d.spotlight.ends_at) + '">' + countdown + '</span>';
@@ -1505,7 +1520,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     extra.slice(0, 2).forEach(function (c) {
       metarow += '<span class="chip">' + esc(c).replace(/_/g, " ") + "</span>";
     });
-    var age = ageText(num(d.age_hours));
+    var age = checked ? "" : ageText(num(d.age_hours));
     if (age && !d.spotlight) metarow += '<span class="chip">' + esc(age) + "</span>";
 
     // Source credit is required on every card.
@@ -1635,6 +1650,14 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }));
   }
   function paintSpotlightTime(now) {
+    document.querySelectorAll('.price-checked[data-checked-at]').forEach(function (el) {
+      var text = priceCheckedText(el.getAttribute("data-checked-at"), now);
+      var tail = el.lastChild;  // the age after the "price checked" label
+      if (tail && tail.nodeType === 3 && el.firstChild !== tail) {
+        var age = text.replace(/^price checked /, "");
+        if (tail.nodeValue !== age) tail.nodeValue = age;
+      } else if (el.textContent !== text) el.textContent = text;
+    });
     if (!(state.spotlight || []).length) return;
     var alive = state.spotlight.filter(function (d) { return Date.parse(d.spotlight.until) > now; });
     if (alive.length !== state.spotlight.length) {
