@@ -535,6 +535,7 @@ sources:
     site: https://www.reddit.com/r/deals/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/deals/new
     region: US
     allowed_html: false
@@ -544,6 +545,7 @@ sources:
     site: https://www.reddit.com/r/coupons/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/coupons/new
     region: US
     allowed_html: false
@@ -553,6 +555,7 @@ sources:
     site: https://www.reddit.com/r/frugal/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/frugal/new
     region: US
     allowed_html: false
@@ -562,6 +565,7 @@ sources:
     site: https://www.reddit.com/r/buildapcsales/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/buildapcsales/new
     region: US
     allowed_html: false
@@ -571,6 +575,7 @@ sources:
     site: https://www.reddit.com/r/GameDeals/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/GameDeals/new
     region: US
     allowed_html: false
@@ -580,6 +585,7 @@ sources:
     site: https://www.reddit.com/r/FrugalFemaleFashion/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/FrugalFemaleFashion/new
     region: US
     allowed_html: false
@@ -1104,6 +1110,7 @@ backup_sources:
     site: https://www.reddit.com/r/Flipping/
     method: api
     adapter: reddit
+    enabled: false   # operator 2026-10-13: skip Reddit (no API keys; new access ends 2026-10-31, public API closes 2027-03)
     url: https://oauth.reddit.com/r/Flipping/new
     region: US
     allowed_html: false
