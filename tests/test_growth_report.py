@@ -94,6 +94,25 @@ RETURNING_RESPONSE = {"reports": [{
     "rows": [{"dimensionValues": [{"value": kind}], "metricValues": [{"value": str(count)}]}
              for kind, count in [("new", 80), ("returning", 20), ("(not set)", 7)]]}]
 }
+DEAL_PAGES_RESPONSE = {"reports": [{
+    "dimensionHeaders": [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath", "dateRange")],
+    "rows": [{"dimensionValues": [{"value": v} for v in (event, device, path, period)],
+              "metricValues": [{"value": str(count)}]}
+             for event, device, path, period, count in [
+                 ("deal_detail_view", "mobile", "/deal/private-product-12345678/", "yesterday", 100),
+                 ("deal_click", "mobile", "/deal/private-product-12345678/", "yesterday", 25),
+                 ("deal_code_copy", "mobile", "/deal/private-product-12345678/", "yesterday", 8),
+                 ("deal_detail_view", "desktop", "/deal/other-87654321/", "window", 40),
+                 ("deal_click", "desktop", "/deal/other-87654321/", "window", 60),
+                 ("page_view", "mobile", "/", "window", 200),
+                 ("deal_click", "mobile", "/", "window", 50),
+                 ("page_view", "tablet", "/deals/electronics/", "window", 30),
+                 ("deal_click", "tablet", "/deals/electronics/", "window", 10),
+                 ("deal_click", "mobile", "/stores/amazon/", "window", 5),
+                 ("deal_click", "mobile", "/deals/under-10/", "window", 4),
+                 ("deal_click", "mobile", "/best-deals-today/", "window", 3),
+                 ("deal_click", "mobile", "/privacy.html", "window", 999)]]}]
+}
 
 SC_TOTAL = {"rows": [{"clicks": 834521.0, "impressions": 9123456.0, "ctr": 0.0914, "position": 17.26}]}
 SC_QUERIES = {"rows": [{"keys": ["private <b>query</b> phrase"], "clicks": 300.0, "impressions": 4000.0,
@@ -211,6 +230,8 @@ class FakeApis:
             if dims == [{"name": "customEvent:store"}]:
                 return httpx.Response(200, json=STORES_RESPONSE)
             if len(queries) == 1:
+                if dims == [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath")]:
+                    return httpx.Response(200, json=DEAL_PAGES_RESPONSE)
                 if dims == [{"name": "eventName"}]:
                     return httpx.Response(200, json=PRODUCT_RESPONSE)
                 if dims == [{"name": "newVsReturning"}]:
@@ -680,7 +701,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     fake = FakeApis()
     with client_for(fake) as client:
         data, status = report.collect(cfg, NOW, client)
-    ok = ok | {"site_health"} | ({"product", "saved"} if google_ else set())
+    ok = ok | {"site_health"} | ({"product", "saved", "deal_pages"} if google_ else set())
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
     assert set(data) == ok | {"subscribers"}
@@ -781,9 +802,9 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     set_telegram(monkeypatch)
     code, fake, _ = full_run(cfg, rsa_key, monkeypatch)
     assert code == 0
-    (msg,) = fake.telegram
-    assert msg["chat_id"] == ADMIN_CHAT  # the admin chat, never the channel
-    lines = msg["text"].splitlines()
+    assert all(msg["chat_id"] == ADMIN_CHAT for msg in fake.telegram)  # admin only
+    text = "".join(msg["text"] for msg in fake.telegram)
+    lines = text.splitlines()
     assert lines[0] == "Growth report for Sat Oct 10, 2026: yesterday / last 7 days"
     assert lines[2:10] == [
         "Sessions: 812,345 / 5,120,333",
@@ -795,7 +816,6 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
         "Ad spend: $12.34 / $86.10",
         "Cost per trial: $12.34 / $43.05",
     ]
-    text = msg["text"]
     for header in ("== Google Analytics ==", "== Search Console, Oct 02 to Oct 08 (its data lags 2-3 days) ==",
                    "== Sitemap ==", "== Meta ==", "== Stripe =="):
         assert header in text
@@ -817,21 +837,27 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
     assert data["product"] == {
         "yesterday": {"home_load_attempts": 400, "first_load_failures": 12,
                       "static_fallback_shown": 11, "first_load_recoveries": 5,
-                      "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3},
+                      "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
+                      "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
-                   "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17}}
+                   "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17,
+                   "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None}}
     # Main totals/events/sources/pages + store query; load counts add no request.
     # The two single queries are the saved-deal events and new/returning (task 066).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
-    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1]
+    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
                  "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45",
                  "product.install_offer_shown: 8 / 51", "product.install_accepted: 2 / 9",
-                 "product.standalone_session: 3 / 17"):
+                 "product.standalone_session: 3 / 17",
+                 "product.deal_detail_views: 100 / 40", "product.deal_detail_outbound_clicks: 25 / 60",
+                 "yesterday mobile/deal: 100 views, 25 outbound actions, actions/view 25.0%",
+                 "window desktop/deal: 40 views, 60 outbound actions, actions/view 150.0%"):
         assert line in text and line not in caplog.text
     assert "Install offers and acceptances are actions" in text and "not retained users" in text
+    assert "actions, not purchases" in text and "private-product" not in text + caplog.text
     assert "product: ok" in caplog.messages
 
 
@@ -867,11 +893,64 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))) as client:
         data, status = report.collect(cfg, NOW, client)
     assert status["ga4"] == status["product"] == "ok"
-    assert all(count == 0 for period in data["product"].values() for count in period.values())
+    assert all(period[name] == 0 for period in data["product"].values() for name in google.PRODUCT_EVENTS)
+    assert all(period[name] is None for period in data["product"].values() for name in google.DEAL_PAGE_COUNTS)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
     for event in ("install_offer_shown", "install_accepted", "standalone_session"):
         assert f"product.{event}: 0 / 0" in text
+    assert "product.deal_detail_views: unavailable (no observed event)" in text
+
+
+def test_deal_page_counts_use_standard_dimensions_and_paginate(cfg):
+    requests = []
+    result = DEAL_PAGES_RESPONSE["reports"][0]
+
+    def page(request):
+        query = json.loads(request.content)["requests"][0]
+        requests.append(query)
+        offset = query["offset"]
+        return httpx.Response(200, json={"reports": [{**result, "rowCount": len(result["rows"]),
+                                                      "rows": result["rows"][offset:offset + 4]}]})
+
+    with httpx.Client(transport=httpx.MockTransport(page)) as client:
+        data = google.ga4_deal_pages(client, GOOGLE_TOKEN, "987654", 7)
+    assert [q["offset"] for q in requests] == [0, 4, 8, 12]
+    assert requests[0]["dimensions"] == [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath")]
+    assert requests[0]["metrics"] == [{"name": "eventCount"}]
+    assert "customEvent:" not in json.dumps(requests)
+    assert data["yesterday"]["deal_detail_views"] == 100 and data["window"]["deal_detail_outbound_clicks"] == 60
+    assert {r["family"] for r in data["window"]["by_device_page"]} == {
+        "deal", "home", "category", "store", "price", "best_today"}
+    assert "private-product" not in json.dumps(data) and "privacy" not in json.dumps(data)
+
+
+@pytest.mark.parametrize("metadata", [{"subjectToThresholding": True}, {"samplingMetadatas": [{}]},
+                                       {"dataLossFromOtherRow": True}])
+def test_insufficient_deal_page_sample_is_unavailable(cfg, metadata):
+    body = {"reports": [{**DEAL_PAGES_RESPONSE["reports"][0], "metadata": metadata}]}
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body))) as client:
+        data = google.ga4_deal_pages(client, GOOGLE_TOKEN, "987654", 7)
+    assert "unavailable" in data
+    _, text = report.build_report(cfg, {"deal_pages": data}, {"deal_pages": "skipped"}, date(2026, 10, 10))
+    assert "Device/page-family actions: unavailable" in text and "actions/view 0" not in text
+
+
+def test_deal_page_api_failure_preserves_other_product_counts(cfg, monkeypatch, caplog):
+    monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+    monkeypatch.setattr(google, "access_token", lambda *a: GOOGLE_TOKEN)
+
+    def failed(*args):
+        raise ValueError("PRIVATE-ERROR https://private.test/item")
+
+    monkeypatch.setattr(google, "ga4_deal_pages", failed)
+    with client_for(FakeApis()) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["deal_pages"] == "error" and status["product"] == "ok"
+    assert data["product"]["yesterday"]["home_load_attempts"] == 400
+    assert data["product"]["yesterday"]["deal_detail_views"] is None
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "Device/page-family actions: unavailable" in text and "PRIVATE" not in text + caplog.text
 
 
 def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, monkeypatch):
@@ -907,7 +986,7 @@ def test_both_channels(cfg, rsa_key, monkeypatch):
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     set_telegram(monkeypatch)
     code, fake, smtp = full_run(cfg, rsa_key, monkeypatch)
-    assert code == 0 and len(smtp.sent) == 1 and len(fake.telegram) == 1
+    assert code == 0 and len(smtp.sent) == 1 and len(fake.telegram) >= 1
 
 
 def test_no_channel_sends_nothing(cfg, rsa_key, monkeypatch, caplog):
@@ -954,7 +1033,9 @@ def test_telegram_text_stays_under_the_limit(cfg, rsa_key, monkeypatch):
     set_telegram(monkeypatch)
     monkeypatch.setattr(report, "build_report", lambda *a: ("s", "x" * 9000))
     _, fake, _ = full_run(cfg, rsa_key, monkeypatch)
-    assert len(fake.telegram[0]["text"]) == report.TELEGRAM_MAX
+    assert all(len(msg["text"]) <= report.TELEGRAM_MAX for msg in fake.telegram)
+    assert len(fake.telegram) > 1
+    assert "".join(msg["text"] for msg in fake.telegram) == "x" * 9000
 
 
 # ------------------------------------------------------------------ public logs
@@ -991,7 +1072,7 @@ def test_cli_never_prints_metrics_report_or_tokens(rsa_key, tmp_path, monkeypatc
     public = out + err + logged
 
     (msg,) = smtp.sent
-    text = fake.telegram[0]["text"]
+    text = "".join(part["text"] for part in fake.telegram)
     assert text == msg.get_payload()[0].get_payload(decode=True).decode()
     for line in text.splitlines():
         if line.strip():

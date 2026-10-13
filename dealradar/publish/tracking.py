@@ -201,6 +201,8 @@ _DISPATCH = """\
     first_load_failed: { ga4Only: true },
     static_fallback_shown: { ga4Only: true },
     first_load_recovered: { ga4Only: true },
+    deal_detail_view: { ga4Only: true, methods: ["deal"] },
+    deal_code_copy: { ga4Only: true, methods: ["home", "deal", "category", "store", "price", "best_today"] },
     sign_up: { meta: "CompleteRegistration", tiktok: "CompleteRegistration", pin: "signup", uet: "sign_up" },
     begin_checkout: { meta: "InitiateCheckout", tiktok: "InitiateCheckout", uet: "begin_checkout" },
     start_trial: { meta: "StartTrial", tiktok: "Subscribe", pin: "checkout", uet: "subscribe" },
@@ -214,6 +216,12 @@ _DISPATCH = """\
       var v = params && params[k];
       if (!ev.ga4Only && typeof v === "string" && v) p[k] = v.slice(0, 60);
     });
+    var pageMethods = ["home", "deal", "category", "store", "price", "best_today"];
+    if (name === "deal_click" && pageMethods.indexOf(p.method) === -1) delete p.method;
+    if (ev.methods) {
+      if (!params || ev.methods.indexOf(params.method) === -1) return;
+      p.method = params.method;
+    }
     if (name === "begin_checkout" && params && (params.plan === "month" || params.plan === "year")) p.plan = params.plan;
     var trial = name === "start_trial";
     function plus(extra) { return Object.assign({}, p, trial ? { value: 0, currency: "USD" } : {}, extra || {}); }

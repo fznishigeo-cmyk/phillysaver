@@ -1420,7 +1420,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       price += ' <span class="save">save $' + Number(d.abs_savings).toFixed(2) + "</span>";
     }
 
-    var title = url && !dead
+    var page = typeof d.deal_path === "string" && /^\/deal\/[a-z0-9-]+-[a-f0-9]{8}\/$/.test(d.deal_path) ? d.deal_path : "";
+    var title = page && !dead ? '<a href="' + esc(page) + '">' + esc(d.item) + "</a>" : url && !dead
       ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
 
@@ -2619,20 +2620,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // An outbound deal link tells the tags only the deal's store and category
   // (never the item or a price: member deals stay with members).
   document.getElementById("content").addEventListener("click", function (e) {
-    var code = e.target.closest ? e.target.closest(".card .code[data-code]") : null;
-    if (code) {
-      var c = code.getAttribute("data-code");
-      var done = function () { toast("Code " + c + " copied"); };
-      try {
-        navigator.clipboard.writeText(c).then(done, function () { toast("Code: " + c); });
-      } catch (err) { toast("Code: " + c); }
-      return;
-    }
+    if (e.button != null && e.button !== 0) return;
     var go = e.target.closest ? e.target.closest('.card a[rel~="sponsored"]') : null;
-    if (go) {
+    if (go && !go.hasAttribute("data-deal-outbound")) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });<!--engagement-->
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });<!--engagement-->
       if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement-->
     }
@@ -2665,23 +2658,28 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function updatePaywall() { window.wpSupport.refresh(state.meta); }
   document.getElementById("content").addEventListener("click", function (e) {
 <!--saved-->    if (savedButtonClick(e)) return;
-<!--/saved-->    var code = e.target.closest(".card .code[data-code]");
-    if (code) {
-      var c = code.getAttribute("data-code");
-      try { navigator.clipboard.writeText(c).then(function () { toast("Code " + c + " copied"); }, function () { toast("Code: " + c); }); }
-      catch (err) { toast("Code: " + c); }
-    }
+<!--/saved-->    if (e.button != null && e.button !== 0) return;
     var go = e.target.closest('.card a[rel~="sponsored"]');
-    if (go) {
+    if (go && !go.hasAttribute("data-deal-outbound")) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });<!--engagement-->
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });<!--engagement-->
       if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement-->
 <!--saved-->      savedOutbound(d);
 <!--/saved-->    }
   });
-<!--/support-->  // The ticker: a locked deal takes the next step; a free one scrolls to
+<!--/support-->  document.getElementById("content").addEventListener("auxclick", function (e) {
+    if (e.button !== 1) return;
+    var go = e.target.closest ? e.target.closest('.card a[rel~="sponsored"]') : null;
+    if (!go || go.hasAttribute("data-deal-outbound")) return;
+    var k = go.closest(".card").getAttribute("data-key");
+    var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
+    track("deal_click", {store: String(d.store || ""), category: String(d.category || ""), method: "home"});
+<!--engagement-->    if (go.classList.contains("getdeal")) recordFind(d);
+<!--/engagement--><!--saved-->    savedOutbound(d);
+<!--/saved-->  });
+  // The ticker: a locked deal takes the next step; a free one scrolls to
   // its card and flashes it. PAUSE (or hover) stops the scroll.
   document.getElementById("tkband").addEventListener("click", function (e) {
     if (e.target.closest("#tkpause")) return;
@@ -2849,7 +2847,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
             return record(d) && typeof d.key === "string" && !!d.key && typeof d.store === "string" &&
               (d.locked === true || typeof d.item === "string") &&
               ["key", "dedupe_key", "store", "item", "brand", "url", "image_url", "category", "badge",
-               "headline", "status", "died_at", "first_seen_at"].every(function (k) {
+               "headline", "status", "died_at", "first_seen_at", "deal_path"].every(function (k) {
                 return d[k] == null || typeof d[k] === "string";
               }) && ["final_price", "regular_price", "pct_at_checkout", "abs_savings", "age_hours", "pick", "ps"].every(function (k) {
                 return d[k] == null || (typeof d[k] === "number" && isFinite(d[k]));
@@ -3072,5 +3070,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   setInterval(loadData, 5 * 60 * 1000);  // fallback self-refresh every 5 minutes
 })();
 </script>
+<script>{{DEAL_ACTIONS_SCRIPT}}</script>
 </body>
 </html>

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -28,6 +29,7 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "standalone_session": "standalone_session"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
+DEAL_PAGE_COUNTS = ("deal_detail_views", "deal_detail_outbound_clicks", "deal_code_copies")
 STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "
                       "name store, scope Event, parameter store")
 
@@ -222,6 +224,79 @@ def ga4_saved(client: Any, token: str, property_id: str, days: int) -> dict:
     except Exception as e:
         # Responses may echo a token; only the class is safe to report.
         out["returning"] = {"unavailable": f"visitor classification unavailable ({type(e).__name__})"}
+    return out
+
+
+def _page_family(path: str) -> str:
+    if path in ("/", "/index.html"):
+        return "home"
+    if re.fullmatch(r"/deal/[^/]+/", path):
+        return "deal"
+    if re.fullmatch(r"/stores/[^/]+/", path):
+        return "store"
+    if re.fullmatch(r"/deals/under-(10|25|50)/", path):
+        return "price"
+    if re.fullmatch(r"/deals/[^/]+/", path):
+        return "category"
+    return "best_today" if path == "/best-deals-today/" else ""
+
+
+def ga4_deal_pages(client: Any, token: str, property_id: str, days: int) -> dict:
+    """Observed actions by standard device/path dimensions, no console setup.
+
+    Aggregate paths into bounded families before returning them. No rows,
+    thresholded data or sampling means unavailable, never an invented zero.
+    """
+    ranges = [{"startDate": "yesterday", "endDate": "yesterday", "name": "yesterday"},
+              {"startDate": f"{days}daysAgo", "endDate": "yesterday", "name": "window"}]
+    request = {"dateRanges": ranges,
+               "dimensions": [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath")],
+               "metrics": [{"name": "eventCount"}], "limit": 10000,
+               "dimensionFilter": {"filter": {"fieldName": "eventName", "inListFilter": {
+                   "values": ["deal_detail_view", "deal_click", "deal_code_copy", "page_view"]}}}}
+    out = {key: {**dict.fromkeys(DEAL_PAGE_COUNTS), "by_device_page": []}
+           for key in ("yesterday", "window")}
+    groups: dict[str, dict[tuple[str, str], dict]] = {key: {} for key in out}
+    offset = 0
+    while True:
+        resp = client.post(GA4_URL.format(quote(property_id, safe="")),
+                           json={"requests": [{**request, "offset": offset}]},
+                           headers={"Authorization": f"Bearer {token}"})
+        resp.raise_for_status()
+        reports = resp.json().get("reports") or []
+        result = reports[0] if reports else {}
+        metadata = result.get("metadata") or {}
+        if metadata.get("subjectToThresholding") or metadata.get("samplingMetadatas") \
+                or metadata.get("dataLossFromOtherRow"):
+            return {"unavailable": "GA4 detail sample is thresholded, sampled or incomplete"}
+        for dims, values in _rows(result):
+            period, event = dims.get("dateRange"), dims.get("eventName")
+            family = _page_family(dims.get("pagePath", ""))
+            if period not in out or not family or len(values) != 1 or values[0] < 0:
+                continue
+            count = values[0]
+            device = dims.get("deviceCategory")
+            device = device if device in ("mobile", "desktop", "tablet") else "unknown"
+            metric = "views" if event == ("deal_detail_view" if family == "deal" else "page_view") else \
+                "outbound_clicks" if event == "deal_click" else "code_copies" if event == "deal_code_copy" else ""
+            if not metric:
+                continue
+            row = groups[period].setdefault((device, family),
+                {"device": device, "family": family, "views": None, "outbound_clicks": None, "code_copies": None})
+            row[metric] = (row[metric] or 0) + count
+            name = "deal_code_copies" if metric == "code_copies" else \
+                "deal_detail_views" if family == "deal" and metric == "views" else \
+                "deal_detail_outbound_clicks" if family == "deal" and metric == "outbound_clicks" else ""
+            if name:
+                out[period][name] = (out[period][name] or 0) + count
+        rows = result.get("rows") or []
+        offset += len(rows)
+        if offset >= int(result.get("rowCount") or len(rows)):
+            break
+        if not rows:
+            return {"unavailable": "GA4 detail rows are incomplete"}
+    for key in out:
+        out[key]["by_device_page"] = [groups[key][pair] for pair in sorted(groups[key])]
     return out
 
 

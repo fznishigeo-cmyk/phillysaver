@@ -1,6 +1,7 @@
 """Earning Get deal destinations, pick scores and shared social gating, offline."""
 
 import hashlib
+import json
 from copy import deepcopy
 
 import pytest
@@ -158,7 +159,13 @@ def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_a
     deals = [make_deal(dedupe_key="earning", canonical_url="https://amazon.com/dp/B012345678"),
              make_deal(dedupe_key="non-earning", canonical_url="https://cc.dealsofamerica.com/click")]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
-    assert hashlib.sha256((tmp_path / "site/deals.json").read_bytes()).hexdigest() == expected
+    doc = json.loads((tmp_path / "site/deals.json").read_bytes())
+    # Task 068 adds an optional page path; every pre-existing byte/value,
+    # including earning URLs and opaque locked stubs, retains this baseline.
+    for row in doc["deals"]:
+        row.pop("deal_path", None)
+    baseline = json.dumps(doc, separators=(",", ":")).encode()
+    assert hashlib.sha256(baseline).hexdigest() == expected
 
 
 @pytest.mark.parametrize("condition", ["used", "open_box", "refurbished"])

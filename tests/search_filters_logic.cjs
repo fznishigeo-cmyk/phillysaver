@@ -133,7 +133,7 @@ async function checkFirstLoad() {
     {meta:{front_page:{broad_categories:{}}},deals:payload.deals}];
   // A malformed deal is skipped; the rest of the publish still goes up.
   const badDeals = [[null], [[]], [{}],
-    ...['store','conditions','credits','codes','how','final_price','locked'].map(k=>
+    ...['store','conditions','credits','codes','how','final_price','locked','deal_path'].map(k=>
       [{...payload.deals[1],[k]:{invalid:true}}]),
     [{...payload.deals[1],credits:[null]}]];
   for (const bad of badDeals) {

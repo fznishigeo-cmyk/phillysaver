@@ -116,6 +116,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                        lambda: google.ga4_stores(client, token(), cfg.growth_ga4_property_id, days)),
         "saved": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
                   lambda: google.ga4_saved(client, token(), cfg.growth_ga4_property_id, days)),
+        "deal_pages": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
+                       lambda: google.ga4_deal_pages(client, token(), cfg.growth_ga4_property_id, days)),
         "search_console": ([need_google, site], lambda: google.search_console(
             client, token(), cfg.growth_search_console_site,
             sc_end - timedelta(days=days - 1), sc_end)),
@@ -177,6 +179,9 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
         data["product"] = {
             period: {name: data["ga4"][period][event] for name, event in google.PRODUCT_EVENTS.items()}
             for period in ("yesterday", "window")}
+        for period in ("yesterday", "window"):
+            detail = data.get("deal_pages", {}).get(period, {})
+            data["product"][period].update({name: detail.get(name) for name in google.DEAL_PAGE_COUNTS})
     log.info("product: %s", status["product"])
     return data, status
 
@@ -316,11 +321,30 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     else:
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
     lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")
+    def observed(value):
+        return _n(value) if value is not None else "unavailable (no observed event)"
+
+    for name in google.DEAL_PAGE_COUNTS:
+        lines.append(f"product.{name}: " + _pair(observed,
+            (product or {}).get("yesterday", {}).get(name), (product or {}).get("window", {}).get(name)))
+    detail = data.get("deal_pages")
+    if detail and "unavailable" not in detail:
+        lines.append("Page actions by device/page family (GA4 sample):")
+        for period in ("yesterday", "window"):
+            for row in detail[period]["by_device_page"]:
+                views, clicks = row["views"], row["outbound_clicks"]
+                ratio = f"{clicks / views:.1%}" if views and clicks is not None else "unavailable"
+                lines.append(f"  {period} {row['device']}/{row['family']}: "
+                             f"{observed(views)} views, {observed(clicks)} outbound actions, "
+                             f"actions/view {ratio}, {observed(row['code_copies'])} code copies")
+        lines.append("Actions/view counts Get deal and fallback-title actions, including related offers; "
+                     "repeat actions can exceed views. These are actions, not purchases. "
+                     "Code copies count successful clipboard writes only.")
+    else:
+        lines.append("Device/page-family actions: unavailable — " + (detail or {}).get("unavailable",
+                     status.get("deal_pages", "not in this snapshot")))
     saved = data.get("saved")
     if saved:
-        def observed(value):
-            return _n(value) if value is not None else "unavailable (no observed event)"
-
         lines.append(f"Feature actions (yesterday / last {days} days; event counts):")
         for event in google.SAVED_EVENTS:
             lines.append(f"  {event}: " + _pair(observed, saved["yesterday"].get(event),
@@ -438,7 +462,17 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
     if get_secret("TELEGRAM_BOT_TOKEN") and get_secret("TELEGRAM_ADMIN_CHAT_ID"):
         configured += 1
         try:
-            code = send_admin_text(text[:TELEGRAM_MAX], http_client=client)
+            # Device/family rows can exceed one message. Keep the full
+            # private report, splitting at a newline when possible.
+            remaining = text
+            code = 200
+            while remaining:
+                end = len(remaining) if len(remaining) <= TELEGRAM_MAX else \
+                    remaining.rfind("\n", 0, TELEGRAM_MAX) + 1 or TELEGRAM_MAX
+                code = send_admin_text(remaining[:end], http_client=client)
+                if code != 200:
+                    break
+                remaining = remaining[end:]
         except Exception as e:
             log.warning("telegram: error %s", _error(e))
         else:

@@ -66,12 +66,12 @@ def test_every_published_file_keeps_sources_quiet(db, cfg, tmp_path, support, op
     for deal, basis in [(amazon, "90-day average price on Amazon"), (used, "new price on Amazon")]:
         page = _page(out, _path(deal)).read_text()
         assert basis in page
-        assert '<p>Sources: Amazon price drop</p>' in page
+        assert '<p class="detail-sources">Sources: Amazon price drop</p>' in page
         assert '<a href="">Amazon price drop' not in page
         assert '?tag=example-20' in page
-    assert '<p>Sources: Amazon price drop</p>' in _page(out, _path(dead)).read_text()
+    assert '<p class="detail-sources">Sources: Amazon price drop</p>' in _page(out, _path(dead)).read_text()
     other_page = _page(out, _path(other)).read_text()
-    assert '<p>Sources: <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>, ' in other_page
+    assert '<p class="detail-sources">Sources: <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>, ' in other_page
     assert '<a href="https://hip2save.com/p/2" rel="noopener">Hip2Save</a></p>' in other_page
     assert "Amazon price history" in (out / "about.html").read_text()
     assert "re-checked against Amazon" in (out / "deals/used-open-box/index.html").read_text()

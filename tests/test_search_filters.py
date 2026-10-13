@@ -47,3 +47,23 @@ def test_search_filters_and_refresh(tmp_path, support, open_access):
     result = subprocess.run(['node', str(Path(__file__).with_name('search_filters_logic.cjs')),
                              str(out / 'index.html'), str(out / 'deals.json')], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("support", [True, False])
+def test_static_and_live_deal_page_journeys_offline(tmp_path, support):
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    cfg = AppConfig(support_enabled=support, paywall_open_access=True, seo_store_page_min_deals=1,
+                    affiliate_amazon_tag="example-20", affiliate_ebay_campaign_id="5339221823",
+                    affiliate_sovrn_enabled=True, affiliate_sovrn_key="0123456789abcdef0123456789abcdef",
+                    affiliate_competitor_tracker_hosts=["go.partner.test"])
+    deals = [make_deal(dedupe_key=f"detail-{i}", item=f"Kitchen offer {i}", category="kitchen",
+                       codes=['SAVE<&"\'10'], stack_steps=["Enter the code"]) for i in range(12)]
+    deals[1].update(store="Amazon", canonical_url="https://www.amazon.com/dp/B012345678?tag=old-20")
+    deals[2].update(store="eBay", canonical_url="https://www.ebay.com/itm/123456789012", codes=[], stack_steps=[])
+    deals[3].update(codes=["SAVE10"], stack_steps=["Use code SAVE10"])
+    deals[4].update(link_as_posted="https://go.partner.test/credit?aff=partner")
+    out, _, _, _ = render(tmp_path, cfg, deals)
+    result = subprocess.run(["node", str(Path(__file__).with_name("deal_pages_logic.cjs")), str(out)],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr

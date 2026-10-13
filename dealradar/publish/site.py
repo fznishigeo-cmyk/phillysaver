@@ -65,6 +65,7 @@ def site_template_version() -> str:
     data = html.replace("<!--standard-->", "").replace("<!--/standard-->", "").encode()
     data += (TEMPLATES_DIR / "site-footer.html").read_bytes()
     data += (TEMPLATES_DIR / "site-footer.css").read_bytes()
+    data += (TEMPLATES_DIR / "deal-actions.js").read_bytes()
     return hashlib.sha256(data).hexdigest()[:12]
 
 
@@ -609,6 +610,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
     for n, d in enumerate(top_picks(candidates, cfg.front_page), 1):
         d["pick"] = n
+    # Select once, before JSON is written: remembered URLs only for pages
+    # this publish emits. Free rows share their objects with member rows;
+    # locked stubs and member-only deals never gain a public path.
+    deal_pages = seo._deal_pages(db, cfg, now, out, teaser, deals)
+    paths = deal_pages[0]
+    for d in serialized + spotlight:
+        path = paths.get(d["key"][:8])
+        if path:
+            d["deal_path"] = path
     open_access = is_open(cfg)
     support = bool(getattr(cfg, "support_enabled", False))
     link = support_link(getattr(cfg, "support_payment_link", ""))
@@ -626,6 +636,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "footer-signup.css").read_bytes()
                 + (TEMPLATES_DIR / "site-footer.html").read_bytes()
                 + (TEMPLATES_DIR / "site-footer.css").read_bytes()
+                + (TEMPLATES_DIR / "deal-actions.js").read_bytes()
                 + str(cfg.join_prompt).encode() + link.encode() + monthly.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
@@ -734,6 +745,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 )
             html = html.replace("{{PLAN_CHOICES_" + place.upper() + "}}", choices)
         html = copy_variant(html, open_access, support)
+        html = html.replace("{{DEAL_ACTIONS_SCRIPT}}", (TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8"))
         html = re.sub(r"<!--engagement-->(.*?)<!--/engagement-->",
                       lambda m: m.group(1) if cfg.engagement else "", html, flags=re.S)
         if name == "index.html" and cfg.engagement:
@@ -809,7 +821,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
-    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals, spotlight=spotlight)
+    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
+                spotlight=spotlight, deal_pages=deal_pages)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")

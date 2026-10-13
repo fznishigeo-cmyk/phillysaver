@@ -1,12 +1,16 @@
 """Deal landing pages and the daily list: offline public data only."""
 
 import hashlib
+import gzip
 import json
 import re
 import shutil
 import subprocess
+from html.parser import HTMLParser
 from datetime import timedelta, timezone
 from html import unescape
+
+import pytest
 
 from dealradar.config import load_config
 from dealradar.publish import seo
@@ -41,6 +45,7 @@ def test_renamed_deal_keeps_url_in_a_fresh_output_directory(db, cfg, tmp_path):
     page = _page(tmp_path / "b", _path(d))
     assert page.exists() and '<h1>New name</h1>' in page.read_text()
     assert not _page(tmp_path / "b", _path(dict(d, item="New name"))).exists()
+    assert json.loads((tmp_path / "b/deals.json").read_text())["deals"][0]["deal_path"] == _path(d)
 
 
 def test_locked_pages_removed_but_url_remembered_across_rotation(db, cfg, tmp_path):
@@ -96,7 +101,7 @@ def test_deal_page_facts_schema_disclosure_affiliate_and_related(db, cfg, tmp_pa
     assert "✓ price history: The price was checked against price history." in html
     assert "Oct 9, 2026</time> (UTC)" in html and "minutes ago" not in html
     assert "<img" not in html
-    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener">Get deal</a><p class="disclosure">Disclosure: affiliate links may earn a commission.</p>' in html
+    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure">Disclosure: affiliate links may earn a commission.</p>' in html
     product = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
     assert product == {"@context": "https://schema.org", "@type": "Product", "name": d["item"],
                        "brand": {"@type": "Brand", "name": d["brand"]},
@@ -125,9 +130,10 @@ def test_steps_match_public_payload_and_credit_links(db, cfg, tmp_path):
     _render(db, cfg, tmp_path, [d])
     html = _page(tmp_path, _path(d)).read_text()
     payload = json.loads((tmp_path / "deals.json").read_text())["deals"][0]
-    assert f'href="{payload["url"]}" rel="sponsored noopener">Get deal' in html
+    assert f'href="{payload["url"]}" rel="sponsored noopener" data-deal-outbound' in html
     assert "How to get this price" in html and "<li>Clip the coupon</li>" in html
     assert "<code>SAVE10</code>" in html and "Slickdeals</a>" in html
+    assert 'data-copy-code="SAVE10" aria-label="Copy code SAVE10" hidden>Copy code</button>' in html
     assert "✓ 2+ sources: Two or more independent sources confirmed this price." in html
 
 
@@ -146,6 +152,8 @@ def test_ended_page_retained_from_database_until_row_deleted(db, cfg, tmp_path):
     html = path.read_text()
     assert "This deal has ended" in html and '<meta name="robots" content="noindex">' in html
     assert '>Get deal</a>' not in html and 'href="/deals/electronics/"' in html
+    assert "data-deal-outbound" not in html.split("<main", 1)[1].split("</main>", 1)[0]
+    assert "data-copy-code=" not in html
     assert _path(d) not in (tmp_path / "sitemap.xml").read_text()
     blocks = [json.loads(s) for s in re.findall(r'application/ld\+json">(.*?)</script>', html)]
     assert [b["@type"] for b in blocks] == ["BreadcrumbList"]
@@ -266,3 +274,123 @@ def test_small_print_names_wowpriced_once_the_amazon_tag_is_set(db, cfg, tmp_pat
         html = (tmp_path / "on" / name).read_text()
         assert "source's affiliate links" not in html, name
         assert "As an Amazon Associate, wowpriced earns from qualifying purchases." in html, name
+
+
+@pytest.mark.parametrize("open_access,cap", [(True, 0), (True, 2), (False, 1), (False, 3000)])
+def test_payload_paths_match_one_emitted_selection_without_locked_leakage(db, cfg, tmp_path,
+                                                                        monkeypatch, open_access, cap):
+    cfg.paywall_open_access = open_access
+    cfg.seo_deal_pages_max = cap
+    select = seo._deal_pages
+    calls = []
+
+    def once(*args):
+        calls.append(True)
+        return select(*args)
+
+    monkeypatch.setattr(seo, "_deal_pages", once)
+    # A remembered path alone must not publish a link for a capped/locked deal.
+    deals = _deals()
+    db.meta_set("seo_deal_paths", json.dumps({hashlib.sha256(d["dedupe_key"].encode()).hexdigest()[:8]: _path(d)
+                                            for d in deals}))
+    result = render_site(db, cfg, NOW, out_dir=tmp_path, deals=deals)
+    assert len(calls) == 1
+    public = json.loads((tmp_path / "deals.json").read_text())["deals"]
+    full = {d["key"]: d for d in result["full_payload"]["deals"]}
+    for d in public:
+        emitted = _page(tmp_path, _path(next(raw for raw in deals
+                   if hashlib.sha256(raw["dedupe_key"].encode()).hexdigest()[:16] == d["key"]))).is_file()
+        if d.get("locked"):
+            from dealradar.publish.paywall import STUB_KEYS
+            assert set(d) == {"locked", *STUB_KEYS}
+            assert "deal_path" not in full[d["key"]]
+            assert not emitted
+        else:
+            assert d == full[d["key"]]
+            assert ("deal_path" in d) == emitted
+            if emitted:
+                assert _page(tmp_path, d["deal_path"]).is_file()
+            card = seo.card_html(d, {d["key"][:8]: d["deal_path"]} if emitted else {})
+            expected = d["deal_path"] if emitted else d["url"]
+            assert f'<h3 class="title"><a href="{expected}"' in card
+
+
+@pytest.mark.parametrize("kind", ["amazon", "epn", "sovrn_code", "multistep", "protected"])
+def test_detail_get_deal_keeps_exact_affiliate_and_steps_destination(db, cfg, tmp_path, kind):
+    cfg.paywall_open_access = True
+    cfg.affiliate_amazon_tag = "example-20"
+    cfg.affiliate_ebay_campaign_id = "5339221823"
+    cfg.affiliate_sovrn_enabled = True
+    cfg.affiliate_sovrn_key = "0123456789abcdef0123456789abcdef"
+    d = make_deal(category="home")
+    if kind == "amazon":
+        d.update(store="Amazon", canonical_url="https://www.amazon.com/dp/B012345678?tag=old-20",
+                 stack_steps=["Clip the coupon", "Subscribe & Save"])
+    elif kind == "epn":
+        d.update(store="eBay", canonical_url="https://www.ebay.com/itm/123456789012", codes=[])
+    elif kind == "multistep":
+        d["stack_steps"] = ["Clip the coupon", "Apply SAVE10"]
+    elif kind == "protected":
+        cfg.affiliate_competitor_tracker_hosts = ["go.deals.test"]
+        d.update(link_as_posted="https://go.deals.test/credit?aff=partner")
+    _render(db, cfg, tmp_path, [d])
+    published = json.loads((tmp_path / "deals.json").read_text())["deals"][0]
+    anchors = re.findall(r'<a class="getdeal" href="([^"]+)"', _page(tmp_path, _path(d)).read_text())
+    assert list(map(unescape, anchors)) == [published["url"]]
+    if kind == "amazon":
+        assert published["url"] == "https://www.amazon.com/dp/B012345678?tag=example-20"
+    elif kind == "epn":
+        assert "campid=5339221823" in published["url"]
+    elif kind == "sovrn_code":
+        assert published["url"].startswith("https://redirect.viglink.com?")
+    elif kind == "multistep":
+        assert published["url"] == "https://slickdeals.net/f/1"
+    else:
+        assert published["url"] == d["link_as_posted"]
+
+
+class _Elements(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.elements = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
+
+
+def test_detail_codes_metadata_escape_and_no_js_are_readable(db, cfg, tmp_path):
+    cfg.paywall_open_access = True
+    code = 'SAVE<&"\'10'
+    store = 'Macy\'s <"shop">\n'
+    d = make_deal(store=store, codes=[code], category='home" onclick="bad')
+    _render(db, cfg, tmp_path, [d])
+    html = _page(tmp_path, _path(d)).read_text()
+    parsed = _Elements(html).elements
+    buttons = [attrs for tag, attrs in parsed if "data-copy-code" in attrs]
+    assert buttons == [{"type": "button", "class": "copy-code", "data-copy-code": code,
+                        "aria-label": "Copy code " + code, "hidden": None}]
+    assert 'Code: <code>SAVE&lt;&amp;&quot;&#x27;10</code>' in html
+    outbound = [attrs for tag, attrs in parsed if "data-deal-outbound" in attrs]
+    assert outbound and all(a["data-store"] == store.strip() and a["data-category"] == "other" for a in outbound)
+    assert not any("onclick" in attrs for tag, attrs in parsed)
+    assert all("data-deal-outbound" not in attrs for tag, attrs in parsed
+               if tag == "a" and attrs.get("rel") == "noopener")
+    assert "<img" not in html and 'role="status" aria-live="polite"' in html
+    assert ".deal-detail>.getdeal{width:100%}" in html and "min-height:44px" in html
+
+
+def test_added_path_field_payload_gzip_measurement(db, cfg, tmp_path):
+    cfg.paywall_open_access = True
+    deals = [make_deal(dedupe_key=f"measure-{i}", item=f"Product {i} kitchen set", codes=[])
+             for i in range(1400)]
+    render_site(db, cfg, NOW, out_dir=tmp_path, deals=deals)
+    payload = json.loads((tmp_path / "deals.json").read_text())
+    original = {**payload, "deals": [{k: v for k, v in d.items() if k != "deal_path"} for d in payload["deals"]]}
+    encode = lambda d: json.dumps(d, separators=(",", ":")).encode()
+    before, after = encode(original), encode(payload)
+    increment = len(gzip.compress(after, mtime=0)) - len(gzip.compress(before, mtime=0))
+    assert increment > 0 and len(after) - len(before) == sum(
+        len(json.dumps({"deal_path": d["deal_path"]}, separators=(",", ":")).encode()) - 1 for d in payload["deals"])
+    print(f"1400 deals: raw {len(before)} -> {len(after)}; gzip {len(gzip.compress(before, mtime=0))}"
+          f" -> {len(gzip.compress(after, mtime=0))} (+{increment} bytes)")

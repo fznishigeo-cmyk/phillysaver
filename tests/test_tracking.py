@@ -570,7 +570,7 @@ def test_event_hooks_at_sign_up_checkout_deal_click_and_welcome(db, cfg, tmp_pat
     assert '["pwfb", "cofb"].forEach' in html and 'addEventListener("click", function () { track("begin_checkout"); })' in html
     click = _between(html, 'e.target.closest(\'.card a[rel~="sponsored"]\')', "nextStep();")
     call = _between(click, 'track("deal_click", {', "});")
-    assert re.findall(r"(\w+):", call) == ["store", "category"]
+    assert re.findall(r"(\w+):", call) == ["store", "category", "method"]
     welcome = (out / "welcome.html").read_text(encoding="utf-8")
     hook = _between(welcome, 'if (/^cs_[A-Za-z0-9_]{8,200}$/.test(fromUrl)', 'window.wpTrack("start_trial")')
     assert 'var TRIAL_KEY = "wp.trial." + fromUrl;' in hook and "if (!lsGet(TRIAL_KEY))" in hook
@@ -619,3 +619,33 @@ def test_welcome_takes_the_session_id_off_the_url_before_any_tag(db, cfg, tmp_pa
     assert json.loads(res.stdout) == {
         "?session_id=cs_live_ABCdef123456": {"id": "cs_live_ABCdef123456", "urls": ["/welcome.html"]},
         "none": {"id": "", "urls": []}}
+
+
+@pytest.mark.parametrize("ga4", [False, True])
+def test_detail_view_and_successful_copy_are_ga4_only_and_methods_are_bounded(tmp_path, ga4):
+    ids = dict(SAMPLE)
+    if not ga4:
+        ids.pop("ga4_measurement_id")
+    private = {"code": "PRIVATE-CODE", "key": "PRIVATE-KEY", "price": 12.34,
+               "store": "PRIVATE-STORE", "category": "PRIVATE-CATEGORY", "url": "https://private.test/item"}
+    calls = [["deal_detail_view", {**private, "method": "deal"}],
+             ["deal_code_copy", {**private, "method": "deal"}],
+             ["deal_code_copy", {**private, "method": "home"}],
+             ["deal_detail_view", {**private, "method": "PRIVATE-METHOD"}],
+             ["deal_code_copy", {**private, "method": "PRIVATE-METHOD"}]]
+    out = _run_node(tmp_path, ids, {"baseline": {}, "open": {"calls": calls},
+                                   "gpc": {"gpc": True, "calls": calls},
+                                   "out": {"storage": {"wp.adsOptOut": "1"}, "calls": calls}})
+    for name in ("open", "gpc", "out"):
+        sent = [e for e in out[name]["dataLayer"] if e[0] == "event"]
+        assert sent == ([["event", event, {"method": params["method"], "send_to": SAMPLE["ga4_measurement_id"]}]
+                         for event, params in calls[:3]] if ga4 else [])
+        assert "PRIVATE" not in json.dumps(out[name]) and "private.test" not in json.dumps(out[name])
+        for tag in ("fbq", "ttq", "pintrk", "uetq"):
+            assert out[name][tag] == (out["baseline"][tag] if name == "open" else None)
+    kinds = ("home", "deal", "category", "store", "price", "best_today")
+    methods = _run_node(tmp_path, ids, {"open": {"calls": [["deal_click", {"method": m}] for m in (*kinds, "PRIVATE-METHOD")]}})
+    if ga4:
+        sent = [e for e in methods["open"]["dataLayer"] if e[0] == "event"]
+        assert [e[2].get("method") for e in sent] == [*kinds, None]
+    assert "PRIVATE" not in json.dumps(methods)

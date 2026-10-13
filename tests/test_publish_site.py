@@ -91,6 +91,8 @@ def test_rewrite_affiliate_is_identity():
 def test_serialized_fields_have_consumers():
     # Maintain this list with the reader when adding a public field. The
     # Worker stores/serves the full payload verbatim, without field readers.
+    # Optional deal_path is attached after page selection: live titles and
+    # engagement.js saveDeal consume it (test_seo_deal_pages.py checks scope).
     fields = {
         "dedupe_key",  # index.html dealKey fallback
         "key",  # index.html dealKey; paywall rotation and STUB_KEYS

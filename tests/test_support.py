@@ -116,13 +116,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "7945a48d27952f7d38389485d49f77f40feaea9aac34d1ff632d8723cbfa05e1"),
-    (False, 49, "f097be596a82d1aac0f05a2e1393ce2592287f6f0f01e7abcc3a64e847dada62"),
-    (True, 0, "725deeae29e3bebcbdeabad6e0a747f5e8739b5188769098497ae870d3edb8d6"),
-    (True, 49, "5216be53973d7e6d5c6645fe28bb217d1d66e595925b2212a90298f56c10443d"),
+    (False, 0, "26991faf91b0d5567b93a6ca14a061c057f4e063845b1ca2059f8a2946258a8d"),
+    (False, 49, "2b129b6fde60d69ee5609630f527012d9fb31260d065af4537931f9a5c6610aa"),
+    (True, 0, "706e9daa1ca73e925d6bc289b7a450dee6664c1d49f6b6dffdb99e6590c88595"),
+    (True, 49, "948063278c325c42824580f993402abf58756519a6fa17065ebbba18d1297285"),
 ])
-def test_support_off_index_bytes_match_task061_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 061 adds shared spotlight styles/rendering in every access mode. Snapshot
+def test_support_off_index_bytes_match_task068_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 068 adds shared titles/actions in every access mode. Snapshot
     # the actual output without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

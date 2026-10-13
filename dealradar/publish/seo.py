@@ -153,6 +153,15 @@ def spotlight_time(ends_at: str, now: datetime) -> str:
     return f"ends in {minutes // 60}h {minutes % 60}m"
 
 
+def _outbound_attrs(d: dict[str, Any]) -> str:
+    """Explicit, bounded labels; never infer analytics from link destinations."""
+    store = re.sub(r"[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]", "", str(d.get("store") or ""))[:60]
+    category = str(d.get("category") or "other")
+    if not re.fullmatch(r"[a-z0-9_]{1,40}", category):
+        category = "other"
+    return f' data-deal-outbound data-store="{escape(store)}" data-category="{escape(category)}"'
+
+
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
               now: datetime | None = None) -> str:
     """One free or dead deal as the wall draws it (index.html cardHtml), with
@@ -192,7 +201,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         price += f' <span class="save">save ${float(d["abs_savings"]):.2f}</span>'
     page = (deal_paths or {}).get(str(d.get("key") or "")[:8])
     title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page and not dead else
-             f'<a href="{e(url)}" rel="sponsored noopener">{e(d.get("item"))}</a>'
+             f'<a href="{e(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>{e(d.get("item"))}</a>'
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip storechip">{e(store)}</span>'
@@ -215,7 +224,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         how = (f'<div class="how"><b>How to get this price:</b> '
                f'{steps or ("" if codes else "the steps are in the deal post")}'
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
-    actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener">Get deal</a>'
+    actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
     return (f'<article class="card{" gone" if dead else ""}{" spotlight" if spotlight else ""}"'
             + (' role="region" aria-label="Today only deal"' if spotlight else "") + '>'
@@ -551,13 +560,11 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                               CATGROUPS[-1])
     hub = f'<a href="{hub_href(slug)}">{escape(label)} deals</a>'
     content = '<p class="ended"><strong>This deal has ended</strong></p>' if dead else ""
-    content += (f'<div class="ph" style="background:hsl({_store_hue(store)},42%,62%)" '
-                f'aria-hidden="true"><span>{escape((store or "deal")[:18])}</span></div>'
-                f'<p>Store: {escape(store)}</p>')
+    content += f'<p class="detail-store">Store: {escape(store)}</p>'
     facts = [f"at {store}"]
     if d.get("final_price") is not None:
         price = f'{float(d["final_price"]):.2f}'
-        content += f'<p>Sale price: <strong>${price}</strong></p>'
+        content += f'<p class="detail-price">Sale price: <strong>${price}</strong></p>'
         facts.insert(0, f"${price}")
     if d.get("regular_price") is not None:
         regular = f'{float(d["regular_price"]):.2f}'
@@ -578,10 +585,19 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                    "corroborated": "Two or more independent sources confirmed this price."}
     content += (f'<p>{_TIER_LABEL.get(badge, "single source")}: '
                 f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
-    if d.get("needs_steps"):
+    if d.get("needs_steps") or d.get("codes"):
         content += '<div class="how"><h2>How to get this price</h2>'
-        content += '<ol>' + ''.join(f'<li>{escape(str(s))}</li>' for s in d.get("how") or []) + '</ol>'
-        content += ''.join(f'<p>Code: <code>{escape(str(c))}</code></p>' for c in d.get("codes") or [])
+        if d.get("how"):
+            content += '<ol>' + ''.join(f'<li>{escape(str(s))}</li>' for s in d.get("how") or []) + '</ol>'
+        for c in d.get("codes") or []:
+            code = escape(str(c))
+            content += f'<p class="detail-code">Code: <code>{code}</code>'
+            if not dead:
+                content += (f'<button type="button" class="copy-code" data-copy-code="{code}" '
+                            f'aria-label="Copy code {code}" hidden>Copy code</button>')
+            content += '</p>'
+        if d.get("codes") and not dead:
+            content += '<p class="code-status" role="status" aria-live="polite"></p>'
         if not (d.get("how") or d.get("codes")):
             content += '<p>The steps are in the deal post.</p>'
         content += '</div>'
@@ -592,10 +608,10 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         f'<a href="{escape(_http(c.get("url")))}" rel="noopener">{escape(str(c.get("name") or ""))}</a>'
         if _http(c.get("url")) else escape(str(c.get("name") or ""))
         for c in d.get("credits") or [])
-    content += f'<p>Sources: {credits}</p>'
+    content += f'<p class="detail-sources">Sources: {credits}</p>'
     url = _http(d.get("url"))
     if not dead and url:
-        content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener">Get deal</a>'
+        content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                     f'<p class="disclosure">{escape(disclosure)}</p>')
     content += f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
@@ -619,7 +635,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
             product["brand"] = {"@type": "Brand", "name": d["brand"]}
         ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
-                         '<div class="deal-detail">' + content + '</div>', dead=dead,
+                         '<div class="deal-detail" data-deal-detail>' + content + '</div>', dead=dead,
                          extra_head=ld + (PRICE_HISTORY_STYLE if chart else ""),
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
@@ -721,7 +737,8 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
 
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
-            source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None) -> None:
+            source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
+            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]) -> None:
     """The search-engine side of a publish, into out: the static wall and
     tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
     sitemap.xml and the IndexNow due-list (beside out, never in it)."""
@@ -730,7 +747,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 
     spotlight = spotlight or []
     open_access = is_open(cfg)
-    paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
+    paths, deal_rows, lastmods = deal_pages
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
@@ -751,7 +768,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
-                     DROP_MINUTES=str(int(cfg.drop_minutes)))
+                     DROP_MINUTES=str(int(cfg.drop_minutes)),
+                     DEAL_ACTIONS_SCRIPT=(TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8"))
     template = copy_variant(template, open_access, support)
     template = affiliate_copy(template, getattr(cfg, "affiliate_amazon_tag", ""))
     template = site_footer(template, now, meta["disclosure"], support)

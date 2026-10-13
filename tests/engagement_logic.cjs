@@ -104,7 +104,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   function click(d, getDeal=true, save=false) {
     let prevented=0, stopped=0;
     const card = {getAttribute:()=>d.key};
-    const go = {closest:()=>card, classList:{contains:k=>getDeal && k==='getdeal'}};
+    const go = {closest:()=>card, hasAttribute:()=>false, classList:{contains:k=>getDeal && k==='getdeal'}};
     const button = {getAttribute:()=>d.key};
     elements.content.listeners.click({target:{closest:s=>s.includes('data-save-key') && save ? button
       : s.includes('sponsored') && !save ? go : null},
@@ -175,7 +175,7 @@ assert.equal(h.finds(),"You've found $10.25 in savings this week");
 assert.ok(!h.finds().includes('saved'));
 let saved=JSON.parse(h.storage.get('wp.weeklyFinds'));
 assert.equal(saved.week,'2026-10-12'); assert.equal(saved.finds.length,1);
-assert.ok(h.events.every(e=>e.name==='deal_click' && Object.keys(e.params).sort().join(',')==='category,store'));
+assert.ok(h.events.every(e=>e.name==='deal_click' && Object.keys(e.params).sort().join(',')==='category,method,store' && e.params.method==='home'));
 h=harness({stored:Object.fromEntries(h.storage)}); h.click(row('a'));
 assert.equal(JSON.parse(h.storage.get('wp.weeklyFinds')).finds.length,1);
 h.ctx.recordFind(row('b',{abs_savings:2.10})); assert.ok(h.finds().includes('$12.35'));
@@ -277,6 +277,11 @@ const SAVED_KEY='wp.savedDeals';
 const record=deals=>JSON.stringify({version:1,deals});
 const identity=(key, changes={})=>({key,label:'Original '+key,store:'Store',...changes});
 const shortlist=options=>harness({savedEnabled:true,switches:off,...options});
+h=shortlist({deals:[row('path',{deal_path:'/deal/original-name-12345678/'})]});
+assert.equal(h.ctx.saveDeal(row('path')),true);
+assert.equal(JSON.parse(h.storage.get(SAVED_KEY)).deals[0].path,'/deal/original-name-12345678/');
+assert.match(h.ctx.cardHtml(row('path',{item:'Renamed item',deal_path:'/deal/original-name-12345678/'})),
+  /<h3 class="title"><a href="\/deal\/original-name-12345678\/">Renamed item<\/a>/);
 h=shortlist({deals:[row('a'),row('b'),row('c')]});
 assert.equal(h.elements.savedview.textContent,'Saved (0)');
 assert.match(h.elements.savedstatus.textContent,/Saved on this device/);

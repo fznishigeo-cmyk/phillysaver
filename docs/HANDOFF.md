@@ -190,6 +190,34 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Deal pages from the wall (Codex task 068, 2026-10-13; shipped after review):**
+  one page-selection pass before JSON adds remembered `deal_path` only for
+  emitted public pages; live titles and the existing device-local Save use
+  it. Get deal URLs and opaque locked stubs stay unchanged. Image-free
+  detail pages have prominent prices, wrapping facts, 44px+ actions and
+  accessible copy buttons beside always-selectable codes; task 062's chart
+  and the spotlight/fallback/saved flows are retained. Explicit static
+  store/category labels and one scoped delegate cover home fallback,
+  listings, details and related offers without duplicating the dynamic
+  listener; modified/middle clicks keep browser navigation. Detail views
+  and successful copies are GA4-only. The private Product report adds
+  device/page-family counts and actions/view (never purchases); absent or
+  incomplete samples are unavailable, long Telegram reports split instead
+  of truncating. A deterministic 1,400-deal path-only comparison measured
+  JSON 1,073,979 → 1,149,869 bytes; gzip (level 9, mtime 0) 33,622 → 43,895
+  (+10,273 bytes). Focused checks passed; final `.venv/bin/python -m
+  pytest -q`: 2,560 passed, 1 deselected, only seven existing local-socket
+  failures (`tests/test_workflows.py::test_deploy_checks_the_yearly_price_with_stripe`,
+  six `change0`–`change5` cases, and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`).
+  Own generated-page QA was prepared for 360px, iPhone 14,
+  Pixel 7 and desktop, light/dark and keyboard title/copy/Back journeys;
+  Chromium fails before launch (`Operation not permitted`), so those
+  visual/layout/focus checks remain. No task 062 owner is available in this
+  session; its module is untouched and its tests pass. Branch creation is
+  read-only here; no commit or push. Remaining: a full green run and browser
+  QA outside the sandbox, then Claude review. Live GA4 counts await deployment
+  and an observed event sample.
 - **Installable app (Codex task 069, 2026-10-13; shipped after review; icons re-rendered from the header mark):** config-driven
   manifest/four existing-logo PNGs, every-page head tags, quiet 44px footer
   install/iOS Safari help, standalone/session tracking and GA4-only Product
