@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "ccc30a7c9cfd10322d26aad15a0092c3b038755fd6121b1d3c5f3f2e4759be6e"),
-    (False, 49, "9169f8ed22edaf457f694236d520b9a98babe1163ffe1960aa93ad19bb33d8b0"),
-    (True, 0, "0cc1ffcecb232b6b24ceeb4e6cd242eabc6a28fe44d36971e84d80970ec7a051"),
-    (True, 49, "608ff512fd78458903619789af28b134e85bceb97b1f3743c311d2d4a21c062d"),
+    (False, 0, "acb1aec0ef687f075bad3136e2a9b0c042cc10c4d9f825ae0219deca03aa9810"),
+    (False, 49, "03d189df66d468286d01bf1e08da0955010e7d9a48e71e5386614a5a46ea97d4"),
+    (True, 0, "738989d6de47ef8c347ac9a50f87936718e83be0ee503e06570665d41b56498f"),
+    (True, 49, "7408bf864bd6a54057116d1ee0401743c223d6312117a06d7a10ee7e1af37dd5"),
 ])
 def test_support_off_index_bytes_match_task074_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 074 adds the shared footer link and preserves it on disclosure refresh.

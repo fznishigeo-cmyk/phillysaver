@@ -69,9 +69,11 @@ def publish(out: Path, cfg) -> None:
     light, dark, _background = colors()
     css_template = (TEMPLATES / "pwa.css").read_text(encoding="utf-8")
     script = (TEMPLATES / "pwa.js").read_text(encoding="utf-8")
-    footer = ('<!-- wp-pwa-footer -->\n'
-              + (TEMPLATES / "pwa-footer.html").read_text(encoding="utf-8")
-              + '<!-- /wp-pwa-footer -->\n')
+    actions, help_section = (TEMPLATES / "pwa-footer.html").read_text(encoding="utf-8").split("\n", 1)
+    # The install link sits inline at the end of the footer links; the iOS
+    # help (a block) stays at the end of the footer.
+    actions = "<!-- wp-pwa-footer -->" + actions + "<!-- /wp-pwa-footer -->"
+    footer = "<!-- wp-pwa-footer -->\n" + help_section + "<!-- /wp-pwa-footer -->\n"
     for path in sorted(out.rglob("*.html")):
         page = _BLOCK.sub("", path.read_text(encoding="utf-8"))
         page_light, page_dark = _header_colors(page, light, dark)
@@ -88,7 +90,13 @@ def publish(out: Path, cfg) -> None:
         if at < 0:
             at = page.find("</head>")
         page = page[:at] + head + page[at:]
-        page = page.replace("</footer>", footer + "</footer>", 1)
+        links = page.find('id="footerlinks"')
+        close = page.find("</nav>", links) if links >= 0 else -1
+        if close >= 0:
+            page = page[:close].rstrip() + actions + "\n  " + page[close:]
+            page = page.replace("</footer>", footer + "</footer>", 1)
+        else:
+            page = page.replace("</footer>", actions + "\n" + footer + "</footer>", 1)
         path.write_text(page, encoding="utf-8")
     headers = out / "_headers"
     headers.write_text(headers.read_text(encoding="utf-8").removesuffix(_HEADERS) + _HEADERS,

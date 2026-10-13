@@ -10,3 +10,10 @@ footer #acctfoot[hidden]{display:none!important}
   footer #footerlinks{text-align:center}
   footer #footerlinks a{min-height:44px;padding:12px 2px}
 }
+/* Wide screens: the footer centers under the deal grid instead of hugging
+   the left edge (operator, 2026-10-13). */
+@media (min-width:641px){
+  footer{text-align:center}
+  footer .footerfine{margin:8px auto 0}
+  footer .footersignup{margin:0 auto 24px;text-align:left}
+}

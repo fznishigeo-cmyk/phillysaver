@@ -1,6 +1,7 @@
 #pwa-actions[hidden],#pwa-install[hidden],#pwa-ios[hidden],#pwa-help[hidden]{display:none!important}
-footer .pwa-link{display:inline-flex;align-items:center;min-height:44px;min-width:44px;
-  padding:10px 4px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+footer .pwa-link{display:inline;padding:0;border:0;background:transparent;color:var(--muted);
+  font:inherit;font-size:13px;cursor:pointer}
+@media (max-width:640px){footer .pwa-link{display:inline-block;min-height:44px;min-width:44px;padding:12px 2px}}
 footer .pwa-link:hover,footer .pwa-link:focus-visible{text-decoration:underline;text-underline-offset:2px}
 footer .pwa-link:focus-visible,#pwa-help:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 #pwa-help{margin-top:12px;max-width:480px;color:var(--fg)}
