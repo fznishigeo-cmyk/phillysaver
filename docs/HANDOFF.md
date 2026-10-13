@@ -162,6 +162,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - The goal is $6/day.
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
+## Pending approvals (track until done; the "Keys + approvals tracker" routine nudges)
+- **eBay Partner Network:** applied 2026-10-13, under review. No reply 24 h
+  after → operator emails EPNHelp@ebay.com. Approved → Campaign ID (10
+  digits, public) → wire eBay links (no EPN support in code yet).
+- **eBay developer API** (`EBAY_CLIENT_ID`/`EBAY_CLIENT_SECRET`), **Best Buy
+  API** (`BESTBUY_API_KEY`): pending.
+- **Sovrn:** links tracked; full approval pending, then direct deposit and
+  the reporting key.
+- **Impact.com:** marketplace declined 2026-10-13, support ticket 895150
+  (reason + manual review). The account still joins brands through their own
+  sign-up pages: Walmart, Target, Home Depot, Kohl's (skip Lowe's, 0% pay).
+  Each approval → one tracking link → wire that store.
+- **Pinterest Standard access:** screen-recording script, then submission.
+
 ## In flight
 - **Source coverage audit (Codex task 052, 2026-10-13):** `python -m
   dealradar source-audit` (workflow `source-audit.yml`, manual + Monday
