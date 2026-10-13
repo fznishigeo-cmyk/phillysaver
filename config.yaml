@@ -302,7 +302,7 @@ engagement:
   visit_streak: true
   surprise_me: true
   hot_meter: true
-  saved_deals: true
+  saved_deals: true       # browser-only saves and price watches, checked when you visit
   saved_deals_limit: 100   # browser-only shortlist; bounded to 1–200
 
 pwa:

@@ -190,6 +190,17 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Price watches (Codex task 071, 2026-10-13; shipped after review):** Saved v2
+  records published save-time prices/conditions and optional targets; exact
+  public matches add a badge, drop-first ordering, was/now text and per-price
+  notice deduplication. GA4-only actions feed Product counts; privacy updated.
+  V1 baselines stay unknown; all four disabled modes match original bytes.
+  Full suite: 2,636 passed, 1 deselected; only seven existing socket failures
+  in `tests/test_workflows.py`: `test_deploy_checks_the_yearly_price_with_stripe`
+  (change0–change5) and `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  Two Saved-on PWA snapshots updated. Chromium EPERM leaves 360px QA and
+  390x844 first-card top before/after unavailable; live GA4 counts await deployment.
+  No commit or push.
 - **Phone filters + Back state (Codex task 065, 2026-10-13; shipped after review):**
   configured `seo.price_pages` presets/custom ceiling, New condition and
   No extra steps; native phone dialog with 44px controls/16px inputs and

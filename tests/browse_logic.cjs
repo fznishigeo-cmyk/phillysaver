@@ -83,6 +83,7 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
     cardHtml:d=>'<article class="card" data-key="'+d.key+'"></article>',
     engagementLineHtml:()=>'',SORT_KEY:'wp.sort',savedOn:()=>saved,savedDeals:{view:false},
     renderSavedControls(){el('filterfields').disabled=ctx.savedDeals.view;el('filtertoggle').disabled=ctx.savedDeals.view;},
+    savedWatchEditor:()=>null,restoreSavedWatchEditor(){},savedWatchHtml:()=>'',
     savedViewHtml:()=>'<div class="grid">'+ctx.state.deals.slice(0,2).map(ctx.cardHtml).join('')+'</div>',
     async fetchPublish(){refreshes++;if(pendingRefresh) await pendingRefresh;return {deals:nextRows || ctx.state.deals};},
     async merge(pub){ctx.state.deals=pub.deals;ctx.refreshStores();}, loadData:async()=>{},

@@ -268,6 +268,12 @@ _SAVED_DISPATCH = """\
     }
 """
 
+_WATCH_EVENTS = """\
+    watch_create: { ga4Only: true, methods: ["save", "target"] },
+    watch_match: { ga4Only: true, methods: ["drop", "target"] },
+    watch_deal_click: { ga4Only: true, methods: ["outbound"] },
+"""
+
 
 def tracking_ids(cfg) -> dict[str, str]:
     """The configured tracking values that pass their pattern; each invalid
@@ -320,6 +326,7 @@ def head_snippet(cfg) -> str:
                                     '    standalone_session: { ga4Only: true },')
     if getattr(cfg, "support_enabled", False) and getattr(cfg, "engagement", {}).get("saved_deals", False):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", _SAVED_DISPATCH + "    var ev = EVENTS[name];")
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n" + _WATCH_EVENTS)
     if getattr(cfg, "engagement", {}).get("surprise_me", False):
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    surprise_click: { metaCustom: "SurpriseClick", tiktok: "ClickButton", uet: "surprise_click" },')

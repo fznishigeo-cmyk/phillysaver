@@ -54,11 +54,15 @@ def util_now():
     return now_utc()
 
 
+_WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
+
+
 def site_template_version(price_presets: list[int] | None = None) -> str:
     """Short hash of the standard home template, preserving its version
     when only the optional support variant changes."""
     import hashlib
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
     html = re.sub(r"<!--support-->.*?<!--/support-->", "", html, flags=re.S)
@@ -635,7 +639,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     browse_script = browse_script.replace("{{PRICE_PRESETS}}", json.dumps(price_presets))
     site_version = site_template_version(price_presets) + ("-open" if open_access else "")
     if support:
-        data = ((TEMPLATES_DIR / "index.html").read_bytes()
+        home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+        # Optional watch markup must not change the disabled page's version.
+        home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
+        data = (home.encode()
                 + (TEMPLATES_DIR / "support.js").read_bytes()
                 + (TEMPLATES_DIR / "join-card.html").read_bytes()
                 + (TEMPLATES_DIR / "join-card.css").read_bytes()
@@ -660,6 +667,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256(
             site_version.encode() + engagement_script.encode()
             + str(saved_deals).encode() + str(saved_limit).encode()
+            + ("".join(_WATCH_BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
+               if saved_deals else b"")
         ).hexdigest()[:12]
     if cfg.pwa_enabled:
         site_version = pwa.site_version(site_version, cfg)
@@ -764,6 +773,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{SURPRISE_HIDDEN}}", "" if engagement["surprise_me"] else "hidden")
         html = re.sub(r"<!--saved-->(.*?)<!--/saved-->",
                       lambda m: m.group(1) if saved_deals else "", html, flags=re.S)
+        html = html.replace("<!--watch-->", "").replace("<!--/watch-->", "")
         html = html.replace("{{HOT_EXPLANATION}}", (
             " Flames mark real signals: at least two are needed, from at least 60% off, "
             "confirmation by two or more independent sources, and a first sighting less "

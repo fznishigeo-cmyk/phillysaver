@@ -1,9 +1,12 @@
 """Saved-list publication, mode boundaries and storage configuration, offline."""
 import re
+import shutil
+from datetime import datetime, timezone
 
 import pytest
 
 from dealradar.config import AppConfig, load_config
+from dealradar.publish import site
 from tests.test_publish_site import make_deal
 from tests.test_support import render
 
@@ -47,9 +50,14 @@ def test_saved_output_privacy_and_dormant_modes(tmp_path, support, enabled, open
     assert ('function savedViewHtml' in home) is on
     assert ('.save-deal,#savedview,#savedall,#savedclear{min-width:44px;min-height:44px' in home) is on
     assert ('Saved on this device.' in privacy) is on
-    assert ('no saved prices, photos, codes or outbound links' in privacy) is on
+    assert ('no photos, codes or outbound links' in privacy) is on
+    assert ('Saved prices and target prices stay in this browser and are checked when you visit.' in privacy) is on
+    assert ('SAVED_VERSION = 2' in home) is on
+    assert ('function savedWatchMatch' in home) is on
+    assert ('watch-count' in home) is on
+    assert ('Watch price' in home) is on
     for page in (home, privacy):
-        assert "<!--saved-->" not in page and "{{" not in page
+        assert "<!--saved-->" not in page and "<!--watch-->" not in page and "{{" not in page
     if support or open_access:
         assert doc["meta"]["locked_count"] == 0 and memory == '["before"]'
     else:
@@ -81,4 +89,36 @@ def test_successful_public_payload_only_and_version_switch(tmp_path):
     _, off, _, _ = render(tmp_path, cfg, [make_deal()])
     assert doc["meta"]["site_version"] != off["meta"]["site_version"]
     # No shortlist load/write, controls or hooks survive the disabled build.
-    assert not re.search(r"wp\.savedDeals|savedButton|savedOutbound|savedViewHtml", (out / "index.html").read_text())
+    assert not re.search(r"wp\.savedDeals|savedButton|savedOutbound|savedViewHtml|watch_|Watch price|watch-price|watch-count",
+                         (out / "index.html").read_text())
+
+
+@pytest.mark.parametrize("support", [False, True])
+@pytest.mark.parametrize("open_access", [False, True])
+def test_disabled_watches_ignore_optional_templates_byte_for_byte(tmp_path, monkeypatch, support, open_access):
+    """Optional watch code/markup must not affect any disabled page or version."""
+    monkeypatch.setattr(site, "util_now", lambda: datetime(2026, 10, 12, tzinfo=timezone.utc))
+    cfg = load_config()
+    cfg.support_enabled = support
+    cfg.paywall_open_access = open_access
+    cfg.engagement["saved_deals"] = False
+    deals = [make_deal(dedupe_key=f"watch-off-{i}") for i in range(4)]
+    before = tmp_path / "before"
+    before.mkdir()
+    out, _, _, _ = render(before, cfg, deals)
+    expected = {str(p.relative_to(out)): p.read_bytes() for p in out.rglob("*") if p.is_file()}
+
+    templates = tmp_path / "templates"
+    shutil.copytree(site.TEMPLATES_DIR, templates)
+    home = templates / "index.html"
+    # Strip just this task's optional fragments, as in the pre-watch home template.
+    home.write_text(re.sub(r"<!--watch-->.*?<!--/watch-->", "", home.read_text(), flags=re.S)
+                    .replace("<!--saved--><!--/saved-->", ""))
+    engagement = templates / "engagement.js"
+    engagement.write_text(re.sub(r"/\* saved-deals \*/.*?/\* /saved-deals \*/", "", engagement.read_text(), flags=re.S))
+    monkeypatch.setattr(site, "TEMPLATES_DIR", templates)
+    after = tmp_path / "after"
+    after.mkdir()
+    out, _, _, _ = render(after, cfg, deals)
+    actual = {str(p.relative_to(out)): p.read_bytes() for p in out.rglob("*") if p.is_file()}
+    assert actual == expected

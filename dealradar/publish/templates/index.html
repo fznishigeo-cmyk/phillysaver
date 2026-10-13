@@ -616,7 +616,22 @@ header{--accent-hover:var(--warm)}
 #savedview::before{content:"\2665\00a0";content:"\2665\00a0" / ""}
 #savedview{white-space:nowrap;flex:0 0 auto}
 #savedtools[hidden],#savedview[hidden],#savedall[hidden],#savedclear[hidden]{display:none}
-<!--/saved-->
+<!--watch-->.watch-count{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;
+             background:var(--warm);color:var(--warm-fg);font-size:12px;line-height:1.5}
+.watch-drop{margin:8px 0;font-size:13px;font-weight:700;overflow-wrap:anywhere}
+.watch-note{margin:4px 0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.watch-price{margin:8px 0;min-width:0}
+.watch-price summary,.watch-price button{min-width:44px;min-height:44px;cursor:pointer}
+.watch-price summary{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px}
+.watch-price summary span{font-size:12.5px;color:var(--muted)}
+.watch-price summary:focus-visible,.watch-price input:focus-visible,.watch-price button:focus-visible{
+  outline:3px solid var(--accent);outline-offset:2px}
+.watch-price form{display:flex;flex-wrap:wrap;align-items:end;gap:8px;min-width:0}
+.watch-price label{flex:1 1 120px;min-width:0;font-size:13px}
+.watch-price input{display:block;width:100%;min-width:0;min-height:44px;font-size:16px}
+.watch-price button{font-size:13px}
+.watch-price form p{flex-basis:100%}
+<!--/watch--><!--/saved-->
 /* Search occupies its row before any data arrives. */
 .search{flex:1 1 320px;max-width:680px;min-width:240px}
 .searchfield{position:relative}
@@ -1522,7 +1537,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
       '<h3 class="title">' + title + "</h3>" +
-      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
+<!--saved--><!--watch-->      savedWatchHtml(d) +
+<!--/watch--><!--/saved-->      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
       how +
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
@@ -1725,8 +1741,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--saved-->    renderSavedControls();
     if (savedOn() && savedDeals.view) {
       traceFree = false;
-      content.innerHTML = savedViewHtml();
-      content.appendChild(panel);
+<!--watch-->      var editor = savedWatchEditor();
+<!--/watch-->      content.innerHTML = savedViewHtml();
+<!--watch-->      restoreSavedWatchEditor(editor);
+<!--/watch-->      content.appendChild(panel);
       window.wpSupport.refresh(state.meta);
       return;
     }
@@ -2997,7 +3015,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     present(pub, deals, null);
   }
   function merge(pub) {
-    if (!isNewPublish(pub)) return Promise.resolve();
+<!--saved--><!--watch-->    if (!isNewPublish(pub)) reconcileSaved(pub);
+    if (!isNewPublish(pub) && savedOn() && savedDeals.view) repaintSaved();
+<!--/watch--><!--/saved-->    if (!isNewPublish(pub)) return Promise.resolve();
     return dealsFor(pub).then(function (deals) { landed(pub, deals); });
   }
   // While a drop waits, a HEAD request asks whether deals.json changed (its

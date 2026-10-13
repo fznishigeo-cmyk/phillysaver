@@ -88,7 +88,9 @@ PRODUCT_RESPONSE = {"reports": [{
     "rows": [{"dimensionValues": [{"value": event}, {"value": key}],
               "metricValues": [{"value": str(count)}]}
              for event, key, count in [("deal_save", "yesterday", 23), ("deal_save", "window", 41),
-                                       ("saved_view", "window", 28), ("saved_deal_click", "window", 17)]]}]
+                                       ("saved_view", "window", 28), ("saved_deal_click", "window", 17),
+                                       ("watch_create", "yesterday", 3), ("watch_create", "window", 9),
+                                       ("watch_match", "window", 5), ("watch_deal_click", "window", 2)]]}]
 }
 RETURNING_RESPONSE = {"reports": [{
     "dimensionHeaders": [{"name": "newVsReturning"}],
@@ -509,12 +511,14 @@ def test_saved_counts_and_seven_day_visitor_classification(cfg, caplog):
         data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 3)
     events, returning = (json.loads(req.content)["requests"][0] for req in fake.requests)
     assert events["dateRanges"][1] == {"startDate": "3daysAgo", "endDate": "yesterday", "name": "window"}
-    assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == list(google.SAVED_EVENTS)
+    assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == list(google.SAVED_EVENTS + google.WATCH_EVENTS)
     assert returning["dimensions"] == [{"name": "newVsReturning"}]
     assert returning["metrics"] == [{"name": "sessions"}]
     assert returning["dateRanges"] == [{"startDate": "7daysAgo", "endDate": "yesterday"}]
-    assert data["window"] == {"deal_save": 41, "saved_view": 28, "saved_deal_click": 17}
-    assert data["yesterday"] == {"deal_save": 23, "saved_view": None, "saved_deal_click": None}
+    assert data["window"] == {"deal_save": 41, "saved_view": 28, "saved_deal_click": 17,
+                              "watch_create": 9, "watch_match": 5, "watch_deal_click": 2}
+    assert data["yesterday"] == {"deal_save": 23, "saved_view": None, "saved_deal_click": None,
+                                 "watch_create": 3, "watch_match": None, "watch_deal_click": None}
     assert data["returning"] == {"sessions": 20, "classified_sessions": 100, "unclassified_sessions": 7}
     cfg.growth_report_days = 3
     _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
@@ -525,6 +529,10 @@ def test_saved_counts_and_seven_day_visitor_classification(cfg, caplog):
     assert "Observed returning sessions (last 7 completed days): 20 / 100 classified sessions (20.0%)" in text
     assert "7 unclassified sessions excluded" in text
     assert "save-to-purchase cohort or cross-device sync statistic" in text
+    assert "product.watch_create: 3 / 9" in text
+    assert "product.watch_match: unavailable (no observed event) / 5" in text
+    assert "product.watch_deal_click: unavailable (no observed event) / 2" in text
+    assert "Price-watch counts are actions" in text
     assert "41" not in caplog.text and GOOGLE_TOKEN not in text + caplog.text
 
 
@@ -590,11 +598,13 @@ def test_no_saved_rows_and_old_report_snapshots_are_unavailable(cfg):
     assert all(value is None for value in data["window"].values())
     _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
     assert "deal_save: unavailable (no observed event) / unavailable (no observed event)" in text
+    assert "product.watch_match: unavailable (no observed event) / unavailable (no observed event)" in text
     with client_for(FakeApis()) as client:
         old_ga = google.ga4(client, GOOGLE_TOKEN, "987654", 7)
     for status in ({}, {"saved": "skipped"}, {"saved": "error"}):
         _, text = report.build_report(cfg, {"ga4": old_ga}, status, date(2026, 10, 10))
         assert "Feature actions and returning sessions: unavailable" in text
+        assert "product.watch_create: unavailable (no observed event) / unavailable (no observed event)" in text
 
 
 def test_new_only_classification_is_an_observed_zero_with_a_denominator(cfg):
@@ -851,18 +861,21 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "static_fallback_shown": 11, "first_load_recoveries": 5,
                       "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
                       "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8,
-                      "filter_apply": 38, "filter_empty": 7, "back_restore": 21},
+                      "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
+                      "watch_create": 3, "watch_match": None, "watch_deal_click": None},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
                    "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17,
                    "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None,
-                   "filter_apply": 300, "filter_empty": 80, "back_restore": 180},
+                   "filter_apply": 300, "filter_empty": 80, "back_restore": 180,
+                   "watch_create": 9, "watch_match": 5, "watch_deal_click": 2},
         "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
                                    "desktop": {"sessions": 50, "rate": .4},
                                    "tablet": {"sessions": 0, "rate": None}}
                           for period in ("yesterday", "window")}}
     # Main totals/events/sources/pages + store query; load and feature counts add no request.
-    # Single queries: saved-deal events, new/returning (066), deal pages (068), device sessions (065).
+    # Single queries: saved-deal events (watch actions share it), new/returning (066),
+    # deal pages (068), device sessions (065).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
     assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
@@ -916,6 +929,7 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     assert status["ga4"] == status["product"] == "ok"
     assert all(data["product"][period][name] == 0 for period in ("yesterday", "window") for name in google.PRODUCT_EVENTS)
     assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.DEAL_PAGE_COUNTS)
+    assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.WATCH_EVENTS)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
     for event in ("install_offer_shown", "install_accepted", "standalone_session"):

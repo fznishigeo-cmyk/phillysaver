@@ -182,6 +182,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
         for period in ("yesterday", "window"):
             detail = data.get("deal_pages", {}).get(period, {})
             data["product"][period].update({name: detail.get(name) for name in google.DEAL_PAGE_COUNTS})
+            watches = data.get("saved", {}).get(period, {})
+            data["product"][period].update({name: watches.get(name) for name in google.WATCH_EVENTS})
         try:
             data["product"]["deal_sessions"] = google.ga4_deal_sessions(client, token(), cfg.growth_ga4_property_id, days)
         except Exception:
@@ -363,6 +365,11 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines.append("Device/page-family actions: unavailable — " + (detail or {}).get("unavailable",
                      status.get("deal_pages", "not in this snapshot")))
     saved = data.get("saved")
+    for event in google.WATCH_EVENTS:
+        lines.append(f"product.{event}: " + _pair(observed,
+            (saved or product or {}).get("yesterday", {}).get(event),
+            (saved or product or {}).get("window", {}).get(event)))
+    lines.append("Price-watch counts are actions checked when visitors load public deals, not notifications or purchases.")
     if saved:
         lines.append(f"Feature actions (yesterday / last {days} days; event counts):")
         for event in google.SAVED_EVENTS:

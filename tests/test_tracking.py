@@ -414,16 +414,19 @@ def test_clarity_alone_loads_only_without_gpc_or_opt_out(tmp_path):
 
 
 @pytest.mark.parametrize("ids", [SAMPLE, {k: v for k, v in SAMPLE.items() if k != "ga4_measurement_id"}])
-def test_saved_events_are_ga4_only_with_fixed_methods_and_counts(tmp_path, ids):
+def test_saved_and_watch_events_are_ga4_only_with_fixed_methods_and_counts(tmp_path, ids):
     if not shutil.which("node"):
         pytest.skip("node unavailable")
     cfg = AppConfig(tracking=ids, support_enabled=True, engagement={"saved_deals": True})
     calls = [[event, {"method": method, "count": count, "key": "PRIVATE-KEY", "item": "PRIVATE-LABEL",
                       "store": "PRIVATE-STORE", "list": ["PRIVATE-LIST"], "url": "https://private.test/?tag=old-20",
-                      "price": 123.45}]
+                      "price": 123.45, "target": 111.25}]
              for event, method, count in [("deal_save", "save", 1), ("deal_save", "remove", 1),
                                            ("deal_save", "clear", 4), ("saved_view", "button", 4),
-                                           ("saved_deal_click", "outbound", 1)]]
+                                           ("saved_deal_click", "outbound", 1),
+                                           ("watch_create", "save", 1), ("watch_create", "target", 1),
+                                           ("watch_match", "drop", 1), ("watch_match", "target", 1),
+                                           ("watch_deal_click", "outbound", 1)]]
     invalid = [["deal_save", {"method": "PRIVATE-METHOD", "count": 1}],
                ["saved_view", {"method": "save", "count": 1}],
                ["saved_deal_click", {"method": "outbound", "count": "1"}],
@@ -431,7 +434,11 @@ def test_saved_events_are_ga4_only_with_fixed_methods_and_counts(tmp_path, ids):
                ["deal_save", {"method": "save", "count": 201}],
                ["deal_save", {"method": "save", "count": 1.5}],
                ["deal_save", {"method": "save", "count": True}],
-               ["deal_save", {"method": "save"}]]
+               ["deal_save", {"method": "save"}],
+               ["watch_create", {"method": "PRIVATE-METHOD"}],
+               ["watch_match", {"method": "save"}],
+               ["watch_deal_click", {"method": "drop"}],
+               ["watch_match", {"method": ["drop"]}], ["watch_create", {}], ["watch_match", None]]
     scenarios = {"open": {"calls": calls + invalid}, "gpc": {"gpc": True, "calls": calls},
                  "out": {"storage": {"wp.adsOptOut": "1"}, "calls": calls},
                  "denied": {"blocked": True, "calls": calls}, "baseline": {}}
@@ -446,7 +453,8 @@ def test_saved_events_are_ga4_only_with_fixed_methods_and_counts(tmp_path, ids):
         assert scenario["error"] is None
         events = [e for e in scenario["dataLayer"] if e[0] == "event"]
         if "ga4_measurement_id" in ids:
-            assert events == [["event", event, {"method": params["method"], "count": params["count"],
+            assert events == [["event", event, {"method": params["method"],
+                                               **({} if event.startswith("watch_") else {"count": params["count"]}),
                                                "send_to": ids["ga4_measurement_id"]}] for event, params in calls]
         else:
             assert events == []
@@ -456,12 +464,16 @@ def test_saved_events_are_ga4_only_with_fixed_methods_and_counts(tmp_path, ids):
         else:
             assert all(scenario[tag] is None for tag in ("fbq", "ttq", "pintrk", "uetq"))
     assert "PRIVATE" not in result.stdout and "private.test" not in result.stdout
+    assert "123.45" not in result.stdout and "111.25" not in result.stdout
 
 
 @pytest.mark.parametrize("support,enabled", [(False, True), (True, False)])
 def test_disabled_or_dormant_saved_events_are_not_registered(support, enabled):
     cfg = AppConfig(tracking=SAMPLE, support_enabled=support, engagement={"saved_deals": enabled})
     assert "savedMethods" not in head_snippet(cfg)
+    assert "watch_create" not in head_snippet(cfg)
+    assert "watch_match" not in head_snippet(cfg)
+    assert "watch_deal_click" not in head_snippet(cfg)
 
 
 @pytest.mark.parametrize("ids", [SAMPLE, {"ga4_measurement_id": SAMPLE["ga4_measurement_id"]},

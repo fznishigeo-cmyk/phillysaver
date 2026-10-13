@@ -30,6 +30,7 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
+WATCH_EVENTS = ("watch_create", "watch_match", "watch_deal_click")
 DEAL_PAGE_COUNTS = ("deal_detail_views", "deal_detail_outbound_clicks", "deal_code_copies")
 STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "
                       "name store, scope Event, parameter store")
@@ -228,13 +229,13 @@ def ga4_saved(client: Any, token: str, property_id: str, days: int) -> dict:
         "dateRanges": ranges, "dimensions": [{"name": "eventName"}],
         "metrics": [{"name": "eventCount"}],
         "dimensionFilter": {"filter": {"fieldName": "eventName",
-            "inListFilter": {"values": list(SAVED_EVENTS)}}}}]})
+            "inListFilter": {"values": list(SAVED_EVENTS + WATCH_EVENTS)}}}}]})
     resp.raise_for_status()
-    out = {key: dict.fromkeys(SAVED_EVENTS) for key in ("yesterday", "window")}
+    out = {key: dict.fromkeys(SAVED_EVENTS + WATCH_EVENTS) for key in ("yesterday", "window")}
     results = resp.json().get("reports") or []
     for dims, values in _rows(results[0] if results else {}):
         key, event = dims.get("dateRange"), dims.get("eventName")
-        if key in out and event in SAVED_EVENTS and len(values) == 1 and values[0] >= 0:
+        if key in out and event in SAVED_EVENTS + WATCH_EVENTS and len(values) == 1 and values[0] >= 0:
             out[key][event] = values[0]
 
     # Isolate this dimension so missing classification never hides action counts.

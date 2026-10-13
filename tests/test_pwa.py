@@ -46,12 +46,12 @@ def tree_hash(out):
 @pytest.mark.parametrize("mode,expected", [
     ("membership", "3234fe27319e9040f9b07981da8f054d9dca2f2ad5b7bad69ed4a48b85515d85"),
     ("open", "9aad788c7bbb4af253c464f91d756ae427795775c04e69ae39770fcd0ad8b5d0"),
-    ("support", "3c262f66437b67f6ac02415c72dce21cbb2345c1c6660aa00b80b1b4e0b6e245"),
-    ("shipped", "95b442dde4f83e43b136a30d7d44a91dfe438727e9e5e978b074cd4bde3899c5"),
+    ("support", "7aba423643b3b9a7f0e7ecd4cfe9c1b16d247c51876244f4b56fbe5ec34e4e0f"),
+    ("shipped", "cae56751e862923d5e432559cce5c6a062e3d1ad122ab0fd56138a7101f8e6a8"),
 ])
-def test_pwa_disabled_matches_every_pre_task069_published_byte(tmp_path, monkeypatch, mode, expected):
-    # Captured before task 069, including page versions, JSON, headers and sitemap.
-    # The existing task 061 support/membership snapshots are unchanged.
+def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
+    # Membership/open retain the pre-069 baseline. Support/shipped include
+    # task 071's enabled Saved price watches, without any PWA output.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
@@ -153,7 +153,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "3c262f66437b67f6ac02415c72dce21cbb2345c1c6660aa00b80b1b4e0b6e245"
+    assert tree_hash(out) == "7aba423643b3b9a7f0e7ecd4cfe9c1b16d247c51876244f4b56fbe5ec34e4e0f"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

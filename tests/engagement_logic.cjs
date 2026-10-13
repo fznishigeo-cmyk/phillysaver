@@ -7,6 +7,7 @@ const home = fs.readFileSync(process.argv[2], 'utf8');
 const enabled = {new_since_visit:true, weekly_finds:true, visit_streak:true, surprise_me:true, hot_meter:true};
 const NOW = Date.parse('2026-10-12T12:00:00-04:00'); // Monday, local time
 const row = (key, changes = {}) => ({key, status:'alive', item:'Item', store:'Store', category:'other',
+  final_price:20, conditions:[],
   url:'https://store.test/item', pct_at_checkout:70, abs_savings:10.25, badge:'corroborated',
   credits:[{name:'One',url:'https://one.test/post'}, {name:'Two',url:'https://two.test/post'}],
   first_seen_at:new Date(NOW-3600000).toISOString(), ...changes});
@@ -18,7 +19,7 @@ function fragment(start, end) {
 function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')], reduced=false, shown=60,
                   savedEnabled=false, savedLimit=100} = {}) {
   let time = now, random = 0, wall = deals, timers = [], renders = 0;
-  const storage = new Map(Object.entries(stored)), events = [], handlers = {}, windowHandlers = {};
+  const storage = new Map(Object.entries(stored)), events = [], toasts = [], handlers = {}, windowHandlers = {};
   function listen(list,type,cb) {
     const previous=list[type];
     list[type]=previous ? (...args)=>{previous(...args); cb(...args);} : cb;
@@ -30,6 +31,8 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   };
   const elements = {};
   const makeElement = () => ({textContent:'', hidden:false, classList:makeClass(), listeners:{}, attributes:{},
+    get innerHTML() {return this.html || '';},
+    set innerHTML(html) {this.html=html; this.textContent=html.replace(/<[^>]*>/g,'');},
     addEventListener(type, cb) {this.listeners[type] = cb;},
     setAttribute(k,v) {this.attributes[k]=v;}, removeAttribute(k) {delete this.attributes[k];}, focus() {this.focused=true;}});
   for (const id of ['tagline','surprise','content','savedview','savedtools','savedall','savedclear','savedstatus',
@@ -78,7 +81,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
     setTimeout:cb=>timers.push(cb), cardImageIndex:0, ageText:()=>'',
     isNew:()=>false, isFreePick:()=>false, lit:()=>false, traceSvg:()=>'', TIER_LABEL:{corroborated:'✓ 2+ sources'},
-    lockLabel:()=>'', toast(){}, navigator:{clipboard:{writeText:()=>Promise.resolve()}},
+    lockLabel:()=>'', toast:message=>toasts.push(message), navigator:{clipboard:{writeText:()=>Promise.resolve()}},
     rememberFocus:()=>null, restoreFocus(){}
   };
   ctx.Math.random = () => random;
@@ -111,12 +114,12 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
       preventDefault(){prevented++;}, stopPropagation(){stopped++;}});
     return {prevented,stopped};
   }
-  return {ctx, storage, events, elements, windowHandlers, handlers, paint, click,
+  return {ctx, storage, events, toasts, elements, windowHandlers, handlers, paint, click,
     finds:()=>elements.weeklyfinds?.textContent || '', streak:()=>elements.visitstreak?.textContent || '',
     line:()=>elements.engagementline ? ['visitstreak','engagementsep','weeklyfinds']
       .filter(id=>!elements[id].hidden).map(id=>elements[id].textContent).join('') : '',
     time:n=>time=n, random:n=>random=n, wall:rows=>wall=rows,
-    surprise:()=>elements.surprise.listeners.click(), timers:()=>timers.forEach(cb=>cb()), renders:()=>renders};
+    surprise:()=>elements.surprise.listeners.click(), timers:()=>{const due=timers; timers=[]; due.forEach(cb=>cb());}, renders:()=>renders};
 }
 // The header keeps the original layout; private engagement belongs to the wall.
 const header = home.match(/<header>([\s\S]*?)<\/header>/)[1];
@@ -272,9 +275,10 @@ for (const throwing of ['read','write']) {
   h.surprise(); assert.equal(h.events.at(-1).name,'surprise_click'); // non-storage features still work
   assert.equal(h.elements.a.scroll.behavior,'smooth');
 }
-// Saved offers always reconcile to public data; only a bounded identity list persists.
+// Saved offers always reconcile to public data; v1 identities migrate without invented prices.
 const SAVED_KEY='wp.savedDeals';
 const record=deals=>JSON.stringify({version:1,deals});
+const watched=deals=>JSON.stringify({version:2,deals});
 const identity=(key, changes={})=>({key,label:'Original '+key,store:'Store',...changes});
 const shortlist=options=>harness({savedEnabled:true,switches:off,...options});
 h=shortlist({deals:[row('path',{deal_path:'/deal/original-name-12345678/'})]});
@@ -288,13 +292,15 @@ assert.match(h.elements.savedstatus.textContent,/Saved on this device/);
 assert.match(h.ctx.cardHtml(row('a')),/<button type="button" class="save-deal"/);
 assert.match(h.ctx.cardHtml(row('a')),/aria-pressed="false" aria-label="Save deal: Item"/);
 assert.deepEqual(h.click(row('a'),true,true),{prevented:1,stopped:1});
-assert.deepEqual(h.events.map(e=>e.name),['deal_save']); // Save never falls through to a deal link.
+assert.deepEqual(h.events.map(e=>e.name),['deal_save','watch_create']); // Save never falls through to a deal link.
 assert.equal(h.ctx.saveDeal(row('a')),false);
 assert.equal(h.ctx.saveDeal(row('b')),true);
 assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['b','a']);
 const serialized=h.storage.get(SAVED_KEY);
-for(const forbidden of ['price','tag=','https:','photo','codes','credits','abs_savings']) assert.ok(!serialized.includes(forbidden));
-assert.ok(JSON.parse(serialized).deals.every(d=>Object.keys(d).sort().join(',')==='key,label,store'));
+for(const forbidden of ['tag=','https:','photo','codes','credits','abs_savings','regular_price']) assert.ok(!serialized.includes(forbidden));
+assert.ok(JSON.parse(serialized).deals.every(d=>Object.keys(d).sort().join(',')==='condition,final_price,key,label,matched_prices,store'));
+assert.equal(JSON.parse(serialized).version,2);
+assert.ok(JSON.parse(serialized).deals.every(d=>d.final_price===20 && d.condition.length===0));
 assert.equal(h.ctx.removeSaved('missing'),false);
 const eventCount=h.events.length;
 h.elements.savedview.listeners.click();
@@ -316,9 +322,10 @@ h.elements.savedclear.listeners.click();
 assert.equal(h.elements.savedview.textContent,'Saved (0)');
 assert.match(h.elements.content.innerHTML,/Save a deal to revisit/);
 assert.equal(h.ctx.clearSaved(),false);
-assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)),{version:1,deals:[]});
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)),{version:2,deals:[]});
 assert.equal(h.events.filter(e=>e.name==='deal_save' && e.params.method==='clear').length,1);
-assert.ok(h.events.filter(e=>e.name!=='deal_click').every(e=>Object.keys(e.params).sort().join(',')==='count,method'));
+assert.ok(h.events.filter(e=>e.name!=='deal_click').every(e=>Object.keys(e.params).sort().join(',')===
+  (e.name.startsWith('watch_') ? 'method' : 'count,method')));
 h.elements.savedall.listeners.click();
 assert.equal(h.elements.content.attributes['data-clarity-unmask'],'true');
 assert.equal(h.elements.content.attributes['data-clarity-mask'],undefined);
@@ -342,7 +349,9 @@ for(const current of [null,row('a',{status:'dead',gone:false}),row('a',{locked:t
   h.ctx.setSavedView(true); html=h.elements.content.innerHTML;
   assert.ok(!/Get deal|href=|\$|SECRET|photos\.test|amazon\.com/.test(html));
   assert.ok(html.includes(current?.gone===true ? 'This deal ended.' : 'Not currently listed; availability unknown'));
-  assert.deepEqual(Object.keys(JSON.parse(h.storage.get(SAVED_KEY)).deals[0]).sort(),['key','label','store']);
+  assert.deepEqual(Object.keys(JSON.parse(h.storage.get(SAVED_KEY)).deals[0]).sort(),
+    ['condition','final_price','key','label','matched_prices','store']);
+  assert.equal(h.ctx.savedDeals.entries[0].final_price,null);
   const n=h.events.length; h.ctx.savedOutbound(current || row('a')); assert.equal(h.events.length,n);
 }
 // A member-only list cannot satisfy a saved public identity or make a locked stub saveable.
@@ -354,13 +363,13 @@ assert.equal(h.ctx.saveDeal(row('private')),false);
 // Limits reject new saves without evicting an existing one, and restored duplicates never reorder.
 h=shortlist({savedLimit:2,deals:[row('a'),row('b'),row('c')]});
 h.ctx.saveDeal(row('a')); h.ctx.saveDeal(row('b'));
-assert.equal(h.ctx.saveDeal(row('c')),false); assert.equal(h.events.length,2);
+assert.equal(h.ctx.saveDeal(row('c')),false); assert.equal(h.events.length,4);
 assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['b','a']);
 h=shortlist({savedLimit:2,stored:{[SAVED_KEY]:record([identity('a'),identity('a',{label:'Duplicate'}),identity('b'),identity('c')])}});
 assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['a','b']);
 assert.equal(h.ctx.savedDeals.entries[0].label,'Original a');
-for(const raw of ['broken','[]','null','{}',JSON.stringify({version:2,deals:[identity('a')]}),
-                 JSON.stringify({version:1,deals:{key:'a'}}),'x'.repeat(150001)]) {
+for(const raw of ['broken','[]','null','{}',JSON.stringify({version:3,deals:[identity('a')]}),
+                 JSON.stringify({version:1,deals:{key:'a'}}),'x'.repeat(2000001)]) {
   h=shortlist({stored:{[SAVED_KEY]:raw}}); assert.equal(h.ctx.savedDeals.entries.length,0);
   assert.ok(h.elements.content.innerHTML.includes('data-key="a"')); // Corruption never breaks the wall.
 }
@@ -408,6 +417,157 @@ assert.equal(h.ctx.savedDeals.started,false);
 h=shortlist(); html=h.ctx.cardHtml(row('a'));
 assert.match(html,/<a class="getdeal" href="https:\/\/store.test\/item" rel="sponsored noopener"/);
 assert.match(html,/via <a href="https:\/\/one.test\/post" rel="noopener">One<\/a>/);
+// Migration keeps v1 saves usable, with no baseline or automatic watch match.
+h=shortlist({stored:{[SAVED_KEY]:record([identity('a',{final_price:100,condition:[],target_price:90,matched_prices:[20]})])}});
+let entry=JSON.parse(h.storage.get(SAVED_KEY)).deals[0];
+assert.equal(entry.final_price,null); assert.equal(entry.condition,null);
+assert.equal(entry.target_price,undefined); assert.deepEqual(entry.matched_prices,[]);
+h.ctx.setSavedView(true);
+assert.match(h.elements.content.innerHTML,/No baseline yet/);
+assert.ok(!h.elements.content.innerHTML.includes('Price dropped'));
+assert.equal(h.ctx.savedDeals.matches.size,0); assert.equal(h.events.filter(e=>e.name.startsWith('watch_')).length,0);
+// A migrated save can explicitly acquire a target and exact condition, without inventing a baseline.
+assert.equal(h.ctx.setWatchTarget('a',20),true);
+assert.equal(h.ctx.savedDeals.entries[0].final_price,null);
+h.ctx.reconcileSaved({deals:[row('a')]}); h.ctx.render(); h.timers();
+assert.match(h.elements.content.innerHTML,/Target price reached: now \$20\.00/);
+assert.equal(h.toasts.length,1);
+// New saves copy only the displayed final price and exact conditions from public data.
+h=shortlist({deals:[row('a',{final_price:29.95,conditions:['used','open_box'],regular_price:500,
+  image_url:'https://photos.test/a',codes:['PRIVATE'],how:['SECRET']})]});
+h.ctx.saveDeal(row('a',{final_price:1,conditions:[]}));
+entry=JSON.parse(h.storage.get(SAVED_KEY)).deals[0];
+assert.equal(entry.final_price,29.95); assert.deepEqual(entry.condition,['open_box','used']);
+assert.equal(entry.target_price,undefined); assert.deepEqual(entry.matched_prices,[]);
+assert.ok(!/500|PRIVATE|SECRET|photos\.test|https:/.test(h.storage.get(SAVED_KEY)));
+assert.equal(h.toasts.length,0);
+assert.ok(!h.ctx.cardHtml(row('a')).includes('Watch price')); // No extra card height on the ordinary wall.
+// Every price/availability/identity/condition guard, with exact matching and no fuzzy titles.
+const watchEntry=(key='a',changes={})=>identity(key,{final_price:20,condition:[],matched_prices:[],...changes});
+for (const [changes,expected] of [[{final_price:19.99},true],[{final_price:20},false],[{final_price:21},false],
+  [{final_price:0},true],[{final_price:null},false],[{final_price:'1'},false],[{final_price:NaN},false],
+  [{final_price:Infinity},false],[{final_price:-1},false],[{final_price:19.999},false],
+  [{status:'dead',gone:true,final_price:1},false],[{status:'dead',gone:false,final_price:1},false],
+  [{status:'unknown',final_price:1},false],[{gone:true,final_price:1},false],[{alive:false,final_price:1},false],
+  [{locked:true,final_price:1},false],[{key:'different',final_price:1},false],
+  [{key:null,dedupe_key:'a',final_price:1},false],
+  [{conditions:['used'],final_price:1},false],[{conditions:['new_customer'],final_price:1},false],
+  [{conditions:null,final_price:1},false],[{conditions:'new',final_price:1},false]]) {
+  h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry()])},deals:[]});
+  h.ctx.reconcileSaved({deals:[row('a',changes)]});
+  assert.equal(h.ctx.savedDeals.matches.size,expected ? 1 : 0,JSON.stringify(changes));
+  assert.equal(h.events.filter(e=>e.name==='watch_match').length,expected ? 1 : 0);
+  h.timers(); assert.equal(h.toasts.length,expected ? 1 : 0);
+}
+h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry()])},deals:[]});
+assert.equal(h.ctx.savedDeals.matches.size,0); h.timers(); assert.equal(h.toasts.length,0);
+h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry('a',{condition:['open_box','used']})])},
+  deals:[row('a',{conditions:['used','open_box'],final_price:10})]});
+assert.equal(h.ctx.savedDeals.matches.size,1); // Condition order does not change the offer.
+// Dropped entries lead the Saved view; badge and readable text also describe matches to screen readers.
+h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry('b'),watchEntry('a')])},
+  deals:[row('a',{final_price:17.25}),row('b')]});
+assert.match(h.elements.savedview.innerHTML,/<span class="watch-count" aria-hidden="true">1<\/span>/);
+assert.match(h.elements.savedview.innerHTML,/<span class="sr-only">, 1 price watch match<\/span>/);
+h.ctx.setSavedView(true); html=h.elements.content.innerHTML;
+assert.ok(html.indexOf('data-key="a"')<html.indexOf('data-key="b"'));
+assert.match(html,/<p class="watch-drop">Price dropped since you saved: was \$20\.00, now \$17\.25<\/p>/);
+assert.ok(!/%|regular/.test(html.match(/<p class="watch-drop">([^<]+)<\/p>/)[1]));
+assert.match(html,/<summary>Watch price<\/summary>/);
+assert.match(html,/type="number" name="target" min="0" step="0.01" required inputmode="decimal"/);
+h.timers(); assert.equal(h.toasts.length,1); assert.match(h.toasts[0],/Checked when you visit/);
+h.click(row('a',{final_price:17.25}));
+assert.deepEqual(JSON.parse(JSON.stringify(h.events.at(-1))),{name:'watch_deal_click',params:{method:'outbound'}});
+h.ctx.setSavedView(false); h.click(row('a',{final_price:17.25}));
+assert.equal(h.events.filter(e=>e.name==='watch_deal_click').length,1);
+// A repeated payload, rerender, reload, or rebound to an already observed price never reannounces it.
+const firstStorage=Object.fromEntries(h.storage);
+h.ctx.reconcileSaved({deals:[row('a',{final_price:17.25}),row('b')]}); h.paint(); h.timers();
+assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+h=shortlist({stored:firstStorage,deals:[row('a',{final_price:17.25}),row('b')]}); h.timers();
+assert.equal(h.ctx.savedDeals.matches.size,1); assert.equal(h.events.length,0); assert.equal(h.toasts.length,0);
+h.ctx.reconcileSaved({deals:[row('a',{final_price:16}),row('b')]}); h.timers();
+assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+h.ctx.reconcileSaved({deals:[row('a',{final_price:17.25}),row('b')]}); h.timers();
+assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+// A target is inclusive, can be $0, and cannot cross on unknown prices or another condition.
+h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry('a',{final_price:null,condition:[],target_price:10})])},
+  deals:[row('a',{final_price:10.01})]});
+assert.equal(h.ctx.savedDeals.matches.size,0);
+for(const price of [10,10,11,10,9]) {h.ctx.reconcileSaved({deals:[row('a',{final_price:price})]}); h.timers();}
+assert.deepEqual(h.events.map(e=>[e.name,e.params.method]),[['watch_match','target'],['watch_match','target']]);
+assert.equal(h.toasts.length,2);
+assert.equal(h.ctx.setWatchTarget('a',0),true);
+assert.equal(h.ctx.setWatchTarget('a',0),false);
+h.ctx.reconcileSaved({deals:[row('a',{final_price:0})]}); h.timers();
+assert.equal(h.events.at(-1).name,'watch_match');
+assert.equal(h.ctx.setWatchTarget('a',null),true);
+assert.equal(h.ctx.savedDeals.entries[0].target_price,undefined);
+for(const target of [-1,'5',NaN,Infinity,1.001]) assert.equal(h.ctx.setWatchTarget('a',target),false);
+h.ctx.reconcileSaved({deals:[row('a',{conditions:['used'],final_price:0})]});
+assert.equal(h.ctx.setWatchTarget('a',5),false);
+assert.equal(h.ctx.savedDeals.matches.size,0);
+// A target above the baseline can match, but must never falsely claim that the price dropped.
+h=shortlist({stored:{[SAVED_KEY]:watched([watchEntry('a',{target_price:25})])},deals:[row('a',{final_price:22})]});
+h.ctx.setSavedView(true);
+assert.match(h.elements.content.innerHTML,/Target price reached: now \$22\.00 \(target \$25\.00\)/);
+assert.ok(!h.elements.content.innerHTML.includes('Price dropped since you saved'));
+// Cross-tab changes recompute badges quietly, and persisted observations suppress duplicate events.
+const tab1=shortlist({deals:[row('a')]}); tab1.ctx.saveDeal(row('a')); tab1.ctx.setWatchTarget('a',15);
+const tab2=shortlist({stored:Object.fromEntries(tab1.storage),deals:[row('a')]}); tab2.ctx.setSavedView(true);
+tab1.ctx.reconcileSaved({deals:[row('a',{final_price:15})]}); tab1.timers();
+tab2.ctx.savedDeals.publicDeals=[row('a',{final_price:15})];
+let tab2Events=tab2.events.length, tab2Record=tab2.storage.get(SAVED_KEY);
+tab2.windowHandlers.storage({key:SAVED_KEY,newValue:tab1.storage.get(SAVED_KEY)});
+assert.equal(tab2.ctx.savedDeals.matches.size,1);
+assert.match(tab2.elements.content.innerHTML,/now \$15\.00/);
+assert.equal(tab2.events.length,tab2Events); assert.equal(tab2.storage.get(SAVED_KEY),tab2Record);
+tab2.storage.set(SAVED_KEY,tab1.storage.get(SAVED_KEY));
+tab2.ctx.reconcileSaved({deals:[row('a',{final_price:15})]}); tab2.timers();
+assert.equal(tab2.events.length,tab2Events); assert.equal(tab2.toasts.length,0);
+tab2.windowHandlers.storage({key:null,newValue:null});
+assert.equal(tab2.ctx.savedDeals.matches.size,0); assert.ok(!tab2.elements.savedview.innerHTML.includes('watch-count'));
+// A quota failure after observing a drop retains prices, targets and deduplication in this tab.
+h=shortlist({deals:[row('a')]}); h.ctx.saveDeal(row('a')); h.ctx.setWatchTarget('a',10);
+h.ctx.localStorage.setItem=()=>{throw Error('quota');};
+h.ctx.reconcileSaved({deals:[row('a',{final_price:10})]}); h.timers();
+assert.equal(h.ctx.savedDeals.persistent,false); assert.equal(h.ctx.savedDeals.matches.size,1);
+assert.equal(h.ctx.savedDeals.entries[0].target_price,10);
+h.ctx.reconcileSaved({deals:[row('a',{final_price:10})]}); h.timers();
+assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+assert.match(h.elements.savedstatus.textContent,/this tab only.*will not persist/);
+// Target form validation and submit do not fall through to navigation or expose a price in analytics.
+h=shortlist({deals:[row('a')]}); h.ctx.saveDeal(row('a')); h.ctx.setSavedView(true);
+h.ctx.cardEls=()=>[];
+const input={value:'7.125'}, feedback={textContent:''};
+const form={getAttribute:()=> 'a',querySelector:s=>s.startsWith('input') ? input : feedback,closest(){return this;}};
+let submitted=0;
+const submit=()=>h.elements.content.listeners.submit({target:form,preventDefault(){submitted++;}});
+submit(); assert.match(feedback.textContent,/up to two decimal places/);
+input.value='7.12'; submit(); submit();
+assert.equal(submitted,3); assert.equal(h.ctx.savedDeals.entries[0].target_price,7.12);
+assert.equal(h.events.filter(e=>e.name==='watch_create' && e.params.method==='target').length,1);
+assert.ok(h.events.filter(e=>e.name.startsWith('watch_')).every(e=>Object.keys(e.params).join(',')==='method'));
+// A public update retains the active target draft and native expanded/focus state.
+h=shortlist();
+const focusedInput={name:'target',value:'12.34',focus(options){this.focused=options;}};
+const summary={focus(options){this.focused=options;}};
+const details={open:true,closest:()=>({getAttribute:()=> 'a'}),querySelector:s=>s==='input' ? focusedInput : summary};
+focusedInput.closest=()=>details;
+h.ctx.document.activeElement=focusedInput;
+const editor=h.ctx.savedWatchEditor();
+assert.equal(editor.key,'a'); assert.equal(editor.value,'12.34'); assert.equal(editor.open,true);
+details.open=false; focusedInput.value='20';
+h.ctx.cardEls=()=>[{getAttribute:()=> 'a',querySelector:()=>details}];
+h.ctx.restoreSavedWatchEditor(editor);
+assert.equal(details.open,true); assert.equal(focusedInput.value,'12.34'); assert.equal(focusedInput.focused.preventScroll,true);
+focusedInput.disabled=true;
+h.ctx.restoreSavedWatchEditor(editor); assert.equal(summary.focused.preventScroll,true);
+// Visitors without saves get no badge, watch UI, storage record or watch toast on their first load.
+h=shortlist(); h.timers();
+assert.equal(h.elements.savedview.hidden,true); assert.equal(h.storage.has(SAVED_KEY),false);
+assert.ok(!h.elements.content.innerHTML.includes('watch-price')); assert.equal(h.toasts.length,0);
+assert.equal(h.events.length,0);
 (async()=>{
   // An HTTP error, invalid payload or JSON failure cannot replace the last good offers.
   h=shortlist({deals:[row('a',{final_price:17.25})]});
@@ -428,6 +588,30 @@ assert.match(html,/via <a href="https:\/\/one.test\/post" rel="noopener">One<\/a
   h.ctx.reconcileSaved(pub); h.ctx.render();
   assert.match(h.elements.content.innerHTML,/Not currently listed; availability unknown/);
   assert.ok(!h.elements.content.innerHTML.includes('$17.25'));
+  // Successful loads of the same publish still check a newly created target.
+  h=shortlist({deals:[row('a')]}); h.ctx.saveDeal(row('a')); h.ctx.setSavedView(true);
+  assert.equal(h.ctx.setWatchTarget('a',20),true);
+  assert.equal(h.events.filter(e=>e.name==='watch_match').length,0); // Editing alone is not a new observation.
+  h.ctx.isNewPublish=()=>false;
+  vm.runInContext(fragment('  function merge(pub)', '  // While a drop waits'),h.ctx);
+  await h.ctx.merge({deals:[row('a')]}); h.timers();
+  assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+  await h.ctx.merge({deals:[row('a')]}); h.timers();
+  assert.equal(h.events.filter(e=>e.name==='watch_match').length,1); assert.equal(h.toasts.length,1);
+  // Malformed HTTP/JSON/envelopes never reach price comparison, or replace the last good match.
+  h.ctx.clock={tag:''}; h.ctx.maybeReloadForNewVersion=()=>{}; h.ctx.dataKey=()=>'';
+  vm.runInContext(fragment('  function fetchPublish()', '  function isNewPublish('),h.ctx);
+  for(const bad of [response({meta:{},deals:[row('a',{final_price:1})]},false),response({}),
+    response({meta:{},deals:{}}),{ok:true,headers:{get:()=>''},json:async()=>{throw Error('bad JSON');}}]) {
+    h.ctx.fetch=async()=>bad;
+    await assert.rejects(h.ctx.fetchPublish());
+    assert.equal(h.events.filter(e=>e.name==='watch_match').length,1);
+    assert.equal(h.ctx.savedDeals.matches.get('a').price,20);
+  }
+  h.ctx.fetch=async()=>response({meta:h.ctx.state.meta,deals:[row('a',{final_price:'1'})]});
+  await h.ctx.merge(await h.ctx.fetchPublish()); h.timers();
+  assert.equal(h.ctx.savedDeals.matches.size,0); // goodDeal skipped this odd row; missing never triggers.
+  assert.equal(h.events.filter(e=>e.name==='watch_match').length,1);
   // Later quota denial and a failing analytics function cannot stop the local action.
   h=shortlist({deals:[row('a'),row('b')]}); h.ctx.saveDeal(row('a'));
   h.ctx.localStorage.setItem=()=>{throw Error('quota');};

@@ -230,7 +230,7 @@ class AppConfig:
     # Loaded configs enable engagement; an empty programmatic config preserves
     # the legacy template (including the dormant membership snapshots).
     engagement: dict[str, bool] = field(default_factory=dict)
-    engagement_saved_deals_limit: int = 100
+    engagement_saved_deals_limit: int = 100  # includes browser-only price watches
     # -- home-screen app: absent block preserves the existing site bytes --
     pwa_enabled: bool = False
     pwa_name: str = "wowpriced"
