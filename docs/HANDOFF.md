@@ -190,6 +190,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Static wall fallback (Codex task 064, 2026-10-13; uncommitted):** failed
+  first JSON loads keep the static deals/links with an inline status and
+  44px Retry; HTTP/JSON/shape validation precedes adoption, retry/timer/return
+  requests share one first adoption, and an empty publish is successful.
+  Four once-per-page GA4-only load events feed the private `product` counts;
+  ad mappings/privacy gates unchanged. Full suite: 2,468 passed, 1 deselected;
+  only 7 existing Stripe yearly-deploy tests failed at sandbox socket setup.
+  Support/dormant membership checks pass. 360px/iPhone 14/Pixel 7/desktop
+  visual checks with our JSON blocked/delayed remain pending: Chromium also
+  fails with sandbox `Operation not permitted`. No commit or push.
 - **Daily deal spotlight (Codex task 061, 2026-10-13):** one configured
   Meh/SideDeal/MorningSave offer first in static/live HTML, with a full phone
   row and DST-correct Meh clock. Price-only offers stay spotlight-only;

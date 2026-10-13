@@ -224,7 +224,7 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
                  meta:{floors:{min_pct:70}}, sortKey:SORT_KEY, sortDir:DIRECTION};
     var rendered = [], content = {innerHTML:"", querySelector: () => null, appendChild: () => {}};
     var document = {getElementById: id => id === "content" ? content : null};
-    var window = {wpSupport:{refresh: () => {}}}, panel = {}, moreObserver = null;
+    var window = {wpSupport:{refresh: () => {}}}, panel = {}, moreObserver = null, loadedOnce = true;
     var renderSearchCount = () => {}; // Search count has its own published-page harness.
     var paintTicker = () => {}, updatePaywall = () => {}, openNudge = () => false;
     var filtered = () => state.deals, isLocked = () => false, canJoin = () => true, openAccess = () => true;

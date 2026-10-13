@@ -15,7 +15,7 @@ const results = cases.map(c => {
   const content = {innerHTML:'', querySelector:()=>null, appendChild(){}};
   class FixedDate extends Date { static now() {return Date.parse('2026-10-09T14:00:00Z');} }
   const ctx = {
-    Date:FixedDate, state:{meta:{front_page:c.options, floors:{min_pct:70}},
+    Date:FixedDate, loadedOnce:true, state:{meta:{front_page:c.options, floors:{min_pct:70}},
       catTab:0, sortKey:defaultSort, sortDir:-1, seed:42, newKeys:{}, deals:c.rows, shown:10000, ...c.state},
     document:{getElementById:id => id === 'content' ? content : controls[id] || null},
     num:x => x == null ? null : Number(x), dealKey:d=>d.key,

@@ -11,8 +11,8 @@ from tests.test_publish_site import make_deal
 from tests.test_support import render
 
 
-@pytest.mark.parametrize('support', [False, True])
-def test_search_filters_and_refresh(tmp_path, support):
+@pytest.mark.parametrize('support,open_access', [(False, False), (False, True), (True, True)])
+def test_search_filters_and_refresh(tmp_path, support, open_access):
     if not shutil.which('node'):
         pytest.skip('node unavailable')
     deals = [make_deal(dedupe_key=f'search-{i}', store=store, item=item, category=cat)
@@ -24,7 +24,7 @@ def test_search_filters_and_refresh(tmp_path, support):
                  ('macys.com', 'Cotton Towel', 'home'),
              ])]
     deals[-1]['sightings'] = [{'source_name': 'dealnews', 'source_url': 'https://dealnews.com/123'}]
-    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=support, paywall_open_access=True), deals)
+    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=support, paywall_open_access=open_access), deals)
     home = (out / 'index.html').read_text()
     assert home.count('id="q"') == 1
     header = home.split('<header>', 1)[1].split('</header>', 1)[0]
@@ -33,6 +33,13 @@ def test_search_filters_and_refresh(tmp_path, support):
     assert 'id="searchcount" role="status" aria-live="polite"' in header
     assert 'aria-label="Store"><option value="">All stores' in home
     assert "srcsel" not in home and "Found by:" not in home
+    assert home.count('id="load-status" class="load-status" role="status" hidden') == 1
+    assert home.index('id="load-status"') < home.index('id="content"')
+    assert 'id="load-retry" type="button" class="pwbtn alt">Retry</button>' in home
+    assert '.load-status .pwbtn{min-width:44px;min-height:44px;flex:0 0 auto}' in home
+    wall = home.split('<div id="content"', 1)[1].split('<div id="paywall"', 1)[0]
+    assert 'class="getdeal" href="https://' in wall and 'class="credit">via <a href="https://' in wall
+    assert '<noscript>' in wall and 'id="load-status"' not in wall
     for i, script in enumerate(re.findall(r'<script>(.*?)</script>', home, re.S)):
         path = tmp_path / f'script-{i}.js'
         path.write_text(script)

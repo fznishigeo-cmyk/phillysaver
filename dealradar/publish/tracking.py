@@ -195,7 +195,12 @@ _DISPATCH = """\
   //
   // start_trial is worth $0 today (value 0, USD); Meta's StartTrial also
   // carries predicted_ltv 9.99, one month of membership.
+  // Home load events go only to GA4 and carry no visitor-supplied params.
   var EVENTS = {
+    home_load_attempt: { ga4Only: true },
+    first_load_failed: { ga4Only: true },
+    static_fallback_shown: { ga4Only: true },
+    first_load_recovered: { ga4Only: true },
     sign_up: { meta: "CompleteRegistration", tiktok: "CompleteRegistration", pin: "signup", uet: "sign_up" },
     begin_checkout: { meta: "InitiateCheckout", tiktok: "InitiateCheckout", uet: "begin_checkout" },
     start_trial: { meta: "StartTrial", tiktok: "Subscribe", pin: "checkout", uet: "subscribe" },
@@ -207,13 +212,14 @@ _DISPATCH = """\
     var p = {};
     ["store", "category", "method"].forEach(function (k) {
       var v = params && params[k];
-      if (typeof v === "string" && v) p[k] = v.slice(0, 60);
+      if (!ev.ga4Only && typeof v === "string" && v) p[k] = v.slice(0, 60);
     });
     if (name === "begin_checkout" && params && (params.plan === "month" || params.plan === "year")) p.plan = params.plan;
     var trial = name === "start_trial";
     function plus(extra) { return Object.assign({}, p, trial ? { value: 0, currency: "USD" } : {}, extra || {}); }
     function send(fn) { try { fn(); } catch (e) { /* one tag's failure never stops the rest */ } }
     if (on.ga4) send(function () { window.gtag("event", name, plus({ send_to: on.ga4 })); });
+    if (ev.ga4Only) return;
     if (on.gadsTrial && trial) send(function () {
       window.gtag("event", "conversion", { send_to: on.gadsTrial, value: 0, currency: "USD" });
     });

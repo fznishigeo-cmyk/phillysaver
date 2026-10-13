@@ -352,6 +352,9 @@ header .dhole{background:var(--chip)}
        text-decoration:underline;text-underline-offset:2px}
 .totop:hover,.totop:focus-visible{color:var(--fg)}
 .empty{color:var(--muted);padding:34px 0;text-align:center}
+.load-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
+             margin:12px 0;color:var(--muted);font-size:13px}
+.load-status .pwbtn{min-width:44px;min-height:44px;flex:0 0 auto}
 .lockedlist{color:var(--muted);margin:10px 0;padding-left:20px}
 footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
        padding-top:14px}
@@ -707,6 +710,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   </select>
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0" inputmode="numeric" autocomplete="off"></label>
+</div>
+<div id="load-status" class="load-status" role="status" hidden>
+  <span id="load-message"></span><button id="load-retry" type="button" class="pwbtn alt">Retry</button>
 </div>
 <div id="content" data-clarity-unmask="true">{{STATIC_WALL}}</div>
 <!--standard--><div id="paywall" class="paywall" data-clarity-mask="true" hidden>
@@ -1127,6 +1133,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
 
   function renderTabs() {
+    if (!loadedOnce) return;
     var nav = document.getElementById("cattabs");
     // Real links to the category hubs (crawlable); a plain click filters
     // the wall in place, a modified one opens the hub.
@@ -1630,6 +1637,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
 
   function render() {
+    if (!loadedOnce) return;  // keep the static cards while the first request waits or fails
     if (moreObserver) moreObserver.disconnect();
     paintTicker();
     cardImageIndex = 0;
@@ -2707,6 +2715,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // A restored or long-hidden page refreshes even between drop marks.
   var hiddenAt = document.hidden ? Date.now() : null, returnRefresh = null;
   function refreshOnReturn() {
+    if (!loadedOnce) return loadData();
     if (returnRefresh) return returnRefresh;
     returnRefresh = fetchPublish().then(merge).then(function () {
       render();
@@ -2786,13 +2795,44 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function fetchPublish() {
     return fetch("deals.json?t=" + new Date().getTime(), {cache: "no-store"})
       .then(function (r) {
-        clock.tag = r.headers.get("etag") || r.headers.get("last-modified") || clock.tag;
-        return r.json();
-      })
-      .then(function (data) {
-        var meta = (data && data.meta) || {};
-        maybeReloadForNewVersion(meta);
-        return { meta: meta, deals: (data && data.deals) || [], spotlight: (data && data.spotlight) || [], key: dataKey(meta) };
+        if (!r.ok) throw new Error("Publish unavailable");
+        return r.json().then(function (data) {
+          function record(v) { return v !== null && typeof v === "object" && !Array.isArray(v); }
+          function strings(v) { return v == null || (Array.isArray(v) && v.every(function (s) { return typeof s === "string"; })); }
+          // One odd deal must never switch off live updates for everyone:
+          // only a broken envelope rejects the publish; a malformed deal is
+          // skipped (review of task 064).
+          function goodDeal(d) {
+            return record(d) && typeof d.key === "string" && !!d.key && typeof d.store === "string" &&
+              (d.locked === true || typeof d.item === "string") &&
+              ["key", "dedupe_key", "store", "item", "brand", "url", "image_url", "category", "badge",
+               "headline", "status", "died_at", "first_seen_at"].every(function (k) {
+                return d[k] == null || typeof d[k] === "string";
+              }) && ["final_price", "regular_price", "pct_at_checkout", "abs_savings", "age_hours", "pick", "ps"].every(function (k) {
+                return d[k] == null || (typeof d[k] === "number" && isFinite(d[k]));
+              }) && ["locked", "alive", "gone", "needs_steps", "earns"].every(function (k) {
+                return d[k] == null || typeof d[k] === "boolean";
+              }) && ["conditions", "codes", "how", "flags"].every(function (k) { return strings(d[k]); }) &&
+              (d.credits == null || (Array.isArray(d.credits) && d.credits.every(function (c) {
+                return record(c) && ["name", "url"].every(function (k) { return c[k] == null || typeof c[k] === "string"; });
+              })));
+          }
+          var valid = record(data) && record(data.meta) && Array.isArray(data.deals) &&
+            (data.spotlight == null || Array.isArray(data.spotlight)) &&
+            ["last_run", "floors", "front_page", "engagement", "support"].every(function (k) {
+              return data.meta[k] == null || record(data.meta[k]);
+            });
+          var front = valid && data.meta.front_page;
+          if (!valid || (front && (!strings(front.broad_categories) || !strings(front.niche_categories)))) {
+            throw new Error("Invalid publish");
+          }
+          var meta = data.meta;
+          clock.tag = r.headers.get("etag") || r.headers.get("last-modified") || clock.tag;
+          maybeReloadForNewVersion(meta);
+          return { meta: meta, deals: data.deals.filter(goodDeal),
+                   spotlight: (data.spotlight || []).filter(function (d) { return goodDeal(d) && record(d.spotlight); }),
+                   key: dataKey(meta) };
+        });
       });
   }
   function isNewPublish(pub) { return !!pub && !(pub.key && pub.key === state.dataKey); }
@@ -2807,7 +2847,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     });
   }
 
-  var loadedOnce = false;
+  var loadedOnce = false, loadRequest = null, loadEvents = {};
+  function trackLoad(name) {
+    if (loadEvents[name]) return;
+    loadEvents[name] = true;
+    track(name);
+  }
   // A publish goes up: meta, list, clock. Returns how many live deals it
   // brought that were not on the wall before (tagged NEW).
   function applyPublish(pub, deals) {
@@ -2939,11 +2984,15 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
 
   function loadData() {
+    if (loadRequest) return loadRequest;
     // Once the wall is up, a publish goes up at its mark (drop) or, while
     // the clock waits for a late one, as soon as it lands: the fallback
     // never puts one up early, so the countdown is never cut short.
     if (loadedOnce && !clock.waiting) return;
-    fetchPublish().then(function (pub) {
+    if (!loadedOnce) trackLoad("home_load_attempt");
+    var status = document.getElementById("load-status"), retry = document.getElementById("load-retry");
+    retry.disabled = true;
+    loadRequest = fetchPublish().then(function (pub) {
       if (loadedOnce) return merge(pub);  // the 5-minute fallback
       // Signed in: the teaser goes up now (CTA held back) and the full
       // payload replaces it once the Worker answers; a failure keeps
@@ -2951,17 +3000,30 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       auth.checking = !!(apiUrl(pub.meta) && token());
       applyPublish(pub, pub.deals);
       render();
+      status.hidden = true;
+      document.getElementById("load-message").textContent = "";
+      if (loadEvents.first_load_failed) trackLoad("first_load_recovered");
       // The answer always ends the check, whatever publish is up by then
       // (a drop at the next mark may have brought a newer one).
       if (auth.checking) memberDeals(false).then(showDeals);
     }).catch(function () {
       if (!loadedOnce) {
-        document.getElementById("content").innerHTML =
-          '<p class="empty">Could not load deals.json</p>';
+        trackLoad("first_load_failed");
+        var hasStatic = !!document.getElementById("content").querySelector(".card");
+        document.getElementById("load-message").textContent = hasStatic
+          ? "Live updates are unavailable. These are the last published deals."
+          : "Live updates are unavailable. Please try again.";
+        status.hidden = false;
+        if (hasStatic) trackLoad("static_fallback_shown");
       } // a failed background refresh keeps showing the last good data
+    }).then(function () {
+      retry.disabled = false;
+      loadRequest = null;
     });
+    return loadRequest;
   }
 
+  document.getElementById("load-retry").addEventListener("click", loadData);
   loadData();
   setInterval(loadData, 5 * 60 * 1000);  // fallback self-refresh every 5 minutes
 })();

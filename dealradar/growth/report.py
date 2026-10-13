@@ -158,6 +158,12 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                       str(e) if isinstance(e, (google.ServiceAccountError, google_ads.GoogleAdsError))
                       else _error(e))
             log.warning("%s: error %s", name, detail)
+    status["product"] = status["ga4"]
+    if status["product"] == "ok":
+        data["product"] = {
+            period: {name: data["ga4"][period][event] for name, event in google.PRODUCT_EVENTS.items()}
+            for period in ("yesterday", "window")}
+    log.info("product: %s", status["product"])
     return data, status
 
 
@@ -255,6 +261,14 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                      f"7-day {week['same_verdict']}/{week['deals_judged']}")
     else:
         lines.append("critic shadow (Haiku vs Sonnet): not available")
+
+    lines += ["", "== Product (GA4 event sample, yesterday / window) =="]
+    product = data.get("product")
+    if product:
+        lines += [f"product.{name}: " + _pair(_n, product["yesterday"][name], product["window"][name])
+                  for name in google.PRODUCT_EVENTS]
+    else:
+        lines.append(f"product: not available ({status.get('product', 'skipped')})")
 
     if ga:
         y, w = ga["yesterday"], ga["window"]

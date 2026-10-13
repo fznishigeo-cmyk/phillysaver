@@ -14,6 +14,7 @@ const rows = Array.from({length:18}, (_, i) => ({key:String(i), status:'alive',
 const content = {innerHTML:'', querySelector:()=>null, appendChild(){}};
 const controls = Object.fromEntries(['q','storesel','minpct'].map(id=>[id,{value:''}]));
 const ctx = {
+  loadedOnce:true,
   state:{meta:{floors:{min_pct:70}}, deals:rows, shown:60, newKeys:{}, sortKey:'fresh',
     sortDir:-1, catTab:0}, moreObserver:null, panel:{}, cardImageIndex:0, traceFree:false,
   TIER_LABEL:{}, num:x=>x == null ? null : Number(x), esc:x=>String(x ?? ''),

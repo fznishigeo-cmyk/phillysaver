@@ -345,6 +345,36 @@ def test_ad_tags_alone_under_gpc_make_no_request_and_wptrack_is_a_no_op(tmp_path
     assert not out["clarity"]
 
 
+@pytest.mark.parametrize("ga4", [False, True])
+def test_home_load_events_are_parameterless_and_ga4_only(tmp_path, ga4):
+    events = ["home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered"]
+    private = {"store": "PRIVATE-STORE", "category": "PRIVATE-CATEGORY", "method": "PRIVATE-METHOD",
+               "url": "https://private.example/item", "error": "PRIVATE-ERROR", "product": "PRIVATE-PRODUCT",
+               "plan": "year", "final_price": 12.34}
+    calls = [[event, private] for event in events]
+    ids = dict(SAMPLE)
+    if not ga4:
+        ids.pop("ga4_measurement_id")
+    scenarios = {"baseline": {}, "open": {"calls": calls}, "gpc": {"gpc": True, "calls": calls},
+                 "opted_out": {"storage": {"wp.adsOptOut": "1"}, "calls": calls}}
+    out = _run_node(tmp_path, ids, scenarios)
+    for name in ("open", "gpc", "opted_out"):
+        result = out[name]
+        assert result["error"] is None
+        sent = [e for e in result["dataLayer"] if e[0] == "event"]
+        assert sent == ([["event", event, {"send_to": SAMPLE["ga4_measurement_id"]}] for event in events]
+                        if ga4 else [])
+        assert "PRIVATE" not in json.dumps(result) and "private.example" not in json.dumps(result)
+        for pixel in ("fbq", "ttq", "pintrk", "uetq"):
+            if name == "open":
+                assert result[pixel] == out["baseline"][pixel]
+            else:
+                assert result[pixel] is None
+        if name != "open":
+            assert result["srcs"] == (["https://www.googletagmanager.com/gtag/js?id=" + SAMPLE["ga4_measurement_id"]]
+                                      if ga4 else [])
+
+
 def test_clarity_alone_loads_only_without_gpc_or_opt_out(tmp_path):
     out = _run_node(tmp_path, {"clarity_project_id": "ywsuwmrauy"}, {
         "open": {}, "gpc": {"gpc": True}, "out": {"storage": {"wp.adsOptOut": "1"}},

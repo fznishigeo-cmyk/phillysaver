@@ -36,7 +36,7 @@ const ctx = {Date:FixedDate, state:{meta:doc.meta, deals:doc.deals, spotlight:do
   isLocked:d=>!!d.locked, isMember:()=>false, unknownMembership:()=>false,
   auth:{checking:false}, sortVal:(d,k)=>d[k === 'pct' ? 'pct_at_checkout' : k],
   paintTicker(){}, updatePaywall(){}, renderSearchCount(){}, openNudge:()=>false,
-  renderMeta(){}, paintClock(){}, clock:{}, loadedOnce:false,
+  renderMeta(){}, paintClock(){}, clock:{}, loadedOnce:true,
   openAccess:()=>true, canJoin:()=>false, rememberFocus:()=>null, restoreFocus(){}, offer:()=>({})};
 vm.createContext(ctx);
 for (const [a,b] of [

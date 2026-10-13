@@ -22,7 +22,9 @@ SCOPES = ("https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/webmasters")
 GA4_URL = "https://analyticsdata.googleapis.com/v1beta/properties/{}:batchRunReports"
 SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
-EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click")
+PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
+                  "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered"}
+EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "
                       "name store, scope Event, parameter store")
 

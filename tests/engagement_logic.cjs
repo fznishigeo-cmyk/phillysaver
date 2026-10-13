@@ -59,7 +59,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     constructor(...args) {super(...(args.length ? args : [time]));}
     static now() {return time;}
   }
-  const ctx = {Date:FixedDate, Math:Object.create(Math),
+  const ctx = {Date:FixedDate, Math:Object.create(Math), loadedOnce:true,
     state:{deals, meta:{engagement:{...enabled,...switches}, floors:{min_pct:60}}, shown}, PAGE_CARDS:60,
     document:{hidden:false, getElementById:id=>elements[id], addEventListener:(type,cb)=>handlers[type]=cb},
     window:{wpSupport:{refresh(){}}, wpTrack:(name,params)=>events.push({name,params}), addEventListener:(type,cb)=>windowHandlers[type]=cb},

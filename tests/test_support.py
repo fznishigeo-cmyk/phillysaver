@@ -116,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "42cb5edca38397d17ec00f72cbc2eed160ce4367ea4f436e9afa124d19b49bac"),
-    (False, 49, "333aa6553399532d527141bbd2e025c740343010a05b709e4c7224f241cff8b4"),
-    (True, 0, "05a683c1ff2c377bb837f788f4b9cd3730306ff549ba0689fa7329aac1467907"),
-    (True, 49, "6a1e1302d50b2ab1e0a3b0aabe32ae7decff175b56592ccc11b5cf741295b04b"),
+    (False, 0, "7945a48d27952f7d38389485d49f77f40feaea9aac34d1ff632d8723cbfa05e1"),
+    (False, 49, "f097be596a82d1aac0f05a2e1393ce2592287f6f0f01e7abcc3a64e847dada62"),
+    (True, 0, "725deeae29e3bebcbdeabad6e0a747f5e8739b5188769098497ae870d3edb8d6"),
+    (True, 49, "5216be53973d7e6d5c6645fe28bb217d1d66e595925b2212a90298f56c10443d"),
 ])
 def test_support_off_index_bytes_match_task061_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 061 adds shared spotlight styles/rendering in every access mode. Snapshot

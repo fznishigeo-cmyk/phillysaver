@@ -37,7 +37,7 @@ const ctx = {URL, URLSearchParams, Set, state:{deals:payload.deals, catTab:2, sh
   location:{search:'', reload(){reloads++;}}, loadedOnce:true, reduceMotion:()=>true,
   SORT_KEY:'wp.sort', lsGet:()=>null, lsSet:(k,v)=>saved.set(k,v),
   fetch:async (url, options)=>{requests.push({url, options}); if(fail) throw Error('offline');
-    return {headers:{get:()=>''}, json:async()=>response};}
+    return {ok:true, headers:{get:()=>''}, json:async()=>response};}
 };
 vm.createContext(ctx);
 for (const [a,b] of [
@@ -53,6 +53,177 @@ for (const [a,b] of [
 const query = value => {element('q').value=value; ctx.updateSearch(); return ctx.filtered();};
 const items = rows => Array.from(rows, d=>d.item);
 const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
+const staticWall = html.match(/<div id="content"[^>]*>([\s\S]*?)<\/div>\s*<div id="paywall"/)[1];
+const support = payload.meta.support.enabled;
+function deferred() {
+  let resolve;
+  const promise = new Promise(r=>{resolve=r;});
+  return {promise, resolve};
+}
+function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false, memberPending=null}={}) {
+  const els = {}, listeners = {}, intervals = [], events = [], requests = [], notices = [];
+  let renders=0, firstAdoptions=0, memberRequests=0;
+  function el(id) {
+    if (['moremore','totop'].includes(id)) return null;
+    return els[id] ||= {value:'', innerHTML:'', textContent:'', hidden:false, disabled:false,
+      addEventListener(type, fn) {listeners[id+':'+type]=fn;},
+      querySelectorAll:()=>[], appendChild(){}, focus(){},
+      querySelector(selector) {return selector === '.card' && /<article class="card/.test(this.innerHTML) ? {} : null;}};
+  }
+  el('content').innerHTML=staticDeals ? staticWall : '<p class="empty">No qualifying deals right now</p>';
+  el('load-status').hidden=true;
+  el('cattabs').innerHTML=html.match(/<nav id="cattabs"[^>]*>(.*?)<\/nav>/)[1];
+  el('toast').textContent='unrelated notice';
+  const c = {next, URLSearchParams, CATGROUPS:ctx.CATGROUPS, PAGE_CARDS:60, AUTO_CARDS:300,
+    state:{shown:60, deals:[], teaser:[], meta:{}, dataKey:'', newKeys:{}, dropKeys:{}, seed:0, sortKey:'top', catTab:0},
+    clock:{tag:'old-tag', waiting:0, step:900000, phase:0, lastSeed:null}, auth:{checking:false}, moreObserver:null,
+    document:{hidden:false, getElementById:el,
+      addEventListener(type, fn) {listeners['document:'+type]=fn;}},
+    window:{wpTrack:(...args)=>events.push(args), wpSupport:{refresh(){}},
+      addEventListener(type, fn) {listeners['window:'+type]=fn;}},
+    localStorage:{getItem:()=>null, setItem(){}}, location:{search:''},
+    setTimeout:()=>1, clearTimeout(){}, setInterval(fn, delay) {intervals.push({fn,delay});},
+    dataKey:m=>m.generated_at || '', dealKey:d=>d.key, keySet:ds=>Object.fromEntries(ds.map(d=>[d.key,true])),
+    openKeys:ds=>Object.fromEntries(ds.filter(d=>!d.locked).map(d=>[d.key,true])),
+    maybeReloadForNewVersion(){}, syncClock(){}, markIndex:()=>1,
+    populateStores(){firstAdoptions++;}, refreshStores(){}, renderMeta(){}, sinceLastVisit(){}, rememberSeen(){},
+    selectAmazonDeals(){}, openFromHash(){}, initEngagement(){}, engagementLineHtml:()=>'',
+    paintTicker(){renders++;}, renderSearchCount(){}, filtered:()=>c.state.deals, ordered:rows=>rows,
+    searchText:()=>el('q').value.trim(),
+    isLocked:d=>d.locked===true, openNudge:()=>false,
+    updatePaywall(){notices.push(c.auth.checking);}, openAccess:()=>!!c.state.meta.open_access,
+    canJoin:()=>false, placeGone:rows=>rows, frontPageView:()=>false, openBand:()=>'', activeSpotlight:()=>[],
+    gridHtml:rows=>'<div class="grid">'+rows.map(d=>'<article class="card" data-key="'+d.key+'">'+d.item+'</article>').join('')+'</div>',
+    apiUrl:m=>(m || c.state.meta).api_url || '', token:()=>support || !signedIn ? '' : 'session',
+    isMember:()=>!!(c.state.me && c.state.me.member),
+    async fetchMe() {memberRequests++; return c.state.me={member:true};},
+    async fetchFull() {if(memberPending) await memberPending.promise;
+      if(memberFails) throw Error('private member error'); return [{...payload.deals[0], key:'member-only'}];},
+    memberDeals:async()=>null, showDeals(){},
+    fetch(url, options) {requests.push({url,options}); const sc=c.next;
+      return (sc.pending ? sc.pending.promise : Promise.resolve()).then(()=>{
+        if (sc.error) throw sc.error;
+        return {ok:!sc.status || sc.status<400, headers:{get:()=>sc.tag || 'new-tag'},
+          json:async()=>{if(sc.invalidJSON) throw Error('JSON at https://private.example/item');
+            if(sc.jsonPending) await sc.jsonPending.promise; return sc.body;}};
+      });
+    }
+  };
+  c.panel=el('paywall');
+  vm.createContext(c);
+  for (const [a,b] of [
+    ['  function esc(s)', '  function sortVal'],
+    ['  function renderTabs()', '  function filtered('],
+    ['  function render()', '  function showMore()'],
+    ['  function resetWall()', '  // Easy sorting:'],
+    ['  function fetchPublish()', '  // While a drop waits,']
+  ]) vm.runInContext(snippet(a,b),c);
+  if (!support) vm.runInContext(snippet('  function memberDeals(fresh)', '  function syncSubbar()'),c);
+  vm.runInContext(snippet('  function loadData()', '})();'),c);
+  return {c, el, listeners, intervals, events, requests, notices,
+    get renders(){return renders;}, get firstAdoptions(){return firstAdoptions;}, get memberRequests(){return memberRequests;},
+    retry:()=>listeners['load-retry:click'](), timer:()=>intervals.find(i=>i.delay===300000).fn(),
+    count:name=>events.filter(e=>e[0]===name).length};
+}
+const goodPublish = () => ({meta:{...payload.meta,api_url:'https://api.test'},deals:payload.deals});
+async function checkFirstLoad() {
+  // Only a broken envelope rejects a publish (review of task 064).
+  const badShapes = [null, [], {}, {meta:{}, deals:null}, {meta:null,deals:[]}, {meta:[],deals:[]},
+    {meta:{},deals:{}}, {meta:{floors:[]},deals:[]},
+    {meta:{front_page:{broad_categories:{}}},deals:payload.deals}];
+  // A malformed deal is skipped; the rest of the publish still goes up.
+  const badDeals = [[null], [[]], [{}],
+    ...['store','conditions','credits','codes','how','final_price','locked'].map(k=>
+      [{...payload.deals[1],[k]:{invalid:true}}]),
+    [{...payload.deals[1],credits:[null]}]];
+  for (const bad of badDeals) {
+    const h=loadHarness({body:{...goodPublish(),deals:[payload.deals[0], ...bad]}}); await flush();
+    assert.equal(h.c.loadedOnce,true); assert.equal(h.el('load-status').hidden,true);
+    assert.deepEqual(h.c.state.deals.map(d=>d.key).filter(k=>k===payload.deals[0].key),[payload.deals[0].key]);
+    assert.ok(h.c.state.deals.every(d=>d && typeof d.store==='string' && typeof d.key==='string'));
+  }
+  for (const failure of [{error:Error('fetch failed https://private.example/product')},
+    {status:404,body:goodPublish()}, {status:503,body:goodPublish()}, {invalidJSON:true},
+    ...badShapes.map(body=>({body}))]) {
+    const h=loadHarness(failure), before=h.el('content').innerHTML, tabs=h.el('cattabs').innerHTML;
+    const oldMeta=h.c.state.meta, oldDeals=h.c.state.deals;
+    await flush();
+    assert.equal(h.c.loadedOnce,false); assert.equal(h.c.loadRequest,null); assert.equal(h.renders,0);
+    assert.equal(h.c.state.meta,oldMeta); assert.equal(h.c.state.deals,oldDeals); assert.equal(h.c.clock.tag,'old-tag');
+    assert.equal(h.el('content').innerHTML,before); assert.match(before,/<a class="getdeal" href="https:\/\//);
+    assert.match(before,/<span class="credit">via <a href="https:\/\//);
+    assert.equal(h.el('load-status').hidden,false); assert.equal(h.el('load-retry').disabled,false);
+    assert.equal(h.el('load-message').textContent,'Live updates are unavailable. These are the last published deals.');
+    assert.equal(h.count('home_load_attempt'),1); assert.equal(h.count('first_load_failed'),1);
+    assert.equal(h.count('static_fallback_shown'),1); assert.equal(h.count('first_load_recovered'),0);
+    assert.ok(h.events.every(e=>e.length===2 && e[1]===undefined));
+    assert.doesNotMatch(h.el('load-message').textContent,/private|https:|JSON|fetch failed/);
+    h.el('q').value='search while unavailable'; h.listeners['q:keydown']({key:'Escape',preventDefault(){}});
+    h.listeners['storesel:change'](); h.c.render();
+    assert.equal(h.el('content').innerHTML,before); assert.equal(h.el('cattabs').innerHTML,tabs);
+    await h.retry(); assert.equal(h.requests.length,2); assert.equal(h.count('first_load_failed'),1);
+    assert.equal(h.count('static_fallback_shown'),1); assert.equal(h.el('content').innerHTML,before);
+    h.c.next={body:goodPublish()}; await h.retry();
+    assert.equal(h.firstAdoptions,1); assert.equal(h.renders,1); assert.equal(h.c.loadedOnce,true);
+    assert.equal(h.el('load-status').hidden,true); assert.equal(h.el('load-message').textContent,'');
+    assert.match(h.el('content').innerHTML,/<article class="card"/);
+    assert.equal(h.el('toast').textContent,'unrelated notice'); assert.equal(h.count('first_load_recovered'),1);
+  }
+  const missing=loadHarness({status:503}, {staticDeals:false}); await flush();
+  assert.equal(missing.el('load-message').textContent,'Live updates are unavailable. Please try again.');
+  assert.doesNotMatch(missing.el('content').innerHTML,/class="card"/); assert.equal(missing.count('static_fallback_shown'),0);
+  missing.c.next={body:goodPublish()}; await missing.retry(); assert.equal(missing.count('first_load_recovered'),1);
+  const empty=loadHarness({body:{meta:{},deals:[]}}); await flush();
+  assert.equal(empty.c.loadedOnce,true); assert.equal(empty.firstAdoptions,1);
+  assert.equal(empty.el('load-status').hidden,true); assert.match(empty.el('content').innerHTML,/No qualifying deals right now/);
+  assert.deepEqual(empty.events.map(e=>e[0]),['home_load_attempt']);
+  for(const timerFirst of [false,true]) {
+    const h=loadHarness({error:Error('unavailable')}); await flush();
+    const pending=deferred(); h.c.next={body:goodPublish(),pending};
+    const tasks=timerFirst ? [h.timer(),h.retry(),h.retry()] : [h.retry(),h.timer(),h.retry()];
+    h.listeners['window:pageshow']({persisted:true});
+    assert.equal(h.requests.length,2); assert.ok(tasks.every(t=>t===tasks[0]));
+    assert.equal(h.el('load-retry').disabled,true); assert.equal(h.el('load-status').hidden,false);
+    assert.equal(h.el('content').innerHTML,staticWall);
+    pending.resolve(); await Promise.all(tasks); await flush();
+    assert.equal(h.firstAdoptions,1); assert.equal(h.renders,1); assert.equal(h.count('first_load_recovered'),1);
+    await h.retry(); h.timer(); assert.equal(h.requests.length,2);
+    const {meta,deals,dataKey}=h.c.state, clock={...h.c.clock}, content=h.el('content').innerHTML;
+    h.c.clock.waiting=1; clock.waiting=1; h.c.next={status:503,body:goodPublish()}; await h.c.loadData();
+    assert.equal(h.c.state.meta,meta); assert.equal(h.c.state.deals,deals); assert.equal(h.c.state.dataKey,dataKey);
+    assert.deepEqual({...h.c.clock},clock); assert.equal(h.el('content').innerHTML,content);
+    assert.equal(h.el('load-status').hidden,true); assert.equal(h.count('first_load_failed'),1);
+  }
+  const pending=deferred(), delayed=loadHarness({body:goodPublish(),jsonPending:pending}); await flush();
+  delayed.c.render(); delayed.timer(); delayed.retry();
+  assert.equal(delayed.c.loadedOnce,false); assert.equal(delayed.el('content').innerHTML,staticWall);
+  assert.equal(delayed.el('load-status').hidden,true); assert.equal(delayed.requests.length,1);
+  assert.equal(delayed.c.clock.tag,'old-tag');
+  pending.resolve(); await flush(); assert.equal(delayed.firstAdoptions,1);
+  const returnLoad=loadHarness({error:Error('unavailable')}); await flush();
+  returnLoad.c.next={body:goodPublish()}; returnLoad.listeners['window:pageshow']({persisted:true}); await flush();
+  assert.equal(returnLoad.firstAdoptions,1); assert.equal(returnLoad.count('first_load_recovered'),1);
+  const normal=loadHarness({body:goodPublish()}); await flush();
+  assert.equal(normal.firstAdoptions,1); assert.deepEqual(normal.events.map(e=>e[0]),['home_load_attempt']);
+  normal.c.clock.waiting=1; normal.c.next={error:Error('later failure')}; await normal.c.loadData();
+  assert.deepEqual(normal.events.map(e=>e[0]),['home_load_attempt']); assert.equal(normal.el('load-status').hidden,true);
+  for (const memberFails of [false,true]) {
+    const h=loadHarness({error:Error('unavailable')},{signedIn:true,memberFails}); await flush();
+    h.c.next={body:goodPublish()};
+    await h.retry(); await flush();
+    assert.equal(h.firstAdoptions,1); assert.equal(h.count('first_load_recovered'),1); assert.equal(h.c.auth.checking,false);
+    assert.equal(h.memberRequests,support ? 0 : 1);
+    assert.equal(h.c.state.deals[0].key,!support && !payload.meta.open_access && !memberFails ? 'member-only' : payload.deals[0].key);
+    assert.equal(h.notices[0],!support);
+  }
+  if (!support && !payload.meta.open_access) {
+    const pending=deferred(), h=loadHarness({body:goodPublish()},{signedIn:true,memberPending:pending}); await flush();
+    assert.equal(h.firstAdoptions,1); assert.equal(h.c.auth.checking,true); assert.deepEqual(h.c.state.deals,payload.deals);
+    h.c.clock.waiting=1; h.c.next={error:Error('refresh while membership waits')}; await h.c.loadData();
+    assert.equal(h.c.auth.checking,true); assert.equal(h.el('load-status').hidden,true);
+    pending.resolve(); await flush(); assert.equal(h.c.auth.checking,false); assert.equal(h.c.state.deals[0].key,'member-only');
+  }
+}
 (async()=>{
   for(const q of ['best office', 'bestoffice', 'best offi', 'BEST-OFFICE'])
     assert.deepEqual(items(query(q)), ['BestOffice 4-Shelf Bookcase']);
@@ -169,5 +340,6 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   fail=false; const reqBefore=requests.length;
   handlers['window:pageshow']({persisted:true}); handlers['window:pageshow']({persisted:true});
   await flush(); assert.equal(requests.length,reqBefore+1);
-  console.log('search, filters and cache refresh passed');
+  await checkFirstLoad();
+  console.log('search, filters, cache refresh and static fallback passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

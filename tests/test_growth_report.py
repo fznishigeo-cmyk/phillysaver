@@ -59,7 +59,11 @@ GA4_RESPONSE = {"reports": [
         {"dimensionValues": [{"value": "start_trial"}, {"value": "window"}], "metricValues": [{"value": "77"}]},
         {"dimensionValues": [{"value": "deal_click"}, {"value": "yesterday"}], "metricValues": [{"value": "9001"}]},
         {"dimensionValues": [{"value": "support_click"}, {"value": "yesterday"}], "metricValues": [{"value": "12"}]},
-        {"dimensionValues": [{"value": "support_click"}, {"value": "window"}], "metricValues": [{"value": "45"}]}]},
+        {"dimensionValues": [{"value": "support_click"}, {"value": "window"}], "metricValues": [{"value": "45"}]},
+        *[{"dimensionValues": [{"value": event}, {"value": period}], "metricValues": [{"value": str(count)}]}
+          for event, counts in (("home_load_attempt", (400, 2500)), ("first_load_failed", (12, 100)),
+                                ("static_fallback_shown", (11, 94)), ("first_load_recovered", (5, 45)))
+          for period, count in zip(("yesterday", "window"), counts)]]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
         {"dimensionValues": [{"value": "facebook / paid"}], "metricValues": [{"value": "1200"}]}]},
@@ -423,16 +427,20 @@ def test_ga4_request_and_parsing():
         {"startDate": "7daysAgo", "endDate": "yesterday", "name": "window"}]
     assert [m["name"] for m in totals["metrics"]] == ["sessions", "totalUsers", "newUsers"]
     assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == [
-        "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click"]
+        "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
+        "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
     assert out["yesterday"] == {"sessions": 812345, "totalUsers": 731942, "newUsers": 640217,
                                 "sign_up": 61, "begin_checkout": 0, "start_trial": 0, "deal_click": 9001,
-                                "support_click": 12}
+                                "support_click": 12, "home_load_attempt": 400, "first_load_failed": 12,
+                                "static_fallback_shown": 11, "first_load_recovered": 5}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
+    assert out["window"]["home_load_attempt"] == 2500 and out["window"]["first_load_failed"] == 100
+    assert out["window"]["static_fallback_shown"] == 94 and out["window"]["first_load_recovered"] == 45
     assert out["sources"] == [("google / organic", 2500), ("facebook / paid", 1200)]
     assert out["pages"] == [("/secret-landing-page.html", 3100)]
 
@@ -537,7 +545,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     fake = FakeApis()
     with client_for(fake) as client:
         data, status = report.collect(cfg, NOW, client)
-    ok = ok | {"site_health"}
+    ok = ok | {"site_health"} | ({"product"} if google_ else set())
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
     assert set(data) == ok | {"subscribers"}
@@ -561,7 +569,7 @@ def test_empty_config_values_skip_their_section(cfg, rsa_key, monkeypatch, caplo
     cfg.growth_instagram_user_id = ""
     with client_for(FakeApis()) as client:
         _, status = report.collect(cfg, NOW, client)
-    assert status["ga4"] == status["instagram"] == "skipped"
+    assert status["ga4"] == status["product"] == status["instagram"] == "skipped"
     assert status["search_console"] == status["facebook"] == "ok"
     assert "ga4: skipped (growth.ga4_property_id not set)" in caplog.messages
 
@@ -661,7 +669,64 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     assert "7 URLs, 1 errors, 2 warnings, last read 2026-10-10T07:12:00Z" in text
     assert "Facebook Page followers: 4,321" in text and "Instagram followers: 8,765" in text
     assert "Cancellations (7 days): 2" in text
-    assert text.rstrip().endswith("stripe ok")
+    assert text.rstrip().endswith("stripe ok, product ok")
+
+
+def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    set_sources(monkeypatch, rsa_key, meta_=False, stripe_=False)
+    fake = FakeApis()
+    with client_for(fake) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["product"] == "ok"
+    assert data["product"] == {
+        "yesterday": {"home_load_attempts": 400, "first_load_failures": 12,
+                      "static_fallback_shown": 11, "first_load_recoveries": 5},
+        "window": {"home_load_attempts": 2500, "first_load_failures": 100,
+                   "static_fallback_shown": 94, "first_load_recoveries": 45}}
+    # Main totals/events/sources/pages + existing store query; no new request or dimensions.
+    queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
+    assert [len(q["requests"]) for q in queries] == [4, 2]
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
+                 "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45"):
+        assert line in text and line not in caplog.text
+    assert "product: ok" in caplog.messages
+
+
+@pytest.mark.parametrize("reason", ["credentials", "property", "api"])
+def test_product_counts_are_unavailable_when_ga4_cannot_be_read(cfg, monkeypatch, caplog, reason):
+    fake = FakeApis()
+    if reason != "credentials":
+        monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+    if reason == "property":
+        cfg.growth_ga4_property_id = ""
+    if reason == "api":
+        monkeypatch.setattr(google, "access_token", lambda *a: GOOGLE_TOKEN)
+
+        def fail(*args):
+            raise ValueError("private failure https://private.example/item")
+
+        monkeypatch.setattr(google, "ga4", fail)
+    with client_for(fake) as client:
+        data, status = report.collect(cfg, NOW, client)
+    expected = "error" if reason == "api" else "skipped"
+    assert status["product"] == expected and "product" not in data
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert f"product: not available ({expected})" in text and "product.home_load_attempts:" not in text
+    assert "private failure" not in text + caplog.text and "private.example" not in text + caplog.text
+
+
+def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
+    monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+    monkeypatch.setattr(google, "access_token", lambda *a: GOOGLE_TOKEN)
+    empty = {"reports": [{}, {}, {}, {}]}
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["ga4"] == status["product"] == "ok"
+    assert all(count == 0 for period in data["product"].values() for count in period.values())
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "product.home_load_attempts: 0 / 0" in text
 
 
 def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, monkeypatch):
@@ -725,7 +790,7 @@ def test_exit_code_only_fails_when_every_configured_section_failed(cfg, rsa_key,
     fake = FakeApis(fail={"api.stripe.com": 500, "wowpriced.com": 500})
     with client_for(fake) as client:
         assert report.run(cfg, NOW, http_client=client) == 1
-    assert fake.telegram[0]["text"].rstrip().endswith("stripe error")  # still reported
+    assert fake.telegram[0]["text"].rstrip().endswith("stripe error, product skipped")  # still reported
 
     code, _, _ = full_run(cfg, rsa_key, monkeypatch, fail={"api.stripe.com": 500})
     assert code == 0  # the other sections worked
