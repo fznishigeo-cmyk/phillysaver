@@ -181,6 +181,7 @@ class TestParsePosts:
             "second_opinions": 0, "spend_usd": 0.05,
             "aborted_spend_cap": False,
             "processed_hashes": [posts[0].content_hash],
+            "post_counts": {posts[0].content_hash: {"extracted": 1, "evidence": 0}},
             "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
         }
 
@@ -224,6 +225,7 @@ class TestParsePosts:
         assert pairs[0][1].item == "Widget"
         assert stats["deals_extracted"] == 2
         assert stats["deals_dropped_evidence"] == 1
+        assert stats["post_counts"][pairs[0][0].content_hash] == {"extracted": 2, "evidence": 1}
         assert any("evidence check failed" in r.message for r in caplog.records)
         # The post keeps every deal the LLM read, the dropped one too: its
         # name still competes for the post's photos, its link still counts

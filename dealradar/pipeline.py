@@ -1556,6 +1556,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         record_deaths()
         summary["items_fetched"] = len(posts)
         summary["source_errors"] = fetch_errors
+        db.audit_seen(posts, now)
 
         # ---- freshness / idempotency: parse only posts not yet content-hashed.
         # Posts are RECORDED only after the parser actually handled them, so a
@@ -1629,11 +1630,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- savings math + dedupe/upsert ----
         _mark_shared_links(pairs)
         deals_upserted = 0
+        audit_outcomes = []
         for post, extracted in pairs:
+            counts = pstats.get("post_counts", {}).get(post.content_hash)
             sav = compute_savings(extracted)
             if sav.exclude_reason in ("in_store", "non_us"):
+                if counts is not None:
+                    counts["other"] = counts.get("other", 0) + 1
                 continue  # excluded entirely (kept out of the DB by design)
             res = upsert_extracted(db, extracted, sav, post, cfg, now)
+            audit_outcomes.append((post, res["dedupe_key"]))
+            if counts is not None and not res["is_new_deal"]:
+                counts["duplicate"] = counts.get("duplicate", 0) + 1
             deals_upserted += 1
             if post_marks_dead(post, extracted):
                 if mark_unconfirmed_dead(db, db.get_deal(res["dedupe_key"]),
@@ -1698,6 +1706,30 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
+
+        # Count the first site gate AFTER critic/rechecks, once per parsed
+        # post version. Duplicate merges are counted separately, even live ones.
+        # Diagnostics only: a failure here never stops the run.
+        try:
+            from .source_audit import gate_reason
+            site_floor = min(cfg.min_pct, cfg.site_show_from_pct)
+            for post, key in audit_outcomes:
+                counts = pstats.get("post_counts", {}).get(post.content_hash)
+                deal = db.get_deal(key)
+                if counts is None or deal is None:
+                    continue
+                ok, reason = rank.is_publishable(deal, cfg, min_pct=site_floor)
+                if not ok:
+                    category = gate_reason(reason)
+                    gate = {"below floor": "below_floor", "critic suspect": "critic"}.get(
+                        category, category)
+                    counts[gate] = counts.get(gate, 0) + 1
+            for post in new_posts:
+                counts = pstats.get("post_counts", {}).get(post.content_hash)
+                if counts is not None:
+                    db.audit_parsed(post, counts, now)
+        except Exception as e:
+            log.warning("source audit counters failed: %s", type(e).__name__)
 
         from .parse.extractor import recategorize_live_deals, recategorize_other
         recategorize_live_deals(db, parser, deadline - _RESERVE_FOR_TAIL_S / 2)

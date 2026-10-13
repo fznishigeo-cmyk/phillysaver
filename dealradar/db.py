@@ -23,6 +23,27 @@ from .models import RawPost
 from .util import iso, now_utc, parse_iso
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS source_audit_posts (
+    source_name TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    parsed_at TEXT,
+    extracted INTEGER NOT NULL DEFAULT 0,
+    evidence INTEGER NOT NULL DEFAULT 0,
+    duplicate INTEGER NOT NULL DEFAULT 0,
+    below_floor INTEGER NOT NULL DEFAULT 0,
+    critic INTEGER NOT NULL DEFAULT 0,
+    dead INTEGER NOT NULL DEFAULT 0,
+    other INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(source_name, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_source_audit_seen ON source_audit_posts(first_seen_at);
+CREATE TABLE IF NOT EXISTS source_audit_breakers (
+    source_name TEXT PRIMARY KEY,
+    tripped_at TEXT NOT NULL,
+    trips INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS critic_shadow_daily (
     day TEXT PRIMARY KEY,
     batches INTEGER NOT NULL DEFAULT 0,
@@ -151,6 +172,29 @@ class DB:
         self.conn.close()
 
     # ---------------- posts_seen ----------------
+
+    def audit_seen(self, posts: list[RawPost], now: datetime) -> None:
+        """Count discoveries, including deferred posts; never store their text."""
+        if self.meta_get("source_audit_since") is None:
+            self.meta_set("source_audit_since", iso(now))
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO source_audit_posts"
+            "(source_name, content_hash, first_seen_at) VALUES (?,?,?)",
+            [(p.source_name, p.content_hash, iso(now)) for p in posts])
+        self.conn.commit()
+
+    def audit_parsed(self, post: RawPost, counts: dict[str, int], now: datetime) -> None:
+        """A post version's parse counters are recorded once, like posts_seen."""
+        self.conn.execute(
+            "UPDATE source_audit_posts SET parsed_at=?, extracted=?, evidence=?,"
+            " duplicate=?, below_floor=?, critic=?, dead=?, other=?"
+            " WHERE source_name=? AND content_hash=?"
+            " AND parsed_at IS NULL",
+            (iso(now), counts["extracted"], counts["evidence"],
+             counts.get("duplicate", 0), counts.get("below_floor", 0),
+             counts.get("critic", 0), counts.get("dead", 0), counts.get("other", 0),
+             post.source_name, post.content_hash))
+        self.conn.commit()
 
     def post_is_known(self, content_hash: str) -> bool:
         row = self.conn.execute(
@@ -378,7 +422,7 @@ class DB:
         the health page without advancing the circuit breaker — used for
         deterministic config states (``needs_key``) that aren't site failures."""
         row = self.conn.execute(
-            "SELECT consecutive_failures FROM source_health WHERE source_name=?",
+            "SELECT consecutive_failures, tripped_until FROM source_health WHERE source_name=?",
             (source_name,),
         ).fetchone()
         failures = int(row["consecutive_failures"]) if row else 0
@@ -401,6 +445,13 @@ class DB:
                 iso(now + timedelta(hours=cooldown_h))
                 if count_failure and failures >= trip_threshold else None
             )
+            old_until = parse_iso(row["tripped_until"]) if row else None
+            if tripped_until and (old_until is None or old_until <= now):
+                self.conn.execute(
+                    "INSERT INTO source_audit_breakers(source_name, tripped_at, trips)"
+                    " VALUES (?,?,1) ON CONFLICT(source_name) DO UPDATE SET"
+                    " tripped_at=excluded.tripped_at, trips=trips+1",
+                    (source_name, iso(now)))
             self.conn.execute(
                 "INSERT INTO source_health(source_name, last_error, consecutive_failures,"
                 " tripped_until, items_last_run, updated_at) VALUES (?,?,?,?,0,?)"
@@ -562,6 +613,9 @@ class DB:
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),
         )
+        self.conn.execute(
+            "DELETE FROM source_audit_posts WHERE first_seen_at < ?",
+            (iso(now - timedelta(days=posts_seen_days)),))
         # Only DEAD deals are pruned, deals_days after they died. A live deal
         # is never removed for its age (operator call, 2026-10-11): Amazon
         # "used - like new" offers stay up until someone buys them, so a

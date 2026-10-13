@@ -258,6 +258,12 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert "acmekitchen.example" in parse_qs(urlsplit(fryer["url"]).query)["u"][0]
     # canonical retailer URL resolved through the redirector, tracking params stripped
     db = DB(env["db"])
+    # The audit ledger includes excluded deals and post versions with no
+    # publishable result. Its gate counts run after the real critic.
+    counters = db.conn.execute(
+        "SELECT SUM(extracted), SUM(duplicate), SUM(below_floor), SUM(critic), SUM(other)"
+        " FROM source_audit_posts WHERE parsed_at IS NOT NULL").fetchone()
+    assert tuple(counters) == (6, 1, 1, 1, 1)
     canon = next(d["canonical_url"] for d in db.all_deals() if "Ninja Foodi" in d["item"])
     db.close()
     assert "acmekitchen.example" in canon
@@ -319,12 +325,35 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
     assert "| newsletter_pick | 1 |" in step_summary.read_text()
 
 
+def test_audit_tracks_evidence_rejects_without_storing_rejected_content(env, monkeypatch):
+    original = _canned_deals
+
+    def with_bad_evidence(prompt):
+        deals = original(prompt)
+        if "FRYDAY at checkout" in prompt:
+            deals.append(dict(item="REJECTED PRIVATE ITEM", store="Nowhere",
+                              final_price=99.99, online_only="true",
+                              evidence=dict(final_price_quote="only $99.99")))
+        return deals
+
+    monkeypatch.setattr("tests.test_e2e_offline._canned_deals", with_bad_evidence)
+    result = _run(env)
+    assert result["parse"]["deals_dropped_evidence"] == 1
+    db = DB(env["db"])
+    counters = db.conn.execute(
+        "SELECT SUM(extracted), SUM(evidence) FROM source_audit_posts").fetchone()
+    assert tuple(counters) == (7, 1)
+    assert "REJECTED PRIVATE ITEM" not in "\n".join(db.conn.iterdump())
+    db.close()
+
+
 def test_rerun_is_idempotent(env, capsys):
     first = _run(env)
     assert first["telegram"]["sent"] == 1
     db = DB(env["db"])
     before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-              for table in ("deals", "sightings", "price_history", "alerts_sent")}
+              for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts")}
+    audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
     db.close()
     second = _run(env)
     assert second["run_key"] == first["run_key"]
@@ -340,6 +369,7 @@ def test_rerun_is_idempotent(env, capsys):
     n_hist = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
     after = {table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
              for table in before}
+    assert [tuple(row) for row in conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")] == audit_before
     (token,) = conn.execute("SELECT dedup_token FROM alerts_sent WHERE channel='telegram'").fetchone()
     conn.close()
     assert after == before and token.endswith("|telegram")
@@ -381,6 +411,7 @@ def test_end_signals_are_deal_specific_and_counted_once(env, monkeypatch, caplog
         first = _run(env)
     db = DB(env["db"])
     assert {d["item"] for d in db.all_deals(status="dead")} == dead_items
+    assert db.conn.execute("SELECT SUM(dead) FROM source_audit_posts").fetchone()[0] == len(dead_items)
     db.close()
     assert first["deaths_by_reason"] == (
         {"post_says_over": len(dead_items)} if dead_items else {})

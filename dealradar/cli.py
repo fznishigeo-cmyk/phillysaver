@@ -105,6 +105,13 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     return run(load_config(args.config), db_path=args.db)
 
 
+def cmd_source_audit(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .source_audit import run
+
+    return run(load_config(args.config), db_path=args.db)
+
+
 def cmd_pinterest(args: argparse.Namespace) -> int:
     from .config import load_config
     from .db import DB
@@ -183,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="live-validate all sources; write sources_report.md")
     common(sp)
     sp.set_defaults(fn=cmd_validate)
+
+    sp = sub.add_parser("source-audit", help="read-only source coverage audit")
+    common(sp)
+    sp.set_defaults(fn=cmd_source_audit)
 
     sp = sub.add_parser("digest", help="send the daily digest if due")
     common(sp)

@@ -163,6 +163,15 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Source coverage audit (Codex task 052, 2026-10-13):** `python -m
+  dealradar source-audit` (workflow `source-audit.yml`, manual + Monday
+  13:17 UTC, read-only state, never commits) probes each enabled source once
+  and reports per source: verdict (OK / LOW YIELD / STALE / BROKEN / TRIPPED),
+  likely cause, 24h/7d counts, drops by reason, live now, Get deal credit
+  share. Counts and names only, to the job summary and the admin Telegram.
+  The pipeline records idempotent discovery/drop/trip counters (history
+  before 2026-10-13 shows n/a or partial). The Telegram reader is never
+  probed (its one login session is shared with the fast lane).
 - **Social copy polish (Codex task 050, 2026-10-13):** `social.social_title`
   (deterministic, 70 chars) drops model/part numbers, variants after the
   first comma and repeated brand words, keeps shopper specs (32MP, 1/4, 4K,

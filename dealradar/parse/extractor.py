@@ -232,6 +232,7 @@ def parse_posts(
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
         "processed_hashes": [],
+        "post_counts": {},
         "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
     }
     if len(posts) > cfg.max_posts_per_run:
@@ -287,6 +288,8 @@ def parse_posts(
         tz_name = tz_by_source.get(post.source_name) or cfg.timezone
         post = _post_for_deals(post, len(llm_deals))
         deals = [to_extracted(d, post, tz_name, now) for d in llm_deals]
+        counts = {"extracted": len(deals), "evidence": 0}
+        stats["post_counts"][post.content_hash] = counts
         # Every deal the LLM read, before evidence drops any: a dropped item
         # still names a photo and still shares a link (dedupe, pipeline).
         post.parsed = [(deal.item, deal.product_url) for deal in deals]
@@ -294,6 +297,7 @@ def parse_posts(
             stats["deals_extracted"] += 1
             ok, reason = verify_evidence(deal, cleaned)
             if not ok:
+                counts["evidence"] += 1
                 stats["deals_dropped_evidence"] += 1
                 if structured:
                     stats["structured_parse"]["dropped_evidence"] += 1
