@@ -190,6 +190,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Post-join support ask (Codex task 075, 2026-10-13):** card, `/join` and
+  footer successes offer the existing Stripe choices/terms once; Not now/Escape/
+  close return focus, remembered joins/supporters skip it, blocked storage allows
+  one/page, and late responses keep the ask open. Disabled/no-link bytes preserved;
+  three GA4-only actions feed private Product. Full suite: **2,747 passed, 1
+  deselected**; only seven known socket-blocked Stripe yearly-deploy cases in
+  `tests/test_workflows.py` (change0–change5 and no-price/no-key). Chromium
+  `Operation not permitted` leaves 360px visual QA pending. Shipped after review.
 - **Intake weights (Codex task 073, 2026-10-13; shadow, shipped after review):**
   baseline fast rotation/hourly slow-first + post round-robin retained in
   shadow; 90s/source, 400 posts, fetch/parse/tail reserves and paced AI/

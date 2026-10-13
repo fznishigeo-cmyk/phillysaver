@@ -1,0 +1,12 @@
+.supportask{display:block;margin-top:16px;font-weight:400;text-align:left;overflow-wrap:anywhere}
+.supportask-copy{display:block;margin-bottom:12px;font-size:16px;line-height:1.5;color:var(--fg)}
+.supportask-actions{display:flex;flex-wrap:wrap;gap:8px}
+.supportask a,.supportask button,.supportask-deals{display:inline-flex;align-items:center;justify-content:center;
+  box-sizing:border-box;min-height:44px;max-width:100%;padding:10px 12px;font:500 16px/1.4 system-ui,sans-serif;
+  color:var(--accent);border:1px solid var(--accent);border-radius:999px;background:transparent;cursor:pointer;
+  text-decoration:none;transition:none;animation:none}
+.supportask button{border:0;padding:10px 0;text-decoration:underline;text-underline-offset:2px}
+.supportask-terms{display:block;margin:12px 0 0;font-size:12px;line-height:1.5;color:var(--muted)}
+.supportask :focus-visible,.supportask-deals:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.joinoverlay[data-support-asking] .joinclose{width:44px;height:44px;font-size:16px}
+.footersignup .supportask a,.supportask a{text-decoration:none}

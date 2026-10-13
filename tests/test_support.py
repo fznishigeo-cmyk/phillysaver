@@ -99,16 +99,17 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert "Emails are stored by our Cloudflare Worker and used only for the deals email." in (out / "privacy.html").read_text()
     for name, count in (("index.html", 1), ("subscribe.html", 1)):
         html = (out / name).read_text()
+        visible = re.sub(r"<script\b.*?</script>|<style\b.*?</style>", "", html, flags=re.S)
         assert "A quick, honest ask." in html and BODY in html
         assert 'href="/join">Join free</a>' in html
         assert ('<form class="joinform" data-clarity-mask="true">' in html) == (name == "index.html")
-        assert html.count(NOTE) == count
-        assert html.count(f'data-support href="{LINK}"') == count
+        assert visible.count(NOTE) == count
+        assert visible.count(f'data-support href="{LINK}"') == count
         # Every Stripe button has its disclaimer immediately in the same section.
-        for match in re.finditer(r'<a[^>]*data-support[^>]*>', html):
+        for match in re.finditer(r'<a[^>]*data-support[^>]*>', visible):
             assert 'target="_blank" rel="noopener"' in match.group()
-            assert NOTE in html[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
-    assert "wowpriced is free for everyone." not in home
+            assert NOTE in visible[match.end():].split("</footer>")[0].split("</div>\n</div>")[0]
+    assert "wowpriced is free for everyone." in home
     assert 'track("support_click", {plan: "once"})' in home and 'joinedCard("email")' in home
     assert 'fetch(api + "/subscribe"' in home and 'JSON.stringify({email: input.value.trim()})' in home
     assert 'try { dismissed = Number(localStorage.getItem(KEY))' in home

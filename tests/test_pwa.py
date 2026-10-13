@@ -47,11 +47,12 @@ def tree_hash(out):
     ("membership", "4e8531e917219d2669deb3b2c1c4cd2cab202d2a8e99a69df8974d9fad14efd8"),
     ("open", "1558895e0ed01ea644548940b22f07718de3bfdaafcb098762b5619796feab63"),
     ("support", "0b01a05db4e9dd97a9fd5ba0e57e261917ce4fb36bd07c9edb5c4353f4930d1b"),
-    ("shipped", "93dafc426a0dbfdd06a308f5828fbbbc90215293425c147fe601199ea1ee0a1f"),
+    ("shipped", "52e9270d9188e7a5a678abc983c149ae256d196d8201489dc3e14f010e3152f1"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Membership/open retain the pre-069 baseline. Support/shipped include
     # task 071's enabled Saved price watches, without any PWA output.
+    # Only shipped has support links and task 075's post-join ask.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())

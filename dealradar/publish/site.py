@@ -362,6 +362,26 @@ JOIN_FORM = (
 )
 
 
+_SUPPORT_ASK_BLOCK = re.compile(r"^ *// support-ask\n(.*?)^ *// /support-ask\n", re.M | re.S)
+
+
+def support_script(link: str = "", monthly: str = "") -> str:
+    """Omit the optional ask entirely without a support link, preserving bytes."""
+    script = (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8")
+    script = _SUPPORT_ASK_BLOCK.sub(lambda m: m.group(1) if link else "", script)
+    if not link:
+        return script
+    ask = seo._fill((TEMPLATES_DIR / "support-ask.html").read_text(encoding="utf-8"),
+                    SUPPORT_ASK_LINK=escape(link, quote=True),
+                    SUPPORT_ASK_MONTHLY=", or from $5 a month" if monthly else "",
+                    SUPPORT_ASK_MONTHLY_ACTION=(
+                        f'<a data-support-monthly href="{escape(monthly, quote=True)}" '
+                        'target="_blank" rel="noopener">Support monthly</a>' if monthly else ""),
+                    SUPPORT_ASK_NOTE=escape(SUPPORT_NOTE_MONTHLY if monthly else SUPPORT_NOTE))
+    return script.replace("{{SUPPORT_ASK_HTML}}", json.dumps(ask)).replace(
+        "{{SUPPORT_ASK_STYLE}}", json.dumps((TEMPLATES_DIR / "support-ask.css").read_text(encoding="utf-8")))
+
+
 def linked_disclosure(disclosure: str) -> str:
     """Link the existing label without lengthening the configured short copy."""
     link = '<a href="/disclosure.html">Disclosure</a>'
@@ -388,7 +408,7 @@ def site_footer(html: str, now: datetime, disclosure: str, support: bool,
         css += (TEMPLATES_DIR / "footer-signup.css").read_text(encoding="utf-8")
     html = html.replace("</style>", css + "</style>", 1)
     if support and "window.wpSupport =" not in html:
-        script = (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8")
+        script = support_script()
         html = html.replace("</body>", "<script>" + script + "</script>\n</body>", 1)
     return html
 
@@ -670,7 +690,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
-                + (TEMPLATES_DIR / "support.js").read_bytes()
+                + support_script(link, monthly).encode()
                 + (TEMPLATES_DIR / "join-card.html").read_bytes()
                 + (TEMPLATES_DIR / "join-card.css").read_bytes()
                 + (TEMPLATES_DIR / "footer-signup.html").read_bytes()
@@ -810,7 +830,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if name == "disclosure.html":
             html = html.replace("{{AFFILIATE_PROGRAMS}}", affiliate_programs(cfg))
         if support:
-            html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
+            html = html.replace("{{SUPPORT_SCRIPT}}", support_script(link, monthly))
             html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
             html = html.replace("{{SUPPORT_ACTION}}", (
                 f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
@@ -884,6 +904,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Actions ignore CNAME (the domain is set in Settings -> Pages).
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
+
+    if support and link:
+        # Generated pages share the same footer join success as root pages.
+        before, after = support_script(), support_script(link, monthly)
+        for path in out.rglob("*.html"):
+            html = path.read_text(encoding="utf-8")
+            updated = html.replace("<script>" + before + "</script>", "<script>" + after + "</script>")
+            if updated != html:
+                path.write_text(updated, encoding="utf-8")
 
     pwa.publish(out, cfg)
 

@@ -9,6 +9,64 @@
   var googleLoading = false, googleBusy = false, emailBusy = false, successTimer = null;
   var popup = false, footer = document.getElementById("footer-signup");
   var onJoinPage = /^\/join(?:\.html)?\/?$/.test(location.pathname);
+  // support-ask
+  var ASK = "wp.support.askShown", SUPPORTED = "wp.support.clicked";
+  var askSeen = false, supported = false, activeAsk = null;
+  function showSupportAsk(success) {
+    if (activeAsk && activeAsk.success === success) return true;
+    var support = meta.support || {};
+    if (!support.enabled || !/^https:\/\/buy\.stripe\.com\/[^\s<>"'\\]+$/.test(support.link || "") ||
+        joinedBefore || askSeen || supported) return false;
+    try {
+      if (localStorage.getItem(ASK) || localStorage.getItem(SUPPORTED)) return false;
+      localStorage.setItem(ASK, "1");
+    } catch (e) { /* blocked storage: once in this page view */ }
+    askSeen = true;
+    var style = document.createElement("style");
+    style.textContent = {{SUPPORT_ASK_STYLE}};
+    document.head.appendChild(style);
+    var ask = document.createElement("span");
+    ask.className = "supportask";
+    ask.innerHTML = {{SUPPORT_ASK_HTML}};
+    success.setAttribute("role", "status");
+    success.appendChild(ask);
+    activeAsk = {node: ask, success: success};
+    if (successTimer !== null) { clearTimeout(successTimer); successTimer = null; }
+    if (promptOpen()) {
+      prompt.setAttribute("data-support-asking", "");
+      prompt.querySelector('[role="dialog"]').setAttribute("aria-describedby", "join-success");
+    }
+    if (onJoinPage && success.id === "join-success") {
+      var deals = document.getElementById("join-deals");
+      deals.textContent = "See today's deals";
+      deals.className = "supportask-deals";
+    }
+    if (success.id === "footer-signup-success") {
+      success.setAttribute("tabindex", "-1");
+      success.focus({preventScroll: true});
+    }
+    track("support_ask_shown");
+    return true;
+  }
+  function finishSupportAsk(method) {
+    if (!activeAsk) return;
+    var success = activeAsk.success;
+    // Keep the chosen link connected for the browser's normal new-tab action.
+    if (method) activeAsk.node.hidden = true;
+    else activeAsk.node.remove();
+    activeAsk = null;
+    track(method ? "support_ask_click" : "support_ask_dismiss", method ? {method: method} : undefined);
+    if (success.id === "join-success" && promptOpen()) {
+      closePrompt();
+    } else {
+      var focus = document.getElementById(success.id === "join-success" ? "join-deals" : "footer-signup-title");
+      if (focus) {
+        if (success.id !== "join-success") focus.setAttribute("tabindex", "-1");
+        focus.focus({preventScroll: true});
+      }
+    }
+  }
+  // /support-ask
   function promptOpen() { return prompt && !prompt.hidden; }
   function emailReady(input) {
     input = input || document.getElementById("join-email");
@@ -51,6 +109,10 @@
     previousFocus = document.activeElement;
     prompt.hidden = false;
     prompt.className = popup ? "joinoverlay joinpopup" : "joinoverlay";
+    // support-ask
+    prompt.removeAttribute("data-support-asking");
+    prompt.querySelector('[role="dialog"]').setAttribute("aria-describedby", "join-description");
+    // /support-ask
     document.getElementById("join-success").hidden = true;
     document.getElementById("join-legal").hidden = false;
     document.getElementById("join-google-message").hidden = true;
@@ -90,10 +152,23 @@
     joined = true;
     try { localStorage.setItem(JOINED, "1"); } catch (e) { /* remembered for this page */ }
     if (footer && method !== "footer") footer.hidden = true;
+    // support-ask
+    if (footer && activeAsk && activeAsk.success.id === "footer-signup-success") footer.hidden = false;
+    // /support-ask
     track("sign_up", {method: method});
   }
   function closePrompt() {
     if (!promptOpen()) return;
+    // support-ask
+    if (activeAsk && activeAsk.success.id === "join-success") {
+      activeAsk.node.remove();
+      activeAsk = null;
+      track("support_ask_dismiss");
+    }
+    if (previousFocus && (!previousFocus.isConnected || (footer && footer.hidden && footer.contains(previousFocus)))) {
+      previousFocus = document.getElementById("subscribe");
+    }
+    // /support-ask
     if (successTimer !== null) { clearTimeout(successTimer); successTimer = null; }
     prompt.hidden = true;
     track("signup_prompt_closed");
@@ -115,6 +190,9 @@
     title.className = "";
     title.setAttribute("tabindex", "-1");
     title.focus({preventScroll: true});
+    // support-ask
+    if (showSupportAsk(success)) return;
+    // /support-ask
     successTimer = setTimeout(function () {
       successTimer = null;
       if (onJoinPage) location.replace("/");
@@ -197,6 +275,9 @@
   catch (e) { /* storage blocked: dismissal lasts for this page view */ }
   try { joined = Boolean(localStorage.getItem(JOINED)); }
   catch (e) { /* joins still work without storage */ }
+  // support-ask
+  var joinedBefore = joined;
+  // /support-ask
   function track(name, params) {
     try { if (typeof window.wpTrack === "function") window.wpTrack(name, params); }
     catch (e) { /* never in the way */ }
@@ -244,6 +325,21 @@
     maybePrompt();
   }
   document.addEventListener("click", function (e) {
+    // support-ask
+    var supportButton = e.target.closest("[data-support], [data-support-monthly]");
+    if (supportButton) {
+      supported = true;
+      try { localStorage.setItem(SUPPORTED, "1"); } catch (err) { /* remembered for this page */ }
+      if (activeAsk && activeAsk.node.contains(supportButton)) {
+        finishSupportAsk(supportButton.hasAttribute("data-support-monthly") ? "monthly" : "once");
+        return;
+      }
+    }
+    if (activeAsk && (e.target.closest("[data-support-ask-dismiss]") || e.target.closest("#join-deals"))) {
+      finishSupportAsk();
+      return;
+    }
+    // /support-ask
     if (prompt && window.innerWidth > 640 && e.target.closest("#subscribe") &&
         !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.button) {
       e.preventDefault();
@@ -303,7 +399,13 @@
             el.hidden = true;
             document.getElementById("footer-signup-success").hidden = false;
             rememberJoin("footer");
+            // support-ask
+            if (activeAsk) return; // another join response must not close the visible ask
+            // /support-ask
             if (promptOpen()) closePrompt();
+            // support-ask
+            showSupportAsk(document.getElementById("footer-signup-success"));
+            // /support-ask
           } else {
             say("You're on the list. When our deals email starts, we'll send you one email to confirm first.", false);
             joinedCard("email");
@@ -328,6 +430,11 @@
   });
   if (prompt) {
     document.addEventListener("keydown", function (e) {
+      // support-ask
+      if (activeAsk && !promptOpen() && e.key === "Escape") {
+        e.preventDefault(); finishSupportAsk(); return;
+      }
+      // /support-ask
       if (!promptOpen()) return;
       if (e.key === "Escape") { e.preventDefault(); closePrompt(); return; }
       if (e.key !== "Tab") return;
@@ -346,7 +453,18 @@
     });
     document.addEventListener("visibilitychange", function () { refresh(); });
   }
+  // support-ask
+  if (!prompt) document.addEventListener("keydown", function (e) {
+    if (activeAsk && e.key === "Escape") { e.preventDefault(); finishSupportAsk(); }
+  });
+  // /support-ask
   window.addEventListener("storage", function (e) {
+    // support-ask
+    if ((e.key === ASK || e.key === SUPPORTED) && e.newValue) {
+      if (e.key === ASK) askSeen = true;
+      else supported = true;
+    }
+    // /support-ask
     if (e.key === JOINED && e.newValue) {
       joined = true;
       if (footer) footer.hidden = true;

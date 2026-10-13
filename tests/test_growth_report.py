@@ -65,7 +65,9 @@ GA4_RESPONSE = {"reports": [
                                 ("static_fallback_shown", (11, 94)), ("first_load_recovered", (5, 45)),
                                 ("install_offer_shown", (8, 51)), ("install_accepted", (2, 9)),
                                 ("standalone_session", (3, 17)),
-                                ("filter_apply", (38, 300)), ("filter_empty", (7, 80)), ("back_restore", (21, 180)))
+                                ("filter_apply", (38, 300)), ("filter_empty", (7, 80)), ("back_restore", (21, 180)),
+                                ("support_ask_shown", (30, 180)), ("support_ask_click", (4, 20)),
+                                ("support_ask_dismiss", (17, 88)))
           for period, count in zip(("yesterday", "window"), counts)]]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
@@ -491,7 +493,7 @@ def test_ga4_request_and_parsing():
         "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
         "install_offer_shown", "install_accepted", "standalone_session",
-        "filter_apply", "filter_empty", "back_restore"]
+        "filter_apply", "filter_empty", "back_restore", "support_ask_shown", "support_ask_click", "support_ask_dismiss"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
@@ -500,7 +502,8 @@ def test_ga4_request_and_parsing():
                                 "support_click": 12, "home_load_attempt": 400, "first_load_failed": 12,
                                 "static_fallback_shown": 11, "first_load_recovered": 5,
                                 "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
-                                "filter_apply": 38, "filter_empty": 7, "back_restore": 21}
+                                "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
+                                "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
@@ -868,12 +871,14 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
                       "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8,
                       "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
+                      "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
                       "watch_create": 3, "watch_match": None, "watch_deal_click": None},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
                    "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17,
                    "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None,
                    "filter_apply": 300, "filter_empty": 80, "back_restore": 180,
+                   "support_ask_shown": 180, "support_ask_click": 20, "support_ask_dismiss": 88,
                    "watch_create": 9, "watch_match": 5, "watch_deal_click": 2},
         "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
                                    "desktop": {"sessions": 50, "rate": .4},
@@ -893,11 +898,14 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                  "yesterday mobile/deal: 100 views, 25 outbound actions, actions/view 25.0%",
                  "window desktop/deal: 40 views, 60 outbound actions, actions/view 150.0%",
                  "product.filter_apply: 38 / 300", "product.filter_empty: 7 / 80", "product.back_restore: 21 / 180",
+                 "product.support_ask_shown: 30 / 180", "product.support_ask_click: 4 / 20",
+                 "product.support_ask_dismiss: 17 / 88",
                  "mobile: 25.0% of 100 sessions / 25.0% of 100 sessions",
                  "tablet: unavailable (0 sessions) / unavailable (0 sessions)"):
         assert line in text and line not in caplog.text
     assert "Install offers and acceptances are actions" in text and "not retained users" in text
     assert "actions, not purchases" in text and "private-product" not in text + caplog.text
+    assert "Support ask counts are actions, not payments or amounts." in text
     assert "product: ok" in caplog.messages
 
 

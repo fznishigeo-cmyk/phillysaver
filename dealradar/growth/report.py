@@ -365,7 +365,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines += ["", "== Product (GA4 event sample, yesterday / window) =="]
     product = data.get("product")
     if product:
-        lines += [f"product.{name}: " + _pair(_n, product["yesterday"][name], product["window"][name])
+        lines += [f"product.{name}: " + _pair(lambda n: _n(n) if n is not None else "unavailable",
+                                           product["yesterday"].get(name), product["window"].get(name))
                   for name in google.PRODUCT_EVENTS]
         sessions = product.get("deal_sessions") or {"unavailable": "device session data not returned"}
         if "unavailable" in sessions:
@@ -385,6 +386,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     else:
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
     lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")
+    lines.append("Support ask counts are actions, not payments or amounts.")
     def observed(value):
         return _n(value) if value is not None else "unavailable (no observed event)"
 

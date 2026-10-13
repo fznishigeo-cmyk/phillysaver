@@ -30,7 +30,9 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered",
                   "install_offer_shown": "install_offer_shown", "install_accepted": "install_accepted",
                   "standalone_session": "standalone_session",
-                  "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore"}
+                  "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore",
+                  "support_ask_shown": "support_ask_shown", "support_ask_click": "support_ask_click",
+                  "support_ask_dismiss": "support_ask_dismiss"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 WATCH_EVENTS = ("watch_create", "watch_match", "watch_deal_click")

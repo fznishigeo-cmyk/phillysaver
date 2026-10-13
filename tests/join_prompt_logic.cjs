@@ -6,7 +6,8 @@ const code = fs.readFileSync(process.argv[2], 'utf8');
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled = true,
-                  delay = 15, google = false, api = 'https://api.test', width = 1000, card = true} = {}) {
+                  delay = 15, google = false, api = 'https://api.test', width = 1000, card = true,
+                  support = {}, footerOnJoin = false} = {}) {
   const handlers = {}, events = [], requests = [], scripts = [], timers = [];
   let nextTimer = 0;
   const storage = new Map(Object.entries(stored));
@@ -16,12 +17,20 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   const document = {hidden:false, addEventListener(type, cb) {handlers[type] = cb;}};
   const rect = () => ({top:10, bottom:50, width:100, height:40, left:0, right:100});
   function node(id, hidden = false) {
-    return {id, hidden, isConnected:true, disabled:false, parentNode:{clientWidth:400},
+    return {id, hidden, isConnected:true, disabled:false, parentNode:{clientWidth:400}, children:[],
       focus() {document.activeElement = this;}, setAttribute(k,v) {this[k] = v;},
+      removeAttribute(k) {delete this[k];}, hasAttribute(k) {return Object.hasOwn(this,k);},
+      appendChild(el) {el.parentNode=this; this.children.push(el);},
+      remove() {this.isConnected=false; this.parentNode.children=this.parentNode.children.filter(el=>el!==this);},
+      contains(el) {return el===this || this.children.some(child=>child.contains(el));},
       style:{setProperty(k,v) {this[k] = v;}},
-      getClientRects() {return this.hidden || (['join-email','submit','join-back'].includes(id) && fields.hidden) ||
+      getClientRects() {
+        for(let el=this;el;el=el.parentNode) if(el.hidden) return [];
+        return (['join-email','submit','join-back'].includes(id) && fields.hidden) ||
         (id === 'join-email-choice' && one.hidden) || (id === 'legal' && legal.hidden) ? [] : [rect()];}, getBoundingClientRect:rect,
-      closest(s) {return s === '#' + id || (id === 'close' && s === '[data-join-close]') ? this : null;}};
+      closest(s) {return s.split(',').some(part=>part.trim() === '#' + id ||
+        (id === 'close' && part.trim() === '[data-join-close]') ||
+        (part.trim().startsWith('[data-') && this.hasAttribute(part.trim().slice(1,-1)))) ? this : null;}};
   }
   const prompt = node('join-prompt', true), choice = node('join-email-choice'), fields = node('join-email-fields', true);
   const input = node('join-email'), submit = node('submit'), message = node('message', true);
@@ -32,33 +41,46 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   const provider = node('join-google', true), providerMessage = node('join-google-message', true);
   const googleOr = node('join-google-or', true), description = node('join-description'), label = node('label');
   const footer = node('footer-signup', true), footerSuccess = node('footer-signup-success', true);
+  const footerTitle = node('footer-signup-title');
   const footerInput = node('footer-email'), footerSubmit = node('footer-submit'), footerMessage = node('footer-message', true);
   footerInput.value = ' footer@example.com ';
   const dialog = node('dialog'), panel = node('paywall', true), bar = node('subbar', true);
-  const nodes = Object.fromEntries([prompt, choice, fields, input, provider, providerMessage, panel, bar, one, back, success, successTitle, deals, subscribe, googleOr, description, footer, footerSuccess].map(n => [n.id,n]));
+  const nodes = Object.fromEntries([prompt, choice, fields, input, provider, providerMessage, panel, bar, one, back, success, successTitle, deals, subscribe, googleOr, description, footer, footerSuccess, footerTitle].map(n => [n.id,n]));
   if (!card) for (const n of [prompt, choice, fields, input, provider, providerMessage, one, back, success, successTitle, deals, googleOr, description]) delete nodes[n.id];
-  if (pathname.startsWith('/join')) {delete nodes[footer.id]; delete nodes[footerSuccess.id];}
+  if (pathname.startsWith('/join') && !footerOnJoin) {delete nodes[footer.id]; delete nodes[footerSuccess.id];}
   nodes['join-legal'] = legal;
   const form = {matches:s=>s === '.joinform', hasAttribute:()=>false, querySelector:s=>s.includes('input') ? input : s.includes('button') ? submit : message};
   const footerForm = {hidden:false, matches:s=>s === '.joinform', hasAttribute:s=>s === 'data-join-footer', querySelector:s=>s.includes('input') ? footerInput : s.includes('button') ? footerSubmit : footerMessage};
   fields.querySelector = s => s === 'label' ? label : s.includes('button') ? submit : message;
   const focusable = [close, choice, input, submit, back, legal, deals];
-  prompt.querySelectorAll = () => focusable;
+  const askControls = () => success.children.flatMap(ask=>ask.children);
+  prompt.querySelectorAll = () => [...focusable, ...askControls()];
   prompt.querySelector = () => dialog;
-  prompt.contains = dialog.contains = el => [...focusable, dialog, successTitle].includes(el);
+  prompt.contains = dialog.contains = el => [...focusable, ...askControls(), dialog, successTitle].includes(el);
   document.activeElement = opener;
   document.getElementById = id => id === 'content' ? {} : nodes[id];
   document.querySelector = () => ({getBoundingClientRect:()=>({bottom:100})});
   document.querySelectorAll = s => s.startsWith('#content .card')
     ? Array.from({length:12},()=>({getBoundingClientRect:()=>({bottom:boundary})})) : [];
-  document.createElement = () => ({});
+  document.createElement = tag => {
+    const el=node(tag);
+    Object.defineProperty(el,'innerHTML',{get(){return this.html;}, set(html){
+      this.html=html;
+      for (const match of html.matchAll(/<(a|button)\b([^>]*)>(.*?)<\/(?:a|button)>/g)) {
+        const child=node(match[1]); child.textContent=match[3];
+        for (const attr of match[2].matchAll(/([\w-]+)(?:="([^"]*)")?/g)) child.setAttribute(attr[1],attr[2]||'');
+        this.appendChild(child);
+      }
+    }});
+    return el;
+  };
   document.head = {appendChild:s=>scripts.push(s)};
-  const meta = {api_url:api, google_client_id:google ? 'configured-client' : '', join:{prompt:enabled,prompt_delay_s:delay}};
+  const meta = {api_url:api, google_client_id:google ? 'configured-client' : '', join:{prompt:enabled,prompt_delay_s:delay}, support};
   const ctx = {document, location:{pathname,hash:'',replace(url){redirected=url;}}, Date:{now:()=>now},
     localStorage:{getItem(k) {if (blocked === 'read') throw Error('blocked'); return storage.get(k) || null;},
       setItem(k,v) {if (blocked === 'write') throw Error('quota'); storage.set(k,v);}},
     setTimeout(cb,ms) {const id=++nextTimer; timers.push({id,cb,at:now+ms}); return id;}, clearTimeout(id) {const t=timers.find(t=>t.id===id); if(t) t.cancelled=true;}, requestAnimationFrame:cb=>cb(),
-    fetch:async(url,options)=>{requests.push({url,...options}); const r = url.endsWith('/api/google') ? authResult : subResult;
+    fetch:async(url,options)=>{requests.push({url,...options}); const r = await (url.endsWith('/api/google') ? authResult : subResult);
       if (r instanceof Error) throw r; return {status:r.status, json:async()=>r.body};},
     window:{innerHeight:800,innerWidth:width,scrollY:0,wpTrack:(name,params)=>events.push({name,params}),
       addEventListener(type,cb) {handlers[type] = cb;}}};
@@ -67,10 +89,10 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   function click(target, modifiers={}) {let prevented=false; handlers.click({target, ...modifiers, preventDefault(){prevented=true;}}); return prevented;}
   function advance(ms) {now += ms; for (const t of timers.splice(0)) {if (t.cancelled) continue; if (t.at <= now) t.cb(); else timers.push(t);}}
   function engage() {click({closest:s=>s === '#cattabs a, #controls select, #controls input'});}
-  function key(key,shiftKey=false) {let prevented=false; handlers.keydown({key,shiftKey,preventDefault(){prevented=true;}}); return prevented;}
+  function key(key,shiftKey=false) {let prevented=false; if(handlers.keydown) handlers.keydown({key,shiftKey,preventDefault(){prevented=true;}}); return prevented;}
   return {ctx, document, prompt, choice, fields, input, submit, message, close, legal, opener, panel, bar, storage, events, requests, scripts,
     provider, providerMessage, meta, handlers, advance, engage, click, key, one, back, success, successTitle, deals, subscribe, dialog,
-    googleOr, description, label, footer, footerSuccess, footerForm, footerInput, footerSubmit, footerMessage,
+    googleOr, description, label, footer, footerSuccess, footerTitle, footerForm, footerInput, footerSubmit, footerMessage,
     redirected:()=>redirected, type(value) {input.value=value; handlers.input({target:input});},
     refresh:()=>ctx.window.wpSupport.refresh(meta), boundary:n=>boundary=n,
     scroll(n) {ctx.window.scrollY=n; handlers.scroll();},
@@ -280,5 +302,135 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   h.engage(); h.advance(15000); assert.equal(h.prompt.hidden,true);
   h=harness(); h.engage(); h.advance(15000); h.submitFooter(); await flush();
   assert.equal(h.prompt.hidden,true); assert.equal(h.footerSuccess.hidden,false);
+  if (code.includes('function showSupportAsk')) {
+    const link='https://buy.stripe.com/test_support', monthly='https://buy.stripe.com/test_monthly';
+    const support={enabled:true,link,monthly_link:code.includes('Support monthly</a>') ? monthly : ''};
+    const ask=h=>[...h.success.children,...h.footerSuccess.children].find(n=>n.className==='supportask'&&!n.hidden);
+    const actions=h=>h.events.filter(e=>e.name.startsWith('support_ask_'));
+    async function join(h,path,method='email') {
+      if (path==='prompt') {h.engage();h.advance(15000);}
+      else if(path==='header') h.click(h.subscribe);
+      if(path.startsWith('footer')) h.submitFooter();
+      else if(method==='google') {h.loadGoogle();h.google();}
+      else {if(path!=='prompt') h.click(h.choice);h.submitEmail();}
+      await flush();
+    }
+    // The only entry is a successful join, for both identities and every surface.
+    for(const path of ['prompt','header','/join','/join/','/join.html','footer','footer-page','footer-join']) {
+      for(const method of path.startsWith('footer') ? ['footer'] : ['email','google']) {
+        h=harness({support,google:method==='google',width:path==='prompt' ? 360 : 1000,
+          pathname:path.startsWith('/join') || path==='footer-join' ? '/join' : path==='footer-page' ? '/about.html' : '/',
+          card:path!=='footer-page',footerOnJoin:path==='footer-join'});
+        h.advance(5000); assert.equal(ask(h),undefined); assert.equal(actions(h).length,0);
+        await join(h,path,method);
+        const a=ask(h); assert.ok(a,path+' '+method);
+        assert.equal(h.storage.get('wp.support.askShown'),'1');
+        assert.equal(actions(h).length,1); assert.equal(actions(h)[0].name,'support_ask_shown');
+        assert.equal(actions(h)[0].params,undefined);
+        assert.ok(a.innerHTML.includes('wowpriced is free for everyone.'));
+        assert.equal(a.innerHTML.includes('from $5 a month'),Boolean(support.monthly_link));
+        assert.ok(a.innerHTML.includes('not tax-deductible') && a.innerHTML.includes('buys nothing extra'));
+        assert.equal(a.parentNode.role,'status');
+        const links=a.children.filter(n=>n.id==='a');
+        assert.deepEqual(links.map(n=>n.href),support.monthly_link ? [link,monthly] : [link]);
+        for(const el of links) {assert.equal(el.target,'_blank');assert.equal(el.rel,'noopener');}
+        h.advance(60000); h.refresh();
+        assert.equal(ask(h),a); assert.equal(h.redirected(),undefined);
+        if(path==='prompt'||path==='header') {
+          assert.equal(h.prompt.hidden,false); assert.equal(h.dialog['aria-describedby'],'join-success');
+          a.children.at(-1).focus(); h.key('Tab'); assert.equal(h.document.activeElement,h.close);
+          h.key('Tab',true); assert.equal(h.document.activeElement,a.children.at(-1));
+        }
+        if(path.startsWith('/join')) assert.equal(h.deals.textContent,"See today's deals");
+        h.click(a.children.at(-1)); // Not now closes once and restores a visible focus target.
+        assert.equal(ask(h),undefined); assert.equal(actions(h).at(-1).name,'support_ask_dismiss');
+        assert.equal(actions(h).at(-1).params,undefined);
+        assert.equal(h.document.activeElement,path.startsWith('footer') ? h.footerTitle : path.startsWith('/join') ? h.deals : h.opener);
+        if(path.startsWith('/join')) assert.equal(h.deals.tabindex,undefined); // Keep the deals link in the tab order.
+        h.key('Escape'); h.click(a.children.at(-1)); assert.equal(actions(h).length,2);
+        h.advance(60000); assert.equal(h.redirected(),undefined);
+      }
+    }
+    // Every closing route counts one dismissal; /join's navigation remains a normal link.
+    for(const closeBy of ['escape','close','outside','header']) {
+      h=harness({support}); await join(h,'header');
+      if(closeBy==='escape') h.key('Escape');
+      else h.click(closeBy==='close' ? h.close : closeBy==='outside' ? h.opener : h.subscribe);
+      assert.equal(h.prompt.hidden,true); assert.equal(ask(h),undefined);
+      assert.deepEqual(actions(h).map(e=>e.name),['support_ask_shown','support_ask_dismiss']);
+      assert.equal(h.document.activeElement,h.opener);
+    }
+    for(const path of ['/join','footer','footer-page']) {
+      h=harness({support,pathname:path==='/join' ? '/join' : '/',card:path!=='footer-page'});
+      await join(h,path); assert.equal(h.key('Escape'),true); assert.equal(ask(h),undefined);
+      assert.equal(actions(h).at(-1).name,'support_ask_dismiss');
+    }
+    h=harness({support,pathname:'/join'}); await join(h,'/join');
+    assert.equal(h.click(h.deals),false); assert.equal(actions(h).at(-1).name,'support_ask_dismiss');
+    // Choosing support emits only the new GA4 action, never the ad-pixel support_click.
+    for(const method of support.monthly_link ? ['once','monthly'] : ['once']) {
+      for(const path of ['header','/join','footer-page']) {
+        h=harness({support,pathname:path==='/join' ? '/join' : '/',card:path!=='footer-page'});
+        await join(h,path);
+        const button=ask(h).children.find(n=>n.hasAttribute(method==='monthly' ? 'data-support-monthly' : 'data-support'));
+        h.click(button);
+        assert.equal(button.isConnected,true); assert.equal(button.parentNode.hidden,true);
+        assert.equal(h.storage.get('wp.support.clicked'),'1'); assert.equal(ask(h),undefined);
+        assert.deepEqual(actions(h).map(e=>e.name),['support_ask_shown','support_ask_click']);
+        assert.deepEqual(JSON.parse(JSON.stringify(actions(h)[1].params)),{method});
+        assert.equal(h.events.some(e=>e.name==='support_click'),false);
+        h.key('Escape'); assert.equal(actions(h).length,2);
+      }
+    }
+    // Read errors and quota errors use a page-local limit; repeated successes cannot arm a timer.
+    for(const blocked of ['', 'read','write']) {
+      h=harness({support,blocked}); await join(h,'header');
+      h.submitEmail(); await flush(); h.advance(60000);
+      assert.equal(h.prompt.hidden,false); assert.ok(ask(h)); assert.equal(actions(h).length,1);
+      h.key('Escape'); await join(h,'header');
+      assert.equal(ask(h),undefined); assert.equal(actions(h).length,2);
+    }
+    // A slow footer response cannot close a card ask; a slow Google response cannot hide a footer ask.
+    let release;
+    h=harness({support,google:true}); h.click(h.subscribe); h.loadGoogle();
+    h.sub(new Promise(resolve=>release=resolve)); h.submitFooter();
+    h.sub({status:200,body:{ok:true}}); h.google(); await flush();
+    assert.ok(ask(h)); release({status:200,body:{ok:true}}); await flush(); h.advance(60000);
+    assert.equal(h.prompt.hidden,false); assert.ok(ask(h)); assert.equal(actions(h).length,1);
+    h=harness({support,google:true}); h.click(h.subscribe); h.loadGoogle();
+    h.auth(new Promise(resolve=>release=resolve)); h.google(); h.submitFooter(); await flush();
+    assert.equal(h.footer.hidden,false); assert.ok(ask(h));
+    release({status:200,body:{me:{email:'verified@example.com',email_verified:true}}}); await flush(); h.advance(60000);
+    assert.equal(h.footer.hidden,false); assert.ok(ask(h)); assert.equal(actions(h).length,1);
+    for(const path of ['header','/join','footer-page']) for(const field of ['wp.support.askShown','wp.support.clicked','wp.join.joined']) {
+      h=harness({support,stored:{[field]:'1'},pathname:path==='/join' ? '/join' : '/',card:path!=='footer-page'});
+      await join(h,path); assert.equal(ask(h),undefined); assert.equal(actions(h).length,0);
+    }
+    for(const blocked of ['', 'read','write']) {
+      h=harness({support,blocked});
+      const button=h.ctx.document.createElement('a');button.setAttribute('data-support','');
+      h.click(button); await join(h,'header'); assert.equal(ask(h),undefined);
+    }
+    for(const field of ['wp.support.askShown','wp.support.clicked']) {
+      h=harness({support}); h.handlers.storage({key:field,newValue:'1'});
+      await join(h,'header'); assert.equal(ask(h),undefined);
+    }
+    h=harness({support}); h.footer.appendChild(h.footerInput); h.footerInput.focus();
+    await join(h,'prompt'); h.key('Escape'); assert.equal(h.document.activeElement,h.subscribe);
+    h=harness({support}); await join(h,'header'); h.opener.isConnected=false;
+    h.key('Escape'); assert.equal(h.document.activeElement,h.subscribe);
+    for(const s of [{}, {...support,enabled:false}, {...support,link:''}, {...support,link:'https://evil.test/'}]) {
+      for(const path of ['header','/join','footer-page']) {
+        h=harness({support:s,pathname:path==='/join' ? '/join' : '/',card:path!=='footer-page'});
+        await join(h,path); assert.equal(ask(h),undefined); assert.equal(actions(h).length,0);
+        if(path==='/join') {h.advance(1500);assert.equal(h.redirected(),'/');}
+        if(path==='header') {h.advance(1800);assert.equal(h.prompt.hidden,true);}
+      }
+    }
+    h=harness({support});h.sub({status:429,body:{}});await join(h,'header');
+    assert.equal(ask(h),undefined);assert.equal(h.storage.has('wp.support.askShown'),false);
+    h=harness({support});h.click(h.subscribe);h.click(h.choice);h.submitEmail();h.key('Escape');await flush();
+    assert.equal(ask(h),undefined);assert.equal(h.storage.has('wp.support.askShown'),false);
+  }
   console.log('join prompt logic passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

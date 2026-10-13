@@ -21,6 +21,8 @@ import logging
 import re
 from pathlib import Path
 
+from ..config import support_link
+
 logger = logging.getLogger("dealradar.publish.tracking")
 
 #: tracking: key -> the exact shape of a real value (ASCII only).
@@ -335,6 +337,11 @@ def head_snippet(cfg) -> str:
                                     '    signup_prompt_shown: { metaCustom: "SignupPromptShown", tiktok: "SignupPromptShown", uet: "signup_prompt_shown" },\n'
                                     '    signup_prompt_closed: { metaCustom: "SignupPromptClosed", tiktok: "SignupPromptClosed", uet: "signup_prompt_closed" },\n'
                                     '    support_click: { metaCustom: "SupportClick", tiktok: "ClickButton", uet: "support_click" },')
+        if support_link(getattr(cfg, "support_payment_link", "")):
+            dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                        '    support_ask_shown: { ga4Only: true },\n'
+                                        '    support_ask_click: { ga4Only: true, methods: ["once", "monthly"] },\n'
+                                        '    support_ask_dismiss: { ga4Only: true },')
     script = f"<script>\n{_HEAD}{''.join(blocks)}{dispatch}</script>\n" if blocks else ""
     if not metas and not script:
         return ""
