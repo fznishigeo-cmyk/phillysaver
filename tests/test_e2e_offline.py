@@ -235,7 +235,8 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
 
     out = capsys.readouterr().out
     assert out.count("TELEGRAM DRY-RUN:") == 1
-    assert "Verified by wowpriced: https://wowpriced.com/deal/" in out
+    assert "TELEGRAM DRY-RUN: 🔥 " in out
+    assert ", verified by wowpriced: https://wowpriced.com/deal/" in out
     assert "\n#ad" in out
 
     deals_json = json.loads((env["site"] / "deals.json").read_text())

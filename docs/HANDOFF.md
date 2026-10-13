@@ -163,6 +163,11 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Social copy polish (Codex task 050, 2026-10-13):** `social.social_title`
+  (deterministic, 70 chars) drops model/part numbers, variants after the
+  first comma and repeated brand words, keeps shopper specs (32MP, 1/4, 4K,
+  2-Pack); Facebook, Instagram and Telegram lead with "🔥 NN% OFF: title".
+  No prices anywhere, `#ad` last, Pinterest alt text keeps the full name.
 - **Earning traffic (Codex task 049, 2026-10-13):** every published deal
   carries `earns` (its Get deal link credits our tag or Sovrn; a source post,
   competitor tracker in `affiliate.competitor_tracker_hosts` or untagged link

@@ -19,7 +19,7 @@ import httpx
 
 from .. import util
 from ..config import get_secret, redact_secrets
-from .social import _candidates, _word_trim, _without_prices
+from .social import _candidates, _word_trim, _without_prices, social_title
 
 log = logging.getLogger(__name__)
 API_BASES = {
@@ -256,7 +256,7 @@ def _board(db, cfg, api: _API, headers: dict) -> str:
 
 
 def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
-    item = _without_prices(str(deal.get("item") or ""))
+    item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _without_prices(str(deal.get("store") or ""))
     pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
     # Reserve the facts and disclosure before trimming a long item name.

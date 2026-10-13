@@ -169,19 +169,19 @@ def test_channel_message_is_price_free_with_disclosure_last():
     deal = make_deal(item="LEGO X200 8-piece $25 £30 €40 USD 50 60 USD Set",
                      store="Walmart $10", conditions=["shipping $5", "use CODE"])
     msg = format_message(deal, "/deal/lego-x200-abc12345/", "#sponsored $5")
-    assert msg == ("80% off LEGO X200 8-piece Set at Walmart\n"
-                   "Verified by wowpriced: https://wowpriced.com/deal/lego-x200-abc12345/\n"
+    assert msg == ("🔥 80% OFF: LEGO X200 8-piece Set\n"
+                   "At Walmart, verified by wowpriced: https://wowpriced.com/deal/lego-x200-abc12345/\n"
                    "#sponsored")
     assert all(value not in msg for value in ("$", "£", "€", "USD", "25", "30", "40",
                                               "50", "60", "10.00", "via", "slickdeals.net",
                                               "walmart.com", "CODE", "shipping"))
 
 
-def test_channel_item_word_trimmed_to_120_chars():
+def test_channel_item_word_trimmed_to_70_chars():
     item = "Long product name " * 30
     msg = format_message(make_deal(item=item), "/deal/product-abcd1234/")
-    trimmed = msg.splitlines()[0].removeprefix("80% off ").removesuffix(" at Walmart")
-    assert len(trimmed) <= 120 and item.startswith(trimmed)
+    trimmed = msg.splitlines()[0].removeprefix("🔥 80% OFF: ")
+    assert len(trimmed) <= 70 and item.startswith(trimmed)
     assert trimmed.split()[-1] in item.split()
     assert msg.splitlines()[-1] == "#ad"
 
@@ -196,7 +196,7 @@ def test_first_pick_sends_with_preview_and_once_token(db, cfg, monkeypatch):
     assert url == "https://api.telegram.org/bottest-token/sendMessage"
     assert payload["chat_id"] == "@testchan"
     assert payload["disable_web_page_preview"] is False and "parse_mode" not in payload
-    assert payload["text"].startswith("80% off LEGO Set at Walmart\n")
+    assert payload["text"].startswith("🔥 80% OFF: LEGO Set\nAt Walmart, verified by wowpriced:")
     assert payload["text"].endswith("\n#ad")
     last = db.last_alert("walmart|lego set", "telegram")
     assert last["dedup_token"] == "walmart|lego set|telegram"
@@ -249,7 +249,7 @@ def test_picks_only_in_pick_order_excluding_posted(db, cfg, monkeypatch):
     client = FakeHttpClient()
     assert send_alerts(db, cfg, NOW, http_client=client, sleep_fn=FakeSleep())["sent"] == 3
     assert [payload["text"].splitlines()[0] for _, payload in client.posts] == [
-        f"80% off {name} at Walmart" for name in ("first", "second", "third")]
+        f"🔥 80% OFF: {name}" for name in ("first", "second", "third")]
 
 
 @pytest.mark.parametrize("limit", [0, 1, 3])

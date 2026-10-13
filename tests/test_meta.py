@@ -98,17 +98,17 @@ def test_caption_facts_prices_word_trim_and_disclosure(cfg, network):
     deal = candidate("first", 1, item=item, store="Amazon $9.99", pct_at_checkout=79.6)
     cfg.meta["instagram"]["hashtags"] = "#deals " * 1000
     text = meta.caption(deal, "/deal/first/", cfg, network)
-    assert text.startswith("80% off Fantastic product")
+    assert text.startswith("🔥 80% OFF: Fantastic product")
     assert "19.99" not in text and "9.99" not in text and "$" not in text
     assert "USD" not in text and "100" not in text
     assert text.endswith("\n#ad")
-    name = text.split("% off ", 1)[1].split(" at Amazon", 1)[0]
-    assert len(name) <= 120 and name.split()[-1] in ("Fantastic", "product")
+    name = text.splitlines()[0].removeprefix("🔥 80% OFF: ")
+    assert len(name) <= 70 and name.split()[-1] in ("Fantastic", "product")
     if network == "instagram":
         assert len(text) <= 2200 and "https://" not in text
         assert "Tap the link in our bio for today's deals." in text
     else:
-        assert text.endswith("Verified by wowpriced: https://wowpriced.com/deal/first/\n#ad")
+        assert text.endswith("At Amazon, verified by wowpriced: https://wowpriced.com/deal/first/\n#ad")
 
 
 def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):
@@ -121,7 +121,7 @@ def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):
     assert "META_SYSTEM_TOKEN" in SECRET_NAMES
     assert SYSTEM not in redact_secrets(SYSTEM)
     assert "graph.facebook.com" in cli.CORE_DOMAINS
-    for name in ("_candidates", "_word_trim", "_without_prices"):
+    for name in ("_candidates", "_word_trim", "_without_prices", "social_title"):
         assert getattr(pinterest, name) is getattr(social, name)
     monkeypatch.setattr("dealradar.config.load_config", lambda path: cfg)
     monkeypatch.setattr(meta, "post", lambda database, config:

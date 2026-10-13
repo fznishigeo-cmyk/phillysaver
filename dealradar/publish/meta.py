@@ -18,7 +18,7 @@ import httpx
 
 from .. import util
 from ..config import get_secret
-from .social import _candidates, _word_trim, _without_prices
+from .social import _candidates, _word_trim, _without_prices, social_title
 
 log = logging.getLogger(__name__)
 STATUSES = {"FINISHED", "IN_PROGRESS", "ERROR", "EXPIRED", "PUBLISHED"}
@@ -89,17 +89,17 @@ def _meta(db, key: str) -> dict:
 
 
 def caption(deal: dict, path: str, cfg, network: str) -> str:
-    item = _word_trim(_without_prices(str(deal.get("item") or "")), 120)
+    item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _word_trim(_without_prices(str(deal.get("store") or "")), 100)
     pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
     disclosure = _word_trim(_without_prices(str(cfg.meta.get("disclosure") or "#ad")), 100) or "#ad"
-    facts = f"{pct}% off {item} at {store}. Verified by wowpriced"
+    facts = f"🔥 {pct}% OFF: {item}\nAt {store}, verified by wowpriced"
     if network == "facebook":
         return f"{facts}: https://wowpriced.com{path}\n{disclosure}"
-    facts += ". Tap the link in our bio for today's deals."
+    facts += ".\nTap the link in our bio for today's deals."
     hashtags = _without_prices(str(cfg.meta["instagram"].get("hashtags") or ""))
     hashtags = _word_trim(hashtags, 2200 - len(facts) - len(disclosure) - 2)
-    return f"{facts} {hashtags}\n{disclosure}"
+    return f"{facts}\n{hashtags}\n{disclosure}"
 
 
 def _image_request(api, method, path, token, **kwargs):

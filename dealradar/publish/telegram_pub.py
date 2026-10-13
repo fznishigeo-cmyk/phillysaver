@@ -21,7 +21,7 @@ import httpx
 from ..config import get_secret
 from ..util import parse_iso
 from .site import rewrite_affiliate
-from .social import _candidates, _word_trim, _without_prices
+from .social import _candidates, _word_trim, _without_prices, social_title
 
 logger = logging.getLogger("dealradar.publish.telegram")
 
@@ -43,12 +43,12 @@ def format_message(deal: dict[str, Any], path: str | None = None,
                    disclosure: str = "#ad") -> str:
     """Price-free channel copy with a deal path; preserve the email format otherwise."""
     if path is not None:
-        item = _word_trim(_without_prices(str(deal.get("item") or "")), 120)
+        item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
         store = _without_prices(str(deal.get("store") or ""))
         pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
         disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
-        return (f"{pct}% off {item} at {store}\n"
-                f"Verified by wowpriced: https://wowpriced.com{path}\n"
+        return (f"🔥 {pct}% OFF: {item}\n"
+                f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n"
                 f"{disclosure}")
 
     final = deal.get("final_price")

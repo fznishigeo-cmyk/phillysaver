@@ -310,6 +310,7 @@ def test_title_description_word_limits_prices_and_disclosure():
     deal = candidate("long", 1, item=item, store="Store " * 50)
     pin = pinterest.pin_payload(deal, "/deal/long/", "b", "#ad")
     assert 0 < len(pin["title"]) <= 100 and len(pin["description"]) <= 500
+    assert len(pin["title"].removeprefix("80% off ")) <= 70
     assert pin["title"].split()[-1] in {"Fantastic", "product"}
     assert pin["description"].endswith("verified by wowpriced. #ad")
     assert pin["alt_text"] == item
