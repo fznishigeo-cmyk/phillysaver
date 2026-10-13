@@ -751,6 +751,125 @@ class TestFairScheduling:
         assert pipeline._RESERVE_FOR_PARSE_S > pipeline._RESERVE_FOR_TAIL_S
 
 
+class TestWeightedIntake:
+    def test_max_wait_includes_actual_post_reads_even_when_fetches_are_fresh(self, tmp_path):
+        from dealradar import source_audit
+
+        db = DB(tmp_path / "state.db")
+        cfg = AppConfig(max_posts_per_run=1)
+        db.meta_set("intake_since", iso(NOW - timedelta(hours=8)))
+        sources = [make_source("high"), make_source("low")]
+        for s in sources:
+            db.record_source_result(s.name, ok=True, error="", items=1, now=NOW)
+        db.record_post(make_post("high", 0), NOW)
+        db.record_post(make_post("low", 0), NOW - timedelta(hours=7))
+        posts = [make_post("high", 1), make_post("low", 1)]
+        weights = {"high": .9, "low": .1}
+        due = source_audit.intake_due_posts(db, weights, cfg, NOW)
+        assert due == ["low"]
+        out = source_audit.intake_post_order(posts, weights, {"sources": {}}, cfg, due)
+        assert [p.source_name for p in out] == ["low"]
+        assert not db.post_is_known(out[0].content_hash)
+        db.record_post(out[0], NOW)
+        assert source_audit.intake_due_posts(db, weights, cfg, NOW) == []
+        db.close()
+
+    def test_on_prefix_honors_source_store_and_post_caps_and_keeps_order(self):
+        import dataclasses
+        from collections import Counter
+        from dealradar import source_audit
+
+        cfg = AppConfig(max_posts_per_run=100)
+        sources = [make_source(f"s{i}") for i in range(4)]
+        history = {"sources": {s.name: {"low_sample": False, "useful_per_usd": 100 if i < 2 else 1,
+            "store_mix": {"amazon" if i < 2 else "walmart": 1}} for i, s in enumerate(sources)}}
+        weights = source_audit.intake_weights(sources, history, cfg)
+        posts = [dataclasses.replace(make_post(s.name, j), structured={"store": "Amazon" if i < 2 else "Walmart"})
+                 for i, s in enumerate(sources) for j in range(50)]
+        out = source_audit.intake_post_order(posts, weights, history, cfg, due=["s3"])
+        assert out[0].source_name == "s3"  # maximum wait wins over yield
+        assert len(out) == 100
+        assert max(Counter(p.source_name for p in out).values()) == 25
+        assert Counter(p.structured["store"] for p in out) == {"Amazon": 50, "Walmart": 50}
+        assert len({p.content_hash for p in out}) == len(out)
+        for s in sources:
+            assert [p.uid for p in out if p.source_name == s.name] == [f"{s.name}-{i}" for i in range(25)]
+        assert len(posts) == 200  # the other hashes are still available to retry
+
+    def test_on_caps_even_when_only_one_store_can_supply_posts(self):
+        import dataclasses
+        from dealradar import source_audit
+
+        cfg = AppConfig(max_posts_per_run=10)
+        posts = [dataclasses.replace(make_post("s", i), structured={"store": ("Amazon", " amazon.COM ")[i % 2]})
+                 for i in range(20)]
+        out = source_audit.intake_post_order(posts, {"s": 1.0}, {"sources": {}}, cfg)
+        assert len(out) == 5
+
+    def test_max_wait_reads_oldest_sources_inside_existing_fetch_budget(self, tmp_path, monkeypatch):
+        from dealradar import source_audit
+
+        db = DB(tmp_path / "state.db")
+        cfg = AppConfig(intake_mode="on", intake_max_wait_hours=6)
+        sources = [make_source("fast", fast_lane=True), make_source("slow"), make_source("unread")]
+        db.meta_set("intake_since", iso(NOW - timedelta(hours=9)))
+        db.record_source_result("fast", ok=True, error="", items=1, now=NOW - timedelta(hours=8))
+        db.record_source_result("slow", ok=True, error="", items=1, now=NOW - timedelta(hours=7))
+        clock, calls, deadlines = [0.0], [], []
+
+        class Adapter:
+            def fetch_posts(self, source, fetcher, db, cfg, now, deadline):
+                calls.append(source.name)
+                deadlines.append(deadline)
+                clock[0] = 6  # only one reader fits before the parse reserve
+                return []
+
+        monkeypatch.setattr("dealradar.fetch.registry.get_adapter", lambda *a, **k: Adapter())
+        monkeypatch.setattr(pipeline.time, "monotonic", lambda: clock[0])
+        for _ in sources:
+            clock[0] = 0
+            order, _ = source_audit.intake_source_order(sources, {"fast": .8, "slow": .15, "unread": .05},
+                                                       {"sources": {}}, db, cfg, NOW, False)
+            pipeline._fetch_all(order, None, db, cfg, NOW, pipeline._RESERVE_FOR_PARSE_S + 5, False)
+        assert calls == ["unread", "fast", "slow"]
+        assert deadlines == [5.0] * 3
+        assert all(r["updated_at"] == iso(NOW) for r in db.all_source_health())
+        # Fast sweeps still cannot fetch an hourly-only source, however old.
+        order, _ = source_audit.intake_source_order(sources, {}, {"sources": {}}, db, cfg,
+                                                  NOW + timedelta(hours=10), True)
+        assert [s.name for s in order] == [s.name for s in sources]
+        db.close()
+
+    def test_weights_leave_tripped_slot_and_breaker_unchanged(self, tmp_path, monkeypatch):
+        from dealradar import source_audit
+
+        db = DB(tmp_path / "state.db")
+        cfg = AppConfig()
+        sources = [make_source("low"), make_source("tripped"), make_source("high")]
+        for s in sources:
+            db.meta_set("source_sig:" + s.name, "|".join((s.method, s.adapter or "", s.url)))
+        for _ in range(3):
+            db.record_source_result("tripped", ok=False, error="http_403", items=0, now=NOW)
+        before = next(r for r in db.all_source_health() if r["source_name"] == "tripped")
+        history = {"sources": {s.name: {"low_sample": False} for s in sources}}
+        order, due = source_audit.intake_source_order(sources, {"high": .9, "low": .1}, history, db, cfg, NOW, False)
+        assert [s.name for s in order] == ["high", "tripped", "low"]
+        assert "tripped" not in due
+        calls = []
+
+        class Adapter:
+            def fetch_posts(self, source, *args):
+                calls.append(source.name)
+                return []
+
+        monkeypatch.setattr("dealradar.fetch.registry.get_adapter", lambda *a, **k: Adapter())
+        _, errors = pipeline._fetch_all(order, None, db, cfg, NOW, time.monotonic() + 1000, False)
+        assert calls == ["high", "low"]
+        assert errors == {"tripped": "tripped"}
+        assert next(r for r in db.all_source_health() if r["source_name"] == "tripped") == before
+        db.close()
+
+
 def test_new_configured_sources_merge_into_stored_set(tmp_path, monkeypatch):
     db = DB(tmp_path / "state.db")
     cfg = load_config()

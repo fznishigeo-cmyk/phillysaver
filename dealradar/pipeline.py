@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from itertools import chain, zip_longest
 from typing import Any
@@ -1557,7 +1558,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.site import health_markdown, render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
-    from . import ai_yield
+    from . import ai_yield, source_audit
     from .parse.extractor import prefilter_counts, prefilter_post_counts
     from .verify import (mark_ended_post, mark_expired_dead, mark_unconfirmed_dead,
                          post_marks_dead, refresh_tiers)
@@ -1579,6 +1580,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     audit_complete = run_complete = yield_recorded = False
     new_posts, sources = [], []
     pstats = {"post_counts": {}}
+    processed = set()
     summary["deaths_by_reason"] = {}
     recorded_deaths = {(d["dedupe_key"], d.get("died_at"), d.get("death"))
                        for d in db.all_deals(status="dead")}
@@ -1595,9 +1597,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
     try:
         ai_yield.start(db, cfg, now, run_key)
+        if db.meta_get("intake_since") is None:
+            db.meta_set("intake_since", util.iso(now))
+        yield_events_before = {r[0] for r in db.conn.execute(
+            "SELECT event_key FROM ai_yield_events WHERE run_key=?", (run_key,))}
         # ---- sources ----
         if sources_override is not None:
-            sources = sources_override  # caller's exact order, never rotated
+            sources = sources_override  # baseline caller order, never rotated
         else:
             sources = _load_effective_sources(
                 db, cfg, fetcher, now,
@@ -1606,6 +1612,22 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             # Production fairness only: on the hourly, slow blogs lead so the
             # big fast-lane feeds don't eat the budget (see _order_for_run).
             sources = _order_for_run(sources, run_key, fast_lane)
+        intake_history = source_audit.intake_history(db, cfg, now)
+        eligible_sources = [s for s in sources if s.enabled and (not fast_lane or s.fast_lane)
+                            and not db.is_tripped(s.name, now)]
+        fetch_weights = source_audit.intake_weights(eligible_sources, intake_history, cfg)
+        weighted_sources, overdue_sources = source_audit.intake_source_order(
+            sources, fetch_weights, intake_history, db, cfg, now, fast_lane)
+        summary["intake"] = {
+            "mode": cfg.intake_mode, "weights": fetch_weights,
+            "proposed_fetch_order": [s.name for s in weighted_sources],
+            "fetch_order_changes": sum(a.name != b.name for a, b in zip(sources, weighted_sources)),
+            "unique_public_by_source": {}, "public_category_mix": {},
+        }
+        if "unavailable" in intake_history:
+            summary["intake"]["unavailable"] = intake_history["unavailable"]
+        if cfg.intake_mode == "on":
+            sources = weighted_sources
         tz_by_source = {s.name: s.tz for s in sources}
 
         # ---- fetch ----
@@ -1632,6 +1654,25 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             seen_this_batch.add(h)
             new_posts.append(post)
         new_posts = _interleave_by_source(new_posts)
+        # Evaluate the same observed posts in shadow. Only on substitutes the
+        # weighted prefix; unselected hashes remain unknown for the next run.
+        post_sources = {s.name: s for s in [*sources, *(inbox.sources if inbox is not None else [])]}
+        post_weights = source_audit.intake_weights(
+            [post_sources.get(name, SourceConfig(name=name, method="rss", url=""))
+             for name in dict.fromkeys(p.source_name for p in new_posts)], intake_history, cfg)
+        overdue_posts = source_audit.intake_due_posts(db, post_weights, cfg, now)
+        weighted_posts = source_audit.intake_post_order(
+            new_posts, post_weights, intake_history, cfg,
+            [*overdue_posts, *(s for s in overdue_sources if s not in overdue_posts)])
+        baseline_prefix = new_posts[:cfg.max_posts_per_run]
+        summary["intake"].update(
+            post_weights=post_weights,
+            proposed_post_order=[p.content_hash for p in weighted_posts],
+            proposed_post_sources=[p.source_name for p in weighted_posts],
+            would_have_changed=sum(a != b for a, b in zip_longest(
+                [p.content_hash for p in baseline_prefix], [p.content_hash for p in weighted_posts])),
+        )
+        parse_posts = weighted_posts if cfg.intake_mode == "on" else new_posts
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
         for post in new_posts:
             mark_ended_post(db, post, now)
@@ -1680,8 +1721,15 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # Parse stops _RESERVE_FOR_TAIL_S early: the critic, price re-checks,
         # and publishing must still run inside the budget on heavy runs.
         pairs, pstats = _parse_new_posts(
-            new_posts, parser, cfg, now, tz_by_source,
+            parse_posts, parser, cfg, now, tz_by_source,
             deadline - _RESERVE_FOR_TAIL_S, db=db)
+        if cfg.intake_mode == "on":
+            pstats["post_counts"] = {**candidate_counts, **pstats.get("post_counts", {})}
+            selected = {p.content_hash for p in parse_posts}
+            for post in new_posts:
+                if post.content_hash not in selected and post.content_hash in pstats["post_counts"]:
+                    pstats["post_counts"][post.content_hash]["evaluation_gap"] = "intake_limit"
+            pstats["prefilter"] = prefilter_counts(new_posts, pstats["post_counts"])
         summary["parse"] = pstats
         summary["second_opinion"] = pstats.get("second_opinion", {
             "calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0})
@@ -1886,8 +1934,15 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from .publish.indexnow import metrics as indexnow_metrics
         summary["indexnow"] = indexnow_metrics(db, cfg, now)
         try:
+            public_keys = ai_yield.public_keys(site_res, cfg)
             yield_counts = ai_yield.record_public(db, cfg, util.now_utc(), run_key,
-                                                 ai_yield.public_keys(site_res, cfg))
+                                                 public_keys)
+            summary["intake"]["unique_public_by_source"] = dict(Counter(
+                r["source_name"] for r in db.conn.execute(
+                    "SELECT event_key,source_name FROM ai_yield_events WHERE run_key=? AND kind='new'", (run_key,))
+                if r["event_key"] not in yield_events_before))
+            summary["intake"]["public_category_mix"] = dict(Counter(
+                d.get("category") or "other" for key in public_keys if (d := db.get_deal(key))))
             yield_recorded = True
         except Exception as e:
             log.warning("AI yield measurement failed: %s", type(e).__name__)
@@ -1982,6 +2037,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if post.via_email and post.content_hash in processed and db.record_post(post, now):
                 recorded += 1
         summary["posts_new"] = recorded
+        summary["intake"].update(source_audit.intake_deferred(
+            db, [*sources, *(inbox.sources if inbox is not None else [])], now))
+        summary["intake"]["deferred_posts"] = len(new_posts) - len(processed)
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days,
                  post_parses_days=cfg.post_parses_days, llm_calls_days=cfg.llm_calls_days,
                  run_stats_days=cfg.run_stats_days, http_cache_days=cfg.http_cache_days,
@@ -2014,6 +2072,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                           untracked_at=now)
         finally:
             try:
+                try:
+                    source_audit.record_intake_cost(
+                        db, cfg, util.now_utc(), run_key,
+                        getattr(parser, "extract_by_source", {}), new_posts, processed,
+                        spend_before=yield_spend_before)
+                except Exception as e:
+                    log.warning("intake cost measurement failed: %s", type(e).__name__)
                 if not audit_complete:
                     counts = pstats.get("post_counts", {})
                     for values in counts.values():

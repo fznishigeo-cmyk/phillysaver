@@ -104,6 +104,22 @@ def test_static_phone_card_keeps_store_price_steps_and_source_credit():
     assert '<a href="https://hip2save.com/deal" rel="noopener">Hip2Save</a>' in card
 
 
+def test_intake_controls_do_not_change_published_wall_or_front_page_mix(tmp_path, cfg, db, monkeypatch):
+    monkeypatch.setattr("dealradar.publish.site.util_now", lambda: NOW)
+    cfg.support_enabled = True
+    cfg.paywall_open_access = True
+    deals = [make_deal(dedupe_key=f"intake-{i}", store="Amazon" if i < 12 else "Target",
+                      category="home" if i % 2 else "kitchen") for i in range(30)]
+    out = tmp_path / "site"
+    outputs = []
+    for mode in ("off", "shadow", "on"):
+        cfg.intake_mode = mode
+        render_site(db, cfg, NOW, out_dir=out, deals=deals)
+        outputs.append(((out / "index.html").read_bytes(), (out / "deals.json").read_bytes()))
+    assert outputs[0] == outputs[1] == outputs[2]
+    assert b"proposed_fetch_order" not in outputs[0][0] + outputs[0][1]
+
+
 @pytest.mark.parametrize("name", ["index", "about", "how-it-works", "subscribe", "join", "privacy", "hub"])
 def test_design_templates_add_no_external_urls(name):
     template = (ROOT / f"dealradar/publish/templates/{name}.html").read_text()

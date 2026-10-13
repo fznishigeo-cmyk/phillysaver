@@ -41,6 +41,177 @@ def source(name="partner", **kwargs):
                         url=f"https://{name}.example/feed/", **kwargs)
 
 
+def intake_sample(rate=1.0, *, low=False, stores=None):
+    return {"useful_per_usd": rate, "low_sample": low, "store_mix": stores or {}}
+
+
+@pytest.mark.parametrize("n", [1, 2, 4, 20])
+def test_intake_zero_samples_are_finite_and_equal(cfg, n):
+    sources = [source(f"s{i}") for i in range(n)]
+    for history in ({"sources": {}}, {"sources": {}, "unavailable": "too young"},
+                    {"sources": {s.name: intake_sample(None, low=True) for s in sources}}):
+        weights = audit.intake_weights(sources, history, cfg)
+        assert list(weights.values()) == pytest.approx([1 / n] * n)
+    assert audit.intake_weights([], {"sources": {}}, cfg) == {}
+
+
+def test_intake_floor_exploration_and_source_cap(cfg):
+    sources = [source(f"s{i}") for i in range(10)]
+    history = {"sources": {s.name: intake_sample(0) for s in sources}}
+    history["sources"]["s0"] = intake_sample(100000)
+    for s in ("s8", "s9"):
+        history["sources"][s] = intake_sample(None, low=True)
+    weights = audit.intake_weights(sources, history, cfg)
+    assert sum(weights.values()) == pytest.approx(1)
+    assert min(weights.values()) >= cfg.intake_floor_share / 10
+    assert max(weights.values()) <= cfg.intake_max_source_share + 1e-9
+    assert weights["s0"] == pytest.approx(cfg.intake_max_source_share)
+    assert weights["s8"] + weights["s9"] >= cfg.intake_exploration_share + 2 * cfg.intake_floor_share / 10
+
+
+def test_intake_store_cap_across_independent_sources_and_sparse_supply(cfg):
+    sources = [source(f"s{i}") for i in range(8)]
+    history = {"sources": {s.name: intake_sample(100000 if i < 4 else 1,
+        stores={"amazon": 1.0} if i < 4 else {f"store{i}": 1.0}) for i, s in enumerate(sources)}}
+    weights = audit.intake_weights(sources, history, cfg)
+    assert sum(weights[f"s{i}"] for i in range(4)) <= cfg.intake_max_store_share + 1e-9
+    assert sum(weights.values()) == pytest.approx(1)
+    only = audit.intake_weights(sources[:4], history, cfg)
+    assert sum(only.values()) == pytest.approx(cfg.intake_max_store_share)
+    assert min(only.values()) >= cfg.intake_floor_share / 4
+
+
+def test_intake_uses_deduped_public_facts_and_ledger_costs(db, cfg, monkeypatch):
+    from dealradar import ai_yield
+    from tests.test_ai_yield import ingest
+    from tests.test_pipeline_sources import make_post
+
+    cfg.intake_min_posts = 2
+    start, at = NOW - timedelta(days=8), NOW - timedelta(days=1)
+    ai_yield.start(db, cfg, start, "baseline")
+    db.meta_set("intake_since", iso(start))
+    key = ingest(db, cfg, "Widget", 20, at, "alpha")
+    ai_yield.record_public(db, cfg, at, "sample", [key, key])
+    # A duplicate from another site adds no new public identity; an eligible
+    # backed price change does add useful yield, even on a no-earning link.
+    ingest(db, cfg, "Widget", 20, at, "beta")
+    ai_yield.record_public(db, cfg, at, "sample", [key])
+    ingest(db, cfg, "Widget", 15, at + timedelta(minutes=1), "alpha")
+    ai_yield.record_public(db, cfg, at + timedelta(minutes=1), "sample", [key])
+    posts = [make_post(s, i) for s in ("alpha", "beta") for i in range(2)]
+    for post in posts:
+        db.record_post(post, at)
+    db.reserve_llm_call("paid", "sample", "fixture", .9, at, {at.date().isoformat(): 10}, 10)
+    db.settle_llm_call("paid", .6, at)
+    direct = {"alpha": {"usd": .2, "calls": 2}, "beta": {"usd": .1, "calls": 1}}
+    audit.record_intake_cost(db, cfg, at, "sample", direct, posts, {p.content_hash for p in posts})
+    before = db.meta_get("intake_cost:sample")
+    audit.record_intake_cost(db, cfg, at, "sample", direct, posts, {p.content_hash for p in posts})
+    assert db.meta_get("intake_cost:sample") == before
+    history = audit.intake_history(db, cfg, NOW)
+    assert "unavailable" not in history
+    a, b = history["sources"]["alpha"], history["sources"]["beta"]
+    assert (a["unique_new_public_deals"], a["useful_price_updates"]) == (1, 1)
+    assert b["unique_new_public_deals"] == b["useful_price_updates"] == 0
+    assert (a["usd"], b["usd"]) == pytest.approx((.35, .25))
+    assert a["useful_per_usd"] == pytest.approx(2 / .35)
+    assert (a["posts"], a["calls"], b["posts"], b["calls"]) == (2, 2, 2, 1)
+    assert a["store_mix"] == {"store": 1.0}
+    assert sum(s["usd"] for s in history["sources"].values()) == pytest.approx(db.spend_usd_for_run("sample"))
+    from dealradar.growth import report
+
+    cfg.intake_mode = "shadow"
+    monkeypatch.setattr(audit, "load_sources", lambda: ([source("alpha"), source("beta")], []))
+    before = list(db.conn.iterdump())
+    data = report._intake(db.path, cfg, NOW.astimezone(timezone(timedelta(hours=-5))))
+    assert list(db.conn.iterdump()) == before
+    assert data["top"][0]["source"] == "alpha" and data["bottom"][0]["source"] == "beta"
+    _, text = report.build_report(cfg, {"intake": data}, {}, NOW.date())
+    assert "Intake (shadow):" in text and "2 new" not in text
+    assert "1 new + 1 updates, 2 posts, 2 extraction calls" in text
+    assert "Oldest deferred: alpha" in text
+    # Run-cost slices and useful events both leave the rolling window.
+    assert not audit.intake_history(db, cfg, NOW + timedelta(days=8))["sources"]
+    audit.record_intake_cost(db, cfg, NOW + timedelta(days=8), "nothing", {}, [], set())
+    assert db.meta_get("intake_cost:sample") is None
+    audit.record_intake_cost(db, cfg, NOW + timedelta(days=8), "sample", {}, [], set(), spend_before=.6)
+    assert db.meta_get("intake_cost:sample") is None
+
+
+def test_intake_young_and_unattributed_cost_history_is_unavailable(db, cfg):
+    assert "unavailable" in audit.intake_history(db, cfg, NOW)
+    db.meta_set("ai_yield_since", iso(NOW - timedelta(days=2)))
+    db.meta_set("intake_since", iso(NOW))
+    assert "too young" in audit.intake_history(db, cfg, NOW)["unavailable"]
+    db.meta_set("intake_since", iso(NOW - timedelta(days=2)))
+    db.start_run("unknown", "hourly", NOW)
+    db.finish_run("unknown", now=NOW, items_fetched=0, posts_new=0,
+                  deals_parsed=0, published=0, spend_usd=.1)
+    audit.record_intake_cost(db, cfg, NOW, "unknown", {}, [], set())
+    assert "cannot be attributed" in audit.intake_history(db, cfg, NOW)["unavailable"]
+
+
+def test_intake_event_credit_follows_the_backed_supplier_not_duplicate_sightings(db, cfg):
+    from dealradar import ai_yield
+    from tests.test_ai_yield import ingest
+
+    ai_yield.start(db, cfg, NOW, "sample")
+    key = ingest(db, cfg, "Widget", 20, NOW, "alpha")
+    ai_yield.record_public(db, cfg, NOW, "sample", [key])
+    ingest(db, cfg, "Widget", 20, NOW, "beta")
+    assert ai_yield.record_public(db, cfg, NOW, "sample", [key])["unique_new_public_deals"] == 0
+    later = NOW + timedelta(minutes=1)
+    ingest(db, cfg, "Widget", 15, later, "beta")
+    ai_yield.record_public(db, cfg, later, "sample", [key])
+    ingest(db, cfg, "Widget", 20, NOW, "alpha")  # an old quote cannot reclaim the update
+    ai_yield.record_public(db, cfg, later, "sample", [key])
+    events = [(r["kind"], r["source_name"]) for r in db.conn.execute(
+        "SELECT kind,source_name FROM ai_yield_events ORDER BY observed_at")]
+    assert events == [("new", "alpha"), ("update", "beta")]
+
+
+def test_intake_missing_cost_observation_does_not_invent_a_yield_rate(db, cfg):
+    db.meta_set("ai_yield_since", iso(NOW - timedelta(days=2)))
+    db.meta_set("intake_since", iso(NOW - timedelta(days=2)))
+    db.reserve_llm_call("paid", "missing", "fixture", .2, NOW, {NOW.date().isoformat(): 10}, 10)
+    db.settle_llm_call("paid", .1, NOW)
+    assert "observation gap" in audit.intake_history(db, cfg, NOW)["unavailable"]
+
+
+def test_intake_cost_of_revisiting_inventory_uses_recent_handled_samples(db, cfg):
+    from tests.test_pipeline_sources import make_post
+
+    cfg.intake_min_posts = 1
+    db.meta_set("ai_yield_since", iso(NOW - timedelta(days=2)))
+    db.meta_set("intake_since", iso(NOW - timedelta(days=2)))
+    for source, n in (("alpha", 2), ("beta", 1)):
+        for i in range(n):
+            db.record_post(make_post(source, i), NOW - timedelta(hours=1))
+    db.start_run("revisit", "hourly", NOW)
+    db.finish_run("revisit", now=NOW, items_fetched=0, posts_new=0,
+                  deals_parsed=0, published=0, spend_usd=.3)
+    audit.record_intake_cost(db, cfg, NOW, "revisit", {}, [], set())
+    history = audit.intake_history(db, cfg, NOW)
+    assert "unavailable" not in history
+    assert (history["sources"]["alpha"]["usd"], history["sources"]["beta"]["usd"]) == pytest.approx((.2, .1))
+    assert history["sources"]["alpha"]["calls"] == history["sources"]["beta"]["calls"] == 0
+
+
+def test_intake_oldest_deferral_covers_posts_and_unread_sources(db, cfg):
+    from tests.test_pipeline_sources import make_post
+
+    db.meta_set("intake_since", iso(NOW - timedelta(hours=9)))
+    post = make_post("partner", 1)
+    db.audit_seen([post], NOW - timedelta(hours=5))
+    db.record_source_result("partner", ok=True, error="", items=1, now=NOW)
+    assert audit.intake_deferred(db, [source()], NOW) == {
+        "oldest_deferred_source": "partner", "oldest_deferred_hours": 5.0}
+    db.record_post(post, NOW)
+    assert audit.intake_deferred(db, [source()], NOW)["oldest_deferred_hours"] == 0
+    result = audit.intake_deferred(db, [source(), source("unread"), source("disabled", enabled=False)], NOW)
+    assert result == {"oldest_deferred_source": "unread", "oldest_deferred_hours": 9.0}
+
+
 def feed(n=1, age=0, *, dated=True):
     date = (NOW - timedelta(days=age)).strftime("%a, %d %b %Y %H:%M:%S GMT")
     return "<rss version='2.0'><channel><title>Source</title>" + "".join(

@@ -190,6 +190,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Intake weights (Codex task 073, 2026-10-13; shadow, shipped after review):**
+  baseline fast rotation/hourly slow-first + post round-robin retained in
+  shadow; 90s/source, 400 posts, fetch/parse/tail reserves and paced AI/
+  critic/Keepa caps unchanged. Seven-day
+  deduped useful/USD weights add floors, exploration, six-hour fetch/post-read
+  priority and source/store ceilings; forecasts and requested `intake.*`
+  coverage plus private report (24h/20-post minimum). Shared AI costs and
+  unparsed store mixes are estimates; structured stores have a hard ceiling.
+  Small necessary fix in `ai_yield.record_public`: credit backed sightings
+  instead of empty source names. Full pytest: **2,683 passed, 1 deselected**;
+  only seven existing Stripe yearly-deploy socket checks in `test_workflows.py`
+  failed (`Operation not permitted`). Live yield, those checks outside the
+  sandbox and Claude review remain; 070/071 untouched. Shipped after review.
 - **IndexNow receipts (Codex task 072, 2026-10-13; shipped after review):** found
   early "sent" stamps even on deploy/POST failure (retries delayed a week),
   no persisted receipt/202 key state, no batch cap, and lost ended/removal

@@ -229,7 +229,8 @@ def test_growth_collect_reads_snapshot_and_handles_pre_migration_db(tmp_path, mo
 
 
 @pytest.mark.parametrize("share,parse_cap", [(0.5, 0.25), (0.0, 0.5)])
-def test_critic_keeps_its_share_of_the_run_allowance(env, monkeypatch, share, parse_cap):
+@pytest.mark.parametrize("mode", ["shadow", "on"])
+def test_critic_keeps_its_share_of_the_run_allowance(env, monkeypatch, share, parse_cap, mode):
     # Paced runs are small: extraction may not spend the critic's share, and
     # the critic then gets the whole allowance (its share plus what is left).
     monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW + timedelta(hours=22))
@@ -251,6 +252,7 @@ def test_critic_keeps_its_share_of_the_run_allowance(env, monkeypatch, share, pa
     def load(*a, **k):
         cfg = real_load(*a, **k)
         cfg.critic_reserve_share = share
+        cfg.intake_mode = mode
         return cfg
 
     monkeypatch.setattr(pipeline, "load_config", load)
@@ -258,3 +260,129 @@ def test_critic_keeps_its_share_of_the_run_allowance(env, monkeypatch, share, pa
     assert caps["parse"] == pytest.approx(parse_cap)
     assert caps["critic"] == pytest.approx(0.5)  # the per-run cap: allowance is not the limit at 22:00
     assert load_config().critic_reserve_share == 0.5
+
+
+@pytest.mark.parametrize("written,mode", [('"off"', "off"), ("shadow", "shadow"), ('"on"', "on"), ("on", "on")])
+def test_intake_config_modes_and_defaults(tmp_path, written, mode):
+    path = tmp_path / "config.yaml"
+    path.write_text("intake:\n  mode: " + written + "\n")
+    assert load_config(path).intake_mode == mode
+    assert load_config().intake_mode == "shadow"
+
+
+@pytest.mark.parametrize("key,value", [("mode", "live"), ("window_days", 0), ("window_days", 31),
+    ("min_posts", 0), ("min_history_hours", 0), ("max_wait_hours", float("inf")),
+    ("floor_share", 0), ("exploration_share", 0), ("max_source_share", 1.1),
+    ("max_store_share", .1), ("floor_share", .9)])
+def test_intake_config_rejects_invalid_bounds(tmp_path, key, value):
+    import yaml
+
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"intake": {key: value}}))
+    with pytest.raises(ValueError, match="intake"):
+        load_config(path)
+
+
+def test_intake_shadow_preserves_reads_output_and_spend_with_a_changed_proposal(env, monkeypatch, tmp_path):
+    import json
+    import yaml
+    from dealradar import source_audit
+
+    monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW + timedelta(hours=22))
+    history = {"sources": {s: {"low_sample": False, "useful_per_usd": rate, "store_mix": {}}
+                           for s, rate in (("blogone", 0), ("feedtwo", 100))}}
+    monkeypatch.setattr(source_audit, "intake_history", lambda *a: history)
+    path = Path(env["cfg"])
+    config = yaml.safe_load(path.read_text())
+    config["intake"].update(mode="off", max_source_share=.8)
+    path.write_text(yaml.safe_dump(config))
+    reads, fetch_orders = [], []
+    original = pipeline._parse_new_posts
+    original_fetch = pipeline._fetch_all
+
+    def observe_fetch(sources, *a, **k):
+        fetch_orders.append([s.name for s in sources])
+        return original_fetch(sources, *a, **k)
+
+    def observe(posts, *a, **k):
+        reads.append([p.content_hash for p in posts])
+        return original(posts, *a, **k)
+
+    monkeypatch.setattr(pipeline, "_parse_new_posts", observe)
+    monkeypatch.setattr(pipeline, "_fetch_all", observe_fetch)
+    off = _run(env)
+    public = (env["site"] / "deals.json").read_bytes()
+    home = (env["site"] / "index.html").read_bytes()
+    config["intake"]["mode"] = "shadow"
+    path.write_text(yaml.safe_dump(config))
+    env["db"] = str(tmp_path / "shadow.db")
+    shadow = _run(env)
+    assert reads[0] == reads[1]
+    assert fetch_orders[0] == fetch_orders[1]
+    assert shadow["intake"]["would_have_changed"] > 0
+    assert shadow["intake"]["fetch_order_changes"] == 2
+    assert public == (env["site"] / "deals.json").read_bytes()
+    assert home == (env["site"] / "index.html").read_bytes()
+    assert shadow["spend_by_kind"] == off["spend_by_kind"]
+    assert shadow["extract_by_source"] == off["extract_by_source"]
+    assert sum(shadow["intake"]["unique_public_by_source"].values()) == 2
+    assert sum(shadow["intake"]["public_category_mix"].values()) == shadow["published"]
+    assert "oldest_deferred_hours" in shadow["intake"]
+    assert "intake" not in json.loads(public)["meta"]["last_run"]
+    db = DB(env["db"])
+    costs = db.meta_get("intake_cost:" + shadow["run_key"])
+    facts = db.conn.execute("SELECT COUNT(*) FROM ai_yield_events").fetchone()[0]
+    db.close()
+    again = _run(env)
+    assert again["posts_new"] == again["spend_usd"] == 0
+    assert again["intake"]["unique_public_by_source"] == {}
+    db = DB(env["db"])
+    assert db.meta_get("intake_cost:" + shadow["run_key"]) == costs
+    assert db.conn.execute("SELECT COUNT(*) FROM ai_yield_events").fetchone()[0] == facts
+    db.close()
+
+
+def test_on_keeps_pacing_critic_keepa_caps_and_retries_deferred_hashes(env, monkeypatch):
+    import json
+    import yaml
+    from dealradar.keepa_budget import KeepaBudget
+    from dealradar.util import iso
+
+    monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW)
+    path = Path(env["cfg"])
+    config = yaml.safe_load(path.read_text())
+    config["intake"]["mode"] = "on"
+    config["parse"]["max_posts_per_run"] = 2
+    path.write_text(yaml.safe_dump(config))
+    db = DB(env["db"])
+    db.meta_set("intake_since", iso(NOW - timedelta(hours=8)))
+    db.record_source_result("feedtwo", ok=True, error="", items=2, now=NOW - timedelta(hours=7))
+    budget = KeepaBudget(tokens_left=10, refill_rate=0, seen_at=NOW)
+    budget.save(db)
+    keepa_before = db.meta_get("keepa_budget")
+    # Existing paced spend blocks all parsing, including an overdue source.
+    db.start_run("earlier", "hourly", NOW)
+    db.finish_run("earlier", now=NOW, items_fetched=0, posts_new=0,
+                  deals_parsed=0, published=0, spend_usd=.5)
+    blocked = _run(env)
+    assert blocked["posts_new"] == blocked["spend_usd"] == 0
+    assert blocked["intake"]["deferred_posts"] == 5
+    assert db.conn.execute("SELECT COUNT(*) FROM posts_seen").fetchone()[0] == 0
+    monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW + timedelta(hours=6))
+    for expected in (2, 2, 1):
+        summary = _run(env)
+        assert summary["posts_new"] == expected
+        assert len(summary["intake"]["proposed_post_order"]) <= 2
+        assert summary["spend_usd"] <= summary["spend_pacing"]["allowance"] <= .5
+        assert summary["price_recheck"]["tokens_short"] == 0
+    assert db.conn.execute("SELECT COUNT(*) FROM posts_seen").fetchone()[0] == 5
+    assert json.loads(db.meta_get("keepa_budget")) == json.loads(keepa_before)
+    assert db.spend_usd_for_day(NOW) <= 6
+    before = (db.conn.execute("SELECT COUNT(*) FROM ai_yield_events").fetchone()[0],
+              db.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0])
+    again = _run(env)
+    assert again["posts_new"] == again["spend_usd"] == 0
+    assert again["intake"]["unique_public_by_source"] == {}
+    assert before == (db.conn.execute("SELECT COUNT(*) FROM ai_yield_events").fetchone()[0],
+                      db.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0])
+    db.close()

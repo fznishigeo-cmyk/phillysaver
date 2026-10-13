@@ -76,6 +76,17 @@ parse:
     claude-haiku-4-5: { input: 1.00, output: 5.00, cache_write: 1.25, cache_read: 0.10 }
     claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_write: 1.25, cache_read: 0.05 }
 
+intake:
+  mode: shadow                 # off | shadow | on; shadow never changes reads
+  window_days: 7               # rolling useful yield, starting with 067/073 coverage
+  min_history_hours: 24        # younger observations are unavailable, not zero yield
+  min_posts: 20                # distinct handled posts before trusting a source's rate
+  floor_share: 0.20            # equal floor across all eligible sources
+  exploration_share: 0.20      # reserved for new/low-sample sources
+  max_source_share: 0.25       # at least 1/N when fewer than four sources exist
+  max_store_share: 0.50        # historical/structured store mix; unknown stores stay unknown
+  max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
+
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
                                # Verification thresholds (history-checked, the

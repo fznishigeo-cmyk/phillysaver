@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -133,6 +134,17 @@ class AppConfig:
     critic_shadow_model: str = "claude-haiku-5-5"
     critic_shadow_batches_per_day: int = 12
     exclude_suspect_msrp: bool = True
+
+    # -- useful-yield intake (off preserves the original rotation/interleave) --
+    intake_mode: str = "off"  # off | shadow | on
+    intake_window_days: int = 7
+    intake_min_history_hours: float = 24.0
+    intake_min_posts: int = 20
+    intake_floor_share: float = 0.2  # shared equally across sources
+    intake_exploration_share: float = 0.2
+    intake_max_source_share: float = 0.25
+    intake_max_store_share: float = 0.5
+    intake_max_wait_hours: float = 6.0
 
     # -- publish / ranking --
     min_pct: float = 70.0
@@ -370,6 +382,27 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "parse", "critic_shadow_batches_per_day", default=cfg.critic_shadow_batches_per_day)))
     cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
+
+    mode = g("intake", "mode", default=cfg.intake_mode)
+    if isinstance(mode, bool):  # YAML 1.1 on/off
+        mode = "on" if mode else "off"
+    cfg.intake_mode = str(mode)
+    if cfg.intake_mode not in {"off", "shadow", "on"}:
+        raise ValueError("intake.mode must be off, shadow, or on")
+    cfg.intake_window_days = int(g("intake", "window_days", default=cfg.intake_window_days))
+    cfg.intake_min_posts = int(g("intake", "min_posts", default=cfg.intake_min_posts))
+    for name in ("min_history_hours", "floor_share", "exploration_share",
+                 "max_source_share", "max_store_share", "max_wait_hours"):
+        setattr(cfg, "intake_" + name, float(g("intake", name, default=getattr(cfg, "intake_" + name))))
+    if (not 1 <= cfg.intake_window_days <= 30 or cfg.intake_min_posts < 1
+            or not 0 < cfg.intake_min_history_hours <= cfg.intake_window_days * 24
+            or not math.isfinite(cfg.intake_max_wait_hours) or cfg.intake_max_wait_hours <= 0
+            or any(not math.isfinite(getattr(cfg, "intake_" + name)) or
+                   not 0 < getattr(cfg, "intake_" + name) <= 1
+                   for name in ("floor_share", "exploration_share", "max_source_share", "max_store_share"))
+            or cfg.intake_floor_share + cfg.intake_exploration_share > 1
+            or cfg.intake_floor_share > cfg.intake_max_store_share):
+        raise ValueError("invalid intake window, sample, wait, or share bounds")
 
     cfg.min_pct = float(g("publish", "min_pct", default=cfg.min_pct))
     cfg.used_min_pct = float(g("publish", "used_min_pct", default=cfg.used_min_pct))

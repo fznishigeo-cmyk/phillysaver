@@ -96,6 +96,14 @@ def record_public(db, cfg, now: datetime, run_key: str, public_keys) -> dict:
                 and price != anchor["ai_public_price"]:
             kind = "update"
         if kind:
+            # Deal payloads omit source_name; the backed source facts live in
+            # sightings. Credit the first supplier, or the latest sighting
+            # supporting an updated price. API-only changes keep first credit.
+            sightings = [s for s in db.sightings_for(deal["id"]) if s["seen_at"] <= iso(now)]
+            matching = [s for s in sightings if s["final_price"] == price]
+            credited = (matching[-1] if kind == "update" else matching[0]) if matching else (
+                sightings[0] if sightings else {})
+            source = deal.get("source_name") or credited.get("source_name", "")
             identity = hashlib.sha256(key.encode()).hexdigest()
             version = [identity, kind, anchor["ai_public_price"], price,
                        deal.get("price_published_at")]
@@ -104,7 +112,7 @@ def record_public(db, cfg, now: datetime, run_key: str, public_keys) -> dict:
                 "INSERT OR IGNORE INTO ai_yield_events"
                 "(event_key,identity,kind,observed_at,run_key,source_name,category)"
                 " VALUES (?,?,?,?,?,?,?)",
-                (event, identity, kind, iso(now), run_key, deal.get("source_name", ""),
+                (event, identity, kind, iso(now), run_key, source,
                  deal.get("category") or "other"))
             if result.rowcount:
                 counts["unique_new_public_deals" if kind == "new" else "useful_price_updates"] += 1

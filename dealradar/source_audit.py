@@ -6,7 +6,10 @@ as n/a, rather than inventing zeroes. Retained sightings supply current gates.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 import logging
+import math
 import os
 import re
 import time
@@ -106,6 +109,271 @@ class _ProbeFetcher(PoliteFetcher):
 def _table_exists(db, name):
     return bool(db.conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone())
+
+
+def _intake_store(value):
+    # Common written store aliases share one ceiling (Amazon / Amazon.com,
+    # Macy's / Macys); no retailer is inferred from unparsed post text.
+    return re.sub(r"[^a-z0-9]", "", str(value or "").strip().casefold().removesuffix(".com"))
+
+
+def record_intake_cost(db, cfg, now, run_key, extract_by_source, posts, processed, spend_before=0.0):
+    """Compact, cumulative costs; a no-spend rerun adds nothing.
+
+    Direct extraction uses the parser's model-priced accounting. Allocate
+    remaining ledger spend (critic, category, second opinion, etc.) by handled
+    posts, falling back to extraction calls or recent handled posts when
+    work revisits existing inventory. This is an estimate, never an
+    affiliate-income signal. Failed runs retain their costs too.
+    """
+    key = "intake_cost:" + run_key
+    previous = json.loads(db.meta_get(key) or json.dumps({"usd": spend_before, "samples": []}))
+    total = db.spend_usd_for_run(run_key)
+    delta = max(0.0, total - previous["usd"])
+    if delta:
+        sample = {"at": util.iso(now), "sources": {}}
+        direct = {s: float(v["usd"]) for s, v in extract_by_source.items()}
+        direct_total = sum(direct.values())
+        scale = min(1.0, delta / direct_total) if direct_total else 1.0
+        handled = Counter(p.source_name for p in posts if p.content_hash in processed)
+        if not handled:
+            handled = Counter({s: v.get("calls", 0) for s, v in extract_by_source.items()})
+        if not sum(handled.values()):
+            handled = Counter({r["source_name"]: r["n"] for r in db.conn.execute(
+                "SELECT source_name,COUNT(*) AS n FROM posts_seen WHERE first_seen_at>=?"
+                " AND first_seen_at<=? GROUP BY source_name",
+                (util.iso(now - timedelta(days=cfg.intake_window_days)), util.iso(now)))})
+        shared = delta - direct_total * scale
+        samples = sum(handled.values())
+        for source in direct.keys() | handled.keys():
+            row = sample["sources"].setdefault(source, {"usd": 0.0, "calls": 0})
+            row["usd"] += direct.get(source, 0.0) * scale + (
+                shared * handled[source] / samples if samples else 0.0)
+            row["calls"] += extract_by_source.get(source, {}).get("calls", 0)
+        sample["unattributed_usd"] = shared if not samples else 0.0
+        previous["samples"].append(sample)
+        previous["usd"] = total
+        db.meta_set(key, json.dumps(previous, separators=(",", ":")))
+    cutoff = util.iso(now - timedelta(days=cfg.intake_window_days))
+    for row in db.conn.execute("SELECT k,v FROM meta WHERE k LIKE 'intake_cost:%'").fetchall():
+        costs = json.loads(row["v"])
+        retained = [s for s in costs["samples"] if s["at"] >= cutoff]
+        if not retained:
+            db.conn.execute("DELETE FROM meta WHERE k=?", (row["k"],))
+        elif retained != costs["samples"]:
+            costs["samples"] = retained
+            db.meta_set(row["k"], json.dumps(costs, separators=(",", ":")))
+    db.conn.commit()
+
+
+def intake_history(db, cfg, now):
+    """067's deduped useful events over a rolling, covered window, facts only."""
+    result = {"sources": {}, "window_days": cfg.intake_window_days}
+    since = util.parse_iso(db.meta_get("ai_yield_since") or "")
+    costs_since = util.parse_iso(db.meta_get("intake_since") or "")
+    if since is None or costs_since is None or not _table_exists(db, "ai_yield_events"):
+        return dict(result, unavailable="067 yield / intake cost history unavailable")
+    retained = util.parse_iso(db.meta_get("ai_yield_retained_since") or "") or since
+    start = max(now - timedelta(days=cfg.intake_window_days), since, costs_since, retained)
+    result.update(observed_hours=max(0.0, (now - start).total_seconds() / 3600),
+                  from_at=util.iso(start), through=util.iso(now), unattributed_usd=0.0)
+    if result["observed_hours"] < cfg.intake_min_history_hours:
+        return dict(result, unavailable="067 yield / intake cost data is too young")
+
+    def bucket(source):
+        return result["sources"].setdefault(source, {"posts": 0, "calls": 0, "usd": 0.0,
+            "unique_new_public_deals": 0, "useful_price_updates": 0, "stores": Counter()})
+
+    # No per-source claims for legacy spend or for a run without an allocation.
+    recorded_costs = {}
+    for row in db.conn.execute("SELECT k,v FROM meta WHERE k LIKE 'intake_cost:%'"):
+        costs = json.loads(row["v"])
+        recorded_costs[row["k"].removeprefix("intake_cost:")] = costs["usd"]
+        for sample in costs["samples"]:
+            if not util.iso(start) <= sample["at"] <= util.iso(now):
+                continue
+            result["unattributed_usd"] += sample.get("unattributed_usd", 0.0)
+            for source, values in sample["sources"].items():
+                b = bucket(source)
+                b["usd"] += values["usd"]
+                b["calls"] += values["calls"]
+    if not _table_exists(db, "llm_calls") or not _table_exists(db, "llm_legacy_spend"):
+        return dict(result, unavailable="ledger history unavailable")
+    paid_runs = db.conn.execute(
+        "SELECT run_key FROM llm_calls WHERE status!='released' AND COALESCE(cost_usd,reserved_usd)>0"
+        " AND COALESCE(billed_at,started_at)>=? AND COALESCE(billed_at,started_at)<=?"
+        " UNION SELECT run_key FROM llm_legacy_spend WHERE usd>0 AND billed_at>=? AND billed_at<=?",
+        (util.iso(start), util.iso(now), util.iso(start), util.iso(now)))
+    if any(recorded_costs.get(r["run_key"], 0) + 1e-9 < db.spend_usd_for_run(r["run_key"]) for r in paid_runs):
+        return dict(result, unavailable="intake cost observation gap")
+    for row in db.conn.execute("SELECT source_name,COUNT(*) AS n FROM posts_seen"
+                               " WHERE first_seen_at>=? AND first_seen_at<=? GROUP BY source_name",
+                               (util.iso(start), util.iso(now))):
+        bucket(row["source_name"])["posts"] = row["n"]
+    stores = {hashlib.sha256(d["dedupe_key"].encode()).hexdigest(): _intake_store(d.get("store"))
+              for d in db.all_deals()}
+    for row in db.conn.execute("SELECT identity,kind,source_name FROM ai_yield_events"
+                               " WHERE kind IN ('new','update') AND observed_at>=? AND observed_at<=?",
+                               (util.iso(start), util.iso(now))):
+        b = bucket(row["source_name"])
+        b["unique_new_public_deals" if row["kind"] == "new" else "useful_price_updates"] += 1
+        if store := stores.get(row["identity"]):
+            b["stores"][store] += 1
+    for b in result["sources"].values():
+        useful = b["unique_new_public_deals"] + b["useful_price_updates"]
+        b["useful_per_usd"] = useful / b["usd"] if b["usd"] > 0 else None
+        b["low_sample"] = b["posts"] < cfg.intake_min_posts or b["useful_per_usd"] is None
+        # Missing/retired store identities are unknown, never guessed.
+        b["store_mix"] = {s: n / useful for s, n in b.pop("stores").items()} if useful else {}
+    if result["unattributed_usd"] > 1e-9:
+        result["unavailable"] = "some ledger spend cannot be attributed to sources"
+    return result
+
+
+def intake_weights(sources, history, cfg):
+    """Floor, explicit exploration, then useful/USD; hard source/store ceilings.
+
+    Store ceilings use observed useful supply, including non-earning stores.
+    When supply cannot fill those ceilings the remainder stays unallocated.
+    """
+    names = list(dict.fromkeys(s.name for s in sources))
+    if not names:
+        return {}
+    stats = history["sources"] if "unavailable" not in history else {}
+    weights = dict.fromkeys(names, cfg.intake_floor_share / len(names))
+    cap = max(cfg.intake_max_source_share, 1 / len(names))
+    mixes = {s: stats.get(s, {}).get("store_mix", {}) for s in names}
+
+    def allocate(amount, scores):
+        for _ in range(len(names) + len({store for mix in mixes.values() for store in mix}) + 1):
+            stores = Counter()
+            for s, w in weights.items():
+                for store, share in mixes[s].items():
+                    stores[store] += w * share
+            room = {s: min([max(0.0, cap - weights[s]), *[
+                max(0.0, cfg.intake_max_store_share - stores[store]) / share
+                for store, share in mixes[s].items() if share > 0]]) for s in names}
+            active = {s: scores.get(s, 0.0) for s in names if room[s] > 1e-10 and scores.get(s, 0.0) > 0}
+            if not active or amount <= 1e-10:
+                break
+            # Scale the whole increment to the tightest store constraint;
+            # independently clipping sources would overshoot a shared store.
+            increments = {s: min(room[s], amount * v / sum(active.values())) for s, v in active.items()}
+            projected = Counter()
+            for s, inc in increments.items():
+                for store, share in mixes[s].items():
+                    projected[store] += inc * share
+            scale = min([1.0, *[max(0.0, cfg.intake_max_store_share - stores[s]) / inc
+                                  for s, inc in projected.items() if inc > 0]])
+            used = 0.0
+            for s, inc in increments.items():
+                weights[s] += inc * scale
+                used += inc * scale
+            amount -= used
+        return amount
+
+    low = {s: 1.0 for s in names if stats.get(s, {}).get("low_sample", True)}
+    allocate(cfg.intake_exploration_share, low or dict.fromkeys(names, 1.0))
+    scores = {s: stats[s]["useful_per_usd"] for s in names if s in stats and not stats[s]["low_sample"]}
+    remaining = allocate(1 - cfg.intake_floor_share - cfg.intake_exploration_share,
+                         scores if any(scores.values()) else dict.fromkeys(names, 1.0))
+    allocate(remaining, dict.fromkeys(names, 1.0))
+    return weights
+
+
+def intake_deferred(db, sources, now):
+    """Pending discovery ages plus time since a source was last attempted."""
+    names = {s.name for s in sources if s.enabled}
+    health = {r["source_name"]: r for r in db.all_source_health()}
+    since = util.parse_iso(db.meta_get("intake_since") or "") or now
+    ages = {s: max(0.0, (now - (util.parse_iso(health.get(s, {}).get("updated_at") or "") or since))
+                   .total_seconds() / 3600) for s in names}
+    if _table_exists(db, "source_audit_posts"):
+        for row in db.conn.execute("SELECT source_name,MIN(first_seen_at) AS oldest FROM source_audit_posts a"
+                                   " WHERE NOT EXISTS (SELECT 1 FROM posts_seen p WHERE p.content_hash=a.content_hash)"
+                                   " GROUP BY source_name"):
+            if row["source_name"] in names:
+                age = max(0.0, (now - util.parse_iso(row["oldest"])).total_seconds() / 3600)
+                ages[row["source_name"]] = max(ages[row["source_name"]], age)
+    source = max(sorted(ages), key=ages.get) if ages else None
+    return {"oldest_deferred_source": source if source and ages[source] > 0 else None,
+            "oldest_deferred_hours": ages.get(source, 0.0)}
+
+
+def intake_source_order(sources, weights, history, db, cfg, now, fast_lane):
+    """Reorder active slots only; run_source still owns every breaker decision."""
+    active = [s for s in sources if s.enabled and (not fast_lane or s.fast_lane)
+              and not db.is_tripped(s.name, now)]
+    health = {r["source_name"]: r for r in db.all_source_health()}
+    since = util.parse_iso(db.meta_get("intake_since") or "") or now
+    ages = {s.name: max(0.0, (now - (util.parse_iso(health.get(s.name, {}).get("updated_at") or "") or since))
+                        .total_seconds() / 3600) for s in active}
+    due = sorted((s.name for s in active if ages[s.name] >= cfg.intake_max_wait_hours),
+                 key=lambda s: -ages[s])
+    low = [s.name for s in active if history["sources"].get(s.name, {}).get("low_sample", True)]
+    explore = set(low[:math.ceil(len(active) * cfg.intake_exploration_share)])
+    positions = {s.name: i for i, s in enumerate(sources)}
+    ordered = iter(sorted(active, key=lambda s: (
+        0 if s.name in due else 1, due.index(s.name) if s.name in due else 0,
+        bool(s.fast_lane) if not fast_lane else False,
+        0 if s.name in explore else 1, -weights.get(s.name, 0), positions[s.name])))
+    active_names = {s.name for s in active}
+    return [next(ordered) if s.name in active_names else s for s in sources], due
+
+
+def intake_due_posts(db, names, cfg, now):
+    """A fresh fetch cannot conceal starvation at the AI read budget."""
+    last = {r["source_name"]: util.parse_iso(r["last_read"]) for r in db.conn.execute(
+        "SELECT source_name,MAX(first_seen_at) AS last_read FROM posts_seen GROUP BY source_name")}
+    since = util.parse_iso(db.meta_get("intake_since") or "") or now
+    ages = {s: max(0.0, (now - last.get(s, since)).total_seconds() / 3600) for s in names}
+    return sorted((s for s in names if ages[s] >= cfg.intake_max_wait_hours), key=lambda s: -ages[s])
+
+
+def intake_post_order(posts, weights, history, cfg, due=()):
+    """A capped weighted prefix. Deferred posts remain unknown and retry normally."""
+    queues = {}
+    for post in posts:
+        queues.setdefault(post.source_name, []).append(post)
+    if not queues or cfg.max_posts_per_run <= 0:
+        return []
+    used, stores, selected = Counter(), Counter(), []
+    cap = max(cfg.intake_max_source_share, 1 / len(queues))
+    source_limit = math.ceil(cfg.max_posts_per_run * cap)
+    store_limit = math.ceil(cfg.max_posts_per_run * cfg.intake_max_store_share)
+
+    def mix(source):
+        structured = queues[source][used[source]].structured or {}
+        store = _intake_store(structured.get("store"))
+        return {store: 1.0} if store else history["sources"].get(source, {}).get("store_mix", {})
+
+    while len(selected) < cfg.max_posts_per_run:
+        eligible = [s for s, queue in queues.items() if used[s] < len(queue)
+                    and used[s] < min(source_limit, math.ceil(cfg.max_posts_per_run * weights.get(s, 1 / len(queues))))
+                    and all(stores[store] + share <= store_limit + 1e-9 for store, share in mix(s).items())]
+        if not eligible:
+            break
+        overdue = [s for s in due if s in eligible and not used[s]]
+        source = overdue[0] if overdue else min(eligible, key=lambda s: (used[s] + 1) / max(weights.get(s, 1 / len(queues)), 1e-9))
+        for store, share in mix(source).items():
+            stores[store] += share
+        selected.append(queues[source][used[source]])
+        used[source] += 1
+    return selected
+
+
+def intake_report_data(db, cfg, now):
+    history = intake_history(db, cfg, now)
+    primary, backup = load_sources()
+    sources = [s for s in primary + backup if s.enabled]
+    result = {"mode": cfg.intake_mode, **intake_deferred(db, sources, now)}
+    if "unavailable" in history:
+        return dict(result, unavailable=history["unavailable"])
+    samples = [dict(source=s, **v) for s, v in history["sources"].items() if not v["low_sample"]]
+    if not samples:
+        return dict(result, unavailable="insufficient source samples")
+    samples.sort(key=lambda v: (-v["useful_per_usd"], v["source"]))
+    return dict(result, observed_hours=history["observed_hours"], top=samples[:3], bottom=list(reversed(samples[-3:])))
 
 
 def _history(db, source, now, days, since_tracking):

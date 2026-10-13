@@ -62,6 +62,16 @@ def _ai_yield(db_path, cfg, now: datetime) -> dict:
         db.close()
 
 
+def _intake(db_path, cfg, now: datetime) -> dict:
+    from ..source_audit import intake_report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return intake_report_data(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _newsletter_senders(db_path) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -109,6 +119,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                      lambda: _ai_yield(db_path, cfg, now)),
         "indexnow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                      lambda: _indexnow(db_path, cfg, now)),
+        "intake": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                   lambda: _intake(db_path, cfg, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -333,6 +345,22 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     else:
         reason = yield_data["unavailable"] if yield_data else "state snapshot unavailable"
         lines.append(f"AI yield: n/a ({reason})")
+
+    intake = data.get("intake")
+    lines.append(f"Intake ({cfg.intake_mode}):")
+    if not intake or "unavailable" in intake:
+        reason = intake["unavailable"] if intake else "state snapshot unavailable"
+        lines.append(f"  unavailable ({reason})")
+    else:
+        lines.append(f"  {intake['observed_hours']:.0f} hours observed; shared AI costs estimated from current/recent handled posts")
+        for key, label in (("top", "Top"), ("bottom", "Bottom")):
+            values = [f"{s['source']} {s['useful_per_usd']:.2f}/USD "
+                      f"({s['unique_new_public_deals']} new + {s['useful_price_updates']} updates, "
+                      f"{s['posts']} posts, {s['calls']} extraction calls, ${s['usd']:.4f})" for s in intake[key]]
+            lines.append(f"  {label}: " + "; ".join(values))
+    if intake and intake.get("oldest_deferred_source"):
+        lines.append(f"  Oldest deferred: {intake['oldest_deferred_source']}, "
+                     f"{intake['oldest_deferred_hours']:.2f} hours")
 
     lines += ["", "== Product (GA4 event sample, yesterday / window) =="]
     product = data.get("product")
