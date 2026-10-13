@@ -323,7 +323,7 @@ def test_prefilter_never_skips_a_free_structured_post():
     assert stats["prefilter"]["would_skip"] == 0
 
 
-def test_shadow_output_matches_off_and_tracks_false_positive_at_the_site_floor(env, monkeypatch):
+def test_shadow_output_matches_off_and_lower_site_floor_preserves_useful_posts(env, monkeypatch):
     from dealradar.parse.schema import LLMDeal
 
     text = "PRIVATE BODY MARKER: Widget was $50 now $45"
@@ -348,7 +348,8 @@ def test_shadow_output_matches_off_and_tracks_false_positive_at_the_site_floor(e
                            sources_override=SOURCES, skip_validation=True,
                            transport=httpx.MockTransport(_handler),
                            claude_client=SimpleNamespace(messages=messages), dry_run_telegram=True)
-    assert summary["prefilter"] == dict(would_skip=1, would_skip_publishable=1)
+    assert summary["prefilter"] == dict(would_skip=0, would_skip_publishable=0,
+                                        unevaluated=0, by_source={})
     assert summary["extract_by_source"]["blogone"]["publishable"] == 1
     db = DB(env["db"])
     assert "PRIVATE BODY MARKER" not in "\n".join(db.conn.iterdump())
@@ -400,7 +401,8 @@ def test_pipeline_reuse_records_two_credits_and_rerun_adds_no_rows(env, monkeypa
 def test_summary_reports_evidence_and_post_critic_publishable_yield(env):
     summary = _run(env)
     assert summary["second_opinion"] == dict(calls=0, deals_extracted=0, deals_passed_evidence=0)
-    assert summary["prefilter"] == dict(would_skip=0, would_skip_publishable=0)
+    assert summary["prefilter"] == dict(would_skip=0, would_skip_publishable=0,
+                                        unevaluated=0, by_source={})
     assert set(summary["llm_cache_tokens"]) == {"read", "write", "uncached"}
     assert summary["parse"]["reused_posts"] == summary["parse"]["reused_deals"] == 0
     assert {s: (c["deals"], c["publishable"]) for s, c in summary["extract_by_source"].items()} == {
@@ -416,8 +418,18 @@ def test_merged_better_price_does_not_inflate_shadow_or_source_yield(env, monkey
                    regular_price=50., final_price=price,
                    evidence=dict(regular_price_quote="was $50", final_price_quote=f"now ${price}"))
            for price in (45, 20)]
-    messages = FakeMessagesWithParse(parse_responses=[
-        *(FakeParseResponse(LLMDeals(deals=[r]), FakeUsage(100, 50)) for r in raw),
+    class SightingMessages(FakeMessagesWithParse):
+        def parse(self, **kwargs):
+            if kwargs["output_format"] is LLMDeals:
+                # Concurrent requests can arrive in either order: each fake
+                # answer must quote THIS request's post, just like a real call.
+                self.parse_calls.append(kwargs)
+                text = kwargs["messages"][0]["content"]
+                deal = next(r for r in raw if r.evidence.final_price_quote in text)
+                return FakeParseResponse(LLMDeals(deals=[deal]), FakeUsage(100, 50))
+            return super().parse(**kwargs)
+
+    messages = SightingMessages(parse_responses=[
         FakeParseResponse(CriticVerdicts.model_validate({"verdicts": [
             dict(index=0, plausible=True, confidence=.9, reason="OK")]}), FakeUsage(100, 50))])
     monkeypatch.setattr(pipeline, "_fetch_all", lambda *a, **kw: (posts, {}))
@@ -432,7 +444,9 @@ def test_merged_better_price_does_not_inflate_shadow_or_source_yield(env, monkey
                            transport=httpx.MockTransport(_handler),
                            claude_client=SimpleNamespace(messages=messages), dry_run_telegram=True)
     assert summary["published"] == 1
-    assert summary["prefilter"] == dict(would_skip=1, would_skip_publishable=0)
+    assert summary["prefilter"] == dict(would_skip=1, would_skip_publishable=0,
+        unevaluated=0, by_source={"blogone": dict(would_skip=1, would_skip_publishable=0,
+                                                  unevaluated=0)})
     assert summary["extract_by_source"]["blogone"]["publishable"] == 0
     assert summary["extract_by_source"]["feedtwo"]["publishable"] == 1
 
@@ -455,4 +469,5 @@ def test_disabled_parser_still_reports_new_summary_keys():
     _, stats = pipeline._parse_new_posts([], None, load_config(), NOW, {}, None)
     assert stats["reused_posts"] == stats["reused_deals"] == 0
     assert stats["second_opinion"] == dict(calls=0, deals_extracted=0, deals_passed_evidence=0)
-    assert stats["prefilter"] == dict(would_skip=0, would_skip_publishable=0)
+    assert stats["prefilter"] == dict(would_skip=0, would_skip_publishable=0,
+                                      unevaluated=0, by_source={})

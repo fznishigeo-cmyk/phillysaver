@@ -51,6 +51,16 @@ def _critic_shadow(db_path, now: datetime) -> dict:
         db.close()
 
 
+def _ai_yield(db_path, cfg, now: datetime) -> dict:
+    from ..ai_yield import report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _newsletter_senders(db_path) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -86,6 +96,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
 
     sections = {
         # Only an explicit snapshot (the CLI passes --db): never a stray local file.
+        "ai_yield": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                     lambda: _ai_yield(db_path, cfg, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -263,6 +275,38 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                      f"7-day {week['same_verdict']}/{week['deals_judged']}")
     else:
         lines.append("critic shadow (Haiku vs Sonnet): not available")
+
+    yield_data = data.get("ai_yield")
+    if yield_data and "unavailable" not in yield_data:
+        lines.append("AI yield (UTC, yesterday / last 7 days):")
+        lines.append(f"  Observation began {yield_data['observed_since']}; earlier history unavailable")
+        for key, label in (("yesterday", "yesterday"), ("week", "7-day")):
+            values = yield_data[key]
+            if "unavailable" in values:
+                lines.append(f"  {label}: n/a ({values['unavailable']})")
+                continue
+            ratio = values["new_deals_per_usd"]
+            ratio_text = f"{ratio:.2f}" if ratio is not None else "n/a"
+            lines.append(f"  {label}: new public deals {_n(values['unique_new_public_deals'])}, "
+                         f"useful price updates {_n(values['useful_price_updates'])}, "
+                         f"new deals/USD {ratio_text}")
+            pf = values["prefilter"]
+            lines.append(f"  Prefilter: {pf['fully_evaluated']}/{pf['candidates']} evaluated, "
+                         f"{pf['publishable_misses']} publishable misses, "
+                         f"{values['prefilter_unevaluated']} unevaluated; "
+                         f"all AI work {_usd(values['spend_usd'])}")
+            coverage = values["coverage"]
+            lines.append(f"  Coverage: {coverage['from']} to {coverage['through']}"
+                         + (" (partial; earlier history unavailable)" if coverage["partial"] else ""))
+            for source, counts in pf["by_source"].items():
+                lines.append(f"    {source}: {counts['candidates']} candidates, "
+                             f"{counts['publishable_misses']} misses, {counts['unevaluated']} unevaluated")
+        ready = yield_data["readiness"]
+        lines.append("Prefilter activation: " + ("ready for manual review" if ready["ready_for_review"]
+                     else "keep shadow — " + "; ".join(ready["reasons"])))
+    else:
+        reason = yield_data["unavailable"] if yield_data else "state snapshot unavailable"
+        lines.append(f"AI yield: n/a ({reason})")
 
     lines += ["", "== Product (GA4 event sample, yesterday / window) =="]
     product = data.get("product")

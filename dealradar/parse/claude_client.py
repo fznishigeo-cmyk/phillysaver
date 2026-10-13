@@ -35,6 +35,12 @@ from .schema import (CATEGORIES, CATEGORY_RULES, CRITIC_SYSTEM_PROMPT, SYSTEM_PR
 
 log = logging.getLogger("dealradar.parse.claude_client")
 
+
+class IncompleteExtraction(list):
+    """Keep existing parse output, but distinguish failure from a valid empty read."""
+
+    complete = False
+
 # LAST RESORT ONLY: used when GET /v1/models itself fails. Never the primary path.
 FALLBACK_MODEL = "claude-haiku-5-5"
 
@@ -438,21 +444,21 @@ class ClaudeParser:
                 source_name=meta.get("source_name", ""))
 
         if resp is None:
-            return []
+            return IncompleteExtraction()
         stop = getattr(resp, "stop_reason", None)
         if stop == "refusal":
             log.warning("model refused extraction for %s; zero deals",
                         meta.get("source_url", ""))
-            return []
+            return IncompleteExtraction()
         if stop == "max_tokens":
             log.warning("extraction truncated at max_tokens for %s; "
                         "skipping post (a re-ask would truncate again)",
                         meta.get("source_url", ""))
-            return []
+            return IncompleteExtraction()
         parsed = getattr(resp, "parsed_output", None)
         if parsed is None:
             log.warning("messages.parse returned no parsed_output; zero deals")
-            return []
+            return IncompleteExtraction()
         return list(parsed.deals)
 
     def _extract_via_create(self, user_prompt: str,
@@ -472,20 +478,20 @@ class ClaudeParser:
             create = self.client.messages.create
         except AttributeError:
             log.warning("messages.create unavailable; skipping post")
-            return []
+            return IncompleteExtraction()
         for attempt in range(attempts):
             try:
                 resp = self._request(lambda: create(**kwargs), kwargs=kwargs,
                                      kind=kind, source_name=source_name)
             except anthropic.BadRequestError as e:
                 log.warning("messages.create rejected, skipping post: %s", e)
-                return []
+                return IncompleteExtraction()
             if resp is None:
-                return []
+                return IncompleteExtraction()
             stop = getattr(resp, "stop_reason", None)
             if stop == "refusal":
                 log.warning("model refused extraction (fallback path); zero deals")
-                return []
+                return IncompleteExtraction()
             raw = "".join(
                 getattr(block, "text", "")
                 for block in getattr(resp, "content", []) or []
@@ -498,17 +504,17 @@ class ClaudeParser:
                 if salvaged is None:
                     log.warning("fallback output truncated at max_tokens with "
                                 "no complete deal; skipping post")
-                    return []
+                    return IncompleteExtraction()
                 try:
                     deals = list(LLMDeals.model_validate(
                         json.loads(salvaged)).deals)
                 except (ValueError, ValidationError) as e:
                     log.warning("fallback output truncated at max_tokens; "
                                 "salvage failed (%s); skipping post", e)
-                    return []
+                    return IncompleteExtraction()
                 log.warning("fallback output truncated at max_tokens; kept %d "
                             "complete deal(s) from the cut answer", len(deals))
-                return deals
+                return IncompleteExtraction(deals)
             try:
                 data = json.loads(_strip_fences(raw))
                 return list(LLMDeals.model_validate(data).deals)
@@ -516,7 +522,7 @@ class ClaudeParser:
                 log.warning("invalid JSON/schema on fallback attempt %d/%d: %s",
                             attempt + 1, attempts, e)
         log.warning("fallback JSON invalid after %d attempts; skipping post", attempts)
-        return []
+        return IncompleteExtraction()
 
 
 def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = False,

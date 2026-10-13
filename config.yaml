@@ -43,8 +43,15 @@ parse:
   concurrency: 6
   # Observe simple, plainly below-floor price pairs before enabling any skips.
   prefilter_below_floor: shadow       # off | shadow | on
+  # Evidence for a later manual activation. Gaps longer than 90 minutes
+  # make a UTC day incomplete; a matching offline supply replay is required.
+  prefilter_readiness:
+    complete_days: 7
+    min_candidates: 200
+    min_source_sites: 3
+    max_gap_minutes: 90
   # Second opinion: when the cheap model finds no deals in a post that smells
-  # like one AND its stated numbers can clear min_pct, re-read it once.
+  # like one AND its stated numbers can clear the lower site floor, re-read it once.
   second_opinion_model: "claude-sonnet-5-5"
   max_second_opinions_per_run: 8
   # Deal critic: before a deal publishes, a stronger model judges whether its

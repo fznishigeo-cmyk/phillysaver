@@ -268,6 +268,9 @@ _REGULAR_LABEL = re.compile(
 _FINAL_LABEL = re.compile(r"\b(?:now|sale|only|just|for)\s*(?:price\s*)?[:=]?\s*$", re.I)
 _EXTRA_SAVINGS = re.compile(
     r"\b(?:coupons?|codes?|promo|clip\w*|extra|stack\w*|rebates?|subscri\w*|s\s*&\s*s)\b", re.I)
+_AMBIGUOUS_OFFER = re.compile(
+    r"\b(?:range|roundup|bogo|bundles?|gift\s+cards?|up\s+to|as\s+low\s+as|"
+    r"starting\s+(?:at|from)|buy\s+\d+|more\s+deals)\b", re.I)
 _SENTENCE_BREAK = re.compile(r"\n|(?<!\breg)[.!?](?:\s+|$)", re.I)
 
 
@@ -305,10 +308,14 @@ def _can_clear_floor(text: str, floor: float) -> bool:
 
 def _below_floor_post(text: str, floor: float) -> bool:
     """Only an unambiguous, single now/regular pair without extra savings."""
-    if _EXTRA_SAVINGS.search(text):
+    if (_EXTRA_SAVINGS.search(text) or _AMBIGUOUS_OFFER.search(text)
+            or _POST_PCT.search(text) or _FREE_OFFER.search(text)):
         return False
     prices = list(_POST_MONEY.finditer(text))
     if len(prices) != 2:
+        return False
+    if any((m.start() and text[m.start() - 1] in "-−")
+           or text[m.end():m.end() + 1] in {".", ","} for m in prices):
         return False
     regular = [m for m in prices if _REGULAR_LABEL.search(text[:m.start()])]
     if len(regular) != 1:
@@ -328,6 +335,44 @@ def _below_floor_post(text: str, floor: float) -> bool:
         return False
     pct = _price_pair_pct(now_price, reg_price)
     return pct is not None and pct < floor - 10
+
+
+def prefilter_post_counts(posts: list[RawPost], cfg: AppConfig) -> dict:
+    """Observe every candidate before caps/deadlines, without saving post text."""
+    if cfg.prefilter_below_floor == "off":
+        return {}
+    floor = min(cfg.min_pct, cfg.site_show_from_pct)
+    counts = {}
+    for post in posts:
+        if post.structured is not None:
+            continue
+        cleaned = clean_for_llm(post, cfg.max_chars_per_post)
+        if _below_floor_post(cleaned, floor):
+            counts[post.content_hash] = {
+                "extracted": 0, "evidence": 0, "prefilter_would_skip": True,
+                "text_fingerprint": hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
+                "evaluation_complete": False, "evaluation_gap": "not_parsed"}
+    return counts
+
+
+def prefilter_counts(posts: list[RawPost], post_counts: dict) -> dict:
+    """Count candidate POSTS, including incomplete post-critic evaluations."""
+    by_source = {}
+    seen = set()
+    for post in posts:
+        if post.content_hash in seen:
+            continue
+        seen.add(post.content_hash)
+        counts = post_counts.get(post.content_hash, {})
+        if not counts.get("prefilter_would_skip"):
+            continue
+        source = by_source.setdefault(post.source_name or "unknown", {
+            "would_skip": 0, "would_skip_publishable": 0, "unevaluated": 0})
+        source["would_skip"] += 1
+        source["would_skip_publishable"] += int(bool(counts.get("prefilter_miss")))
+        source["unevaluated"] += int(not counts.get("evaluation_complete", False))
+    return {**{key: sum(s[key] for s in by_source.values()) for key in (
+        "would_skip", "would_skip_publishable", "unevaluated")}, "by_source": by_source}
 
 
 def _post_for_deals(post: RawPost, n_deals: int) -> RawPost:
@@ -373,13 +418,14 @@ def parse_posts(
         "second_opinion": {"calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0},
         "reused_posts": 0,
         "reused_deals": 0,
-        "prefilter": {"would_skip": 0, "would_skip_publishable": 0},
+        "prefilter": {},
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
         "processed_hashes": [],
-        "post_counts": {},
+        "post_counts": prefilter_post_counts(posts, cfg),
         "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
     }
+    observed_posts = posts
     if len(posts) > cfg.max_posts_per_run:
         dropped = len(posts) - cfg.max_posts_per_run
         log.warning(
@@ -395,7 +441,7 @@ def parse_posts(
     workers = max(1, int(getattr(cfg, "parse_concurrency", 1)))
     lock = threading.Lock()
 
-    def _extract(post: RawPost, cleaned: str) -> tuple[list, bool]:
+    def _extract(post: RawPost, cleaned: str) -> tuple[list, bool, bool]:
         """Worker: one post's LLM read(s); runs on a pool thread."""
         meta = {
             "source_name": post.source_name,
@@ -405,7 +451,7 @@ def parse_posts(
         llm_deals = parser.extract(cleaned, meta, kind="extract")
         second_opinion = False
         if (not llm_deals and so_model and _smells_like_deal(cleaned)
-                and _can_clear_floor(cleaned, cfg.min_pct)):
+                and _can_clear_floor(cleaned, min(cfg.min_pct, cfg.site_show_from_pct))):
             with lock:
                 take = stats["second_opinions"] < so_cap
                 if take:
@@ -416,10 +462,11 @@ def parse_posts(
                 second_opinion = True
                 with lock:
                     stats["second_opinion"]["calls"] += 1
-        return llm_deals, second_opinion
+        return llm_deals, second_opinion, getattr(llm_deals, "complete", True)
 
     def _record(post: RawPost, cleaned: str, llm_deals: list, *, fingerprint: str,
-                reused: bool, second_opinion: bool, skipped: bool, would_skip: bool) -> None:
+                reused: bool, second_opinion: bool, skipped: bool, would_skip: bool,
+                complete: bool) -> None:
         """Main thread: evidence-verify and collect one parsed post."""
         structured = post.structured is not None
         if structured:
@@ -441,7 +488,13 @@ def parse_posts(
         deals = [to_extracted(d, post, tz_name, now) for d in llm_deals]
         counts = {"extracted": len(deals), "evidence": 0}
         if would_skip:
+            counts["text_fingerprint"] = stats["post_counts"][post.content_hash]["text_fingerprint"]
             counts["prefilter_would_skip"] = True
+            counts["evaluation_complete"] = complete
+            if not complete:
+                prior_gap = stats["post_counts"][post.content_hash].get("evaluation_gap")
+                counts["evaluation_gap"] = ("skipped" if skipped else
+                                            "legacy_cache" if prior_gap == "legacy_cache" else "extraction")
         stats["post_counts"][post.content_hash] = counts
         # Every deal the LLM read, before evidence drops any: a dropped item
         # still names a photo and still shares a link (dedupe, pipeline).
@@ -451,6 +504,9 @@ def parse_posts(
             ok, reason = verify_evidence(deal, cleaned)
             if not ok:
                 counts["evidence"] += 1
+                if would_skip:
+                    counts["evaluation_complete"] = False
+                    counts["evaluation_gap"] = "evidence"
                 stats["deals_dropped_evidence"] += 1
                 if structured:
                     stats["structured_parse"]["dropped_evidence"] += 1
@@ -468,7 +524,7 @@ def parse_posts(
                 stats["second_opinion"]["deals_passed_evidence"] += 1
             if structured:
                 stats["structured_parse"]["deals"] += 1
-        if (db is not None and not structured and not reused and not skipped
+        if (db is not None and complete and not structured and not reused and not skipped
                 and not counts["evidence"]):
             # Rejected output stays transient; only a complete evidence-backed
             # parse (including a genuine empty answer) is saved as facts.
@@ -482,7 +538,7 @@ def parse_posts(
     idx = 0
     # Share each read's future, even within a concurrent batch. SQLite stays
     # on the main thread; every source still verifies and records its own post.
-    reads: dict[str, Future | tuple[list, bool]] = {}
+    reads: dict[str, Future | tuple[list, bool, bool]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         while idx < len(posts) and not stats["aborted_spend_cap"]:
             if deadline is not None and time.monotonic() >= deadline:
@@ -499,16 +555,12 @@ def parse_posts(
                 cleaned = (post.text if post.structured is not None
                            else clean_for_llm(post, cfg.max_chars_per_post))
                 # Structured (API) posts cost nothing to read: never skip them.
-                would_skip = (post.structured is None
-                              and cfg.prefilter_below_floor != "off"
-                              and _below_floor_post(cleaned, cfg.min_pct))
-                if would_skip:
-                    stats["prefilter"]["would_skip"] += 1
+                would_skip = bool(stats["post_counts"].get(post.content_hash, {}).get("prefilter_would_skip"))
                 skipped = would_skip and cfg.prefilter_below_floor == "on"
                 if skipped:
-                    read = ([], False)
+                    read = ([], False, False)
                 elif post.structured is not None:
-                    read = ([LLMDeal.model_validate(post.structured)], False)
+                    read = ([LLMDeal.model_validate(post.structured)], False, True)
                 else:
                     fingerprint = hashlib.sha256(cleaned.encode("utf-8")).hexdigest()
                     if fingerprint in reads:
@@ -517,21 +569,38 @@ def parse_posts(
                         cached = (db.cached_post_parse(fingerprint, now, cfg.post_parses_days)
                                   if db is not None else None)
                         if cached is not None:
-                            read, reused = ([LLMDeal.model_validate(d) for d in cached], False), True
+                            complete = True
+                            since = db.meta_get("ai_yield_since")
+                            if would_skip and since:
+                                parsed_at = db.conn.execute(
+                                    "SELECT parsed_at FROM post_parses WHERE text_fingerprint=?",
+                                    (fingerprint,)).fetchone()[0]
+                                complete = parsed_at >= since
+                                if not complete:
+                                    stats["post_counts"][post.content_hash]["evaluation_gap"] = "legacy_cache"
+                            read, reused = ([LLMDeal.model_validate(d) for d in cached], False, complete), True
                         else:
                             read = pool.submit(_extract, post, cleaned)
                         reads[fingerprint] = read
                 jobs.append((post, cleaned, fingerprint, read, reused, skipped, would_skip))
             for post, cleaned, fingerprint, read, reused, skipped, would_skip in jobs:
                 try:
-                    llm_deals, second_opinion = read.result() if isinstance(read, Future) else read
+                    llm_deals, second_opinion, complete = read.result() if isinstance(read, Future) else read
                     _record(post, cleaned, llm_deals, fingerprint=fingerprint,
                             reused=reused, second_opinion=second_opinion and not reused,
-                            skipped=skipped, would_skip=would_skip)
+                            skipped=skipped, would_skip=would_skip, complete=complete)
                 except SpendCapReached as e:
                     if not stats["aborted_spend_cap"]:
                         log.warning("spend cap reached, aborting parse: %s", e)
                     stats["aborted_spend_cap"] = True
+
+    processed = set(stats["processed_hashes"])
+    capped = {p.content_hash for p in observed_posts[len(posts):]}
+    for h, counts in stats["post_counts"].items():
+        if h not in processed:
+            counts["evaluation_gap"] = ("max_posts" if h in capped else
+                                        "spend_cap" if stats["aborted_spend_cap"] else "deadline")
+    stats["prefilter"] = prefilter_counts(observed_posts, stats["post_counts"])
 
     # Category reuse is independent of status and condition; only verified
     # structured deals need a title read. At most 60 titles, plus one retry

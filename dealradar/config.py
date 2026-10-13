@@ -118,6 +118,10 @@ class AppConfig:
     # round-trip time, not tokens; a small pool multiplies posts-per-run.
     parse_concurrency: int = 1
     prefilter_below_floor: str = "off"  # off | shadow | on
+    prefilter_complete_days: int = 7
+    prefilter_min_candidates: int = 200
+    prefilter_min_source_sites: int = 3
+    prefilter_max_gap_minutes: int = 90
     model_pricing_per_mtok: dict[str, dict[str, float]] = field(default_factory=dict)
     second_opinion_model: str = ""      # "" disables the second-opinion pass
     max_second_opinions_per_run: int = 8
@@ -334,6 +338,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.prefilter_below_floor = str(prefilter)
     if cfg.prefilter_below_floor not in {"off", "shadow", "on"}:
         raise ValueError("parse.prefilter_below_floor must be off, shadow, or on")
+    for name in ("complete_days", "min_candidates", "min_source_sites", "max_gap_minutes"):
+        field = "prefilter_" + name
+        value = int(g("parse", "prefilter_readiness", name, default=getattr(cfg, field)))
+        if value <= 0:
+            raise ValueError("parse.prefilter_readiness values must be positive")
+        setattr(cfg, field, value)
     cfg.second_opinion_model = g("parse", "second_opinion_model", default="") or ""
     cfg.max_second_opinions_per_run = int(g("parse", "max_second_opinions_per_run", default=cfg.max_second_opinions_per_run))
     cfg.critic_model = g("parse", "critic_model", default="") or ""

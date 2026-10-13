@@ -255,14 +255,19 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
                      now: datetime, tz_by_source: dict[str, str],
                      deadline: float | None, db: DB | None = None
                      ) -> tuple[list[tuple[RawPost, Any]], dict]:
-    from .parse.extractor import parse_posts
+    from .parse.extractor import parse_posts, prefilter_counts, prefilter_post_counts
+
+    post_counts = prefilter_post_counts(new_posts, cfg)
 
     stats = {"posts_sent": 0, "deals_extracted": 0, "deals_dropped_evidence": 0,
              "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled",
              "processed_hashes": [], "reused_posts": 0, "reused_deals": 0,
              "second_opinion": {"calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0},
-             "prefilter": {"would_skip": 0, "would_skip_publishable": 0}}
+             "post_counts": post_counts,
+             "prefilter": prefilter_counts(new_posts, post_counts)}
     if not new_posts or parser is None:
+        for counts in post_counts.values():
+            counts["evaluation_gap"] = "parser_unavailable"
         return [], stats
     stats["parser"] = parser.model
     try:
@@ -1552,6 +1557,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.site import health_markdown, render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
+    from . import ai_yield
+    from .parse.extractor import prefilter_counts, prefilter_post_counts
     from .verify import (mark_ended_post, mark_expired_dead, mark_unconfirmed_dead,
                          post_marks_dead, refresh_tiers)
 
@@ -1567,6 +1574,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     fetcher = PoliteFetcher(db, cfg, transport=transport)
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
     parser = None
+    yield_spend_before = db.spend_usd_for_run(run_key)
+    yield_counts = {"unique_new_public_deals": 0, "useful_price_updates": 0}
+    audit_complete = run_complete = yield_recorded = False
+    new_posts, sources = [], []
+    pstats = {"post_counts": {}}
     summary["deaths_by_reason"] = {}
     recorded_deaths = {(d["dedupe_key"], d.get("died_at"), d.get("death"))
                        for d in db.all_deals(status="dead")}
@@ -1582,6 +1594,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 counts[reason] = counts.get(reason, 0) + 1
 
     try:
+        ai_yield.start(db, cfg, now, run_key)
         # ---- sources ----
         if sources_override is not None:
             sources = sources_override  # caller's exact order, never rotated
@@ -1623,6 +1636,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         for post in new_posts:
             mark_ended_post(db, post, now)
         record_deaths()
+
+        candidate_counts = prefilter_post_counts(new_posts, cfg)
+        pstats["post_counts"] = candidate_counts
+        ai_yield.observe_prefilter(db, cfg, new_posts, candidate_counts, now,
+                                  [*sources, *(inbox.sources if inbox is not None else [])])
 
         # ---- parse (Claude; evidence-verified) ----
         # Daily ceiling: this run may spend at most what remains of the cap
@@ -1667,10 +1685,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["parse"] = pstats
         summary["second_opinion"] = pstats.get("second_opinion", {
             "calls": 0, "deals_extracted": 0, "deals_passed_evidence": 0})
-        summary["prefilter"] = pstats.get("prefilter", {
-            "would_skip": 0, "would_skip_publishable": 0})
+        summary["prefilter"] = pstats.get("prefilter", prefilter_counts(new_posts, {}))
         summary["structured_parse"] = pstats.get("structured_parse", {
             "posts": 0, "deals": 0, "dropped_evidence": 0})
+        if remaining_today <= 0:
+            for counts in pstats.get("post_counts", {}).values():
+                counts["evaluation_gap"] = "daily_cap"
         processed = set(pstats.get("processed_hashes") or [])
         recorded = 0
         if pstats.get("parser") == "disabled":
@@ -1787,21 +1807,40 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 deal = db.get_deal(key)
                 if counts is None or deal is None:
                     continue
+                candidate = dict(deal, final_price=sav.final_price,
+                                 regular_price=sav.regular_price,
+                                 pct_at_checkout=sav.pct_at_checkout,
+                                 abs_savings=sav.abs_savings,
+                                 online_only=extracted.online_only,
+                                 currency=extracted.currency, region=extracted.region,
+                                 conditions=extracted.conditions)
+                # A missing critic verdict is a gap only when this sighting
+                # otherwise could publish; clear below-floor items need no
+                # extra paid judgment for the audit.
+                judgment_complete = True
+                if counts.get("prefilter_would_skip") and cfg.critic_enabled and cfg.critic_model:
+                    unjudged = dict(candidate, flags=[f for f in candidate.get("flags", [])
+                                                     if f != "suspect_msrp"])
+                    if rank.is_publishable(unjudged, cfg, min_pct=site_floor, require_critic=False)[0]:
+                        verdict = deal.get("critic")
+                        valid = (isinstance(verdict, dict)
+                                 and type(verdict.get("plausible")) is bool
+                                 and (not verdict["plausible"] or verdict.get("rechecked")
+                                      or float(verdict.get("confidence") or 0) >= .7))
+                        if (not valid or deal.get("final_price") != sav.final_price
+                                or deal.get("regular_price") != sav.regular_price):
+                            judgment_complete = False
+                            counts["evaluation_complete"] = False
+                            counts["evaluation_gap"] = "critic"
                 ok, reason = rank.is_publishable(deal, cfg, min_pct=site_floor)
                 if ok:
                     # A merged row's better price cannot make a below-floor
                     # sighting publishable in the source or shadow counters.
-                    candidate = dict(deal, final_price=sav.final_price,
-                                     pct_at_checkout=sav.pct_at_checkout,
-                                     abs_savings=sav.abs_savings,
-                                     online_only=extracted.online_only,
-                                     currency=extracted.currency, region=extracted.region,
-                                     conditions=extracted.conditions)
                     if rank.is_publishable(candidate, cfg, min_pct=site_floor)[0]:
                         if parser is not None and hasattr(parser, "extract_by_source"):
                             parser.extract_by_source[post.source_name or "unknown"]["publishable"] += 1
-                        if counts.get("prefilter_would_skip"):
-                            summary["prefilter"]["would_skip_publishable"] += 1
+                        if counts.get("prefilter_would_skip") and judgment_complete:
+                            counts["prefilter_miss"] = True
                 else:
                     category = gate_reason(reason)
                     gate = {"below floor": "below_floor", "critic suspect": "critic"}.get(
@@ -1811,8 +1850,17 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 counts = pstats.get("post_counts", {}).get(post.content_hash)
                 if counts is not None:
                     db.audit_parsed(post, counts, now)
+            ai_yield.observe_prefilter(db, cfg, new_posts, pstats.get("post_counts", {}), now,
+                                      [*sources, *(inbox.sources if inbox is not None else [])])
+            audit_complete = True
         except Exception as e:
             log.warning("source audit counters failed: %s", type(e).__name__)
+            for counts in pstats.get("post_counts", {}).values():
+                if counts.get("prefilter_would_skip"):
+                    counts["evaluation_complete"] = False
+                    counts["evaluation_gap"] = "audit_failed"
+        summary["prefilter"] = prefilter_counts(new_posts, pstats.get("post_counts", {}))
+        summary["parse"]["prefilter"] = summary["prefilter"]
 
         from .parse.extractor import recategorize_live_deals, recategorize_other
         recategorize_live_deals(db, parser, deadline - _RESERVE_FOR_TAIL_S / 2)
@@ -1834,6 +1882,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        try:
+            yield_counts = ai_yield.record_public(db, cfg, util.now_utc(), run_key,
+                                                 ai_yield.public_keys(site_res, cfg))
+            yield_recorded = True
+        except Exception as e:
+            log.warning("AI yield measurement failed: %s", type(e).__name__)
         summary["link_mix"] = site_res.get("link_mix", {})
         summary["link_mix"]["trackers_resolved"] = summary["redirects"]["trackers_resolved"]
         log.info("link mix: earning %d; not earning %d; trackers resolved %d",
@@ -1896,6 +1950,14 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             getattr(parser, "extract_by_source", {}).items()
         }
         summary["llm_cache_tokens"] = dict(getattr(parser, "cache_tokens", {}))
+        untracked_spend = max(0.0, spend_total - float(getattr(parser, "ledger_spend_usd", 0.0)))
+        yield_spend = max(spend_total, db.spend_usd_for_run(run_key) - yield_spend_before + untracked_spend)
+        summary["ai_yield"] = ai_yield.metrics(
+            yield_counts, yield_spend, summary["prefilter"]["unevaluated"])
+        if not yield_recorded:
+            summary["ai_yield"]["unavailable"] = "public yield measurement failed"
+            summary["ai_yield"]["new_deals_per_usd"] = None
+        summary["ai_yield"]["prefilter_readiness"] = ai_yield.readiness(db, cfg, util.now_utc())
         if step_summary:
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:
@@ -1931,6 +1993,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 log.warning("newsletter inbox acknowledgement deferred")
                 summary["inbox_acknowledged"] = 0
         summary["elapsed_s"] = round(time.monotonic() - started, 1)
+        run_complete = (audit_complete and yield_recorded and not pstats.get("aborted_spend_cap")
+                        and not summary["prefilter"]["unevaluated"]
+                        and len(processed) == len(new_posts))
         log.info("run %s done in %.1fs: %s", run_key, summary["elapsed_s"],
                  {k: v for k, v in summary.items() if k != "source_errors"})
         return summary
@@ -1945,8 +2010,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                           accounted_spend_usd=float(getattr(parser, "ledger_spend_usd", 0.0)),
                           untracked_at=now)
         finally:
-            fetcher.close()
-            db.close()
+            try:
+                if not audit_complete:
+                    counts = pstats.get("post_counts", {})
+                    for values in counts.values():
+                        if values.get("prefilter_would_skip"):
+                            values["evaluation_complete"] = False
+                            values["evaluation_gap"] = "run_failed"
+                    ai_yield.observe_prefilter(db, cfg, new_posts, counts, now, sources)
+                ai_yield.finish(db, cfg, util.now_utc(), run_key, complete=run_complete)
+            finally:
+                fetcher.close()
+                db.close()
             try:
                 summary["state_db_bytes"] = os.path.getsize(db.path)
                 log.info("state.db bytes: %d", summary["state_db_bytes"])

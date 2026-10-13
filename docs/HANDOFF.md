@@ -190,6 +190,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **AI yield (Codex task 067, 2026-10-13; shipped after review):** intake uses the
+  lower site floor; compact deduped supply/price-change facts, audit gaps and
+  ledger-priced UTC reports. Observation starts with the first instrumented
+  run (`ai_yield_since`; no live sample here). Shadow stays on: activation
+  still needs 7 complete UTC days, 200 distinct evaluated candidates from
+  3 independent sites, zero misses/gaps and a matching source/category replay.
+  Checks: 2,520 passed; 7 existing Stripe deploy checks blocked by sandbox
+  sockets; 1 deselected. No commit or push.
 - **Saved deals (Codex task 066, 2026-10-13; shipped after review):** a heart in each
   photo's corner (cards keep their height); "♥ Saved (n)" leads the controls
   row only once something is saved; the device note shows only in the Saved

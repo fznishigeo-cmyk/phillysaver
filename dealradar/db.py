@@ -214,6 +214,40 @@ CREATE TABLE IF NOT EXISTS run_stats (
     spend_usd REAL NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS ai_yield_events (
+    event_key TEXT PRIMARY KEY,
+    identity TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    category TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_yield_at ON ai_yield_events(observed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_yield_first_identity ON ai_yield_events(identity)
+    WHERE kind IN ('new','baseline');
+CREATE TABLE IF NOT EXISTS ai_yield_runs (
+    run_key TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    policy TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    failed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS ai_prefilter_posts (
+    policy TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    site TEXT NOT NULL,
+    text_fingerprint TEXT NOT NULL DEFAULT '',
+    first_seen_at TEXT NOT NULL,
+    evaluated INTEGER NOT NULL DEFAULT 0,
+    miss INTEGER NOT NULL DEFAULT 0,
+    gap TEXT NOT NULL DEFAULT 'not_parsed',
+    PRIMARY KEY(policy, source_name, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_prefilter_at ON ai_prefilter_posts(first_seen_at);
+
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -230,6 +264,14 @@ class DB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(deals)")}
+        # Lifetime dedupe anchors live on the existing inventory rows; the
+        # dated observations below expire with run_stats, never these anchors.
+        for name, kind in (("ai_public_at", "TEXT"), ("ai_public_price", "REAL")):
+            if name not in columns:
+                self.conn.execute(f"ALTER TABLE deals ADD COLUMN {name} {kind}")
+        if "text_fingerprint" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(ai_prefilter_posts)")}:
+            self.conn.execute("ALTER TABLE ai_prefilter_posts ADD COLUMN text_fingerprint TEXT NOT NULL DEFAULT ''")
         if self.meta_get("llm_ledger_migrated") is None:
             self.conn.execute(
                 "INSERT INTO llm_legacy_spend(run_key, billed_at, usd)"
@@ -733,6 +775,15 @@ class DB:
                 (day,)).fetchone()[0])  # read-only snapshots before the migration
         return self._day_spend(self.conn, day)
 
+    def spend_usd_for_run(self, run_key: str) -> float:
+        """All calls sharing a run key, including unsettled worst-case bounds."""
+        row = self.conn.execute(
+            "SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,reserved_usd)),0)"
+            " FROM llm_calls WHERE run_key=? AND status!='released')"
+            " + (SELECT COALESCE(SUM(usd),0) FROM llm_legacy_spend WHERE run_key=?)",
+            (run_key, run_key)).fetchone()
+        return float(row[0])
+
     @staticmethod
     def _day_spend(conn, day: str) -> float:
         # Uncertain calls retain their full reservation, including the next
@@ -890,6 +941,14 @@ class DB:
         self.conn.execute("DELETE FROM llm_calls WHERE call_key IN (" + old_calls + ")", params)
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
+        yield_cutoff = iso(now - timedelta(days=run_stats_days))
+        for table, stamp in (("ai_yield_events", "observed_at"),
+                             ("ai_yield_runs", "started_at"),
+                             ("ai_prefilter_posts", "first_seen_at")):
+            self.conn.execute(f"DELETE FROM {table} WHERE {stamp} < ?", (yield_cutoff,))
+        previous = self.meta_get("ai_yield_retained_since") or ""
+        if self.meta_get("ai_yield_since") and yield_cutoff > previous:
+            self.meta_set("ai_yield_retained_since", yield_cutoff)
         self.conn.execute("DELETE FROM http_cache WHERE fetched_at < ?",
                           (iso(now - timedelta(days=http_cache_days)),))
         # Only failed attempts expire. A `sent` row is the record that a live
