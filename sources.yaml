@@ -1066,7 +1066,7 @@ backup_sources:
     display_name: "Tanga"
     site: https://www.tanga.com/
     method: rss
-    url: https://www.tanga.com/deals.rss
+    url: https://www.tanga.com/feeds/current_deal.xml   # deals.rss now redirects to the home page (source probe 2026-10-13: this feed, 49 items)
     region: US
     allowed_html: false
     fast_lane: false
