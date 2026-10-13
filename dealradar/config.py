@@ -142,6 +142,7 @@ class AppConfig:
     # Sovrn first-click check): {"walmart.com/222918738": "https://sovrn.co/..."}.
     affiliate_link_overrides: dict = field(default_factory=dict)
     affiliate_competitor_tracker_hosts: list[str] = field(default_factory=list)
+    affiliate_repair_competitor_trackers: bool = False
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_deal_pages_max: int = 3000
@@ -347,6 +348,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         str(host).strip().lower().removeprefix("www.")
         for host in (g("affiliate", "competitor_tracker_hosts", default=[]) or [])
         if re.fullmatch(r"[a-z0-9.-]+", str(host).strip().lower())]
+    cfg.affiliate_repair_competitor_trackers = bool(
+        g("affiliate", "repair_competitor_trackers", default=False))
     cfg.affiliate_sovrn_enabled = bool(g("affiliate", "sovrn_enabled", default=False))
     # The link key lives in the GitHub secret SOVRN_API_KEY (operator's call);
     # config affiliate.sovrn_key is only a local fallback.

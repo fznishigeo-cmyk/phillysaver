@@ -168,9 +168,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   competitor tracker in `affiliate.competitor_tracker_hosts` or untagged link
   does not). Non-earning deals rank lower in top picks
   (`top_picks.no_earn_factor: 0.5`) and social posts (Pinterest, Facebook,
-  Instagram, Telegram) skip them (`social.require_earning_link`). Competitor
-  trackers get one robots-checked redirect repair to the store link (credit
-  stays). `link_mix` reports earning / not_earning / trackers_resolved.
+  Instagram, Telegram) skip them (`social.require_earning_link`). The tracker
+  repair is **off** (`affiliate.repair_competitor_trackers: false`, 2026-10-13):
+  Deals of America, DealMoon and Southern Savers granted crawl permission on
+  condition they keep their affiliate credit, and their tracker IS that
+  credit. Each run puts back any tracker link the repair had replaced
+  (`source_credit_restored`). Used / open-box / refurbished deals are never
+  top picks or social posts (operator: one-unit items sell out to the first
+  buyer). `link_mix` reports earning / not_earning.
 - **Clarity + traffic report (Codex task 048, 2026-10-12):** Clarity
   (`tracking.clarity_project_id`) loads only without GPC/opt-out, like the ad
   pixels; every form, search box and account area carries

@@ -132,8 +132,16 @@ affiliate:
   # links are rewritten); emails never do (Amazon forbids tagged links in
   # email), and the site's disclosure switches to the one below.
   amazon_tag: "wowpriced-20"
+  # Other deal sites' click trackers: they earn for that site, not for us
+  # (ranked lower, never posted to social).
   competitor_tracker_hosts: [cc.dealsofamerica.com, go.dealmoon.com,
                              slickdeals.net, links.southernsavers.com]
+  # NEVER replace a source's own tracker with the store link: Deals of
+  # America, DealMoon and Southern Savers gave crawl permission on the
+  # condition that they keep their affiliate credit (sources.yaml
+  # crawl_permission), and their tracker IS that credit. Operator's
+  # agreements, 2026-10-10; repair switched off 2026-10-13.
+  repair_competitor_trackers: false
   # One store page -> one network short link ("<host>/<product id>"). Sovrn
   # onboarding (2026-10-12): its first-click check needs a click from our site.
   link_overrides:

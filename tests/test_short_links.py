@@ -19,7 +19,9 @@ from tests.test_sovrn_links import KEY
 @pytest.fixture
 def setup(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = AppConfig()
+    # The repair mechanism (off in config.yaml: permitted sources keep their
+    # tracker as affiliate credit) is exercised here with the switch on.
+    cfg = AppConfig(affiliate_repair_competitor_trackers=True)
     calls = []
     targets = {}
 
@@ -245,7 +247,8 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, track
     monkeypatch.setenv("SOVRN_API_KEY", KEY)
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text((Path(__file__).resolve().parents[1] / "config.yaml").read_text().replace(
-        'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
+        'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"').replace(
+        "repair_competitor_trackers: false", "repair_competitor_trackers: true"))
     db_path = tmp_path / "state.db"
     db = DB(db_path)
     PhotoFixture._seed(db, "stable", f"https://{host}/abc")
@@ -409,3 +412,57 @@ def test_competitors_share_cap_with_short_links_and_respect_deadline(setup, monk
     assert len(calls) == 3 and len(set(calls)) == 3
     pipeline._resolve_short_links(db, fetcher, None, cfg)
     assert len(calls) == 3
+
+
+def test_production_config_never_repairs_a_permitted_sources_tracker(tmp_path):
+    """Deals of America, DealMoon and Southern Savers keep their affiliate credit
+    (their crawl-permission condition): their tracker link is never replaced."""
+    from dealradar.config import load_config
+    cfg = load_config()
+    assert cfg.affiliate_repair_competitor_trackers is False
+    assert {"cc.dealsofamerica.com", "go.dealmoon.com", "links.southernsavers.com"} <= set(
+        cfg.affiliate_competitor_tracker_hosts)
+    db = DB(tmp_path / "state.db")
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        return httpx.Response(301, headers={"Location": "https://www.walmart.com/ip/1"})
+
+    fetcher = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handler), sleep_fn=lambda _: None)
+    link = "https://cc.dealsofamerica.com/click/9"
+    PhotoFixture._seed(db, "doa", link, image="https://images.example/a.jpg")
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+    assert calls == [] and db.get_deal("doa")["canonical_url"] == link
+    fetcher.close()
+    db.close()
+
+
+def _replaced(db, key, posted, current, flags=("link_resolve_tried",)):
+    payload = {"dedupe_key": key, "store": "Walmart", "item": key, "flags": list(flags),
+               "conditions": [], "link_as_posted": posted, "canonical_url": current}
+    db.insert_deal(dedupe_key=key, store="Walmart", item=key, normalized_item=key,
+                   canonical_url=current, payload=payload, final_price=9.99,
+                   pct_at_checkout=60.0, abs_savings=15.0, online_only="true",
+                   expires_at="", now=util.now_utc())
+
+
+def test_replaced_source_tracker_links_are_put_back_once(tmp_path):
+    from dealradar.config import load_config
+    cfg = load_config()
+    db = DB(tmp_path / "state.db")
+    tracker = "https://go.dealmoon.com/exec/j?d=123"
+    _replaced(db, "swapped", tracker, "https://www.walmart.com/ip/123")
+    _replaced(db, "never-tried", tracker, "https://www.walmart.com/ip/456", flags=())
+    _replaced(db, "store-link", "https://www.target.com/p/x", "https://www.target.com/p/x-canon")
+    _replaced(db, "still-tracker", tracker, tracker)
+    assert pipeline._restore_source_credit_links(db, cfg) == 1
+    swapped = db.get_deal("swapped")
+    assert swapped["canonical_url"] == tracker
+    assert db.get_deal("never-tried")["canonical_url"] == "https://www.walmart.com/ip/456"
+    assert db.get_deal("store-link")["canonical_url"] == "https://www.target.com/p/x-canon"
+    assert pipeline._restore_source_credit_links(db, cfg) == 0  # idempotent
+    cfg.affiliate_repair_competitor_trackers = True
+    _replaced(db, "while-on", tracker, "https://www.walmart.com/ip/789")
+    assert pipeline._restore_source_credit_links(db, cfg) == 0
+    db.close()

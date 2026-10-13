@@ -684,6 +684,44 @@ def _site_of(url: str) -> str:
     return site if "." in site else ""
 
 
+def _restore_source_credit_links(db: DB, cfg: AppConfig) -> int:
+    """Put back a source's own tracker link that a tracker repair replaced.
+
+    Deals of America, DealMoon and Southern Savers keep their affiliate credit
+    as a condition of their crawl permission; their tracker link is that credit.
+    The 2026-10-13 tracker repair could swap it for the store link. While repair
+    is off, any deal posted with such a tracker whose product link now points
+    elsewhere gets the tracker back. Idempotent: a restored deal matches no more.
+    """
+    from .dedupe import _DEAL_FIELDS
+    from .publish.site import is_competitor_tracker_host
+
+    if cfg.affiliate_repair_competitor_trackers:
+        return 0
+    hosts = cfg.affiliate_competitor_tracker_hosts
+    restored = 0
+    for deal in db.all_deals():
+        posted = str(deal.get("link_as_posted") or "")
+        current = str(deal.get("canonical_url") or "")
+        try:
+            posted_host = (urlsplit(posted).hostname or "").lower()
+            current_host = (urlsplit(current).hostname or "").lower()
+        except ValueError:
+            continue
+        if (not posted or posted == current
+                or not is_competitor_tracker_host(posted_host, hosts)
+                or (current_host and is_competitor_tracker_host(current_host, hosts))
+                or "link_resolve_tried" not in (deal.get("flags") or [])):
+            continue
+        payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
+        payload["canonical_url"] = posted
+        db.update_deal(deal["dedupe_key"], payload=payload, canonical_url=posted)
+        restored += 1
+    if restored:
+        log.info("source credit: restored %d source tracker link(s)", restored)
+    return restored
+
+
 def _resolve_short_links(db: DB, fetcher, deadline: float | None,
                          cfg: AppConfig, *, stats: dict | None = None,
                          deals: list[dict[str, Any]] | None = None) -> int:
@@ -714,7 +752,10 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             continue
         if parts.scheme not in ("http", "https") or not host or is_challenge_url(link):
             continue
-        tracker = is_competitor_tracker_host(host, tracker_hosts)
+        # Off by default: a permitted source keeps its affiliate credit, and its
+        # tracker is that credit (config affiliate.repair_competitor_trackers).
+        tracker = cfg.affiliate_repair_competitor_trackers and \
+            is_competitor_tracker_host(host, tracker_hosts)
         if (deal.get("image_url") or deal.get("link_shared")) and not tracker:
             continue
         if not tracker and host.removeprefix("www.") not in _SHORT_LINK_HOSTS:
@@ -1621,6 +1662,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if fast_lane else 0)
         summary["redirects"] = {"resolved": 0, "tried": 0, "trackers_resolved": 0}
         summary["post_links"] = {"tried": 0, "found": 0}
+        summary["source_credit_restored"] = _restore_source_credit_links(db, cfg)
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
                                  stats=summary["redirects"],
