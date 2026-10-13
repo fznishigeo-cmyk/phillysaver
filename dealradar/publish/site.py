@@ -344,7 +344,7 @@ SUPPORT_NOTE = (
 )
 #: With the monthly link too: the renewal terms sit next to the button.
 SUPPORT_NOTE_MONTHLY = (
-    "Once: any amount. Monthly: $1 times the number you pick, renewing each month "
+    "Once: any amount. Monthly: from $5 ($1 times the number you pick, 5 or more), renewing each month "
     "until you cancel (email hello@wowpriced.com anytime). Both through Stripe. "
     "wowpriced is a for-profit business: support is not tax-deductible and buys "
     "nothing extra; every deal stays free."

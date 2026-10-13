@@ -47,7 +47,7 @@ def tree_hash(out):
     ("membership", "3234fe27319e9040f9b07981da8f054d9dca2f2ad5b7bad69ed4a48b85515d85"),
     ("open", "9aad788c7bbb4af253c464f91d756ae427795775c04e69ae39770fcd0ad8b5d0"),
     ("support", "3c262f66437b67f6ac02415c72dce21cbb2345c1c6660aa00b80b1b4e0b6e245"),
-    ("shipped", "1ab6b2a71cdc2709c7324f36371b934917f4e65d2d2730fbc598c8a089a0118d"),
+    ("shipped", "95b442dde4f83e43b136a30d7d44a91dfe438727e9e5e978b074cd4bde3899c5"),
 ])
 def test_pwa_disabled_matches_every_pre_task069_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured before task 069, including page versions, JSON, headers and sitemap.
