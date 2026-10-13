@@ -26,9 +26,11 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(meta.time, "sleep", lambda seconds: None)
     config = load_config()
     config.site_dir = str(tmp_path / "site")
-    # Production posting is paused (config.yaml, 2026-10-13); these tests
-    # exercise the poster itself.
+    # These tests exercise the poster itself, starting from draft mode
+    # (production went live 2026-10-13; `live(cfg)` switches a test over).
     config.meta["enabled"] = True
+    for network in ("facebook", "instagram"):
+        config.meta[network]["mode"] = "draft"
     return config
 
 
@@ -115,7 +117,8 @@ def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):
     assert cfg.meta["graph_base"] == "https://graph.facebook.com/v26.0"
     assert cfg.meta["page_id"] == "1382622794936174"
     assert cfg.meta["ig_user_id"] == "17841412621006331"
-    assert cfg.meta["facebook"]["mode"] == cfg.meta["instagram"]["mode"] == "draft"
+    production = load_config().meta
+    assert production["facebook"]["mode"] == production["instagram"]["mode"] == "live"
     assert cfg.meta["facebook"]["hours_utc"] == [13, 17, 21, 1]
     assert cfg.meta["instagram"]["hours_utc"] == [14, 19, 23]
     assert "META_SYSTEM_TOKEN" in SECRET_NAMES
