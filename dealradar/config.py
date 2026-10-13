@@ -43,6 +43,7 @@ SECRET_NAMES = [
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
     "NEWSLETTER_SECRET",  # bearer token for the Worker: /list (newsletter) and /api/publish (paywall)
+    "NEWSLETTER_INBOX_TOKEN", "NEWSLETTER_FORWARD_TO",
     "PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "META_SYSTEM_TOKEN",
 ]
 
@@ -231,6 +232,11 @@ class AppConfig:
     newsletter_timezone: str = "America/New_York"
     newsletter_max_per_run: int = 200  # messages per run; the rest ride the next run
     newsletter_top_n: int = 10         # deals per email, picked once a day by the parse model
+
+    # -- incoming partner newsletters (independent of customer email sends) --
+    newsletter_inbox_url: str = ""
+    newsletter_inbox_max_messages: int = 50
+    newsletter_inbox_max_response_bytes: int = 2097152
     # -- tracking: public analytics/ad tag IDs, validated in publish/tracking.py --
     tracking: dict[str, str] = field(default_factory=dict)
     pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
@@ -474,6 +480,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.newsletter_max_per_run = max(1, int(g("newsletter", "max_per_run",
                                               default=cfg.newsletter_max_per_run)))
     cfg.newsletter_top_n = max(1, int(g("newsletter", "top_n", default=cfg.newsletter_top_n)))
+    cfg.newsletter_inbox_url = str(g("partner_newsletters", "inbox_url", default="") or "").strip().rstrip("/")
+    cfg.newsletter_inbox_max_messages = max(1, int(g(
+        "partner_newsletters", "max_messages", default=cfg.newsletter_inbox_max_messages)))
+    cfg.newsletter_inbox_max_response_bytes = max(1024, int(g(
+        "partner_newsletters", "max_response_bytes", default=cfg.newsletter_inbox_max_response_bytes)))
     tracking = g("tracking", default={})
     cfg.tracking = {str(k): str(v).strip() for k, v in tracking.items()
                     if v not in (None, "")} if isinstance(tracking, dict) else {}
@@ -540,6 +551,8 @@ def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
         notes=str(d.get("notes", "")),
         crawl_permission=str(d.get("crawl_permission", "")),
         image_permission=bool(d.get("image_permission", False)),
+        newsletter_from=[str(address).strip().lower() for address in
+                         (d.get("newsletter_from") or [])],
     )
 
 

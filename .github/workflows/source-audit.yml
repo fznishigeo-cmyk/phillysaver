@@ -51,4 +51,5 @@ jobs:
           KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
           SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}
           THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
+          NEWSLETTER_INBOX_TOKEN: ${{ secrets.NEWSLETTER_INBOX_TOKEN }}
         run: python -m dealradar source-audit

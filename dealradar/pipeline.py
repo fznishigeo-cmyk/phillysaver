@@ -101,7 +101,7 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
                     s, crawl_permission=cur.crawl_permission,
                     image_permission=cur.image_permission,
                     allowed_html=cur.allowed_html, fast_lane=cur.fast_lane,
-                    site=cur.site))
+                    site=cur.site, newsletter_from=cur.newsletter_from))
         # Sources added to sources.yaml since the last validation join the run
         # set immediately (a dead guess just fails politely and is culled at
         # the next daily revalidation) — "add a source" works on the next run.
@@ -191,6 +191,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
     fetch_deadline = deadline - _RESERVE_FOR_PARSE_S
     posts: list[RawPost] = []
     errors: dict[str, str] = {}
+    newsletter_inbox = None
     for source in sources:
         if not source.enabled:
             continue
@@ -201,7 +202,18 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                         "(rotation puts them first on a later run)", source.name)
             break
         try:
-            adapter = get_adapter(source, cfg, fast_lane=fast_lane)
+            if source.method == "email" and newsletter_inbox is not None:
+                adapter = newsletter_inbox
+            else:
+                adapter = get_adapter(source, cfg, fast_lane=fast_lane)
+                if source.method == "email":
+                    newsletter_inbox = adapter
+                    adapter.sources = sources
+                    # Our private API shares the injected transport, but never
+                    # the fetcher's body cache or partner crawl/enrichment.
+                    adapter._http = fetcher._client
+                    adapter._sleep, adapter._clock = fetcher._sleep, fetcher._clock
+                    fetcher.newsletter_inbox = adapter
         except ValueError as e:
             errors[source.name] = f"no adapter: {e}"
             continue
@@ -327,7 +339,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     from .product_images import _names_no_product, link_identity, pick_photo, single_product
 
     from .source_policy import image_granted
-    granted = {s.name: s for s in sources if image_granted(s, cfg)}
+    granted = {s.name: s for s in sources if image_granted(s, cfg) and s.method != "email"}
     if not granted:
         return 0
     done = 0
@@ -371,6 +383,8 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
     pages: dict[str, str] = {}                 # article -> html ('' = no page)
     photos: dict[str, Any] = {}                # article -> its PostPhotos
     for deal in deals:
+        if "newsletter" in (deal.get("flags") or []):
+            continue
         if deal.get("image_url") or \
                 "image_backfill_tried" in (deal.get("flags") or []):
             continue
@@ -741,6 +755,8 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
     for deal in sorted(db.all_deals() if deals is None else deals,
                        key=lambda d: str(d.get("first_seen_at") or ""), reverse=True):
+        if "newsletter" in (deal.get("flags") or []):
+            continue
         if "link_resolve_tried" in (deal.get("flags") or []):
             continue
         if deal.get("status") == "dead":
@@ -837,6 +853,8 @@ def _links_from_posts(db: DB, fetcher, deadline: float | None,
     tried = found = fetched = 0
     for deal in sorted(deals, key=lambda d: str(d.get("first_seen_at") or ""),
                        reverse=True):
+        if "newsletter" in (deal.get("flags") or []):
+            continue
         if deal.get("status") != "alive" or deal.get("image_url") or \
                 "post_link_tried" in (deal.get("flags") or []):
             continue
@@ -971,6 +989,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     now = util.now_utc()
     candidates = []
     for deal in db.all_deals():
+        if "newsletter" in (deal.get("flags") or []):
+            continue
         if deal.get("image_url") or \
                 "product_image_tried" in (deal.get("flags") or []):
             continue
@@ -1047,6 +1067,8 @@ def _check_stored_images(db: DB, fetcher, deadline: float | None,
 
     by_url: dict[str, list[dict[str, Any]]] = {}
     for deal in db.all_deals():
+        if "newsletter" in (deal.get("flags") or []):
+            continue
         image = deal.get("image_url") or ""
         if image:
             by_url.setdefault(image, []).append(deal)
@@ -1487,7 +1509,7 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     for _post, extracted in pairs:
         if not extracted.link_as_posted:
             extracted.link_as_posted = extracted.product_url
-        if not extracted.product_url or keeps_source_tracker(extracted.product_url, cfg):
+        if getattr(_post, "via_email", False) or not extracted.product_url or keeps_source_tracker(extracted.product_url, cfg):
             continue  # a permitted source's tracker stays exactly as posted
         if time.monotonic() > min(deadline - 30, stop_at):
             extracted.product_url = canonicalize_url(extracted.product_url)
@@ -1629,7 +1651,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             pass
         else:
             for post in new_posts:
-                if post.content_hash in processed and db.record_post(post, now):
+                if not post.via_email and post.content_hash in processed and db.record_post(post, now):
                     recorded += 1
         summary["posts_new"] = recorded
 
@@ -1643,11 +1665,20 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         for post, extracted in pairs:
             counts = pstats.get("post_counts", {}).get(post.content_hash)
             sav = compute_savings(extracted)
+            if post.via_email:
+                sav.flags.append("newsletter")
             if sav.exclude_reason in ("in_store", "non_us"):
                 if counts is not None:
                     counts["other"] = counts.get("other", 0) + 1
                 continue  # excluded entirely (kept out of the DB by design)
             res = upsert_extracted(db, extracted, sav, post, cfg, now)
+            if post.via_email:
+                from .dedupe import _DEAL_FIELDS
+                stored = db.get_deal(res["dedupe_key"])
+                if "newsletter" not in (stored.get("flags") or []):
+                    payload = {k: stored.get(k) for k in _DEAL_FIELDS if k in stored}
+                    payload["flags"] = list(stored.get("flags") or []) + ["newsletter"]
+                    db.update_deal(res["dedupe_key"], payload=payload)
             audit_outcomes.append((post, res["dedupe_key"]))
             if counts is not None and not res["is_new_deal"]:
                 counts["duplicate"] = counts.get("duplicate", 0) + 1
@@ -1833,12 +1864,28 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                                                     kind=kind)
 
         # ---- retention + bookkeeping ----
+        # Inbox posts become known only after their facts and the rest of the
+        # run were handled. Failed/capped reads stay pending, including every
+        # unprocessed part of a multi-deal email.
+        for post in new_posts:
+            if post.via_email and post.content_hash in processed and db.record_post(post, now):
+                recorded += 1
+        summary["posts_new"] = recorded
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days)
         db.finish_run(run_key, now=util.now_utc(),
                       items_fetched=len(posts), posts_new=recorded,
                       deals_parsed=pstats.get("deals_extracted", 0),
                       published=summary["published"],
                       spend_usd=spend_total)
+        inbox = getattr(fetcher, "newsletter_inbox", None)
+        if inbox is not None:
+            try:
+                summary["inbox_acknowledged"] = inbox.acknowledge(db, cfg, deadline)
+            except Exception:
+                # Never log an HTTP exception or email body. A failed ack is
+                # retried on the next pull; content hashes prevent re-parsing.
+                log.warning("newsletter inbox acknowledgement deferred")
+                summary["inbox_acknowledged"] = 0
         summary["elapsed_s"] = round(time.monotonic() - started, 1)
         log.info("run %s done in %.1fs: %s", run_key, summary["elapsed_s"],
                  {k: v for k, v in summary.items() if k != "source_errors"})

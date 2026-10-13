@@ -367,7 +367,8 @@ def test_audit_workflow_shape():
     expected = {"REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT",
                 "TELEGRAM_API_ID", "TELEGRAM_API_HASH", "TELEGRAM_SESSION",
                 "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "WOOT_API_KEY",
-                "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN", "SOVRN_API_KEY"}
+                "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN", "SOVRN_API_KEY",
+                "NEWSLETTER_INBOX_TOKEN"}
     assert set(run["env"]) == expected
     fast = yaml.safe_load((root / ".github/workflows/fast.yml").read_text())
     fast_env = next(s["env"] for s in fast["jobs"]["run"]["steps"] if s.get("run") == "python -m dealradar run --fast-lane")

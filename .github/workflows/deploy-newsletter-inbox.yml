@@ -1,0 +1,101 @@
+name: deploy newsletter inbox
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cloudflare/newsletter-inbox
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Check required secrets
+        env:
+          NEWSLETTER_INBOX_TOKEN: ${{ secrets.NEWSLETTER_INBOX_TOKEN }}
+          NEWSLETTER_FORWARD_TO: ${{ secrets.NEWSLETTER_FORWARD_TO }}
+        run: |
+          set -euo pipefail
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] &&
+            [ -n "$NEWSLETTER_INBOX_TOKEN" ] && [ -n "$NEWSLETTER_FORWARD_TO" ] || {
+              echo "::error::Set CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, NEWSLETTER_INBOX_TOKEN and NEWSLETTER_FORWARD_TO repository secrets first"
+              exit 1
+            }
+
+      - name: Install MIME parser and test
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm test
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4
+
+      - name: Find or create the inbox KV namespace
+        id: kv
+        run: |
+          set -euo pipefail
+          find_id() {
+            wrangler kv namespace list | node -e '
+              let s = "";
+              process.stdin.on("data", d => s += d).on("end", () => {
+                const namespaces = JSON.parse(s.slice(s.indexOf("["), s.lastIndexOf("]") + 1));
+                const wanted = ["wowpriced_newsletter_inbox", "wowpriced-newsletter-inbox-wowpriced_newsletter_inbox"];
+                const found = namespaces.find(n => wanted.includes(n.title));
+                process.stdout.write(found ? found.id : "");
+              });'
+          }
+          id="$(find_id)"
+          if [ -z "$id" ]; then
+            wrangler kv namespace create wowpriced_newsletter_inbox
+            id="$(find_id)"
+          fi
+          [ -n "$id" ] || { echo "::error::Inbox KV namespace missing"; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the Worker
+        id: deploy
+        env:
+          KV_ID: ${{ steps.kv.outputs.id }}
+        run: |
+          set -euo pipefail
+          sed "s/REPLACED_AT_DEPLOY/$KV_ID/" wrangler.toml > wrangler.deploy.toml
+          wrangler deploy --config wrangler.deploy.toml | tee deploy.log
+          url="$(grep -o 'https://[A-Za-z0-9.-]*\.workers\.dev' deploy.log | head -1 || true)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Put the inbox and forwarding secrets on the Worker
+        env:
+          NEWSLETTER_INBOX_TOKEN: ${{ secrets.NEWSLETTER_INBOX_TOKEN }}
+          NEWSLETTER_FORWARD_TO: ${{ secrets.NEWSLETTER_FORWARD_TO }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$NEWSLETTER_INBOX_TOKEN" | wrangler secret put NEWSLETTER_INBOX_TOKEN --config wrangler.deploy.toml
+          printf '%s' "$NEWSLETTER_FORWARD_TO" | wrangler secret put NEWSLETTER_FORWARD_TO --config wrangler.deploy.toml
+
+      - name: Write the job summary
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          {
+            echo "## Newsletter inbox deployed"
+            echo "Worker URL: $WORKER_URL (also in Workers & Pages → wowpriced-newsletter-inbox)"
+            echo 'Paste the URL into config.yaml partner_newsletters.inbox_url.'
+            echo 'Email Routing → Routing rules → Create address: deals@wowpriced.com → Send to a Worker → wowpriced-newsletter-inbox → Save.'
+            echo 'NEWSLETTER_FORWARD_TO must be the operator’s verified Email Routing destination address. Full setup: docs/HANDOFF.md.'
+          } >> "$GITHUB_STEP_SUMMARY"

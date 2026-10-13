@@ -180,6 +180,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Partner newsletter inbox (Codex task 055, 2026-10-13):** for partners
+  whose firewall blocks our crawler (we never get around it; operator will
+  not re-contact them). An Email Worker (`cloudflare/newsletter-inbox/`) on
+  deals@wowpriced.com forwards every original to the operator and stages
+  capped bodies in KV for 7 days; the `newsletter` adapter reads facts only,
+  keeps the partner's post as the credit link and evidence rules unchanged,
+  and acks only handled messages. Eight `method: email` entries in
+  sources.yaml stay disabled until their `newsletter_from` is filled.
+  Operator: **1)** repository secrets `NEWSLETTER_INBOX_TOKEN` (any long
+  random string) and `NEWSLETTER_FORWARD_TO` (the verified Gmail
+  destination), run **deploy newsletter inbox**, paste its URL into
+  `partner_newsletters.inbox_url`; **2)** Cloudflare Email Routing → Routing
+  Rules → Create: custom address **deals**, action **Send to a Worker**,
+  destination **wowpriced-newsletter-inbox**; **3)** subscribe deals@ to the
+  eight partners, confirm the forwarded emails, fill their real From
+  addresses in `newsletter_from` and enable each entry.
 - **Partner credit + politeness (Codex task 053, 2026-10-13):** robots.txt
   now gates every request to a web page, HEAD and redirect hops included
   (robots.txt errors other than 404/410 disallow; the permission bypass is

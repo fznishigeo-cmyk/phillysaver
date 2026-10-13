@@ -1,0 +1,15 @@
+# Deploy workflow creates the namespace and supplies the two secrets.
+name = "wowpriced-newsletter-inbox"
+main = "worker.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[vars]
+MAX_RAW_BYTES = "1048576"
+MAX_MESSAGE_BYTES = "262144"
+MAX_RESPONSE_BYTES = "2097152"
+PAGE_SIZE = "25"
+
+[[kv_namespaces]]
+binding = "INBOX"
+id = "REPLACED_AT_DEPLOY"

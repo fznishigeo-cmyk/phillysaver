@@ -1,5 +1,5 @@
 # dealradar source registry.
-# Required fields per entry: name, method (rss|api|html), url, region, allowed_html, fast_lane.
+# Required fields per entry: name, method (rss|api|html|email), url, region, allowed_html, fast_lane.
 # Optional: adapter (for method=api), enabled, tz (IANA, for feeds with naive dates), notes.
 #
 # Policy (enforced in code, flags here are *permission to try*, never permission to bypass):
@@ -1030,6 +1030,112 @@ sources:
     notes: "Deal blog."
     crawl_permission: "operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal's credit link, the grant covers displaying the site's own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
+
+  # ---- permitted partner newsletters (RSS entries above remain unchanged) ----
+  - name: bensbargains_newsletter
+    display_name: Ben's Bargains
+    site: https://bensbargains.com/
+    method: email
+    adapter: newsletter
+    url: https://bensbargains.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: techbargains_newsletter
+    display_name: TechBargains
+    site: https://www.techbargains.com/
+    method: email
+    adapter: newsletter
+    url: https://www.techbargains.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: couponcabin_blog_newsletter
+    display_name: CouponCabin
+    site: https://www.couponcabin.com/
+    method: email
+    adapter: newsletter
+    url: https://www.couponcabin.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: dealmama_newsletter
+    display_name: DealMama
+    site: https://www.dealmama.com/
+    method: email
+    adapter: newsletter
+    url: https://www.dealmama.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal''s credit link, the grant covers displaying the site''s own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: edealinfo_newsletter
+    display_name: eDealinfo
+    site: https://www.edealinfo.com/
+    method: email
+    adapter: newsletter
+    url: https://www.edealinfo.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal''s credit link, the grant covers displaying the site''s own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: raining_hot_coupons_newsletter
+    display_name: Raining Hot Coupons
+    site: https://www.raininghotcoupons.com/
+    method: email
+    adapter: newsletter
+    url: https://www.raininghotcoupons.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal''s credit link, the grant covers displaying the site''s own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: coupon_lady_deals_newsletter
+    display_name: Coupon Lady Deals
+    site: https://www.couponladydeals.com/
+    method: email
+    adapter: newsletter
+    url: https://www.couponladydeals.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal''s credit link, the grant covers displaying the site''s own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator''s file. Bypass applies to this host only.'
+  - name: coupon_with_kayla_newsletter
+    display_name: Coupon With Kayla
+    site: https://www.couponwithkayla.com/
+    method: email
+    adapter: newsletter
+    url: https://www.couponwithkayla.com/
+    region: US
+    allowed_html: false
+    fast_lane: false
+    enabled: false
+    newsletter_from: []
+    notes: Disabled until the operator copies the real From address from a forwarded newsletter into newsletter_from and enables this entry. Reads email only; never fetches partner pages.
+    crawl_permission: 'operator reports written email permission from this site (2026-10-11; conditions: the site keeps credit via every published deal''s credit link, the grant covers displaying the site''s own deal images with credit, and it holds while the membership price stays under $19.99/month). Correspondence on the operator''s file. Bypass applies to this host only.'
 
 backup_sources:
   - name: dealspotr

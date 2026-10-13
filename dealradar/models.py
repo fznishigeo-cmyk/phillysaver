@@ -17,7 +17,7 @@ from typing import Any
 @dataclass
 class SourceConfig:
     name: str
-    method: str  # "rss" | "api" | "html"
+    method: str  # "rss" | "api" | "html" | "email"
     url: str
     region: str = "US"
     allowed_html: bool = False
@@ -37,6 +37,7 @@ class SourceConfig:
     image_permission: bool = False
     display_name: str = ""
     site: str = ""
+    newsletter_from: list[str] = field(default_factory=list)  # exact sender allow-list
 
 
 @dataclass
@@ -92,6 +93,7 @@ class RawPost:
     # against, the holders of a shared link. Set by parse_posts; transient.
     parsed: list[tuple[str, str]] = field(default_factory=list)
     structured: dict | None = None  # API facts + quotes; transient like text
+    via_email: bool = False        # never fetch this newsletter's partner pages
 
     @property
     def content_hash(self) -> str:

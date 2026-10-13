@@ -27,6 +27,9 @@ def get_adapter(source: SourceConfig, cfg: AppConfig, *, fast_lane: bool = False
     even though construction currently needs nothing from it.
     """
     method = (source.method or "").lower()
+    if method == "email" and source.adapter == "newsletter":
+        from .newsletter import NewsletterAdapter
+        return NewsletterAdapter()
     if method == "html":
         from .pages import PAGE_ADAPTERS, PageAdapter
         if source.adapter in PAGE_ADAPTERS:

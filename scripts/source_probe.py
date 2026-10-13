@@ -104,12 +104,16 @@ def main() -> int:
     by_name = {s.name: s for s in primary + backup}
     unknown = [n for n in names if n not in by_name]
     rows = []
+    email_sources = []
     with tempfile.TemporaryDirectory() as tmp:
         fetcher = PoliteFetcher(DB(Path(tmp) / "probe.db"), cfg)
         for name in names:
             if name in unknown:
                 continue
             src = by_name[name]
+            if src.method == "email":
+                email_sources.append(name)
+                continue  # email credit URLs are never crawl/probe targets
             override = _permission_host(src, cfg)
             first = probe(fetcher, src.url, override)
             tried = [first]
@@ -137,6 +141,8 @@ def main() -> int:
         lines.append(f"| {name} | {'yes' if perm else 'no'} | {verdict(first)} | {found} |")
     for n in unknown:
         lines.append(f"| {n} | ? | not in sources.yaml | — |")
+    for n in email_sources:
+        lines.append(f"| {n} | yes | email inbox only; use source-audit | not probed |")
     lines += ["", "<details><summary>every request</summary>", "",
               "| Source | URL | Status | Final URL | Bytes | Verdict |", "|---|---|---|---|---|---|"]
     for name, _perm, _first, _best, tried in rows:
