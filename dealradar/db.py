@@ -499,6 +499,16 @@ class DB:
             return 0, None
         return len(prices), float(statistics.median(prices))
 
+    def price_observations(self, canonical_key: str, since: datetime,
+                           until: datetime) -> list[dict[str, Any]]:
+        """Our recorded checks only, in time order within an inclusive window."""
+        rows = self.conn.execute(
+            "SELECT price, observed_at FROM price_history WHERE canonical_key=?"
+            " AND observed_at>=? AND observed_at<=? ORDER BY observed_at, id",
+            (canonical_key, iso(since), iso(until)),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # ---------------- alerts_sent ----------------
 
     def delivery_batch(self, channel: str, run_key: str, keys: list[str],

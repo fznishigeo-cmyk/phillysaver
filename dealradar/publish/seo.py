@@ -31,6 +31,7 @@ import yaml
 from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
+from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
 
 logger = logging.getLogger("dealradar.publish.seo")
 
@@ -514,7 +515,8 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 
 
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
-               disclosure: str, live: list[dict[str, Any]], paths: dict[str, str]) -> str:
+               disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
+               observations: list[dict[str, Any]], now: datetime) -> str:
     dead = d.get("status") == "dead"
     item, store = str(d.get("item") or ""), str(d.get("store") or "")
     pct = _pct(d["pct_at_checkout"]) if d.get("pct_at_checkout") is not None else None
@@ -542,6 +544,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         content += f'<p>{pct}% off'
         content += (f' · save ${float(d["abs_savings"]):.2f}'
                     if d.get("abs_savings") is not None else "") + '</p>'
+    chart = price_history_chart(observations, now, d.get("final_price"), ended=dead)
+    content += chart
     conds = [str(c).replace("_", " ") for c in d.get("conditions") or []]
     if conds:
         content += '<p>Condition: ' + escape(", ".join(conds)) + '</p>'
@@ -591,7 +595,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
             product["brand"] = {"@type": "Brand", "name": d["brand"]}
         ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
-                         '<div class="deal-detail">' + content + '</div>', dead=dead, extra_head=ld,
+                         '<div class="deal-detail">' + content + '</div>', dead=dead,
+                         extra_head=ld + (PRICE_HISTORY_STYLE if chart else ""),
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
 
@@ -735,7 +740,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     landing_pages = {}
     for d in deal_rows:
         path = paths[d["key"][:8]]
-        html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths)
+        observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
+        html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
+                          observations, now)
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")

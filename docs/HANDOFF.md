@@ -190,6 +190,13 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Price history (Codex task 062, 2026-10-13; uncommitted):** deal pages
+  show our 90-day checks at 3+ observations spanning 48 hours: median,
+  min/max, current-price marker, hidden UTC table and theme tokens. Dense
+  histories show 24 real checks (stats/count use all); one indexed read/page,
+  under 6 KB. Tests: 33 focused passed; full suite 2,460 passed, 1 deselected,
+  7 existing Stripe yearly-deploy tests blocked by local sockets. Chromium
+  360px visual review also blocked by the sandbox. No commit or push.
 - **Lighter state (Codex task 060, finished by Claude after Codex hit
   "model at capacity", 2026-10-13):** `state.db.enc` was 52 MB, pushed every
   run, past GitHub's 50 MB warning (hard limit 100 MB). Now gzip (`-n -6`)
