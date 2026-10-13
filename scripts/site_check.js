@@ -27,9 +27,14 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
 const CARDS = "#content .card[data-key]";
 const STEP_TIMEOUT_MS = 10000;
 const SITE_URL = new URL(SITE);
-let siteRequests = 0, siteQueue = Promise.resolve(), lastSiteRequest = 0;
+// Our own site, still paced at 1 request/s. 40 ran out on 2026-10-13 as the
+// walk grew (more hubs), and the last page failed as a bare ERR_FAILED.
+const SITE_REQUEST_LIMIT = 60;
+let siteRequests = 0, siteQueue = Promise.resolve(), lastSiteRequest = 0, lastAbort = "";
 async function siteRequest(photo = false) {
-  if (!photo && ++siteRequests > 40) throw new Error("site request limit (40)");
+  if (!photo && ++siteRequests > SITE_REQUEST_LIMIT) {
+    throw new Error(`site request limit (${SITE_REQUEST_LIMIT})`);
+  }
   const pending = siteQueue.then(async () => {
     const delay = Math.max(0, 1000 - (Date.now() - lastSiteRequest));
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
@@ -68,7 +73,7 @@ async function guardPage(page) {
     try {
       if (url.origin === SITE_URL.origin) await siteRequest(request.resourceType() === "image");
       await route.continue();
-    } catch { await route.abort(); }
+    } catch (e) { lastAbort = String(e.message || e); await route.abort(); }
   });
 }
 function check(ok, reason) { if (!ok) throw new Error(reason); }
@@ -104,7 +109,9 @@ async function walk(page, doc, device) {
       results.push({ n, name, ok: true, ...(note ? { note } : {}) });
     } catch (e) {
       // Playwright errors include call logs; keep the summary to one short line.
-      const reason = String(e.message || e).split("\n")[0].slice(0, 140);
+      // A request our own guard aborted surfaces as a bare ERR_FAILED: name why.
+      const why = lastAbort ? ` (guard: ${lastAbort})` : "";
+      const reason = (String(e.message || e).split("\n")[0].slice(0, 140) + why).slice(0, 200);
       results.push({ n, name, ok: false, reason });
     }
   }
