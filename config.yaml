@@ -357,6 +357,7 @@ tracking:
   bing_site_verification: ""        # msvalidate.01 (32 hex characters)
   pinterest_domain_verify: "a24dd8688b84862029ffdb65db755ed9"  # p:domain_verify (32 hex characters)
   facebook_domain_verification: ""  # facebook-domain-verification
+  impact_site_verification: "b4812b05-b7e3-4770-93fb-b84c8d745343"  # impact-site-verification (Impact.com sign-up)
 
 social:
   require_earning_link: true

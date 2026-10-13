@@ -36,6 +36,7 @@ SAMPLE = {
     "bing_site_verification": "0123456789ABCDEF0123456789ABCDEF",
     "pinterest_domain_verify": "0123456789abcdef0123456789abcdef",
     "facebook_domain_verification": "abcdefghij0123456789klmnopqrst",
+    "impact_site_verification": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
 }
 HOSTS = ("googletagmanager.com", "connect.facebook.net", "analytics.tiktok.com",
          "s.pinimg.com", "bat.bing.com", "www.clarity.ms")
@@ -122,7 +123,9 @@ def test_sample_ids_put_the_snippet_in_every_page_exactly_once(db, cfg, tmp_path
         for meta in ('<meta name="google-site-verification" content="abcDEF123_-xyzXYZ7890abcdEFGH">',
                      '<meta name="msvalidate.01" content="0123456789ABCDEF0123456789ABCDEF">',
                      '<meta name="p:domain_verify" content="0123456789abcdef0123456789abcdef">',
-                     '<meta name="facebook-domain-verification" content="abcdefghij0123456789klmnopqrst">'):
+                     '<meta name="facebook-domain-verification" content="abcdefghij0123456789klmnopqrst">',
+                     '<meta name="impact-site-verification" value="1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d"'
+                     ' content="1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d">'):
             assert page.count(meta) == 1, (name, meta)
     # Still self-contained: every tag loads from script, none from markup.
     for name in ("index.html", "about.html", "welcome.html", "privacy.html"):
@@ -159,6 +162,7 @@ def test_changed_ids_replace_the_block_and_cleared_ids_remove_it():
     ("bing_site_verification", "0123456789ABCDEF"),
     ("pinterest_domain_verify", "zz23456789abcdef0123456789abcdef"),
     ("facebook_domain_verification", "abc def ghi jkl"),
+    ("impact_site_verification", "1a2b'><script>"),
 ])
 def test_invalid_ids_are_skipped_with_a_warning(caplog, key, bad):
     caplog.set_level(logging.WARNING, logger="dealradar.publish.tracking")
