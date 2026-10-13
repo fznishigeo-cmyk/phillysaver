@@ -550,6 +550,8 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
                observations: list[dict[str, Any]], now: datetime) -> str:
+    from .site import linked_disclosure
+
     dead = d.get("status") == "dead"
     item, store = str(d.get("item") or ""), str(d.get("store") or "")
     pct = _pct(d["pct_at_checkout"]) if d.get("pct_at_checkout") is not None else None
@@ -612,7 +614,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     url = _http(d.get("url"))
     if not dead and url:
         content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
-                    f'<p class="disclosure">{escape(disclosure)}</p>')
+                    f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
     content += f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
     if related:

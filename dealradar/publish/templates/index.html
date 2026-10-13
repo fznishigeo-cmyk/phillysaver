@@ -1015,7 +1015,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // Footer line: the FTC disclosure, from meta.disclosure verbatim, never
     // hardcoded in this template. Run times and counts are the operator's
     // (Actions summary), not visitors' (operator, 2026-10-12).
-    document.getElementById("metaline").textContent = m.disclosure || "";
+    var disclosure = esc(m.disclosure || "");
+    var disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
+    document.getElementById("metaline").innerHTML = disclosure.indexOf("Disclosure:") === 0
+      ? disclosureLink + disclosure.slice(10)
+      : disclosure + (disclosure ? " " : "") + disclosureLink;
 <!--standard-->    // Account menu (docs/paywall.md): only once a Worker is configured.
     var me = state.me, on = !!apiUrl(m);
     document.getElementById("account").hidden = !on;

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
+<meta name="theme-color" content="#4fd8c6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1b22" media="(prefers-color-scheme: dark)">
+<meta name="description" content="How wowpriced earns affiliate commissions, what to check before buying, and the limits of our deal information and optional support payments.">
+<title>Disclaimer &amp; Affiliate Disclosure | wowpriced</title>
+<link rel="canonical" href="{{SITE_URL}}/disclosure.html">
+<style>
+:root{
+  color-scheme: light dark;
+  --bg:#f3f5f7; --card:#ffffff; --fg:#1a1d21; --muted:#5c6570; --line:#e2e6eb;
+  --chip:#eef1f5; --accent:#0e7569; --accent-fg:#ffffff; --link:#0b63c4;
+  --shadow:0 1px 2px rgba(15,23,32,.06),0 4px 14px rgba(15,23,32,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d1117; --card:#161c23; --fg:#e7eaee; --muted:#a4adb7; --line:#2a313a;
+         --chip:#20262e; --accent:#2fb3a4; --accent-fg:#07211d; --link:#6cb1ff;
+         --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.35); }
+}
+*{box-sizing:border-box}
+input::placeholder{color:var(--muted);opacity:1}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+header{--fg:#073b35;--muted:#20564f;--accent:#073b35;--link:#073b35;
+       background:#4fd8c6;color:var(--fg);border-bottom:2px solid #ffb020;box-shadow:var(--shadow)}
+@media (prefers-color-scheme: dark){
+  header{--fg:#f3f7f8;--muted:#a9bcc6;--accent:#60ddca;--link:#9fe6da;background:#0f1b22}
+}
+.hrow{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;flex-wrap:wrap;
+      gap:4px 14px;align-items:baseline}
+@media (min-width:1280px){.hrow{max-width:1360px}}
+.brand{font-size:22px;font-weight:800;letter-spacing:-.3px;margin:0}
+.brand a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
+.mark{width:32px;height:32px;flex:none;transform:rotate(-8deg)}
+.word{font-weight:900;letter-spacing:-.8px}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:var(--accent)}
+.tag{color:var(--muted);font-size:13px}
+.wrap{max-width:720px;margin:0 auto;padding:0 16px 48px}
+h1{font-size:30px;line-height:1.2;margin:32px 0 6px}
+.lede{color:var(--muted);font-size:17px;margin:0 0 24px}
+h2{font-size:20px;margin:30px 0 8px}
+p{margin:0 0 14px}
+ul{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 8px}
+.muted{color:var(--muted);font-size:14px}
+footer{color:var(--muted);font-size:12.5px;margin-top:34px;border-top:1px solid var(--line);
+       padding-top:14px}
+footer p{margin:0 0 8px}
+@media (max-width:640px){
+  .hrow{padding:10px 16px 8px}
+  .tag{display:none}
+  h1{font-size:26px}
+}
+p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:not(.getdeal):not(.btn):not(.pwbtn){
+  text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <p class="brand"><a href="/" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
+    <span class="tag">verified deals · refreshed every {{DROP_MINUTES}} minutes</span>
+  </div>
+</header>
+<div class="wrap">
+<main>
+<h1>Disclaimer &amp; Affiliate Disclosure</h1>
+<p class="lede">How the site earns money and what to check before you buy.</p>
+
+<h2>How we make money</h2>
+<p>Some links are affiliate links, either ours or the deal source's. If you buy through
+   one, wowpriced or the source may earn a commission at no extra cost to you. Partner
+   sources keep their own affiliate credit.</p>
+<p>Whether a link earns a commission does not change which deals qualify. Deals publish
+   only from verified price facts and the discount floors explained in
+   <a href="/how-it-works.html">How it works</a>.</p>
+
+<h2>Programs we use</h2>
+{{AFFILIATE_PROGRAMS}}
+
+<h2>Prices and availability</h2>
+<p>Prices and stock can change quickly. Our checks reflect the information available
+   at the times shown on the site; they do not guarantee a price or availability when
+   you shop. The retailer's checkout price is final.</p>
+<p>Codes, coupons, rebates and other steps can expire or have conditions. Check the
+   retailer's current offer, eligibility rules and total cost before paying.</p>
+
+<h2>No warranty / your own judgment</h2>
+<p>We provide information in good faith for general information, without a warranty
+   of completeness or accuracy. Use your own judgment about whether an item, its
+   condition and its price meet your needs.</p>
+<p>We are not the seller. The retailer handles your purchase, returns, shipping,
+   warranties and customer support under its own terms.</p>
+
+<h2>Links to other sites</h2>
+<p>We do not control external websites or their content. When you follow a link, that
+   site's privacy policies and terms apply. Review them before sharing information
+   or making a purchase.</p>
+
+<h2>Limitation of liability</h2>
+<p>To the extent permitted by law, wowpriced is not liable for losses or damages
+   resulting from using this site, relying on its information or buying through an
+   external link. This does not limit rights or liability that the law does not
+   allow us to limit.</p>
+
+<h2>Support payments</h2>
+<p>Support payments are voluntary. wowpriced is a for-profit business: support is
+   not tax-deductible and buys nothing extra.</p>
+
+<h2>Contact and updates</h2>
+<p>Questions about this page? {{DISCLOSURE_CONTACT}}</p>
+<p>Changes will be posted on this page. The date below records the latest update to
+   this disclaimer.</p>
+<p class="muted">Last updated <time datetime="2026-10-13">October 13, 2026</time>.</p>
+</main>
+{{SITE_FOOTER}}
+</div>
+</body>
+</html>

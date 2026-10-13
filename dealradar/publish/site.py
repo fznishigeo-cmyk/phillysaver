@@ -362,13 +362,21 @@ JOIN_FORM = (
 )
 
 
+def linked_disclosure(disclosure: str) -> str:
+    """Link the existing label without lengthening the configured short copy."""
+    link = '<a href="/disclosure.html">Disclosure</a>'
+    if disclosure.startswith("Disclosure:"):
+        return link + escape(disclosure[len("Disclosure"):])
+    return escape(disclosure) + (" " if disclosure else "") + link
+
+
 def site_footer(html: str, now: datetime, disclosure: str, support: bool,
                 account: bool = False) -> str:
     """One footer for root and nested pages, with the configured disclosure."""
     if "{{SITE_FOOTER}}" not in html:
         return html
     footer = (TEMPLATES_DIR / "site-footer.html").read_text(encoding="utf-8")
-    footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=escape(disclosure),
+    footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=linked_disclosure(disclosure),
                        FOOTER_SIGNUP=(TEMPLATES_DIR / "footer-signup.html").read_text(encoding="utf-8") if support else "",
                        ACCOUNT_FOOTER=(
                            '<span id="footterms" hidden></span><p id="acctfoot" class="meta" hidden>Your account: '
@@ -399,6 +407,23 @@ def affiliate_copy(html: str, amazon_tag: str) -> str:
     if not amazon_tag:
         return html
     return _SOURCE_ONLY_ABOUT.sub(AFFILIATE_ABOUT, html)
+
+
+def affiliate_programs(cfg: AppConfig) -> str:
+    """Our active programs only; source affiliates keep their own credit."""
+    programs = []
+    if cfg.affiliate_amazon_tag:
+        programs.append('<li><strong>Amazon Associates.</strong> As an Amazon Associate, '
+                        'wowpriced earns from qualifying purchases.</li>')
+    if cfg.affiliate_ebay_campaign_id:
+        programs.append('<li><strong>eBay Partner Network.</strong> We may earn a commission '
+                        'on qualifying purchases through our eBay links.</li>')
+    if cfg.affiliate_sovrn_enabled:
+        programs.append('<li><strong>Sovrn Commerce.</strong> We may earn a commission '
+                        'on purchases through eligible retailer links.</li>')
+    return '<ul>' + ''.join(programs) + '</ul>' if programs else (
+        '<p>We currently have no active affiliate programs of our own. '
+        'A deal source may still earn a commission through its links.</p>')
 
 
 def copy_variant(html: str, open_access: bool, support: bool = False) -> str:
@@ -739,7 +764,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     pages = ("index.html", "welcome.html", "about.html",
              "careers.html", "contact.html", "how-it-works.html", "hacks.html",
-             "subscribe.html", "privacy.html")
+             "subscribe.html", "privacy.html", "disclosure.html")
     if support:
         pages += ("join.html",)
     else:
@@ -780,6 +805,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "than two hours ago. Two signals show two flames; all three show three."
         ) if engagement["hot_meter"] else "")
         html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
+        if name == "disclosure.html":
+            html = html.replace("{{AFFILIATE_PROGRAMS}}", affiliate_programs(cfg))
         if support:
             html = html.replace("{{SUPPORT_SCRIPT}}", (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8"))
             html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
@@ -824,6 +851,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in pages:
         html = (out / name).read_text(encoding="utf-8")
         html = html.replace("{{CONTACT_EMAIL}}", email)
+        html = html.replace("{{DISCLOSURE_CONTACT}}", (
+            f'Email <a href="mailto:{email}">{email}</a>.' if email else
+            '<a href="/contact.html">Contact us</a>.'))
         html = html.replace("{{DROP_MINUTES}}", str(int(cfg.drop_minutes)))
         (out / name).write_text(html, encoding="utf-8")
 
@@ -837,7 +867,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if "{{SITE_URL}}" in html:
             (out / name).write_text(html.replace("{{SITE_URL}}", site_url), encoding="utf-8")
     public = ["", "about.html", "how-it-works.html", "hacks.html", "subscribe.html",
-              "contact.html", "careers.html", "privacy.html"]
+              "contact.html", "careers.html", "privacy.html", "disclosure.html"]
     if support:
         public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the

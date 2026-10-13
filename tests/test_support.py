@@ -116,14 +116,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "7ab93241e68d8eefd4a6924c9038f57b834d231c285cf8cdc729a3e89fec241f"),
-    (False, 49, "dac46e5c18a02167ab1f955a60b0d0a630a8809c354ac3adc8790d2478de31a9"),
-    (True, 0, "20a3ca0f2366cb87e509841808f1a5ecaa4594269eba8f152b91f91bfbf40584"),
-    (True, 49, "4f613039e19ceaf32c1ff94c1165836410e78fc8ca693cae6b2c504f54a03807"),
+    (False, 0, "ccc30a7c9cfd10322d26aad15a0092c3b038755fd6121b1d3c5f3f2e4759be6e"),
+    (False, 49, "9169f8ed22edaf457f694236d520b9a98babe1163ffe1960aa93ad19bb33d8b0"),
+    (True, 0, "0cc1ffcecb232b6b24ceeb4e6cd242eabc6a28fe44d36971e84d80970ec7a051"),
+    (True, 49, "608ff512fd78458903619789af28b134e85bceb97b1f3743c311d2d4a21c062d"),
 ])
-def test_support_off_index_bytes_match_task065_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 065 adds shared filters and tab browsing state in every access mode. Snapshot
-    # the actual output without task 037's head-only hint or a moving version.
+def test_support_off_index_bytes_match_task074_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 074 adds the shared footer link and preserves it on disclosure refresh.
+    # Snapshot without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     html = (out / "index.html").read_bytes()

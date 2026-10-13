@@ -88,12 +88,15 @@ function checkFooter(html, meta) {
   check(JSON.stringify(links) === JSON.stringify([
     ["/about.html", "About"], ["/how-it-works.html", "How it works"], ["/hacks.html", "Deal hacks"],
     ["/careers.html", "Work with us"], ["/contact.html", "Contact"],
-    ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"]
+    ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
   ]), "footer link line changed");
   const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
   check(footer.includes("We search the top deal sites and stores for hours every day, so you don't have to."),
     "missing footer search note");
-  check(footer.includes(`<span id="metaline">${escape(meta.disclosure || "")}</span>`), "footer disclosure changed");
+  const disclosure = escape(meta.disclosure || ""), disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
+  const linked = disclosure.startsWith("Disclosure:") ? disclosureLink + disclosure.slice(10)
+    : disclosure + (disclosure ? " " : "") + disclosureLink;
+  check(footer.includes(`<span id="metaline">${linked}</span>`), "footer disclosure changed");
   check(!/wowpriced is free for everyone\.|Once: any amount|Membership —|Every deal links to the seller/.test(footer),
     "old footer copy remains");
   if ((meta.support || {}).enabled) check(footer.includes('id="footer-signup"'), "missing footer signup");
@@ -251,7 +254,7 @@ async function walk(page, doc, device) {
       } catch (e) { problems.push(`${path}: ${String(e.message).split("\n")[0]}`); return ""; }
     }
     // Cloudflare's extensionless URLs leave room in the request budget for the new pages.
-    for (const path of ["about", "how-it-works", "contact", "privacy", "subscribe"]) {
+    for (const path of ["about", "how-it-works", "contact", "privacy", "disclosure", "subscribe"]) {
       await read(path);
     }
     const sitemap = await read("sitemap.xml", "xml");

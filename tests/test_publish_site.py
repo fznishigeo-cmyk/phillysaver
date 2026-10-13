@@ -241,7 +241,7 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     # The FTC line must come from deals.json meta at render time, not be baked in.
     assert "disclosure" in html
     assert "m.disclosure" in html or "meta.disclosure" in html
-    assert DISCLOSURE in html
+    assert DISCLOSURE in re.sub(r"<[^>]+>", "", html)
     # Required UI affordances live in the template.
     assert "No qualifying deals right now" in html
     assert 'rel="sponsored noopener"' in html
@@ -381,9 +381,9 @@ class TestLiveHomePage:
         # The disclosure sits in the footer, verbatim from meta; the run
         # time and deal count are the operator's, never shown (2026-10-12).
         assert html.index('id="metaline"') > html.index("<footer>")
-        assert 'getElementById("metaline").textContent = m.disclosure || "";' in html
+        assert 'getElementById("metaline").innerHTML = disclosure.indexOf("Disclosure:") === 0' in html
         assert "Last run" not in html
-        assert DISCLOSURE in html
+        assert DISCLOSURE in re.sub(r"<[^>]+>", "", html)
 
 
 class TestContentPages:

@@ -190,6 +190,12 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Disclaimer (Codex task 074, 2026-10-13):** full `/disclosure.html`, config-only
+  programs, shared footer/short-label links, sitemap and site-check; 360px
+  structural checks pass. Only support-index/PWA tree hashes regenerated.
+  Suite: **2,660 passed, 1 deselected**; seven known Stripe yearly-deploy
+  tests blocked by local socket permissions. Remaining: those tests outside
+  the sandbox, Claude review. No commit or push.
 - **Price watches (Codex task 071, 2026-10-13; shipped after review):** Saved v2
   records published save-time prices/conditions and optional targets; exact
   public matches add a badge, drop-first ordering, was/now text and per-price

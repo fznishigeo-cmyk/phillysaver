@@ -101,7 +101,7 @@ def test_deal_page_facts_schema_disclosure_affiliate_and_related(db, cfg, tmp_pa
     assert "✓ price history: The price was checked against price history." in html
     assert "Oct 9, 2026</time> (UTC)" in html and "minutes ago" not in html
     assert "<img" not in html
-    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure">Disclosure: affiliate links may earn a commission.</p>' in html
+    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure"><a href="/disclosure.html">Disclosure</a>: affiliate links may earn a commission.</p>' in html
     product = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
     assert product == {"@context": "https://schema.org", "@type": "Product", "name": d["item"],
                        "brand": {"@type": "Brand", "name": d["brand"]},
@@ -206,8 +206,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     deals = [make_deal(dedupe_key=f"large{i}", item=f"Deal {i}", codes=[])
              for i in range(1600)]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
-    # Support publishes join.html; PWA adds the manifest and four brand icons.
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1638
+    # Support publishes join.html; PWA adds its manifest/icons; task 074 adds disclosure.html.
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1639
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():
@@ -260,12 +260,12 @@ const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
 
 def test_small_print_names_wowpriced_once_the_amazon_tag_is_set(db, cfg, tmp_path):
     pages = ("about.html", "careers.html", "contact.html", "hacks.html", "how-it-works.html",
-             "privacy.html", "deals/electronics/index.html", "best-deals-today/index.html")
+             "privacy.html", "disclosure.html", "deals/electronics/index.html", "best-deals-today/index.html")
     cfg.paywall_open_access = True
     _render(db, cfg, tmp_path / "off")
     for name in pages:  # no Store ID: the configured FTC disclosure
         html = (tmp_path / "off" / name).read_text()
-        assert cfg.ftc_disclosure in html and "As an Amazon Associate" not in html, name
+        assert cfg.ftc_disclosure in re.sub(r"<[^>]+>", "", html) and "As an Amazon Associate" not in html, name
     cfg.affiliate_amazon_tag = "example-20"
     from dealradar.config import load_config
     cfg.affiliate_disclosure = load_config().affiliate_disclosure

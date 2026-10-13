@@ -18,7 +18,7 @@ LINKS = [
     ("/about.html", "About"), ("/how-it-works.html", "How it works"),
     ("/hacks.html", "Deal hacks"), ("/careers.html", "Work with us"),
     ("/contact.html", "Contact"), ("/subscribe.html", "Join & support"),
-    ("/privacy.html", "Privacy"),
+    ("/privacy.html", "Privacy"), ("/disclosure.html", "Disclosure"),
 ]
 SEARCH = "We search the top deal sites and stores for hours every day, so you don't have to."
 
@@ -34,7 +34,7 @@ def test_every_page_has_one_shared_footer(tmp_path, support, amazon):
                     seo_store_page_min_deals=1)
     out, doc, _, _ = render(tmp_path, cfg, [make_deal(dedupe_key=f"footer-{i}", final_price=5, regular_price=50) for i in range(10)])
     pages = {str(p.relative_to(out)): p.read_text() for p in out.rglob("*.html")}
-    assert {"index.html", "404.html", "welcome.html", "subscribe.html",
+    assert {"index.html", "404.html", "welcome.html", "subscribe.html", "disclosure.html",
             "best-deals-today/index.html", "stores/walmart/index.html",
             "deals/under-10/index.html"} <= pages.keys()
     assert any(name.startswith("deal/") for name in pages)
@@ -49,6 +49,7 @@ def test_every_page_has_one_shared_footer(tmp_path, support, amazon):
         assert " ".join(unescape(re.sub(r"<[^>]+>", "", nav)).split()) == "© 2026 wowpriced · " + " · ".join(label for _, label in LINKS)
         fine = re.search(r'<p class="footerfine">(.*?)</p>', footer, re.S)[1]
         assert unescape(re.sub(r"<[^>]+>", "", fine)) == SEARCH + " " + expected_disclosure, name
+        assert '<span id="metaline"><a href="/disclosure.html">Disclosure</a>:' in fine, name
         for removed in ("wowpriced is free for everyone.", "data-support-note", "Membership —",
                         "Every deal links to the seller", "re-checked live", "Once: any amount"):
             assert removed not in footer, (name, removed)
