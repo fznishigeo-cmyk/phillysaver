@@ -269,7 +269,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # post is the product. Without an ASIN the deal gets no Keepa price
         # check and no photo (live: 6 photo-less Amazon cards for this).
         asin = _asin_from_text(post.text)
-        if asin and "amazon." not in (extracted.product_url or "").lower():
+        from .publish.site import keeps_source_tracker
+        if asin and "amazon." not in (extracted.product_url or "").lower() \
+                and not keeps_source_tracker(extracted.product_url or "", cfg):
             extracted = dataclasses.replace(
                 extracted, product_url=f"https://www.amazon.com/dp/{asin}")
     existing = find_existing(db, extracted.store, extracted.product_url,

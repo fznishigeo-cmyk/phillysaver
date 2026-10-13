@@ -689,8 +689,9 @@ def _restore_source_credit_links(db: DB, cfg: AppConfig) -> int:
 
     Deals of America, DealMoon and Southern Savers keep their affiliate credit
     as a condition of their crawl permission; their tracker link is that credit.
-    The 2026-10-13 tracker repair could swap it for the store link. While repair
-    is off, any deal posted with such a tracker whose product link now points
+    The 2026-10-13 tracker repair, ingest redirect resolution and the Amazon
+    link-from-text fallback could swap it for the store link. While repair is
+    off, any deal posted with such a tracker whose product link now points
     elsewhere gets the tracker back. Idempotent: a restored deal matches no more.
     """
     from .dedupe import _DEAL_FIELDS
@@ -710,8 +711,7 @@ def _restore_source_credit_links(db: DB, cfg: AppConfig) -> int:
             continue
         if (not posted or posted == current
                 or not is_competitor_tracker_host(posted_host, hosts)
-                or (current_host and is_competitor_tracker_host(current_host, hosts))
-                or "link_resolve_tried" not in (deal.get("flags") or [])):
+                or (current_host and is_competitor_tracker_host(current_host, hosts))):
             continue
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         payload["canonical_url"] = posted
@@ -730,7 +730,8 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
     cap is spent on deals visitors see); None = every deal."""
     from .dedupe import _DEAL_FIELDS
     from .http_client import extract_asin, is_challenge_url, resolve_redirects
-    from .publish.site import _deal_source_hosts, is_competitor_tracker_host
+    from .publish.site import (_deal_source_hosts, is_competitor_tracker_host,
+                               keeps_source_tracker)
 
     resolved = tried = trackers_resolved = 0
     tracker_hosts = cfg.affiliate_competitor_tracker_hosts
@@ -750,7 +751,8 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             host = (parts.hostname or "").lower()
         except ValueError:
             continue
-        if parts.scheme not in ("http", "https") or not host or is_challenge_url(link):
+        if parts.scheme not in ("http", "https") or not host or is_challenge_url(link) \
+                or keeps_source_tracker(link, cfg):
             continue
         # Off by default: a permitted source keeps its affiliate credit, and its
         # tracker is that credit (config affiliate.repair_competitor_trackers).
@@ -1471,6 +1473,7 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     keyed by it (RawPost.photos.in_link).
     """
     from .http_client import canonicalize_url, resolve_redirects
+    from .publish.site import keeps_source_tracker
 
     # Best effort, bounded: past _RESOLVE_BUDGET_S the rest keep their link
     # canonicalized as posted (live wart: three slow stores ate 5.5 min).
@@ -1478,8 +1481,8 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     for _post, extracted in pairs:
         if not extracted.link_as_posted:
             extracted.link_as_posted = extracted.product_url
-        if not extracted.product_url:
-            continue
+        if not extracted.product_url or keeps_source_tracker(extracted.product_url, cfg):
+            continue  # a permitted source's tracker stays exactly as posted
         if time.monotonic() > min(deadline - 30, stop_at):
             extracted.product_url = canonicalize_url(extracted.product_url)
             continue

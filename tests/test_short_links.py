@@ -456,13 +456,60 @@ def test_replaced_source_tracker_links_are_put_back_once(tmp_path):
     _replaced(db, "never-tried", tracker, "https://www.walmart.com/ip/456", flags=())
     _replaced(db, "store-link", "https://www.target.com/p/x", "https://www.target.com/p/x-canon")
     _replaced(db, "still-tracker", tracker, tracker)
-    assert pipeline._restore_source_credit_links(db, cfg) == 1
+    # Any path that swapped it counts, not only the repair (Codex audit 051).
+    assert pipeline._restore_source_credit_links(db, cfg) == 2
     swapped = db.get_deal("swapped")
     assert swapped["canonical_url"] == tracker
-    assert db.get_deal("never-tried")["canonical_url"] == "https://www.walmart.com/ip/456"
+    assert db.get_deal("never-tried")["canonical_url"] == tracker
     assert db.get_deal("store-link")["canonical_url"] == "https://www.target.com/p/x-canon"
     assert pipeline._restore_source_credit_links(db, cfg) == 0  # idempotent
     cfg.affiliate_repair_competitor_trackers = True
     _replaced(db, "while-on", tracker, "https://www.walmart.com/ip/789")
     assert pipeline._restore_source_credit_links(db, cfg) == 0
     db.close()
+
+
+def _granted_tracker_setup(tmp_path):
+    from dealradar.config import load_config
+    cfg = load_config()
+    db = DB(tmp_path / "state.db")
+    calls = []
+
+    def handler(request):
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        calls.append(str(request.url))
+        return httpx.Response(302, headers={
+            "Location": "https://www.amazon.com/dp/B012345678?tag=source-20"})
+
+    fetcher = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handler),
+                            sleep_fn=lambda _: None)
+    return cfg, db, fetcher, calls
+
+
+@pytest.mark.parametrize("link", [
+    "https://cc.dealsofamerica.com/v1/otc/item?affid=source",
+    "https://go.dealmoon.com/a?affid=source",
+    "https://links.southernsavers.com/a?affid=source",
+])
+def test_ingest_keeps_a_granted_tracker_exactly_as_posted(tmp_path, link):
+    """Codex audit 051 blocker: ingest resolution followed the tracker to
+    Amazon, dropped the source's tag and published ours."""
+    from types import SimpleNamespace
+    cfg, db, fetcher, calls = _granted_tracker_setup(tmp_path)
+    ext = SimpleNamespace(product_url=link, link_as_posted="")
+    pipeline._resolve_product_urls([(None, ext)], fetcher, cfg, time.monotonic() + 180)
+    assert calls == [] and ext.product_url == link and ext.link_as_posted == link
+    fetcher.close()
+    db.close()
+
+
+def test_short_link_pass_never_follows_a_photo_less_dealmoon_tracker(tmp_path):
+    cfg, db, fetcher, calls = _granted_tracker_setup(tmp_path)
+    link = "https://go.dealmoon.com/a?affid=source"
+    PhotoFixture._seed(db, "dm", link)
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+    assert calls == [] and db.get_deal("dm")["canonical_url"] == link
+    fetcher.close()
+    db.close()
+

@@ -81,6 +81,23 @@ def is_competitor_tracker_host(host: str, hosts: list[str] | tuple[str, ...]) ->
     return any(host == h or host.endswith("." + h) for h in hosts)
 
 
+def keeps_source_tracker(url: str, cfg) -> bool:
+    """True when ``url`` is a source's tracker that must stay exactly as posted.
+
+    While the tracker repair is off, a permitted source's tracker IS its
+    affiliate credit (crawl-permission condition): nothing may resolve,
+    canonicalize or replace it.
+    """
+    if getattr(cfg, "affiliate_repair_competitor_trackers", False) or not url:
+        return False
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return bool(host) and is_competitor_tracker_host(
+        host, getattr(cfg, "affiliate_competitor_tracker_hosts", ()))
+
+
 @lru_cache(maxsize=1)
 def _deal_source_hosts() -> set[str]:
     """Known source/blog hosts, including paused sources; stores can also have feeds."""
