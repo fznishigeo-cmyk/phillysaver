@@ -55,6 +55,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from ..savings import display_pct
+from ..persistence import delivery_run_key, message_id, prepare_delivery
 from ..config import get_secret
 from .email_digest import smtp_connect
 from .site import rewrite_affiliate
@@ -182,7 +184,7 @@ def _row_html(deal: dict[str, Any]) -> str:
     if reg:
         price += f' <s style="color:#616a75">${reg:,.2f}</s>'
     if pct is not None:
-        price += f' <span style="color:#107a3d;font-weight:700">{pct:.0f}% off</span>'
+        price += f' <span style="color:#107a3d;font-weight:700">{display_pct(pct)}% off</span>'
     price += f' <span style="color:#616a75">at {esc(deal.get("store") or "")}</span>'
     actions = ""
     if url:
@@ -232,7 +234,7 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
         if d.get("regular_price"):
             bits.append(f"was ${d['regular_price']:,.2f}")
         if d.get("pct_at_checkout") is not None:
-            bits.append(f"{d['pct_at_checkout']:.0f}% off")
+            bits.append(f"{display_pct(d['pct_at_checkout'])}% off")
         line = (f"{i}. {d.get('item') or ''} — "
                 + ("" if d["email_hide_price"] else f"${final:,.2f}" if final is not None else "$?")
                 + (f" ({', '.join(bits)})" if bits else "")
@@ -290,11 +292,12 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
                           smtp_factory: Any = None,
                           http_client: Any = None,
                           deadline: float | None = None,
-                          parser: Any = None) -> dict[str, Any]:
+                          parser: Any = None,
+                          run_key: str | None = None) -> dict[str, Any]:
     """The day's email to every subscriber not yet sent today, at most
     cfg.newsletter_max_per_run per run and never past ``deadline`` (a
-    time.monotonic() value: the run's budget; a job killed by its timeout
-    would lose the state.db commit and re-send). ``parser`` is the run's
+    time.monotonic() value: the run's budget). Durable outgoing claims prevent
+    repeating uncertain deliveries. ``parser`` is the run's
     shared ClaudeParser for todays_top (None: rank order). Returns {sent,
     skipped, day}; the `skipped` reason is "" whenever messages went out."""
     local = now.astimezone(ZoneInfo(cfg.newsletter_timezone))
@@ -331,10 +334,15 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         done = set(json.loads(db.meta_get(key) or "[]"))
     except ValueError:
         done = set()
-    pending = [s for s in subscribers if fingerprint(s["email"]) not in done]
+    pending = [s for s in subscribers if fingerprint(s["email"]) not in done
+               and not db.outgoing_exists("newsletter", f"{day}|{fingerprint(s['email'])}")]
     if not pending:
         return skip("everyone already sent today", log.debug)
-    pending = pending[:cfg.newsletter_max_per_run]
+    selected = db.delivery_batch("newsletter", delivery_run_key(now, run_key),
+                                 [fingerprint(s["email"]) for s in pending[:cfg.newsletter_max_per_run]])
+    pending = [s for s in pending if fingerprint(s["email"]) in selected]
+    if not pending or not db.delivery_budget("newsletter", delivery_run_key(now, run_key)):
+        return skip("this run's recipient batch is complete", log.debug)
     if not done:
         # First send of a new day: yesterday's progress list has done its
         # job, so it shrinks to nothing rather than piling up in state.db.
@@ -376,6 +384,8 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
             msg["Subject"] = subject
             msg["From"] = sender
             msg["To"] = sub["email"]  # one message per subscriber, never a list
+            operation = f"{day}|{fingerprint(sub['email'])}"
+            msg["Message-ID"] = message_id("newsletter", operation)
             # RFC 8058 one-click unsubscribe: mail clients show their own button.
             msg["List-Unsubscribe"] = f"<{unsub}>"
             msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
@@ -385,18 +395,21 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
                                                   html_lib.escape(unsub)),
                                 "html", "utf-8"))
             try:
+                if not prepare_delivery(db, "newsletter", operation, now, run_key):
+                    continue
                 server.send_message(msg)
             except smtplib.SMTPServerDisconnected as e:
                 log.warning("newsletter: connection lost after %d sends (%s); "
                             "the rest ride the next run", stats["sent"], e)
                 break
             except Exception as e:
-                log.warning("newsletter: send to %s failed (retries next run): %s",
+                log.warning("newsletter: send to %s failed: %s",
                             _mask(sub["email"]), e)
                 continue
             done.add(fingerprint(sub["email"]))
             # Recorded after EVERY send: a crash mid-batch resends nothing.
             db.meta_set(key, json.dumps(sorted(done)))
+            db.finish_outgoing("newsletter", operation, now)
             stats["sent"] += 1
     finally:
         try:
@@ -429,7 +442,7 @@ def _ask_model(candidates: list[dict[str, Any]], n: int, parser,
         pct = d.get("pct_at_checkout")
         facts = ((f"${final:,.2f}" if final is not None else "price ?")
                  + (f", was ${reg:,.2f}" if reg else "")
-                 + (f", {pct:.0f}% off" if pct is not None else ""))
+                 + (f", {display_pct(pct)}% off" if pct is not None else ""))
         conds = ", ".join(d.get("conditions") or [])
         lines.append(f"{i}. {d.get('item') or ''} | {d.get('store') or ''} | {facts}"
                      f" | {d.get('verify_tier') or 'unverified'}"
@@ -439,22 +452,19 @@ def _ask_model(candidates: list[dict[str, Any]], n: int, parser,
     if deadline is not None:
         timeout = max(0.0, min(timeout, deadline - time.monotonic()))
     client = parser.client
-    if callable(getattr(client, "with_options", None)):
-        client = client.with_options(max_retries=0)  # the SDK retries twice by default
+    kwargs = dict(model=parser.model, max_tokens=PICK_MAX_TOKENS,
+                  system=PICK_SYSTEM_PROMPT.format(n=n),
+                  messages=[{"role": "user", "content": prompt}], timeout=timeout)
     try:
-        parser._check_spend_cap()  # the same gate as every parser call
-        resp = client.messages.create(
-            model=parser.model,
-            max_tokens=PICK_MAX_TOKENS,
-            system=PICK_SYSTEM_PROMPT.format(n=n),
-            messages=[{"role": "user", "content": prompt}],
-            timeout=timeout,
-        )
+        create = client.messages.create
+        resp = parser._request(lambda: create(**kwargs), kwargs=kwargs,
+                               kind="newsletter_pick", retry=False)
     except Exception as e:  # spend cap, API failure or timeout: rank order today
         log.warning("newsletter pick: no model answer (%s: %s); rank order",
                     type(e).__name__, e)
         return None
-    parser._account(resp, parser.model, kind="newsletter_pick")
+    if resp is None:
+        return None
     if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):
         log.warning("newsletter pick: model stopped (%s); rank order",
                     resp.stop_reason)
@@ -606,7 +616,8 @@ def build_confirmation(cfg, confirm_url: str) -> tuple[str, str, str]:
 def send_confirmations(db, cfg, now: datetime, *,
                        smtp_factory: Any = None,
                        http_client: Any = None,
-                       deadline: float | None = None) -> dict[str, Any]:
+                       deadline: float | None = None,
+                       run_key: str | None = None) -> dict[str, Any]:
     """One confirmation link to each pending sign-up the Worker lists, at
     most MAX_CONFIRMATIONS_PER_RUN per run and never past ``deadline``
     (time.monotonic), then POST /list/confirm-sent so the Worker never
@@ -638,9 +649,15 @@ def send_confirmations(db, cfg, now: datetime, *,
     recent = _confirm_guard(db, now)
     # Emailed within 24 h yet still listed: the confirm-sent POST failed
     # last time. No second email; the Worker is simply told again below.
-    already = [s["email"] for s in pending if fingerprint(s["email"]) in recent]
+    already = [s["email"] for s in pending if fingerprint(s["email"]) in recent
+               or db.outgoing_status("confirmation", fingerprint(s["email"] + "|" + s["token"])) == "sent"]
     todo = [s for s in pending
-            if fingerprint(s["email"]) not in recent][:MAX_CONFIRMATIONS_PER_RUN]
+            if fingerprint(s["email"]) not in recent and not db.outgoing_exists(
+                "confirmation", fingerprint(s["email"] + "|" + s["token"]))]
+    selected = db.delivery_batch("confirmation", delivery_run_key(now, run_key),
+                                 [fingerprint(s["email"] + "|" + s["token"])
+                                  for s in todo[:MAX_CONFIRMATIONS_PER_RUN]])
+    todo = [s for s in todo if fingerprint(s["email"] + "|" + s["token"]) in selected]
     sent: list[str] = []
     if todo:
         port = int(get_secret("SMTP_PORT") or "587")
@@ -663,21 +680,26 @@ def send_confirmations(db, cfg, now: datetime, *,
                 msg["Subject"] = subject
                 msg["From"] = sender
                 msg["To"] = sub["email"]
+                operation = fingerprint(sub["email"] + "|" + sub["token"])
+                msg["Message-ID"] = message_id("confirmation", operation)
                 msg.attach(MIMEText(text_body, "plain", "utf-8"))
                 msg.attach(MIMEText(html_body, "html", "utf-8"))
                 try:
+                    if not prepare_delivery(db, "confirmation", operation, now, run_key):
+                        continue
                     server.send_message(msg)
                 except smtplib.SMTPServerDisconnected as e:
                     log.warning("confirmations: connection lost after %d sends (%s); "
                                 "the rest ride the next run", len(sent), e)
                     break
                 except Exception as e:
-                    log.warning("confirmations: send to %s failed (retries next run): %s",
+                    log.warning("confirmations: send to %s failed: %s",
                                 _mask(sub["email"]), e)
                     continue
                 recent[fingerprint(sub["email"])] = now.isoformat()
                 # Recorded after EVERY send: a crash mid-batch resends nothing.
                 db.meta_set(CONFIRM_META_KEY, json.dumps(recent, sort_keys=True))
+                db.finish_outgoing("confirmation", operation, now)
                 sent.append(sub["email"])
         finally:
             try:

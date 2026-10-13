@@ -127,7 +127,8 @@ def test_shadow_skips_when_full_call_will_not_fit(tmp_path, cap):
     insert(db, deal())
     parser, msgs = parser_for(critic_shadow_batches_per_day=12)
     parser.run_cap_usd = cap
-    assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == 1
+    # Small allowances cannot reserve even the real critic's full response.
+    assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == int(cap == .01)
     expected = int(cap == .01)
     assert parser.spend_by_kind["critic_shadow"]["calls"] == expected
     assert db.critic_shadow_counts(NOW)["batches"] == expected

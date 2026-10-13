@@ -14,6 +14,8 @@ Score = pct_at_checkout
 
 from __future__ import annotations
 
+from .conditions import USED_CONDITIONS, normalize_conditions
+
 import logging
 import math
 import re
@@ -134,14 +136,14 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
     from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
 
     options = cfg.front_page.get("top_picks")
-    conditions = set(deal.get("conditions") or [])
+    conditions = set(normalize_conditions(deal.get("conditions")))
     category = deal.get("category") or "other"
     if not options or deal.get("status", "alive") != "alive" or deal.get("locked") \
             or not str(deal.get("image_url") or "").startswith("https://") \
             or deal.get("price_is_range") or "range" in (deal.get("flags") or []) \
             or category == "other" or category in cfg.front_page.get("niche_categories", []) \
             or conditions & {"targeted", "new_customer", "in_store_only", "ymmv", "clearance_aisle"} \
-            or conditions & set(options.get("exclude_conditions", [])):
+            or conditions & set(normalize_conditions(options.get("exclude_conditions", []))):
         return None
     quality = (options["pct_weight"] * float(deal.get("pct_at_checkout") or 0)
                + options["dollars_weight"] * math.log10(1 + float(deal.get("abs_savings") or 0)))
@@ -214,7 +216,7 @@ def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]
 
 
 def is_publishable(deal: dict[str, Any], cfg,
-                   min_pct: float | None = None) -> tuple[bool, str]:
+                   min_pct: float | None = None, *, require_critic: bool = True) -> tuple[bool, str]:
     """All publish gates; returns (False, reason) naming the first failure.
 
     ``min_pct`` overrides cfg.min_pct (the site's lower "strong deals" tier
@@ -223,6 +225,15 @@ def is_publishable(deal: dict[str, Any], cfg,
     status = deal.get("status", "alive")
     if status != "alive":
         return False, f"status: {status!r} is not 'alive'"
+    if "unbacked_price" in (deal.get("flags") or []):
+        return False, "price: latest sighting has no computable checkout price"
+
+    sources = [deal.get("source_name", "")] + [
+        s.get("source_name", "") for s in deal.get("sightings") or []]
+    if require_critic and any(str(s or "").casefold().startswith("keepa") for s in sources):
+        verdict = deal.get("critic")
+        if not isinstance(verdict, dict) or type(verdict.get("plausible")) is not bool:
+            return False, "critic: Keepa deal awaits a valid verdict"
 
     online_only = deal.get("online_only", "unknown")
     if online_only != "true":
@@ -256,7 +267,7 @@ def is_publishable(deal: dict[str, Any], cfg,
 
     # Used/open-box supply is plentiful: such deals clear a HIGHER absolute
     # floor, and the site's lower "strong deals" tier never softens it.
-    if {"used", "open_box"} & set(deal.get("conditions") or []):
+    if USED_CONDITIONS & set(normalize_conditions(deal.get("conditions"))):
         used_floor = getattr(cfg, "used_min_pct", 80.0)
         if pct < used_floor:
             return False, (f"pct_at_checkout: {pct!r} < used_min_pct "

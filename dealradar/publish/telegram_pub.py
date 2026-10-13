@@ -10,7 +10,6 @@ The channel carries price-free facts and a live wowpriced deal-page link.
 from __future__ import annotations
 
 import logging
-import math
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -18,6 +17,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from ..savings import display_pct
+from ..persistence import delivery_run_key, prepare_delivery
 from ..config import get_secret
 from ..util import parse_iso
 from .site import rewrite_affiliate
@@ -46,7 +47,7 @@ def format_message(deal: dict[str, Any], path: str | None = None,
     if path is not None:
         item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
         store = _without_prices(str(deal.get("store") or ""))
-        pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
+        pct = display_pct(deal["pct_at_checkout"])
         disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
         return (f"🔥 {pct}% OFF: {item}\n"
                 f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n"
@@ -56,7 +57,7 @@ def format_message(deal: dict[str, Any], path: str | None = None,
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
-    pct_s = f"{pct:.0f}% off" if pct is not None else "?% off"
+    pct_s = f"{display_pct(pct)}% off" if pct is not None else "?% off"
     tier = _TIER_WORDS.get(deal.get("verify_tier") or "", "")
     head = f"{pct_s}, {tier}" if tier else pct_s
     parts = [
@@ -83,7 +84,8 @@ def _should_send(last: dict[str, Any] | None) -> bool:
 
 
 def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_client: Any = None,
-                sleep_fn: Any = None, deadline: float | None = None) -> dict[str, Any]:
+                sleep_fn: Any = None, deadline: float | None = None,
+                run_key: str | None = None) -> dict[str, Any]:
     """Post capped public picks to the channel. Returns {sent, skipped, dry_run}.
 
     Dry-run semantics: an EXPLICIT dry run (the ``dry_run`` argument or
@@ -112,9 +114,13 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
         return result
 
     alerts = db.conn.execute(
-        "SELECT deal_key, sent_at FROM alerts_sent WHERE channel='telegram'"
+        "SELECT deal_key, dedup_token, sent_at FROM alerts_sent WHERE channel='telegram'"
     ).fetchall()
-    sent_at = [at for row in alerts if (at := parse_iso(row["sent_at"]))]
+    attempted = {row["dedup_token"]: row["sent_at"] for row in alerts}
+    outgoing = db.outgoing_for("telegram")
+    for entry in outgoing:
+        attempted.setdefault(entry["dedup_token"], entry["started_at"])
+    sent_at = [at for value in attempted.values() if (at := parse_iso(value))]
     today = sum(at.astimezone(zone).date() == local.date() for at in sent_at)
     cap = min(max(0, int(settings.get("posts_per_run", 1))),
               max(0, int(settings.get("daily_max", 24)) - today))
@@ -122,6 +128,7 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
     if not cap or (sent_at and (now - max(sent_at)).total_seconds() < gap_seconds):
         return result
     posted = {row["deal_key"]: True for row in alerts}
+    posted.update({row["dedup_token"].removesuffix("|telegram"): True for row in outgoing})
     try:
         candidates = _candidates(db, cfg, posted)
     except (OSError, ValueError, KeyError, TypeError):
@@ -135,6 +142,10 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
                       if (seen := parse_iso(deal.get("first_seen_at") or "")) is not None
                       and (now - seen).total_seconds() >= min_age]
     candidates = candidates[:cap]
+    if not creds_missing or explicit_dry:
+        selected = db.delivery_batch("telegram", delivery_run_key(now, run_key),
+                                     [d["dedupe_key"] for d, _ in candidates])
+        candidates = [(d, path) for d, path in candidates if d["dedupe_key"] in selected]
 
     if sleep_fn is None:
         sleep_fn = time.sleep
@@ -185,19 +196,25 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
             if deadline is not None and time.monotonic() >= deadline:
                 break
             real_posts += 1
+            if not prepare_delivery(db, "telegram", dedup_token, now, run_key):
+                skipped += 1
+                continue
             resp = client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": channel, "text": msg,
                       "disable_web_page_preview": False},
             )
             if resp.status_code != 200:
-                logger.error("telegram send failed (%s) for %s; will retry next run",
+                if 400 <= resp.status_code < 500:
+                    db.finish_outgoing("telegram", dedup_token, now, rejected=True)
+                logger.error("telegram send failed (%s) for %s",
                              resp.status_code, key)
                 skipped += 1
-                continue  # NOT recorded -> retried next run
+                continue  # uncertain deliveries retain their outgoing claim
             db.record_alert(deal_key=key, channel="telegram",
                             dedup_token=dedup_token, now=now,
                             price_at_send=final, tier_at_send=tier)
+            db.finish_outgoing("telegram", dedup_token, now)
             sent += 1
     finally:
         if created_client and client is not None:

@@ -13,6 +13,7 @@ engine reports the true numbers and the publish layer applies the floors.
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Any
 
@@ -47,6 +48,11 @@ _ABS_OFF_RE = re.compile(r"\boff\b|coupon|clip|discount|save")
 
 _CHECKOUT_KINDS = ("pct_off", "abs_off", "sale_price")
 _REBATE_KINDS = ("rebate_abs", "rebate_pct")
+
+
+def display_pct(value: float) -> int:
+    """Whole-percent display rounding, matching the browser's Math.round."""
+    return math.floor(float(value) + .5)
 
 
 # ---------------------------------------------------------------------------

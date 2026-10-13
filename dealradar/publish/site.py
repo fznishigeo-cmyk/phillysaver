@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
+from ..savings import display_pct
 from ..config import load_sources, redact_secrets, support_link
 from ..rank import pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
@@ -255,7 +256,7 @@ def _headline(deal: dict[str, Any]) -> str:
     else:
         lead = f"{item} is ${final:,.2f} at {store}"
     if pct is not None:
-        lead += f" — {pct:.0f}% off"
+        lead += f" — {display_pct(pct)}% off"
         if reg:
             lead += f" the usual ${reg:,.2f}"
         elif deal.get("basis") == "list_price_claim":

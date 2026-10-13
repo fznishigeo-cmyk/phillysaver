@@ -204,6 +204,8 @@ Missing regular price **and** no stated pct **and** no `deal_type` →
 - `final_price` in the result is the **shipping-adjusted** checkout price;
   `regular_price` passes through unchanged.
 - All pcts are rounded to **1 decimal** at the very end.
+- Whole-percent display copy uses half-up rounding everywhere (62.5% → 63%).
+  Gates and calculations retain the engine's one-decimal value.
 
 **Worked example:** "reg $100 now $35 + $6 shipping" → result
 `final_price=41.0`, `regular_price=100.0`, `abs_savings=59.0`, `pct=59.0`.

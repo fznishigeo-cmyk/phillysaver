@@ -196,9 +196,11 @@ def test_per_run_daily_caps_and_utc_reset(db, cfg, mode):
     run(db, cfg, calls)
     assert [len(history(db, key)[n]) for n in ("facebook", "instagram")] == [2, 2]
     run(db, cfg, calls)
+    assert [len(history(db, key)[n]) for n in ("facebook", "instagram")] == [2, 2]
+    run(db, cfg, calls, now=NOW + timedelta(minutes=10))
     assert [len(history(db, key)[n]) for n in ("facebook", "instagram")] == [4, 3]
     calls.clear()
-    run(db, cfg, calls)
+    run(db, cfg, calls, now=NOW + timedelta(minutes=20))
     assert not calls
     run(db, cfg, calls, now=NOW + timedelta(days=1))
     assert [len(history(db, key)[n]) for n in ("facebook", "instagram")] == [6, 5]

@@ -293,7 +293,7 @@ def test_one_category_call_at_most_sixty_titles():
 
 def test_failed_calls_default_without_routing_around_caps(monkeypatch):
     parser, msgs = parser_for()
-    monkeypatch.setattr(parser, "_request", lambda fn: None)
+    monkeypatch.setattr(parser, "_request", lambda fn, **kwargs: None)
     assert critique_deals(parser, [deal()]) == [None]
     assert categorize_titles(parser, ["Widget"]) == ["other"]
     assert msgs.calls == []

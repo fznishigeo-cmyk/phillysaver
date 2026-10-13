@@ -18,6 +18,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..models import Evidence, ExtractedDeal, RawPost
+from ..conditions import normalize_conditions
 
 log = logging.getLogger("dealradar.parse.schema")
 
@@ -126,6 +127,8 @@ class LLMEvidence(BaseModel):
     final_price_quote: str = ""
     pct_quote: str = ""
     price_upper_bound_quote: str = ""
+    shipping_quote: str = ""
+    deal_type_quote: str = ""
 
     _drop_nulls = model_validator(mode="before")(_drop_null_keys)
 
@@ -173,6 +176,11 @@ class LLMDeal(BaseModel):
     price_upper_bound: float | None = None
 
     _repair = model_validator(mode="before")(_repair_payload)
+
+    @field_validator("conditions")
+    @classmethod
+    def _norm_conditions(cls, v: list[str]) -> list[str]:
+        return normalize_conditions(v)
 
     @field_validator("regular_price", "final_price", "pct_off", "abs_savings",
                      "price_upper_bound", mode="before")
@@ -300,7 +308,9 @@ Rules:
 - expires_at_raw: copy the expiry wording exactly as written ('ends today',
   'through 10/12', an ISO date) WITHOUT interpreting it. Empty if none.
 - deal_type: one of '', 'bogo', 'b2g1', 'b2g3', 'b1g1_50', 'free_after_rebate',
-  'moneymaker', 'penny' — tag from the wording only.
+  'moneymaker', 'penny' — tag from wording backed by evidence.deal_type_quote.
+- shipping_cost_or_threshold: copy the stated shipping cost/free threshold;
+  evidence.shipping_quote must copy the shipping wording and every amount.
 - 'as low as $X' and price ranges: set price_is_range=true and
   price_upper_bound to the highest price mentioned, backed by its own exact
   verbatim quote in evidence.price_upper_bound_quote (no quote -> leave
@@ -316,6 +326,8 @@ Rules:
   subscribe_save), and sale prices. Multi-buy promos like 'save $X on 2
   select items' or 'X% off when you buy 2' apply only when buying multiples:
   record them as stack steps AND add the condition multi_buy.
+- Every stack step and rebate must be copied verbatim, including its numbers
+  and wording. Unsupported shipping, steps, rebates or deal types drop the deal.
 - codes / rebates: promo codes and rebates exactly as written.
 - category: the single best fit from electronics, computers, home, kitchen,
   kids_baby, toys_games, fashion, beauty, health, grocery, pets, outdoors,
@@ -422,6 +434,8 @@ def to_extracted(d: LLMDeal, post: RawPost, tz_name: str, now: datetime) -> Extr
             final_price_quote=d.evidence.final_price_quote,
             pct_quote=d.evidence.pct_quote,
             price_upper_bound_quote=d.evidence.price_upper_bound_quote,
+            shipping_quote=d.evidence.shipping_quote,
+            deal_type_quote=d.evidence.deal_type_quote,
         ),
         confidence=d.confidence,
         deal_type=d.deal_type,

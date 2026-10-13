@@ -4,14 +4,12 @@ A deal is identified by its dedupe_key:
 - 'url|<canonical_url>' when the pipeline resolved a canonical product URL;
 - 'si|<store>|<normalized item>' otherwise (store + normalized item name).
 
-Merging keeps the best (lowest) observed final price and its matching savings
-fields, unions list facts (codes, conditions, rebates, stack steps), and keeps
+Merging keeps the latest backed price and its matching checkout facts, and keeps
 the most recently stated expiry. Sightings and price history are anchored on
 the post's content_hash, so re-running the pipeline adds no rows.
 
-Note on canonical_url fill-in: the frozen DB contract offers no method to
-update the deals.canonical_url column, so a later-resolved URL is filled into
-the stored payload only (the column keeps its insert-time value).
+An initially missing product URL is filled into the row as well as its
+payload, so later merges can compare the product's known identity.
 """
 
 from __future__ import annotations
@@ -93,9 +91,15 @@ def find_existing(db, store: str, canonical_url: str, item: str,
     cutoff = fuzzy_threshold * 100.0
     code_cutoff = CODE_ASSISTED_RATIO * 100.0
     my_codes = _distinctive_codes(codes)
+    from .product_images import link_key
+
+    identity = link_key(canonical_url) if canonical_url else ""
     best: dict[str, Any] | None = None
     best_score = 0.0
     for row in db.deals_by_store(store):
+        other = link_key(row.get("canonical_url") or "")
+        if identity and other and identity != other:
+            continue
         score = fuzz.token_sort_ratio(norm, row["normalized_item"])
         bar = (code_cutoff
                if my_codes and (_distinctive_codes(row.get("codes")) & my_codes)
@@ -287,6 +291,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         payload["online_only_published_at"] = (
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
         payload["expires_published_at"] = util.iso(post_at) if extracted.expires_at else ""
+        payload["price_published_at"] = util.iso(post_at)
         payload["image_url"] = _post_image(extracted, post)
         deal_id = db.insert_deal(
             dedupe_key=key,
@@ -313,13 +318,23 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         key = existing["dedupe_key"]
         deal_id = int(existing["id"])
         is_new = False
-        payload = {k: existing.get(k) for k in _DEAL_FIELDS if k in existing}
+        payload = {k: v for k, v in existing.items()
+                   if k not in ("id", "normalized_item")}
+
+        fresh = db.add_sighting(deal_id, source_name=post.source_name,
+                                source_url=post.url, content_hash=post.content_hash,
+                                seen_at=now, final_price=savings.final_price)
 
         old_final = existing.get("final_price")
         new_final = savings.final_price
-        price_improved = new_final is not None and (
+        price_at = util.parse_iso(existing.get("price_published_at")
+                                  or existing.get("last_seen_at") or "")
+        current = fresh and (price_at is None or post_at >= price_at)
+        price_improved = current and new_final is not None and (
             old_final is None or new_final < old_final)
-        if price_improved:
+        price_changed = current and (
+            new_final != old_final or savings.regular_price != existing.get("regular_price"))
+        if current:
             payload["final_price"] = savings.final_price
             payload["regular_price"] = savings.regular_price
             payload["pct_at_checkout"] = savings.pct_at_checkout
@@ -327,17 +342,24 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["abs_savings"] = savings.abs_savings
             payload["basis"] = savings.basis
             payload["flags"] = list(savings.flags)
+            if not savings.computable:
+                payload["flags"].append("unbacked_price")
+            elif not price_changed and (existing.get("critic") or {}).get("plausible") is False:
+                payload["flags"].append("suspect_msrp")
+            if existing.get("status") == "dead" and "price_moved" in (existing.get("flags") or []):
+                payload["flags"].append("price_moved")
             # The prices the critic judged changed: its verdict is stale.
-            payload["critic"] = None
-            # Keepa data older than this drop cannot judge the new price.
-            payload["price_since"] = util.iso(now)
+            if price_changed:
+                payload["critic"] = None
+                # Keepa data older than this update cannot judge the new price.
+                payload["price_since"] = util.iso(now)
+            payload["price_published_at"] = util.iso(post_at)
+            for field in ("codes", "rebates", "stack_steps", "shipping_cost_or_threshold",
+                          "deferred_value", "quantity_or_unit"):
+                payload[field] = getattr(extracted, field)
 
-        payload["codes"] = _union(existing.get("codes"), extracted.codes)
         payload["conditions"] = _union(existing.get("conditions"),
                                        extracted.conditions)
-        payload["rebates"] = _union(existing.get("rebates"), extracted.rebates)
-        payload["stack_steps"] = _union(existing.get("stack_steps"),
-                                        extracted.stack_steps)
 
         new_at = util.iso(post_at)
         online_at = (existing.get("online_only_published_at")
@@ -390,10 +412,6 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                 payload["image_url"] = image
         payload["last_seen_at"] = util.iso(now)
 
-        fresh = db.add_sighting(deal_id, source_name=post.source_name,
-                                source_url=post.url,
-                                content_hash=post.content_hash,
-                                seen_at=now, final_price=savings.final_price)
         payload["sightings"] = db.sightings_for(deal_id)
         # A NEW sighting of a dead deal at (or within the recheck's 10% of)
         # its stored price is proof it is on sale again. Live wart
@@ -438,9 +456,11 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         db.update_deal(
             key,
             payload=payload,
-            final_price=savings.final_price if price_improved else None,
-            pct_at_checkout=savings.pct_at_checkout if price_improved else None,
-            abs_savings=savings.abs_savings if price_improved else None,
+            final_price=savings.final_price if current else None,
+            pct_at_checkout=savings.pct_at_checkout if current else None,
+            abs_savings=savings.abs_savings if current else None,
+            replace_prices=current,
+            canonical_url=payload.get("canonical_url") or None,
             online_only=merged_online,
             status="alive" if revived else None,
             expires_at=merged_expires,

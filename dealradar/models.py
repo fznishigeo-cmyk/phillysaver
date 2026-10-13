@@ -115,6 +115,8 @@ class Evidence:
     final_price_quote: str = ""
     pct_quote: str = ""
     price_upper_bound_quote: str = ""  # required when price_is_range
+    shipping_quote: str = ""
+    deal_type_quote: str = ""
 
 
 @dataclass
@@ -160,6 +162,11 @@ class ExtractedDeal:
     # this deal's link (a store or sale page). It names none of them; the
     # deal row keeps the fact as Deal.link_shared.
     link_shared: bool = False
+
+    def __post_init__(self) -> None:
+        from .conditions import normalize_conditions
+
+        self.conditions = normalize_conditions(self.conditions)
 
 
 @dataclass
@@ -226,6 +233,9 @@ class Deal:
     # ISO UTC of a later price drop or revival; the recheck kills a deal
     # only on Keepa data newer than this and first_seen_at.
     price_since: str = ""
+    price_published_at: str = ""
+    online_only_published_at: str = ""
+    expires_published_at: str = ""
     # ISO UTC of the last Keepa recheck that ANSWERED without a verdict
     # (inconclusive offers scan, stale data): the deal waits a retry window
     # instead of being re-asked, and paid for, on every run.

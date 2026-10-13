@@ -369,18 +369,18 @@ class TestSending:
                  deadline=future)
         assert r["sent"] == 3
 
-    def test_failed_recipient_is_retried_next_run(self, db, cfg, monkeypatch):
+    def test_uncertain_recipient_is_not_retried_next_run(self, db, cfg, monkeypatch):
         configure(monkeypatch)
         worker = FakeWorker([("a@x.com", "t1"), ("bad@x.com", "t2"), ("c@x.com", "t3")])
         factory = Factory(fail_for={"bad@x.com"})
         stats = send(db, cfg, AFTER_8_LOCAL, worker, factory)
         assert stats["sent"] == 2 and stats["skipped"] == ""
         assert set(sent_today(db)) == fps("a@x.com", "c@x.com")
-        # The mailbox is back: only the failed address is sent again.
+        # An uncertain SMTP acceptance is never automatically re-sent.
         ok = Factory()
-        assert send(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 1
-        assert [m["To"] for m in ok.messages] == ["bad@x.com"]
-        assert set(sent_today(db)) == fps("a@x.com", "bad@x.com", "c@x.com")
+        assert send(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 0
+        assert ok.messages == []
+        assert set(sent_today(db)) == fps("a@x.com", "c@x.com")
 
     def test_connection_drop_stops_the_batch_and_resumes(self, db, cfg, monkeypatch):
         configure(monkeypatch)
@@ -389,8 +389,8 @@ class TestSending:
         assert send(db, cfg, AFTER_8_LOCAL, worker, factory)["sent"] == 1
         assert set(sent_today(db)) == fps("a@x.com")
         ok = Factory()
-        assert send(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 2
-        assert [m["To"] for m in ok.messages] == ["b@x.com", "c@x.com"]
+        assert send(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 1
+        assert [m["To"] for m in ok.messages] == ["c@x.com"]
 
     def test_new_subscriber_mid_day_gets_todays_email(self, db, cfg, monkeypatch):
         configure(monkeypatch)
@@ -607,7 +607,7 @@ class TestPick:
         (call,) = messages.calls
         assert 0 < call["timeout"] <= 0.2
         assert parser.client.options == [{"max_retries": 0}]
-        assert parser.spend_usd == 0.0
+        assert 0 < parser.spend_usd <= parser.run_cap_usd  # uncertain billed work stays reserved
 
     def test_no_parser_or_nothing_to_choose_means_no_call(self, cfg):
         picked, how = N.pick_top(ranked(45), cfg, None)  # no key / daily cap spent
@@ -626,10 +626,10 @@ class TestPick:
     def test_spend_counts_toward_the_same_cap(self, cfg):
         # The pick's cost lands on the shared parser, so the next call that
         # would pass the run's remaining cap is never made.
-        parser, messages = make_parser(cfg, ids_answer(5), ids_answer(6),
-                                       run_cap_usd=PICK_COST / 2)
+        parser, messages = make_parser(cfg, ids_answer(5), ids_answer(6))
         assert N.pick_top(ranked(45), cfg, parser)[1] == "model"
         assert parser.spend_usd == pytest.approx(PICK_COST)
+        parser.run_cap_usd = parser.spend_usd + .000001
         picked, how = N.pick_top(ranked(45), cfg, parser)
         assert how == "rank" and items(picked) == RANK_TOP10
         assert len(messages.calls) == 1
@@ -1014,15 +1014,15 @@ class TestConfirmations:
                        factory)["skipped"] == "no pending sign-ups"
         assert len(factory.messages) == 1
 
-    def test_guard_expires_after_24h(self, db, cfg, monkeypatch):
+    def test_delivery_claim_outlives_the_24h_guard(self, db, cfg, monkeypatch):
         configure(monkeypatch)
         worker = FakeOptInWorker([("a@x.com", "tok-a")], mark_status=500)
         factory = Factory()
         assert confirm(db, cfg, AFTER_8_LOCAL, worker, factory)["sent"] == 1
         assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=23), worker, factory)["sent"] == 0
-        # Still listed a day later (the Worker never took the mark): one more link.
-        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=25), worker, factory)["sent"] == 1
-        assert len(factory.messages) == 2
+        # A failed Worker mark cannot cause an accepted email to be re-sent.
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=25), worker, factory)["sent"] == 0
+        assert len(factory.messages) == 1
         # A new sign-up alongside a guarded one: only the new one is emailed,
         # both are marked in the one POST.
         worker.pending.append(("b@x.com", "tok-b"))
@@ -1039,14 +1039,14 @@ class TestConfirmations:
         assert worker.marked == [["a@x.com", "c@x.com"]] and worker.pending == [("bad@x.com", "t2")]
         assert guarded(db) == fps("a@x.com", "c@x.com")  # the refusal is not guarded
         ok = Factory()
-        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 1
-        assert [m["To"] for m in ok.messages] == ["bad@x.com"] and worker.pending == []
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), worker, ok)["sent"] == 0
+        assert ok.messages == [] and worker.pending == [("bad@x.com", "t2")]
 
         dropping = FakeOptInWorker([("d@x.com", "t4"), ("e@x.com", "t5")])
         drop = Factory(drop_after=1)
         assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=1), dropping, drop)["sent"] == 1
         assert dropping.marked == [["d@x.com"]] and dropping.pending == [("e@x.com", "t5")]
-        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=2), dropping, Factory())["sent"] == 1
+        assert confirm(db, cfg, AFTER_8_LOCAL + timedelta(hours=2), dropping, Factory())["sent"] == 0
 
     @pytest.mark.parametrize("missing, reason", [
         ("worker_url", "newsletter.worker_url not configured"),
@@ -1084,7 +1084,7 @@ class TestConfirmations:
         def boom(host, port):
             raise OSError("smtp down")
 
-        stats = N.send_confirmations(db, cfg, AFTER_8_LOCAL, smtp_factory=boom,
+        stats = N.send_confirmations(db, cfg, AFTER_8_LOCAL + timedelta(minutes=10), smtp_factory=boom,
                                      http_client=worker.client())
         assert stats["skipped"].startswith("smtp connect failed") and stats["sent"] == 0
         assert worker.marked == [] and N.fingerprint("a@x.com") not in guarded(db)

@@ -192,7 +192,7 @@ def test_hourly_shape() -> None:
     assert_cloudflare_is_the_only_host(doc)
 
     run_step = next(s for s in steps if s.get("run", "").strip() == "python -m dealradar run")
-    assert set(run_step["env"]) == set(SECRET_NAMES)
+    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY"])
     # The operator saved the Sovrn link key as SOVRN_API_KEY2 (2026-10-12).
     renamed = {"SOVRN_API_KEY": "${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}"}
     for name, value in run_step["env"].items():
@@ -244,11 +244,13 @@ def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
     assert post > deploy and steps[post]["continue-on-error"] is True
     assert steps[post]["id"] == "pinterest"
     assert steps[post]["env"] == {"PINTEREST_APP_ID": "${{ secrets.PINTEREST_APP_ID }}",
-                                   "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}"}
+                                   "PINTEREST_APP_SECRET": "${{ secrets.PINTEREST_APP_SECRET }}",
+                                   "STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
     meta = steps[post + 1]
     assert meta == {
         "name": "Post top deals to Facebook and Instagram", "id": "meta",
-        "continue-on-error": True, "env": {"META_SYSTEM_TOKEN": "${{ secrets.META_SYSTEM_TOKEN }}"},
+        "continue-on-error": True, "env": {"META_SYSTEM_TOKEN": "${{ secrets.META_SYSTEM_TOKEN }}",
+                                         "STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"},
         "run": "python -m dealradar meta-post",
     }
     commit = steps[post + 2]
@@ -285,7 +287,7 @@ def test_fast_shape() -> None:
 
     run_step = next(s for s in job["steps"]
                     if s.get("run", "").strip() == "python -m dealradar run --fast-lane")
-    assert set(run_step["env"]) == set(SECRET_NAMES)
+    assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY"])
 
 
 @pytest.mark.parametrize("path", [HOURLY, FAST])

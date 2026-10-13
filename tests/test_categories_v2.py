@@ -207,7 +207,7 @@ def test_partial_answers_keep_valid_indexes_retry_only_missing():
 
 def test_retry_cap_keeps_accepted_categories_in_parse():
     messages = IndexedMessages([[{"i": 0, "category": "beauty"}]])
-    parser, _ = parser_for(messages, spend_cap_usd_per_run=.00001)
+    parser, _ = parser_for(messages, spend_cap_usd_per_run=.0004)
     posts = [KeepaDealsAdapter._map_row(_amazon_row(i), SRC, NOW) for i in range(2)]
     pairs, stats = parse_posts(posts, parser, parser.cfg, NOW, {})
     assert [d.category for _, d in pairs] == ["beauty", "other"]
@@ -229,7 +229,7 @@ def test_recategorization_resumes_cap_is_idempotent_and_changes_only_category(tm
     db.meta_set(ROOTS_META, json.dumps({"B000000001": "101"}))
     original = snapshot(db)
     messages = IndexedMessages([[{"i": 0, "category": "fashion"}]])
-    parser, _ = parser_for(messages, spend_cap_usd_per_run=.00001)
+    parser, _ = parser_for(messages, spend_cap_usd_per_run=.0024)
     with caplog.at_level("INFO"):
         recategorize_live_deals(db, parser)
     assert db.meta_get("recategorized_v2") != "1"

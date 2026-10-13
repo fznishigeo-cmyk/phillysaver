@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 from .config import get_secret, error_summary, load_config
 from .db import DB
 from .http_client import PoliteFetcher
+from .conditions import USED_CONDITIONS, normalize_conditions
 from .keepa_budget import (MIN_FOR_RECHECK, KeepaBudget, describe_429,
                            response_payload)
 from .util import iso, parse_iso
@@ -59,7 +60,7 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
                 fetcher: PoliteFetcher | None = None) -> str:
     """Compute the verification tier for one deal row dict."""
     since = now - timedelta(hours=cfg.corroborate_window_h)
-    if db.distinct_sources_within(deal["id"], since) >= 2:
+    if db.distinct_sources_within(deal["id"], since, deal.get("final_price"), now) >= 2:
         return "corroborated"
 
     final = deal.get("final_price")
@@ -215,6 +216,20 @@ def post_marks_dead(post, extracted) -> bool:
     return False
 
 
+def mark_ended_post(db, post, now: datetime) -> None:
+    """An updated single-product title can end its old sighting without a parse."""
+    if not text_marks_dead(post.title):
+        return
+    deals = db.deals_for_post(post.source_name, post.url)
+    if len(deals) != 1:
+        return  # a roundup's title does not identify which product ended
+    deal = deals[0]
+    price_at = parse_iso(deal.get("price_published_at") or deal.get("last_seen_at") or "")
+    post_at = post.published_at or post.fetched_at
+    if price_at is None or post_at >= price_at:
+        mark_unconfirmed_dead(db, deal, "post_says_over", now)
+
+
 _IMAGE_NAME_RE = re.compile(r"[\w.,+%-]+")
 
 
@@ -262,7 +277,7 @@ _HIDDEN_PROMO_RE = re.compile(
 
 def is_used_deal(deal: dict[str, Any]) -> bool:
     """True for a used / open-box deal (Amazon Warehouse, Amazon Resale)."""
-    return bool({"used", "open_box"} & set(deal.get("conditions") or []))
+    return bool(USED_CONDITIONS & set(normalize_conditions(deal.get("conditions"))))
 
 
 #: Keepa timestamps count minutes from 2011-01-01T00:00Z; that moment is

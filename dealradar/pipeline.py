@@ -1226,7 +1226,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             continue
         if tried_recently(deal, used):
             continue
-        ok, _reason = rank.is_publishable(deal, cfg)
+        ok, _reason = rank.is_publishable(deal, cfg, require_critic=False)
         if not ok:
             continue  # only spend tokens on deals that would publish
         (photo if in_window else due_used if used else due).append(deal)
@@ -1234,7 +1234,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     for deal in db.all_deals(status="dead"):
         if deal.get("asin") and not deal.get("price_rechecked_at") \
                 and _revivable(deal, now) and not tried_recently(deal, True) \
-                and rank.is_publishable(dict(deal, status="alive"), cfg)[0]:
+                and rank.is_publishable(dict(deal, status="alive"), cfg, require_critic=False)[0]:
             due_used.append(deal)
     # A suspect's confirming reading first, then longest-unchecked (never-
     # checked leading): when demand outgrows the token plan the shortfall
@@ -1357,7 +1357,9 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
             deal.get("canonical_url") or "")).upper()
 
     def condition_class(deal):
-        conditions = set(deal.get("conditions") or [])
+        from .conditions import normalize_conditions
+
+        conditions = set(normalize_conditions(deal.get("conditions")))
         for condition in ("open_box", "refurbished", "used"):
             if condition in conditions:
                 return condition
@@ -1379,7 +1381,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
                 continue
             verdict = other.get("critic")
             basis = other.get("regular_price")
-            if not verdict or not basis or basis <= 0:
+            if (not isinstance(verdict, dict) or type(verdict.get("plausible")) is not bool
+                    or not basis or basis <= 0):
                 continue
             if condition_class(other) != condition_class(deal):
                 continue
@@ -1416,11 +1419,12 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
         if deal.get("status") != "alive":
             continue
         prior = deal.get("critic")
-        if prior and not (prior.get("plausible")
-                          and float(prior.get("confidence") or 0.0) < 0.7
-                          and not prior.get("rechecked")):
+        valid_prior = isinstance(prior, dict) and type(prior.get("plausible")) is bool
+        if valid_prior and not (prior.get("plausible")
+                                and float(prior.get("confidence") or 0.0) < 0.7
+                                and not prior.get("rechecked")):
             continue
-        ok, _reason = rank.is_publishable(deal, cfg)
+        ok, _reason = rank.is_publishable(deal, cfg, require_critic=False)
         if not ok:
             continue
         verdict = reusable(deal)
@@ -1545,20 +1549,21 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .publish.site import health_markdown, render_site
     from .publish.telegram_pub import send_alerts
     from .savings import compute_savings
-    from .verify import (mark_expired_dead, mark_unconfirmed_dead,
+    from .verify import (mark_ended_post, mark_expired_dead, mark_unconfirmed_dead,
                          post_marks_dead, refresh_tiers)
 
     cfg = load_config(config_path)
     now = now or util.now_utc()
     started = time.monotonic()
     deadline = started + cfg.run_budget_s
-    run_key = _run_key(now, fast_lane)
+    run_key = os.environ.get("DEALRADAR_RUN_KEY") or _run_key(now, fast_lane)
     kind = "fast" if fast_lane else "hourly"
 
     db = DB(db_path)
     db.start_run(run_key, kind, now)
     fetcher = PoliteFetcher(db, cfg, transport=transport)
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
+    parser = None
     summary["deaths_by_reason"] = {}
     recorded_deaths = {(d["dedupe_key"], d.get("died_at"), d.get("death"))
                        for d in db.all_deals(status="dead")}
@@ -1612,6 +1617,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             new_posts.append(post)
         new_posts = _interleave_by_source(new_posts)
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
+        for post in new_posts:
+            mark_ended_post(db, post, now)
+        record_deaths()
 
         # ---- parse (Claude; evidence-verified) ----
         # Daily ceiling: this run may spend at most what remains of the cap
@@ -1639,6 +1647,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             # the deal critic all draw on the same spend caps.
             parser = _build_parser(cfg, claude_client=claude_client,
                                    run_cap_usd=remaining_today)
+            from .parse.claude_client import ClaudeParser
+
+            if isinstance(parser, ClaudeParser):
+                parser.bind_ledger(db, run_key)
         # The critic keeps its share of this run's allowance: extraction may
         # use the rest, and whatever it leaves also goes to the critic.
         run_cap = parser.run_cap_usd if parser is not None else 0.0
@@ -1834,20 +1846,22 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             log.warning("paywall publish failed: %s", e)
             summary["paywall_publish"] = False
         tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram,
-                         deadline=deadline)
+                         deadline=deadline, run_key=run_key)
         summary["telegram"] = tg
         # Paying members (Stripe) get the same new deals by email, bundled.
-        summary["member_alerts"] = send_member_alerts(db, cfg, now)
-        summary["digest_sent"] = maybe_send_digest(db, cfg, now)
+        summary["member_alerts"] = send_member_alerts(db, cfg, now, run_key=run_key)
+        summary["digest_sent"] = maybe_send_digest(db, cfg, now, run_key=run_key)
         # Double opt-in: new sign-ups get their confirmation link every run
         # (small and capped, so it goes before the day's big send).
         summary["confirmations"] = send_confirmations(db, cfg, now,
-                                                      deadline=deadline)
+                                                      deadline=deadline,
+                                                      run_key=run_key)
         # The free list's daily top: picked once a day by the parse model on
         # the shared parser (same caps); its spend joins this run's total.
         summary["newsletter"] = send_daily_newsletter(db, cfg, now,
                                                       deadline=deadline,
-                                                      parser=parser)
+                                                      parser=parser,
+                                                      run_key=run_key)
         if parser is not None:
             spend_total = float(getattr(parser, "spend_usd", 0.0))
         summary["spend_usd"] = spend_total
@@ -1881,11 +1895,6 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 recorded += 1
         summary["posts_new"] = recorded
         db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days)
-        db.finish_run(run_key, now=util.now_utc(),
-                      items_fetched=len(posts), posts_new=recorded,
-                      deals_parsed=pstats.get("deals_extracted", 0),
-                      published=summary["published"],
-                      spend_usd=spend_total)
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             try:
@@ -1900,8 +1909,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                  {k: v for k, v in summary.items() if k != "source_errors"})
         return summary
     finally:
-        fetcher.close()
-        db.close()
+        try:
+            db.finish_run(run_key, now=util.now_utc(),
+                          items_fetched=summary.get("items_fetched", 0),
+                          posts_new=summary.get("posts_new", 0),
+                          deals_parsed=summary.get("parse", {}).get("deals_extracted", 0),
+                          published=summary.get("published", 0),
+                          spend_usd=float(getattr(parser, "spend_usd", 0.0)),
+                          accounted_spend_usd=float(getattr(parser, "ledger_spend_usd", 0.0)),
+                          untracked_at=now)
+        finally:
+            fetcher.close()
+            db.close()
 
 
 def validate_only(*, db_path: str = "state.db", config_path: str | None = None,

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import secrets
 import time
@@ -17,6 +16,8 @@ from urllib.parse import urlencode
 
 import httpx
 
+from ..savings import display_pct
+from ..persistence import delivery_run_key, prepare_delivery
 from .. import util
 from ..config import get_secret, redact_secrets
 from .social import _candidates, _word_trim, _without_prices, social_title
@@ -258,7 +259,7 @@ def _board(db, cfg, api: _API, headers: dict) -> str:
 def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
     item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _without_prices(str(deal.get("store") or ""))
-    pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
+    pct = display_pct(deal["pct_at_checkout"])
     # Reserve the facts and disclosure before trimming a long item name.
     disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
     suffix = f". {pct}% off at {_word_trim(store, 100)}, verified by wowpriced. {disclosure}"
@@ -273,7 +274,8 @@ def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
     }
 
 
-def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
+def post(db, cfg, *, transport=None, now: datetime | None = None,
+         run_key: str | None = None) -> int:
     if not cfg.pinterest.get("enabled", False):
         log.info("pinterest: disabled")
         return 0
@@ -288,11 +290,18 @@ def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
         if not token:
             return 0
         posted = _meta(db, "pinterest_posted")
+        outgoing = db.outgoing_for("pinterest")
+        for entry in outgoing:
+            posted.setdefault(entry["dedup_token"], {"at": entry["started_at"]})
         today = sum(1 for entry in posted.values()
                     if (at := util.parse_iso(entry.get("at"))) and at.date() == now.date())
         daily_max = max(0, int(cfg.pinterest.get("daily_max", 20)))
         limit = min(max(0, int(cfg.pinterest.get("pins_per_run", 2))), max(0, daily_max - today))
         candidates = _candidates(db, cfg, posted)[:limit] if limit else []
+        selected = db.delivery_batch("pinterest", delivery_run_key(now, run_key),
+                                     [d["dedupe_key"] for d, _ in candidates])
+        candidates = [(d, path) for d, path in _candidates(db, cfg, posted)
+                      if d["dedupe_key"] in selected][:limit] if limit else []
         if not candidates:
             log.info("pinterest: posted 0 (today %d/%d)", today, daily_max)
             return 0
@@ -300,14 +309,20 @@ def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
         board_id = _board(db, cfg, api, headers)
         count = 0
         for deal, path in candidates:
+            key = deal["dedupe_key"]
             try:
+                if not prepare_delivery(db, "pinterest", key, now, run_key):
+                    continue
                 pin = api.request("POST", "/pins", headers=headers,
                                   json=pin_payload(deal, path, board_id,
                                                    cfg.pinterest.get("disclosure", "#ad")))
                 posted[deal["dedupe_key"]] = {"pin_id": str(pin["id"]), "at": util.iso(now)}
                 db.meta_set("pinterest_posted", json.dumps(posted))
+                db.finish_outgoing("pinterest", key, now)
                 count += 1
             except _APIError as error:
+                if error.status is not None and 400 <= error.status < 500:
+                    db.finish_outgoing("pinterest", key, now, rejected=True)
                 log.warning("pinterest: %s%s", "not connected, " if error.status == 401 else "", error)
                 if error.status == 401:
                     break

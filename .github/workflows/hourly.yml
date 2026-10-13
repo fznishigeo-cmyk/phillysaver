@@ -21,6 +21,9 @@ jobs:
   run:
     name: hourly run
     runs-on: ubuntu-latest
+    env:
+      DEALRADAR_DURABLE_STATE: "1"
+      DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
     timeout-minutes: 15  # hard stop; the run itself targets < 3 min of runner time
     steps:
       - name: Check out repository
@@ -43,7 +46,9 @@ jobs:
         run: bash scripts/restore_state.sh
 
       - name: Run pipeline
+        id: pipeline
         env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
           DEALS_CLAUDE_API_KEY: ${{ secrets.DEALS_CLAUDE_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
@@ -70,6 +75,8 @@ jobs:
         run: python -m dealradar run
 
       - name: Commit state to data branch
+        # Save billed calls and pending deliveries even when the pipeline fails.
+        if: ${{ !cancelled() && steps.pipeline.outcome != 'skipped' }}
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/commit_state.sh
@@ -112,6 +119,7 @@ jobs:
         id: pinterest
         continue-on-error: true
         env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
           PINTEREST_APP_ID: ${{ secrets.PINTEREST_APP_ID }}
           PINTEREST_APP_SECRET: ${{ secrets.PINTEREST_APP_SECRET }}
         run: python -m dealradar pinterest-post
@@ -120,6 +128,7 @@ jobs:
         id: meta
         continue-on-error: true
         env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
           META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
         run: python -m dealradar meta-post
 

@@ -263,21 +263,29 @@ class TestParsePathAndSpend:
         assert parser.spend_usd == pytest.approx(0.15)
 
     def test_spend_cap_aborts_before_next_call(self):
-        cfg = make_cfg(spend_cap_usd_per_run=0.10)
+        cfg = make_cfg()
         messages = FakeMessagesWithParse(parse_responses=[
-            # (700k * 0.10 + 100k * 0.50) / 1e6 = 0.12 >= 0.10 cap
-            FakeParseResponse(one_deal(), FakeUsage(700_000, 100_000)),
+            FakeParseResponse(one_deal(), FakeUsage(1000, 100)),
             FakeParseResponse(one_deal(), FakeUsage(1, 1)),
         ])
         parser = make_parser(messages, cfg=cfg)
+        from dealradar.parse.claude_client import MAX_TOKENS
+        from dealradar.parse.schema import SYSTEM_PROMPT, build_user_prompt
+
+        kwargs = dict(model=parser.model, max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+                      messages=[{"role": "user", "content": build_user_prompt("post one", META)}],
+                      output_format=LLMDeals)
+        reservation = parser._reserve(kwargs)
+        parser._settle(reservation, kwargs, kind="extract", released=True)
+        parser.run_cap_usd = reservation[1] + .000075
         assert len(parser.extract("post one", META)) == 1
-        assert parser.spend_usd == pytest.approx(0.12)
+        assert parser.spend_usd == pytest.approx(.00015)
         before = {kind: dict(stats) for kind, stats in parser.spend_by_kind.items()}
         with pytest.raises(SpendCapReached):
             parser.extract("post two", META)
         assert len(messages.parse_calls) == 1  # the second call never went out
         assert parser.spend_by_kind == before
-        assert before["extract"] == {"calls": 1, "usd": pytest.approx(0.12)}
+        assert before["extract"] == {"calls": 1, "usd": pytest.approx(.00015)}
 
     def test_refusal_stop_reason_means_zero_deals(self):
         messages = FakeMessagesWithParse(parse_responses=[

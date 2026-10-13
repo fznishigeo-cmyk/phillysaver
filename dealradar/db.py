@@ -15,14 +15,69 @@ from __future__ import annotations
 import json
 import sqlite3
 import statistics
+from contextlib import closing
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .models import RawPost
+from .conditions import normalize_conditions
 from .util import iso, now_utc, parse_iso
 
+
+@lru_cache(maxsize=1)
+def _publisher_sites() -> dict[str, str]:
+    from .config import load_sources
+
+    primary, backup = load_sources()
+    return {s.name: (urlsplit(s.site).hostname or "").lower().removeprefix("www.")
+            for s in primary + backup}
+
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS delivery_batches (
+    channel TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    deal_keys TEXT NOT NULL,
+    quota INTEGER NOT NULL,
+    PRIMARY KEY(channel, run_key)
+);
+CREATE TABLE IF NOT EXISTS outgoing (
+    channel TEXT NOT NULL,
+    dedup_token TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    finished_at TEXT,
+    PRIMARY KEY(channel, dedup_token)
+);
+CREATE TABLE IF NOT EXISTS llm_calls (
+    call_key TEXT PRIMARY KEY,
+    run_key TEXT NOT NULL,
+    model TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    billed_at TEXT,
+    reserved_usd REAL NOT NULL,
+    cost_usd REAL,
+    status TEXT NOT NULL DEFAULT 'reserved'
+);
+CREATE TABLE IF NOT EXISTS llm_reservations (
+    call_key TEXT NOT NULL REFERENCES llm_calls(call_key),
+    day TEXT NOT NULL,
+    usd REAL NOT NULL,
+    PRIMARY KEY(call_key, day)
+);
+CREATE INDEX IF NOT EXISTS idx_llm_run ON llm_calls(run_key, status);
+CREATE INDEX IF NOT EXISTS idx_llm_day ON llm_calls(substr(billed_at,1,10), status);
+CREATE INDEX IF NOT EXISTS idx_llm_reserved_day ON llm_reservations(day);
+CREATE TABLE IF NOT EXISTS llm_legacy_spend (
+    id INTEGER PRIMARY KEY,
+    run_key TEXT NOT NULL,
+    billed_at TEXT NOT NULL,
+    usd REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_llm_legacy_day ON llm_legacy_spend(substr(billed_at,1,10));
 CREATE TABLE IF NOT EXISTS source_audit_posts (
     source_name TEXT NOT NULL,
     content_hash TEXT NOT NULL,
@@ -165,6 +220,24 @@ class DB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        if self.meta_get("llm_ledger_migrated") is None:
+            self.conn.execute(
+                "INSERT INTO llm_legacy_spend(run_key, billed_at, usd)"
+                " SELECT run_key, started_at, spend_usd FROM run_stats WHERE spend_usd > 0")
+            self.meta_set("llm_ledger_migrated", "1")
+        for row in self.conn.execute("SELECT id, payload, final_price FROM deals").fetchall():
+            payload = json.loads(row["payload"])
+            conditions = normalize_conditions(payload.get("conditions"))
+            repaired = dict(payload, conditions=conditions)
+            if not payload.get("price_published_at"):
+                latest = self.conn.execute(
+                    "SELECT final_price FROM sightings WHERE deal_id=? ORDER BY seen_at DESC,id DESC LIMIT 1",
+                    (row["id"],)).fetchone()
+                if latest and latest[0] != row["final_price"]:
+                    repaired["flags"] = list(dict.fromkeys([*(payload.get("flags") or []), "unbacked_price"]))
+            if repaired != payload:
+                self.conn.execute("UPDATE deals SET payload=? WHERE id=?",
+                                  (json.dumps(repaired), row["id"]))
         self.conn.commit()
 
     def close(self) -> None:
@@ -232,6 +305,7 @@ class DB:
 
     def _deal_row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         d = json.loads(row["payload"])
+        d["conditions"] = normalize_conditions(d.get("conditions"))
         d.update({
             "id": row["id"],
             "dedupe_key": row["dedupe_key"],
@@ -277,13 +351,14 @@ class DB:
                     status: str | None = None,
                     expires_at: str | None = None,
                     last_seen_at: datetime | None = None,
-                    canonical_url: str | None = None) -> None:
+                    canonical_url: str | None = None,
+                    replace_prices: bool = False) -> None:
         sets, vals = [], []
         for col, v in [("final_price", final_price), ("pct_at_checkout", pct_at_checkout),
                        ("abs_savings", abs_savings), ("online_only", online_only),
                        ("verify_tier", verify_tier), ("status", status),
                        ("expires_at", expires_at), ("canonical_url", canonical_url)]:
-            if v is not None:
+            if v is not None or (replace_prices and col in {"final_price", "pct_at_checkout", "abs_savings"}):
                 sets.append(f"{col}=?")
                 vals.append(v)
         if payload is not None:
@@ -342,12 +417,35 @@ class DB:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def distinct_sources_within(self, deal_id: int, since: datetime) -> int:
-        row = self.conn.execute(
-            "SELECT COUNT(DISTINCT source_name) AS n FROM sightings"
-            " WHERE deal_id=? AND seen_at>=?", (deal_id, iso(since)),
-        ).fetchone()
-        return int(row["n"])
+    def distinct_sources_within(self, deal_id: int, since: datetime,
+                                final_price: float | None = None,
+                                now: datetime | None = None) -> int:
+        if final_price is None:
+            row = self.conn.execute("SELECT final_price FROM deals WHERE id=?", (deal_id,)).fetchone()
+            final_price = row[0] if row else None
+            if final_price is None:
+                return 0
+        rows = self.conn.execute(
+            "SELECT source_name, source_url, final_price FROM sightings"
+            " WHERE deal_id=? AND seen_at>=? AND seen_at<=? ORDER BY seen_at DESC, id DESC",
+            (deal_id, iso(since), iso(now or now_utc()))).fetchall()
+        latest = {}
+        sites = _publisher_sites()
+        for row in rows:
+            publisher = sites.get(row["source_name"]) or (
+                urlsplit(row["source_url"]).hostname or "").lower().removeprefix("www.")
+            if publisher:
+                latest.setdefault(publisher, row["final_price"])
+        # Use the live-price check's existing 10% plus one-cent tolerance.
+        return sum(price is not None and abs(price - final_price) <= abs(final_price) * .10 + .01
+                   for price in latest.values())
+
+    def deals_for_post(self, source_name: str, source_url: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT DISTINCT deals.* FROM deals JOIN sightings ON sightings.deal_id=deals.id"
+            " WHERE sightings.source_name=? AND sightings.source_url=?",
+            (source_name, source_url)).fetchall()
+        return [self._deal_row_to_dict(row) for row in rows]
 
     # ---------------- price_history ----------------
 
@@ -374,6 +472,59 @@ class DB:
         return len(prices), float(statistics.median(prices))
 
     # ---------------- alerts_sent ----------------
+
+    def delivery_batch(self, channel: str, run_key: str, keys: list[str],
+                       quota: int | None = None) -> list[str]:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO delivery_batches(channel, run_key, deal_keys, quota) VALUES (?,?,?,?)",
+            (channel, run_key, json.dumps(keys), len(keys) if quota is None else quota))
+        self.conn.commit()
+        row = self.conn.execute(
+            "SELECT deal_keys FROM delivery_batches WHERE channel=? AND run_key=?",
+            (channel, run_key)).fetchone()
+        return json.loads(row[0])
+
+    def delivery_budget(self, channel: str, run_key: str) -> int:
+        row = self.conn.execute(
+            "SELECT quota - (SELECT COUNT(*) FROM outgoing WHERE channel=? AND run_key=?"
+            " AND status!='rejected') FROM delivery_batches WHERE channel=? AND run_key=?",
+            (channel, run_key, channel, run_key)).fetchone()
+        return max(0, row[0]) if row else 0
+
+    def outgoing_exists(self, channel: str, token: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM outgoing WHERE channel=? AND dedup_token=? AND status!='rejected'",
+            (channel, token)).fetchone() is not None
+
+    def outgoing_status(self, channel: str, token: str) -> str | None:
+        row = self.conn.execute("SELECT status FROM outgoing WHERE channel=? AND dedup_token=?",
+                                (channel, token)).fetchone()
+        return row[0] if row else None
+
+    def claim_outgoing(self, channel: str, token: str, run_key: str, now: datetime) -> bool:
+        # Check the run quota in the same write that claims the operation.
+        result = self.conn.execute(
+            "INSERT INTO outgoing(channel, dedup_token, run_key, started_at) SELECT ?,?,?,?"
+            " WHERE NOT EXISTS (SELECT 1 FROM delivery_batches WHERE channel=? AND run_key=?"
+            " AND quota <= (SELECT COUNT(*) FROM outgoing WHERE channel=? AND run_key=?"
+            " AND status!='rejected'))"
+            " ON CONFLICT(channel, dedup_token) DO UPDATE SET status='pending',"
+            " started_at=excluded.started_at, run_key=excluded.run_key, finished_at=NULL"
+            " WHERE outgoing.status='rejected'",
+            (channel, token, run_key, iso(now), channel, run_key, channel, run_key))
+        self.conn.commit()
+        return result.rowcount == 1
+
+    def finish_outgoing(self, channel: str, token: str, now: datetime, *,
+                        rejected: bool = False) -> None:
+        self.conn.execute(
+            "UPDATE outgoing SET status=?, finished_at=? WHERE channel=? AND dedup_token=?",
+            ("rejected" if rejected else "sent", iso(now), channel, token))
+        self.conn.commit()
+
+    def outgoing_for(self, channel: str) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.conn.execute(
+            "SELECT * FROM outgoing WHERE channel=? AND status!='rejected'", (channel,))]
 
     def alert_exists(self, channel: str, dedup_token: str) -> bool:
         row = self.conn.execute(
@@ -516,7 +667,8 @@ class DB:
 
     def finish_run(self, run_key: str, *, now: datetime, items_fetched: int,
                    posts_new: int, deals_parsed: int, published: int,
-                   spend_usd: float) -> None:
+                   spend_usd: float, accounted_spend_usd: float = 0.0,
+                   untracked_at: datetime | None = None) -> None:
         self.conn.execute(
             # spend ADDS: two runs can share a quarter-hour key (10-minute
             # cron), and real money spent must never vanish from the daily
@@ -527,17 +679,71 @@ class DB:
             (iso(now), items_fetched, posts_new, deals_parsed, published,
              spend_usd, run_key),
         )
+        untracked = max(0.0, spend_usd - accounted_spend_usd)
+        if untracked:
+            self.conn.execute(
+                "INSERT INTO llm_legacy_spend(run_key, billed_at, usd) VALUES (?,?,?)",
+                (run_key, iso(untracked_at or now), untracked))
         self.conn.commit()
 
     def spend_usd_for_day(self, now: datetime) -> float:
         """Total recorded LLM spend for the current UTC day, across all runs."""
         day = now.astimezone(timezone.utc).strftime("%Y-%m-%d")
-        row = self.conn.execute(
-            "SELECT COALESCE(SUM(spend_usd), 0) AS s FROM run_stats"
-            " WHERE started_at >= ? AND started_at < ?",
-            (f"{day}T00:00:00+00:00", f"{day}T23:59:59+00:00"),
-        ).fetchone()
-        return float(row["s"])
+        if not self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='llm_calls'").fetchone():
+            return float(self.conn.execute(
+                "SELECT COALESCE(SUM(spend_usd),0) FROM run_stats WHERE substr(started_at,1,10)=?",
+                (day,)).fetchone()[0])  # read-only snapshots before the migration
+        return self._day_spend(self.conn, day)
+
+    @staticmethod
+    def _day_spend(conn, day: str) -> float:
+        # Uncertain calls retain their full reservation, including the next
+        # UTC day: a response lost at midnight must not escape either cap.
+        row = conn.execute(
+            "SELECT (SELECT COALESCE(SUM(usd),0) FROM llm_legacy_spend"
+            " WHERE substr(billed_at,1,10)=?)"
+            " + (SELECT COALESCE(SUM(cost_usd),0) FROM llm_calls"
+            " WHERE status='settled' AND substr(billed_at,1,10)=?)"
+            " + (SELECT COALESCE(SUM(usd),0) FROM llm_reservations WHERE day=?)",
+            (day, day, day)).fetchone()
+        return float(row[0])
+
+    def reserve_llm_call(self, call_key: str, run_key: str, model: str,
+                         cost: float, now: datetime, allowances: dict[str, float],
+                         run_cap: float) -> None:
+        from .errors import SpendCapReached
+
+        # Separate connections allow parser workers and other parser
+        # instances to reserve atomically without sharing a SQLite cursor.
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            used = conn.execute(
+                "SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,reserved_usd)),0)"
+                " FROM llm_calls WHERE run_key=? AND status!='released')"
+                " + (SELECT COALESCE(SUM(usd),0) FROM llm_legacy_spend WHERE run_key=?)",
+                (run_key, run_key)).fetchone()[0]
+            if used + cost > run_cap or any(
+                    self._day_spend(conn, day) + cost > cap for day, cap in allowances.items()):
+                raise SpendCapReached("insufficient run or daily allowance for LLM reservation")
+            conn.execute(
+                "INSERT INTO llm_calls(call_key, run_key, model, started_at, reserved_usd)"
+                " VALUES (?,?,?,?,?)", (call_key, run_key, model, iso(now), cost))
+            conn.executemany("INSERT INTO llm_reservations(call_key, day, usd) VALUES (?,?,?)",
+                             [(call_key, day, cost) for day in allowances])
+
+    def settle_llm_call(self, call_key: str, cost: float, now: datetime, *,
+                        uncertain: bool = False) -> None:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            conn.execute("UPDATE llm_calls SET cost_usd=?, billed_at=?, status=? WHERE call_key=?",
+                         (cost, iso(now), "uncertain" if uncertain else "settled", call_key))
+            if not uncertain:
+                conn.execute("DELETE FROM llm_reservations WHERE call_key=?", (call_key,))
+
+    def release_llm_call(self, call_key: str) -> None:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            conn.execute("UPDATE llm_calls SET cost_usd=0, status='released' WHERE call_key=?",
+                         (call_key,))
+            conn.execute("DELETE FROM llm_reservations WHERE call_key=?", (call_key,))
 
     def avg_items_7d(self, now: datetime, kind: str = "hourly") -> float | None:
         since = iso(now - timedelta(days=7))

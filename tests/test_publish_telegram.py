@@ -387,11 +387,11 @@ def test_zero_gap_batch_rate_limit_and_no_dry_run_sleep(db, cfg, monkeypatch):
     assert sleeper.calls == [pytest.approx(4.0)]
     published(db, cfg, [make_deal(dedupe_key="third"), make_deal(dedupe_key="fourth")])
     sleeper.calls.clear()
-    assert send_alerts(db, cfg, NOW, dry_run=True, sleep_fn=sleeper)["sent"] == 2
+    assert send_alerts(db, cfg, NOW + timedelta(minutes=10), dry_run=True, sleep_fn=sleeper)["sent"] == 2
     assert sleeper.calls == []
 
 
-def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
+def test_uncertain_post_is_not_retried(db, cfg, monkeypatch):
     set_creds(monkeypatch)
     published(db, cfg, [make_deal(), make_deal(dedupe_key="second-pick")])
     failing = FakeHttpClient(status_code=500)
@@ -399,7 +399,8 @@ def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
         "sent": 0, "skipped": 1, "dry_run": False}
     assert db.last_alert("walmart|lego set", "telegram") is None
     assert len(failing.posts) == 1  # failures also respect the per-run budget
-    assert send_alerts(db, cfg, NOW, http_client=FakeHttpClient())["sent"] == 1
+    assert send_alerts(db, cfg, NOW, http_client=FakeHttpClient())["sent"] == 0
+    assert db.outgoing_for("telegram")[0]["status"] == "pending"
 
 
 def test_deadline_defers_unrecorded_pick(db, cfg, monkeypatch):

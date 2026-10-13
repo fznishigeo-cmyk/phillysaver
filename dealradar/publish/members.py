@@ -7,8 +7,8 @@ meta, and members get ONE bundled email per window carrying every new
 verified deal, BCC'd over the same SMTP settings as the digest.
 
 Idempotency: alerts_sent('email_members', <dedupe_key>) is recorded per
-deal only after a successful send, so re-runs resend nothing and a failed
-send retries next run. Only extracted facts + a link + source credit ever
+deal after a successful send; a durable outgoing claim prevents repeating an
+uncertain delivery. Only extracted facts + a link + source credit ever
 leave this module.
 """
 
@@ -26,6 +26,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from ..savings import display_pct
+from ..persistence import checkpoint_state, delivery_run_key, message_id
 from ..config import get_secret
 from ..util import iso, parse_iso
 from .telegram_pub import format_message
@@ -109,7 +111,7 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
               default=0.0)
     n = len(deals)
     subject = (f"{_brand(cfg)}: {n} new verified deal{'s' if n != 1 else ''} "
-               f"(up to {top:.0f}% off)")
+               f"(up to {display_pct(top)}% off)")
     lines = [format_message(d) for d in deals]
     footer = []
     domain = getattr(cfg, "custom_domain", "") or ""
@@ -134,7 +136,8 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
 def send_member_alerts(db, cfg, now: datetime, *,
                        deals: list[dict[str, Any]] | None = None,
                        smtp_factory: Any = None,
-                       http_client: Any = None) -> dict[str, Any]:
+                       http_client: Any = None,
+                       run_key: str | None = None) -> dict[str, Any]:
     """Email members every new verified deal, bundled, at most once per
     cfg.members_email_every_minutes (a day or more: once per local day from
     cfg.members_email_hour_local, carrying what arrived since the last one).
@@ -159,13 +162,18 @@ def send_member_alerts(db, cfg, now: datetime, *,
     last = parse_iso(db.meta_get(META_LAST_EMAIL) or "")
     window = timedelta(minutes=int(getattr(cfg, "members_email_every_minutes", 60)))
     daily = window >= timedelta(days=1)
-    fresh = [d for d in deals if not db.alert_exists(CHANNEL, d["dedupe_key"])]
+    fresh = [d for d in deals if not db.alert_exists(CHANNEL, d["dedupe_key"])
+             and not db.outgoing_exists(CHANNEL, d["dedupe_key"])]
     if daily:
         # The day's email carries the day's deals: what arrived since the
         # last one (the last 24 h before the first), never an old backlog.
         since = last or now - timedelta(days=1)
         fresh = [d for d in fresh
                  if (parse_iso(d.get("first_seen_at") or "") or now) >= since]
+    all_fresh = fresh
+    selected = db.delivery_batch(CHANNEL, delivery_run_key(now, run_key),
+                                 [d["dedupe_key"] for d in fresh[:_cap(cfg)]])
+    fresh = [d for d in fresh if d["dedupe_key"] in selected]
     stats["deals"] = len(fresh)
     if not fresh:
         return stats
@@ -183,7 +191,8 @@ def send_member_alerts(db, cfg, now: datetime, *,
         stats["skipped"] = "within email window"  # they ride the next one
         return stats
 
-    subject, text_body, html_body = build_member_email(fresh, cfg)
+    subject, text_body, html_body = build_member_email(fresh + [d for d in all_fresh
+                                                             if d not in fresh], cfg)
     port = int(get_secret("SMTP_PORT") or "587")
     user = get_secret("SMTP_USER")
     sender = get_secret("SMTP_FROM") or user or f"{_brand(cfg)}@{host}"
@@ -191,6 +200,9 @@ def send_member_alerts(db, cfg, now: datetime, *,
     msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = sender  # members ride BCC: one message, no address leaks
+    sent_deals = fresh[:_cap(cfg)]
+    operation = "|".join(sorted(d["dedupe_key"] for d in sent_deals))
+    msg["Message-ID"] = message_id(CHANNEL, operation)
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
     factory = smtp_factory or smtplib.SMTP
@@ -199,19 +211,28 @@ def send_member_alerts(db, cfg, now: datetime, *,
         server.starttls()
         if user:
             server.login(user, get_secret("SMTP_PASSWORD"))
+        for deal in sent_deals:
+            if not db.claim_outgoing(CHANNEL, deal["dedupe_key"], delivery_run_key(now, run_key), now):
+                return stats
+        checkpoint_state(db)
         server.send_message(msg, from_addr=sender, to_addrs=members)
-        server.quit()
     except Exception as e:
-        log.warning("member email failed (retries next run): %s", e)
+        log.warning("member email failed: %s", e)
         stats["skipped"] = "send failed"
         return stats
+    finally:
+        if "server" in locals():
+            try:
+                server.quit()
+            except Exception:
+                pass
 
-    sent_deals = fresh[:_cap(cfg)]
     for d in sent_deals:
         db.record_alert(deal_key=d["dedupe_key"], channel=CHANNEL,
                         dedup_token=d["dedupe_key"], now=now,
                         price_at_send=d.get("final_price"),
                         tier_at_send=d.get("verify_tier") or "")
+        db.finish_outgoing(CHANNEL, d["dedupe_key"], now)
     db.meta_set(META_LAST_EMAIL, iso(now))
     stats["deals"] = len(sent_deals)
     stats["sent"] = len(members)

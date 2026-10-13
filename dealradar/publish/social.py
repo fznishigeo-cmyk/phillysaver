@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ..source_policy import host_of, sources_for_url
+from ..conditions import normalize_conditions
 
 
 def _word_trim(text: str, limit: int) -> str:
@@ -87,7 +88,8 @@ def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
         if (deal.get("locked") or deal.get("status") != "alive" or not deal.get("pick")
                 or not deal.get("dedupe_key") or deal["dedupe_key"] in posted
                 or (cfg.social_require_earning_link and not deal.get("earns"))
-                or set(deal.get("conditions") or []) & set(cfg.social_exclude_conditions)):
+                or set(normalize_conditions(deal.get("conditions")))
+                & set(normalize_conditions(cfg.social_exclude_conditions))):
             continue
         image = urlsplit(deal.get("image_url") or "")
         if sources_for_url(deal.get("image_url") or "") or any(

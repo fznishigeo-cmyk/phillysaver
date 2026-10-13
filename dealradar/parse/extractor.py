@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -76,7 +77,7 @@ def _number_candidates(v: float) -> set[str]:
     return cands
 
 
-def _number_in_quote(value: float, nquote: str) -> bool:
+def _number_in_quote(value: float, nquote: str, text: str | None = None) -> bool:
     """True when `value` appears in the quote on DIGIT BOUNDARIES.
 
     A bare substring test would let 9.99 be "backed" by '19.99' (and 29 by
@@ -84,8 +85,15 @@ def _number_in_quote(value: float, nquote: str) -> bool:
     ',' and must not be followed by a digit or a '.digit' continuation.
     """
     for cand in _number_candidates(value):
-        if re.search(r"(?<![\d.,])" + re.escape(cand) + r"(?!\.?\d)", nquote):
-            return True
+        pattern = re.compile(r"(?<![\d.,])" + re.escape(cand) + r"(?![.,]?\d)")
+        if text is None:
+            if pattern.search(nquote):
+                return True
+        else:
+            for quote in re.finditer(re.escape(nquote), text):
+                if any(match.end() <= quote.end() for match in
+                       pattern.finditer(text, quote.start(), quote.end() + 2)):
+                    return True
     return False
 
 
@@ -111,16 +119,79 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
     for label, value, quote in checks:
         if value is None:
             continue
+        if not math.isfinite(value):
+            return False, f"{label}: value is not a finite number"
         nquote = _norm_ws(quote)
         if not nquote:
             return False, f"{label}={value:g}: evidence quote is empty"
         if nquote not in ntext:
             return False, f"{label}: quote {nquote!r} not found verbatim in text"
-        if not _number_in_quote(value, nquote):
+        if not _number_in_quote(value, nquote, ntext):
             return False, (f"{label}: quote {nquote!r} does not contain the "
                            f"number {value:g} on digit boundaries")
         if label == "pct_off" and "%" not in nquote and "percent" not in nquote.lower():
             return False, f"pct_off: quote {nquote!r} carries no %% sign"
+    from ..savings import parse_shipping, parse_stack_step
+
+    # These free-form facts are mathematical inputs too. Copying a number
+    # from elsewhere in the post cannot establish a coupon or shipping cost.
+    math_quotes = set()
+    math_spans = []
+    checkout_end = 0
+    for label, values in (("stack_steps", deal.stack_steps), ("rebates", deal.rebates)):
+        for value in values:
+            quote = _norm_ws(value)
+            if not quote or quote not in ntext:
+                return False, f"{label}: input not found verbatim in text"
+            step = parse_stack_step(quote)
+            if step["value"] is not None:
+                if not _number_in_quote(step["value"], quote, ntext):
+                    return False, f"{label}: number is only part of the source amount"
+                if quote in math_quotes:
+                    return False, f"{label}: the same mathematical input is repeated"
+                math_quotes.add(quote)
+                checkout = label == "stack_steps" and step["kind"] in {"pct_off", "abs_off", "sale_price"}
+                match = next((m for m in re.finditer(re.escape(quote), ntext)
+                              if (not checkout or m.start() >= checkout_end)
+                              and not any(m.start() < right and left < m.end()
+                                          for left, right in math_spans)
+                              and _number_in_quote(step["value"], quote,
+                                                   ntext[max(0, m.start() - 1):m.end() + 2])), None)
+                if match is None:
+                    return False, f"{label}: overlapping evidence or unsupported step order"
+                math_spans.append(match.span())
+                if checkout:
+                    checkout_end = match.end()
+            if label == "rebates" and step["kind"] not in {"rebate_abs", "rebate_pct", "deferred"}:
+                return False, "rebates: amount has no verbatim rebate wording"
+            if step["kind"] == "pct_off" and not re.search(
+                    r"\boff\b|discount|coupon|\bsave\b|subscribe|\bs&s\b", quote, re.I):
+                return False, "stack_steps: percentage has no verbatim discount wording"
+    if deal.shipping_cost_or_threshold:
+        quote = _norm_ws(deal.evidence.shipping_quote or deal.shipping_cost_or_threshold)
+        shipping = parse_shipping(quote)
+        if (not quote or quote not in ntext
+                or not re.search(r"shipping|delivery|postage", quote, re.I)
+                or shipping != parse_shipping(deal.shipping_cost_or_threshold)
+                or any(value is not None and not (value == 0 and re.search(r"\bfree\b", quote, re.I))
+                       and not _number_in_quote(value, quote, ntext) for value in shipping)):
+            return False, "shipping: missing or mismatched verbatim shipping evidence"
+    if deal.deal_type:
+        quote = _norm_ws(deal.evidence.deal_type_quote)
+        patterns = {
+            "bogo": r"\bbogo\s+free\b|buy\s+(?:1|one)\s+get\s+(?:1|one)\s+free",
+            "b2g1": r"buy\s+(?:2|two)\s+get\s+(?:1|one)\s+free",
+            "b2g3": r"buy\s+(?:2|two)\s+get\s+(?:3|three)\s+free",
+            "b1g1_50": r"buy\s+(?:1|one)\s+get\s+(?:1|one)\s+50\s*%\s+off",
+            "free_after_rebate": r"free\s+after\s+(?:mail[ -]?in\s+)?rebate",
+            "moneymaker": r"\bmoney[ -]?maker\b",
+            "penny": (r"\bpenny\s+(?:deal|price|sale)\b|"
+                      r"\b(?:only|just|for|costs?)\s+(?:(?:a|one|1)\s+)?penny\b|"
+                      r"\$0\.01(?!\d)|\b1\s*(?:cent|¢)"),
+        }
+        pattern = patterns.get(deal.deal_type)
+        if not quote or quote not in ntext or not pattern or not re.search(pattern, quote, re.I):
+            return False, "deal_type: missing or mismatched verbatim evidence"
     return True, ""
 
 

@@ -28,6 +28,7 @@ from urllib.parse import urlsplit
 import httpx
 import yaml
 
+from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
 
@@ -127,7 +128,7 @@ def hub_href(slug: str) -> str:
 
 def _pct(v: Any) -> int:
     """A percent as the page shows it (JavaScript's Math.round)."""
-    return math.floor(float(v) + 0.5)
+    return display_pct(v)
 
 
 def _http(url: Any) -> str:

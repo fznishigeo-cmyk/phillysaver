@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import re
 import time
 from datetime import datetime, timezone
@@ -16,6 +15,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from ..savings import display_pct
+from ..persistence import delivery_run_key, prepare_delivery
 from .. import util
 from ..config import get_secret
 from .social import _candidates, _word_trim, _without_prices, social_title
@@ -91,7 +92,7 @@ def _meta(db, key: str) -> dict:
 def caption(deal: dict, path: str, cfg, network: str) -> str:
     item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _word_trim(_without_prices(str(deal.get("store") or "")), 100)
-    pct = math.floor(float(deal["pct_at_checkout"]) + 0.5)
+    pct = display_pct(deal["pct_at_checkout"])
     disclosure = _word_trim(_without_prices(str(cfg.meta.get("disclosure") or "#ad")), 100) or "#ad"
     facts = f"🔥 {pct}% OFF: {item}\nAt {store}, verified by wowpriced"
     if network == "facebook":
@@ -140,7 +141,8 @@ def _instagram(api, cfg, token, deal, text, mode) -> tuple[str, str]:
     return str(media["id"]), "PUBLISHED"
 
 
-def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
+def post(db, cfg, *, transport=None, now: datetime | None = None,
+         run_key: str | None = None) -> int:
     if not cfg.meta.get("enabled", False):
         log.info("meta: disabled")
         return 0
@@ -161,17 +163,27 @@ def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
             if mode not in ("draft", "live"):
                 raise ValueError("invalid posting mode")
             history = drafts if mode == "draft" else posted
-            today = sum(1 for entry in history[network].values()
-                        if (at := util.parse_iso(entry.get("at"))) and at.date() == now.date())
+            channel = f"meta:{network}:{mode}"
+            outgoing = db.outgoing_for(channel)
+            reserved = {entry["dedup_token"]: {"at": entry["started_at"]} for entry in outgoing}
+            attempts = {**reserved, **history[network]}
             daily_max = max(0, int(settings["daily_max"]))
+            today = sum(1 for entry in attempts.values()
+                        if (at := util.parse_iso(entry.get("at"))) and at.date() == now.date())
             limit = min(max(0, int(settings["posts_per_run"])), max(0, daily_max - today))
             if mode == "live" and now.hour not in settings.get("hours_utc", []):
                 limit = 0
             count = 0
-            excluded = {**posted[network], **failed[network]}
+            excluded = {**posted[network], **failed[network], **reserved}
             if mode == "draft":
                 excluded.update(drafts[network])
             candidates = _candidates(db, cfg, excluded) if limit else []
+            selected = db.delivery_batch(channel, delivery_run_key(now, run_key),
+                                         [d["dedupe_key"] for d, _ in candidates[:3]], quota=limit)
+            candidates = [(d, path) for d, path in candidates if d["dedupe_key"] in selected]
+            limit = min(limit, db.delivery_budget(channel, delivery_run_key(now, run_key)))
+            if not limit:
+                candidates = []
             if candidates:
                 if api is None:
                     api = _API(cfg, transport=transport)
@@ -182,11 +194,13 @@ def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
                     page_token = page["access_token"]
                     if not isinstance(page_token, str) or not page_token:
                         raise _APIError()
-                for deal, path in candidates[:3]:
-                    if count >= limit:
+                for deal, path in candidates:
+                    if count >= limit or not db.delivery_budget(channel, delivery_run_key(now, run_key)):
                         break
                     text = caption(deal, path, cfg, network)
                     try:
+                        if not prepare_delivery(db, channel, deal["dedupe_key"], now, run_key):
+                            continue
                         status = None
                         if network == "instagram":
                             post_id, status = _instagram(api, cfg, token, deal, text, mode)
@@ -205,12 +219,15 @@ def post(db, cfg, *, transport=None, now: datetime | None = None) -> int:
                                 entry["status"] = status
                         history[network][deal["dedupe_key"]] = entry
                         db.meta_set("meta_drafts" if mode == "draft" else "meta_posted", json.dumps(history))
+                        db.finish_outgoing(channel, deal["dedupe_key"], now)
                         count += 1
                         if mode == "draft":
                             log.info("meta: %s draft pick %s: %s; image host %s; deal path %s%s",
                                      network, deal["pick"], text.replace("\n", " "), entry["image_host"], path,
                                      f"; container status {status}" if status else "")
                     except _APIError as error:
+                        if error.rejected or (error.status is not None and 400 <= error.status < 500):
+                            db.finish_outgoing(channel, deal["dedupe_key"], now, rejected=True)
                         if error.disconnected:
                             raise
                         log.warning("meta: %s HTTP %s code %s", network, error.status, error.code)

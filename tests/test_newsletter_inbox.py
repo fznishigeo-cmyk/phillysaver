@@ -410,12 +410,13 @@ def test_feed_and_email_share_one_source_for_corroboration_and_one_credit(env):
     assert len(db.all_deals()) == 1
     deal = db.all_deals()[0]
     assert len(db.sightings_for(deal["id"])) == 2
-    assert db.distinct_sources_within(deal["id"], NOW - timedelta(hours=24)) == 1
+    assert db.distinct_sources_within(deal["id"], NOW - timedelta(hours=24), now=NOW) == 1
     assert assign_tier(db, deal, cfg, NOW) == "unverified"
     public = _serialize_deal(dict(deal, sightings=db.sightings_for(deal["id"])), NOW, cfg=cfg)
     assert public["credits"] == [{"name": "Ben's Bargains", "url": feed.url}]
     assert email_credits(dict(deal, sightings=db.sightings_for(deal["id"]))) == [(source().name, feed.url)]
-    other = dataclasses.replace(feed, source_name="other_partner", uid="other-guid")
+    other = dataclasses.replace(feed, source_name="other_partner", uid="other-guid",
+                                url="https://other-partner.example/widget/")
     upsert_extracted(db, dataclasses.replace(extracted, source_name=other.source_name),
                      compute_savings(extracted), other, cfg, NOW)
     assert assign_tier(db, db.all_deals()[0], cfg, NOW) == "corroborated"
@@ -494,7 +495,7 @@ def pipeline_env(env, monkeypatch, tmp_path):
 def pipeline_message():
     return message(html=(
         "<div><a href='https://bensbargains.com/bargain/fryer/'>Ninja Foodi Air Fryer</a> "
-        "regularly $129.99 just $29.99 FRYDAY at checkout</div>"
+        "regularly $129.99 just $29.99 FRYDAY at checkout; free shipping on orders over $25</div>"
         "<div><a href='https://bensbargains.com/bargain/headphones/'>Mega Headphones X200</a> "
         "list price $199.99 as low as $39.99 most colors $59.99</div>"
         "<p>" + PRIVATE + "</p>"))

@@ -201,7 +201,7 @@ def test_board_found_or_created_and_remembered(db, cfg, create):
     assert sum(r.method == "POST" and r.url.path == "/v5/boards" for r in calls) == int(create)
     published(db, cfg, [candidate("third", 1)])
     calls.clear()
-    pinterest.post(db, cfg, transport=transport, now=NOW)
+    pinterest.post(db, cfg, transport=transport, now=NOW + timedelta(minutes=10))
     assert len(calls) == 1 and calls[0].url.path == "/v5/pins"
 
 
@@ -288,7 +288,11 @@ def test_failed_pin_status_only_and_retry_next_run(db, cfg, caplog, status):
         assert secret not in caplog.text
     calls.clear()
     pinterest.post(db, cfg, transport=httpx.MockTransport(api_handler(db, calls)), now=NOW)
-    assert len(json.loads(db.meta_get("pinterest_posted"))) == 2
+    if status == 500:
+        assert calls == []  # uncertain acceptance is never replayed
+        assert db.meta_get("pinterest_posted") is None
+    else:
+        assert len(json.loads(db.meta_get("pinterest_posted"))) == 2
 
 
 def test_partial_success_survives_later_401(db, cfg):

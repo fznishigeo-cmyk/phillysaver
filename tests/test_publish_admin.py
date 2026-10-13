@@ -172,18 +172,18 @@ def test_missing_creds_logs_only_but_still_records(db, cfg, caplog):
     assert admin_sent(db)
 
 
-def test_failed_post_not_recorded_then_retried(db, cfg, monkeypatch):
+def test_uncertain_post_is_not_automatically_retried(db, cfg, monkeypatch):
     set_admin_creds(monkeypatch)
     seed_hourly_runs(db, NOW, items=100)
     failing = FakeHttpClient(status_code=500)
     warnings = check_and_alert(db, cfg, NOW, items_fetched=10, http_client=failing)
     assert warnings == ["low volume: 10 vs 7-day avg 100.0"]
     assert len(failing.posts) == 1
-    assert not admin_sent(db)  # retry stays possible
+    assert not admin_sent(db)
     ok = FakeHttpClient(status_code=200)
     check_and_alert(db, cfg, NOW, items_fetched=10, http_client=ok)
-    assert len(ok.posts) == 1
-    assert admin_sent(db)
+    assert len(ok.posts) == 0
+    assert db.outgoing_for("admin")[0]["status"] == "pending"
 
 
 def test_unknown_sender_digest_once_a_day_despite_health_or_count_changes(db, cfg, monkeypatch, caplog):
@@ -212,10 +212,10 @@ def test_unknown_sender_digest_once_a_day_despite_health_or_count_changes(db, cf
     assert db.conn.execute("SELECT count(*) FROM alerts_sent WHERE channel='admin_newsletters'").fetchone()[0] == 2
 
 
-def test_failed_unknown_sender_digest_retries_before_marking_day(db, cfg, monkeypatch):
+def test_rejected_unknown_sender_digest_retries_before_marking_day(db, cfg, monkeypatch):
     set_admin_creds(monkeypatch)
     _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], NOW)
-    failed = FakeHttpClient(status_code=500)
+    failed = FakeHttpClient(status_code=400)
     check_and_alert(db, cfg, NOW, items_fetched=100, http_client=failed)
     assert not db.alert_exists("admin_newsletters", NOW.date().isoformat())
     client = FakeHttpClient()
@@ -241,3 +241,18 @@ def test_unknown_sender_day_uses_utc(db, cfg, monkeypatch):
     check_and_alert(db, cfg, local, items_fetched=100, http_client=client)
     check_and_alert(db, cfg, local.astimezone(timezone.utc), items_fetched=100, http_client=client)
     assert len(client.posts) == 1
+
+
+def test_uncertain_unknown_sender_digest_is_not_repeated_with_new_health_warning(db, cfg, monkeypatch):
+    set_admin_creds(monkeypatch)
+    _record_unknown_senders(db, [("msg:" + "1" * 64, "sender@unmapped.example")], NOW)
+    failed = FakeHttpClient(status_code=500)
+    check_and_alert(db, cfg, NOW, items_fetched=100, http_client=failed)
+    assert not db.alert_exists("admin_newsletters", NOW.date().isoformat())
+    assert db.outgoing_exists("admin_newsletters", NOW.date().isoformat())
+    trip_sources(db, NOW, cfg.tripped_sources_warn)
+    client = FakeHttpClient()
+    check_and_alert(db, cfg, NOW, items_fetched=100, http_client=client)
+    assert len(client.posts) == 1
+    assert "5 sources tripped" in client.posts[0][1]["text"]
+    assert "newsletter senders" not in client.posts[0][1]["text"]

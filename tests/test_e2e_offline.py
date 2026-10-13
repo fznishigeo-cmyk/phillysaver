@@ -59,7 +59,8 @@ def _canned_deals(prompt_text: str) -> list[dict]:
             shipping_cost_or_threshold="free over $25", codes=["FRYDAY"],
             expires_at_raw="ends today", confidence=0.95, category="kitchen",
             evidence=dict(regular_price_quote="regularly $129.99",
-                          final_price_quote="just $29.99", pct_quote=""),
+                          final_price_quote="just $29.99", pct_quote="",
+                          shipping_quote="free shipping on orders over $25"),
         )]
     if "Chef Pro Knife Set" in prompt_text:  # feed one, roundup post -> 2 deals
         return [
@@ -304,6 +305,7 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
 
     def fake_send(db, cfg, now, *, deadline=None, parser=None, **kw):
         seen["parser"] = parser
+        seen["run_key"] = kw.get("run_key")
         parser._account(_FakeResponse(None), parser.model, kind="newsletter_pick")
         return {"sent": 0, "skipped": "test", "day": ""}
 
@@ -311,6 +313,7 @@ def test_newsletter_pick_rides_the_shared_parser_and_its_spend_is_recorded(env, 
     step_summary = tmp_path / "step_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     summary = _run(env)
+    assert seen["run_key"] == summary["run_key"]
     parser = seen["parser"]
     assert parser is not None and parser.model == "claude-haiku-5-5"
     assert parser.spend_usd > summary["parse"]["spend_usd"] > 0

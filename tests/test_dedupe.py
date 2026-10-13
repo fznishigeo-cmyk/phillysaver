@@ -205,7 +205,7 @@ def test_find_existing_lookup_order(tmp_path) -> None:
     db.close()
 
 
-def test_lower_price_replaces_higher_does_not(tmp_path) -> None:
+def test_latest_price_replaces_the_historical_minimum(tmp_path) -> None:
     db = DB(tmp_path / "state.db")
     cfg = make_cfg()
     url = "https://www.example.com/p/vacuum"
@@ -233,8 +233,8 @@ def test_lower_price_replaces_higher_does_not(tmp_path) -> None:
     res3 = up("3", 45.0, 55.0, "quoted_regular")
     assert res3["price_improved"] is False
     deal = db.get_deal(key)
-    assert deal["final_price"] == 40.0  # best price kept
-    assert deal["basis"] == "stated_pct"  # matching basis kept with it
+    assert deal["final_price"] == 45.0  # current backed price
+    assert deal["basis"] == "quoted_regular"
 
     # 3 sightings, 3 price-history rows (one per distinct post)
     assert len(db.sightings_for(deal["id"])) == 3
@@ -294,7 +294,7 @@ def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
     """Live wart (B0BKQSDF5C): the price recheck killed a Warehouse deal and
     a fresh sighting minutes later merged into the dead row and left it
     dead. A NEW sighting revives it — even at the same price, where the
-    merge keeps the old flags; replaying a known post never does."""
+    latest sighting supplies the current facts; replaying a known post never does."""
     db = DB(tmp_path / "state.db")
     cfg = make_cfg()
     ext = make_extracted(item="Steiner binoculars", store="Amazon",
@@ -322,7 +322,7 @@ def test_new_sighting_revives_a_dead_deal(tmp_path) -> None:
     assert res2["revived"] is True and res2["price_improved"] is False
     row = db.get_deal(key)
     assert row["status"] == "alive"
-    assert row["flags"] == ["limited_qty"]
+    assert row["flags"] == []
     assert row["died_at"] == "" and row["price_rechecked_at"] == ""
 
     kill()
@@ -361,7 +361,7 @@ def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
         cfg, later)
     assert res["revived"] is False
     row = db.get_deal(key)
-    assert row["status"] == "dead" and row["final_price"] == 50.0
+    assert row["status"] == "dead" and row["final_price"] == 180.0
     assert "price_moved" in row["flags"] and row["price_rechecked_at"]
     assert len(row["sightings"]) == 2
     near = make_savings(final=54.99, regular=200.0, pct=72.5, abs_s=145.01)
@@ -370,7 +370,7 @@ def test_dearer_sighting_never_revives_a_dead_deal(tmp_path) -> None:
         cfg, later)
     assert res["revived"] is True
     row = db.get_deal(key)
-    assert row["status"] == "alive" and row["final_price"] == 50.0
+    assert row["status"] == "alive" and row["final_price"] == 54.99
     assert row["price_since"] == util.iso(later)
     db.close()
 
@@ -645,7 +645,7 @@ def test_link_as_posted_is_stored_and_filled_on_merge(tmp_path) -> None:
                              product_url="https://www.walmart.com/ip/Glue-Gun-Pink/456",
                              link_as_posted="https://goto.walmart.com/c/4/5/6")
     assert dedupe.upsert_extracted(db, variant, make_savings(), make_post(uid="b"),
-                                   cfg, NOW)["dedupe_key"] == key
+                                   cfg, NOW)["dedupe_key"] != key
     assert not db.get_deal(key).get("link_as_posted")
     again = dataclasses.replace(ext, link_as_posted="https://goto.walmart.com/c/7/8/9")
     dedupe.upsert_extracted(db, again, make_savings(), make_post(uid="c"), cfg, NOW)

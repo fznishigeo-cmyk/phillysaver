@@ -190,6 +190,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Money/math correctness (Codex tasks 054/054b, 2026-10-13):** audit 051
+  findings 9-13, 16, 17, 19, 20, 22, 23: math inputs need verified evidence;
+  Keepa deals publish only with a valid critic verdict; distinct product links
+  never merge; higher prices and ended posts retire stale offers; "2+ sources"
+  needs independent sites supporting the active price; LLM spend is reserved
+  (worst case) in the state ledger before each call and settled by UTC day;
+  each run freezes its social batch; an uncertain delivery is never resent;
+  one rounding rule; normalized used/open-box conditions. Workflows now save
+  state even when the pipeline step fails, and check-point the encrypted
+  state before each outgoing post/email (not before each LLM call: that
+  serialized every call behind a git push; the ledger rides the end-of-run
+  save).
 - **Top-of-page refresh (Codex task 057 + phone pass, 2026-10-13):** operator
   ("the top is sleepy; wake people up"): bright aqua header with a white
   search field, one amber accent (drop clock, Join free, active tab, % badges),
