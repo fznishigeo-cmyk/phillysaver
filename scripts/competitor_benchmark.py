@@ -65,6 +65,11 @@ def main() -> int:
     with httpx.Client(headers={"User-Agent": "wowpriced-benchmark (hello@wowpriced.com)"}) as client:
         for url in targets():
             rows.append(score(client, url))
+            # Keyless quota is gone: stop after three refusals in a row
+            # instead of asking for every site (add the PSI_API_KEY secret).
+            if len(rows) >= 3 and all(r.get("error") == "HTTP 429" for r in rows[-3:]):
+                rows.append({"url": "(stopped)", "error": "PageSpeed API refused 3 in a row: add PSI_API_KEY"})
+                break
             time.sleep(3)
     good = [r for r in rows if "error" not in r]
     good.sort(key=lambda r: (-r["performance"], -r["accessibility"]))

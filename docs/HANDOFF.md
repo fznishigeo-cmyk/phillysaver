@@ -80,6 +80,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **Daily quality loop (2026-10-13):** "be the senior engineer; refine, don't
+  reinvent; check every day without being told." Routine "Daily quality
+  loop" (6:17am New York) reads the daily `mobile-audit` run (phones first:
+  70-80% of traffic), run health and, on Mondays, the `competitor-benchmark`
+  run (Google PageSpeed vs ~63 competitor/partner sites), then ships 1-3
+  small Codex-built, Claude-reviewed refinements.
+- **AI budget (2026-10-13):** $6/day normal ($6-10 acceptable). Up to
+  $15-20/day only for truly necessary work until ~2026-10-17 (e.g. the first
+  partner-newsletter backlog), via `spend_cap_boost_*`, then back. More
+  later once affiliate income arrives.
 - **Email on the operator's behalf (2026-10-13):** never send. Show the
   text in chat; after the operator approves, create a Gmail draft (on the
   original thread when replying); the operator presses Send.
