@@ -116,17 +116,14 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "48ec9e2562493ef31e5d89843dbfe10791ed8dbcbae8c67739cf85553d20aaff"),
-    (False, 49, "89db194a4776bc2792a359fd70b647740c42d2f25139948f3ccc6078fb717d05"),
-    (True, 0, "effefab710dfbca33d770a7fce884061e7b2b82074079ae9e493e0f6bda7f1c9"),
-    (True, 49, "661917169bee195fb30f720adafd68a58f4a03698359b22322532b0680805103"),
+    (False, 0, "3267a96d47450c0fc807788f0a3c9bc2c4f7cdbb927728a018417f77d56e5e56"),
+    (False, 49, "fe8825154e3e7a740a009bebdbf82ccea7608dd9098ea63b6705f40600b1891d"),
+    (True, 0, "c4b81ced0c6b70e99888b8f04dca4d1e7ba934b2cc5f80e8ad8a5c06dfbc90cc"),
+    (True, 49, "61595c68ebce6f5a8c578eea2deee12417a2a97f1dc9de5eb856c6c95e43bdf5"),
 ])
-def test_support_off_index_bytes_match_task049_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 048 adds Clarity masking in all modes; keep the shared
-    # baseline without task 037's head-only hint.
-    # Task 053 keeps gone-card source credits active in both access modes.
-    # 2026-10-13: each drop rotates a new window of picks to the top.
-    # Membership behavior stays covered separately; the version stays fixed.
+def test_support_off_index_bytes_match_task057_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 057 refreshes the shared design in every access mode. Snapshot
+    # the actual output without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
     html = (out / "index.html").read_bytes()
@@ -286,7 +283,7 @@ def test_support_button_styles_and_theme_contrast(tmp_path):
     home = (out / "index.html").read_text()
     assert "border:1.5px solid var(--accent);background:transparent" in home
     assert "border-radius:999px;padding:10px 22px;font-weight:500" in home
-    assert "#subscribe.getdeal{min-height:52px}" in home
+    assert "#subscribe.getdeal{min-height:52px;" in home
     assert "transition:background-color 150ms,color 150ms,border-color 150ms" in home
     assert "font-weight:600;border-radius:10px;box-shadow:none" in home
     assert ".pwbtn.alt,#surprise" in home
@@ -304,12 +301,13 @@ def test_support_button_styles_and_theme_contrast(tmp_path):
         linear = [v / 12.92 if v <= .04045 else ((v + .055) / 1.055) ** 2.4 for v in channels]
         return sum(v * weight for v, weight in zip(linear, (.2126, .7152, .0722)))
 
-    # Solid, outline and hover button text in light, dark and the ink header.
+    # Solid, outline and hover button text in light, dark and both headers.
     for foreground, background in (("#ffffff", "#0e7569"), ("#ffffff", "#0f7b6e"),
                                    ("#0e7569", "#f3f5f7"), ("#0e7569", "#ffffff"),
                                    ("#07211d", "#2fb3a4"), ("#07211d", "#42c2b2"),
                                    ("#2fb3a4", "#0d1117"), ("#2fb3a4", "#161c23"),
-                                   ("#2fc4b2", "#163b40"), ("#04201c", "#2fc4b2")):
+                                   ("#073b35", "#4fd8c6"), ("#60ddca", "#0f1b22"),
+                                   ("#352500", "#ffb020"), ("#ffb020", "#243640")):
         assert foreground in home and background in home
         light, dark = sorted((luminance(foreground), luminance(background)), reverse=True)
         assert (light + .05) / (dark + .05) >= 4.5, (foreground, background)

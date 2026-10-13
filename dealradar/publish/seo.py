@@ -705,6 +705,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     (out / "index.html").write_text(
         _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall,
               IMAGE_PRECONNECTS=_image_preconnects(teaser, site_url, cfg.front_page),
+              AMAZON_STRIP_HIDDEN="" if sum(
+                  d.get("status") != "dead" and store_slug(str(d.get("store") or "")) == "amazon"
+                  for d in teaser) >= 10 else "hidden",
               TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
     support = bool(getattr(cfg, "support_enabled", False))
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),

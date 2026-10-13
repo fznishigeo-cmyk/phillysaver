@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
-<meta name="theme-color" content="#0e7569">
+<meta name="theme-color" content="#4fd8c6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1b22" media="(prefers-color-scheme: dark)">
 <title>Join wowpriced</title>
 <meta name="description" content="Join wowpriced free for one email with the best deals. Unsubscribe anytime.">
 <link rel="canonical" href="{{SITE_URL}}/join.html">
@@ -20,14 +21,19 @@ input::placeholder{color:var(--muted);opacity:1}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:var(--accent)}
-header{background:#0f1b22;color:#f3f7f8;border-bottom:1px solid rgba(255,255,255,.13)}
+header{--fg:#073b35;--muted:#20564f;--accent:#073b35;--link:#073b35;
+       background:#4fd8c6;color:var(--fg);border-bottom:2px solid #ffb020}
+@media (prefers-color-scheme: dark){
+  header{--fg:#f3f7f8;--muted:#a9bcc6;--accent:#60ddca;--link:#9fe6da;background:#0f1b22}
+}
 .hrow{max-width:1200px;margin:auto;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
-header a{color:#9fe6da}
+@media (min-width:1280px){.hrow{max-width:1360px}}
+header a{color:var(--link)}
 .brand{margin:0;font-size:24px;line-height:1}
 .brand a{display:inline-flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
 .mark{width:36px;height:36px;flex:none;transform:rotate(-8deg)}
 .word{font-weight:900;letter-spacing:-.9px}
-.word em{font-style:normal;font-weight:650;letter-spacing:-.5px;color:#cfe9e5}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.5px;color:var(--accent)}
 .back{font-size:14px;text-decoration:none}
 .back:hover{text-decoration:underline}
 .wrap{position:relative;max-width:1000px;margin:0 auto;padding:80px 24px;isolation:isolate;overflow:hidden}

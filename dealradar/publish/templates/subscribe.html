@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
-<meta name="theme-color" content="#0e7569">
+<meta name="theme-color" content="#4fd8c6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1b22" media="(prefers-color-scheme: dark)">
 <!--standard--><title>wowpriced — membership</title><!--/standard--><!--support--><title>wowpriced — support our work and join free</title><!--/support-->
 <!--paywall--><meta name="description" content="wowpriced membership: every verified deal on the wall unlocked, new deals every {{DROP_MINUTES}} minutes."><!--/paywall--><!--open--><meta name="description" content="wowpriced membership: a 7-day free trial, then $9.99/month."><!--/open--><!--support--><meta name="description" content="wowpriced is free for everyone. Join free for the deals email or support our work with a one-time payment."><!--/support-->
 <link rel="canonical" href="{{SITE_URL}}/subscribe.html">
@@ -25,11 +26,14 @@ a{color:var(--link)}
 .wrap{max-width:640px;margin:0 auto;padding:40px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;
       margin-bottom:16px}
-.brand{font-size:22px;font-weight:800;margin:0 0 18px}
+.brand{font-size:22px;font-weight:800;margin:-28px -28px 18px;padding:18px 28px;
+       background:#4fd8c6;color:#073b35;border-bottom:2px solid #ffb020;border-radius:16px 16px 0 0}
+@media (prefers-color-scheme: dark){.brand{background:#0f1b22;color:#f3f7f8}}
 .brand a{display:inline-flex;align-items:center;gap:9px;color:inherit;text-decoration:none}
 .mark{width:32px;height:32px;flex:none;transform:rotate(-8deg)}
 .word{font-weight:900;letter-spacing:-.8px}
-.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:var(--accent)}
+.word em{font-style:normal;font-weight:650;letter-spacing:-.4px;color:inherit}
+@media (prefers-color-scheme: dark){.word em{color:#60ddca}}
 h1{font-size:28px;margin:0 0 10px}
 h2{font-size:17px;margin:0 0 6px}
 p{margin:0 0 14px}

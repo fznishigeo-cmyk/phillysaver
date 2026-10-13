@@ -28,7 +28,7 @@ def test_search_filters_and_refresh(tmp_path, support):
     home = (out / 'index.html').read_text()
     assert home.count('id="q"') == 1
     header = home.split('<header>', 1)[1].split('</header>', 1)[0]
-    assert header.index('id="q"') < header.index('id="cattabs"')
+    assert home.index('id="q"') < home.index('</header>') < home.index('id="amazon-strip"') < home.index('id="cattabs"')
     assert 'aria-label="Clear search"' in header
     assert 'id="searchcount" role="status" aria-live="polite"' in header
     assert 'aria-label="Store"><option value="">All stores' in home

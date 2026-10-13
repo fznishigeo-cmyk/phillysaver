@@ -15,11 +15,11 @@ function element(id) {
   return elements[id] ||= {value:'', hidden:false, textContent:'', innerHTML:'', options:[],
     addEventListener(type, fn) { handlers[id + ':' + type] = fn; },
     appendChild(opt) {this.options.push(opt);}, remove(i) {this.options.splice(i, 1);},
-    focus() {this.focused = true;}, querySelectorAll() {return [];}};
+    focus() {this.focused = true;}, querySelectorAll() {return [];}, scrollIntoView(options) {this.scrolled = options;}};
 }
 element('storesel').options.push({value:''});
-const session = new Map();
-const ctx = {URL, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:'old'}, PAGE_CARDS:60,
+const session = new Map(), saved = new Map();
+const ctx = {URL, URLSearchParams, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:'old'}, PAGE_CARDS:60,
   CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]),
   document:{hidden:false, getElementById:element, createElement:()=>({}),
     addEventListener(type, fn) {handlers['document:'+type] = fn;}},
@@ -34,7 +34,8 @@ const ctx = {URL, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:
   dealsFor:async pub=>pub.deals,
   landed(pub, deals) {ctx.state.deals = deals; ctx.state.dataKey = pub.key;},
   sessionStorage:{getItem:k=>session.get(k), setItem:(k,v)=>session.set(k,v)},
-  location:{reload(){reloads++;}},
+  location:{search:'', reload(){reloads++;}}, loadedOnce:true, reduceMotion:()=>true,
+  SORT_KEY:'wp.sort', lsGet:()=>null, lsSet:(k,v)=>saved.set(k,v),
   fetch:async (url, options)=>{requests.push({url, options}); if(fail) throw Error('offline');
     return {headers:{get:()=>''}, json:async()=>response};}
 };
@@ -44,6 +45,7 @@ for (const [a,b] of [
   ['  var SITE_VERSION =', '  // Every published deal'],
   ['  function storeKey(', '  function cmp('],
   ['  function resetWall()', '  // Easy sorting:'],
+  ['  var sortsel =', '  function refreshStores()'],
   ['  function refreshStores()', '  // ---- publishes:'],
   ['  function fetchPublish()', '  function isNewPublish('],
   ['  function merge(pub)', '  function poll()']
@@ -100,6 +102,41 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   ctx.refreshStores(); assert.ok(!element('storesel').options.some(o=>o.value==='ghost'));
   ctx.state.deals.pop();
   element('storesel').value='walmart'; ctx.refreshStores(); assert.equal(element('storesel').value,'walmart');
+  // The Amazon band counts live deals across categories, using the same
+  // normalized store key as the existing filter, and follows later drops.
+  ctx.state.deals = Array.from({length:9}, (_,i)=>({...payload.deals[2], key:`a${i}`,
+    store:['Amazon',' amazon.COM ','AMAZON'][i%3], status:'alive'}));
+  ctx.state.deals.push({...payload.deals[2], store:'Amazon', status:'dead'},
+    {...payload.deals[2], store:'Amazon Fresh', status:'alive'});
+  ctx.refreshStores(); assert.equal(element('amazon-strip').hidden,true);
+  ctx.state.deals.push({...payload.deals[2], key:'tenth', store:'Amazon', status:'alive'});
+  ctx.refreshStores(); assert.equal(element('amazon-strip').hidden,false);
+  element('q').value='missing'; element('minpct').value='99'; element('storesel').value='walmart';
+  ctx.state.catTab=3; ctx.state.shown=600; ctx.state.sortKey='price'; ctx.state.sortDir=1;
+  for (const modifier of ['ctrlKey','metaKey','shiftKey','altKey','button']) {
+    handlers['amazon-deals:click']({[modifier]:1, preventDefault(){assert.fail('modified navigation intercepted');}});
+    assert.equal(ctx.state.sortKey,'price'); assert.equal(ctx.state.shown,600);
+  }
+  ctx.loadedOnce=false;
+  handlers['amazon-deals:click']({preventDefault(){assert.fail('navigation before data was intercepted');}});
+  ctx.loadedOnce=true;
+  let amazonPrevented=false;
+  handlers['amazon-deals:click']({preventDefault(){amazonPrevented=true;}});
+  assert.ok(amazonPrevented); assert.equal(ctx.state.catTab,0); assert.equal(ctx.state.shown,60);
+  assert.equal(element('q').value,''); assert.equal(element('clearsearch').hidden,true);
+  assert.equal(element('minpct').value,'0'); assert.equal(element('storesel').value,'amazon');
+  assert.equal(element('sortsel').value,'top:-1'); assert.equal(saved.get('wp.sort'),'top:-1');
+  assert.equal(ctx.state.sortKey,'top'); assert.equal(ctx.state.sortDir,-1);
+  assert.equal(ctx.filtered().filter(d=>d.status!=='dead').length,10);
+  assert.ok(ctx.filtered().every(d=>ctx.storeKey(d.store)==='amazon'));
+  assert.equal(element('controls').scrolled.behavior,'auto');
+  // Opening the actual link in another tab overrides a remembered sort.
+  element('storesel').value=''; ctx.state.sortKey='price';
+  ctx.location.search='?store=amazon&sort=top';
+  vm.runInContext(snippet('      var browse =', '      renderTabs();'),ctx);
+  assert.equal(element('storesel').value,'amazon'); assert.equal(ctx.state.sortKey,'top');
+  ctx.state.deals.pop(); ctx.refreshStores(); assert.equal(element('amazon-strip').hidden,true);
+  element('storesel').value='';
   ctx.state.deals=Array.from({length:1637},()=>ninja);
   // The published metadata renderer sets the rounded live count placeholder.
   vm.runInContext(snippet('    var live = state.deals.filter', '    document.getElementById("tagline").textContent'),ctx);

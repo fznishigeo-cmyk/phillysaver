@@ -112,7 +112,7 @@ def test_css_text_pairs_pass_in_both_themes(published):
                     if background in palette:
                         assert contrast(rgb(palette[text]), rgb(palette[background])) >= 4.5, (
                             path, text, background, palette)
-            for background in ('accent', 'flag', 'cond', 'dead'):
+            for background in ('accent', 'flag', 'cond', 'dead', 'warm'):
                 if background + '-fg' in palette:
                     assert contrast(rgb(palette[background + '-fg']), rgb(palette[background])) >= 4.5
             if 'tile-fg' in palette:
@@ -125,12 +125,41 @@ def test_css_text_pairs_pass_in_both_themes(published):
                                     grey(colorsys.hls_to_rgb(h / 360, .62, .42)))
                            for h in range(360)) >= 4.5
         assert 'input::placeholder{color:var(--muted);opacity:1}' in css
+        for header in re.findall(r'header\{([^}]+)\}', css):
+            palette = dict(re.findall(r'--([\w-]+):(#[\da-f]+)', header))
+            surface = re.search(r'background:(#[\da-f]+|var\(--card\))', header)
+            if not surface or 'fg' not in palette:
+                continue
+            background = palette['card'] if surface[1] == 'var(--card)' else surface[1]
+            for text in ('fg', 'muted', 'accent', 'link', 'good'):
+                if text in palette:
+                    assert contrast(rgb(palette[text]), rgb(background)) >= 4.5, (path, text, background)
     home = (published / 'index.html').read_text()
     css, palettes = themes(home)
-    header = re.search(r'header\{--card:(.*?)\}', css, re.S)[1]
-    header_muted = rgb(re.search(r'--muted:(#[\da-f]+)', header)[1])
-    for background in ('#163b40', '#0f1b22', '#0c151b'):
-        assert contrast(header_muted, composite(rgb('#fff'), rgb(background), .065)) >= 4.5
+    headers = re.findall(r'header\{--card:([^}]+)\}', css)
+    assert len(headers) == 2
+    for header in headers:
+        palette = dict(re.findall(r'--([\w-]+):(#[\da-f]+)', '--card:' + header))
+        for text in ('fg', 'muted', 'accent', 'link', 'good'):
+            assert contrast(rgb(palette[text]), rgb(palette['card'])) >= 4.5
+        for text in ('search-fg', 'search-muted'):
+            assert contrast(rgb(palette[text]), rgb(palette['search-bg'])) >= 4.5
+        for background in ('search-bg', 'card'):
+            assert contrast(rgb(palette['search-line']), rgb(palette[background])) >= 3
+        assert contrast(rgb(palette['accent']), rgb(palette['search-bg'])) >= 3
+    drop = {}
+    for declarations in re.findall(r'header \.drop\{([^}]+)\}', css):
+        drop.update(re.findall(r'--([\w-]+):(#[\da-f]+)', declarations))
+        for text in ('fg', 'muted', 'good'):
+            assert contrast(rgb(drop[text]), rgb(drop['chip'])) >= 4.5
+        for background in ('chip', 'line'):
+            assert contrast(rgb(palettes[0]['warm']), rgb(drop[background])) >= 3
+    strip = re.search(r'\.amazon-strip\{([^}]+)\}', css)[1]
+    strip_bg = re.search(r'background:(#[\da-f]+)', strip)[1]
+    strip_fg = re.search(r'color:(#[\da-f]+)', strip)[1]
+    strip_link = re.search(r'\.amazon-inner a\{color:(#[\da-f]+)', css)[1]
+    for text in (strip_fg, strip_link):
+        assert contrast(rgb(text), rgb(strip_bg)) >= 4.5
     for fg, bg in (('#f3f0e8', '#22303f'), ('#223140', '#eef1ec')):
         assert contrast(rgb(fg), rgb(bg)) >= 4.5
         assert contrast(rgb(fg), composite(rgb(fg), rgb(bg), .14)) >= 4.5

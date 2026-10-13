@@ -50,6 +50,56 @@ def browser(tmp_path, cfg, db, cases):
     return json.loads(result.stdout)
 
 
+@pytest.mark.parametrize("live", [0, 9, 10, 11])
+@pytest.mark.parametrize("support", [False, True])
+def test_amazon_strip_threshold_link_and_text_only(tmp_path, cfg, db, live, support):
+    cfg.support_enabled = support
+    cfg.paywall_open_access = True
+    deals = [make_deal(dedupe_key=f"amazon-{i}", store=("Amazon", " amazon.COM ", "AMAZON")[i % 3])
+             for i in range(live)]
+    deals += [make_deal(dedupe_key="gone-amazon", store="Amazon", status="dead", death="confirmed",
+                        died_at="2026-10-09T13:00:00+00:00"),
+              make_deal(dedupe_key="different-store", store="Amazon Fresh")]
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=deals)
+    home = (out / "index.html").read_text()
+    strip = re.search(r'<aside id="amazon-strip"([^>]*)>(.*?)</aside>', home, re.S)
+    assert strip
+    assert bool(re.search(r"\bhidden\b", strip[1])) is (live < 10)
+    assert "Top <strong>Amazon</strong> deals right now" in strip[2]
+    assert 'href="?store=amazon&amp;sort=top#content">See deals ›</a>' in strip[2]
+    assert not re.search(r"<(img|svg|object|iframe)\b", strip[2], re.I)
+    assert home.index("</header>") < strip.start() < home.index('id="cattabs"') < home.index('id="content"')
+
+
+def test_wide_grid_preserves_card_room_and_small_screen_rules():
+    for name in ("index.html", "hub.html"):
+        template = (ROOT / "dealradar/publish/templates" / name).read_text()
+        assert re.search(r"@media \(min-width:1280px\)\{[^@]*?"
+                         r"\.grid\{grid-template-columns:repeat\(5,minmax\(0,1fr\)\)\}", template)
+        assert "max-width:1360px" in template
+        assert "grid-template-columns:repeat(auto-fill,minmax(235px,1fr))" in template
+        assert "grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px" in template
+        # At the breakpoint, each card retains the old 235px minimum.
+        assert (1280 - 2 * 16 - 4 * 14) / 5 >= 235
+    home = (ROOT / "dealradar/publish/templates/index.html").read_text()
+    assert "-webkit-line-clamp:2" in home
+    assert re.search(r"#cattabs\{[^}]*flex-wrap:wrap", home)
+    assert ".cattab::before" in home and ".cattab:focus-visible" in home
+
+
+@pytest.mark.parametrize("name", ["index", "about", "how-it-works", "subscribe", "join", "privacy", "hub"])
+def test_design_templates_add_no_external_urls(name):
+    template = (ROOT / f"dealradar/publish/templates/{name}.html").read_text()
+    # Existing namespaces and the dormant Google login script are the only
+    # literal external URLs; no new fonts, images, CDNs or protocol-relative assets.
+    existing = {"http://www.w3.org/2000/svg"}
+    if name == "index":
+        existing |= {"https://schema.org", "https://accounts.google.com/gsi/client"}
+    assert set(re.findall(r"https?://[\w./-]+", template)) == existing
+    assert not re.search(r'(?:src|href)=["\']//|@import\b|url\(["\']?(?:https?:)?//', template)
+
+
 def test_caps_photos_and_stable_remainder(options):
     source = rows()
     original = source.copy()

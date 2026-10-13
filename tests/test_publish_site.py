@@ -857,9 +857,9 @@ class TestDropClock:
         assert 'id="dropdial" class="dial"' in html and ".dslot{" in html
         assert "function paintDial(f, left)" in html
         assert "paintDial(f, clock.dropping ? null : left);" in html
-        # Operator: green at the start, through yellow, red for the last minute.
+        # Task 057: the warm accent fills the ring; a real drop still turns green.
         dial = _between(html, "function paintDial(", "function tick(")
-        assert "left <= lastMin ? 4 : Math.round(142 - 96" in dial and '"--dial"' in dial
+        assert '"--dial", "var(--warm)"' in dial
         assert 'class="dtick"' in html and ".drop.dropping .dtick{opacity:1" in html
         css = html[html.index(".dropt{"):html.index("}", html.index(".dropt{"))]
         assert "font-size:22px" in css and "font-weight:800" in css

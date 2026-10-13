@@ -180,6 +180,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Top-of-page refresh (Codex task 057 + phone pass, 2026-10-13):** operator
+  ("the top is sleepy; wake people up"): bright aqua header with a white
+  search field, one amber accent (drop clock, Join free, active tab, % badges),
+  five cards per row on wide screens, CSS-shape category tabs, and a
+  text-only "Top Amazon deals right now · See deals" strip (no store logos:
+  trademark rules) when 10+ Amazon deals are live. Phones: categories in one
+  swipeable row with an edge fade (desktop keeps the wrap), filters at 16px
+  (no iOS zoom). Headless-Chromium audit (scripts/mobile_audit.cjs): first
+  deal at 362px on an iPhone 14 (was 474), no sideways overflow.
+
 - **Partner newsletter inbox (Codex tasks 055/056, 2026-10-13):** email is
   a second channel for every permission partner; web readers keep running
   (we never get around their firewalls; operator will not re-contact them).
