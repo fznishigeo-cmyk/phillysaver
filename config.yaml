@@ -372,7 +372,10 @@ social:
     daily_max: 20                 # per UTC day
     disclosure: "#ad"             # last word of every description
   meta:                           # Facebook Page + Instagram (operator, 2026-10-12)
-    enabled: true
+    # Paused 2026-10-13: Meta restricted the new account from sharing links
+    # until 2026-11-11 (automated "prohibited commercial practices" flag on
+    # day one). No API calls, drafts included, until the review clears.
+    enabled: false
     graph_base: "https://graph.facebook.com/v26.0"
     page_id: "1382622794936174"   # Wowpriced (public id, not a secret)
     ig_user_id: "17841412621006331"  # @wowpriced

@@ -26,6 +26,9 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(meta.time, "sleep", lambda seconds: None)
     config = load_config()
     config.site_dir = str(tmp_path / "site")
+    # Production posting is paused (config.yaml, 2026-10-13); these tests
+    # exercise the poster itself.
+    config.meta["enabled"] = True
     return config
 
 
