@@ -110,10 +110,11 @@ def test_no_template_token_is_left_in_any_output_file(db, cfg, tmp_path):
         assert "{{" not in p.read_text(encoding="utf-8"), p
 
 
-def test_hub_floor_reads_the_stable_7_day_count(db, cfg, tmp_path):
+def test_hub_floor_reads_current_visible_offers_and_history_is_context(db, cfg, tmp_path):
     out = tmp_path / "site"
     _seed_week(db, 3)
     db.update_deal("electronics|w0", verify_tier="corroborated")
+    cfg.paywall_open_access = True
     _render(db, cfg, out)
     sitemap = (out / "sitemap.xml").read_text(encoding="utf-8")
     elec = (out / "deals" / "electronics" / "index.html").read_text(encoding="utf-8")
@@ -121,13 +122,12 @@ def test_hub_floor_reads_the_stable_7_day_count(db, cfg, tmp_path):
     assert "<loc>https://wowpriced.com/deals/electronics/</loc><lastmod>" in sitemap
     assert "3 new deals in this category passed our checks, median 72% off, " \
            "1 confirmed by 2+ independent sources." in elec
-    # Kitchen has live deals on the wall but nothing in the 7-day count:
-    # thin, so noindex and out of the sitemap (never the free or locked count).
+    # Kitchen has enough current public offers despite no seven-day history.
     kitchen = (out / "deals" / "home-kitchen" / "index.html").read_text(encoding="utf-8")
     assert "ZZITEM-1" in kitchen or "more deal" in kitchen
-    assert '<meta name="robots" content="noindex">' in kitchen
-    assert "/deals/home-kitchen/" not in sitemap
-    assert '<meta name="robots" content="noindex">' in \
+    assert '<meta name="robots"' not in kitchen
+    assert "/deals/home-kitchen/" in sitemap
+    assert '<meta name="robots" content="noindex,follow">' in \
         (out / "deals" / "pets" / "index.html").read_text(encoding="utf-8")
 
 
@@ -198,9 +198,9 @@ def test_rotating_teaser_changes_only_deal_page_sitemap_entries(db, cfg, tmp_pat
     assert without_deals(sitemap) == without_deals(other)  # hub dates remain stable
     assert sitemap != other  # only the newly unlocked deals get pages
     text = sitemap.decode()
-    assert "<url><loc>https://wowpriced.com/about.html</loc></url>" in text
-    assert "<url><loc>https://wowpriced.com/</loc></url>" in text
-    assert "<lastmod>2026-10-09T12:00:00+00:00</lastmod>" in text  # newest deal shown
+    assert "<url><loc>https://wowpriced.com/about.html</loc><lastmod>" in text
+    assert "<url><loc>https://wowpriced.com/</loc><lastmod>" in text
+    assert f"<lastmod>{NOW.isoformat()}</lastmod>" in text  # first observed page facts
 
 
 def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
@@ -229,7 +229,7 @@ def test_indexnow_due_list_respects_the_interval_and_reruns(db, cfg, tmp_path):
                    for d in _deals() if d["category"] == "electronics")
     assert set(due()) == changed
     _render(db, cfg, out, deals=more, now=NOW + timedelta(hours=14))
-    assert due() == ["https://wowpriced.com/best-deals-today/"]  # crossed UTC midnight
+    assert due() == []  # crossing midnight alone changes no substantive facts
     sent = json.loads(db.meta_get("indexnow_sent"))
     assert set(sent) == set(first) | {new_url}
 

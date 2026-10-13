@@ -67,7 +67,7 @@ def test_disclaimer_copy_tokens_sitemap_and_stable_update_date(tmp_path, support
     assert not re.search(r"<script|<form|<dialog", "".join(content.values()))
     urls = ElementTree.parse(out / "sitemap.xml").findall("{*}url")
     entry = [url for url in urls if url.find("{*}loc").text == "https://wowpriced.com/disclosure.html"]
-    assert len(entry) == 1 and entry[0].find("{*}lastmod") is None  # same treatment as privacy
+    assert len(entry) == 1  # lastmod follows the page facts (task 070), like privacy
     assert "https://wowpriced.com/disclosure.html" in json.loads(seo.due_list_path(out).read_text())
     db = DB(tmp_path / "state.db")
     try:

@@ -158,11 +158,16 @@ class AppConfig:
     affiliate_repair_competitor_trackers: bool = False
     affiliate_ebay_campaign_id: str = ""  # eBay Partner Network, 10 digits ("" = off)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
-    seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
+    seo_hub_min_items: int = 10        # visible live offers for an indexable hub
+    seo_home_min_items: int = 1
+    seo_best_today_min_items: int = 1
+    seo_deal_page_min_items: int = 1
     seo_deal_pages_max: int = 3000
     seo_store_page_min_deals: int = 15
     seo_store_pages_max: int = 12
+    seo_price_page_min_deals: int = 10
     seo_price_pages: list[int] = field(default_factory=lambda: [10, 25, 50])
+    seo_lastmod_retention_days: int = 35  # absent URLs; current URLs are retained
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
     seo_indexnow_resubmit_days: float = 7.0  # unchanged URLs listed again (0 = never)
@@ -417,13 +422,19 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         else:
             logging.getLogger("dealradar.config").warning(
                 "affiliate.link_overrides entry ignored: not <host>/<id> -> a Sovrn link")
-    cfg.seo_hub_min_items = max(0, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
+    cfg.seo_hub_min_items = max(1, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
+    cfg.seo_home_min_items = max(1, int(g("seo", "home_min_items", default=cfg.seo_home_min_items)))
+    cfg.seo_best_today_min_items = max(1, int(g("seo", "best_today_min_items", default=cfg.seo_best_today_min_items)))
+    cfg.seo_deal_page_min_items = max(1, int(g("seo", "deal_page_min_items", default=cfg.seo_deal_page_min_items)))
     cfg.seo_deal_pages_max = max(0, int(g("seo", "deal_pages_max", default=cfg.seo_deal_pages_max)))
     cfg.seo_store_page_min_deals = max(1, int(g(
         "seo", "store_page_min_deals", default=cfg.seo_store_page_min_deals)))
     cfg.seo_store_pages_max = max(0, int(g("seo", "store_pages_max", default=cfg.seo_store_pages_max)))
+    cfg.seo_price_page_min_deals = max(1, int(g("seo", "price_page_min_deals", default=cfg.seo_price_page_min_deals)))
     cfg.seo_price_pages = sorted({int(n) for n in g(
         "seo", "price_pages", default=cfg.seo_price_pages) if int(n) > 0})
+    cfg.seo_lastmod_retention_days = max(1, min(365, int(g(
+        "seo", "lastmod_retention_days", default=cfg.seo_lastmod_retention_days))))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))

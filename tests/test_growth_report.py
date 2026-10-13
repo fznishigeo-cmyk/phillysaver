@@ -129,6 +129,11 @@ SC_QUERIES = {"rows": [{"keys": ["private <b>query</b> phrase"], "clicks": 300.0
                         "ctr": 0.075, "position": 4.2}]}
 SC_PAGES = {"rows": [{"keys": ["https://wowpriced.com/hacks.html"], "clicks": 120.0,
                       "impressions": 2000.0, "ctr": 0.06, "position": 6.0}]}
+SC_DEVICE_PAGES = {"rows": [
+    {"keys": ["https://wowpriced.com/", "MOBILE"], "clicks": 3, "impressions": 40},
+    {"keys": ["https://wowpriced.com/deals/under-25/", "MOBILE"], "clicks": 0, "impressions": 10},
+    {"keys": ["https://wowpriced.com/deal/product-12345678/", "DESKTOP"], "clicks": 2, "impressions": 20},
+]}
 SITEMAP = {"path": "https://wowpriced.com/sitemap.xml", "lastDownloaded": "2026-10-10T07:12:00Z",
            "isPending": False, "warnings": "2", "errors": "1",
            "contents": [{"type": "web", "submitted": "7", "indexed": "0"}]}
@@ -254,7 +259,8 @@ class FakeApis:
             if path.endswith("/searchAnalytics/query"):
                 dims = json.loads(request.content)["dimensions"]
                 return httpx.Response(200, json={(): SC_TOTAL, ("query",): SC_QUERIES,
-                                                 ("page",): SC_PAGES}[tuple(dims)])
+                                                 ("page",): SC_PAGES,
+                                                 ("page", "device"): SC_DEVICE_PAGES}[tuple(dims)])
             if request.method == "PUT":
                 return httpx.Response(204)
             return httpx.Response(200, json=SITEMAP)

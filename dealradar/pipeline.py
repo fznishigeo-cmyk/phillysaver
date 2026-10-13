@@ -1882,6 +1882,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        summary["seo_audit"] = site_res.get("seo_audit", {})
         try:
             yield_counts = ai_yield.record_public(db, cfg, util.now_utc(), run_key,
                                                  ai_yield.public_keys(site_res, cfg))

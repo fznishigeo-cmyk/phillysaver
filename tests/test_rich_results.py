@@ -44,6 +44,13 @@ def test_live_product_uses_published_facts_and_utc_publish_date(db, cfg, tmp_pat
                    "itemCondition": "https://schema.org/" + condition},
     }
     assert f'<strong>${product["offers"]["price"]}</strong>' in html
+    assert f'<strong>${product["offers"]["price"]}</strong> USD' in html
+    assert "Availability: Live offer" in html
+    assert not seo.seo_audit.Page(html, _path(d)).schema_mismatch()
+    assert not {"review", "aggregateRating", "ratingValue", "priceValidUntil", "shippingDetails",
+                "hasMerchantReturnPolicy"} & set(product)
+    assert not {"review", "aggregateRating", "ratingValue", "priceValidUntil", "shippingDetails",
+                "hasMerchantReturnPolicy"} & set(product["offers"])
     assert [c["item"] for c in crumbs["itemListElement"]] == [
         "https://wowpriced.com/", "https://wowpriced.com/deals/home-kitchen/",
         "https://wowpriced.com" + _path(d)]

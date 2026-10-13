@@ -129,7 +129,9 @@ def test_support_off_index_bytes_match_task074_baseline(tmp_path, monkeypatch, m
     html = (out / "index.html").read_bytes()
     hint = b'<link rel="preconnect" href="https://m.media-amazon.com">\n'
     assert html.count(hint) == 1
-    assert hashlib.sha256(html.replace(hint, b"")).hexdigest() == expected
+    empty_robots = b'<meta name="robots" content="noindex,follow">\n'
+    assert html.count(empty_robots) == 1
+    assert hashlib.sha256(html.replace(hint, b"").replace(empty_robots, b"")).hexdigest() == expected
     assert doc["meta"]["support"] == {"enabled": False, "link": "", "monthly_link": ""}
 
 

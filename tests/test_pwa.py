@@ -44,10 +44,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "f508735d3f421f7b34b28fd0e55dc19d68ee168ec065eadf7f9972532e42a4ce"),
-    ("open", "bff42b0e744f7dddf1a149fec84b5baed3e157566e4df1cf73f835963c1807ec"),
-    ("support", "d02d99d12784694949aada52f7d94ea03c27a9e1c2aa949cb50da5436d261744"),
-    ("shipped", "cd9aa0051551eb53ab0bc02b301aa3dc49c0bab1f22d568cd82fe24b11d641c8"),
+    ("membership", "4e8531e917219d2669deb3b2c1c4cd2cab202d2a8e99a69df8974d9fad14efd8"),
+    ("open", "1558895e0ed01ea644548940b22f07718de3bfdaafcb098762b5619796feab63"),
+    ("support", "0b01a05db4e9dd97a9fd5ba0e57e261917ce4fb36bd07c9edb5c4353f4930d1b"),
+    ("shipped", "93dafc426a0dbfdd06a308f5828fbbbc90215293425c147fe601199ea1ee0a1f"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Membership/open retain the pre-069 baseline. Support/shipped include
@@ -148,12 +148,14 @@ def test_pwa_preserves_every_outbound_link_and_the_home_before_footer(tmp_path, 
 def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, monkeypatch):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config("support")
+    out, _, _, _ = render(tmp_path, cfg, sample_deals())
+    original = tree_hash(out)
     cfg.pwa_enabled = True
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "d02d99d12784694949aada52f7d94ea03c27a9e1c2aa949cb50da5436d261744"
+    assert tree_hash(out) == "0b01a05db4e9dd97a9fd5ba0e57e261917ce4fb36bd07c9edb5c4353f4930d1b"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

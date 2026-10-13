@@ -44,7 +44,7 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - `stripe check (read-only)` verifies checkout end to end.
 - **Search:** the home page carries the free deals as plain HTML; 11 category
   pages at `/deals/<slug>/` (copy in `publish/templates/hubs.yaml`, noindex
-  under `seo.hub_min_items` verified deals in 7 days); 404.html; a stable
+  under `seo.hub_min_items` current public live offers); 404.html; a stable
   sitemap; IndexNow (`python -m dealradar indexnow`, after deploy). Google
   gets the sitemap from the growth report's daily submit.
 - **Tracking:** `config.yaml tracking:` holds the public IDs (GA4, Meta,
@@ -190,6 +190,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **SEO audit (Codex task 070, 2026-10-13; shipped after review):** final HTML is
+  audited on every publish; current visible offers gate indexing. Compact
+  fact fingerprints (35-day absent-URL retention, 50k cap) stabilize lastmod;
+  visible USD/condition/live-offer facts match Product/Offer. Private Search
+  Console family/device rows paginate and keep missing samples unavailable.
+  Clean fixture: zero issues, sitemap 35/35; fault fixture: one thin page,
+  one schema mismatch, one broken link. Full suite: 2,650 passed, 1 deselected;
+  seven existing Stripe socket tests blocked. Normal home bytes match all
+  four original modes; Chromium blocks 360px/390x844 QA and first-card
+  measurement. Live Search Console sample remains. Shipped after review.
 - **Disclaimer (Codex task 074, 2026-10-13):** full `/disclosure.html`, config-only
   programs, shared footer/short-label links, sitemap and site-check; 360px
   structural checks pass. Only support-index/PWA tree hashes regenerated.

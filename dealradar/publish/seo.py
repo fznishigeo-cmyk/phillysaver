@@ -5,7 +5,7 @@ Live deal facts come from the teaser render_site already built
 (docs/paywall.md): free deals in full, locked deals only as a count and a %
 range, never a name, price, link or photo. Static HTML carries no images at
 all. Ended pages retain previously public facts until the row is deleted.
-Hub stats only read; IndexNow and the stable deal paths each keep a meta key.
+Hub stats only read; IndexNow, stable deal paths and fact fingerprints keep meta keys.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
+from . import seo_audit
 
 logger = logging.getLogger("dealradar.publish.seo")
 
@@ -360,7 +361,7 @@ def _price_pages(cfg, live: list[dict[str, Any]]) -> dict[str, tuple[str, list[d
         slug = f"under-{n}"
         assert slug not in hubs, f"Price page collides with category hub: {slug}"
         rows = [d for d in live if d.get("final_price") is not None and d["final_price"] <= n]
-        if len(rows) >= 10:
+        if len(rows) >= max(1, int(cfg.seo_price_page_min_deals)):
             pages[f"/deals/{slug}/"] = f"Deals under ${n}", rows
     return pages
 
@@ -426,8 +427,8 @@ def _site_floor(cfg) -> float:
 def week_stats(db, cfg, now: datetime) -> dict[str, dict[str, Any]]:
     """Per hub: the deals first seen in the last 7 days that clear every
     publish gate at the site floor (alive or dead since), their median % off
-    and how many 2+ sources confirmed. Our own data, stable from one drop to
-    the next: the hubs' thin-page floor reads the count."""
+    and how many 2+ sources confirmed. Historical context only; current
+    visible offers determine indexability."""
     from .. import rank  # lazy, as in site.py
 
     since, floor = now - timedelta(days=7), _site_floor(cfg)
@@ -492,7 +493,7 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
                  CANONICAL=escape(f"{site_url}/deals/{slug}/"),
                  EXTRA_HEAD=_breadcrumbs(site_url, [(copy["title"], hub_href(slug))])
                  + _item_list(free, deal_paths or {}, site_url), TABS="",
-                 ROBOTS="" if indexable else '<meta name="robots" content="noindex">\n',
+                 ROBOTS="" if indexable else '<meta name="robots" content="noindex,follow">\n',
                  SITE_URL=site_url, SLUG=slug, INTRO=escape(copy["intro"]),
                  STATS=f'<div class="box"><p>{line}</p></div>', DEALS=deals,
                  HUB_LINKS=_hub_links())
@@ -514,11 +515,13 @@ def _date(dt: datetime, full: bool = False) -> str:
 
 def _landing_page(template: str, title: str, heading: str, description: str,
                   path: str, site_url: str, content: str, *, dead: bool = False,
+                  indexable: bool = True,
                   extra_head: str = "", intro: str = "",
                   breadcrumbs: list[tuple[str, str]] | None = None) -> str:
     return _fill(template, TITLE=escape(heading), PAGE_TITLE=escape(title),
                  DESCRIPTION=escape(description), CANONICAL=escape(site_url + path),
-                 ROBOTS='<meta name="robots" content="noindex">\n' if dead else "",
+                 ROBOTS=('<meta name="robots" content="noindex">\n' if dead else
+                         '<meta name="robots" content="noindex,follow">\n' if not indexable else ""),
                  EXTRA_HEAD=extra_head + _breadcrumbs(site_url, breadcrumbs or [(heading, path)]),
                  INTRO=escape(intro), STATS="", DEALS=content,
                  TABS='<nav class="hrow" aria-label="categories">' + tabs_html() + '</nav>',
@@ -549,7 +552,7 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
-               observations: list[dict[str, Any]], now: datetime) -> str:
+               observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True) -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -566,7 +569,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     facts = [f"at {store}"]
     if d.get("final_price") is not None:
         price = f'{float(d["final_price"]):.2f}'
-        content += f'<p class="detail-price">Sale price: <strong>${price}</strong></p>'
+        content += f'<p class="detail-price">Sale price: <strong>${price}</strong> USD</p>'
         facts.insert(0, f"${price}")
     if d.get("regular_price") is not None:
         regular = f'{float(d["regular_price"]):.2f}'
@@ -580,8 +583,11 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     chart = price_history_chart(observations, now, d.get("final_price"), ended=dead)
     content += chart
     conds = [str(c).replace("_", " ") for c in d.get("conditions") or []]
-    if conds:
-        content += '<p>Condition: ' + escape(", ".join(conds)) + '</p>'
+    if not {"used", "open_box", "refurbished"} & set(d.get("conditions") or []):
+        conds.insert(0, "new")
+    content += '<p>Condition: ' + escape(", ".join(conds)) + '</p>'
+    if not dead:
+        content += '<p class="detail-availability">Availability: Live offer</p>'
     badge = d.get("badge") or "unverified"
     explanation = {"history-checked": "The price was checked against price history.",
                    "corroborated": "Two or more independent sources confirmed this price."}
@@ -638,6 +644,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
                          '<div class="deal-detail" data-deal-detail>' + content + '</div>', dead=dead,
+                         indexable=indexable,
                          extra_head=ld + (PRICE_HISTORY_STYLE if chart else ""),
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
@@ -688,13 +695,6 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     return paths, rows, lastmods
 
 
-def _newest(rows: list[dict[str, Any]]) -> str:
-    """The newest first sighting among a hub's deals (its sitemap lastmod):
-    free and locked together, so the rotating free picks never move it."""
-    times = [t for t in (parse_iso(d.get("first_seen_at") or "") for d in rows) if t]
-    return iso(max(times)) if times else ""
-
-
 def due_list_path(site_dir: str | Path) -> Path:
     return Path(site_dir).resolve().parent / INDEXNOW_FILE
 
@@ -740,16 +740,17 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
-            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]) -> None:
-    """The search-engine side of a publish, into out: the static wall and
-    tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
-    sitemap.xml and the IndexNow due-list (beside out, never in it)."""
+            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]) -> tuple[list[str], str]:
+    """Emit the wall, hubs and deal pages; return paths and the static wall.
+
+    publish_sitemap reads the final tracked pages for dates and the audit.
+    """
     from .paywall import is_open
     from .site import affiliate_copy, copy_variant, site_footer
 
     spotlight = spotlight or []
     open_access = is_open(cfg)
-    paths, deal_rows, lastmods = deal_pages
+    paths, deal_rows, _previous_dates = deal_pages
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
@@ -760,6 +761,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                   d.get("status") != "dead" and store_slug(str(d.get("store") or "")) == "amazon"
                   for d in teaser) >= 10 else "hidden",
               TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
+    floors = seo_audit.minimums(cfg)
+    index_file = out / "index.html"
+    if seo_audit.Page(index_file.read_text(encoding="utf-8"), "/").live_offers() < floors["home"]:
+        index_file.write_text(index_file.read_text(encoding="utf-8").replace(
+            "</head>", '<meta name="robots" content="noindex,follow">\n</head>', 1), encoding="utf-8")
     support = bool(getattr(cfg, "support_enabled", False))
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                             now, meta["disclosure"], support)
@@ -783,19 +789,16 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
     browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
     template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links))
-    landing_pages = {}
     for d in deal_rows:
         path = paths[d["key"][:8]]
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
-                          observations, now)
+                          observations, now, indexable=floors["deal"] <= 1)
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
-        if d.get("status") == "alive":
-            landing_pages[path] = html
     best_path = "/best-deals-today/"
-    best_title = f"Best deals today ({_date(now, full=True)}) | wowpriced"
+    best_title = "Best deals today | wowpriced"
     n = sum(d.get("status") == "alive" for d in teaser)
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
@@ -804,14 +807,14 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
                               '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths) for d in best_rows) + '</div>',
-                              intro=intro, extra_head=_item_list(best_rows, paths, site_url))
+                              intro=intro, extra_head=_item_list(best_rows, paths, site_url),
+                              indexable=len(best_rows) >= floors["best_today"])
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)
     (out / "best-deals-today" / "index.html").write_text(best_html, encoding="utf-8")
-    landing_pages[best_path] = best_html
     browse_pages = stores | prices
     for path, (name, rows) in browse_pages.items():
         heading = f"{name} deals today" if path in stores else f"{name} today"
-        title = f"{heading} ({_date(now, full=True)}) | wowpriced"
+        title = f"{heading} | wowpriced"
         count = ("1,000+" if len(rows) >= 1000 else f"{len(rows) // 100 * 100:,}+"
                  if len(rows) >= 100 else str(len(rows)))
         pcts = [float(d["pct_at_checkout"]) for d in rows if d.get("pct_at_checkout") is not None]
@@ -822,12 +825,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
         html = _landing_page(page_template, title, heading, intro, path, site_url,
                              '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths) for d in rows[:_HUB_MAX])
-                             + '</div>', intro=intro, extra_head=_item_list(rows[:_HUB_MAX], paths, site_url))
+                             + '</div>', intro=intro, extra_head=_item_list(rows[:_HUB_MAX], paths, site_url),
+                             indexable=min(len(rows), _HUB_MAX) >= floors["store" if path in stores else "price"])
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
-        landing_pages[path] = html
-        lastmods[path] = _newest(rows)
     # Re-used output folders must lose pages that fall below a floor or cap.
     for folder in list((out / "stores").glob("*")) + list((out / "deals").glob("under-*")):
         if f"/{folder.relative_to(out).as_posix()}/" not in browse_pages:
@@ -835,18 +837,17 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                 shutil.rmtree(folder)
             else:
                 folder.unlink()
-    floor = int(getattr(cfg, "seo_hub_min_items", 10))
-    listed: list[tuple[str, str, str]] = []  # (slug, lastmod, html) of indexable hubs
+    listed = 0
     for label, group, slug in HUB_GROUPS:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
-        indexable = stats[slug]["count"] >= floor
+        indexable = min(sum(not d.get("locked") for d in rows), _HUB_MAX) >= floors["category"]
         html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
                          site_url, open_access, paths)
         (out / "deals" / slug).mkdir(parents=True, exist_ok=True)
         (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
         if indexable:
-            listed.append((slug, _newest(rows), html))
-    logger.info("seo: %d of %d category hubs indexable", len(listed), len(HUB_GROUPS))
+            listed += 1
+    logger.info("seo: %d of %d category hubs indexable", listed, len(HUB_GROUPS))
 
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if key and not _KEY_RE.fullmatch(key):
@@ -854,31 +855,41 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         key = ""
     if key:
         (out / f"{key}.txt").write_text(key, encoding="utf-8")
+    emitted = (["/" + p for p in public] + ["/welcome.html", "/404.html"]
+               + [hub_href(slug) for _label, _group, slug in HUB_GROUPS]
+               + list(paths.values()) + [best_path] + list(browse_pages))
+    return emitted, wall
+
+
+def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
+                    emitted: list[str], wall: str) -> dict[str, seo_audit.Page]:
+    """Read final pages once for fingerprints, sitemap coverage and the audit."""
+    pages = seo_audit.read_pages(out, emitted)
     if not site_url:
-        return
-    # Fixed pages carry no lastmod; a hub's is its newest deal's first
-    # sighting, so two publishes of the same data write the same sitemap.
-    urls = "".join(f"  <url><loc>{escape(site_url)}/{escape(p)}</loc></url>\n" for p in public)
-    urls += "".join(f"  <url><loc>{escape(site_url)}/deals/{slug}/</loc>"
-                    + (f"<lastmod>{lastmod}</lastmod>" if lastmod else "") + "</url>\n"
-                    for slug, lastmod, _html in listed)
-    assert len(public) + len(listed) + len(landing_pages) <= 50_000
-    for path in landing_pages:
-        lastmod = lastmods.get(path, "")
+        (out / "sitemap.xml").unlink(missing_ok=True)
+        return pages
+    lastmods = seo_audit.fact_lastmods(db, cfg, now, site_url, pages)
+    # Match the emitted robots directives, including empty home/best pages.
+    indexable = {p: page for p, page in pages.items() if page.indexable}
+    assert len(indexable) <= 50_000
+    urls = ""
+    for path in indexable:
+        lastmod = lastmods[path]
         urls += (f"  <url><loc>{escape(site_url + path)}</loc>"
                  + (f"<lastmod>{escape(lastmod)}</lastmod>" if lastmod else "") + "</url>\n")
     (out / "sitemap.xml").write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f"{urls}</urlset>\n", encoding="utf-8")
-    if key:
-        pages = {f"{site_url}/{p}": wall if p == "" else (out / p).read_text(encoding="utf-8")
-                 for p in public}
-        pages.update({f"{site_url}/deals/{slug}/": html for slug, _lastmod, html in listed})
-        pages.update({site_url + path: html for path, html in landing_pages.items()})
-        due = indexnow_due(db, cfg, now, pages)
+    key = getattr(cfg, "seo_indexnow_key", "") or ""
+    if _KEY_RE.fullmatch(key):
+        contents = {site_url + path: wall if path == "/" else
+                    (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
+                            path.lstrip("/"))).read_text(encoding="utf-8") for path in indexable}
+        due = indexnow_due(db, cfg, now, contents)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
-        logger.info("indexnow: %d of %d URL(s) due", len(due), len(pages))
+        logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))
+    return pages
 
 
 def submit_indexnow(cfg, http_client: Any = None) -> int:

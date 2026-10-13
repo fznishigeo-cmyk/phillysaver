@@ -400,14 +400,37 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines.append(f"Top landing pages ({days} days, sessions):")
         lines += [f"  {name or '(not set)'}: {_n(n)}" for name, n in ga["pages"]]
     if sc:
+        def search_number(value):
+            return _n(int(value)) if value is not None else "unavailable"
+
+        def search_ctr(value):
+            return f"{value * 100:.1f}%" if value is not None else "unavailable"
+
+        position = f"{sc['position']:.1f}" if sc.get("position") is not None else "unavailable"
         lines += ["", f"== Search Console, {sc['start']:%b %d} to {sc['end']:%b %d} "
                       "(its data lags 2-3 days) ==",
-                  f"Clicks {_n(sc['clicks'])}, impressions {_n(sc['impressions'])}, "
-                  f"CTR {sc['ctr'] * 100:.1f}%, average position {sc['position']:.1f}",
+                  f"Clicks {search_number(sc['clicks'])}, impressions {search_number(sc['impressions'])}, "
+                  f"CTR {search_ctr(sc['ctr'])}, average position {position}",
                   "Top queries (clicks / impressions):"]
-        lines += [f"  {q}: {_pair(_n, c, i)}" for q, c, i in sc["queries"]]
+        lines += [f"  {q}: {_pair(search_number, c, i)}" for q, c, i in sc["queries"]]
         lines.append("Top pages (clicks / impressions):")
-        lines += [f"  {p}: {_pair(_n, c, i)}" for p, c, i in sc["pages"]]
+        lines += [f"  {p}: {_pair(search_number, c, i)}" for p, c, i in sc["pages"]]
+        lines.append("Search by page family and device (returned Search Console rows):")
+        if reason := sc.get("family_device_unavailable"):
+            lines.append("  " + reason)
+        for row in sc.get("by_family") or []:
+            lines.append(f"  {row['family']}: clicks {search_number(row['clicks'])}, "
+                         f"impressions {search_number(row['impressions'])}, CTR {search_ctr(row['ctr'])}")
+        for row in sc.get("by_device_page") or []:
+            lines.append(f"  {row['device']}/{row['family']}: clicks {search_number(row['clicks'])}, "
+                         f"impressions {search_number(row['impressions'])}, CTR {search_ctr(row['ctr'])}")
+        if not sc.get("by_device_page"):
+            lines.append("  unavailable (no family/device sample)")
+        lines.append("Search Console may omit rows; absent families/devices are unavailable, not zero. "
+                     "CTR is summed clicks / summed impressions; zero impressions has no CTR.")
+    else:
+        lines += ["", "Search by page family and device: unavailable ("
+                  + status.get("search_console", "skipped") + ")"]
     if sm:
         lines += ["", "== Sitemap ==",
                   f"Submitted {sm['url']}" + (" (Google has not read it yet)" if sm["pending"] else ""),

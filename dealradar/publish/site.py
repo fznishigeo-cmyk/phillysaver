@@ -25,7 +25,7 @@ from ..config import AppConfig, load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import pwa, seo
+from . import pwa, seo, seo_audit
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -872,8 +872,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
-    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
-                spotlight=spotlight, deal_pages=deal_pages)
+    seo_paths, seo_wall = seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
+                                     spotlight=spotlight, deal_pages=deal_pages)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
@@ -888,6 +888,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
     # into every page written above or by another pass, nested ones included.
     apply_tracking(out, cfg)
+    seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
+    audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)
@@ -895,4 +897,4 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),
-            "full_payload": full_doc, "health": health_doc}
+            "full_payload": full_doc, "health": health_doc, "seo_audit": audit_result}

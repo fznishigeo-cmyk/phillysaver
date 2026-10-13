@@ -9,20 +9,23 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
-import re
 import subprocess
 import tempfile
 import time
 from datetime import date
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
+
+from ..publish.seo_audit import FAMILIES, page_family
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 SCOPES = ("https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/webmasters")
 GA4_URL = "https://analyticsdata.googleapis.com/v1beta/properties/{}:batchRunReports"
 SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
+SC_PAGE_SIZE = 25_000
 PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
                   "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered",
                   "install_offer_shown": "install_offer_shown", "install_accepted": "install_accepted",
@@ -269,17 +272,7 @@ def ga4_saved(client: Any, token: str, property_id: str, days: int) -> dict:
 
 
 def _page_family(path: str) -> str:
-    if path in ("/", "/index.html"):
-        return "home"
-    if re.fullmatch(r"/deal/[^/]+/", path):
-        return "deal"
-    if re.fullmatch(r"/stores/[^/]+/", path):
-        return "store"
-    if re.fullmatch(r"/deals/under-(10|25|50)/", path):
-        return "price"
-    if re.fullmatch(r"/deals/[^/]+/", path):
-        return "category"
-    return "best_today" if path == "/best-deals-today/" else ""
+    return page_family(path)
 
 
 def ga4_deal_pages(client: Any, token: str, property_id: str, days: int) -> dict:
@@ -346,29 +339,86 @@ def _site_url(site: str) -> str:
 
 
 def search_console(client: Any, token: str, site: str, start: date, end: date) -> dict:
-    """Clicks, impressions, CTR, position; top 10 queries and top 5 pages."""
+    """Totals/top rows, and paginated observed page-family/device counts.
+
+    Search Console can omit rows even after pagination. Missing groups are
+    unavailable; explicit zero-click rows remain zero. CTR uses summed
+    clicks/impressions, never an average of per-page percentages.
+    """
     url = _site_url(site) + "/searchAnalytics/query"
 
-    def query(dims: list[str], limit: int) -> list[dict]:
+    def query(dims: list[str], limit: int, offset: int = 0) -> list[dict]:
         resp = client.post(url, headers={"Authorization": f"Bearer {token}"}, json={
             "startDate": start.isoformat(), "endDate": end.isoformat(),
-            "dimensions": dims, "rowLimit": limit})
+            "dimensions": dims, "rowLimit": limit, "startRow": offset, "dataState": "final"})
         resp.raise_for_status()
         return resp.json().get("rows") or []
 
     total = (query([], 1) or [{}])[0]
 
-    def top(rows: list[dict]) -> list[tuple[str, int, int]]:
-        return [((r.get("keys") or [""])[0], int(r.get("clicks") or 0),
-                 int(r.get("impressions") or 0)) for r in rows]
+    def metric(row, key):
+        try:
+            value = float(row[key])
+            return value if math.isfinite(value) and value >= 0 else None
+        except (KeyError, TypeError, ValueError):
+            return None
 
-    return {"start": start, "end": end,
-            "clicks": int(total.get("clicks") or 0),
-            "impressions": int(total.get("impressions") or 0),
-            "ctr": float(total.get("ctr") or 0.0),
-            "position": float(total.get("position") or 0.0),
-            "queries": top(query(["query"], 10)),
-            "pages": top(query(["page"], 5))}
+    def top(rows: list[dict]) -> list[tuple[str, int | None, int | None]]:
+        return [((r.get("keys") or [""])[0],
+                 int(c) if (c := metric(r, "clicks")) is not None else None,
+                 int(i) if (i := metric(r, "impressions")) is not None else None) for r in rows]
+
+    out = {"start": start, "end": end,
+           "clicks": metric(total, "clicks"), "impressions": metric(total, "impressions"),
+           "ctr": metric(total, "ctr"), "position": metric(total, "position"),
+           "queries": top(query(["query"], 10)), "pages": top(query(["page"], 5))}
+    groups, seen, offset = {}, set(), 0
+    own_host = site.removeprefix("sc-domain:") if site.startswith("sc-domain:") else urlsplit(site).hostname
+    try:
+        while True:
+            rows = query(["page", "device"], SC_PAGE_SIZE, offset)
+            for row in rows:
+                keys = row.get("keys") or []
+                clicks, impressions = metric(row, "clicks"), metric(row, "impressions")
+                if len(keys) != 2 or clicks is None or impressions is None or clicks > impressions:
+                    raise ValueError("incomplete family/device row")
+                pair = tuple(keys)
+                if pair in seen:
+                    raise ValueError("repeated pagination row")
+                seen.add(pair)
+                page = urlsplit(keys[0])
+                if page.scheme not in ("http", "https") or (page.hostname or "").removeprefix("www.") != (own_host or "").removeprefix("www."):
+                    raise ValueError("page outside Search Console property")
+                family = page_family(keys[0])
+                if not family:
+                    continue
+                device = keys[1].lower()
+                device = device if device in ("mobile", "desktop", "tablet") else "unknown"
+                values = groups.setdefault((device, family), [0, 0])
+                values[0] += int(clicks)
+                values[1] += int(impressions)
+            offset += len(rows)
+            if len(rows) < SC_PAGE_SIZE:
+                break
+    except Exception as e:
+        # Preserve totals; API errors can echo credentials/URLs in their text.
+        groups = {}
+        out["family_device_unavailable"] = f"Search Console family/device unavailable ({type(e).__name__})"
+
+    def counts(values):
+        clicks, impressions = values if values is not None else (None, None)
+        return {"clicks": clicks, "impressions": impressions,
+                "ctr": clicks / impressions if impressions else None}
+
+    out["by_device_page"] = [{"device": device, "family": family, **counts(groups.get((device, family)))}
+                             for device in ("mobile", "desktop", "tablet", *(["unknown"] if any(
+                                 d == "unknown" for d, _f in groups) else [])) for family in FAMILIES]
+    out["by_family"] = []
+    for family in FAMILIES:
+        values = [v for (_device, f), v in groups.items() if f == family]
+        out["by_family"].append({"family": family, **counts(
+            [sum(v[i] for v in values) for i in (0, 1)] if values else None)})
+    return out
 
 
 def submit_sitemap(client: Any, token: str, site: str, sitemap_url: str) -> dict:

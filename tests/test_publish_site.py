@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1445,9 +1445,12 @@ def test_search_engines_get_a_sitemap_robots_and_canonical_urls(db, cfg, tmp_pat
         assert f'<link rel="canonical" href="https://wowpriced.com/{name}">' in page, name
     assert '<meta name="robots" content="noindex">' in (out / "welcome.html").read_text(encoding="utf-8")
     sitemap = (out / "sitemap.xml").read_text(encoding="utf-8")
-    assert "<loc>https://wowpriced.com/</loc>" in sitemap and "welcome.html" not in sitemap
-    # No "today" stamp: fixed pages carry no lastmod (hubs: tests/test_seo.py).
-    assert "<lastmod>" not in sitemap and "404.html" not in sitemap
+    assert "<loc>https://wowpriced.com/</loc>" not in sitemap and "welcome.html" not in sitemap
+    assert '<meta name="robots" content="noindex,follow">' in index  # empty wall
+    # Dates record first observed facts; a second build cannot advance them.
+    assert f"<lastmod>{NOW.isoformat()}</lastmod>" in sitemap and "404.html" not in sitemap
+    render_site(db, cfg, NOW + timedelta(hours=1), out_dir=out, deals=[])
+    assert (out / "sitemap.xml").read_text(encoding="utf-8") == sitemap
     robots = (out / "robots.txt").read_text(encoding="utf-8")
     assert "Sitemap: https://wowpriced.com/sitemap.xml" in robots
     assert "Disallow: /welcome.html" in robots

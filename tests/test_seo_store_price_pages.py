@@ -92,7 +92,7 @@ def test_store_content_count_median_wall_order_and_support(db, cfg, tmp_path, n,
         d["canonical_url"] = "https://www.amazon.com/dp/B012345678"
     _render(db, cfg, tmp_path, deals + _rows("Walmart", 15))
     html = _page(tmp_path, "/stores/amazon/").read_text()
-    assert '<title>Amazon deals today (October 9, 2026) | wowpriced</title>' in html
+    assert '<title>Amazon deals today | wowpriced</title>' in html
     assert '<h1>Amazon deals today</h1>' in html
     median = 81 if n % 2 == 0 else 91
     assert f"{count} live deals right now, median {median}% off." in html
@@ -125,7 +125,7 @@ def test_price_inclusive_filter_floor_and_card_limit(db, cfg, tmp_path):
     for n in [10, 25, 50]:
         html = _page(tmp_path, f"/deals/under-{n}/").read_text()
         selected = [d for d in deals if d["final_price"] is not None and d["final_price"] <= n]
-        assert f'<title>Deals under ${n} today (October 9, 2026) | wowpriced</title>' in html
+        assert f'<title>Deals under ${n} today | wowpriced</title>' in html
         assert f'<h1>Deals under ${n} today</h1>' in html
         assert f'<link rel="canonical" href="https://wowpriced.com/deals/under-{n}/">' in html
         assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in selected[:60]]
@@ -169,7 +169,7 @@ def test_sitemap_indexnow_stable_bytes_and_removal(db, cfg, tmp_path):
     sitemap = (out / "sitemap.xml").read_text()
     due = json.loads(seo.due_list_path(out).read_text())
     for path in paths:
-        lastmod = "2026-10-09T12:00:00+00:00" if path == "/stores/walmart/" else "2026-10-09T13:00:00+00:00"
+        lastmod = NOW.isoformat()  # baseline observed at publish, not inferred from sightings
         assert f'<loc>https://wowpriced.com{path}</loc><lastmod>{lastmod}</lastmod>' in sitemap
         assert "https://wowpriced.com" + path in due
     snapshots = {p: _page(out, p).read_bytes() for p in paths}
@@ -178,7 +178,8 @@ def test_sitemap_indexnow_stable_bytes_and_removal(db, cfg, tmp_path):
     assert (out / "sitemap.xml").read_text() == sitemap
     assert json.loads(seo.due_list_path(out).read_text()) == []
     _render(db, cfg, out, deals, now=NOW + timedelta(days=1))
-    assert "October 10, 2026" in _page(out, "/stores/amazon/").read_text()
+    assert snapshots == {p: _page(out, p).read_bytes() for p in paths}
+    assert (out / "sitemap.xml").read_text() == sitemap
     # Falling below the store floor removes the folder and all navigation.
     _render(db, cfg, out, deals[:14])
     assert _store_paths(out) == set()

@@ -171,29 +171,29 @@ def test_best_today_order_date_links_count_and_repeat_bytes(db, cfg, tmp_path):
     _render(db, cfg, tmp_path, deals, now=date)
     best = _page(tmp_path, "/best-deals-today/")
     html = best.read_text()
-    assert '<title>Best deals today (October 9, 2026) | wowpriced</title>' in html
+    assert '<title>Best deals today | wowpriced</title>' in html
     assert "100+ live deals" in html and html.count('<article class="card">') == 30
     assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in deals[:30]]
     hub = (tmp_path / "deals/electronics/index.html").read_text()
     assert all(f'<h3 class="title"><a href="{_path(d)}">' in hub for d in deals[:60])
     for page in [html, _page(tmp_path, _path(deals[0])).read_text()]:
         assert "Sign up for the latest deals" in page and "free trial" not in page and "members only" not in page
-    # Deal bytes depend on data, not on the run time; best-today changes at UTC midnight.
+    # Page bytes depend on data, not on the build date, including best-today.
     before = {str(p.relative_to(tmp_path)): p.read_bytes() for p in (tmp_path / 'deal').rglob('*.html')}
     sitemap = (tmp_path / 'sitemap.xml').read_bytes()
     _render(db, cfg, tmp_path, deals, now=NOW + timedelta(hours=4))
     assert best.read_text() == html and (tmp_path / 'sitemap.xml').read_bytes() == sitemap
     assert before == {str(p.relative_to(tmp_path)): p.read_bytes() for p in (tmp_path / 'deal').rglob('*.html')}
     _render(db, cfg, tmp_path, deals, now=NOW + timedelta(days=1))
-    assert "October 10, 2026" in best.read_text()
+    assert best.read_text() == html and (tmp_path / 'sitemap.xml').read_bytes() == sitemap
 
 
-def test_price_since_is_lastmod_and_new_page_indexnow_once(db, cfg, tmp_path):
+def test_first_observed_facts_are_lastmod_and_new_page_indexnow_once(db, cfg, tmp_path):
     cfg.paywall_open_access = True
     d = make_deal(price_since="2026-10-09T13:00:00+00:00", codes=[])
     _render(db, cfg, tmp_path, [d])
     sitemap = (tmp_path / "sitemap.xml").read_text()
-    assert f'<loc>https://wowpriced.com{_path(d)}</loc><lastmod>{d["price_since"]}</lastmod>' in sitemap
+    assert f'<loc>https://wowpriced.com{_path(d)}</loc><lastmod>{NOW.isoformat()}</lastmod>' in sitemap
     due = lambda: json.loads(seo.due_list_path(tmp_path).read_text())
     assert "https://wowpriced.com" + _path(d) in due()
     assert "https://wowpriced.com/best-deals-today/" in due()

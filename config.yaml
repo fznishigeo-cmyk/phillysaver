@@ -180,12 +180,17 @@ seo:
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.
   store_page_min_deals: 15    # Public live deals required for a store page.
   store_pages_max: 12         # Maximum store pages, most live deals first.
+  price_page_min_deals: 10    # Public live deals required for a price page.
   price_pages: [10, 25, 50]   # Sale-price ceilings for price pages and home filter presets.
+  home_min_items: 1          # Keep an empty wall out of search until offers return.
+  best_today_min_items: 1
+  deal_page_min_items: 1     # A single-deal page requires its live offer; ended stays noindex.
   # Category hubs (/deals/<slug>/): a hub is indexable and in the sitemap
-  # only while its category had at least this many deals pass our checks in
-  # the last 7 days (a stable count: never the rotating free deals or the
-  # locked count). Below it the hub is noindex and left out of the sitemap.
+  # only while it shows at least this many CURRENT public live offers.
+  # Ended deals, locked counts and seven-day history never qualify it.
+  # Below it the hub is noindex,follow and left out of the sitemap.
   hub_min_items: 10
+  lastmod_retention_days: 35  # Keep absent URL fingerprints briefly; at most 50k URLs.
   # IndexNow (Bing, Yahoo, DuckDuckGo, Yandex). The key is public by design:
   # the site serves it at /<key>.txt to prove the domain is ours.
   indexnow_key: "89b51421654dec4627eb3ed0290d59b2"
