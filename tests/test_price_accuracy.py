@@ -85,3 +85,31 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1, minutes=5))
     assert calls == []
     db.close()
+
+
+def _priced(current: int, listed: int, month: int, ninety: int):
+    # current is indexed by Keepa price type: 0 = Amazon, 4 = List Price.
+    return KeepaDealsAdapter._map_row(
+        {"asin": "B0TIDEPODS", "title": "Tide Pods Laundry Detergent",
+         "current": [current, -1, -1, -1, listed],
+         "avg": [[current], [2300], [month], [ninety]]}, SRC, NOW)
+
+
+def test_list_price_amazon_really_sold_at_is_the_regular_price():
+    # Amazon's page: $22.53, "List Price: $24.94", -10%.
+    post = _priced(2253, 2494, 2350, 2300)
+    assert "Regular price (List Price on Amazon): $24.94." in post.text
+    assert post.structured["regular_price"] == 24.94
+    assert post.structured["regular_price_basis"] == "List Price on Amazon"
+    assert post.structured["evidence"]["regular_price_quote"] in post.text
+
+
+def test_list_price_the_item_never_sold_near_is_ignored():
+    # The leggings: a $22 list price, but Amazon's 90-day average ($16.02)
+    # never came near it; Amazon showed "Typical price: $6.01".
+    post = _priced(365, 2200, 601, 1602)
+    assert "Regular price (30-day average on Amazon): $6.01." in post.text
+    assert "List Price" not in post.text
+    # No list price at all: the averages, as before.
+    assert "List Price" not in _priced(2253, -1, 2350, 2300).text
+    assert load_config().keepa_list_price_min_avg_ratio == 0.9

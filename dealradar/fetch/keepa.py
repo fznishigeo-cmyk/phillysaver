@@ -99,6 +99,8 @@ MIN_RATING = 20
 PRICE_TYPE_AMAZON = 0
 PRICE_TYPE_NEW = 1
 PRICE_TYPE_WAREHOUSE = 9
+#: 4 = the product's List Price (manufacturer/seller suggested price).
+PRICE_TYPE_LIST = 4
 #: ... and 11 = the count of NEW offers (a count, not a price).
 COUNT_NEW = 11
 
@@ -253,6 +255,25 @@ def _regular_basis(avg: Any, price_type: int) -> tuple[float, str] | None:
         if avg30 is not None and 0 < avg30 < avg90:
             return avg30, "30-day average"
     return avg90, "90-day average"
+
+
+def _amazon_basis(row: dict[str, Any], avg: Any,
+                  list_ratio: float) -> tuple[float, str] | None:
+    """The reference price Amazon itself shows, so our percent matches
+    the product page (operator, 2026-10-13). Amazon shows a List Price
+    only when customers recently bought at it, else a Typical price (the
+    median price paid over 90 days). The List Price counts when Amazon's
+    own 90-day average reached ``list_ratio`` of it (the item really sold
+    near list); otherwise the lower of the 30- and 90-day averages stands
+    in for the Typical price. Never a list price the item never sold at."""
+    typical = _regular_basis(avg, PRICE_TYPE_AMAZON)
+    if typical is None:
+        return None
+    listed = _price_at(row.get("current"), PRICE_TYPE_LIST)
+    avg90 = _avg_price(avg, PRICE_TYPE_AMAZON)
+    if listed and avg90 and listed > typical[0] and avg90 >= list_ratio * listed:
+        return listed, "List Price"
+    return typical
 
 
 def _count_at(arr: Any, idx: int) -> int | None:
@@ -474,7 +495,8 @@ class KeepaDealsAdapter(SourceAdapter):
 
         def map_amazon(row: dict[str, Any]) -> RawPost | None:
             return self._map_row(row, source, now, floors=floors,
-                                 category_names=pull.category_names)
+                                 category_names=pull.category_names,
+                                 list_ratio=cfg.keepa_list_price_min_avg_ratio)
 
         def map_warehouse(row: dict[str, Any]) -> RawPost | None:
             return self._map_warehouse_row(
@@ -919,14 +941,15 @@ class KeepaDealsAdapter(SourceAdapter):
     @staticmethod
     def _map_row(row: dict[str, Any], source: SourceConfig, now: datetime,
                  *, floors: tuple[float, ...] = (),
-                 category_names: dict[str, str] | None = None) -> RawPost | None:
+                 category_names: dict[str, str] | None = None,
+                 list_ratio: float = 0.9) -> RawPost | None:
         asin = str(row.get("asin") or "").strip().upper()
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
         avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
         current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
-        basis = _regular_basis(avg_raw, PRICE_TYPE_AMAZON)
+        basis = _amazon_basis(row, avg_raw, list_ratio)
         if current is None or basis is None or current >= basis[0]:
             return None
         if not _dense_history(avg_raw, PRICE_TYPE_AMAZON):
@@ -934,8 +957,9 @@ class KeepaDealsAdapter(SourceAdapter):
         avg, label = basis
 
         # Synthesized source text: the quotes the evidence check will verify.
-        # The lower of the 30- and 90-day averages is the honest "regular"
-        # basis — never a claimed MSRP — and it is LABELED as such. The wording deliberately matches
+        # The regular basis is the reference Amazon shows (a List Price the
+        # item recently sold at, else the Typical-price stand-in), never a
+        # bare claimed MSRP, and it is LABELED as such. The wording deliberately matches
         # the extraction vocabulary ("On sale for" -> final, "Regular price"
         # -> regular): the first live runs showed the model correctly
         # refusing to treat an unlabeled "recent average" as a regular

@@ -286,6 +286,9 @@ class AppConfig:
     keepa_warehouse_max_new_posts_per_pull: int = 20
     keepa_warehouse_min_drop_pct: float = 45.0  # used price vs honest new price
     keepa_warehouse_min_new_price: float = 25.0
+    # Amazon price drops use the List Price when Amazon's 90-day average
+    # reached this share of it (the item really sold near list).
+    keepa_list_price_min_avg_ratio: float = 0.9
     # Live price re-check cadence, hours (config.yaml keepa.recheck_*):
     # deals first seen within recheck_fresh_window_h, older new-condition
     # deals, and used/open-box deals (an offers scan, ~13 tokens each).
@@ -602,6 +605,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     for name in ("recheck_fresh_h", "recheck_fresh_window_h", "recheck_new_h", "recheck_used_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
+    cfg.keepa_list_price_min_avg_ratio = min(1.0, max(0.5, float(g(
+        "keepa", "list_price_min_avg_ratio", default=cfg.keepa_list_price_min_avg_ratio))))
     cfg.keepa_recheck_top_h = max(0.0, float(g(
         "keepa", "recheck_top_h", default=cfg.keepa_recheck_top_h)))
     cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
