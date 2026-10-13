@@ -1,0 +1,58 @@
+name: robots probe (read-only)
+
+# For each host: the HTTP status of its robots.txt (our User-Agent) and
+# whether our crawler may fetch a sample path under it. Checks that API and
+# short-link hosts stay usable when every request honours robots.txt.
+# Reads robots.txt only; writes nothing but the log.
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Space-separated sample URLs (one per host)"
+        required: true
+        default: "https://api.keepa.com/product https://api.keepa.com/deal https://developer.woot.com/feed/All https://meh.com/api/1/current.json https://amzn.to/3abcdef https://a.co/d/abcdef https://on.ltk.com/abc https://goto.target.com/abc https://graph.threads.net/v1.0/me https://www.amazon.com/dp/B0GLP6BWD9 https://m.media-amazon.com/images/I/x.jpg"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dealradar
+        run: pip install -e .
+      - name: robots.txt per host
+        env:
+          URLS: ${{ inputs.urls }}
+        run: |
+          python - <<'PY'
+          import os, time, urllib.robotparser
+          from urllib.parse import urlsplit
+          import httpx
+          from dealradar.config import load_config
+          ua = load_config().resolved_user_agent()
+          for url in os.environ["URLS"].split():
+              p = urlsplit(url)
+              robots = f"{p.scheme}://{p.netloc}/robots.txt"
+              try:
+                  r = httpx.get(robots, headers={"User-Agent": ua}, timeout=10, follow_redirects=False)
+                  status = r.status_code
+                  if 200 <= status < 300:
+                      rp = urllib.robotparser.RobotFileParser(); rp.parse(r.text.splitlines())
+                      verdict = "allowed" if rp.can_fetch(ua, url) else "DISALLOWED"
+                  elif status in (404, 410):
+                      verdict = "allowed (no robots.txt)"
+                  else:
+                      verdict = "DISALLOWED (robots.txt error, conservative)"
+                  loc = r.headers.get("location", "")
+              except Exception as e:
+                  status, verdict, loc = 0, f"DISALLOWED ({type(e).__name__})", ""
+              print(f"{p.netloc:28} robots {status:>3} {('-> ' + loc) if loc else ''} | {p.path:24} {verdict}")
+              time.sleep(1)
+          PY
