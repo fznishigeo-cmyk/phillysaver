@@ -117,13 +117,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "702cdb5cdb95bf9509a20ebf89f2cf8e6cec8925760be363998b47bb61103e9f"),
-    (False, 49, "7c5096c0746d8bb9d60b1ce80eff3abe92a292da8139750217fb4f800fc3cf3c"),
-    (True, 0, "909101dc698b199d4004666d27572c9fd92ee471505a0ecc435e14727244aea3"),
-    (True, 49, "6e22a3025663828c729488fe50bdd2c19a92b3b9a8b80f07e3261e9f44997997"),
+    (False, 0, "bc4e479c335aa60bc106a13e0ecaccd3c17fb688c40d06d24522692261ed6d7e"),
+    (False, 49, "3ce4132be7da85afca4b09d51e46aaacc1cce6675637d7754091b3a2526fa8fb"),
+    (True, 0, "f44ef8c0885531749f883bc38276b409f6541b7a019917b3d2fa2b65a6c932d3"),
+    (True, 49, "4ba57900b777fadfd280afb9c7ca757e0c8cb2775dd41f554d29ee5e38ee33ec"),
 ])
-def test_support_off_index_bytes_match_task074_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 074 adds the shared footer link and preserves it on disclosure refresh.
+def test_support_off_index_bytes_match_task076_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 076 changes only phone hit-area CSS in all four home modes.
     # Snapshot without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

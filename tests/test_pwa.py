@@ -44,14 +44,14 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "752357379dffa28059b43530257574331461d6140ac6660b6204973e0d1a0568"),
-    ("open", "1167fe1497670f28ae4a03ccc16ab9c0caca373c567553dbd99b1236b5cdfa34"),
-    ("support", "5e06f1e6c6e24a47152632c897e003473f368ec62092933501e590e8f3dfbdc4"),
-    ("shipped", "596b742354505b3133342cbd0b3f77cefb731b34219a459facd36767029d32d7"),
+    ("membership", "75f8e4d541d992f70d4798b67abaddda5b11b3ae5b643425929473f8a1141122"),
+    ("open", "ca3dcc756cd531ba427194aafa683cc53f3c387ad7832bde85b00c43f842eb4f"),
+    ("support", "618cfcb594e626bc35ea483168e3c7cf4890e8cfb0b0274003aaf2cd8cb28bef"),
+    ("shipped", "1d2ea8d7b9b0d0808724d96455906d39fb97a9cfc141a4dadf8854cda5116753"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
-    # Membership/open retain the pre-069 baseline. Support/shipped include
-    # task 071's enabled Saved price watches, without any PWA output.
+    # Task 076 updates all four trees: shared phone target CSS changes
+    # every footer page and the template version, without any PWA output.
     # Only shipped has support links and task 075's post-join ask.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)
@@ -156,7 +156,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "5e06f1e6c6e24a47152632c897e003473f368ec62092933501e590e8f3dfbdc4"
+    assert tree_hash(out) == "618cfcb594e626bc35ea483168e3c7cf4890e8cfb0b0274003aaf2cd8cb28bef"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

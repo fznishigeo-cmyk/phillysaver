@@ -223,7 +223,7 @@ def test_phone_controls_and_small_links_have_44px_hit_areas(published):
     assert 'min-height:48px' in phone_rule(css, '.subbar.ready')
     assert 'min-height:36px' in phone_rule(css, '.code')
     assert 'margin:4px 4px 4px 0' in phone_rule(css, '.code')
-    link = 'a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)'
+    link = ':where(a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab))'
     for selector in (link + '::after', '.code::after'):
         declarations = phone_rule(css, selector)
         assert 'content:"";position:absolute' in declarations
@@ -237,6 +237,50 @@ def test_phone_controls_and_small_links_have_44px_hit_areas(published):
     assert 'overflow:visible;white-space:normal' in phone_rule(css, '.credit')
     assert 'outline:2px solid var(--accent);outline-offset:3px' in css
     assert '@media (prefers-reduced-motion: reduce)' in css and '.tkstrip{animation:none}' in css
+
+
+def test_phone_extensions_are_shared_without_reflow_and_neighbors_keep_their_taps(published):
+    for path in published.rglob('*.html'):
+        css, _ = themes(path.read_text())
+        for selector in ('.brand a::after', '#amazon-deals::after',
+                         '.card .title a::after', '.card .credit a::after',
+                         '.detail-sources a::after', '.code::after'):
+            declarations = phone_rule(css, selector)
+            assert 'content:"";position:absolute' in declarations, (path, selector)
+            assert 'min-height:44px' in declarations, (path, selector)
+            assert 'min-width:44px' in declarations, (path, selector)
+            assert not re.search(r'\b(?:background|color|font|padding|margin):', declarations)
+        assert phone_rule(css, '.card .title:has(a)') == 'position:relative;overflow:visible'
+        assert 'top:calc(50% + 2px)' in phone_rule(css, '#amazon-deals::after')
+        assert '.card .title{' not in css  # ended titles keep their original clip
+        assert phone_rule(css, '.card .title a') == 'position:static'
+        assert phone_rule(css, '.card .credit') == 'padding:14px;margin:-14px'
+        # Static credits keep their original ellipsis, whitespace and line height.
+        if '<article class="card' in path.read_text():
+            assert '.credit{font-size:11.5px;color:var(--muted);min-width:0;overflow:hidden;' in css
+        assert phone_rule(css, '.card .credit a') == 'position:relative'
+        for selector in ('.card .credit a::after', '.detail-sources a::after'):
+            declarations = phone_rule(css, selector)
+            assert 'left:auto;right:0;transform:translateY(-50%)' in declarations
+            assert 'width:44px;min-width:100%' in declarations
+            assert 'max-width:calc(100% + 24px);z-index:0' in declarations
+        assert 'left:-8px;right:auto;max-width:calc(100% + 16px)' in phone_rule(css, '.detail-sources a::after')
+        for selector in ('.card .credit a:first-of-type::after', '.detail-sources a:first-of-type::after'):
+            assert 'max-width:none' in phone_rule(css, selector)
+        assert 'left:auto;right:0' in phone_rule(css, '.detail-sources a:first-of-type::after')
+        assert phone_rule(css, '.detail-sources a:not(:first-of-type):last-of-type::after') == 'left:0;right:auto;max-width:calc(100% + 16px)'
+        for selector in ('.card .actions', '.detail-sources'):
+            assert 'isolation:isolate' in phone_rule(css, selector)
+        assert 'position:relative;z-index:1' in phone_rule(css, '.card .actions>.getdeal')
+        for selector in ('.card .credit a::before', '.detail-sources a::before'):
+            assert phone_rule(css, selector).strip() == 'content:"";position:absolute;inset:0;z-index:1'
+        assert 'width:calc(100% + 3px);min-width:0;height:calc(100% + 3px)' in phone_rule(css, '.code::after')
+    css, _ = themes((published / 'index.html').read_text())
+    assert 'overflow:hidden' in phone_rule(css, '.title a')
+    assert '-webkit-line-clamp:2' in phone_rule(css, '.title a')
+    # Zero specificity lets the shared title use its heading as the
+    # containing block instead of getting clipped by a positioned link.
+    assert ':where(a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)),.code{position:relative}' in css
 
 
 def test_phone_type_never_drops_below_12px(published):

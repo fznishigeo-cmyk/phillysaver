@@ -190,6 +190,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Phone taps (Codex task 076, 2026-10-13; uncommitted):** shared invisible
+  44px extensions, retained title clamps, neighbor guards and a probe-based
+  audit (8 Node math checks). Only four support-off home/four PWA trees and
+  the no-link support hash refreshed; PWA off compares its initial render.
+  HTML/JS outside CSS/version unchanged. Pytest: **2,789 passed, 1 deselected**;
+  only 7 known Stripe yearly-deploy tests fail on sandbox socket creation.
+  Chromium EPERM leaves first-card before/after and visual/collision QA
+  unmeasured; crowded credits may remain under 44px and are reported. No push.
 - **Post-join support ask (Codex task 075, 2026-10-13):** card, `/join` and
   footer successes offer the existing Stripe choices/terms once; Not now/Escape/
   close return focus, remembered joins/supporters skip it, blocked storage allows
