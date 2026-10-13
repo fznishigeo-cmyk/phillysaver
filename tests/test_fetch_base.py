@@ -228,3 +228,30 @@ def test_success_resets_consecutive_failures(tmp_path):
 def test_source_adapter_is_abstract():
     with pytest.raises(TypeError):
         SourceAdapter()  # type: ignore[abstract]
+
+
+def test_new_access_mode_clears_the_breaker_and_no_mode_changes_nothing(tmp_path):
+    """Adding a keyed API's secret gives the source a fresh breaker; an adapter
+    without an access mode keeps its old signature (no mass reset)."""
+    cfg, db, clock, fetcher, source = make_env(tmp_path)
+    now = now_utc()
+
+    class Keyed(ScriptedAdapter):
+        mode = ""
+
+        def access_mode(self):
+            return self.mode
+
+    failing = Keyed(RuntimeError("robots blocked"))
+    for _ in range(3):
+        run_source(source, failing, fetcher, db, cfg, now, clock=clock)
+    assert db.is_tripped("src1", now)
+    # Still no key: same signature as a plain adapter, still tripped.
+    assert run_source(source, failing, fetcher, db, cfg, now, clock=clock)[2] == "tripped"
+    assert db.meta_get("source_sig:src1") == "rss||https://example.com/feed"
+
+    keyed = Keyed([make_post(now)])
+    keyed.mode = "keyed"
+    posts, ok, _ = run_source(source, keyed, fetcher, db, cfg, now, clock=clock)
+    assert ok is True and len(posts) == 1
+    assert db.meta_get("source_sig:src1") == "rss||https://example.com/feed|keyed"

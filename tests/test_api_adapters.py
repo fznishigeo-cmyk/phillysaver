@@ -515,3 +515,11 @@ class TestInstagram:
                            adapter="instagram")
         with pytest.raises(AdapterDisabled, match="stubbed"):
             InstagramAdapter().fetch_posts(src, None, None, cfg, NOW, None)
+
+
+def test_meh_access_mode_tracks_the_key(monkeypatch):
+    from dealradar.fetch.meh import MehAdapter
+    monkeypatch.delenv("MEH_API_KEY", raising=False)
+    assert MehAdapter().access_mode() == ""
+    monkeypatch.setenv("MEH_API_KEY", "synthetic-key")
+    assert MehAdapter().access_mode() == "keyed"

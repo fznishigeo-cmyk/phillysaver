@@ -79,6 +79,13 @@ def run_source(
     # starts with a clean count.
     sig_key, sig = "source_sig:" + source.name, \
         "|".join((source.method, source.adapter or "", source.url))
+    # So does a new access path, e.g. a keyed API whose key was just added
+    # (live 2026-10-13: Meh stayed tripped on its robots-blocked public feed).
+    # Adapters without one keep the old signature, so no other breaker resets.
+    access = getattr(adapter, "access_mode", None)
+    mode = access() if callable(access) else ""
+    if mode:
+        sig += "|" + mode
     if db.meta_get(sig_key) != sig:
         db.reset_breaker(source.name)
         db.meta_set(sig_key, sig)

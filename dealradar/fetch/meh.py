@@ -73,6 +73,11 @@ class MehAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn  # kept for interface symmetry (single call per run)
 
+    def access_mode(self) -> str:
+        """The keyed API is a different reader from the public feed: adding
+        the key gives the source a fresh circuit breaker (run_source)."""
+        return "keyed" if get_secret("MEH_API_KEY") else ""
+
     def fetch_posts(
         self,
         source: SourceConfig,
