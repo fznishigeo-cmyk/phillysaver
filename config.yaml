@@ -104,6 +104,7 @@ publish:
       cheap_factor: 0.8
       cheap_below: 5.0
       steps_factor: 0.8
+      no_earn_factor: 0.5
       max_same_store: 40
       max_same_brand: 3
       max_same_category: 24
@@ -127,6 +128,8 @@ affiliate:
   # links are rewritten); emails never do (Amazon forbids tagged links in
   # email), and the site's disclosure switches to the one below.
   amazon_tag: "wowpriced-20"
+  competitor_tracker_hosts: [cc.dealsofamerica.com, go.dealmoon.com,
+                             slickdeals.net, links.southernsavers.com]
   # One store page -> one network short link ("<host>/<product id>"). Sovrn
   # onboarding (2026-10-12): its first-click check needs a click from our site.
   link_overrides:
@@ -344,6 +347,7 @@ tracking:
   facebook_domain_verification: ""  # facebook-domain-verification
 
 social:
+  require_earning_link: true
   pinterest:
     enabled: true
     environment: sandbox          # sandbox (Trial access) | production

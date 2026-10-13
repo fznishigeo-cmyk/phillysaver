@@ -687,19 +687,20 @@ def _site_of(url: str) -> str:
 def _resolve_short_links(db: DB, fetcher, deadline: float | None,
                          cfg: AppConfig, *, stats: dict | None = None,
                          deals: list[dict[str, Any]] | None = None) -> int:
-    """Resolve photo-less redirect links once, newest first, keeping identity.
+    """Resolve photo-less redirects and competitor trackers once, keeping identity.
     deals: the deals to consider (run() passes the site's, so the per-run
     cap is spent on deals visitors see); None = every deal."""
     from .dedupe import _DEAL_FIELDS
     from .http_client import extract_asin, is_challenge_url, resolve_redirects
+    from .publish.site import _deal_source_hosts, is_competitor_tracker_host
 
-    resolved = tried = 0
+    resolved = tried = trackers_resolved = 0
+    tracker_hosts = cfg.affiliate_competitor_tracker_hosts
     now = util.now_utc()
     show_dead = timedelta(hours=float(getattr(cfg, "show_dead_hours", 0) or 0))
     for deal in sorted(db.all_deals() if deals is None else deals,
                        key=lambda d: str(d.get("first_seen_at") or ""), reverse=True):
-        if deal.get("image_url") or deal.get("link_shared") or \
-                "link_resolve_tried" in (deal.get("flags") or []):
+        if "link_resolve_tried" in (deal.get("flags") or []):
             continue
         if deal.get("status") == "dead":
             died = util.parse_iso(deal.get("died_at") or "")
@@ -713,7 +714,10 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             continue
         if parts.scheme not in ("http", "https") or not host or is_challenge_url(link):
             continue
-        if host.removeprefix("www.") not in _SHORT_LINK_HOSTS:  # www.creator.anchor.store, live
+        tracker = is_competitor_tracker_host(host, tracker_hosts)
+        if (deal.get("image_url") or deal.get("link_shared")) and not tracker:
+            continue
+        if not tracker and host.removeprefix("www.") not in _SHORT_LINK_HOSTS:
             domain = _site_of(link)
             # Known sellers remain product pages even if credited as a source.
             if not domain or domain.startswith("amazon.") or \
@@ -726,15 +730,27 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             break
         try:
             target = resolve_redirects(fetcher, link, cfg.redirect_max_hops,
-                                       deadline=deadline)
+                                       deadline=deadline, respect_robots=tracker)
         except DeadlineExceeded:
             break
         tried += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         flags = list(payload.get("flags") or [])
         flags.append("link_resolve_tried")
-        changed = target != link and urlsplit(target).scheme in ("http", "https") \
-            and not is_challenge_url(target)
+        try:
+            target_parts = urlsplit(target)
+            target_host = (target_parts.hostname or "").lower().removeprefix("www.")
+        except ValueError:
+            target_host = ""
+        changed = bool(target != link and target_host and target_parts.scheme in ("http", "https")
+                       and not is_challenge_url(target))
+        if changed and tracker:
+            excluded = _deal_source_hosts() | set(_SHORT_LINK_HOSTS) | {"wowpriced.com"}
+            changed = bool(target_host and not is_competitor_tracker_host(target_host, tracker_hosts)
+                           and not any(target_host == h or target_host.endswith("." + h)
+                                       for h in excluded)
+                           and not any(_site_of(target) == _site_of(s.get("source_url") or "")
+                                       for s in db.sightings_for(deal["id"])))
         if changed:
             payload["canonical_url"] = target
             if not deal.get("asin"):
@@ -742,6 +758,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             flags = [f for f in flags if f not in
                      ("product_image_tried", "image_backfill_tried")]
             resolved += 1
+            trackers_resolved += int(tracker)
         payload["flags"] = flags
         db.update_deal(deal["dedupe_key"], payload=payload,
                        canonical_url=target if changed else None)
@@ -749,6 +766,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             break
     if stats is not None:
         stats.update(resolved=resolved, tried=tried)
+        stats["trackers_resolved"] = trackers_resolved
     return resolved
 
 
@@ -1601,7 +1619,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["images_cleared"] = (
             _check_stored_images(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, now)
             if fast_lane else 0)
-        summary["redirects"] = {"resolved": 0, "tried": 0}
+        summary["redirects"] = {"resolved": 0, "tried": 0, "trackers_resolved": 0}
         summary["post_links"] = {"tried": 0, "found": 0}
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
@@ -1660,6 +1678,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         })
         summary["published"] = site_res.get("published", 0)
         summary["link_mix"] = site_res.get("link_mix", {})
+        summary["link_mix"]["trackers_resolved"] = summary["redirects"]["trackers_resolved"]
+        log.info("link mix: earning %d; not earning %d; trackers resolved %d",
+                 summary["link_mix"].get("earning", 0), summary["link_mix"].get("not_earning", 0),
+                 summary["link_mix"]["trackers_resolved"])
         # Source health is the operator's only: the run's GitHub Actions
         # summary (private to the repository), never the public site.
         step_summary = os.environ.get("GITHUB_STEP_SUMMARY")

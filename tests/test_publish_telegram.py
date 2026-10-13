@@ -135,6 +135,7 @@ def published(db, cfg, rows=None):
         deal.setdefault("pick", i + 1)
         deal.setdefault("badge", deal.get("verify_tier", "unverified"))
         deal.setdefault("image_url", "https://images.example/product.jpg")
+        deal.setdefault("earns", True)
         key = deal["key"][:8]
         paths[key] = f"/deal/product-{key}/"
         folder = out / paths[key].strip("/")

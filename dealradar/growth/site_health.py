@@ -140,7 +140,8 @@ def check(client, cfg, now: datetime) -> dict:
     if not home_content:
         warnings.append("home page missing content")
     return dict(live=len(live), photos=len(photos), coverage=coverage,
-                link_mix=link_mix(live, cfg.affiliate_amazon_tag),
+                link_mix=link_mix(live, cfg.affiliate_amazon_tag,
+                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts),
                 missing_stores=stores.most_common(10), missing_sources=sources.most_common(10),
                 checked=len(sample) - unchecked, unchecked=unchecked,
                 broken=sum(broken.values()), broken_stores=broken.most_common(),

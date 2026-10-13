@@ -585,7 +585,7 @@ class PoliteFetcher:
     # ---------------------------------------------------------- redirect hops
 
     def _redirect_hop(
-        self, url: str, deadline: float | None
+        self, url: str, deadline: float | None, *, respect_robots: bool = False
     ) -> tuple[FetchResult, str]:
         """One redirect hop: HEAD first, on 403/405/501 fall back to GET.
 
@@ -598,7 +598,7 @@ class PoliteFetcher:
         quick = {"max_attempts": 1, "timeout_s": REDIRECT_HOP_TIMEOUT_S}
         result, resp_headers = self._request_with_retries(
             "HEAD", url, {}, deadline=deadline, conditional=False,
-            follow_redirects=False, read_body=False, **quick,
+            follow_redirects=False, read_body=False, respect_robots=respect_robots, **quick,
         )
         if result.status in _HEAD_FALLBACK_STATUSES:
             self._check_deadline(deadline)
@@ -623,6 +623,7 @@ def resolve_redirects(
     max_hops: int = 5,
     *,
     deadline: float | None = None,
+    respect_robots: bool = False,
 ) -> str:
     """Resolve an affiliate/shortener redirect chain to a canonical URL.
 
@@ -638,14 +639,16 @@ def resolve_redirects(
 
     Rate limits and the optional ``deadline`` apply to every hop; crossing the
     deadline raises :class:`DeadlineExceeded`. Any other error returns
-    ``canonicalize_url`` of the last known URL.
+    ``canonicalize_url`` of the last known URL. ``respect_robots`` also checks
+    HEAD metadata requests, so tracker repairs never contact a disallowed URL.
     """
     current = url
     try:
         for _hop in range(max_hops):
             if extract_asin(current):
                 break
-            result, location = fetcher._redirect_hop(current, deadline)
+            result, location = fetcher._redirect_hop(current, deadline,
+                                                    respect_robots=respect_robots)
             if result.blocked_by_robots:
                 break
             if not (300 <= result.status < 400) or not location:

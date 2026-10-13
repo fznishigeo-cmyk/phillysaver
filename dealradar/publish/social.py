@@ -31,7 +31,8 @@ def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
     candidates = []
     for deal in deals:
         if (deal.get("locked") or deal.get("status") != "alive" or not deal.get("pick")
-                or not deal.get("dedupe_key") or deal["dedupe_key"] in posted):
+                or not deal.get("dedupe_key") or deal["dedupe_key"] in posted
+                or (cfg.social_require_earning_link and not deal.get("earns"))):
             continue
         image = urlsplit(deal.get("image_url") or "")
         path = paths.get(str(deal.get("key") or "")[:8], "")

@@ -76,6 +76,11 @@ _AFFILIATE_PARAMS = {
 }
 
 
+def is_competitor_tracker_host(host: str, hosts: list[str] | tuple[str, ...]) -> bool:
+    host = host.lower().removeprefix("www.")
+    return any(host == h or host.endswith("." + h) for h in hosts)
+
+
 @lru_cache(maxsize=1)
 def _deal_source_hosts() -> set[str]:
     """Known source/blog hosts, including paused sources; stores can also have feeds."""
@@ -88,7 +93,8 @@ def _deal_source_hosts() -> set[str]:
 
 def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
                       sovrn_enabled: bool = False, cuid: str = "",
-                      credit_urls: list[str] | None = None) -> str:
+                      credit_urls: list[str] | None = None,
+                      competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> str:
     """The one place outbound links are rewritten (nothing else may).
 
     With the operator's Amazon Associates Store ID (config affiliate.amazon_tag)
@@ -111,7 +117,8 @@ def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
         return urlunsplit(parts._replace(query=urlencode(query)))
     if not sovrn_enabled or not re.fullmatch(r"[0-9a-f]{32}", sovrn_key):
         return url
-    excluded = _deal_source_hosts() | _SOVRN_HOSTS | {"wowpriced.com", "amzn.to", "a.co", "link.amazon"}
+    excluded = (_deal_source_hosts() | _SOVRN_HOSTS | set(competitor_tracker_hosts)
+                | {"wowpriced.com", "amzn.to", "a.co", "link.amazon"})
     for credit in credit_urls or []:
         try:
             credit_host = (urlsplit(credit).hostname or "").lower().removeprefix("www.")
@@ -132,40 +139,59 @@ def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
     return wrapped
 
 
-def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "") -> dict[str, Any]:
+def _link_destination(deal: dict[str, Any], amazon_tag: str,
+                      competitor_tracker_hosts: list[str] | tuple[str, ...]) -> tuple[str, str, bool]:
+    """Classify the final Get deal URL once for earning checks and counts."""
+    url = deal.get("url") or ""
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower().removeprefix("www.")
+    except ValueError:
+        return "none", "", False
+    if not host or parts.scheme not in ("http", "https"):
+        return "none", "", False
+    ours = bool(amazon_tag and parts.scheme == "https"
+                and ("tag", amazon_tag) in parse_qsl(parts.query))
+    if host in {"amazon.com", "smile.amazon.com"}:
+        bucket = "amazon_tagged" if ours else "amazon_untagged"
+    elif host in {"amzn.to", "a.co", "link.amazon"}:
+        bucket = "amazon_short"
+    elif any(url == c.get("url") for c in deal.get("credits") or []):
+        bucket = "source_post"
+    elif host in _SOVRN_HOSTS:
+        bucket = "sovrn"
+    else:
+        bucket = "other_store"
+    earns = (parts.scheme == "https" and not is_competitor_tracker_host(host, competitor_tracker_hosts)
+             and (bucket in {"amazon_tagged", "sovrn"} or (bucket == "amazon_short" and ours)))
+    return bucket, host, earns
+
+
+def earning_link(deal: dict[str, Any], amazon_tag: str = "", *,
+                 competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> bool:
+    """Whether this deal's final Get deal destination credits our affiliate link."""
+    return _link_destination(deal, amazon_tag, competitor_tracker_hosts)[2]
+
+
+def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "", *,
+             competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
     """Count public live Get deal destinations, without fetching or rewriting.
 
     Pass the configured Store ID to distinguish our tag from another source's.
     Locked stubs and ended deals have no live public Get deal link to count.
     """
     counts = dict.fromkeys(("amazon_tagged", "amazon_untagged", "amazon_short",
-                            "source_post", "sovrn", "other_store", "none"), 0)
+                            "source_post", "sovrn", "other_store", "none",
+                            "earning", "not_earning"), 0)
     stores: Counter[str] = Counter()
     for deal in deals:
         if deal.get("locked") or not deal.get("alive", deal.get("status") == "alive"):
             continue
-        url = deal.get("url") or ""
-        try:
-            parts = urlsplit(url)
-            host = (parts.hostname or "").lower().removeprefix("www.")
-        except ValueError:
-            host = ""
-        if not host or parts.scheme not in ("http", "https"):
-            bucket = "none"
-        elif host in {"amazon.com", "smile.amazon.com"}:
-            ours = bool(amazon_tag and parts.scheme == "https"
-                        and ("tag", amazon_tag) in parse_qsl(parts.query))
-            bucket = "amazon_tagged" if ours else "amazon_untagged"
-        elif host in {"amzn.to", "a.co", "link.amazon"}:
-            bucket = "amazon_short"
-        elif any(url == c.get("url") for c in deal.get("credits") or []):
-            bucket = "source_post"
-        elif host in _SOVRN_HOSTS:
-            bucket = "sovrn"
-        else:
-            bucket = "other_store"
+        bucket, host, earns = _link_destination(deal, amazon_tag, competitor_tracker_hosts)
+        if bucket == "other_store":
             stores[host] += 1
         counts[bucket] += 1
+        counts["earning" if earns else "not_earning"] += 1
     return {**counts, "by_store": dict(sorted(stores.items(), key=lambda x: (-x[1], x[0]))[:10]),
             "amazon_untagged_flag": bool(amazon_tag and counts["amazon_untagged"])}
 
@@ -358,7 +384,8 @@ def _override_key(url: str) -> str:
 
 def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
                     overrides: dict[str, str] | None = None, *,
-                    sovrn_key: str = "", sovrn_enabled: bool = False) -> dict[str, Any]:
+                    sovrn_key: str = "", sovrn_enabled: bool = False,
+                    competitor_tracker_hosts: list[str] | tuple[str, ...] = ()) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
@@ -377,7 +404,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     key = hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16]
     store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
                                    sovrn_enabled=sovrn_enabled, cuid=key,
-                                   credit_urls=[c["url"] for c in credits]) if canon else ""
+                                   credit_urls=[c["url"] for c in credits],
+                                   competitor_tracker_hosts=competitor_tracker_hosts) if canon else ""
     override = (overrides or {}).get(_override_key(canon)) if canon else None
     # Get deal goes to the store when it earns (operator, 2026-10-12): any
     # Amazon deal with our tag, and simple code deals at a store with a
@@ -387,10 +415,10 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         host = (urlsplit(canon).hostname or "").lower() if canon.startswith("https://") else ""
     except ValueError:
         host = ""
-    earning = bool(override or (amazon_tag and host in _AMAZON_HOSTS)
-                   or (store_link != canon and store_link.startswith("https://redirect.viglink.com?")))
     if override:
         store_link = override
+    earning = earning_link({"url": store_link, "credits": credits}, amazon_tag,
+                           competitor_tracker_hosts=competitor_tracker_hosts)
     amazon = bool(amazon_tag and host in _AMAZON_HOSTS)
     ours = amazon or (earning and _simple_code_deal(deal))
     url = post if steps and post and not ours else \
@@ -404,6 +432,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
         "url": url,
+        "earns": earning_link({"url": url, "credits": credits}, amazon_tag,
+                              competitor_tracker_hosts=competitor_tracker_hosts),
         "image_url": deal.get("image_url") or "",
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
@@ -476,9 +506,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     overrides = getattr(cfg, "affiliate_link_overrides", {}) or {}
     serialized = [_serialize_deal(d, now, amazon_tag, overrides,
                                  sovrn_key=cfg.affiliate_sovrn_key,
-                                 sovrn_enabled=cfg.affiliate_sovrn_enabled) for d in deals
+                                 sovrn_enabled=cfg.affiliate_sovrn_enabled,
+                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
-    scores = {d["dedupe_key"]: pick_score(d, cfg, now) for d in deals}
+    earns = {d["dedupe_key"]: d["earns"] for d in serialized}
+    scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now)
+              for d in deals if d["dedupe_key"] in earns}
     for d in serialized:
         value = scores[d["dedupe_key"]]
         if value is not None:
@@ -697,5 +730,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 len(serialized), locked_count, out)
     return {"published": len(serialized), "out_dir": str(out),
-            "link_mix": link_mix(teaser, amazon_tag),
+            "link_mix": link_mix(teaser, amazon_tag,
+                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts),
             "full_payload": full_doc, "health": health_doc}

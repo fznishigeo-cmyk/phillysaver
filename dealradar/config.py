@@ -141,6 +141,7 @@ class AppConfig:
     # One store page -> one affiliate short link (network onboarding, e.g. the
     # Sovrn first-click check): {"walmart.com/222918738": "https://sovrn.co/..."}.
     affiliate_link_overrides: dict = field(default_factory=dict)
+    affiliate_competitor_tracker_hosts: list[str] = field(default_factory=list)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # 7-day verified deals for an indexable hub
     seo_deal_pages_max: int = 3000
@@ -225,6 +226,7 @@ class AppConfig:
     tracking: dict[str, str] = field(default_factory=dict)
     pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
     meta: dict[str, Any] = field(default_factory=dict)  # social.meta
+    social_require_earning_link: bool = True
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -329,6 +331,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.front_page = g("publish", "front_page", default={}) or {}
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
+    cfg.social_require_earning_link = bool(g("social", "require_earning_link", default=True))
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
     tag = str(g("affiliate", "amazon_tag", default="") or "").strip()
@@ -336,6 +339,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         logging.getLogger("dealradar.config").warning("affiliate.amazon_tag ignored: not a Store ID")
         tag = ""
     cfg.affiliate_amazon_tag = tag
+    cfg.affiliate_competitor_tracker_hosts = [
+        str(host).strip().lower().removeprefix("www.")
+        for host in (g("affiliate", "competitor_tracker_hosts", default=[]) or [])
+        if re.fullmatch(r"[a-z0-9.-]+", str(host).strip().lower())]
     cfg.affiliate_sovrn_enabled = bool(g("affiliate", "sovrn_enabled", default=False))
     # The link key lives in the GitHub secret SOVRN_API_KEY (operator's call);
     # config affiliate.sovrn_key is only a local fallback.

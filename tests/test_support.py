@@ -121,9 +121,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     (True, 0, "982a00ae611a53ab6cc4847649734f1af3af1432bcc4fc265c1cf228ca27dd09"),
     (True, 49, "0c16062bfabb6435c66f90dd644c5a4e52952c5d1128cf5bb47d531bba676f1c"),
 ])
-def test_support_off_index_bytes_match_task048_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+def test_support_off_index_bytes_match_task049_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 048 adds Clarity masking in all modes; keep the shared
     # baseline without task 037's head-only hint.
+    # Task 049 changes deal payloads; these empty-page bytes stay unchanged.
     # Membership behavior stays covered separately; the version stays fixed.
     monkeypatch.setattr(site, "site_template_version", lambda: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))

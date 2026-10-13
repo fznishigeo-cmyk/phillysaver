@@ -245,10 +245,11 @@ def test_pick_score_math_and_factors(cfg, options):
     cfg.front_page = options
     deal = pick_deal()
     import math
-    quality = 80 + 12 * math.log10(41) + 8 + 5 + 3
+    factor = options["top_picks"]["no_earn_factor"]
+    quality = (80 + 12 * math.log10(41) + 8 + 5 + 3) * factor
     assert pick_score(deal, cfg, NOW) == pytest.approx(quality)
-    assert pick_score(dict(deal, verify_tier="history-checked"), cfg, NOW) == pytest.approx(quality - 2)
-    assert pick_score(dict(deal, verify_tier="unverified", store="Unknown", brand=""), cfg, NOW) == pytest.approx(quality - 16)
+    assert pick_score(dict(deal, verify_tier="history-checked"), cfg, NOW) == pytest.approx(quality - 2 * factor)
+    assert pick_score(dict(deal, verify_tier="unverified", store="Unknown", brand=""), cfg, NOW) == pytest.approx(quality - 16 * factor)
     assert pick_score(dict(deal, store=" WALMART "), cfg, NOW) == pytest.approx(quality)
     old = dict(deal, first_seen_at="2026-10-08T02:00:00Z")
     assert pick_score(old, cfg, NOW) == pytest.approx(quality / 2)
@@ -267,7 +268,7 @@ def test_pick_score_math_and_factors(cfg, options):
     # Every score knob comes from config, including both weighted terms.
     cfg.front_page = dict(options, top_picks=dict(options["top_picks"], pct_weight=2,
                                                 dollars_weight=0, brand_bonus=10))
-    assert pick_score(deal, cfg, NOW) == pytest.approx(160 + 8 + 5 + 10)
+    assert pick_score(deal, cfg, NOW) == pytest.approx((160 + 8 + 5 + 10) * factor)
 
 
 @pytest.mark.parametrize("changes", [

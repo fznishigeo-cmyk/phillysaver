@@ -10,6 +10,7 @@ import dataclasses
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -171,6 +172,8 @@ def env(tmp_path, monkeypatch):
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
                 "DEALS_CLAUDE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
+    # A public test link key makes the resolved retailer pick earn offline.
+    monkeypatch.setenv("SOVRN_API_KEY", "0123456789abcdef0123456789abcdef")
     fetch_all = pipeline._fetch_all
 
     def fetch_with_photos(*args, **kwargs):
@@ -222,7 +225,10 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     # set ("$150 value" fake MSRP) -> suspect_msrp -> only 2 publish.
     assert summary["critic"] == {"judged": 3, "suspect": 1, "reused": 0, "calls": 1}
     assert summary["published"] == 2
-    assert summary["link_mix"]["source_post"] == 2
+    assert summary["link_mix"]["source_post"] == 1
+    assert summary["link_mix"]["sovrn"] == 1
+    assert summary["link_mix"]["earning"] == summary["link_mix"]["not_earning"] == 1
+    assert summary["link_mix"]["trackers_resolved"] == 0
     assert summary["link_mix"]["amazon_untagged_flag"] is False
     assert summary["telegram"]["dry_run"] is True
     assert summary["telegram"]["sent"] == 1
@@ -244,10 +250,11 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     assert fryer["badge"] == "corroborated"  # two independent sources in 24 h
     assert len(fryer["credits"]) == 2
     assert fryer["category"] == "kitchen"    # LLM category tag reaches the site
-    # Promo code FRYDAY: Get deal opens the source post with the steps and
-    # the card shows the code.
+    # Promo code FRYDAY: Get deal uses the earning store link and the card
+    # keeps the code and both source credits.
     assert fryer["needs_steps"] is True and "FRYDAY" in fryer["codes"]
-    assert fryer["url"] in {c["url"] for c in fryer["credits"]}
+    assert fryer["earns"] is True and urlsplit(fryer["url"]).hostname == "redirect.viglink.com"
+    assert "acmekitchen.example" in parse_qs(urlsplit(fryer["url"]).query)["u"][0]
     # canonical retailer URL resolved through the redirector, tracking params stripped
     db = DB(env["db"])
     canon = next(d["canonical_url"] for d in db.all_deals() if "Ninja Foodi" in d["item"])

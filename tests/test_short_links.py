@@ -11,7 +11,9 @@ from dealradar.config import AppConfig
 from dealradar.db import DB
 from dealradar.errors import DeadlineExceeded
 from dealradar.http_client import PoliteFetcher
+from dealradar.publish.site import _serialize_deal
 from tests.test_pipeline_sources import TestProductImageBackfill as PhotoFixture
+from tests.test_sovrn_links import KEY
 
 
 @pytest.fixture
@@ -166,7 +168,7 @@ def test_robots_blocked_host_is_tried_once(setup):
     try:
         stats = {}
         assert pipeline._resolve_short_links(db, fetcher, None, cfg, stats=stats) == 0
-        assert stats == {"resolved": 0, "tried": 1}
+        assert stats == {"resolved": 0, "tried": 1, "trackers_resolved": 0}
         assert db.get_deal("blocked")["flags"] == ["link_resolve_tried"]
         assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
     finally:
@@ -234,17 +236,19 @@ def test_deadline_leaves_deal_unflagged(setup, monkeypatch):
     assert db.get_deal("pending")["flags"] == []
 
 
-def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
+@pytest.mark.parametrize("host,trackers_resolved", [("on.ltk.com", 0), ("cc.dealsofamerica.com", 1)])
+def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, trackers_resolved):
     step_summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST", "DEALS_CLAUDE_API_KEY"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("SOVRN_API_KEY", KEY)
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text((Path(__file__).resolve().parents[1] / "config.yaml").read_text().replace(
         'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"'))
     db_path = tmp_path / "state.db"
     db = DB(db_path)
-    PhotoFixture._seed(db, "stable", "https://on.ltk.com/abc")
+    PhotoFixture._seed(db, "stable", f"https://{host}/abc")
     db.close()
     calls = []
 
@@ -252,7 +256,7 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
         if request.url.path == "/robots.txt":
             return httpx.Response(200, text="User-agent: *\nAllow: /\n")
         calls.append(str(request.url))
-        if request.url.host == "on.ltk.com":
+        if request.url.host == host:
             return httpx.Response(301, headers={"Location": "https://www.walmart.com/ip/123"})
         if request.url.host == "images.example":
             assert request.method == "HEAD"
@@ -266,14 +270,20 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch):
 
     assert run(False)["short_links"] == 0
     assert calls == []
-    first = run(True)
+    with caplog.at_level("INFO", logger="dealradar.pipeline"):
+        first = run(True)
     assert first["short_links"] == 1 and first["product_images"] == 1
-    assert first["redirects"] == {"resolved": 1, "tried": 1}
+    assert first["redirects"] == {"resolved": 1, "tried": 1, "trackers_resolved": trackers_resolved}
+    assert first["link_mix"]["trackers_resolved"] == trackers_resolved
+    assert first["link_mix"]["earning"] == 1 and first["link_mix"]["not_earning"] == 0
+    assert any(r.message == f"link mix: earning 1; not earning 0; trackers resolved {trackers_resolved}"
+               for r in caplog.records)
     assert first["photo_gaps"]["alive_without_photo"] == 0
     assert "photo gaps: 0 alive deals without a photo; by canonical host: none" in step_summary.read_text()
     assert "redirects: resolved 1 of 1" in step_summary.read_text()
     before = list(calls)
-    assert run(True)["short_links"] == 0
+    rerun = run(True)
+    assert rerun["short_links"] == rerun["link_mix"]["trackers_resolved"] == 0
     # The newly stored photo gets one metadata check on the next pass.
     assert calls == before + ["https://images.example/product.jpg"]
     before = list(calls)
@@ -301,3 +311,101 @@ def test_a_www_tracker_host_is_followed(setup):
     PhotoFixture._seed(db, "www", "https://www.creator.anchor.store/x")
     pipeline._resolve_short_links(db, fetcher, None, cfg)
     assert calls == ["https://www.creator.anchor.store/x"]
+
+
+@pytest.mark.parametrize("host", ["cc.dealsofamerica.com", "go.dealmoon.com", "slickdeals.net",
+                                  "links.southernsavers.com", "custom-tracker.example"])
+@pytest.mark.parametrize("target", ["https://www.macys.com/shop/product/widget?ID=123",
+                                    "https://www.amazon.com/dp/B0GLP6BWD9"])
+def test_competitor_with_photo_resolves_to_earning_store_and_keeps_credit(setup, host, target):
+    db, cfg, fetcher, calls, targets = setup
+    cfg.affiliate_competitor_tracker_hosts = [host]
+    link = f"https://{host}/click/123"
+    targets[link] = target
+    image = "https://images.example/widget.jpg"
+    PhotoFixture._seed(db, "competitor", link, image=image)
+    credit(db, "competitor", "https://source.example/original-post")
+    before_credit = db.sightings_for(db.get_deal("competitor")["id"])
+    stats = {}
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg, stats=stats) == 1
+    row = db.get_deal("competitor")
+    assert row["canonical_url"] == target and row["image_url"] == image
+    assert row["flags"] == ["link_resolve_tried"]
+    assert db.sightings_for(row["id"]) == before_credit
+    out = _serialize_deal(row, util.now_utc(), "our-store-20", sovrn_key=KEY,
+                          sovrn_enabled=True, competitor_tracker_hosts=[host])
+    assert out["earns"] is True
+    if "macys" in target:
+        assert out["url"].startswith("https://redirect.viglink.com?")
+    else:
+        assert out["url"] == target + "?tag=our-store-20"
+    assert stats == {"resolved": 1, "tried": 1, "trackers_resolved": 1}
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+
+
+@pytest.mark.parametrize("intermediate", [False, True])
+def test_competitor_robots_disallow_blocks_head_and_get_and_flags_once(setup, intermediate):
+    db, cfg, _fetcher, _calls, _targets = setup
+    cfg.affiliate_competitor_tracker_hosts = ["tracker.example", "blocked.example"]
+    link = "https://tracker.example/click?utm_source=original"
+    PhotoFixture._seed(db, "blocked", link, image="https://images.example/widget.jpg")
+    requests = []
+
+    def handler(request):
+        requests.append((request.method, str(request.url)))
+        if request.url.path == "/robots.txt":
+            blocked = request.url.host == "blocked.example" or not intermediate
+            return httpx.Response(200, text="User-agent: *\n" + ("Disallow: /\n" if blocked else "Allow: /\n"))
+        assert intermediate and request.method == "HEAD" and request.url.host == "tracker.example"
+        return httpx.Response(301, headers={"Location": "https://blocked.example/next"})
+
+    fetcher = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handler), sleep_fn=lambda _: None)
+    try:
+        stats = {}
+        assert pipeline._resolve_short_links(db, fetcher, None, cfg, stats=stats) == 0
+        assert db.get_deal("blocked")["canonical_url"] == link
+        assert db.get_deal("blocked")["flags"] == ["link_resolve_tried"]
+        before = requests.copy()
+        assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+        assert requests == before
+        assert stats == {"resolved": 0, "tried": 1, "trackers_resolved": 0}
+    finally:
+        fetcher.close()
+    assert requests == ([("GET", "https://tracker.example/robots.txt"),
+                         ("HEAD", link), ("GET", "https://blocked.example/robots.txt")]
+                        if intermediate else [("GET", "https://tracker.example/robots.txt")])
+
+
+@pytest.mark.parametrize("target", ["https://go.dealmoon.com/click/456", "https://a.co/short",
+                                    "https://slickdeals.net/f/123", "https://hip2save.com/post",
+                                    "https://www.walmart.com/blocked", "https://custom-blog.example/post"])
+def test_competitor_unresolved_or_source_target_stays_original(setup, target):
+    db, cfg, fetcher, calls, targets = setup
+    cfg.affiliate_competitor_tracker_hosts = ["cc.dealsofamerica.com", "go.dealmoon.com", "slickdeals.net"]
+    link = "https://cc.dealsofamerica.com/click/123"
+    targets[link] = target
+    PhotoFixture._seed(db, "original", link)
+    credit(db, "original", "https://custom-blog.example/original")
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+    assert db.get_deal("original")["canonical_url"] == link
+    assert db.get_deal("original")["flags"] == ["link_resolve_tried"]
+    assert not any("/blocked" in url for url in calls)
+
+
+def test_competitors_share_cap_with_short_links_and_respect_deadline(setup, monkeypatch):
+    db, cfg, fetcher, calls, targets = setup
+    cfg.affiliate_competitor_tracker_hosts = ["custom-tracker.example"]
+    for key, host, photo in [("newest", "custom-tracker.example", "https://images.example/p.jpg"),
+                             ("middle", "a.co", ""), ("oldest", "custom-tracker.example", "")]:
+        PhotoFixture._seed(db, key, f"https://{host}/{key}", image=photo)
+    db.update_deal("newest", payload=dict(db.get_deal("newest"), link_shared=True))
+    monkeypatch.setattr(pipeline, "_SHORT_LINK_PER_RUN", 2)
+    assert pipeline._resolve_short_links(db, fetcher, time.monotonic() - 1, cfg) == 0
+    assert calls == [] and all("link_resolve_tried" not in row["flags"] for row in db.all_deals())
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 0
+    assert len(calls) == 2
+    assert sum("link_resolve_tried" in row["flags"] for row in db.all_deals()) == 2
+    pipeline._resolve_short_links(db, fetcher, None, cfg)
+    assert len(calls) == 3 and len(set(calls)) == 3
+    pipeline._resolve_short_links(db, fetcher, None, cfg)
+    assert len(calls) == 3

@@ -1605,6 +1605,8 @@ class TestCarefulDeath:
         died = NOW - timedelta(hours=3)
         self._seed_dead(db, "url|wh", "B0BKQSDF5C", died=died)
         self._seed_dead(db, "url|sold", "B0SOLDUNIT", died=died)
+        # The channel now requires an earning Get deal link as well as a live unit.
+        db.update_deal("url|wh", canonical_url="https://www.amazon.com/dp/B0BKQSDF5C")
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
         monkeypatch.setenv("KEEPA_KEY", "kkey")

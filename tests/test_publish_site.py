@@ -98,6 +98,7 @@ def test_serialized_fields_have_consumers():
         "item",  # index.html cards/search/ticker; SEO cards
         "brand",  # index.html search haystack
         "url",  # index.html Get deal; SEO card links
+        "earns",  # social._candidates; rank.pick_score
         "image_url",  # index.html mediaHtml; STUB_KEYS
         "final_price",  # index.html cards/price sort/ticker; SEO cards
         "regular_price",  # index.html and SEO crossed-out card price

@@ -77,6 +77,7 @@ def candidate(key, pick, **changes):
             "pick": pick, "image_url": "https://images.example/product.jpg",
             "status": "alive", "item": f"Product {key}", "store": "Amazon",
             "pct_at_checkout": 80.0, "final_price": 9.99, "regular_price": 49.95,
+            "earns": True,
             **changes}
 
 

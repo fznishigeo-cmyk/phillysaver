@@ -131,7 +131,7 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
 
 def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
     """Landing-page quality, with checkout effort and age factored in."""
-    from .publish.site import _needs_steps, _simple_code_deal
+    from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
 
     options = cfg.front_page.get("top_picks")
     conditions = set(deal.get("conditions") or [])
@@ -161,6 +161,14 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime) -> float | None:
         quality *= options["cheap_factor"]
     if _needs_steps(deal) and not _simple_code_deal(deal):
         quality *= options["steps_factor"]
+    earns = deal.get("earns")
+    if earns is None:
+        earns = _serialize_deal(deal, now, cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
+                                sovrn_key=cfg.affiliate_sovrn_key,
+                                sovrn_enabled=cfg.affiliate_sovrn_enabled,
+                                competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts)["earns"]
+    if not earns:
+        quality *= options.get("no_earn_factor", 0.5)
     return quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
                              / options["fresh_half_life_h"])
 

@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-12)
+# Handoff — state of wowpriced.com (updated 2026-10-13)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -163,6 +163,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   - Never skip the critic for Keepa deals: a review showed inflated bases.
 
 ## In flight
+- **Earning traffic (Codex task 049, 2026-10-13):** every published deal
+  carries `earns` (its Get deal link credits our tag or Sovrn; a source post,
+  competitor tracker in `affiliate.competitor_tracker_hosts` or untagged link
+  does not). Non-earning deals rank lower in top picks
+  (`top_picks.no_earn_factor: 0.5`) and social posts (Pinterest, Facebook,
+  Instagram, Telegram) skip them (`social.require_earning_link`). Competitor
+  trackers get one robots-checked redirect repair to the store link (credit
+  stays). `link_mix` reports earning / not_earning / trackers_resolved.
 - **Clarity + traffic report (Codex task 048, 2026-10-12):** Clarity
   (`tracking.clarity_project_id`) loads only without GPC/opt-out, like the ad
   pixels; every form, search box and account area carries

@@ -36,7 +36,8 @@ def test_simple_walmart_code_earns_and_keeps_card_facts(steps):
     query = parse_qs(urlsplit(out["url"]).query)
     assert urlsplit(out["url"]).hostname == "redirect.viglink.com"
     assert query == {"key": [KEY], "u": [deal["canonical_url"]], "cuid": [out["key"]]}
-    assert dict(out, url=baseline["url"]) == baseline
+    assert out["earns"] and not baseline["earns"]
+    assert dict(out, url=baseline["url"], earns=baseline["earns"]) == baseline
     assert out["needs_steps"] and out["codes"] == ["SAVE10", "EXTRA5"]
     assert out["credits"][0]["url"] == POST
     assert publish(deal) == out and deal == before
@@ -143,7 +144,9 @@ def test_render_keeps_locked_stubs_emails_code_copy_and_credit(tmp_path):
         assert result["link_mix"]["source_post"] == int(not enabled)
     off, on = payloads
     assert on["deals"][1] == off["deals"][1] and on["deals"][1]["locked"]
-    assert dict(on["deals"][0], url=off["deals"][0]["url"]) == off["deals"][0]
+    assert on["deals"][0]["earns"] and not off["deals"][0]["earns"]
+    assert dict(on["deals"][0], url=off["deals"][0]["url"],
+                earns=off["deals"][0]["earns"]) == off["deals"][0]
     home = (tmp_path / "True/index.html").read_text()
     assert '<code class="code">SAVE10</code>' in home
     assert 'navigator.clipboard.writeText' in home and POST in home
