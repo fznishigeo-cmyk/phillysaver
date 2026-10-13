@@ -190,6 +190,13 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Daily deal spotlight (Codex task 061, 2026-10-13):** one configured
+  Meh/SideDeal/MorningSave offer first in static/live HTML, with a full phone
+  row and DST-correct Meh clock. Price-only offers stay spotlight-only;
+  missing dollar savings also allowed, known floors and rotation retained.
+  Validation: 2,477 passed, 1 deselected; only 7 existing Stripe socket tests
+  blocked by the sandbox. Remaining: verify live Meh's retained price/photo.
+  No commit or push.
 - **Price history (Codex task 062, 2026-10-13; uncommitted):** deal pages
   show our 90-day checks at 3+ observations spanning 48 hours: median,
   min/max, current-price marker, hidden UTC table and theme tokens. Dense

@@ -193,6 +193,14 @@ Missing regular price **and** no stated pct **and** no `deal_type` →
 **Worked example:** "Gadget only $25 today!" (no reg, no pct) → excluded
 `no_basis`.
 
+**One exception, placement only (2026-10-13):** a post from a configured
+daily-deal source (`publish.front_page.spotlight.sources`, e.g. Meh, whose API
+gives the price but no regular price) keeps its evidence-verified checkout
+price with `basis='price_only'` and **no** pct, regular price or savings
+(all `None`). Such a deal appears only in the "Today only" spotlight card,
+which shows the price and never a %, "save $" or strikethrough; every other
+surface (grid, alerts, social, structured data) still excludes it.
+
 ## 12. Absolute savings, result fields, rounding
 
 - `abs_savings = regular - final_adjusted` when both are known, else `None` —

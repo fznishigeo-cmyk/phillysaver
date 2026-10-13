@@ -18,8 +18,9 @@ import logging
 import re
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, time as day_time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -34,6 +35,12 @@ log = logging.getLogger("dealradar.fetch.meh")
 
 CURRENT_URL = "https://meh.com/api/1/current.json"
 PUBLIC_FEED_URL = "https://meh.com/feed.json"  # official keyless JSON Feed
+
+
+def deal_end(seen: datetime) -> datetime:
+    """The next midnight US Central, including 23/25-hour DST days."""
+    tomorrow = seen.astimezone(ZoneInfo("America/Chicago")).date() + timedelta(days=1)
+    return datetime.combine(tomorrow, day_time(), ZoneInfo("America/Chicago")).astimezone(timezone.utc)
 
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")  # [text](url) / ![alt](url) -> text
 _MD_NOISE = re.compile(r"[*_`#>]+")

@@ -123,7 +123,7 @@ def parse_stack_step(s: str) -> dict:
 # public engine
 # ---------------------------------------------------------------------------
 
-def compute_savings(d: models.ExtractedDeal) -> models.SavingsResult:
+def compute_savings(d: models.ExtractedDeal, *, allow_price_only: bool = False) -> models.SavingsResult:
     """Turn raw extracted facts into a SavingsResult, per SAVINGS_RULES.md."""
     # ---- Rule 1: gates first ----
     if (d.currency or "").strip().upper() != "USD" or (d.region or "").strip().upper() != "US":
@@ -177,7 +177,8 @@ def compute_savings(d: models.ExtractedDeal) -> models.SavingsResult:
         return _structural(d, flags, checkout_steps, rebate_steps, ship_cost, ship_threshold)
 
     # ---- Rules 2/3/4/5/6/11/12: price-basis math ----
-    return _price_basis(d, flags, checkout_steps, rebate_steps, ship_cost, ship_threshold)
+    return _price_basis(d, flags, checkout_steps, rebate_steps, ship_cost, ship_threshold,
+                        allow_price_only=allow_price_only)
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +374,8 @@ def _penny(d: models.ExtractedDeal, flags: list[str],
 def _price_basis(d: models.ExtractedDeal, flags: list[str],
                  checkout_steps: list[dict[str, Any]],
                  rebate_steps: list[dict[str, Any]],
-                 ship_cost: float | None, ship_threshold: float | None,
+                 ship_cost: float | None, ship_threshold: float | None, *,
+                 allow_price_only: bool = False,
                  ) -> models.SavingsResult:
     """Rules 2/3/4/5/6/11/12: the main price-basis flow."""
     reg = d.regular_price
@@ -413,6 +415,11 @@ def _price_basis(d: models.ExtractedDeal, flags: list[str],
             pct_co = float(d.pct_off)
             basis = "list_price_claim"
         else:
+            if allow_price_only and not d.price_is_range:
+                # A daily spotlight may state a verified checkout price without
+                # a discount basis. Preserve the price; invent no savings.
+                return _finish(d, flags, final_adj=b_adj, regular=None,
+                               pct_co=None, pct_wr=None, abs_s=None, basis="price_only")
             logger.debug("excluded no_basis (final only): %s", d.item)
             return models.SavingsResult(computable=False, exclude_reason="no_basis")
     elif reg:

@@ -545,3 +545,261 @@ def test_one_credit_per_source_name():
         {"source_name": "hip2save_amazon", "source_url": "https://hip2save.com/c"}]}
     credits = _serialize_deal(deal, datetime(2026, 10, 13, tzinfo=timezone.utc))["credits"]
     assert [c["url"] for c in credits] == ["https://hip2save.com/a", "https://slickdeals.net/b"]
+
+
+def daily_deal(source="meh", **changes):
+    seen = changes.get("first_seen_at", "2026-10-09T12:00:00Z")
+    price = changes.get("final_price", 10)
+    return pick_deal(**{"dedupe_key": source, "store": source, "first_seen_at": seen, "sightings": [{
+        "source_name": source, "source_url": f"https://{source}.com/deals/today",
+        "seen_at": seen, "final_price": price}], **changes})
+
+
+@pytest.mark.parametrize("changes", [
+    {"status": "dead"}, {"image_url": ""}, {"image_url": "http://img.example/a.jpg"},
+    {"image_url": "https://meh.com/photo.jpg"}, {"online_only": "unknown"},
+    {"online_only": "false"}, {"currency": "EUR"}, {"region": "CA"},
+    {"flags": ["suspect_msrp"]}, {"flags": ["unbacked_price"]},
+    {"abs_savings": 4.99}, {"abs_savings": None}, {"pct_at_checkout": 69.9},
+    {"final_price": None}, {"final_price": -1}, {"final_price": float("nan")},
+    {"pct_at_checkout": 100}, {"first_seen_at": "2026-10-08T12:00:00Z"},
+    {"first_seen_at": "2026-10-09T15:00:00Z"},
+    {"price_published_at": "2026-10-08T12:00:00Z"},
+    {"expires_at": "2026-10-09T14:00:00Z"},
+    {"sightings": [{"source_name": "keepa_amazon_drops"}]},
+])
+def test_spotlight_preserves_publish_gates(cfg, options, changes):
+    from dealradar.rank import daily_spotlight
+    cfg.front_page = options
+    assert daily_spotlight([daily_deal(**changes)], cfg, NOW) == []
+
+
+def test_spotlight_selection_known_pct_then_newest(cfg, options):
+    from dealradar.rank import daily_spotlight
+    cfg.front_page = options
+    unknown = daily_deal(pct_at_checkout=None, regular_price=None, abs_savings=None,
+                         first_seen_at="2026-10-09T13:00:00Z")
+    lower = daily_deal("sidedeal", pct_at_checkout=70)
+    best = daily_deal("morningsave", pct_at_checkout=85)
+    assert daily_spotlight([unknown, lower, best], cfg, NOW)[0]["dedupe_key"] == "morningsave"
+    tie = daily_deal("meh", pct_at_checkout=85, first_seen_at="2026-10-09T13:00:00Z")
+    assert daily_spotlight([best, tie], cfg, NOW)[0]["dedupe_key"] == "meh"
+    cfg.front_page = dict(options, spotlight=dict(options["spotlight"], max_cards=2))
+    assert [d["dedupe_key"] for d in daily_spotlight([unknown, best, tie], cfg, NOW)] == ["meh", "morningsave"]
+    cfg.front_page = dict(options, spotlight={"sources": ["sidedeal"], "max_cards": 1})
+    assert daily_spotlight([tie], cfg, NOW) == []
+    cfg.front_page = dict(options, spotlight=dict(options["spotlight"], max_cards=0))
+    assert daily_spotlight([tie], cfg, NOW) == []
+
+
+def test_spotlight_price_only_exception_is_narrow(cfg, options):
+    from dealradar.rank import daily_spotlight, is_publishable
+    cfg.front_page = options
+    deal = daily_deal(pct_at_checkout=None, regular_price=None, abs_savings=None)
+    assert daily_spotlight([deal], cfg, NOW)
+    assert not is_publishable(deal, cfg)[0]  # Alerts/social never opt in.
+    for changes in ({"abs_savings": 4.99}, {"conditions": ["used"]},
+                    {"regular_price": 50}, {"flags": ["unbacked_price"]}):
+        assert daily_spotlight([dict(deal, **changes)], cfg, NOW) == []
+    assert not is_publishable(daily_deal("hip2save", pct_at_checkout=None,
+                                         regular_price=None, abs_savings=None), cfg,
+                              allow_spotlight_price=True)[0]
+    # An old daily source that no longer supports the active price cannot win.
+    stale = daily_deal()
+    stale["sightings"][0]["final_price"] = 20
+    assert daily_spotlight([stale], cfg, NOW) == []
+    # Keepa's critic requirement also applies when a daily site credits it.
+    deal["sightings"].append({"source_name": "keepa_amazon_drops"})
+    assert daily_spotlight([deal], cfg, NOW) == []
+    deal["critic"] = {"plausible": True}
+    assert daily_spotlight([deal], cfg, NOW)
+
+
+@pytest.mark.parametrize("seen,end,hours", [
+    ("2026-03-08T06:00:00Z", "2026-03-09T05:00:00Z", 23),
+    ("2026-11-01T05:00:00Z", "2026-11-02T06:00:00Z", 25),
+    ("2026-10-09T01:00:00Z", "2026-10-09T05:00:00Z", 4),
+])
+def test_meh_end_is_central_midnight_across_dst(seen, end, hours):
+    from dealradar.fetch.meh import deal_end
+    from dealradar.util import parse_iso
+    stamp = parse_iso(seen)
+    assert deal_end(stamp) == parse_iso(end)
+    assert (deal_end(stamp) - stamp).total_seconds() == hours * 3600
+
+
+def test_spotlight_end_unknown_or_explicit_and_day_boundary(cfg, options):
+    from datetime import timedelta
+    from dealradar.rank import daily_spotlight
+    from dealradar.util import parse_iso
+    cfg.front_page = options
+    meh = daily_spotlight([daily_deal()], cfg, NOW)[0]
+    assert parse_iso(meh["spotlight"]["ends_at"]) == parse_iso("2026-10-10T05:00:00Z")
+    assert daily_spotlight([daily_deal()], cfg, parse_iso("2026-10-10T05:00:00Z")) == []
+    for source in ("sidedeal", "morningsave"):
+        assert daily_spotlight([daily_deal(source)], cfg, NOW)[0]["spotlight"]["ends_at"] == ""
+        deal = daily_deal(source, expires_at="2026-10-09T19:12:00Z")
+        info = daily_spotlight([deal], cfg, NOW)[0]["spotlight"]
+        assert seo.spotlight_time(info["ends_at"], NOW) == "ends in 5h 12m"
+        assert seo.spotlight_time(info["ends_at"], NOW + timedelta(hours=6)) == ""
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+def test_static_spotlight_first_unique_and_price_only(tmp_path, cfg, db, options, unknown):
+    cfg.front_page = options
+    cfg.paywall_open_access = True
+    changes = {"pct_at_checkout": None, "regular_price": None, "abs_savings": None} if unknown else {}
+    deal = daily_deal(item="TODAY OFFER", **changes)
+    render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=[pick_deal(item="GRID OFFER"), deal])
+    doc = json.loads((tmp_path / "site/deals.json").read_text())
+    spot = doc["spotlight"][0]
+    home = (tmp_path / "site/index.html").read_text()
+    wall = home.split('<div id="content" data-clarity-unmask="true">')[1].split('<div id="paywall"')[0]
+    assert wall.index("TODAY OFFER") < wall.index("GRID OFFER")
+    assert len(re.findall(r'<h3 class="title">.*?TODAY OFFER', wall)) == 1
+    assert 'role="region" aria-label="Today only deal"' in wall
+    assert "Today only · Meh" in wall and "ends in 15h 0m" in wall
+    assert 'src="https://img.example/photo.jpg"' in wall
+    if unknown:
+        assert all(d["dedupe_key"] != "meh" for d in doc["deals"])
+        card = seo.card_html(dict(spot, regular_price=500, abs_savings=490), now=NOW)
+        assert 'class="now">$10.00' in card
+        assert not re.search(r'%|save \$|<s>', card)
+        for path in (tmp_path / "site").rglob("*.html"):
+            if path.name != "index.html" or path.parent != tmp_path / "site":
+                assert "TODAY OFFER" not in path.read_text()
+    else:
+        assert doc["deals"][1]["dedupe_key"] == "meh"
+        assert 'class="flag">-80%' in wall
+
+
+def test_price_only_verified_ingest_publish_isolated_and_idempotent(tmp_path, cfg, db, options):
+    from dealradar.dedupe import upsert_extracted
+    from dealradar.models import Evidence, ExtractedDeal, RawPost
+    from dealradar.parse.extractor import verify_evidence
+    from dealradar.rank import published_deals, site_deals, spotlight_sources
+    from dealradar.savings import compute_savings
+    cfg.front_page = options
+    cfg.paywall_open_access = True
+    post = RawPost("meh", "today", "https://meh.com/deals/today", "Today's gadget",
+                   "Price: $19.00", NOW, NOW, image_url="https://img.example/today.jpg")
+    extracted = ExtractedDeal("Today's gadget", "Meh", post.url, "meh", final_price=19,
+                              online_only="true", evidence=Evidence(final_price_quote="Price: $19.00"))
+    assert verify_evidence(extracted, post.text)[0]
+    assert not verify_evidence(extracted, "No price here")[0]
+    assert not compute_savings(extracted).computable  # Default math unchanged.
+    result = compute_savings(extracted, allow_price_only=post.source_name in spotlight_sources(cfg))
+    assert result.final_price == 19
+    assert result.regular_price is result.pct_at_checkout is result.abs_savings is None
+    first = upsert_extracted(db, extracted, result, post, cfg, NOW)
+    second = upsert_extracted(db, extracted, result, post, cfg, NOW)
+    assert first["is_new_deal"] and not second["is_new_deal"]
+    assert len(db.sightings_for(first["deal_id"])) == 1
+    assert published_deals(db, cfg, NOW) == site_deals(db, cfg, NOW) == []
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out)
+    doc = json.loads((out / "deals.json").read_text())
+    assert doc["deals"] == [] and doc["spotlight"][0]["final_price"] == 19
+    assert not list((out / "deal").glob("*/index.html"))
+    cfg.front_page = {}
+    render_site(db, cfg, NOW, out_dir=out)
+    assert "spotlight" not in json.loads((out / "deals.json").read_text())
+    # An ordinary source cannot publish a price-only row even via explicit input.
+    render_site(db, cfg, NOW, out_dir=out, deals=[daily_deal("hip2save", pct_at_checkout=None,
+                  regular_price=None, abs_savings=None)])
+    assert json.loads((out / "deals.json").read_text())["deals"] == []
+
+
+def test_no_spotlight_home_unchanged_and_phone_accessibility(tmp_path, cfg, db, options):
+    cfg.front_page = options
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=[pick_deal()])
+    before = (out / "index.html").read_bytes()
+    assert "spotlight" not in json.loads((out / "deals.json").read_text())
+    cfg.front_page = {k: v for k, v in options.items() if k != "spotlight"}
+    render_site(db, cfg, NOW, out_dir=out, deals=[pick_deal()])
+    assert (out / "index.html").read_bytes() == before
+    template = (ROOT / "dealradar/publish/templates/index.html").read_text()
+    assert re.search(r'@media \(max-width:640px\)\{[^@]*\.spotlight-grid \.spotlight\{grid-column:span 2\}', template)
+    assert re.search(r'@media \(prefers-reduced-motion: reduce\)\{[^@]*\.card\.spotlight,\.card\.spotlight \*\{animation:none;transition:none\}', template)
+    assert '.card.spotlight:focus-within{outline:2px solid var(--accent)' in template
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+def test_spotlight_browser_render_filters_expiry_and_rotation(tmp_path, cfg, db, options, unknown):
+    cfg.front_page = options
+    cfg.paywall_open_access = True
+    changes = {"pct_at_checkout": None, "regular_price": None, "abs_savings": None} if unknown else {}
+    deals = [daily_deal(item="TODAY OFFER", **changes)] + [
+        pick_deal(dedupe_key=f"grid-{i}", item=f"Grid offer {i}", brand=f"Brand{i}") for i in range(30)]
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=deals)
+    result = subprocess.run(["node", str(ROOT / "tests/spotlight_logic.cjs"),
+                             str(out / "index.html"), str(out / "deals.json")],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_spotlight_preserves_closed_paywall_rotation(tmp_path, cfg, db, options):
+    source = [pick_deal(dedupe_key=f"grid-{i}", store=f"Store {i}") for i in range(6)]
+    source += [daily_deal(), daily_deal("morningsave", pct_at_checkout=None,
+                                       regular_price=None, abs_savings=None)]
+    rotations = []
+    for setting in (options, {k: v for k, v in options.items() if k != "spotlight"}):
+        cfg.front_page = setting
+        db.meta_set("teaser_recent", "[]")
+        drops = []
+        for _ in range(4):
+            render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=source)
+            doc = json.loads((tmp_path / "site/deals.json").read_text())
+            free = {d["key"] for d in doc["deals"] if not d.get("locked")}
+            assert len(free) == cfg.paywall_teaser_count
+            assert all(d["pct_at_checkout"] is None or d["key"] in free for d in doc.get("spotlight", []))
+            memory = json.loads(db.meta_get("teaser_recent"))
+            assert not any(d["key"] in memory for d in doc.get("spotlight", []) if d["pct_at_checkout"] is None)
+            drops.append(free)
+        rotations.append(drops)
+    assert rotations[0] == rotations[1]
+
+
+def test_price_only_spotlight_shipping_and_other_math_gates():
+    from dealradar.models import ExtractedDeal
+    from dealradar.savings import compute_savings
+    raw = dict(item="Gadget", store="Meh", source_url="https://meh.com/today", source_name="meh", final_price=19)
+    result = compute_savings(ExtractedDeal(**raw, shipping_cost_or_threshold="$5 shipping"), allow_price_only=True)
+    assert result.final_price == 24 and result.pct_at_checkout is result.abs_savings is None
+    for changes in ({"currency": "EUR"}, {"conditions": ["in_store_only"]},
+                    {"regular_price_unit": "pack", "final_price_unit": "per_unit"},
+                    {"final_price": -1}, {"regular_price": 0}, {"price_is_range": True}):
+        assert not compute_savings(ExtractedDeal(**{**raw, **changes}), allow_price_only=True).computable
+    known = ExtractedDeal(**raw, regular_price=100)
+    assert compute_savings(known, allow_price_only=True) == compute_savings(known)
+
+
+def test_price_only_does_not_retain_an_old_discount_page(tmp_path, cfg, db, options):
+    cfg.front_page = options
+    cfg.paywall_open_access = True
+    deal = daily_deal()
+    db.insert_deal(dedupe_key="meh", store="Meh", item=deal["item"], normalized_item="gadget",
+                   canonical_url=deal["canonical_url"], payload=deal, final_price=10,
+                   pct_at_checkout=80, abs_savings=40, online_only="true", expires_at="", now=NOW)
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out)
+    old_pages = list((out / "deal").glob("*/index.html"))
+    assert old_pages
+    db.update_deal("meh", payload=dict(deal, regular_price=None, death="confirmed"),
+                   final_price=10, pct_at_checkout=None, abs_savings=None,
+                   status="dead", replace_prices=True)
+    render_site(db, cfg, NOW, out_dir=out)
+    assert not any(p.exists() for p in old_pages)
+
+
+def test_spotlight_is_a_full_width_banner_on_wider_screens():
+    # A lone spotlight card left the rest of its desktop row empty
+    # (review 2026-10-13); phones keep the stacked, full-row card.
+    home = (ROOT / "dealradar/publish/templates/index.html").read_text()
+    banner = home[home.index("@media (min-width:641px){\n  .spotlight-grid"):]
+    banner = banner[:banner.index("\n}\n")]
+    assert ".spotlight-grid{grid-template-columns:minmax(0,1fr)}" in banner
+    assert ".spotlight-grid .card.spotlight{flex-direction:row" in banner
+    assert ".spotlight-grid .spotlight{grid-column:span 2}" in home

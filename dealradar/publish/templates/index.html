@@ -183,6 +183,20 @@ header .dhole{background:var(--chip)}
 /* Hover highlights without moving: a card that lifts out from under a
    resting pointer loses :hover, drops back, and bobs on its own. */
 .card:not(.gone):hover{box-shadow:0 2px 4px rgba(15,23,32,.08),0 10px 24px rgba(15,23,32,.12)}
+.card.spotlight{border-color:var(--accent)}
+.card.spotlight:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.today-ribbon{position:absolute;left:8px;bottom:8px;background:var(--chip);color:var(--accent);
+  font-size:12px;font-weight:700;padding:3px 8px;border-radius:7px}
+.spotlight-time{font-variant-numeric:tabular-nums}
+/* Wider screens: one full-width "Today only" banner, photo left (a lone
+   card would leave the rest of its row empty). Phones keep the tall card. */
+@media (min-width:641px){
+  .spotlight-grid{grid-template-columns:minmax(0,1fr)}
+  .spotlight-grid .card.spotlight{flex-direction:row;min-height:168px}
+  .spotlight-grid .spotlight .media{flex:0 0 260px;height:auto;border-bottom:0;
+    border-right:1px solid var(--line)}
+  .spotlight-grid .spotlight .body{justify-content:center;max-width:640px}
+}
 /* A drop: new arrivals lead with a NEW tag; moved cards get a sweep. */
 .card.isnew{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow)}
 .newtag{position:absolute;left:8px;bottom:8px;background:var(--accent);color:var(--accent-fg);
@@ -435,6 +449,8 @@ footer .meta{font-size:11.5px}
   .tkstrip{animation:none}
 }
 @media (max-width:640px){
+  .spotlight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .spotlight-grid .spotlight{grid-column:span 2}
   header{position:relative}
   .hrow{padding:10px 12px 4px;gap:4px 10px}
   .brand{font-size:21px}
@@ -503,6 +519,7 @@ footer .meta{font-size:11.5px}
 /* Reduced motion: no pulse, no sweep, no slide; a drop reorders instantly. */
 @media (prefers-reduced-motion: reduce){
   .card.moved::after,.card.enter{animation:none}
+  .card.spotlight,.card.spotlight *{animation:none;transition:none}
   .trace rect{animation:none}
   .card.lit .trace rect{stroke-dasharray:none}
   .freetag i{animation:none}
@@ -766,7 +783,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // All deals and category tabs scroll without end (operator, 2026-10-12).
   var AUTO_CARDS = 300;
   var moreObserver = null;
-  var state = { shown: PAGE_CARDS, deals: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
+  var state = { shown: PAGE_CARDS, deals: [], spotlight: [], teaser: [], me: null, meta: {}, dataKey: "", plan: "month",
                 sortKey: "top", sortDir: -1, catTab: 0,
                 seed: 0, newKeys: {}, dropKeys: {}, unlocked: 0 };
   // Minutes between drops when deals.json does not say: meta.cadence_minutes
@@ -886,10 +903,13 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
     var floor = num((m.floors || {}).min_pct);
     var tagline = "verified deals";
-    if (floor != null) {
+    var priceOnly = (state.spotlight || []).filter(function (d) {
+      return d.pct_at_checkout == null && Date.parse(d.spotlight.until) > Date.now();
+    });
+    if (floor != null && !priceOnly.length) {
       tagline += ", " + Math.round(floor) + (floor < 90 ? "–90% off" : "%+ off");
     }
-    var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length;
+    var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length + priceOnly.length;
     document.getElementById("q").placeholder = "Search " + roughCount(live) + " deals";
     document.getElementById("tagline").textContent =
       tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
@@ -1013,6 +1033,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       if (now - clock.lastPoll >= every) { clock.lastPoll = now; poll(); }
     }
     paintClock(now);
+    paintSpotlightTime(now);
   }
   setInterval(tick, 1000);
 
@@ -1068,7 +1089,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function populateStores() {
     var counts = Object.create(null), names = Object.create(null);
-    state.deals.forEach(function (d) {
+    state.deals.concat((state.spotlight || []).filter(function (d) {
+      return d.pct_at_checkout == null && Date.parse(d.spotlight.until) > Date.now();
+    })).forEach(function (d) {
       if (d.status === "dead") return;
       var name = (d.store || "").trim().replace(/\.com$/i, ""), key = storeKey(name);
       if (!key) return;
@@ -1125,12 +1148,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     });
   }
 
-  function filtered() {
+  function filtered(rows) {
     var q = searchText(), words = normalizeSearch(q).split(" ").filter(Boolean);
     var store = document.getElementById("storesel").value;
     var group = (CATGROUPS[q ? 0 : state.catTab] || CATGROUPS[0])[1];
     var minpct = Number(document.getElementById("minpct").value) || 0;
-    return state.deals.filter(function (d) {
+    return (rows || state.deals).filter(function (d) {
       if (q && !matchesSearch(d, words)) return false;
       if (store && storeKey(d.store) !== store) return false;
       if (group === "USED") {
@@ -1315,7 +1338,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
     if (d.status === "dead") media += '<span class="gonetag">' + esc(goneText(d)) + "</span>";
-    if (isNew(d)) media += '<span class="newtag">NEW</span>';
+    if (d.spotlight) media += '<span class="today-ribbon">Today only · ' + esc(d.spotlight.source) + '</span>';
+    if (isNew(d) && !d.spotlight) media += '<span class="newtag">NEW</span>';
     return media;
   }
 
@@ -1347,15 +1371,16 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var dead = d.status === "dead";
     var conds = d.conditions || [];
     var media = mediaHtml(d);<!--engagement-->
-    if (newSinceVisit(d)) media += '<span class="visit-new">NEW<span class="sr-only"> since your last visit</span></span>';
+    if (!d.spotlight && newSinceVisit(d)) media += '<span class="visit-new">NEW<span class="sr-only"> since your last visit</span></span>';
 <!--/engagement-->
 
     var price = d.final_price != null
       ? '<span class="now">$' + Number(d.final_price).toFixed(2) + "</span>" : "";
-    if (d.regular_price != null) {
+    var priceOnly = d.spotlight && d.pct_at_checkout == null;
+    if (!priceOnly && d.regular_price != null) {
       price += " <s>$" + Number(d.regular_price).toFixed(2) + "</s>";
     }
-    if (!dead && d.abs_savings != null) {
+    if (!priceOnly && !dead && d.abs_savings != null) {
       price += ' <span class="save">save $' + Number(d.abs_savings).toFixed(2) + "</span>";
     }
 
@@ -1365,6 +1390,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     var tier = d.badge || "unverified";
     var metarow = '<span class="chip storechip">' + esc(d.store || "") + "</span>";
+    var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
+    if (countdown) metarow += '<span class="chip spotlight-time" data-ends-at="' +
+      esc(d.spotlight.ends_at) + '">' + countdown + '</span>';
     if (TIER_LABEL[tier]) {
       metarow += '<span class="badge tier-' + esc(tier) + '">' + TIER_LABEL[tier] + "</span>";
     }
@@ -1374,7 +1402,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       metarow += '<span class="chip">' + esc(c).replace(/_/g, " ") + "</span>";
     });
     var age = ageText(num(d.age_hours));
-    if (age) metarow += '<span class="chip">' + esc(age) + "</span>";
+    if (age && !d.spotlight) metarow += '<span class="chip">' + esc(age) + "</span>";
 
     // Source credit is required on every card.
     var credits = (d.credits || []).map(function (c) {
@@ -1400,8 +1428,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         (d.needs_steps ? ' title="Opens the deal post with the steps"' : "") + ">Get deal</a>"
       : "") + '<span class="credit">' + credits + "</span>";
 
-    return '<article class="card' + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
+    return '<article class="card' + (d.spotlight ? " spotlight" : "") + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
       (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '"' +
+      (d.spotlight ? ' role="region" aria-label="Today only deal"' : '') +
       '>' +
       '<div class="media">' + media + "</div>" +
       '<div class="body">' +
@@ -1412,7 +1441,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       how +
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
-      "</div>" + (dead ? "" : traceSvg(d)) + "</article>";
+      "</div>" + (dead || d.spotlight ? "" : traceSvg(d)) + "</article>";
   }
 
   // ---- the deal ticker ----
@@ -1485,6 +1514,37 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
   function gridHtml(deals) {
     return '<div class="grid">' + deals.map(cardHtml).join("") + "</div>";
+  }
+
+  function spotlightTime(endsAt, now) {
+    var end = Date.parse(endsAt || "");
+    if (!isFinite(end) || end <= now) return "";
+    var minutes = Math.ceil((end - now) / 60000);
+    return "ends in " + Math.floor(minutes / 60) + "h " + (minutes % 60) + "m";
+  }
+  function activeSpotlight() {
+    if (!(state.spotlight || []).length) return [];
+    if ((searchText() ? 0 : state.catTab) > 1) return [];
+    return filtered(state.spotlight.filter(function (d) {
+      return d.status === "alive" && Date.parse(d.spotlight.until) > Date.now();
+    }));
+  }
+  function paintSpotlightTime(now) {
+    if (!(state.spotlight || []).length) return;
+    var alive = state.spotlight.filter(function (d) { return Date.parse(d.spotlight.until) > now; });
+    if (alive.length !== state.spotlight.length) {
+      var focus = rememberFocus();
+      state.spotlight = alive;
+      renderMeta();
+      refreshStores();
+      render();
+      restoreFocus(focus);
+    }
+    document.querySelectorAll('.spotlight-time[data-ends-at]').forEach(function (el) {
+      var text = spotlightTime(el.getAttribute("data-ends-at"), now);
+      if (el.textContent !== text) el.textContent = text;
+      el.hidden = !text;
+    });
   }
 
   function frontPageView() {
@@ -1574,17 +1634,22 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     paintTicker();
     cardImageIndex = 0;
     var content = document.getElementById("content");
-<!--engagement-->    var engagementHtml = engagementLineHtml();
-<!--/engagement-->    var rows = state.deals.length ? ordered(filtered(), true) : [];
-    renderSearchCount(rows);
     traceFree = state.deals.some(isLocked);
+<!--engagement-->    var engagementHtml = engagementLineHtml();
+<!--/engagement-->    var spotlight = activeSpotlight(), spotlightKeys = spotlight.map(dealKey);
+    var spotlightHtml = spotlight.length ? '<div class="grid spotlight-grid">' + spotlight.map(cardHtml).join("") + '</div>' : '';
+    var rows = state.deals.length ? ordered(filtered(), true).filter(function (d) {
+      return spotlightKeys.indexOf(dealKey(d)) === -1;
+    }) : [];
+    renderSearchCount(rows.concat(spotlight));
     updatePaywall(rows.some(isLocked) || openNudge());
-    if (!state.deals.length) {
+    if (!state.deals.length && !spotlight.length) {
       content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No qualifying deals right now</p>';
       return;
     }
     if (!rows.length) {
-      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No deals match the current filters</p>';
+      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->spotlightHtml +
+        (spotlight.length ? '' : '<p class="empty">No deals match the current filters</p>');
       return;
     }
     var floors = (state.meta && state.meta.floors) || {};
@@ -1604,7 +1669,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     });
     var headliners = split < 0 ? rows : rows.slice(0, split);
     var strong = split < 0 ? [] : rows.slice(split);
-    var html = <!--engagement-->engagementHtml || <!--/engagement-->"", banded = false, remaining = state.shown;
+    var html = (<!--engagement-->engagementHtml || <!--/engagement-->"") + spotlightHtml, banded = false, remaining = state.shown;
     // The first grid with locked cards gets the trial band ahead of them.
 <!--standard-->    function grid(list) {
       var openBandHere = openAccess() && !banded && canJoin() && list.length > 8;
@@ -2727,7 +2792,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       .then(function (data) {
         var meta = (data && data.meta) || {};
         maybeReloadForNewVersion(meta);
-        return { meta: meta, deals: (data && data.deals) || [], key: dataKey(meta) };
+        return { meta: meta, deals: (data && data.deals) || [], spotlight: (data && data.spotlight) || [], key: dataKey(meta) };
       });
   }
   function isNewPublish(pub) { return !!pub && !(pub.key && pub.key === state.dataKey); }
@@ -2752,6 +2817,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     state.teaser = pub.deals;
     state.meta = pub.meta;
     state.deals = deals;
+    state.spotlight = pub.spotlight || [];
     state.dataKey = pub.key;<!--engagement-->
     initEngagement();
 <!--/engagement-->

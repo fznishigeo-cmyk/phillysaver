@@ -20,10 +20,11 @@ import logging
 import math
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from .util import parse_iso
+from .util import iso, parse_iso
 
 log = logging.getLogger("dealradar.rank")
 
@@ -40,7 +41,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
     supply cannot meet every cap, relax runs, then stores, then niche counts.
     Keep this selection in sync with frontPageMix in index.html.
     """
-    if not options:
+    if not options or "max_niche_top" not in options:
         return rows
     broad = set(options.get("broad_categories", []))
     niche = set(options.get("niche_categories", []))
@@ -215,12 +216,75 @@ def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]
     return sorted(rows, key=lambda d: d.get("pick", math.inf))
 
 
+def spotlight_sources(cfg) -> set[str]:
+    options = cfg.front_page.get("spotlight") or {}
+    if int(options.get("max_cards", 0)) <= 0:
+        return set()
+    return {str(s).casefold() for s in options.get("sources", [])}
+
+
+def daily_spotlight(rows: list[dict[str, Any]], cfg, now: datetime) -> list[dict[str, Any]]:
+    """Today's backed daily offers, separate from ordinary publish sets."""
+    from .config import load_sources
+    from .fetch.meh import deal_end
+    from .publish.credits import source_display_name
+    from .source_policy import source_image_allowed
+
+    sources = spotlight_sources(cfg)
+    if not sources or not rows:
+        return []
+    primary, backup = load_sources()
+    zones = {s.name: s.tz for s in primary + backup}
+    candidates = []
+    for deal in rows:
+        if not is_publishable(deal, cfg, allow_spotlight_price=True)[0]:
+            continue
+        price = deal.get("final_price")
+        if not isinstance(price, (int, float)) or isinstance(price, bool) \
+                or not math.isfinite(price) or price < 0:
+            continue
+        image = str(deal.get("image_url") or "")
+        sightings = deal.get("sightings") or []
+        if not image.startswith("https://") or not source_image_allowed(image, sightings, cfg):
+            continue
+        expiry = parse_iso(deal.get("expires_at") or "")
+        if expiry is not None and expiry <= now:
+            continue
+        for sighting in sightings:
+            source = str(sighting.get("source_name") or "").casefold()
+            if source not in sources or sighting.get("final_price") != deal.get("final_price"):
+                continue
+            seen = parse_iso(sighting.get("seen_at") or deal.get("first_seen_at") or "")
+            published = parse_iso(deal.get("price_published_at") or "")
+            if seen is not None and published is not None:
+                seen = min(seen, published)
+            zone = ZoneInfo("America/Chicago" if source == "meh" else zones.get(source, "UTC"))
+            if seen is None or seen > now or seen.astimezone(zone).date() != now.astimezone(zone).date():
+                continue
+            day_end = (deal_end(seen) if source == "meh" else datetime.combine(
+                seen.astimezone(zone).date() + timedelta(days=1), time(), zone).astimezone(timezone.utc))
+            end = expiry or (day_end if source == "meh" else None)
+            candidates.append((dict(deal, spotlight={
+                "source": source_display_name(source),
+                "ends_at": iso(end) if end else "",
+                "until": iso(min(day_end, end) if end else day_end),
+            }), seen))
+            break  # One card even when several daily sources credited it.
+    candidates.sort(key=lambda pair: (
+        pair[0].get("pct_at_checkout") is not None,
+        pair[0].get("pct_at_checkout") or 0, pair[1]), reverse=True)
+    return [d for d, _seen in candidates[:int(cfg.front_page["spotlight"]["max_cards"])]]
+
+
 def is_publishable(deal: dict[str, Any], cfg,
-                   min_pct: float | None = None, *, require_critic: bool = True) -> tuple[bool, str]:
+                   min_pct: float | None = None, *, require_critic: bool = True,
+                   allow_spotlight_price: bool = False) -> tuple[bool, str]:
     """All publish gates; returns (False, reason) naming the first failure.
 
     ``min_pct`` overrides cfg.min_pct (the site's lower "strong deals" tier
     reuses every other gate unchanged); alerts always use cfg.min_pct.
+    ``allow_spotlight_price`` admits a configured daily source's price-only
+    offer; known discounts still clear both floors. Ordinary sets never opt in.
     """
     status = deal.get("status", "alive")
     if status != "alive":
@@ -255,13 +319,18 @@ def is_publishable(deal: dict[str, Any], cfg,
 
     floor = cfg.min_pct if min_pct is None else min_pct
     pct = deal.get("pct_at_checkout")
-    if pct is None or pct < floor:
+    final = deal.get("final_price")
+    price_only = (allow_spotlight_price and pct is None
+                  and deal.get("regular_price") is None
+                  and bool(spotlight_sources(cfg) & {str(s or "").casefold() for s in sources})
+                  and isinstance(final, (int, float)) and not isinstance(final, bool)
+                  and math.isfinite(final) and final >= 0)
+    if (pct is None and not price_only) or (pct is not None and pct < floor):
         return False, f"pct_at_checkout: {pct!r} < min_pct {floor}"
 
     # Sanity: "100% off" while money changes hands is a contradiction
     # (seen live: a $254.98 phone published as 100% off via a rebate rule).
-    final = deal.get("final_price")
-    if pct >= 99.95 and final is not None and final > 0.01:
+    if pct is not None and pct >= 99.95 and final is not None and final > 0.01:
         return False, (f"inconsistent: pct_at_checkout {pct:g} claims free "
                        f"but final_price is ${final:g}")
 
@@ -269,12 +338,15 @@ def is_publishable(deal: dict[str, Any], cfg,
     # floor, and the site's lower "strong deals" tier never softens it.
     if USED_CONDITIONS & set(normalize_conditions(deal.get("conditions"))):
         used_floor = getattr(cfg, "used_min_pct", 80.0)
-        if pct < used_floor:
+        if pct is None or pct < used_floor:
             return False, (f"pct_at_checkout: {pct!r} < used_min_pct "
                            f"{used_floor} (used/open-box)")
 
     abs_savings = deal.get("abs_savings")
-    if abs_savings is None or abs_savings < cfg.min_abs_savings:
+    # With no discount basis, dollar savings are also unknown. The price-only
+    # spotlight makes no savings claim; any known dollar value keeps its floor.
+    if (abs_savings is None and not price_only) \
+            or (abs_savings is not None and abs_savings < cfg.min_abs_savings):
         return False, (f"abs_savings: {abs_savings!r} < min_abs_savings "
                        f"{cfg.min_abs_savings}")
 

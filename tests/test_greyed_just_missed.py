@@ -229,10 +229,10 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var paintTicker = () => {}, updatePaywall = () => {}, openNudge = () => false;
     var filtered = () => state.deals, isLocked = () => false, canJoin = () => true, openAccess = () => true;
     var openBand = () => "<aside>Join</aside>", num = x => x == null ? null : Number(x);
-    var gridHtml = rows => {rendered.push(...rows); return "<div class=grid></div>";};
+    var gridHtml = rows => {rendered.push(...rows); return "<div class=grid></div>";}, dealKey = d => d.key;
     '''.replace("SORT_KEY", json.dumps(sort_key)).replace("DIRECTION", str(direction))
     script += '\n'.join(js_function(n) for n in (
-        "sortVal", "cmp", "ordered", "frontPageView", "frontPageMix", "placeGone"))
+        "sortVal", "cmp", "ordered", "frontPageView", "frontPageMix", "placeGone", "activeSpotlight"))
     script += '\n' + copy_variant(js_function("render"), True, support)
     script += '\nrender(); console.log(JSON.stringify({rows:rendered, html:content.innerHTML}));'
     result = run_js(script, rows)

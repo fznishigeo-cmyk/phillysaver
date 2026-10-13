@@ -94,6 +94,9 @@ publish:
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true
+    spotlight:
+      sources: [meh, sidedeal, morningsave]
+      max_cards: 1
     top_picks:                # the All tab's first cards (operator, 2026-10-12)
       count: 120
       pct_weight: 1.0

@@ -1347,7 +1347,7 @@ class TestEyeCatchers:
 
     def test_hairline_runs_on_the_free_picks_and_under_the_pointer(self, html):
         assert 'pathLength="1"' in html and 'traceSvg(d) + "</article>"' in html
-        assert '(dead ? "" : traceSvg(d))' in html      # gone cards never trace
+        assert '(dead || d.spotlight ? "" : traceSvg(d))' in html  # gone/spotlight cards never trace
         assert "hashStr(String(dealKey(d))) % 5000" in html  # staggered, not lockstep
         free = _between(html, "function isFreePick(", "function lit(")
         assert "traceFree && !isMember() && !auth.checking && !unknownMembership() &&" in free
@@ -1632,7 +1632,7 @@ class TestWallPagination:
         assert 'el.addEventListener("change", resetWall)' in reset
         sort = _between(html, 'sortsel.addEventListener("change"', "(function restoreSort()")
         assert "resetWall();" in sort
-        tabs = _between(html, "function renderTabs()", "function filtered()")
+        tabs = _between(html, "function renderTabs()", "function filtered(")
         assert "state.shown = PAGE_CARDS;" in tabs
         publish = _between(html, "function applyPublish(", "function loadData(")
         assert "state.shown" not in publish and "resetWall" not in publish

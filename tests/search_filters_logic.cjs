@@ -139,8 +139,15 @@ const flush = async()=>{await new Promise(resolve=>setImmediate(resolve));};
   element('storesel').value='';
   ctx.state.deals=Array.from({length:1637},()=>ninja);
   // The published metadata renderer sets the rounded live count placeholder.
-  vm.runInContext(snippet('    var live = state.deals.filter', '    document.getElementById("tagline").textContent'),ctx);
+  const countCode = snippet('    var priceOnly =', '    if (floor !=') +
+    snippet('    var live = state.deals.filter', '    document.getElementById("tagline").textContent');
+  vm.runInContext(countCode,ctx);
   assert.equal(element('q').placeholder,'Search 1,000+ deals');
+  ctx.state.deals=[];
+  ctx.state.spotlight=[{pct_at_checkout:null, spotlight:{until:new Date(now+3600000).toISOString()}}];
+  vm.runInContext(countCode,ctx);
+  assert.equal(element('q').placeholder,'Search 1 deals');
+  ctx.state.spotlight=[];
   ctx.state.deals=payload.deals;
   handlers['window:pageshow']({persisted:false}); await flush(); assert.equal(requests.length,0);
   handlers['window:pageshow']({persisted:true}); await flush();

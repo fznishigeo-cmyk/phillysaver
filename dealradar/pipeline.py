@@ -1692,7 +1692,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         audit_outcomes = []
         for post, extracted in pairs:
             counts = pstats.get("post_counts", {}).get(post.content_hash)
-            sav = compute_savings(extracted)
+            sav = compute_savings(extracted, allow_price_only=(
+                post.source_name in rank.spotlight_sources(cfg)))
             if post.via_email:
                 sav.flags.append("newsletter")
             if sav.exclude_reason in ("in_store", "non_us"):

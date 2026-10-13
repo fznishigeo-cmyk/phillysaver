@@ -22,7 +22,7 @@ from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, ur
 
 from ..savings import display_pct
 from ..config import load_sources, redact_secrets, support_link
-from ..rank import pick_score, top_picks
+from ..rank import daily_spotlight, pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from . import seo
@@ -486,7 +486,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     image = deal.get("image_url") or ""
     if not source_image_allowed(image, deal.get("sightings") or [], cfg):
         image = ""
-    return {
+    public = {
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
         # product link or the item words, which a visitor must not see).
@@ -520,6 +520,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "age_hours": age_hours,
         "credits": credits,
     }
+    if deal.get("spotlight"):
+        public["spotlight"] = deal["spotlight"]
+    return public
 
 
 def source_health(db, now: datetime, last_run: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -561,19 +564,24 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
         # The site shows qualifying deals that recently died too (marked dead);
         # alerts and the digest use rank.published_deals (alive only).
+        spotlight_rows = db.all_deals(status="alive")
         deals = rank.site_deals(db, cfg, now)
+    else:
+        spotlight_rows = deals
+    # A price-only offer has one home: the separate spotlight payload. It
+    # never enters the grid, teaser rotation, picks or SEO discount pages.
+    deals = [d for d in deals if d.get("pct_at_checkout") is not None]
 
     out = Path(out_dir) if out_dir is not None else Path(cfg.site_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     amazon_tag = getattr(cfg, "affiliate_amazon_tag", "")
     overrides = getattr(cfg, "affiliate_link_overrides", {}) or {}
-    serialized = [_serialize_deal(d, now, amazon_tag, overrides,
-                                 sovrn_key=cfg.affiliate_sovrn_key,
-                                 sovrn_enabled=cfg.affiliate_sovrn_enabled,
-                                 competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
-                                 ebay_campid=cfg.affiliate_ebay_campaign_id,
-                                 cfg=cfg) for d in deals
+    link_options = dict(sovrn_key=cfg.affiliate_sovrn_key,
+                        sovrn_enabled=cfg.affiliate_sovrn_enabled,
+                        competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+                        ebay_campid=cfg.affiliate_ebay_campaign_id, cfg=cfg)
+    serialized = [_serialize_deal(d, now, amazon_tag, overrides, **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
     scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now)
@@ -592,6 +600,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     except (TypeError, ValueError):
         recent = []
     teaser, locked_count = split_teaser(serialized, cfg, recent)
+    unlocked = {d["dedupe_key"] for d in teaser if not d.get("locked")}
+    spotlight = [_serialize_deal(d, now, amazon_tag, overrides, **link_options)
+                 for d in daily_spotlight([d for d in spotlight_rows
+                     if d.get("pct_at_checkout") is None or d["dedupe_key"] in unlocked], cfg, now)]
+    spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]
     candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
     for n, d in enumerate(top_picks(candidates, cfg.front_page), 1):
@@ -636,7 +649,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # commission and carries Amazon's required sentence.
         "disclosure": (getattr(cfg, "affiliate_disclosure", "") if amazon_tag else "")
                       or cfg.ftc_disclosure,
-        "count": len(serialized),
+        "count": len(serialized) + len(spotlight_only),
         # Membership links (empty until the operator pastes them in
         # config.yaml); the page hides the Subscribe button when empty.
         "subscribe_url": getattr(cfg, "subscribe_url", "") or "",
@@ -670,8 +683,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
     }
     full_doc = {"meta": meta, "deals": serialized}
+    public_doc = {"meta": meta, "deals": teaser}
+    if spotlight:
+        full_doc["spotlight"] = public_doc["spotlight"] = spotlight
     (out / "deals.json").write_text(
-        json.dumps({"meta": meta, "deals": teaser}, separators=(",", ":")), encoding="utf-8"
+        json.dumps(public_doc, separators=(",", ":")), encoding="utf-8"
     )
 
     # Source health is the operator's, never the public site's (operator
@@ -779,7 +795,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
-    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals)
+    seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals, spotlight=spotlight)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
@@ -794,9 +810,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     apply_tracking(out, cfg)
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
-                len(serialized), locked_count, out)
-    return {"published": len(serialized), "out_dir": str(out),
-            "link_mix": link_mix(teaser, amazon_tag,
+                meta["count"], locked_count, out)
+    return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),
             "full_payload": full_doc, "health": health_doc}

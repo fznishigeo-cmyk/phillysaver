@@ -145,6 +145,14 @@ def _store_hue(store: str) -> int:
     return h
 
 
+def spotlight_time(ends_at: str, now: datetime) -> str:
+    end = parse_iso(ends_at)
+    if end is None or end <= now:
+        return ""
+    minutes = math.ceil((end - now).total_seconds() / 60)
+    return f"ends in {minutes // 60}h {minutes % 60}m"
+
+
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
               now: datetime | None = None) -> str:
     """One free or dead deal as the wall draws it (index.html cardHtml), with
@@ -153,11 +161,18 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     with a locked stub."""
     e = lambda v: escape(str(v if v is not None else ""))
     dead = d.get("status") == "dead"
+    spotlight = d.get("spotlight") or {}
+    price_only = bool(spotlight) and d.get("pct_at_checkout") is None
     url = _http(d.get("url"))
     store = str(d.get("store") or "")
     conds = d.get("conditions") or []
     media = (f'<div class="ph" style="background:hsl({_store_hue(store)},42%,62%)" '
              f'aria-hidden="true"><span>{e((store or "deal")[:18])}</span></div>')
+    if spotlight and d.get("image_url"):
+        media = (f'<img src="{e(d["image_url"])}" alt="{e(d.get("item"))}" '
+                 'referrerpolicy="no-referrer" fetchpriority="high" loading="eager">')
+    if spotlight:
+        media += f'<span class="today-ribbon">Today only · {e(spotlight["source"])}</span>'
     if d.get("pct_at_checkout") is not None:
         media += f'<span class="flag">-{_pct(d["pct_at_checkout"])}%</span>'
     tag = "OPEN BOX" if "open_box" in conds else ("USED" if "used" in conds else "")
@@ -171,9 +186,9 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     price = ""
     if d.get("final_price") is not None:
         price = f'<span class="now">${float(d["final_price"]):.2f}</span>'
-    if d.get("regular_price") is not None:
+    if not price_only and d.get("regular_price") is not None:
         price += f' <s>${float(d["regular_price"]):.2f}</s>'
-    if not dead and d.get("abs_savings") is not None:
+    if not price_only and not dead and d.get("abs_savings") is not None:
         price += f' <span class="save">save ${float(d["abs_savings"]):.2f}</span>'
     page = (deal_paths or {}).get(str(d.get("key") or "")[:8])
     title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page and not dead else
@@ -181,6 +196,10 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip storechip">{e(store)}</span>'
+    countdown = spotlight_time(spotlight.get("ends_at", ""), now or datetime.now(timezone.utc))
+    if countdown:
+        meta += (f'<span class="chip spotlight-time" data-ends-at="{e(spotlight["ends_at"])}">'
+                 f'{countdown}</span>')
     if tier in _TIER_LABEL:
         meta += f'<span class="badge tier-{e(tier)}">{_TIER_LABEL[tier]}</span>'
     for c in [c for c in conds if c not in ("used", "open_box")][:2]:
@@ -198,7 +217,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
     actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener">Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
-    return (f'<article class="card{" gone" if dead else ""}">'
+    return (f'<article class="card{" gone" if dead else ""}{" spotlight" if spotlight else ""}"'
+            + (' role="region" aria-label="Today only deal"' if spotlight else "") + '>'
             f'<div class="media">{media}</div><div class="body">'
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
             f'<h3 class="title">{title}</h3>'
@@ -243,23 +263,27 @@ def place_gone(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
                 deal_paths: dict[str, str] | None = None, now: datetime | None = None,
-                front_page: dict | None = None) -> str:
+                front_page: dict | None = None, spotlight: list[dict[str, Any]] | None = None) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
-    free = [d for d in teaser if not d.get("locked")]
+    spotlight = spotlight or []
+    spotlight_keys = {d["key"] for d in spotlight}
+    free = [d for d in teaser if not d.get("locked") and d.get("key") not in spotlight_keys]
     if (front_page or {}).get("top_picks"):
         free = place_gone(pick_order(free, front_page))
     else:
         free = pick_order(place_gone(free), front_page or {})
     more = max(0, len(free) - _STATIC_WALL_MAX)
     free = free[:_STATIC_WALL_MAX]
-    stubs = [d for d in teaser if d.get("locked")]
+    stubs = [d for d in teaser if d.get("locked") and d.get("key") not in spotlight_keys]
     html = ('<noscript><p class="meta">JavaScript is off: these are the '
             + ("top" if open_access else "free") + " deals as of "
             "the last update. Turn it on for live drops, search and sorting, or browse the "
             "categories above.</p></noscript>")
-    if not (free or stubs):
+    if not (free or stubs or spotlight):
         return html + '<p class="empty">No qualifying deals right now</p>'
     html += '<h2 class="secth sr-only">Verified deals right now</h2>'
+    if spotlight:
+        html += '<div class="grid spotlight-grid">' + "".join(card_html(d, deal_paths, now) for d in spotlight) + '</div>'
     if free:
         html += '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>"
     if more:
@@ -625,7 +649,8 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     rows = live[:cap]
     logger.info("seo: %d live deal pages; %d left out by seo.deal_pages_max", len(rows), max(0, len(live) - cap))
     for k, d in raw.items():
-        if d.get("status") == "dead" and (k in remembered or k in public):
+        if d.get("status") == "dead" and d.get("pct_at_checkout") is not None \
+                and (k in remembered or k in public):
             if k not in public:
                 d = dict(d, sightings=db.sightings_for(d["id"]))
             rows.append(public.get(k) or _serialize_deal(d, now))
@@ -696,21 +721,22 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str]) -> list[str]:
 
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
-            source_deals: list[dict[str, Any]]) -> None:
+            source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None) -> None:
     """The search-engine side of a publish, into out: the static wall and
     tabs in index.html, 404.html, the hubs, _headers, the IndexNow key file,
     sitemap.xml and the IndexNow due-list (beside out, never in it)."""
     from .paywall import is_open
     from .site import affiliate_copy, copy_variant, site_footer
 
+    spotlight = spotlight or []
     open_access = is_open(cfg)
     paths, deal_rows, lastmods = _deal_pages(db, cfg, now, out, teaser, source_deals)
-    wall = static_wall(teaser, open_access, paths, now, cfg.front_page)
+    wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(
         _fill(index, CATGROUPS=groups, CAT_TABS=tabs_html(), STATIC_WALL=wall,
-              IMAGE_PRECONNECTS=_image_preconnects(teaser, site_url, cfg.front_page),
+              IMAGE_PRECONNECTS=_image_preconnects(spotlight + teaser if spotlight else teaser, site_url, cfg.front_page),
               AMAZON_STRIP_HIDDEN="" if sum(
                   d.get("status") != "dead" and store_slug(str(d.get("store") or "")) == "amazon"
                   for d in teaser) >= 10 else "hidden",
