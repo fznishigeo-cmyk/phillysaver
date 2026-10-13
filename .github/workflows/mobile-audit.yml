@@ -1,0 +1,52 @@
+name: mobile audit (read-only)
+
+# Daily check of how wowpriced.com feels on phones: headless Chromium in
+# iPhone / Pixel / 360px / dark-mode profiles (scripts/mobile_audit.cjs).
+# Our own site only. Writes the JSON to the run summary and screenshots as
+# a short-lived artifact; changes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Site to audit"
+        required: false
+        default: "https://wowpriced.com"
+  schedule:
+    - cron: '7 10 * * *'   # 6:07am New York (EDT)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Audit
+        env:
+          URL: ${{ inputs.url || 'https://wowpriced.com' }}
+        run: |
+          mkdir -p shots
+          node scripts/mobile_audit.cjs "$URL" shots/mobile > audit.json
+          { echo '## Mobile audit'; echo; echo '```json'; cat audit.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat audit.json
+      - uses: actions/upload-artifact@v6
+        with:
+          name: mobile-audit
+          path: |
+            audit.json
+            shots/
+          retention-days: 7

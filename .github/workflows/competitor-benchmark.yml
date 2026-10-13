@@ -1,0 +1,38 @@
+name: competitor benchmark (read-only)
+
+# Weekly: wowpriced.com vs the deal sites we compete with, scored by Google's
+# PageSpeed Insights (mobile Lighthouse run by Google, not our crawler).
+# scripts/competitor_benchmark.py; writes the run summary and a JSON artifact.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 10 * * 1'   # Mondays 6:23am New York (EDT)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: competitor-benchmark
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dealradar
+        run: pip install -e .
+      - name: Benchmark
+        env:
+          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
+        run: python scripts/competitor_benchmark.py
+      - uses: actions/upload-artifact@v6
+        with:
+          name: competitor-benchmark
+          path: benchmark.json
+          retention-days: 30
