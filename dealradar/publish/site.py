@@ -630,9 +630,18 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
+    saved_deals = support and bool(cfg.engagement.get("saved_deals", False))
+    if "saved_deals" in cfg.engagement:
+        engagement["saved_deals"] = saved_deals
+    saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
     if cfg.engagement:
+        engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
+        engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
+                                   lambda m: m.group(1) if saved_deals else "",
+                                   engagement_script, flags=re.S)
         site_version = hashlib.sha256(
-            site_version.encode() + (TEMPLATES_DIR / "engagement.js").read_bytes()
+            site_version.encode() + engagement_script.encode()
+            + str(saved_deals).encode() + str(saved_limit).encode()
         ).hexdigest()[:12]
     meta = {
         "site_version": site_version,
@@ -678,6 +687,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         "join": {"prompt": support and cfg.join_prompt,
                  "prompt_delay_s": max(15, cfg.join_prompt_delay_s), "apple": cfg.join_apple},
         "engagement": engagement,
+        **({"saved_deals_limit": saved_limit} if saved_deals else {}),
         "front_page": cfg.front_page,
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
@@ -725,8 +735,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = re.sub(r"<!--engagement-->(.*?)<!--/engagement-->",
                       lambda m: m.group(1) if cfg.engagement else "", html, flags=re.S)
         if name == "index.html" and cfg.engagement:
-            html = html.replace("{{ENGAGEMENT_SCRIPT}}", (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8"))
+            html = html.replace("{{ENGAGEMENT_SCRIPT}}", engagement_script)
             html = html.replace("{{SURPRISE_HIDDEN}}", "" if engagement["surprise_me"] else "hidden")
+        html = re.sub(r"<!--saved-->(.*?)<!--/saved-->",
+                      lambda m: m.group(1) if saved_deals else "", html, flags=re.S)
         html = html.replace("{{HOT_EXPLANATION}}", (
             " Flames mark real signals: at least two are needed, from at least 60% off, "
             "confirmation by two or more independent sources, and a first sighting less "

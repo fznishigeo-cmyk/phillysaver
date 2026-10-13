@@ -140,9 +140,9 @@ def assert_placement(rows, original):
 
 
 def js_function(name):
-    # Engagement off: its optional hooks (task 026) are stripped, as the
-    # publish does when config.yaml engagement is empty.
-    source = re.sub(r"<!--engagement-->.*?<!--/engagement-->", "",
+    # Optional engagement and saved-list hooks are stripped, as the
+    # publisher does when config.yaml engagement is empty.
+    source = re.sub(r"<!--(engagement|saved)-->.*?<!--/\1-->", "",
                     (seo.TEMPLATES_DIR / "index.html").read_text(), flags=re.S)
     start = source.index(f"  function {name}(")
     end = source.index("\n  }", start) + 4

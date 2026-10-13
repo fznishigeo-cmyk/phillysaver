@@ -15,9 +15,14 @@ function fragment(start, end) {
   assert.ok(a >= 0 && b > a, start);
   return home.slice(a,b);
 }
-function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')], reduced=false, shown=60} = {}) {
+function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')], reduced=false, shown=60,
+                  savedEnabled=false, savedLimit=100} = {}) {
   let time = now, random = 0, wall = deals, timers = [], renders = 0;
   const storage = new Map(Object.entries(stored)), events = [], handlers = {}, windowHandlers = {};
+  function listen(list,type,cb) {
+    const previous=list[type];
+    list[type]=previous ? (...args)=>{previous(...args); cb(...args);} : cb;
+  }
   const makeClass = () => {
     const names = new Set();
     return {add:k=>names.add(k), remove:k=>names.delete(k), contains:k=>names.has(k),
@@ -26,8 +31,9 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   const elements = {};
   const makeElement = () => ({textContent:'', hidden:false, classList:makeClass(), listeners:{}, attributes:{},
     addEventListener(type, cb) {this.listeners[type] = cb;},
-    setAttribute(k,v) {this.attributes[k]=v;}});
-  for (const id of ['tagline','surprise','content']) elements[id] = makeElement();
+    setAttribute(k,v) {this.attributes[k]=v;}, removeAttribute(k) {delete this.attributes[k];}, focus() {this.focused=true;}});
+  for (const id of ['tagline','surprise','content','savedview','savedtools','savedall','savedclear','savedstatus',
+                    'storesel','sortsel','minpct','q','clearsearch','searchcount']) elements[id] = makeElement();
   const lineIds = ['engagementline','visitstreak','engagementsep','weeklyfinds'];
   function readLine(html) {
     for (const id of lineIds) delete elements[id];
@@ -60,9 +66,10 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     static now() {return time;}
   }
   const ctx = {Date:FixedDate, Math:Object.create(Math), loadedOnce:true,
-    state:{deals, meta:{engagement:{...enabled,...switches}, floors:{min_pct:60}}, shown}, PAGE_CARDS:60,
-    document:{hidden:false, getElementById:id=>elements[id], addEventListener:(type,cb)=>handlers[type]=cb},
-    window:{wpSupport:{refresh(){}}, wpTrack:(name,params)=>events.push({name,params}), addEventListener:(type,cb)=>windowHandlers[type]=cb},
+    state:{deals, meta:{engagement:{...enabled,saved_deals:savedEnabled,...switches}, support:{enabled:true},
+      saved_deals_limit:savedLimit, floors:{min_pct:60}}, shown}, PAGE_CARDS:60,
+    document:{hidden:false, getElementById:id=>elements[id], addEventListener:(type,cb)=>listen(handlers,type,cb)},
+    window:{wpSupport:{refresh(){}}, wpTrack:(name,params)=>events.push({name,params}), addEventListener:(type,cb)=>listen(windowHandlers,type,cb)},
     localStorage:{getItem(k) {if (throwing==='read') throw Error('blocked'); return storage.get(k) || null;},
       setItem(k,v) {if (throwing==='write') throw Error('readonly'); storage.set(k,v);},
       removeItem(k) {if (throwing==='write') throw Error('readonly'); storage.delete(k);}},
@@ -71,7 +78,8 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
     setTimeout:cb=>timers.push(cb), mediaHtml:()=>'<span>photo</span>', ageText:()=>'',
     isNew:()=>false, isFreePick:()=>false, lit:()=>false, traceSvg:()=>'', TIER_LABEL:{corroborated:'✓ 2+ sources'},
-    lockLabel:()=>'', toast(){}, navigator:{clipboard:{writeText:()=>Promise.resolve()}}
+    lockLabel:()=>'', toast(){}, navigator:{clipboard:{writeText:()=>Promise.resolve()}},
+    rememberFocus:()=>null, restoreFocus(){}
   };
   ctx.Math.random = () => random;
   vm.createContext(ctx);
@@ -88,12 +96,18 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   assert.ok(contentStart >= 0 && contentEnd > contentStart);
   vm.runInContext(home.slice(contentStart,contentEnd), ctx);
   ctx.initEngagement();
+  ctx.reconcileSaved({deals});
   function paint() {elements.tagline.textContent='verified deals · 1 live deal'; ctx.renderEngagement(); ctx.render();}
   paint();
-  function click(d, getDeal=true) {
+  function click(d, getDeal=true, save=false) {
+    let prevented=0, stopped=0;
     const card = {getAttribute:()=>d.key};
     const go = {closest:()=>card, classList:{contains:k=>getDeal && k==='getdeal'}};
-    elements.content.listeners.click({target:{closest:s=>s.includes('sponsored') ? go : null}});
+    const button = {getAttribute:()=>d.key};
+    elements.content.listeners.click({target:{closest:s=>s.includes('data-save-key') && save ? button
+      : s.includes('sponsored') && !save ? go : null},
+      preventDefault(){prevented++;}, stopPropagation(){stopped++;}});
+    return {prevented,stopped};
   }
   return {ctx, storage, events, elements, windowHandlers, handlers, paint, click,
     finds:()=>elements.weeklyfinds?.textContent || '', streak:()=>elements.visitstreak?.textContent || '',
@@ -256,4 +270,163 @@ for (const throwing of ['read','write']) {
   h.surprise(); assert.equal(h.events.at(-1).name,'surprise_click'); // non-storage features still work
   assert.equal(h.elements.a.scroll.behavior,'smooth');
 }
-console.log('engagement logic passed');
+// Saved offers always reconcile to public data; only a bounded identity list persists.
+const SAVED_KEY='wp.savedDeals';
+const record=deals=>JSON.stringify({version:1,deals});
+const identity=(key, changes={})=>({key,label:'Original '+key,store:'Store',...changes});
+const shortlist=options=>harness({savedEnabled:true,switches:off,...options});
+h=shortlist({deals:[row('a'),row('b'),row('c')]});
+assert.equal(h.elements.savedview.textContent,'Saved (0)');
+assert.match(h.elements.savedstatus.textContent,/Saved on this device/);
+assert.match(h.ctx.cardHtml(row('a')),/<button type="button" class="save-deal"/);
+assert.match(h.ctx.cardHtml(row('a')),/aria-pressed="false" aria-label="Save deal: Item"/);
+assert.deepEqual(h.click(row('a'),true,true),{prevented:1,stopped:1});
+assert.deepEqual(h.events.map(e=>e.name),['deal_save']); // Save never falls through to a deal link.
+assert.equal(h.ctx.saveDeal(row('a')),false);
+assert.equal(h.ctx.saveDeal(row('b')),true);
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['b','a']);
+const serialized=h.storage.get(SAVED_KEY);
+for(const forbidden of ['price','tag=','https:','photo','codes','credits','abs_savings']) assert.ok(!serialized.includes(forbidden));
+assert.ok(JSON.parse(serialized).deals.every(d=>Object.keys(d).sort().join(',')==='key,label,store'));
+assert.equal(h.ctx.removeSaved('missing'),false);
+const eventCount=h.events.length;
+h.elements.savedview.listeners.click();
+assert.equal(h.elements.savedview.attributes['aria-pressed'],'true');
+assert.equal(h.elements.savedview.textContent,'Saved (2)');
+assert.equal(h.elements.content.attributes['data-clarity-mask'],'true');
+assert.equal(h.elements.storesel.disabled,true);
+h.ctx.setSavedView(true); h.ctx.render(); h.ctx.render();
+assert.equal(h.events.length,eventCount+1); // One view event per user opening, never per render.
+h.click(row('a')); assert.equal(h.events.at(-1).name,'saved_deal_click');
+assert.equal(h.events.filter(e=>e.name==='saved_deal_click').length,1);
+assert.equal(h.events.filter(e=>e.name==='deal_click').length,1);
+h.click(row('a'),true,true);
+assert.equal(h.elements.savedview.textContent,'Saved (1)');
+assert.equal(h.ctx.isSaved('a'),false);
+h.elements.savedclear.listeners.click();
+assert.equal(h.elements.savedview.textContent,'Saved (0)');
+assert.match(h.elements.content.innerHTML,/Save a deal to revisit/);
+assert.equal(h.ctx.clearSaved(),false);
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)),{version:1,deals:[]});
+assert.equal(h.events.filter(e=>e.name==='deal_save' && e.params.method==='clear').length,1);
+assert.ok(h.events.filter(e=>e.name!=='deal_click').every(e=>Object.keys(e.params).sort().join(',')==='count,method'));
+h.elements.savedall.listeners.click();
+assert.equal(h.elements.content.attributes['data-clarity-unmask'],'true');
+assert.equal(h.elements.content.attributes['data-clarity-mask'],undefined);
+assert.equal(h.elements.savedview.focused,true);
+// Persistence preserves newest-first order and optional safe internal paths; current names/prices win.
+h=shortlist({stored:{[SAVED_KEY]:record([identity('b',{path:'/deal/original-b-123abcde/'}),identity('a')])},
+  deals:[row('a',{item:'Renamed item',final_price:17.25,regular_price:50}),row('b',{final_price:31})]});
+h.ctx.setSavedView(true);
+let html=h.elements.content.innerHTML;
+assert.ok(html.indexOf('data-key="b"')<html.indexOf('data-key="a"'));
+assert.match(html,/Renamed item/); assert.match(html,/\$17\.25/); assert.ok(!html.includes('Original a'));
+assert.equal(JSON.parse(h.storage.get(SAVED_KEY)).deals[0].path,'/deal/original-b-123abcde/');
+h.ctx.state.deals=[row('a',{item:'Renamed again',final_price:9.99,regular_price:40}),row('b')];
+h.ctx.reconcileSaved({deals:h.ctx.state.deals}); h.ctx.render();
+assert.match(h.elements.content.innerHTML,/\$9\.99/); assert.ok(!h.elements.content.innerHTML.includes('$17.25'));
+// Cap/rotation/absent pages are unknown. A confirmed gone match alone says it ended.
+for(const current of [null,row('a',{status:'dead',gone:false}),row('a',{locked:true,item:'LOCKED SECRET',final_price:999}),
+                      row('a',{status:'dead',gone:true})]) {
+  h=shortlist({stored:{[SAVED_KEY]:record([identity('a',{final_price:88,url:'https://amazon.com/item?tag=old-20',
+    codes:['SECRET'],image_url:'https://photos.test/a'})])},deals:current ? [current] : []});
+  h.ctx.setSavedView(true); html=h.elements.content.innerHTML;
+  assert.ok(!/Get deal|href=|\$|SECRET|photos\.test|amazon\.com/.test(html));
+  assert.ok(html.includes(current?.gone===true ? 'This deal ended.' : 'Not currently listed; availability unknown'));
+  assert.deepEqual(Object.keys(JSON.parse(h.storage.get(SAVED_KEY)).deals[0]).sort(),['key','label','store']);
+  const n=h.events.length; h.ctx.savedOutbound(current || row('a')); assert.equal(h.events.length,n);
+}
+// A member-only list cannot satisfy a saved public identity or make a locked stub saveable.
+h=shortlist({deals:[row('a',{locked:true})]});
+assert.equal(h.ctx.saveDeal(row('a',{locked:false,final_price:1})),false);
+assert.ok(!h.ctx.cardHtml(row('a',{locked:true})).includes('data-save-key'));
+h.ctx.state.deals=[row('private')];
+assert.equal(h.ctx.saveDeal(row('private')),false);
+// Limits reject new saves without evicting an existing one, and restored duplicates never reorder.
+h=shortlist({savedLimit:2,deals:[row('a'),row('b'),row('c')]});
+h.ctx.saveDeal(row('a')); h.ctx.saveDeal(row('b'));
+assert.equal(h.ctx.saveDeal(row('c')),false); assert.equal(h.events.length,2);
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['b','a']);
+h=shortlist({savedLimit:2,stored:{[SAVED_KEY]:record([identity('a'),identity('a',{label:'Duplicate'}),identity('b'),identity('c')])}});
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['a','b']);
+assert.equal(h.ctx.savedDeals.entries[0].label,'Original a');
+for(const raw of ['broken','[]','null','{}',JSON.stringify({version:2,deals:[identity('a')]}),
+                 JSON.stringify({version:1,deals:{key:'a'}}),'x'.repeat(150001)]) {
+  h=shortlist({stored:{[SAVED_KEY]:raw}}); assert.equal(h.ctx.savedDeals.entries.length,0);
+  assert.ok(h.elements.content.innerHTML.includes('data-key="a"')); // Corruption never breaks the wall.
+}
+for(const path of ['https://evil.test/deal/a/','//evil.test/deal/a/','/deal/../a/','/deal/%2e%2e/a/',
+                  '/deal/a/?tag=old-20','/deal/a/#code','/deal/a/\\evil','/deal/a/\n','javascript:alert(1)','/stores/amazon/']) {
+  h=shortlist({stored:{[SAVED_KEY]:record([identity('a',{path})])}});
+  assert.equal(h.ctx.savedDeals.entries[0].path,undefined);
+}
+for(const changes of [{key:''},{key:{}},{key:'a'.repeat(257)},{label:''},{label:4},{label:'x'.repeat(201)},
+                      {label:'bad\u0000label'},{store:[]},{store:'bad\nstore'}]) {
+  h=shortlist({stored:{[SAVED_KEY]:record([identity('a',changes)])}}); assert.equal(h.ctx.savedDeals.entries.length,0);
+}
+h=shortlist({stored:{[SAVED_KEY]:record([identity('absent',{label:'<img src=x onerror="boom">',store:'A & B'})])}});
+h.ctx.setSavedView(true); assert.match(h.elements.content.innerHTML,/&lt;img/);
+assert.ok(!h.elements.content.innerHTML.includes('<img')); assert.match(h.elements.content.innerHTML,/A &amp; B/);
+// Quota/read denial preserves an in-memory shortlist and explains its tab-only lifetime.
+for(const throwing of ['read','write']) {
+  h=shortlist({throwing}); h.click(row('a'),true,true);
+  assert.equal(h.ctx.savedDeals.entries.length,1); assert.equal(h.ctx.savedDeals.persistent,false);
+  assert.match(h.elements.savedstatus.textContent,/this tab only.*will not persist/);
+  h.windowHandlers.storage({key:SAVED_KEY,newValue:record([identity('other')])});
+  assert.equal(h.ctx.savedDeals.entries[0].key,'a');
+  h.ctx.setSavedView(true); assert.match(h.elements.content.innerHTML,/Get deal/);
+  h.elements.savedclear.listeners.click(); assert.equal(h.ctx.savedDeals.entries.length,0);
+}
+h=shortlist({throwing:'write',stored:{[SAVED_KEY]:record([identity('b')])},deals:[row('a'),row('b')]});
+h.click(row('a'),true,true); assert.equal(h.ctx.savedDeals.entries.length,2);
+assert.deepEqual(JSON.parse(h.storage.get(SAVED_KEY)).deals.map(d=>d.key),['b']);
+// Cross-tab saves/removals/clear and malformed changes update count/view without analytics or write loops.
+h=shortlist(); h.ctx.setSavedView(true);
+let n=h.events.length;
+h.windowHandlers.storage({key:SAVED_KEY,newValue:record([identity('a')])});
+assert.equal(h.elements.savedview.textContent,'Saved (1)'); assert.match(h.elements.content.innerHTML,/Get deal/);
+assert.equal(h.events.length,n); assert.equal(h.storage.has(SAVED_KEY),false);
+h.windowHandlers.storage({key:'other',newValue:null}); assert.equal(h.ctx.savedDeals.entries.length,1);
+h.windowHandlers.storage({key:SAVED_KEY,newValue:'corrupt'}); assert.equal(h.ctx.savedDeals.entries.length,0);
+h.windowHandlers.storage({key:SAVED_KEY,newValue:record([identity('a')])});
+h.windowHandlers.storage({key:null,newValue:null}); assert.equal(h.ctx.savedDeals.entries.length,0);
+assert.equal(h.events.length,n);
+// Switch-off never reads or mutates a stored list, and ordinary outbound/source markup stays intact.
+h=harness({stored:{[SAVED_KEY]:record([identity('a')])},switches:off});
+assert.equal(h.ctx.saveDeal(row('a')),false); assert.equal(h.ctx.clearSaved(),false);
+assert.ok(!h.ctx.cardHtml(row('a')).includes('data-save-key'));
+assert.equal(h.ctx.savedDeals.started,false);
+h=shortlist(); html=h.ctx.cardHtml(row('a'));
+assert.match(html,/<a class="getdeal" href="https:\/\/store.test\/item" rel="sponsored noopener"/);
+assert.match(html,/via <a href="https:\/\/one.test\/post" rel="noopener">One<\/a>/);
+(async()=>{
+  // An HTTP error, invalid payload or JSON failure cannot replace the last good offers.
+  h=shortlist({deals:[row('a',{final_price:17.25})]});
+  h.ctx.saveDeal(row('a')); h.ctx.setSavedView(true);
+  h.ctx.clock={tag:''}; h.ctx.maybeReloadForNewVersion=()=>{};
+  h.ctx.dataKey=meta=>meta.generated_at || '';
+  vm.runInContext(fragment('  function fetchPublish()', '  function isNewPublish('),h.ctx);
+  const response=(body,ok=true)=>({ok,headers:{get:()=>''},json:async()=>body});
+  for(const bad of [response({meta:{},deals:[]},false), response({}), response({meta:{},deals:{}}),
+                    {ok:true,headers:{get:()=>''},json:async()=>{throw Error('bad JSON');}}]) {
+    h.ctx.fetch=async()=>bad;
+    await assert.rejects(h.ctx.fetchPublish()); h.ctx.render();
+    assert.match(h.elements.content.innerHTML,/\$17\.25/);
+    assert.ok(!h.elements.content.innerHTML.includes('availability unknown'));
+  }
+  h.ctx.fetch=async()=>response({meta:h.ctx.state.meta,deals:[]});
+  const pub=await h.ctx.fetchPublish();
+  h.ctx.reconcileSaved(pub); h.ctx.render();
+  assert.match(h.elements.content.innerHTML,/Not currently listed; availability unknown/);
+  assert.ok(!h.elements.content.innerHTML.includes('$17.25'));
+  // Later quota denial and a failing analytics function cannot stop the local action.
+  h=shortlist({deals:[row('a'),row('b')]}); h.ctx.saveDeal(row('a'));
+  h.ctx.localStorage.setItem=()=>{throw Error('quota');};
+  h.ctx.window.wpTrack=()=>{throw Error('tag down');};
+  assert.equal(h.ctx.saveDeal(row('b')),true);
+  assert.equal(h.ctx.savedDeals.entries.length,2);
+  assert.equal(h.ctx.savedDeals.persistent,false);
+  h.ctx.renderSavedControls();
+  assert.match(h.elements.savedstatus.textContent,/will not persist/);
+  console.log('engagement and saved-deals logic passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});

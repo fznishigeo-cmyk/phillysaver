@@ -190,6 +190,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Saved deals (Codex task 066, 2026-10-13; shipped after review):** a heart in each
+  photo's corner (cards keep their height); "♥ Saved (n)" leads the controls
+  row only once something is saved; the device note shows only in the Saved
+  view. Support-only,
+  device-local identities/labels/store/path (100 default, 1–200 cap); current
+  public cards, unknown/confirmed-ended states, remove/clear, cross-tab sync
+  and tab-only fallback. GA4-only count/method events and private `saved`
+  counts (report Product section) plus seven-day classified returning sessions; privacy copy updated.
+  Full suite: 2,494 passed, 1 deselected; seven existing Stripe yearly-deploy
+  cases blocked by local sockets. Chromium launch blocked 360px, iPhone/Pixel,
+  keyboard, dark-mode and reduced-motion QA; branch creation is read-only
+  here. No commit or push; tasks 061/062 untouched.
 - **Static wall fallback (Codex task 064, 2026-10-13; uncommitted):** failed
   first JSON loads keep the static deals/links with an inline status and
   44px Retry; HTTP/JSON/shape validation precedes adoption, retry/timer/return

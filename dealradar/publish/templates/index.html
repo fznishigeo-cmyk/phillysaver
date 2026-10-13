@@ -562,7 +562,27 @@ header{--accent-hover:var(--warm)}
   outline:2px solid var(--accent);outline-offset:3px}
 .card:hover{transform:none}
 @media (max-width:640px){#subscribe.getdeal{min-height:44px}}
-<!--/support-->
+<!--/support--><!--saved-->
+.save-deal,#savedview,#savedall,#savedclear{min-width:44px;min-height:44px;border:1px solid var(--accent);
+  border-radius:8px;padding:8px 10px;background:var(--card);color:var(--accent);font:inherit;font-size:13px;cursor:pointer}
+.save-deal[aria-pressed="true"],#savedview[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.save-deal:focus-visible,#savedview:focus-visible,#savedall:focus-visible,#savedclear:focus-visible{
+  outline:2px solid var(--accent);outline-offset:3px}
+.saved-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.saved-tools p{flex:1 1 240px;margin:0;font-size:12.5px;color:var(--muted)}
+.saved-unavailable .body{padding:14px;overflow-wrap:anywhere}
+.saved-unavailable p{font-size:13px}
+.media .save-deal{position:absolute;right:2px;bottom:2px;width:44px;height:44px;padding:5px;border:0;
+  background:transparent;display:flex;align-items:center;justify-content:center}
+.media .save-deal svg{width:34px;height:34px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.18))}
+.save-deal circle{fill:var(--card)}
+.save-deal path{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linejoin:round}
+.media .save-deal[aria-pressed="true"]{background:transparent}
+.save-deal[aria-pressed="true"] path{fill:var(--accent)}
+#savedview::before{content:"\2665\00a0";content:"\2665\00a0" / ""}
+#savedview{white-space:nowrap;flex:0 0 auto}
+#savedtools[hidden],#savedview[hidden],#savedall[hidden],#savedclear[hidden]{display:none}
+<!--/saved-->
 /* Search occupies its row before any data arrives. */
 .search{flex:1 1 320px;max-width:680px;min-width:240px}
 .searchfield{position:relative}
@@ -699,7 +719,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <nav id="cattabs" aria-label="category tabs">{{CAT_TABS}}</nav>
 <div class="wrap">
 <div id="controls">
-  <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
+<!--saved-->  <button id="savedview" type="button" aria-pressed="false" aria-controls="content" hidden>Saved (0)</button>
+<!--/saved-->  <select id="storesel" aria-label="Store"><option value="">All stores</option></select>
   <select id="sortsel" aria-label="sort order">
     <option value="top:-1">sort: top picks</option>
     <option value="fresh:-1">sort: fresh drops</option>
@@ -711,7 +732,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--engagement-->  <button id="surprise" type="button" {{SURPRISE_HIDDEN}}>Surprise me</button>
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0" inputmode="numeric" autocomplete="off"></label>
 </div>
-<div id="load-status" class="load-status" role="status" hidden>
+<!--saved--><div id="savedtools" class="saved-tools" hidden>
+  <p id="savedstatus" role="status" aria-live="polite">Saved on this device.</p>
+  <button id="savedall" type="button" hidden>All deals</button>
+  <button id="savedclear" type="button" hidden>Clear saved deals</button>
+</div>
+<!--/saved--><div id="load-status" class="load-status" role="status" hidden>
   <span id="load-message"></span><button id="load-retry" type="button" class="pwbtn alt">Retry</button>
 </div>
 <div id="content" data-clarity-unmask="true">{{STATIC_WALL}}</div>
@@ -1147,7 +1173,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         if (searchText()) return;
-        state.catTab = Number(b.getAttribute("data-i")) || 0;
+<!--saved-->        savedDeals.view = false;
+        renderSavedControls();
+<!--/saved-->        state.catTab = Number(b.getAttribute("data-i")) || 0;
         state.shown = PAGE_CARDS;
         renderTabs();
         render();
@@ -1345,7 +1373,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     if (usedTag(d)) media += '<span class="condtag">' + usedTag(d) + "</span>";
     if (d.status === "dead") media += '<span class="gonetag">' + esc(goneText(d)) + "</span>";
-    if (d.spotlight) media += '<span class="today-ribbon">Today only · ' + esc(d.spotlight.source) + '</span>';
+<!--saved-->    media += savedButtonHtml(d);
+<!--/saved-->    if (d.spotlight) media += '<span class="today-ribbon">Today only · ' + esc(d.spotlight.source) + '</span>';
     if (isNew(d) && !d.spotlight) media += '<span class="newtag">NEW</span>';
     return media;
   }
@@ -1642,7 +1671,15 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     paintTicker();
     cardImageIndex = 0;
     var content = document.getElementById("content");
-    traceFree = state.deals.some(isLocked);
+<!--saved-->    renderSavedControls();
+    if (savedOn() && savedDeals.view) {
+      traceFree = false;
+      content.innerHTML = savedViewHtml();
+      content.appendChild(panel);
+      window.wpSupport.refresh(state.meta);
+      return;
+    }
+<!--/saved-->    traceFree = state.deals.some(isLocked);
 <!--engagement-->    var engagementHtml = engagementLineHtml();
 <!--/engagement-->    var spotlight = activeSpotlight(), spotlightKeys = spotlight.map(dealKey);
     var spotlightHtml = spotlight.length ? '<div class="grid spotlight-grid">' + spotlight.map(cardHtml).join("") + '</div>' : '';
@@ -2627,7 +2664,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function syncSubbar() { window.wpSupport.refresh(state.meta); }
   function updatePaywall() { window.wpSupport.refresh(state.meta); }
   document.getElementById("content").addEventListener("click", function (e) {
-    var code = e.target.closest(".card .code[data-code]");
+<!--saved-->    if (savedButtonClick(e)) return;
+<!--/saved-->    var code = e.target.closest(".card .code[data-code]");
     if (code) {
       var c = code.getAttribute("data-code");
       try { navigator.clipboard.writeText(c).then(function () { toast("Code " + c + " copied"); }, function () { toast("Code: " + c); }); }
@@ -2640,7 +2678,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       track("deal_click", { store: String(d.store || ""), category: String(d.category || "") });<!--engagement-->
       if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement-->
-    }
+<!--saved-->      savedOutbound(d);
+<!--/saved-->    }
   });
 <!--/support-->  // The ticker: a locked deal takes the next step; a free one scrolls to
   // its card and flashes it. PAUSE (or hover) stops the scroll.
@@ -2687,7 +2726,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   var searchTimer;
   function updateSearch() {
     clearTimeout(searchTimer);
-    renderTabs();
+<!--saved-->    savedDeals.view = false;
+    renderSavedControls();
+<!--/saved-->    renderTabs();
     resetWall();
   }
   function clearSearch() {
@@ -2745,7 +2786,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function selectAmazonDeals() {
     clearTimeout(searchTimer);
-    document.getElementById("q").value = "";
+<!--saved-->    savedDeals.view = false;
+    renderSavedControls();
+<!--/saved-->    document.getElementById("q").value = "";
     document.getElementById("storesel").value = "amazon";
     document.getElementById("minpct").value = "0";
     state.catTab = 0;
@@ -2866,7 +2909,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     state.dataKey = pub.key;<!--engagement-->
     initEngagement();
 <!--/engagement-->
-    syncClock();
+<!--saved-->    reconcileSaved(pub);
+<!--/saved-->    syncClock();
     if (first) {
       loadedOnce = true;
       populateStores();

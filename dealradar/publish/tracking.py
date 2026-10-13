@@ -237,6 +237,22 @@ _DISPATCH = """\
 })();
 """
 
+_SAVED_DISPATCH = """\
+    // Local shortlist events are GA4-only. No identity, label or list leaves
+    // the browser; both the action labels and numeric counts are bounded.
+    var savedMethods = {deal_save: ["save", "remove", "clear"], saved_view: ["button"],
+                        saved_deal_click: ["outbound"]};
+    if (Object.prototype.hasOwnProperty.call(savedMethods, name)) {
+      var method = params && params.method, count = params && params.count;
+      if (savedMethods[name].indexOf(method) === -1 || !Number.isSafeInteger(count) || count < 0 || count > 200) return;
+      if (on.ga4) {
+        try { window.gtag("event", name, {method: method, count: count, send_to: on.ga4}); }
+        catch (e) { /* analytics never stops a save */ }
+      }
+      return;
+    }
+"""
+
 
 def tracking_ids(cfg) -> dict[str, str]:
     """The configured tracking values that pass their pattern; each invalid
@@ -282,6 +298,8 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if getattr(cfg, "support_enabled", False) and getattr(cfg, "engagement", {}).get("saved_deals", False):
+        dispatch = dispatch.replace("    var ev = EVENTS[name];", _SAVED_DISPATCH + "    var ev = EVENTS[name];")
     if getattr(cfg, "engagement", {}).get("surprise_me", False):
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    surprise_click: { metaCustom: "SurpriseClick", tiktok: "ClickButton", uet: "surprise_click" },')

@@ -223,9 +223,10 @@ class AppConfig:
     join_prompt: bool = True
     join_prompt_delay_s: int = 15
     join_apple: bool = False          # reserved until Apple sign-in is supported
-    # Loaded configs enable all five; an empty programmatic config preserves
+    # Loaded configs enable engagement; an empty programmatic config preserves
     # the legacy template (including the dormant membership snapshots).
     engagement: dict[str, bool] = field(default_factory=dict)
+    engagement_saved_deals_limit: int = 100
     # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
     newsletter_enabled: bool = True
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
@@ -485,7 +486,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.join_prompt_delay_s = max(15, int(g("join", "prompt_delay_s", default=15)))
     cfg.join_apple = bool(g("join", "apple", default=False))
     cfg.engagement = {name: bool(g("engagement", name, default=True)) for name in (
-        "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
+        "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter", "saved_deals")}
+    cfg.engagement_saved_deals_limit = max(1, min(200, int(g(
+        "engagement", "saved_deals_limit", default=cfg.engagement_saved_deals_limit))))
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
     cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
     cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))

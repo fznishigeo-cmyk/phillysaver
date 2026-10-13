@@ -1643,7 +1643,7 @@ class TestWallPagination:
         assert "cards on the page" not in script
 
 
-ENGAGEMENT_SWITCHES = ("new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")
+ENGAGEMENT_SWITCHES = ("new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter", "saved_deals")
 
 
 def test_engagement_config_defaults_and_independent_switches(tmp_path):
@@ -1664,8 +1664,9 @@ def test_engagement_switches_reach_public_and_member_meta(db, cfg, tmp_path, mod
     cfg.paywall_open_access = mode == "open"
     result = render_site(db, cfg, NOW, out_dir=tmp_path, deals=[make_deal()])
     public = json.loads((tmp_path / "deals.json").read_text())
-    assert public["meta"]["engagement"] == cfg.engagement
-    assert result["full_payload"]["meta"]["engagement"] == cfg.engagement
+    expected = {**cfg.engagement, "saved_deals": cfg.support_enabled and cfg.engagement["saved_deals"]}
+    assert public["meta"]["engagement"] == expected
+    assert result["full_payload"]["meta"]["engagement"] == expected
     home = (tmp_path / "index.html").read_text()
     assert "{{" not in home
     tag = re.search(r'<button id="surprise"[^>]*>', home).group()

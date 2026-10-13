@@ -295,6 +295,8 @@ engagement:
   visit_streak: true
   surprise_me: true
   hot_meter: true
+  saved_deals: true
+  saved_deals_limit: 100   # browser-only shortlist; bounded to 1–200
 
 join:
   prompt: true

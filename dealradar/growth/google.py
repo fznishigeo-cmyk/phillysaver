@@ -25,6 +25,7 @@ SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
 PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
                   "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
+SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "
                       "name store, scope Event, parameter store")
 
@@ -166,6 +167,59 @@ def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:
             "total": int(float(totals[0]["metricValues"][0]["value"])) if totals else 0,
             "stores": [(d.get("customEvent:store", ""), m[0]) for d, m in _rows(result)],
         }
+    return out
+
+
+def ga4_saved(client: Any, token: str, property_id: str, days: int) -> dict:
+    """Observed feature actions and seven-day visitor-classified sessions.
+
+    A missing event or visitor classification is unavailable, not an
+    inferred zero. This measures return visits, never a purchase cohort.
+    """
+    url = GA4_URL.format(quote(property_id, safe=""))
+    headers = {"Authorization": f"Bearer {token}"}
+    ranges = [{"startDate": "yesterday", "endDate": "yesterday", "name": "yesterday"},
+              {"startDate": f"{days}daysAgo", "endDate": "yesterday", "name": "window"}]
+    resp = client.post(url, headers=headers, json={"requests": [{
+        "dateRanges": ranges, "dimensions": [{"name": "eventName"}],
+        "metrics": [{"name": "eventCount"}],
+        "dimensionFilter": {"filter": {"fieldName": "eventName",
+            "inListFilter": {"values": list(SAVED_EVENTS)}}}}]})
+    resp.raise_for_status()
+    out = {key: dict.fromkeys(SAVED_EVENTS) for key in ("yesterday", "window")}
+    results = resp.json().get("reports") or []
+    for dims, values in _rows(results[0] if results else {}):
+        key, event = dims.get("dateRange"), dims.get("eventName")
+        if key in out and event in SAVED_EVENTS and len(values) == 1 and values[0] >= 0:
+            out[key][event] = values[0]
+
+    # Isolate this dimension so missing classification never hides action counts.
+    out["returning"] = {"unavailable": "visitor classification not returned"}
+    try:
+        resp = client.post(url, headers=headers, json={"requests": [{
+            "dateRanges": [{"startDate": "7daysAgo", "endDate": "yesterday"}],
+            "dimensions": [{"name": "newVsReturning"}],
+            "metrics": [{"name": "sessions"}], "limit": 10}]})
+        resp.raise_for_status()
+        results = resp.json().get("reports") or []
+        result = results[0] if results else {}
+        classified, returning, unclassified = 0, 0, 0
+        for dims, values in _rows(result):
+            if "newVsReturning" not in dims or len(values) != 1 or values[0] < 0:
+                continue
+            kind, count = dims["newVsReturning"], values[0]
+            if kind in ("new", "returning"):
+                classified += count
+                if kind == "returning":
+                    returning += count
+            else:
+                unclassified += count
+        if classified:
+            out["returning"] = {"sessions": returning, "classified_sessions": classified,
+                                "unclassified_sessions": unclassified}
+    except Exception as e:
+        # Responses may echo a token; only the class is safe to report.
+        out["returning"] = {"unavailable": f"visitor classification unavailable ({type(e).__name__})"}
     return out
 
 

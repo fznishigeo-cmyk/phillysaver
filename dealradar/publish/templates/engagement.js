@@ -188,3 +188,230 @@
   }
   window.addEventListener("pageshow", refreshLocalDay);
   document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshLocalDay(); });
+/* saved-deals */
+  // Only public identities and display labels persist. Offers always come
+  // from the last successfully loaded public payload, never this record.
+  var SAVED_KEY = "wp.savedDeals", SAVED_VERSION = 1;
+  var savedDeals = {started: false, persistent: true, entries: [], view: false, publicDeals: []};
+  function savedOn() {
+    return (state.meta.support || {}).enabled === true && engagementOn("saved_deals");
+  }
+  function savedLimit() {
+    var limit = state.meta.saved_deals_limit;
+    return Number.isSafeInteger(limit) ? Math.max(1, Math.min(200, limit)) : 100;
+  }
+  function savedText(value, max, empty) {
+    return typeof value === "string" && value.length <= max && (empty || value.trim()) &&
+      !/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(value);
+  }
+  function savedPath(path) {
+    // A root-relative path with no query, fragment, escapes or dot segments.
+    return typeof path === "string" && /^\/deal\/[a-z0-9][a-z0-9-]{0,100}\/$/.test(path) ? path : "";
+  }
+  function savedEntry(entry) {
+    if (!entry || !savedText(entry.key, 256, false) ||
+        !savedText(entry.label, 200, false) || !savedText(entry.store, 80, true)) return null;
+    var clean = {key: entry.key, label: entry.label, store: entry.store};
+    var path = savedPath(entry.path);
+    if (path) clean.path = path;
+    return clean;
+  }
+  function parseSaved(raw) {
+    if (typeof raw !== "string" || raw.length > 150000) return [];
+    try {
+      var record = JSON.parse(raw);
+      if (!record || record.version !== SAVED_VERSION || !Array.isArray(record.deals)) return [];
+      var entries = [], seen = new Set();
+      // Bound work as well as output when a record is corrupt or excessive.
+      record.deals.slice(0, 200).forEach(function (entry) {
+        var clean = savedEntry(entry);
+        if (clean && !seen.has(clean.key) && entries.length < savedLimit()) {
+          entries.push(clean);
+          seen.add(clean.key);
+        }
+      });
+      return entries;
+    } catch (e) { return []; }
+  }
+  function savedRecord() {
+    return JSON.stringify({version: SAVED_VERSION, deals: savedDeals.entries});
+  }
+  function persistSaved() {
+    if (!savedDeals.persistent) return;
+    try { localStorage.setItem(SAVED_KEY, savedRecord()); }
+    catch (e) { savedDeals.persistent = false; }
+  }
+  function readSaved() {
+    if (!savedDeals.persistent) return;
+    try {
+      var raw = localStorage.getItem(SAVED_KEY);
+      savedDeals.entries = parseSaved(raw);
+      // Remove obsolete or unwanted fields rather than carrying them forward.
+      if (raw !== null && raw !== savedRecord()) persistSaved();
+    } catch (e) { savedDeals.persistent = false; }
+  }
+  function reconcileSaved(pub) {
+    if (!savedOn()) return;
+    savedDeals.publicDeals = pub.deals;
+    if (!savedDeals.started) {
+      savedDeals.started = true;
+      readSaved();
+    }
+    savedDeals.entries = savedDeals.entries.slice(0, savedLimit());
+    renderSavedControls();
+  }
+  function isSaved(key) {
+    return savedDeals.entries.some(function (entry) { return entry.key === key; });
+  }
+  function savedPublicMatch(key) {
+    return savedDeals.publicDeals.find(function (d) { return dealKey(d) === key; });
+  }
+  function saveDeal(d) {
+    if (!savedOn() || !d || isSaved(dealKey(d))) return false;
+    var current = savedPublicMatch(dealKey(d));
+    if (!current || isLocked(current) || current.status !== "alive") return false;
+    var entry = savedEntry({key: dealKey(current), label: String(current.item || "").slice(0, 200),
+      store: String(current.store || "").slice(0, 80), path: current.deal_path});
+    if (!entry) return false;
+    if (savedDeals.entries.length >= savedLimit()) {
+      toast("Saved list is full (" + savedLimit() + "). Remove a deal to save another.");
+      return false;
+    }
+    savedDeals.entries.unshift(entry); // Newest saves first; duplicate saves never reorder.
+    persistSaved();
+    track("deal_save", {method: "save", count: 1});
+    return true;
+  }
+  function removeSaved(key) {
+    if (!savedOn() || !isSaved(key)) return false;
+    savedDeals.entries = savedDeals.entries.filter(function (entry) { return entry.key !== key; });
+    persistSaved();
+    track("deal_save", {method: "remove", count: 1});
+    return true;
+  }
+  function clearSaved() {
+    if (!savedOn() || !savedDeals.entries.length) return false;
+    var count = savedDeals.entries.length;
+    savedDeals.entries = [];
+    persistSaved();
+    track("deal_save", {method: "clear", count: count});
+    return true;
+  }
+  function savedButtonHtml(d) {
+    if (!savedOn() || isLocked(d)) return "";
+    var key = dealKey(d), on = isSaved(key), current = savedPublicMatch(key);
+    if (!on && (!current || isLocked(current) || current.status !== "alive")) return "";
+    var label = on ? "Remove saved deal: " : "Save deal: ";
+    return '<button type="button" class="save-deal" data-save-key="' + esc(key) +
+      '" data-clarity-mask="true" aria-pressed="' + on + '" aria-label="' + esc(label + (d.item || "deal")) + '">' +
+      '<svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><circle cx="16" cy="16" r="15"/>' +
+      '<path d="M16 24.2l-1.2-1.1C10.4 19.1 7.5 16.5 7.5 13.3c0-2.6 2-4.6 4.6-4.6 1.5 0 2.9.7 3.9 1.8 1-1.1 2.4-1.8 3.9-1.8 2.6 0 4.6 2 4.6 4.6 0 3.2-2.9 5.8-7.3 9.8L16 24.2z"/></svg></button>';
+  }
+  function renderSavedControls() {
+    var button = document.getElementById("savedview");
+    if (!button) return;
+    var on = savedOn();
+    button.hidden = !on || (!savedDeals.entries.length && !savedDeals.view);
+    document.getElementById("savedtools").hidden = !on || !savedDeals.view;
+    if (!on) return;
+    var content = document.getElementById("content");
+    if (savedDeals.view) {
+      content.removeAttribute("data-clarity-unmask");
+      content.setAttribute("data-clarity-mask", "true");
+    } else {
+      content.removeAttribute("data-clarity-mask");
+      content.setAttribute("data-clarity-unmask", "true");
+    }
+    button.textContent = "Saved (" + savedDeals.entries.length + ")";
+    button.setAttribute("aria-pressed", String(savedDeals.view));
+    document.getElementById("savedall").hidden = !savedDeals.view;
+    var clear = document.getElementById("savedclear");
+    clear.hidden = !savedDeals.view;
+    clear.disabled = !savedDeals.entries.length;
+    var status = document.getElementById("savedstatus"), message = savedDeals.persistent
+      ? "Saved on this device. Clearing site data removes your saved list."
+      : "Saved in this tab only. Your browser blocked storage; this list will not persist.";
+    if (status.textContent !== message) status.textContent = message;
+    ["storesel", "sortsel", "minpct", "surprise"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.disabled = savedDeals.view || (id === "surprise" && !surpriseRows().length);
+    });
+  }
+  function setSavedView(on) {
+    if (!savedOn() || savedDeals.view === on) return;
+    savedDeals.view = on;
+    if (on) {
+      document.getElementById("q").value = "";
+      document.getElementById("clearsearch").hidden = true;
+      document.getElementById("searchcount").textContent = "";
+    }
+    if (on) track("saved_view", {method: "button", count: savedDeals.entries.length});
+    renderSavedControls();
+    render();
+  }
+  function savedUnavailableHtml(entry, current) {
+    var ended = current && !isLocked(current) && current.status === "dead" && current.gone === true;
+    var label = ended ? current.item : entry.label, store = ended ? current.store : entry.store;
+    return '<article class="card saved-unavailable' + (ended ? ' gone' : '') + '" data-key="' + esc(entry.key) + '">' +
+      '<div class="body"><h3 class="title">' + esc(label) + '</h3><p class="meta">' + esc(store) + '</p>' +
+      '<p>' + (ended ? "This deal ended." : "Not currently listed; availability unknown") + '</p>' +
+      '<button type="button" class="save-deal" data-save-key="' + esc(entry.key) +
+      '" data-clarity-mask="true" aria-pressed="true" aria-label="' + esc("Remove saved deal: " + label) + '">Remove</button></div></article>';
+  }
+  function savedViewHtml() {
+    if (!savedDeals.entries.length) return '<h2 class="secth">Saved deals (0)</h2><p class="empty">Save a deal to revisit it here.</p>';
+    return '<h2 class="secth">Saved deals (' + savedDeals.entries.length + ')</h2><div class="grid">' +
+      savedDeals.entries.map(function (entry) {
+        var current = savedPublicMatch(entry.key);
+        return current && !isLocked(current) && current.status === "alive"
+          ? cardHtml(current) : savedUnavailableHtml(entry, current);
+      }).join("") + '</div>';
+  }
+  function repaintSaved() {
+    var focus = rememberFocus();
+    renderSavedControls();
+    render();
+    restoreFocus(focus);
+    if (focus && document.activeElement === document.body) document.getElementById("savedview").focus({preventScroll: true});
+  }
+  function savedButtonClick(e) {
+    var button = e.target.closest("button[data-save-key]");
+    if (!button || !savedOn()) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    var key = button.getAttribute("data-save-key");
+    var changed = isSaved(key) ? removeSaved(key) : saveDeal(savedPublicMatch(key));
+    if (changed) repaintSaved();
+    return true;
+  }
+  function savedOutbound(d) {
+    var current = savedPublicMatch(dealKey(d));
+    if (savedOn() && savedDeals.view && isSaved(dealKey(d)) && current && !isLocked(current) && current.status === "alive") {
+      track("saved_deal_click", {method: "outbound", count: 1});
+    }
+  }
+  var savedViewButton = document.getElementById("savedview");
+  if (savedViewButton) {
+    savedViewButton.addEventListener("click", function () { setSavedView(!savedDeals.view); });
+    document.getElementById("savedall").addEventListener("click", function () {
+      setSavedView(false);
+      savedViewButton.focus({preventScroll: true});
+    });
+    document.getElementById("savedclear").addEventListener("click", function () {
+      if (clearSaved()) { repaintSaved(); savedViewButton.focus({preventScroll: true}); }
+    });
+  }
+  window.addEventListener("storage", function (e) {
+    if (!savedOn() || !savedDeals.started || !savedDeals.persistent || (e.key !== SAVED_KEY && e.key !== null)) return;
+    if (e.storageArea && e.storageArea !== localStorage) return;
+    savedDeals.entries = parseSaved(e.key === null ? null : e.newValue);
+    repaintSaved(); // No write or analytics: another tab already performed this action.
+  });
+  function refreshSaved() {
+    if (!savedOn() || !savedDeals.started || !savedDeals.persistent) return;
+    readSaved();
+    repaintSaved();
+  }
+  window.addEventListener("pageshow", refreshSaved);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) refreshSaved(); });
+/* /saved-deals */

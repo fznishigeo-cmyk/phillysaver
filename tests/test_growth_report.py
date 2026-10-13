@@ -80,6 +80,19 @@ STORES_RESPONSE = {"reports": [
     for count, total in ((8000, 9001), (18000, 20001))
 ]}
 
+PRODUCT_RESPONSE = {"reports": [{
+    "dimensionHeaders": [{"name": "eventName"}, {"name": "dateRange"}],
+    "rows": [{"dimensionValues": [{"value": event}, {"value": key}],
+              "metricValues": [{"value": str(count)}]}
+             for event, key, count in [("deal_save", "yesterday", 23), ("deal_save", "window", 41),
+                                       ("saved_view", "window", 28), ("saved_deal_click", "window", 17)]]}]
+}
+RETURNING_RESPONSE = {"reports": [{
+    "dimensionHeaders": [{"name": "newVsReturning"}],
+    "rows": [{"dimensionValues": [{"value": kind}], "metricValues": [{"value": str(count)}]}
+             for kind, count in [("new", 80), ("returning", 20), ("(not set)", 7)]]}]
+}
+
 SC_TOTAL = {"rows": [{"clicks": 834521.0, "impressions": 9123456.0, "ctr": 0.0914, "position": 17.26}]}
 SC_QUERIES = {"rows": [{"keys": ["private <b>query</b> phrase"], "clicks": 300.0, "impressions": 4000.0,
                         "ctr": 0.075, "position": 4.2}]}
@@ -191,8 +204,15 @@ class FakeApis:
                                              "token_type": "Bearer"})
         if host == "analyticsdata.googleapis.com":
             assert auth == f"Bearer {GOOGLE_TOKEN}"
-            if json.loads(request.content)["requests"][0].get("dimensions") == [{"name": "customEvent:store"}]:
+            queries = json.loads(request.content)["requests"]
+            dims = queries[0].get("dimensions")
+            if dims == [{"name": "customEvent:store"}]:
                 return httpx.Response(200, json=STORES_RESPONSE)
+            if len(queries) == 1:
+                if dims == [{"name": "eventName"}]:
+                    return httpx.Response(200, json=PRODUCT_RESPONSE)
+                if dims == [{"name": "newVsReturning"}]:
+                    return httpx.Response(200, json=RETURNING_RESPONSE)
             return httpx.Response(200, json=GA4_RESPONSE)
         if host == "searchconsole.googleapis.com":
             assert auth == f"Bearer {GOOGLE_TOKEN}"
@@ -445,6 +465,117 @@ def test_ga4_request_and_parsing():
     assert out["pages"] == [("/secret-landing-page.html", 3100)]
 
 
+def test_saved_counts_and_seven_day_visitor_classification(cfg, caplog):
+    caplog.set_level(logging.DEBUG)
+    fake = FakeApis()
+    with client_for(fake) as client:
+        data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 3)
+    events, returning = (json.loads(req.content)["requests"][0] for req in fake.requests)
+    assert events["dateRanges"][1] == {"startDate": "3daysAgo", "endDate": "yesterday", "name": "window"}
+    assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == list(google.SAVED_EVENTS)
+    assert returning["dimensions"] == [{"name": "newVsReturning"}]
+    assert returning["metrics"] == [{"name": "sessions"}]
+    assert returning["dateRanges"] == [{"startDate": "7daysAgo", "endDate": "yesterday"}]
+    assert data["window"] == {"deal_save": 41, "saved_view": 28, "saved_deal_click": 17}
+    assert data["yesterday"] == {"deal_save": 23, "saved_view": None, "saved_deal_click": None}
+    assert data["returning"] == {"sessions": 20, "classified_sessions": 100, "unclassified_sessions": 7}
+    cfg.growth_report_days = 3
+    _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
+    assert "== Product (GA4 event sample" in text
+    assert "Feature actions (yesterday / last 3 days; event counts):" in text
+    assert "deal_save: 23 / 41" in text
+    assert "saved_view: unavailable (no observed event) / 28" in text
+    assert "Observed returning sessions (last 7 completed days): 20 / 100 classified sessions (20.0%)" in text
+    assert "7 unclassified sessions excluded" in text
+    assert "save-to-purchase cohort or cross-device sync statistic" in text
+    assert "41" not in caplog.text and GOOGLE_TOKEN not in text + caplog.text
+
+
+@pytest.mark.parametrize("classification", [
+    {}, {"dimensionHeaders": [{"name": "newVsReturning"}], "rows": []},
+    {"dimensionHeaders": [{"name": "totalUsers"}], "rows": [
+        {"dimensionValues": [{"value": "new"}], "metricValues": [{"value": "80"}]}]},
+    {"dimensionHeaders": [{"name": "newVsReturning"}], "rows": [
+        {"dimensionValues": [{"value": "(not set)"}], "metricValues": [{"value": "80"}]}]},
+])
+def test_missing_visitor_classification_is_unavailable_not_inferred(cfg, classification):
+    fake = FakeApis()
+
+    def handler(request):
+        query = json.loads(request.content)["requests"][0]
+        if query.get("dimensions") == [{"name": "newVsReturning"}]:
+            return httpx.Response(200, json={"reports": [classification]})
+        return fake(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 7)
+    assert data["window"]["deal_save"] == 41
+    assert data["returning"] == {"unavailable": "visitor classification not returned"}
+    _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
+    assert "Observed returning sessions (last 7 completed days): unavailable" in text
+    assert "0 classified sessions" not in text and "0.0%" not in text
+
+
+@pytest.mark.parametrize("failure", ["dimension", "permission", "transport", "json"])
+def test_visitor_classification_failure_preserves_saved_counts(cfg, monkeypatch, caplog, failure):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("GOOGLE_SA_JSON", "configured")
+    monkeypatch.setattr(google, "access_token", lambda *_: GOOGLE_TOKEN)
+    fake = FakeApis()
+
+    def handler(request):
+        if request.url.host == "analyticsdata.googleapis.com":
+            query = json.loads(request.content)["requests"][0]
+            if query.get("dimensions") == [{"name": "newVsReturning"}]:
+                if failure == "transport":
+                    raise httpx.ConnectError(GOOGLE_TOKEN, request=request)
+                if failure == "json":
+                    return httpx.Response(200, text=GOOGLE_TOKEN)
+                return httpx.Response(400 if failure == "dimension" else 403,
+                                      json={"error": {"message": GOOGLE_TOKEN}})
+        return fake(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data, status = report.collect(cfg, NOW, client)
+    assert status["saved"] == status["ga4"] == "ok"
+    assert data["saved"]["window"]["saved_deal_click"] == 17
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "visitor classification unavailable" in text
+    assert GOOGLE_TOKEN not in text + caplog.text
+
+
+def test_no_saved_rows_and_old_report_snapshots_are_unavailable(cfg):
+    def handler(request):
+        return httpx.Response(200, json={"reports": [{}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 7)
+    assert all(value is None for value in data["window"].values())
+    _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
+    assert "deal_save: unavailable (no observed event) / unavailable (no observed event)" in text
+    with client_for(FakeApis()) as client:
+        old_ga = google.ga4(client, GOOGLE_TOKEN, "987654", 7)
+    for status in ({}, {"saved": "skipped"}, {"saved": "error"}):
+        _, text = report.build_report(cfg, {"ga4": old_ga}, status, date(2026, 10, 10))
+        assert "Feature actions and returning sessions: unavailable" in text
+
+
+def test_new_only_classification_is_an_observed_zero_with_a_denominator(cfg):
+    fake = FakeApis()
+
+    def handler(request):
+        query = json.loads(request.content)["requests"][0]
+        if query.get("dimensions") == [{"name": "newVsReturning"}]:
+            return httpx.Response(200, json={"reports": [{"dimensionHeaders": [{"name": "newVsReturning"}],
+                "rows": [{"dimensionValues": [{"value": "new"}], "metricValues": [{"value": "10"}]}]}]})
+        return fake(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 7)
+    _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
+    assert "0 / 10 classified sessions (0.0%)" in text
+
+
 def test_search_console_query_and_sitemap_submit():
     fake = FakeApis()
     with client_for(fake) as client:
@@ -545,7 +676,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     fake = FakeApis()
     with client_for(fake) as client:
         data, status = report.collect(cfg, NOW, client)
-    ok = ok | {"site_health"} | ({"product"} if google_ else set())
+    ok = ok | {"site_health"} | ({"product", "saved"} if google_ else set())
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
     assert set(data) == ok | {"subscribers"}
@@ -684,9 +815,10 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "static_fallback_shown": 11, "first_load_recoveries": 5},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45}}
-    # Main totals/events/sources/pages + existing store query; no new request or dimensions.
+    # Main totals/events/sources/pages + store query; load counts add no request.
+    # The two single queries are the saved-deal events and new/returning (task 066).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
-    assert [len(q["requests"]) for q in queries] == [4, 2]
+    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
                  "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45"):

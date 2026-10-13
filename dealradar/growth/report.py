@@ -102,6 +102,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                 lambda: google.ga4(client, token(), cfg.growth_ga4_property_id, days)),
         "ga4_stores": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
                        lambda: google.ga4_stores(client, token(), cfg.growth_ga4_property_id, days)),
+        "saved": ([need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)],
+                  lambda: google.ga4_saved(client, token(), cfg.growth_ga4_property_id, days)),
         "search_console": ([need_google, site], lambda: google.search_console(
             client, token(), cfg.growth_search_console_site,
             sc_end - timedelta(days=days - 1), sc_end)),
@@ -269,6 +271,28 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   for name in google.PRODUCT_EVENTS]
     else:
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
+    saved = data.get("saved")
+    if saved:
+        def observed(value):
+            return _n(value) if value is not None else "unavailable (no observed event)"
+
+        lines.append(f"Feature actions (yesterday / last {days} days; event counts):")
+        for event in google.SAVED_EVENTS:
+            lines.append(f"  {event}: " + _pair(observed, saved["yesterday"].get(event),
+                                               saved["window"].get(event)))
+        returning = saved.get("returning") or {"unavailable": "visitor classification not returned"}
+        if "unavailable" in returning:
+            lines.append("Observed returning sessions (last 7 completed days): unavailable — "
+                         + returning["unavailable"])
+        else:
+            count, classified = returning["sessions"], returning["classified_sessions"]
+            lines.append(f"Observed returning sessions (last 7 completed days): {_n(count)} / "
+                         f"{_n(classified)} classified sessions ({count / classified:.1%}); "
+                         f"{_n(returning['unclassified_sessions'])} unclassified sessions excluded")
+        lines.append("deal_save includes save, remove and clear actions. Return visits are GA4's "
+                     "new/returning classification, not a save-to-purchase cohort or cross-device sync statistic.")
+    else:
+        lines.append(f"Feature actions and returning sessions: unavailable ({status.get('saved', 'skipped')})")
 
     if ga:
         y, w = ga["yesterday"], ga["window"]
