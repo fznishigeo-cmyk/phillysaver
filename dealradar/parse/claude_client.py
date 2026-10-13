@@ -157,6 +157,8 @@ class ClaudeParser:
             for kind in ("extract", "second_opinion", "critic", "critic_shadow", "category", "newsletter_pick", "other")
         }
         self.extract_by_source: dict[str, dict] = {}
+        # Prompt-cache evidence for the run summary (task 059 verification).
+        self.cache_tokens = {"read": 0, "write": 0, "uncached": 0}
         self._spend_lock = threading.RLock()
         self._reserved_usd = 0.0
         self.ledger_spend_usd = 0.0
@@ -237,12 +239,16 @@ class ClaudeParser:
         pricing = self._pricing(model or self.model)
         in_rate = float(pricing.get("input", 0.0))
         out_rate = float(pricing.get("output", 0.0))
+        written = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        read = getattr(usage, "cache_read_input_tokens", 0) or 0
         cost = (usage.input_tokens * in_rate
-                + (getattr(usage, "cache_creation_input_tokens", 0) or 0)
-                * in_rate * pricing["cache_write"]
-                + (getattr(usage, "cache_read_input_tokens", 0) or 0)
-                * in_rate * pricing["cache_read"]
+                + written * in_rate * pricing["cache_write"]
+                + read * in_rate * pricing["cache_read"]
                 + usage.output_tokens * out_rate) / 1e6
+        with self._spend_lock:
+            self.cache_tokens["read"] += read
+            self.cache_tokens["write"] += written
+            self.cache_tokens["uncached"] += usage.input_tokens
         self._record_cost(cost, kind, source_name)
         return cost
 

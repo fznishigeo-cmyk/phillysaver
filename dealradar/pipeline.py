@@ -1894,6 +1894,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             name: dict(stats) for name, stats in
             getattr(parser, "extract_by_source", {}).items()
         }
+        summary["llm_cache_tokens"] = dict(getattr(parser, "cache_tokens", {}))
         if step_summary:
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:

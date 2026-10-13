@@ -35,6 +35,7 @@ def test_cache_usage_is_priced_by_the_actual_model(model, in_rate, out_rate, rea
     assert cost == pytest.approx((100 * in_rate + 200 * in_rate * 1.25
                                  + 300 * in_rate * read_mult + 40 * out_rate) / 1e6)
     assert parser.spend_by_kind["second_opinion"] == {"calls": 1, "usd": cost}
+    assert parser.cache_tokens == {"read": 300, "write": 200, "uncached": 100}
 
 
 @pytest.mark.parametrize("model", ["unknown-model", "claude-haiku-5-5"])
@@ -400,6 +401,7 @@ def test_summary_reports_evidence_and_post_critic_publishable_yield(env):
     summary = _run(env)
     assert summary["second_opinion"] == dict(calls=0, deals_extracted=0, deals_passed_evidence=0)
     assert summary["prefilter"] == dict(would_skip=0, would_skip_publishable=0)
+    assert set(summary["llm_cache_tokens"]) == {"read", "write", "uncached"}
     assert summary["parse"]["reused_posts"] == summary["parse"]["reused_deals"] == 0
     assert {s: (c["deals"], c["publishable"]) for s, c in summary["extract_by_source"].items()} == {
         "blogone": (4, 1), "feedtwo": (2, 2)}
