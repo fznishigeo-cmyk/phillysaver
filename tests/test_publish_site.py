@@ -1336,7 +1336,8 @@ class TestEyeCatchers:
         assert "days free" in locked
         paint = _between(html, "function paintTicker(", "function gridHtml(")
         assert "strip.innerHTML = one + one;" in paint and "if (sig === tickerSig) return;" in paint
-        assert 'id="tkpause" aria-pressed="false"' in html and 'id="tklist"' in html
+        assert 'id="tkpause"' not in html and 'id="tklist"' in html  # no pause button (operator)
+        assert ".tkband:hover .tkstrip,.tkband:focus-within .tkstrip" in html  # hover/focus still stop it
         assert ".tkstrip{animation:none}" in html  # reduced motion: no scroll
 
     def test_trial_band_sits_between_free_and_locked_deals(self, html):

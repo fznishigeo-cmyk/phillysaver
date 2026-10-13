@@ -213,7 +213,7 @@ def test_body_links_have_underlines_and_buttons_keep_their_style(published):
 
 def test_phone_controls_and_small_links_have_44px_hit_areas(published):
     css, _ = themes((published / 'index.html').read_text())
-    for selector in ('button:not(.code):not(.tkpause)', 'input:not([type="radio"])',
+    for selector in ('button:not(.code)', 'input:not([type="radio"])',
                      'select', '.getdeal', '.cattab', '.zerotoday', '.plans label', '.toast'):
         declarations = phone_rule(css, selector)
         assert 'min-height:44px' in declarations and 'min-width:44px' in declarations, selector
@@ -224,14 +224,13 @@ def test_phone_controls_and_small_links_have_44px_hit_areas(published):
     assert 'min-height:36px' in phone_rule(css, '.code')
     assert 'margin:4px 4px 4px 0' in phone_rule(css, '.code')
     link = 'a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)'
-    for selector in (link + '::after', '.code::after', '.tkpause::after'):
+    for selector in (link + '::after', '.code::after'):
         declarations = phone_rule(css, selector)
         assert 'content:"";position:absolute' in declarations
         assert 'left:50%;top:50%;transform:translate(-50%,-50%)' in declarations
         assert 'min-height:44px' in declarations and 'min-width:44px' in declarations
-    assert 'min-height:44px' in phone_rule(css, '.tkband')  # don't clip PAUSE's target
+    assert 'min-height:44px' in phone_rule(css, '.tkband')
     assert 'min-height:44px' in phone_rule(css, '.tkitem')
-    assert 'opacity:1' in phone_rule(css, '.tkpause')
     # A min-height on the 2-line clamp would show a sliver of line 3.
     assert 'min-height' not in phone_rule(css, '.title a')
     assert '-webkit-line-clamp:2' in phone_rule(css, '.title a')
@@ -249,7 +248,7 @@ def test_phone_type_never_drops_below_12px(published):
         assert all(float(size) >= 12 for size in sizes), (width, sizes)
     for selector in ('.tag', '.secth', '.chip', '.badge', '.credit', '.newtag', '.condtag',
                      '.gonetag', '.freetag', '.visit-new', '.hotmeter', '.tklabel', '.tkitem s',
-                     '.tkpause', '#subscribe[data-zero]::after', 'body footer .meta',
+                     '#subscribe[data-zero]::after', 'body footer .meta',
                      'body footer .footerfine', 'body footer #acctfoot'):
         assert 'font-size:12px' in phone_rule(css, selector)
     # Specificity must beat the shared footer's later, desktop 11px rules.

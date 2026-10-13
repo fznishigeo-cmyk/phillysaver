@@ -436,7 +436,7 @@ footer .meta{font-size:11.5px}
 .searchnote{margin:18px 0 6px;text-align:center;color:var(--muted)}
 /* ---- the deal ticker: a stencilled notice band on worn plaster above the
    header; a torn mustard label, an ink band with a spray-dot texture and
-   the live deals scrolling on a seamless loop (hover or PAUSE stops it) ---- */
+   the live deals scrolling on a seamless loop (hover or focus stops it) ---- */
 .tk{--tk-plaster:#ddd7cc;--tk-band:#22303f;--tk-on:#f3f0e8;--tk-poster:#dcc27a;
     --tk-aqua:#75b2b0;--tk-coral:#e46f58;--tk-display:"Archivo Black","Arial Black",Impact,sans-serif;
     --tk-mono:"Recursive Mono",ui-monospace,Menlo,Consolas,monospace;
@@ -466,7 +466,7 @@ footer .meta{font-size:11.5px}
                           radial-gradient(circle at 70% 60%,rgba(255,255,255,.18) 0 1px,#0000 1px);
                background-size:14px 14px}
 .tkstrip{display:flex;width:max-content;height:100%;animation:tkscroll var(--tk-dur,60s) linear infinite}
-.tkband:hover .tkstrip,.tkband.paused .tkstrip,.tkband.hiddentab .tkstrip{animation-play-state:paused}
+.tkband:hover .tkstrip,.tkband:focus-within .tkstrip,.tkband.hiddentab .tkstrip{animation-play-state:paused}
 @keyframes tkscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .tkitem{display:flex;align-items:center;gap:9px;padding:0 22px;white-space:nowrap;
         border-right:1px solid color-mix(in srgb,var(--tk-on) 14%,transparent)}
@@ -474,11 +474,6 @@ footer .meta{font-size:11.5px}
 .tkitem s{text-decoration:none;font:500 11px/1 var(--tk-mono);letter-spacing:.06em}
 .tkitem span{font:500 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}
 .tkitem b{font:600 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.01em}
-.tkpause{position:absolute;right:6px;top:50%;transform:translateY(-50%);z-index:2;border:0;
-         cursor:pointer;padding:4px 8px;border-radius:2px;opacity:0;transition:opacity 180ms;
-         background:color-mix(in srgb,var(--tk-on) 14%,var(--tk-band));color:var(--tk-on);
-         font:700 10px/1 var(--tk-mono);letter-spacing:.06em}
-.tkband:hover .tkpause,.tkpause:focus-visible,.tkband.paused .tkpause{opacity:1}
 .tksr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);margin:0;padding:0}
 .card.flash{outline:3px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){
@@ -545,7 +540,6 @@ footer .meta{font-size:11.5px}
   /* Desktop spacing above the first deal costs a phone screen ~24px. */
   #controls{margin:8px 0 4px}
   .tklabel{padding:0 16px 0 10px;font-size:12px}
-  .tkpause{font-size:12px;padding:6px 10px}
   .freetag{font-size:12px}
   .tag{font-size:12px}
   .tkitem{padding:0 16px}
@@ -680,7 +674,7 @@ header{--accent-hover:var(--warm)}
   body{padding-top:env(safe-area-inset-top)}
   a,button,input,select,[role="button"],[role="tab"],.card.locked,.tkitem,.toast{
     touch-action:manipulation;-webkit-tap-highlight-color:rgba(14,117,105,.18)}
-  button:not(.code):not(.tkpause),input:not([type="radio"]),select,
+  button:not(.code),input:not([type="radio"]),select,
   .getdeal,.cattab,.zerotoday,.plans label,.toast{min-width:44px;min-height:44px}
   .getdeal{display:inline-flex;align-items:center;justify-content:center}
   #controls label{padding-block:0}
@@ -690,7 +684,7 @@ header{--accent-hover:var(--warm)}
   /* Small links retain their visual size; their transparent target can
      extend into the surrounding space. Credits must not clip that area. */
   a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab),.code{position:relative}
-  a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)::after,.code::after,.tkpause::after{
+  a:not(.getdeal):not(.pwbtn):not(.subbar):not(.cattab)::after,.code::after{
     content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
     width:100%;height:100%;min-width:44px;min-height:44px}
   .title:has(a){display:block}
@@ -699,14 +693,13 @@ header{--accent-hover:var(--warm)}
   .credit a{display:inline-block;max-width:100%}
   .code{min-height:36px;min-width:44px;margin:4px 4px 4px 0}
   .tkband,.tkitem{min-height:44px}
-  .tkpause{opacity:1}
   .metarow{flex-wrap:nowrap;overflow:hidden;
     -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent);
     mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
   .metarow>*{flex:0 0 auto}
   .metarow .storechip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .tag,.secth,.chip,.badge,.credit,.newtag,.condtag,.gonetag,.freetag,.visit-new,.hotmeter,
-  .tklabel,.tkitem s,.tkpause,#subscribe[data-zero]::after,
+  .tklabel,.tkitem s,#subscribe[data-zero]::after,
   body footer .meta,body footer .footerfine,body footer #acctfoot{font-size:12px}
   .supporttext{padding-right:44px}
   .toast{top:calc(14px + env(safe-area-inset-top));
@@ -721,7 +714,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   <div class="tkband" id="tkband">
     <div class="tklabel" aria-hidden="true">Live deals</div>
     <div class="tkrun"><div class="tkstrip" id="tkstrip" aria-hidden="true"></div></div>
-    <button type="button" class="tkpause" id="tkpause" aria-pressed="false">PAUSE</button>
     <ul class="tksr" id="tklist"></ul>
   </div>
 </section>
@@ -2755,9 +2747,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/engagement--><!--saved-->    savedOutbound(d);
 <!--/saved-->  });
   // The ticker: a locked deal takes the next step; a free one scrolls to
-  // its card and flashes it. PAUSE (or hover) stops the scroll.
+  // its card and flashes it. Hover or keyboard focus stops the scroll (no
+  // pause button: operator, 2026-10-13); reduced motion never scrolls it.
   document.getElementById("tkband").addEventListener("click", function (e) {
-    if (e.target.closest("#tkpause")) return;
     var it = e.target.closest(".tkitem");
     if (!it) return;
     if (it.getAttribute("data-locked") && !isMember()) { nextStep(); return; }
@@ -2780,12 +2772,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       setTimeout(function () { card.classList.remove("flash"); }, 1600);
       return;
     }
-  });
-  document.getElementById("tkpause").addEventListener("click", function () {
-    var band = document.getElementById("tkband"), on = !band.classList.contains("paused");
-    band.classList.toggle("paused", on);
-    this.setAttribute("aria-pressed", on ? "true" : "false");
-    this.textContent = on ? "PLAY" : "PAUSE";
   });
   document.addEventListener("visibilitychange", function () {
     document.getElementById("tkband").classList.toggle("hiddentab", document.hidden);
