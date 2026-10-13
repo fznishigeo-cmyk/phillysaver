@@ -80,6 +80,9 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **Email on the operator's behalf (2026-10-13):** never send. Show the
+  text in chat; after the operator approves, create a Gmail draft (on the
+  original thread when replying); the operator presses Send.
 - **Free site + optional support (Codex task 019, LIVE 2026-10-12):**
   `support.enabled: true` replaces the membership pitch (operator: people
   won't pay; affiliate is the income). Every deal is free. **Join free**
