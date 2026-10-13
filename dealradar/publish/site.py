@@ -47,6 +47,9 @@ def _credit(sighting: dict[str, Any]) -> dict[str, str]:
 
 #: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
 _TEASER_META = "teaser_recent"
+#: db meta key: the top picks the last publish showed (the price recheck
+#: checks these first and most often; config keepa.recheck_top_h).
+PICKS_META = "published_picks"
 
 
 def util_now():
@@ -663,8 +666,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]
     candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
-    for n, d in enumerate(top_picks(candidates, cfg.front_page), 1):
+    picked = top_picks(candidates, cfg.front_page)
+    for n, d in enumerate(picked, 1):
         d["pick"] = n
+    db.meta_set(PICKS_META, json.dumps([d["dedupe_key"] for d in picked]))
     # Select once, before JSON is written: remembered URLs only for pages
     # this publish emits. Free rows share their objects with member rows;
     # locked stubs and member-only deals never gain a public path.

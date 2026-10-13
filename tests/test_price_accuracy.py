@@ -1,0 +1,87 @@
+"""Price accuracy on the 20 token/min Keepa plan (operator, 2026-10-13):
+the site showed Amazon Essentials leggings at $3.65, -77% vs $16.02, while
+Amazon showed $4.11 with "Typical price: $6.01" (-32%)."""
+
+from __future__ import annotations
+
+import json
+from datetime import timedelta
+
+from dealradar import pipeline, verify
+from dealradar.config import load_config
+from dealradar.db import DB
+from dealradar.fetch.keepa import KeepaDealsAdapter
+from dealradar.publish.site import PICKS_META
+from tests.test_keepa import SRC
+from tests.test_quality_trio import NOW, _seed_amazon
+
+
+def _leggings(month: int, ninety: int):
+    # avg is [day, week, month, 90-day] x [priceType]; index 0 = Amazon.
+    return KeepaDealsAdapter._map_row(
+        {"asin": "B0LEGGINGS", "title": "Amazon Essentials Women's Leggings",
+         "current": [365], "avg": [[380], [450], [month], [ninety]]}, SRC, NOW)
+
+
+def test_regular_price_is_the_lower_of_the_30_and_90_day_averages():
+    post = _leggings(601, 1602)
+    assert "Regular price (30-day average on Amazon): $6.01." in post.text
+    assert post.structured["regular_price"] == 6.01
+    assert post.structured["regular_price_basis"] == "30-day average on Amazon"
+    assert post.structured["evidence"]["regular_price_quote"] in post.text
+    # A month above the 90-day average leaves the 90-day basis (and its
+    # hash wording) exactly as before.
+    steady = _leggings(1700, 1602)
+    assert "Regular price (90-day average on Amazon): $16.02." in steady.text
+    assert steady.structured["regular_price_basis"] == "90-day average on Amazon"
+
+
+def test_no_drop_against_the_30_day_average_is_no_post():
+    assert _leggings(360, 1602) is None
+
+
+def _product(live_cents: int) -> dict:
+    return {"asin": "B0LEGGINGS", "lastUpdate": 99999999,
+            "stats": {"current": [live_cents, -1]}}
+
+
+def test_live_price_tolerance_is_a_config_knob():
+    deal = {"asin": "B0LEGGINGS", "final_price": 3.65, "conditions": [],
+            "first_seen_at": "2026-10-10T03:00:00+00:00"}
+    assert load_config().keepa_recheck_tolerance_pct == 5
+    assert verify.judge_live_price(deal, _product(411), 5) is False
+    assert verify.judge_live_price(deal, _product(411)) is False  # 10% too
+    assert verify.judge_live_price(deal, _product(383), 5) is True
+    assert verify.judge_live_price(deal, _product(395), 5) is False
+    assert verify.judge_live_price(deal, _product(395), 10) is True
+
+
+def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
+    db = DB(tmp_path / "state.db")
+    seen = (NOW - timedelta(hours=2)).isoformat()
+    last = (NOW - timedelta(hours=1, minutes=5)).isoformat()
+    for key in ("url|pick", "url|plain", "url|usedpick"):
+        _seed_amazon(db, key, "B0" + key[4:].upper().ljust(8, "0"),
+                     used=key == "url|usedpick", last=last, first_seen_at=seen)
+    _seed_amazon(db, "url|never", "B0NEVER000", first_seen_at=seen)
+    db.meta_set(PICKS_META, json.dumps(["url|pick", "url|usedpick"]))
+    cfg = load_config()
+    cfg.feature_flags["keepa"] = True
+    assert cfg.keepa_recheck_top_h == 1
+    calls = []
+
+    def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
+        calls.append([d["dedupe_key"] for d in deals])
+        return {d["dedupe_key"]: True for d in deals}
+
+    monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
+    pipeline._recheck_prices(db, cfg, NOW)
+    # The new-condition pick is due after an hour and leads the never-
+    # checked deal; a non-pick waits recheck_fresh_h, a used pick its
+    # offers-scan cadence (13 tokens each).
+    assert calls == [["url|pick", "url|never"]]
+    cfg.keepa_recheck_top_h = 0
+    calls.clear()
+    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1, minutes=5))
+    assert calls == []
+    db.close()

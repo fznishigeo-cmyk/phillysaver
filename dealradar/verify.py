@@ -488,9 +488,11 @@ def _judge_used(asin: str, deal: dict[str, Any], product: dict[str, Any],
     return None
 
 
-def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | None:
+def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
+                     tolerance_pct: float = 10.0) -> bool | None:
     """The verdict for one deal given its Keepa product record: True =
-    a current offer still matches the deal's final price within 10% (or,
+    a current offer still matches the deal's final price within
+    ``tolerance_pct`` (config keepa.recheck_tolerance_pct) (or,
     for a deal whose discount only shows at checkout — coupon, code,
     Subscribe & Save — the quoted regular price); False = the price moved
     or no offer is left (deal is over); None = no opinion. A used/open-box
@@ -537,7 +539,7 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any]) -> bool | No
         # regular price the post quoted; the coupon is invisible here.
         target = max(target, float(regular))
         basis = "regular (promo hidden from listing)"
-    ok = live <= target * 1.10 + 0.01
+    ok = live <= target * (1 + tolerance_pct / 100.0) + 0.01
     if not ok and stale:
         log.debug("price recheck %s: final=$%.2f live=$%.2f in Keepa data from "
                   "%s, before the price stood (%s); no opinion", asin,
@@ -593,7 +595,8 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                 product = products.get(asin)
                 if product is None:
                     continue
-                out[deal["dedupe_key"]] = judge_live_price(deal, product)
+                out[deal["dedupe_key"]] = judge_live_price(
+                    deal, product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
     return out
 
 
@@ -615,7 +618,8 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
         product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget, fetcher=fetcher)
         if product is None:
             return None  # 429: the bucket is empty, try a later pass
-        return judge_live_price(deal, product)
+        return judge_live_price(deal, product,
+                                getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
     except Exception as e:  # tokens exhausted, transport, schema drift
         log.warning("price recheck failed for %s: %s", asin, error_summary(e))
         return None

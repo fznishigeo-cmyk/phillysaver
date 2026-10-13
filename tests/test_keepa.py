@@ -193,7 +193,7 @@ class TestKeepaAdapter:
             "asin": "B0REALSHAPE", "title": "Robot Vacuum X",
             # index 0 = Amazon's price; later entries are other price types.
             "current": [4999, 5999, -1, 120000],
-            # [day, week, month, 90d] x [priceType] — 90-day window preferred.
+            # [day, week, month, 90d] x [priceType].
             "avg": [[5200, -1], [9900, -1], [15000, -1], [19999, 6000]],
             # Keepa serializes the image filename as an int array of chars.
             "image": [ord(c) for c in "61vacuumIMG._AC_.jpg"],
@@ -218,7 +218,8 @@ class TestKeepaAdapter:
         posts = adapter.fetch_posts(SRC, None, None, cfg, NOW, None)
         assert len(posts) == 1
         assert "On sale for $49.99" in posts[0].text
-        assert "Regular price (90-day average on Amazon): $199.99" in posts[0].text
+        # The lower of the 30-day ($150) and 90-day ($199.99) averages.
+        assert "Regular price (30-day average on Amazon): $150.00" in posts[0].text
         # Thumbnail: Amazon's own public CDN URL, decoded from the int array.
         assert posts[0].image_url == \
             "https://m.media-amazon.com/images/I/61vacuumIMG._AC_.jpg"

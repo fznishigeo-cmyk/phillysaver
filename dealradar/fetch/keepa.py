@@ -106,6 +106,7 @@ COUNT_NEW = 11
 #: 90-day average — the honest "typical price" basis (day/week windows miss
 #: slow-boiled clearance). 3 is also the 90-day index of a row's ``avg``.
 DATE_RANGE_DAY = 0
+DATE_RANGE_MONTH = 2
 DATE_RANGE_90D = 3
 
 #: Keepa sortType: 1 = deal age (newest first), 2 = absolute drop (big-ticket
@@ -234,6 +235,24 @@ def _avg90_price(avg: Any, price_type: int) -> float | None:
     if len(avg) > DATE_RANGE_90D:
         return _price_at(avg[DATE_RANGE_90D], price_type)
     return None
+
+
+def _regular_basis(avg: Any, price_type: int) -> tuple[float, str] | None:
+    """The honest "regular" price for an Amazon price drop: the LOWER of
+    the 30-day and 90-day averages, with its label. Live wart: clearance
+    leggings that sat unsold at $16-20 for weeks had a $16.02 time-weighted
+    90-day average while Amazon's own page said "Typical price: $6.01"; the
+    site claimed -77% where Amazon showed -32%. A flat array (degraded
+    shape) is its one average."""
+    avg90 = _avg_price(avg, price_type)  # longest window with data
+    if avg90 is None or avg90 <= 0:
+        return None
+    if isinstance(avg, (list, tuple)) and len(avg) > DATE_RANGE_90D \
+            and isinstance(avg[DATE_RANGE_MONTH], (list, tuple)):
+        avg30 = _price_at(avg[DATE_RANGE_MONTH], price_type)
+        if avg30 is not None and 0 < avg30 < avg90:
+            return avg30, "30-day average"
+    return avg90, "90-day average"
 
 
 def _count_at(arr: Any, idx: int) -> int | None:
@@ -907,15 +926,16 @@ class KeepaDealsAdapter(SourceAdapter):
             return None
         avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
         current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
-        avg = _avg_price(avg_raw, PRICE_TYPE_AMAZON)
-        if current is None or avg is None or avg <= 0 or current >= avg:
+        basis = _regular_basis(avg_raw, PRICE_TYPE_AMAZON)
+        if current is None or basis is None or current >= basis[0]:
             return None
         if not _dense_history(avg_raw, PRICE_TYPE_AMAZON):
             return None  # sparse history: the "average" is an artifact
+        avg, label = basis
 
         # Synthesized source text: the quotes the evidence check will verify.
-        # The 90-day average is the honest "regular" basis — never a claimed
-        # MSRP — and it is LABELED as such. The wording deliberately matches
+        # The lower of the 30- and 90-day averages is the honest "regular"
+        # basis — never a claimed MSRP — and it is LABELED as such. The wording deliberately matches
         # the extraction vocabulary ("On sale for" -> final, "Regular price"
         # -> regular): the first live runs showed the model correctly
         # refusing to treat an unlabeled "recent average" as a regular
@@ -923,7 +943,7 @@ class KeepaDealsAdapter(SourceAdapter):
         lines = [
             title,
             f"On sale for ${current:,.2f} at Amazon.",
-            f"Regular price (90-day average on Amazon): ${avg:,.2f}.",
+            f"Regular price ({label} on Amazon): ${avg:,.2f}.",
             "Sold online at Amazon.com (price tracked by Keepa).",
             f"Product link: https://www.amazon.com/dp/{asin}",
         ]
@@ -942,14 +962,14 @@ class KeepaDealsAdapter(SourceAdapter):
             published_at=None,  # first_seen governs freshness
             fetched_at=now,
             image_url=_image_url(row),
-            hash_text=f"{title}\n${current:,.2f}, {pct} under the 90-day average",
+            hash_text=f"{title}\n${current:,.2f}, {pct} under the {label}",
             structured={
                 **_structured_category(row, category_names),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(current, 2),
                 "regular_price": round(avg, 2),
-                "regular_price_basis": "90-day average on Amazon",
+                "regular_price_basis": f"{label} on Amazon",
                 "conditions": [], "confidence": 1.0,
                 "evidence": {"final_price_quote": lines[1],
                              "regular_price_quote": lines[2]},

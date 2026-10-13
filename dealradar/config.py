@@ -293,6 +293,12 @@ class AppConfig:
     keepa_recheck_fresh_window_h: float = 24.0
     keepa_recheck_new_h: float = 3.0
     keepa_recheck_used_h: float = 6.0
+    # The All tab's top picks (what shoppers see first): new-condition
+    # Amazon picks re-checked at least this often, hours; 0 = off.
+    keepa_recheck_top_h: float = 0.0
+    # A new-condition deal stays live while the listing is at most this
+    # many percent above the price we show.
+    keepa_recheck_tolerance_pct: float = 10.0
     keepa_sweep_enabled: bool = True          # warehouse sweep on idle tokens
     keepa_sweep_asins_per_pull: int = 100
     keepa_sweep_reserve_tokens: float = 400.0  # kept on top of reserve_tokens
@@ -596,6 +602,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     for name in ("recheck_fresh_h", "recheck_fresh_window_h", "recheck_new_h", "recheck_used_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
+    cfg.keepa_recheck_top_h = max(0.0, float(g(
+        "keepa", "recheck_top_h", default=cfg.keepa_recheck_top_h)))
+    cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
+        "keepa", "recheck_tolerance_pct", default=cfg.keepa_recheck_tolerance_pct)))
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
     cfg.keepa_sweep_asins_per_pull = max(1, int(g(

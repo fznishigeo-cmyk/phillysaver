@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import logging
 import os
 import re
@@ -1211,6 +1212,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
     budget = KeepaBudget.load(db)
+    from .publish.site import PICKS_META
+    try:
+        picks = {str(k) for k in json.loads(db.meta_get(PICKS_META) or "[]")}
+    except (TypeError, ValueError):
+        picks = set()
     due: list[dict[str, Any]] = []
     due_used: list[dict[str, Any]] = []
     photo: list[dict[str, Any]] = []
@@ -1226,6 +1232,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             now - seen < timedelta(hours=cfg.keepa_recheck_fresh_window_h)
         every = cfg.keepa_recheck_used_h if used else \
             cfg.keepa_recheck_fresh_h if fresh else cfg.keepa_recheck_new_h
+        if not used and cfg.keepa_recheck_top_h and deal["dedupe_key"] in picks:
+            every = min(every, cfg.keepa_recheck_top_h)  # what shoppers see first
         if deal.get("gone_suspect_at"):
             every = _CONFIRM_GONE_H  # a suspect is asked again soon
         last = util.parse_iso(deal.get("price_rechecked_at") or "")
@@ -1245,12 +1253,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 and _revivable(deal, now) and not tried_recently(deal, True) \
                 and rank.is_publishable(dict(deal, status="alive"), cfg, require_critic=False)[0]:
             due_used.append(deal)
-    # A suspect's confirming reading first, then longest-unchecked (never-
-    # checked leading): when demand outgrows the token plan the shortfall
-    # spreads across every deal instead of the newest rows never being
-    # rechecked at all (live review finding).
-    def order(d: dict[str, Any]) -> tuple[bool, str]:
-        return (not d.get("gone_suspect_at"), d.get("price_rechecked_at") or "")
+    # A suspect's confirming reading first, then the published top picks,
+    # then longest-unchecked (never-checked leading): when demand outgrows
+    # the token plan the shortfall spreads across every deal instead of the
+    # newest rows never being rechecked at all (live review finding).
+    def order(d: dict[str, Any]) -> tuple[bool, bool, str]:
+        return (not d.get("gone_suspect_at"), d["dedupe_key"] not in picks,
+                d.get("price_rechecked_at") or "")
     due.sort(key=order)
     due_used.sort(key=order)
 

@@ -246,6 +246,13 @@ keepa:
   recheck_fresh_window_h: 24
   recheck_new_h: 12                # older new-condition deals (1 token each)
   recheck_used_h: 24               # used/open-box (offers scan, up to 13 tokens each)
+  # Accuracy (operator, 2026-10-13: the site showed $3.65 while Amazon
+  # showed $4.11). The top picks shoppers see first are re-checked hourly
+  # (new condition, 1 token each: at most ~120 tokens an hour) and lead
+  # every recheck queue; a listing more than recheck_tolerance_pct above
+  # the shown price ends the deal.
+  recheck_top_h: 1
+  recheck_tolerance_pct: 5
   focus_categories: ["Beauty & Personal Care", "Health & Household"]  # empty = off
   # NEW posts (not yet content-hashed: each costs an LLM parse, a critic
   # call and a keepa_check) emitted per pull; posts already handled ride
