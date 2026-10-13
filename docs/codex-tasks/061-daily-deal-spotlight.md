@@ -18,11 +18,18 @@ Today such a deal competes with ~3,000 others and its link earns nothing
 
 ## Do
 1. Config knob `front_page.spotlight` with `sources: [meh, sidedeal,
-   morningsave]`, `max_cards: 1`, `min_pct` defaulting to `publish.min_pct`
-   (never a new literal floor). A deal qualifies when it is alive, published
-   (passes `rank.is_publishable` and evidence as today), came from a listed
-   source within its day, and has a photo. If several qualify, the highest
-   pct_at_checkout wins; ties by newest.
+   morningsave]` and `max_cards: 1`. Live fact (2026-10-13): Meh's API gives
+   the price but NO regular price, so its deal ("2-Pack: Aukey MixFlex Sling
+   30W PD 10,000mAh Power Banks", final price evidence-verified) fails the
+   publish floor and is never shown. A spotlight deal qualifies when it is
+   alive, from a listed source, seen within its day, has a photo, has an
+   evidence-verified final price, and passes every `rank.is_publishable`
+   gate EXCEPT the % floor (add a narrow, named exception for spotlight
+   sources only; do not loosen anything else). When pct_at_checkout is
+   known and >= `publish.min_pct`, show it as today; when it is unknown,
+   the card shows the price and "Today only" with NO percent, NO "save $",
+   NO strikethrough, and NO invented regular price. If several qualify,
+   known-pct deals rank first (highest pct), then newest.
 2. Front page: render the spotlight card ABOVE the normal grid on every tab
    where it qualifies (All/Trending), visually a normal card plus a subtle
    accent: a small "Today only" ribbon, the source name ("Meh"), and a
@@ -35,10 +42,13 @@ Today such a deal competes with ~3,000 others and its link earns nothing
 3. Static HTML (seo.card_html / STATIC_WALL) gets the same card first so
    no-JS readers and search engines see it.
 4. Never change prices, evidence, tiers or link rewriting; the spotlight is
-   placement only. Keep the drop rotation (DROP_WINDOW) for the grid.
+   placement only. A spotlight deal without a known pct appears ONLY in the
+   spotlight (not in the grid, alerts, social posts, deal pages' "% off"
+   copy or structured data offers with a discount). Keep the drop rotation
+   (DROP_WINDOW) for the grid.
 
 ## Tests
-Selection (qualifies / not alive / below floor / no photo / two candidates),
+Selection (qualifies / not alive / no photo / two candidates / unknown pct shows no % / known pct below floor still excluded / non-spotlight source without pct still excluded everywhere),
 end-time computation for Meh (DST boundary), not duplicated in the grid,
 phone CSS spans 2 columns, reduced-motion rule, static HTML has it first,
 desktop unchanged when no spotlight. Byte-hash baselines updated from new
