@@ -23,7 +23,9 @@ SCOPES = ("https://www.googleapis.com/auth/analytics.readonly",
 GA4_URL = "https://analyticsdata.googleapis.com/v1beta/properties/{}:batchRunReports"
 SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
 PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
-                  "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered"}
+                  "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered",
+                  "install_offer_shown": "install_offer_shown", "install_accepted": "install_accepted",
+                  "standalone_session": "standalone_session"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 STORE_REGISTRATION = ("Register the GA4 custom dimension: Admin → Custom definitions → Create, "

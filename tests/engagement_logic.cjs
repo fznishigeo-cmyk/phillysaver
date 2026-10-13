@@ -67,7 +67,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   }
   const ctx = {Date:FixedDate, Math:Object.create(Math), loadedOnce:true,
     state:{deals, meta:{engagement:{...enabled,saved_deals:savedEnabled,...switches}, support:{enabled:true},
-      saved_deals_limit:savedLimit, floors:{min_pct:60}}, shown}, PAGE_CARDS:60,
+      saved_deals_limit:savedLimit, floors:{min_pct:60}}, shown, newKeys:{}}, PAGE_CARDS:60,
     document:{hidden:false, getElementById:id=>elements[id], addEventListener:(type,cb)=>listen(handlers,type,cb)},
     window:{wpSupport:{refresh(){}}, wpTrack:(name,params)=>events.push({name,params}), addEventListener:(type,cb)=>listen(windowHandlers,type,cb)},
     localStorage:{getItem(k) {if (throwing==='read') throw Error('blocked'); return storage.get(k) || null;},
@@ -76,7 +76,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     ordered:rows=>rows, filtered:()=>wall, isLocked:d=>d.locked===true,
     cardEls:cards, moreObserver:null, renderSearchCount(){}, paintTicker(){}, updatePaywall(){},
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
-    setTimeout:cb=>timers.push(cb), mediaHtml:()=>'<span>photo</span>', ageText:()=>'',
+    setTimeout:cb=>timers.push(cb), cardImageIndex:0, ageText:()=>'',
     isNew:()=>false, isFreePick:()=>false, lit:()=>false, traceSvg:()=>'', TIER_LABEL:{corroborated:'✓ 2+ sources'},
     lockLabel:()=>'', toast(){}, navigator:{clipboard:{writeText:()=>Promise.resolve()}},
     rememberFocus:()=>null, restoreFocus(){}
@@ -86,6 +86,8 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
   vm.runInContext(fragment('  function dealKey(d)', '  function keySet'), ctx);
   vm.runInContext(fragment('  // Browser-only visit state.', '  function renderMeta()'), ctx);
+  vm.runInContext(fragment('  function storeHue(s)', '  var traceFree'), ctx);
+  vm.runInContext(fragment('  function goneText(d)', '  function lockedHtml(d)'), ctx);
   vm.runInContext(fragment('  function lockedHtml(d)', '  function cardHtml(d)'), ctx);
   vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
   vm.runInContext(fragment('  function gridHtml(deals)', '  function showMore()'), ctx);

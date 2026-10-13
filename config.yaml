@@ -305,6 +305,11 @@ engagement:
   saved_deals: true
   saved_deals_limit: 100   # browser-only shortlist; bounded to 1–200
 
+pwa:
+  enabled: true
+  name: "wowpriced"
+  short_name: "wowpriced"
+
 join:
   prompt: true
   prompt_delay_s: 15       # never earlier than 15 seconds, and only after engagement

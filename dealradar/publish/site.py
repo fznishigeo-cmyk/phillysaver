@@ -25,7 +25,7 @@ from ..config import load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_score, top_picks
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import seo
+from . import pwa, seo
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -643,6 +643,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             site_version.encode() + engagement_script.encode()
             + str(saved_deals).encode() + str(saved_limit).encode()
         ).hexdigest()[:12]
+    if cfg.pwa_enabled:
+        site_version = pwa.site_version(site_version, cfg)
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -816,6 +818,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Actions ignore CNAME (the domain is set in Settings -> Pages).
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
+
+    pwa.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
     # into every page written above or by another pass, nested ones included.

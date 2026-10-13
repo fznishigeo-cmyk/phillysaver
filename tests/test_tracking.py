@@ -179,6 +179,34 @@ def test_one_bad_id_leaves_the_good_ones():
     assert "<script>" not in snippet.replace("<script>\n", "", 1)
 
 
+@pytest.mark.parametrize("enabled,ga4", [(True, True), (True, False), (False, True)])
+def test_install_events_are_ga4_only_and_drop_every_supplied_parameter(tmp_path, enabled, ga4):
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    ids = dict(SAMPLE)
+    if not ga4:
+        ids.pop("ga4_measurement_id")
+    snippet = head_snippet(AppConfig(pwa_enabled=enabled, tracking=ids))
+    events = ("install_offer_shown", "install_accepted", "standalone_session")
+    supplied = {"id": "private", "url": "https://private.example", "store": "private",
+                "category": "private", "method": "private", "count": 42, "plan": "year"}
+    scenarios = {"plain": {"calls": [[event, supplied] for event in events]},
+                 "gpc": {"gpc": True, "calls": [[event, supplied] for event in events]},
+                 "opted_out": {"storage": {"wp.adsOptOut": "1"}, "calls": [[event, supplied] for event in events]}}
+    (tmp_path / "snippet.js").write_text(_script(snippet))
+    (tmp_path / "harness.cjs").write_text(HARNESS)
+    (tmp_path / "scenarios.json").write_text(json.dumps(scenarios))
+    result = subprocess.run(["node", "harness.cjs", "snippet.js", "scenarios.json"], cwd=tmp_path,
+                            check=True, capture_output=True, text=True, timeout=30)
+    for observed in json.loads(result.stdout).values():
+        assert observed["error"] is None
+        calls = [call for call in observed["dataLayer"] or [] if call[0] == "event"]
+        assert calls == ([["event", event, {"send_to": SAMPLE["ga4_measurement_id"]}] for event in events]
+                         if enabled and ga4 else [])
+        assert all(event not in json.dumps(observed[key]) for event in events
+                   for key in ("fbq", "ttq", "pintrk", "uetq"))
+
+
 # ---- consent ----
 
 def _gated(js: str, at: int) -> bool:

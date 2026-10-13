@@ -231,6 +231,10 @@ class AppConfig:
     # the legacy template (including the dormant membership snapshots).
     engagement: dict[str, bool] = field(default_factory=dict)
     engagement_saved_deals_limit: int = 100
+    # -- home-screen app: absent block preserves the existing site bytes --
+    pwa_enabled: bool = False
+    pwa_name: str = "wowpriced"
+    pwa_short_name: str = "wowpriced"
     # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
     newsletter_enabled: bool = True
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
@@ -499,6 +503,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter", "saved_deals")}
     cfg.engagement_saved_deals_limit = max(1, min(200, int(g(
         "engagement", "saved_deals_limit", default=cfg.engagement_saved_deals_limit))))
+    cfg.pwa_enabled = bool(g("pwa", "enabled", default=cfg.pwa_enabled))
+    cfg.pwa_name = str(g("pwa", "name", default=cfg.pwa_name) or cfg.pwa_name).strip() or cfg.pwa_name
+    cfg.pwa_short_name = str(g("pwa", "short_name", default=cfg.pwa_short_name) or cfg.pwa_short_name).strip() or cfg.pwa_short_name
     cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
     cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
     cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))

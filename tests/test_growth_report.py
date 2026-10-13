@@ -62,7 +62,9 @@ GA4_RESPONSE = {"reports": [
         {"dimensionValues": [{"value": "support_click"}, {"value": "window"}], "metricValues": [{"value": "45"}]},
         *[{"dimensionValues": [{"value": event}, {"value": period}], "metricValues": [{"value": str(count)}]}
           for event, counts in (("home_load_attempt", (400, 2500)), ("first_load_failed", (12, 100)),
-                                ("static_fallback_shown", (11, 94)), ("first_load_recovered", (5, 45)))
+                                ("static_fallback_shown", (11, 94)), ("first_load_recovered", (5, 45)),
+                                ("install_offer_shown", (8, 51)), ("install_accepted", (2, 9)),
+                                ("standalone_session", (3, 17)))
           for period, count in zip(("yesterday", "window"), counts)]]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
@@ -448,14 +450,16 @@ def test_ga4_request_and_parsing():
     assert [m["name"] for m in totals["metrics"]] == ["sessions", "totalUsers", "newUsers"]
     assert events["dimensionFilter"]["filter"]["inListFilter"]["values"] == [
         "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
-        "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered"]
+        "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
+        "install_offer_shown", "install_accepted", "standalone_session"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
     assert out["yesterday"] == {"sessions": 812345, "totalUsers": 731942, "newUsers": 640217,
                                 "sign_up": 61, "begin_checkout": 0, "start_trial": 0, "deal_click": 9001,
                                 "support_click": 12, "home_load_attempt": 400, "first_load_failed": 12,
-                                "static_fallback_shown": 11, "first_load_recovered": 5}
+                                "static_fallback_shown": 11, "first_load_recovered": 5,
+                                "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
@@ -812,17 +816,22 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
     assert status["product"] == "ok"
     assert data["product"] == {
         "yesterday": {"home_load_attempts": 400, "first_load_failures": 12,
-                      "static_fallback_shown": 11, "first_load_recoveries": 5},
+                      "static_fallback_shown": 11, "first_load_recoveries": 5,
+                      "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
-                   "static_fallback_shown": 94, "first_load_recoveries": 45}}
+                   "static_fallback_shown": 94, "first_load_recoveries": 45,
+                   "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17}}
     # Main totals/events/sources/pages + store query; load counts add no request.
     # The two single queries are the saved-deal events and new/returning (task 066).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
     assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
-                 "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45"):
+                 "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45",
+                 "product.install_offer_shown: 8 / 51", "product.install_accepted: 2 / 9",
+                 "product.standalone_session: 3 / 17"):
         assert line in text and line not in caplog.text
+    assert "Install offers and acceptances are actions" in text and "not retained users" in text
     assert "product: ok" in caplog.messages
 
 
@@ -846,6 +855,8 @@ def test_product_counts_are_unavailable_when_ga4_cannot_be_read(cfg, monkeypatch
     assert status["product"] == expected and "product" not in data
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert f"product: not available ({expected})" in text and "product.home_load_attempts:" not in text
+    assert "product.install_offer_shown:" not in text and "product.install_accepted:" not in text
+    assert "product.standalone_session:" not in text
     assert "private failure" not in text + caplog.text and "private.example" not in text + caplog.text
 
 
@@ -859,6 +870,8 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     assert all(count == 0 for period in data["product"].values() for count in period.values())
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
+    for event in ("install_offer_shown", "install_accepted", "standalone_session"):
+        assert f"product.{event}: 0 / 0" in text
 
 
 def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, monkeypatch):

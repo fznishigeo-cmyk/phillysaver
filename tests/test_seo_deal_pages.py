@@ -198,7 +198,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     deals = [make_deal(dedupe_key=f"large{i}", item=f"Deal {i}", codes=[])
              for i in range(1600)]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1633  # support mode also publishes join.html
+    # Support publishes join.html; PWA adds the manifest and four brand icons.
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1638
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():

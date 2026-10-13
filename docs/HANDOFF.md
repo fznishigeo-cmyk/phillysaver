@@ -190,6 +190,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Installable app (Codex task 069, 2026-10-13; shipped after review; icons re-rendered from the header mark):** config-driven
+  manifest/four existing-logo PNGs, every-page head tags, quiet 44px footer
+  install/iOS Safari help, standalone/session tracking and GA4-only Product
+  action counts; no service worker. Disabled output matches all four original
+  mode baselines; no support hashes regenerated. Corrected the saved harness's
+  stale media stub. Full suite: 2,552 passed, 1 deselected; only seven existing
+  Stripe yearly-deploy tests blocked by local socket permissions.
+  390x844 first-card top before/after unavailable (Chromium sandbox shutdown
+  EPERM); `tests/pwa_layout.cjs` is ready for measurement, native install and
+  status-bar QA remain. Branch creation read-only; no commit or push.
 - **AI yield (Codex task 067, 2026-10-13; shipped after review):** intake uses the
   lower site floor; compact deduped supply/price-change facts, audit gaps and
   ledger-priced UTC reports. Observation starts with the first instrumented

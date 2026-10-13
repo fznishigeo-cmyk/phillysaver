@@ -298,6 +298,11 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if getattr(cfg, "pwa_enabled", False):
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    install_offer_shown: { ga4Only: true },\n'
+                                    '    install_accepted: { ga4Only: true },\n'
+                                    '    standalone_session: { ga4Only: true },')
     if getattr(cfg, "support_enabled", False) and getattr(cfg, "engagement", {}).get("saved_deals", False):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", _SAVED_DISPATCH + "    var ev = EVENTS[name];")
     if getattr(cfg, "engagement", {}).get("surprise_me", False):

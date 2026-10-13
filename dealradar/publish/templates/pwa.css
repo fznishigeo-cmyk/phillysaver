@@ -1,0 +1,10 @@
+#pwa-actions[hidden],#pwa-install[hidden],#pwa-ios[hidden],#pwa-help[hidden]{display:none!important}
+footer .pwa-link{display:inline-flex;align-items:center;min-height:44px;min-width:44px;
+  padding:10px 4px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+footer .pwa-link:hover,footer .pwa-link:focus-visible{text-decoration:underline;text-underline-offset:2px}
+footer .pwa-link:focus-visible,#pwa-help:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+#pwa-help{margin-top:12px;max-width:480px;color:var(--fg)}
+#pwa-help h2{font-size:18px;margin:0 0 8px}
+#pwa-help p{font-size:14px;margin:0}
+@media (display-mode:standalone){html{background:{{PWA_LIGHT}}}}
+@media (display-mode:standalone) and (prefers-color-scheme:dark){html{background:{{PWA_DARK}}}}

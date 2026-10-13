@@ -315,6 +315,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   for name in google.PRODUCT_EVENTS]
     else:
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
+    lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")
     saved = data.get("saved")
     if saved:
         def observed(value):
