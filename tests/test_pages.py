@@ -275,3 +275,28 @@ def test_morningsave_sales_counters_do_not_change_identity():
     assert [p.content_hash for p in original] == [p.content_hash for p in changed]
     with pytest.raises(RuntimeError, match='changed_deal_card'):
         parse_page(source('morningsave'), body('morningsave').replace(b'sale-price', b'new-price'), NOW)
+
+
+def test_morningsave_list_layout_reads_priced_offers_only():
+    """Live layout change (probe 2026-10-13): priced offers are list items
+    with div.offer-details; the photo-only superlatives strip is skipped."""
+    src = source('morningsave')
+    posts = parse_page(src, body('morningsave_list'), NOW)
+    assert [(p.url, p.title) for p in posts] == [
+        ('https://morningsave.com/deals/chargeworx-power-bank', 'Chargeworx 10,000mAh Power Bank'),
+        ('https://morningsave.com/deals/robot-vacuum', 'Robot Vacuum with Self-Empty Base')]
+    assert posts[0].text == 'Chargeworx 10,000mAh Power Bank\nSale price $19.'
+    assert posts[1].text.endswith('Sale price $1,249.99.')
+    assert all(p.uid == p.url and p.published_at is None for p in posts)
+    assert 'photo-only' not in ' '.join(p.url for p in posts)
+
+
+def test_morningsave_list_layout_fails_only_when_no_offer_parses():
+    src = source('morningsave')
+    one_broken = body('morningsave_list').replace(b'<span class="whole">1,249</span>', b'')
+    assert len(parse_page(src, one_broken, NOW)) == 1
+    with pytest.raises(RuntimeError, match='changed_deal_card'):
+        parse_page(src, body('morningsave_list').replace(b'class="amount"', b'class="sum"'), NOW)
+    with pytest.raises(RuntimeError, match='invalid_deal_permalink'):
+        parse_page(src, body('morningsave_list').replace(
+            b'href="/deals/robot-vacuum"', b'href="https://evil.example/deals/robot-vacuum"'), NOW)

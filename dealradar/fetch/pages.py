@@ -70,6 +70,8 @@ def _first(node, **kw):
 
 def parse_page(source, body: bytes, now: datetime) -> list[RawPost]:
     root = _Tree(body.decode("utf-8", "replace")).root
+    if source.adapter == "morningsave" and _first(root, cls="offer-details"):
+        return _parse_morningsave_list(source, root, now)
     if source.adapter in {"dealmoon_us", "morningsave"}:
         return _parse_new_cards(source, root, now)
     brads = source.adapter == "bradsdeals"
@@ -176,6 +178,57 @@ def _parse_new_cards(source, root, now):
         seen.add(url)
         if len(posts) >= MAX_ENTRIES:
             break
+    return posts
+
+
+def _child(node, cls):
+    return next((c for c in node.children if isinstance(c, _Node)
+                 and cls in c.attrs.get("class", "").split()), None)
+
+
+def _parse_morningsave_list(source, root, now):
+    """MorningSave's list layout (probe 2026-10-13): each priced offer is a
+    ``li`` holding ``div.offer-details`` (its price split into
+    ``span.amount > span.symbol + span.whole``) and a ``/deals/`` link whose
+    image alt (or title) names the item. The photo-only "superlatives"
+    strip carries no price and is skipped. Price only: the page shows no
+    list price. Only a page whose offers ALL fail to parse is a changed
+    layout."""
+    host = urlsplit(source.url).netloc
+    posts, seen, offers = [], set(), 0
+    for li in root.find(tag="li"):
+        details = _child(li, "offer-details")
+        if details is None:
+            continue
+        offers += 1
+        link = next((a for a in li.find(tag="a")
+                     if urlsplit(a.attrs.get("href") or "").path.startswith("/deals/")), None)
+        amount = _first(details, cls="amount")
+        if link is None or amount is None:
+            continue
+        img = _first(link, tag="img")
+        title = (link.attrs.get("title") or (img.attrs.get("alt", "") if img else "")).strip()
+        whole, cents = _first(amount, cls="whole"), _first(amount, cls="fraction")
+        dollars = re.sub(r"[^\d,.]", "", whole.text()) if whole else ""
+        cents = re.sub(r"\D", "", cents.text()) if cents else ""
+        if not title or not re.match(r"\d", dollars):
+            continue
+        price = "$" + dollars + ("." + cents if cents and "." not in dollars else "")
+        url = urljoin(source.url, link.attrs["href"])
+        parts = urlsplit(url)
+        if (parts.scheme not in {"http", "https"} or parts.netloc != host
+                or not re.fullmatch(r"/deals/[^/]+", parts.path)):
+            raise RuntimeError("invalid_deal_permalink")
+        url = url.split("#", 1)[0].split("?", 1)[0]
+        if url in seen:
+            continue
+        posts.append(RawPost(source.name, url, url, title,
+                             f"{title}\nSale price {price}.", None, now))
+        seen.add(url)
+        if len(posts) >= MAX_ENTRIES:
+            break
+    if offers and not posts:
+        raise RuntimeError("changed_deal_card")
     return posts
 
 

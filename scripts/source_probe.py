@@ -7,8 +7,8 @@ honoured except on the source's own host when sources.yaml documents written
 crawl_permission, per-host rate limit, retries) and reports what came back:
 status, final URL, whether the body is a feed, and a guess at a firewall
 page. When the URL answers with an HTML page instead of a feed, or 404s, it
-looks for the site's advertised feed (<link rel="alternate" ...>) and probes
-up to two candidates. Nothing is written anywhere but the job log and the
+looks for the site's advertised feed (<link rel="alternate" ...>), else the
+common feed paths (COMMON_FEED_PATHS), and probes up to four candidates. Nothing is written anywhere but the job log and the
 run summary; it never retries around a 403 or a challenge page.
 """
 
@@ -39,6 +39,11 @@ FIREWALLS = [
     ("imperva", re.compile(rb"Incapsula|_Incapsula_Resource|imperva", re.I)),
 ]
 ALT_RE = re.compile(rb"<link[^>]+>", re.I)
+
+
+#: Tried, in order, when a site advertises no feed (WordPress, Blogger,
+#: Ghost/Hugo and static-site defaults).
+COMMON_FEED_PATHS = ("/feed/", "/feeds/posts/default", "/rss.xml", "/index.xml")
 
 
 def firewall(body: bytes | None) -> str:
@@ -205,7 +210,10 @@ def main() -> int:
                         h = probe(fetcher, home, override)
                         tried.append(h)
                         cands = feed_links(h.get("body"), h.get("final") or home)
-                for cand in cands[:2]:
+                if not cands:  # nothing advertised: the usual feed paths
+                    home = f"{urlsplit(src.url).scheme}://{urlsplit(src.url).netloc}"
+                    cands = [home + path for path in COMMON_FEED_PATHS]
+                for cand in cands[:len(COMMON_FEED_PATHS)]:
                     host = urlsplit(cand).netloc.lower()
                     tried.append(probe(fetcher, cand, override if host == override else None))
             best = next((t for t in tried if t.get("entries")), None)
