@@ -2,6 +2,8 @@
 (function () {
   var meta = {}, dismissed = false, queued = false;
   var KEY = "wp.support.dismissed", WEEK = 7 * 24 * 60 * 60 * 1000;
+  // The phone's sticky Join free bar has its own X: hidden for a week.
+  var BAR = "wp.joinbar.dismissed", barDismissed = false;
   var panel = document.getElementById("paywall");
   var prompt = document.getElementById("join-prompt"), started = Date.now();
   var SHOWN = "wp.join.promptUntil", JOINED = "wp.join.joined";
@@ -145,6 +147,8 @@
     if (panel) panel.hidden = true;
     var bar = document.getElementById("subbar");
     if (bar) bar.hidden = true;
+    var barClose = document.getElementById("subbarclose");
+    if (barClose) barClose.hidden = true;
     track("signup_prompt_shown");
     loadGoogle();
   }
@@ -273,6 +277,8 @@
   }
   try { dismissed = Number(localStorage.getItem(KEY)) > Date.now(); }
   catch (e) { /* storage blocked: dismissal lasts for this page view */ }
+  try { barDismissed = Number(localStorage.getItem(BAR)) > Date.now(); }
+  catch (e) { /* storage blocked: the X still hides it for this page view */ }
   try { joined = Boolean(localStorage.getItem(JOINED)); }
   catch (e) { /* joins still work without storage */ }
   // support-ask
@@ -320,8 +326,9 @@
       '#content .trialband, #content .joinform, footer a[href="/join"], footer [data-support], footer [data-support-monthly], #footer-signup'
     )).some(function (el) { return inView(el, edge); });
     panel.hidden = shown || dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
-    var bar = document.getElementById("subbar");
-    if (bar) bar.hidden = shown || !panel.hidden || otherAsk || inView(document.getElementById("subscribe"));
+    var bar = document.getElementById("subbar"), barClose = document.getElementById("subbarclose");
+    if (bar) bar.hidden = barDismissed || shown || !panel.hidden || otherAsk || inView(document.getElementById("subscribe"));
+    if (bar && barClose) barClose.hidden = bar.hidden;
     maybePrompt();
   }
   document.addEventListener("click", function (e) {
@@ -363,6 +370,12 @@
     }
     if (e.target.closest("[data-support]")) track("support_click", {plan: "once"});
     if (e.target.closest("[data-support-monthly]")) track("support_click", {plan: "monthly"});
+    if (e.target.closest("#subbarclose")) {
+      barDismissed = true;
+      try { localStorage.setItem(BAR, String(Date.now() + WEEK)); }
+      catch (err) { /* storage blocked: still hide for this page view */ }
+      refresh();
+    }
     if (e.target.closest("[data-support-close]")) {
       dismissed = true;
       try { localStorage.setItem(KEY, String(Date.now() + WEEK)); }
