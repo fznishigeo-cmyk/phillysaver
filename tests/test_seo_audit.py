@@ -146,6 +146,20 @@ def test_every_required_schema_field_is_compared_to_visible_text(db, cfg, tmp_pa
     assert seo_audit.audit(tmp_path, cfg, "https://wowpriced.com")["schema_mismatches"] == 1
 
 
+def test_long_name_shortened_for_google_still_matches_the_visible_name(db, cfg, tmp_path):
+    """Live (2026-10-14): names over Google's 150 characters are shortened
+    in the markup; the audit flagged 224 such pages as mismatched."""
+    cfg.paywall_open_access = True
+    item = "Lifetime Vinyl Standard Cathedral Top Center Mount Shutter " * 4
+    d = make_deal(item=item.strip(), codes=[], conditions=[],
+                  image_url="https://images.example/item.jpg")
+    _render(db, cfg, tmp_path, [d])
+    html = _page(tmp_path, _path(d)).read_text()
+    data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
+    assert len(data["name"]) <= 150 and data["name"].endswith("…")
+    assert seo_audit.audit(tmp_path, cfg, "https://wowpriced.com")["schema_mismatches"] == 0
+
+
 def test_fingerprint_retention_and_nonfacts_do_not_move_dates(db, cfg):
     html = '<html><head><title>Offer</title></head><body><main><h1>Product</h1><p>$10.00</p></main><footer>2026</footer><script>build=1</script></body></html>'
     page = seo_audit.Page(html, "/deal/a-12345678/")

@@ -55,6 +55,19 @@ def _text(s: str) -> str:
     return " ".join(s.split())
 
 
+# Google's merchant listings reject a Product name over 150 characters.
+NAME_LIMIT = 150
+
+
+def word_limit(text: str, limit: int) -> str:
+    """At most ``limit`` characters, cut at a word with an ellipsis."""
+    text = _text(str(text))
+    if len(text) <= limit:
+        return text
+    cut = text[:limit - 1].rsplit(" ", 1)[0] if " " in text[:limit - 1] else text[:limit - 1]
+    return cut.rstrip(" ,;:-") + "…"
+
+
 @dataclass
 class _Node:
     tag: str
@@ -192,7 +205,8 @@ class Page(HTMLParser):
             same_price = actual.is_finite() and actual == Decimal(amount[1].replace(",", ""))
         except InvalidOperation:
             same_price = False
-        return not (_text(str(product.get("name") or "")) == name.text() and offer.get("@type") == "Offer"
+        return not (_text(str(product.get("name") or "")) == word_limit(name.text(), NAME_LIMIT)
+                    and offer.get("@type") == "Offer"
                     and same_price and offer.get("priceCurrency") == amount[2]
                     and availability.text() == "Availability: Live offer"
                     and offer.get("availability") == "https://schema.org/InStock"
