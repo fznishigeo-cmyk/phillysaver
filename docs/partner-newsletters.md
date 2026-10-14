@@ -17,7 +17,7 @@ are preserved. Paused web feeds are included; feed settings stay unchanged.
 - [ ] [Ben's Bargains](https://bensbargains.com/) (`bensbargains`) — Matched sender: —
 - [ ] [Brad's Deals](https://www.bradsdeals.com/) (`bradsdeals`) — Matched sender: —
 - [ ] [Carolinas and Dollars](https://www.carolinasanddollars.com/) (`carolinas_and_dollars`) — Matched sender: —
-- [ ] [Clark Deals](https://clarkdeals.com/) (`clark_deals`) — Matched sender: —
+- [ ] [Clark Deals](https://clarkdeals.com/) (`clark_deals`) — Matched sender: deals@clark.com
 - [ ] [Coupon Lady Deals](https://www.couponladydeals.com/) (`coupon_lady_deals`) — Matched sender: —
 - [ ] [Coupon With Kayla](https://www.couponwithkayla.com/) (`coupon_with_kayla`) — Matched sender: —
 - [ ] [Coupon With Star](https://www.couponwithstar.com/) (`coupon_with_star`) — Matched sender: —

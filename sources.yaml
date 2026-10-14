@@ -316,6 +316,7 @@ sources:
     site: https://clarkdeals.com/
     method: rss
     url: https://clarkdeals.com/feed/
+    newsletter_from: ["deals@clark.com"]   # its newsletter mails from clark.com (inbox, 2026-10-13)
     region: US
     allowed_html: false
     fast_lane: false
