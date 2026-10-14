@@ -172,6 +172,31 @@ CREATE TABLE IF NOT EXISTS deals (
 CREATE INDEX IF NOT EXISTS idx_deals_store ON deals(store);
 CREATE INDEX IF NOT EXISTS idx_deals_status ON deals(status);
 
+CREATE TABLE IF NOT EXISTS products (
+    product_id INTEGER PRIMARY KEY,
+    signature TEXT NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS product_keys (
+    kind TEXT NOT NULL,
+    value TEXT NOT NULL,
+    product_id INTEGER NOT NULL REFERENCES products(product_id),
+    PRIMARY KEY(kind, value, product_id)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_product_keys_product ON product_keys(product_id);
+CREATE TABLE IF NOT EXISTS product_offers (
+    dedupe_key TEXT PRIMARY KEY,
+    product_id INTEGER REFERENCES products(product_id),
+    store TEXT NOT NULL,
+    condition TEXT NOT NULL,
+    match TEXT NOT NULL,
+    fingerprint BLOB NOT NULL,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_product_offers_product ON product_offers(product_id);
+
 CREATE TABLE IF NOT EXISTS sightings (
     id INTEGER PRIMARY KEY,
     deal_id INTEGER NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
@@ -320,11 +345,14 @@ class DB:
         columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(deals)")}
         # Lifetime dedupe anchors live on the existing inventory rows; the
         # dated observations below expire with run_stats, never these anchors.
-        for name, kind in (("ai_public_at", "TEXT"), ("ai_public_price", "REAL")):
+        for name, kind in (("ai_public_at", "TEXT"), ("ai_public_price", "REAL"),
+                           ("product_id", "INTEGER REFERENCES products(product_id)")):
             if name not in columns:
                 self.conn.execute(f"ALTER TABLE deals ADD COLUMN {name} {kind}")
         if "text_fingerprint" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(ai_prefilter_posts)")}:
             self.conn.execute("ALTER TABLE ai_prefilter_posts ADD COLUMN text_fingerprint TEXT NOT NULL DEFAULT ''")
+        if "products_backfilled" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(run_stats)")}:
+            self.conn.execute("ALTER TABLE run_stats ADD COLUMN products_backfilled INTEGER NOT NULL DEFAULT 0")
         if self.meta_get("llm_ledger_migrated") is None:
             self.conn.execute(
                 "INSERT INTO llm_legacy_spend(run_key, billed_at, usd)"
@@ -445,6 +473,7 @@ class DB:
             "expires_at": row["expires_at"],
             "first_seen_at": row["first_seen_at"],
             "last_seen_at": row["last_seen_at"],
+            "product_id": row["product_id"] if "product_id" in row.keys() else None,
         })
         return d
 
@@ -459,9 +488,11 @@ class DB:
             " expires_at, first_seen_at, last_seen_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (dedupe_key, store, item, normalized_item, canonical_url,
-             json.dumps(payload), final_price, pct_at_checkout, abs_savings,
+             json.dumps({k: v for k, v in payload.items() if k != "product_id"}),
+             final_price, pct_at_checkout, abs_savings,
              online_only, expires_at, iso(now), iso(now)),
         )
+        self._attach_product(dedupe_key)
         self.conn.commit()
         return int(cur.lastrowid)
 
@@ -486,7 +517,7 @@ class DB:
                 vals.append(v)
         if payload is not None:
             sets.append("payload=?")
-            vals.append(json.dumps(payload))
+            vals.append(json.dumps({k: v for k, v in payload.items() if k != "product_id"}))
         if last_seen_at is not None:
             sets.append("last_seen_at=?")
             vals.append(iso(last_seen_at))
@@ -494,7 +525,39 @@ class DB:
             return
         vals.append(dedupe_key)
         self.conn.execute(f"UPDATE deals SET {', '.join(sets)} WHERE dedupe_key=?", vals)
+        # Ordinary maintenance of legacy rows must not turn the bounded
+        # backfill into an unbounded one. A real upsert (last_seen_at) can
+        # attach immediately; other updates maintain already-linked offers.
+        if last_seen_at is not None or ((payload is not None or canonical_url is not None)
+                and self.conn.execute("SELECT 1 FROM product_offers WHERE dedupe_key=?",
+                                      (dedupe_key,)).fetchone()):
+            self._attach_product(dedupe_key)
         self.conn.commit()
+
+    def _attach_product(self, dedupe_key: str) -> None:
+        from .products import attach
+
+        deal = self.get_deal(dedupe_key)
+        if deal is not None:
+            attach(self.conn, deal)
+
+    def backfill_products(self, limit: int, *, run_key: str | None = None) -> int:
+        """Resume with the next unlinked rows; each durable offer is its checkpoint."""
+        from .products import attach
+
+        if limit <= 0:
+            return 0
+        with self.conn:
+            if run_key is not None and self.conn.execute(
+                    "UPDATE run_stats SET products_backfilled=1 WHERE run_key=? AND products_backfilled=0",
+                    (run_key,)).rowcount != 1:
+                return 0
+            rows = self.conn.execute(
+                "SELECT d.* FROM deals d LEFT JOIN product_offers p USING(dedupe_key)"
+                " WHERE p.dedupe_key IS NULL ORDER BY d.id LIMIT ?", (limit,)).fetchall()
+            for row in rows:
+                attach(self.conn, self._deal_row_to_dict(row))
+        return len(rows)
 
     def deals_by_store(self, store: str, status: str = "alive") -> list[dict[str, Any]]:
         rows = self.conn.execute(
@@ -605,6 +668,34 @@ class DB:
             (canonical_key, iso(since), iso(until)),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    def product_price_history(self, product_id: int, days: int,
+                              *, now: datetime | None = None) -> list[dict[str, Any]]:
+        """Recorded observations across linked offers, retaining store and condition.
+
+        Sightings fill gaps only: the same post already in price_history is
+        one observation, not two. No prices or savings are inferred.
+        """
+        import math
+
+        if days < 0:
+            return []
+        until = now or now_utc()
+        window = (product_id, iso(until - timedelta(days=days)), iso(until))
+        rows = self.conn.execute(
+            "SELECT h.price, h.observed_at, p.dedupe_key, h.store, p.condition"
+            " FROM product_offers p JOIN price_history h ON h.canonical_key=p.dedupe_key"
+            " WHERE p.product_id=? AND h.observed_at>=? AND h.observed_at<=?"
+            " UNION ALL"
+            " SELECT s.final_price, s.seen_at, p.dedupe_key, p.store, p.condition"
+            " FROM product_offers p JOIN deals d USING(dedupe_key)"
+            " JOIN sightings s ON s.deal_id=d.id"
+            " WHERE p.product_id=? AND s.seen_at>=? AND s.seen_at<=?"
+            " AND NOT EXISTS (SELECT 1 FROM price_history h"
+            " WHERE h.canonical_key=p.dedupe_key AND h.content_hash=s.content_hash)"
+            " ORDER BY observed_at, dedupe_key, price", window + window).fetchall()
+        return [dict(r) for r in rows if r["price"] is not None
+                and math.isfinite(r["price"]) and r["price"] >= 0]
 
     # ---------------- alerts_sent ----------------
 

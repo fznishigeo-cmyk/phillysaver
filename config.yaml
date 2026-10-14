@@ -234,6 +234,10 @@ traffic:
   product_families_enabled: true # Exact stored identities only; no fuzzy or inferred models.
   product_family_min_offers: 3  # Distinct public live offers (minimum 2).
 
+product_entities:
+  backfill_per_run: 200      # Stored rows only; resumes without requests or LLM calls. 0 pauses.
+  also_at_enabled: false    # Same-product, same-condition public offers on deal pages.
+
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
   abs_savings_weight: 0.1      # score += min(abs_savings, 100) * weight

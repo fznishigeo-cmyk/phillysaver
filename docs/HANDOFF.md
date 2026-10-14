@@ -206,6 +206,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   no-price/no-key). A green run outside this sandbox and live observations
   after deployment remain. Definitions are in the task's HANDOFF.
   Read-only Git metadata blocks branch creation; no commit or push.
+- **Product entities (Codex task 089, 2026-10-14; uncommitted):** additive
+  integer products, indexed exact keys and durable offer links expose internal
+  `product_id` without changing public JSON, dedupe, ranking or social rules.
+  Exact item/variant/condition guards deliberately leave uncertain matches
+  separate; conflicting updates quarantine links, preserving original facts.
+  Backfill is 200/run, resumable, transactional and repeat-run safe; existing
+  observations/sightings provide product history even after deal pruning.
+  `product_entities.also_at_enabled` defaults off; on compares only public
+  live same-condition offers with emitted detail pages. Four disabled output
+  trees match HEAD byte for byte. Full suite: **3,266 passed, 21 failed,
+  1 deselected**; every failure reproduces on untouched HEAD: 14 social-stock
+  fixtures (5 earning-links, 8 money-math, 1 quality-trio) expect sends without
+  the required evidence, and 7 Stripe tests hit blocked localhost sockets.
+  **Final 76 focused checks passed**, including both offline idempotency modes,
+  backfill/identity guards and eBay/Woot re-listings. Synthetic 3,000-offer storage
+  adds 112,675 gzip bytes; a 200-row backfill took 0.024 s. Model and limitations:
+  `docs/product-entities.md`; byte hashes in the task brief. No requests,
+  dependencies, commit or push. Read-only Git metadata blocks branch creation.
+  Remaining: existing social-fixture repairs (stock rules stay), the seven
+  socket checks outside this sandbox, and review. Comparison remains off.
 - **Wall confirmation coverage (Codex task 085, 2026-10-14; uncommitted):**
   saved wall keys round-trip correctly; top classification precedes wall,
   and the old aggregate mixed 2-hour new checks with 24-hour used checks.

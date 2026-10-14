@@ -505,6 +505,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         db.record_price(key, extracted.store, savings.final_price, now,
                         post.content_hash)
 
+    payload["product_id"] = db.get_deal(key)["product_id"]
     return {
         "deal_id": deal_id,
         "dedupe_key": key,

@@ -1788,6 +1788,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
     try:
         efficiency.start(db, now, run_key)
+        db.backfill_products(cfg.product_entities_backfill_per_run, run_key=run_key)
         ai_yield.start(db, cfg, now, run_key)
         if db.meta_get("intake_since") is None:
             db.meta_set("intake_since", util.iso(now))

@@ -195,6 +195,8 @@ class AppConfig:
     traffic_hub_pagination_enabled: bool = False
     traffic_product_families_enabled: bool = False
     traffic_product_family_min_offers: int = 3
+    product_entities_backfill_per_run: int = 200
+    product_entities_also_at_enabled: bool = False
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
     seo_indexnow_resubmit_days: float = 7.0  # unchanged received URLs (0 = never)
@@ -545,6 +547,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.traffic_hub_pagination_enabled = bool(g("traffic", "hub_pagination_enabled", default=False))
     cfg.traffic_product_families_enabled = bool(g("traffic", "product_families_enabled", default=False))
     cfg.traffic_product_family_min_offers = max(2, int(g("traffic", "product_family_min_offers", default=3)))
+    cfg.product_entities_backfill_per_run = max(0, int(g("product_entities", "backfill_per_run", default=200)))
+    cfg.product_entities_also_at_enabled = bool(g("product_entities", "also_at_enabled", default=False))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))

@@ -592,7 +592,8 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
                observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True,
-               discovery: str = "", sharing: str = "", share_head: str = "") -> str:
+               discovery: str = "", sharing: str = "", share_head: str = "",
+               also_at: str = "") -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -672,7 +673,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if not dead and url:
         content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                     f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
-    content += sharing + discovery + f'<p>Browse {hub}.</p>'
+    content += (also_at if not dead else "") + sharing + discovery + f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
     if related:
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
@@ -804,6 +805,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
     browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
     template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links))
+    also_at = {}
+    if cfg.product_entities_also_at_enabled:
+        from .product_offers import blocks
+
+        also_at = blocks(live, source_deals, paths)
     for d in deal_rows:
         path = paths[d["key"][:8]]
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
@@ -812,7 +818,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         discovery += inventory.family_link(d, family_members)
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1,
-                          discovery=discovery, sharing=sharing, share_head=share_head)
+                          discovery=discovery, sharing=sharing, share_head=share_head,
+                          also_at=also_at.get(d["dedupe_key"], ""))
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
