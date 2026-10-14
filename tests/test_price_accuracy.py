@@ -73,7 +73,7 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     assert cfg.keepa_recheck_top_h == .75
     calls = []
 
-    def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
+    def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None, live=False):
         calls.append([d["dedupe_key"] for d in deals])
         return {d["dedupe_key"]: True for d in deals}
 
