@@ -13,7 +13,7 @@ import yaml
 
 from dealradar.growth import google, report, subscribers
 from tests.test_growth_report import (FakeApis, GOOGLE_TOKEN, NOW,
-                                      cfg, clean_env, client_for)
+                                      cfg, clean_env, client_for, not_measured)
 
 ROOT = Path(__file__).resolve().parents[1]
 ADDRESS = "private-subscriber@example.com"
@@ -140,7 +140,7 @@ def test_subscribers_403_is_safe_and_other_sections_continue(cfg, monkeypatch, c
         data, status = report.collect(cfg, NOW, client)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert status["subscribers"] == "error" and status["site_health"] == "ok"
-    assert "subscribers: not available (HTTPStatusError 403)" in text
+    assert "subscribers" in not_measured(text) and "subscribers: not available" not in text
     assert "Join free yesterday:" not in text
     assert ADDRESS not in text + caplog.text and CF_TOKEN not in text + caplog.text
 
@@ -151,7 +151,8 @@ def test_missing_cloudflare_secret_is_one_line(cfg):
         data, status = report.collect(cfg, NOW, client)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert status["subscribers"] == "skipped"
-    assert text.count("subscribers: not available (CLOUDFLARE_API_TOKEN not set)") == 1
+    assert not_measured(text).count("subscribers") == 1
+    assert "subscribers: not available" not in text
     assert "api.cloudflare.com" not in fake.hosts()
 
 
@@ -171,7 +172,8 @@ def test_money_totals_and_headlines(cfg):
         stores = google.ga4_stores(client, GOOGLE_TOKEN, "987654", 7)
     _, text = report.build_report(cfg, {"ga4": ga, "ga4_stores": stores,
         "subscribers": {"total": 456, "yesterday": 12}}, {}, date(2026, 10, 10))
-    assert text.splitlines()[2:5] == ["Sessions: 812,345 / 5,120,333",
+    technical = text.split(report.TECHNICAL_HEADING + "\n\n")[1]
+    assert technical.splitlines()[2:5] == ["Sessions: 812,345 / 5,120,333",
                                     "Clicks out yesterday: 9,001", "Join free yesterday: 12"]
     assert "== Money ==" in text
     assert "Clicks out by store (yesterday): total 9,001\n  Amazon: 8,000\n  Target: 1" in text

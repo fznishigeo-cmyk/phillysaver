@@ -12,6 +12,7 @@ from __future__ import annotations
 import functools
 import html as html_lib
 import logging
+import re
 from datetime import date, datetime, time, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -24,7 +25,7 @@ import httpx
 from ..config import get_secret
 from .. import clicks
 from ..db import DB
-from ..fetch.newsletter import unknown_sender_counts, unknown_sender_text
+from ..fetch.newsletter import partner_mail, unknown_sender_counts, unknown_sender_text
 from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..publish import indexnow
@@ -35,6 +36,8 @@ log = logging.getLogger("dealradar.growth")
 
 SEARCH_LAG_DAYS = 3   # Search Console data trails by 2-3 days
 TELEGRAM_MAX = 4000   # under Telegram's 4,096-character message limit
+TECHNICAL_HEADING = "Technical details (for Claude — you can skip this)"
+NOT_CONNECTED = "not connected yet"
 
 
 def _error(e: Exception) -> str:
@@ -158,6 +161,47 @@ def _newsletter_senders(db_path) -> dict:
         db.close()
 
 
+def newsletter_arrivals(received: dict, sources: list) -> dict:
+    """Which permission partners' newsletters have arrived (operator,
+    2026-10-14: "let me know which newsletters we are still waiting for, so I
+    can keep attempting"). One row per partner site, however many feeds it has."""
+    partners = {}
+    for s in sources:
+        if s.crawl_permission and s.method != "email":
+            partners.setdefault(s.display_name or s.name, {"site": s.site or s.url, "names": set()})[
+                "names"].add(s.name)
+    got = sorted(name for name, p in partners.items() if p["names"] & set(received))
+    since = min((row.get("first_seen") or row.get("last_seen") or "") for row in received.values()) \
+        if received else ""
+    return {"since": since, "total": len(partners), "received": got,
+            "missing": [{"name": name, "site": partners[name]["site"]}
+                        for name in sorted(partners) if name not in got]}
+
+
+def _newsletter_arrivals(db_path) -> dict:
+    from ..config import load_sources
+    db = DB(db_path, read_only=True)
+    try:
+        primary, backup = load_sources()
+        return newsletter_arrivals(partner_mail(db), primary + backup)
+    finally:
+        db.close()
+
+
+def _newsletter_lines(data: dict) -> list[str]:
+    arrivals = data.get("newsletter_arrivals") or {}
+    if not arrivals or "unavailable" in arrivals:
+        return []
+    since = arrivals["since"] or "today"
+    lines = ["", f"Newsletters still waiting on (tracking since {since[:10] if since != 'today' else since})",
+             f"Received from {len(arrivals['received'])} of {arrivals['total']} partner sites."]
+    if arrivals["missing"]:
+        lines.append("Not received yet. Try resubscribing with deals@wowpriced.com:")
+        lines += [f"  • {row['name']}: {row['site']}" for row in arrivals["missing"]]
+        lines.append("(Some sites only email weekly, so give each one 7 days.)")
+    return lines
+
+
 def _indexnow(db_path, cfg, now: datetime) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -222,6 +266,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                                 lambda: _newsletter_senders(db_path)),
+        "newsletter_arrivals": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                                lambda: _newsletter_arrivals(db_path)),
         "site_health": ([("publish.custom_domain", cfg.custom_domain)],
                         lambda: site_health.check(client, cfg, now)),
         "cloudflare_traffic": ([("CLOUDFLARE_OPS_TOKEN", cf_ops),
@@ -331,6 +377,172 @@ def _pair(fmt, a, b) -> str:
     return f"{fmt(a)} / {fmt(b)}"
 
 
+def _source_name(source_medium: str) -> str:
+    source, _, medium = source_medium.lower().strip().partition(" / ")
+    if source == "(direct)":
+        return "typed the address or bookmark"
+    if source in ("google", "google.com"):
+        return {"organic": "Google search", "cpc": "Google ads", "ppc": "Google ads"}.get(medium, "other")
+    if source in ("bing", "bing.com"):
+        return {"organic": "Bing search", "cpc": "Bing ads", "ppc": "Bing ads"}.get(medium, "other")
+    for name, hosts in (("Facebook", ("facebook", "facebook.com", "fb", "fb.com")),
+                        ("Instagram", ("instagram", "instagram.com", "ig")),
+                        ("Pinterest", ("pinterest", "pinterest.com")),
+                        ("TikTok", ("tiktok", "tiktok.com")),
+                        ("YouTube", ("youtube", "youtube.com")),
+                        ("Reddit", ("reddit", "reddit.com")),
+                        ("Threads", ("threads", "threads.net", "threads.com"))):
+        if any(source == host or source.endswith("." + host) for host in hosts):
+            return name
+    if medium == "email":
+        return "email"
+    return "other"
+
+
+def _change(current, previous) -> str:
+    if current is None or previous is None:
+        return NOT_CONNECTED
+    delta = current - previous
+    return f"up {_n(delta)}" if delta > 0 else f"down {_n(-delta)}" if delta < 0 else "same"
+
+
+def _plain_summary(cfg, data: dict, yesterday: date) -> list[str]:
+    """Use only collected measurements; never turn a missing source into zero."""
+    def section(name):
+        value = data.get(name) or {}
+        return {} if "unavailable" in value else value
+
+    def number(value, fmt=_n):
+        return NOT_CONNECTED if value is None else fmt(value)
+
+    def money(value):
+        return f"${value:,.0f}" if value == int(value) else _usd(value)
+
+    window = "this week" if cfg.growth_report_days == 7 else f"over the last {cfg.growth_report_days:,} days"
+
+    def periods(a, b, fmt=_n):
+        if a is None and b is None:
+            return NOT_CONNECTED
+        return f"{number(a, fmt)} yesterday · {number(b, fmt)} {window}"
+
+    ga, subs, stores = section("ga4"), section("subscribers"), section("ga4_stores")
+    y, w, before = (ga.get(period, {}) for period in ("yesterday", "window", "day_before"))
+    # sign_up is the existing GA4 sign-up action count, for both periods.
+    # The subscriber list's all-time total must never stand in for this week.
+    signups_y = y.get("sign_up") if ga else subs.get("yesterday")
+    signups_w = w.get("sign_up") if ga else subs.get("window")
+    signups_before = before.get("sign_up") if ga else subs.get("day_before")
+    st = section("stripe")
+    members = NOT_CONNECTED
+    if st.get("active") is not None and not st.get("test_mode"):
+        members = f"{_n(st['active'])} ({number(st.get('mrr'), money)} a month)"
+    paid = [section(name) for name in ("meta_ads", "google_ads")]
+    spend = []
+    for period in ("yesterday", "window"):
+        values = [a.get(period, {}).get("spend") for a in paid]
+        spend.append(sum(values) if all(v is not None for v in values) else None)
+    health = section("site_health")
+    deals = number(health.get("live"))
+    if health.get("live") is not None:
+        coverage = number(health.get("coverage"), lambda n: f"{n:,.0f}%")
+        deals += f" ({coverage} with a photo)"
+    website = NOT_CONNECTED
+    if health:
+        if health.get("home_status") == 200 and health.get("home_content"):
+            website = "working"
+            if "stale publish" in health.get("warnings", []):
+                website += "; updates delayed"
+        elif health.get("home_status"):
+            website = "needs attention"
+        else:
+            website = "could not be checked"
+        age = health.get("age_minutes")
+        if age is not None and age >= 0:
+            minutes = round(age)
+            website += f" (updated {minutes:,} {'minute' if minutes == 1 else 'minutes'} ago)"
+        else:
+            website += f" (update time {NOT_CONNECTED})"
+    sources: dict[str, int] = {}
+    for source, count in ga.get("sources", []):
+        name = _source_name(source)
+        sources[name] = sources.get(name, 0) + count
+    source_rows = [f"Where visitors came from ({window}, visits): "]
+    for item in ([f"{name} {_n(count)}" for name, count in sources.items()] or [NOT_CONNECTED]):
+        if source_rows[-1].endswith(": "):
+            source_rows[-1] += item
+        elif len(source_rows[-1]) + len(item) + 2 <= 100:
+            source_rows[-1] += ", " + item
+        else:
+            source_rows[-1] += ","
+            source_rows.append("  " + item)
+    lines = [f"wowpriced daily report — {yesterday:%a %b} {yesterday.day}",
+             "Real people only. Robots and search engines are NOT counted here.", ""]
+    for label, value in (
+        ("People who visited:", periods(y.get("totalUsers"), w.get("totalUsers"))),
+        ('Clicked "Get deal":', periods(y.get("deal_click") if ga else stores.get("yesterday", {}).get("total"),
+                                       w.get("deal_click") if ga else stores.get("window", {}).get("total"))),
+        ("Free sign-ups:", periods(signups_y, signups_w)),
+        ("Paying members:", members),
+        ("Ad spend:", periods(*spend, fmt=money)),
+    ):
+        lines.append(f"{label:<25}{value}")
+    lines += source_rows
+    lines += [f"{'Deals on the site:':<25}{deals}", f"{'Website:':<25}{website}", "",
+              "Compared with the day before: visitors " + _change(y.get("totalUsers"), before.get("totalUsers"))
+              + ", sign-ups " + _change(signups_y, signups_before) + ".", ""]
+    cf = section("cloudflare_traffic").get("window", {}).get("page_views")
+    if cf is None:
+        lines.append(f"Search engine and robot traffic: {NOT_CONNECTED}. These are NOT visitors.")
+    else:
+        # Cloudflare's existing query includes all traffic, without a robot-only split.
+        lines.append(f"Search engines and other robots are included in {_n(cf)} page reads {window} "
+                     "(Google, Bing and other robots). That is good for future search traffic, "
+                     "but these are NOT visitors.")
+    return lines
+
+
+def _collapse_unmeasured(lines: list[str]) -> list[str]:
+    """Collapse missing metric rows, preserving partial values and explanations."""
+    result, missing = [], []
+    context = ""
+    missing_value = r"(?:unavailable|not available|n/a)"
+    for line in lines:
+        label, sep, values = line.strip().partition(": ")
+        if line.startswith("==") or line.endswith(":"):
+            context = line.strip("= :")
+        # Missing-only blocks sometimes put their value on the following line.
+        standalone = re.match(r"(?:unavailable|not available)(?:$| \(| — )", line.strip(), re.I) \
+            or line == "Unavailable: no retained publish observations."
+        if standalone:
+            label, values = context, line.strip()
+        # Parentheses describe why a measurement is absent, except an observed
+        # zero-session denominator, which remains a real number for the engineer.
+        bare = re.sub(r"\((?!0 sessions\))[^()]*\)", "", values)
+        pure = re.fullmatch(rf"{missing_value}(?:\s*/\s*{missing_value})*(?:\s*—.*)?\s*", bare, re.I)
+        metric_row = label.startswith(("Keepa tokens", "Tokens per useful", "Oldest shown Amazon",
+                                       "Shown Amazon", "LLM dollars")) or values.startswith("clicks ") \
+            or label == "Events" or (label.startswith(("yesterday ", "window ")) and "actions/view" in values)
+        compound = metric_row and "unavailable" in values and not re.search(r"\d", values)
+        if metric_row and re.search(r"\d", values):
+            pure = False  # Missing ratio with measured costs/counts in parentheses.
+        if line.startswith("Keepa deal-finding efficiency is unavailable;") and not re.search(r"\d", bare):
+            label, compound = "Keepa deal-finding efficiency and oldest shown Amazon price", True
+        if line.startswith("Clicks unavailable,") and not re.search(r"\d", line):
+            label, compound, sep = "Search Console totals", True, True
+        if standalone or (sep and (pure or compound)):
+            if line.startswith("  ") and not standalone:
+                label = f"{context} — {label}"
+            if label not in missing:
+                missing.append(label)
+        else:
+            result.append(line)
+    if missing:
+        # Keep the existing section-status footer last.
+        index = len(result) - 1 if result and result[-1].startswith("Sections:") else len(result)
+        result.insert(index, "not measured yet: " + "; ".join(missing))
+    return result
+
+
 def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, str]:
     """(subject, plain text): headline numbers first, then one block per section."""
     days = cfg.growth_report_days
@@ -354,8 +566,10 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     cf = data.get("cloudflare_traffic")
     if cf:
         y, w = cf["yesterday"], cf["window"]
-        lines.append(f"Visitors (Cloudflare): yesterday {_n(y['visitors'])}, last {days} days "
-                     f"{_n(w['visitors'])}; page views {_n(w['page_views'])}")
+        lines.append("Cloudflare traffic (mostly robots): uniques "
+                     + _pair(_n, y["visitors"], w["visitors"]) + "; page views "
+                     + _pair(_n, y["page_views"], w["page_views"]) + "; requests "
+                     + _pair(_n, y["requests"], w["requests"]))
         lines.append("Cloudflare page views (yesterday / window): "
                      + _pair(_n, y["page_views"], w["page_views"]) + "; requests "
                      + _pair(_n, y["requests"], w["requests"]))
@@ -678,6 +892,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   f"Cancellations ({days} days): {_n(st['canceled'])}"]
     lines += ["", "Sections: " + ", ".join(f"{k} {v}" for k, v in status.items())]
     brand = cfg.custom_domain or "dealradar"
+    lines = [*_plain_summary(cfg, data, yesterday), *_newsletter_lines(data), "", TECHNICAL_HEADING, "",
+             *_collapse_unmeasured(lines)]
     return f"{brand} growth report {yesterday.isoformat()}", "\n".join(lines) + "\n"
 
 
@@ -718,15 +934,19 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
         try:
             # Device/family rows can exceed one message. Keep the full
             # private report, splitting at a newline when possible.
-            remaining = text
+            top, boundary, details = text.partition("\n" + TECHNICAL_HEADING + "\n")
+            parts = [top + "\n", TECHNICAL_HEADING + "\n" + details] if boundary else [text]
             code = 200
-            while remaining:
-                end = len(remaining) if len(remaining) <= TELEGRAM_MAX else \
-                    remaining.rfind("\n", 0, TELEGRAM_MAX) + 1 or TELEGRAM_MAX
-                code = send_admin_text(remaining[:end], http_client=client)
+            for remaining in parts:
+                while remaining:
+                    end = len(remaining) if len(remaining) <= TELEGRAM_MAX else \
+                        remaining.rfind("\n", 0, TELEGRAM_MAX) + 1 or TELEGRAM_MAX
+                    code = send_admin_text(remaining[:end], http_client=client)
+                    if code != 200:
+                        break
+                    remaining = remaining[end:]
                 if code != 200:
                     break
-                remaining = remaining[end:]
         except Exception as e:
             log.warning("telegram: error %s", _error(e))
         else:

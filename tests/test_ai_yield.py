@@ -508,4 +508,5 @@ def test_growth_report_private_metrics_and_unavailable_history(tmp_path, monkeyp
     assert "0 unevaluated" in text and "ready for manual review" in text
     assert "new public deals" not in "\n".join(caplog.messages)
     _, old_text = report.build_report(cfg, {"ai_yield": {"unavailable": "history unavailable"}}, {}, end.date())
-    assert "AI yield: n/a (history unavailable)" in old_text
+    missing = next(line for line in old_text.splitlines() if line.startswith("not measured yet:"))
+    assert "AI yield" in missing and "AI yield: n/a" not in old_text

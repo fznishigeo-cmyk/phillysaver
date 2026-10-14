@@ -61,7 +61,9 @@ def test_paginated_rows_aggregate_weighted_ctr_and_custom_price_family(cfg, monk
     assert "mobile/home: clicks 5, impressions 100, CTR 5.0%" in text
     assert "desktop/price: clicks 0, impressions 8, CTR 0.0%" in text
     assert "tablet/deal: clicks 0, impressions 0, CTR unavailable" in text
-    assert "mobile/category: clicks unavailable, impressions unavailable, CTR unavailable" in text
+    missing = next(line for line in text.splitlines() if line.startswith("not measured yet:"))
+    assert "— mobile/category" in missing
+    assert "mobile/category: clicks unavailable" not in text
     assert "PRIVATE" not in text and "private-item" not in json.dumps(data, default=str)
 
 
@@ -70,8 +72,10 @@ def test_no_rows_and_old_report_samples_are_unavailable(cfg, monkeypatch):
     assert all(data[k] is None for k in ("clicks", "impressions", "ctr", "position"))
     assert all(row["clicks"] is None for row in data["by_device_page"])
     _, text = report.build_report(cfg, {"search_console": data}, {}, END)
-    assert "Clicks unavailable, impressions unavailable, CTR unavailable" in text
-    assert "home: clicks unavailable, impressions unavailable, CTR unavailable" in text
+    missing = next(line for line in text.splitlines() if line.startswith("not measured yet:"))
+    assert "Search Console totals" in missing and "— home" in missing
+    assert "Clicks unavailable, impressions unavailable" not in text
+    assert "home: clicks unavailable" not in text
     for snapshot in ({}, {"search_console": {k: v for k, v in data.items()
                                              if k not in ("by_family", "by_device_page")}}):
         _, text = report.build_report(cfg, snapshot, {"search_console": "skipped"}, END)

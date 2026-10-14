@@ -230,6 +230,23 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Baseline test repairs, review/deployment and live OAuth/GA4/admin verification
   remain; polling cannot guarantee a real-time ceiling without Google-side budget
   protections. No live API action, commit or push.
+- **Plain growth report (Codex task 100, 2026-10-14; uncommitted):** owner
+  summary comes first in email and its own admin Telegram message; all prior
+  details follow the skip-this heading, with missing-only rows listed once.
+  Cloudflare totals never label people: its query includes robots but cannot
+  identify a robot-only count, so the summary says robots are included.
+  Source counts are labeled visits; GA4 sign-up actions supply both periods,
+  never the all-time subscriber total. No day-before data exists in the current
+  collector, so comparisons say "not connected yet"; incomplete combined ad
+  spend does too. Collection, private delivery destinations and logs unchanged.
+  **274 focused checks passed; final summary checks: 51 passed**, including
+  the case added during the full run. Full `.venv/bin/python -m pytest -q`:
+  **3,646 passed, 9 failed, 6 deselected**. All failures reproduce on untouched
+  HEAD: the shipped tree hash in `test_product_shadow.py`, the 1,600-deal file
+  count in `test_seo_deal_pages.py` (1,772 vs 1,771), and the seven Stripe
+  localhost-socket checks in `test_workflows.py` (`Operation not permitted`).
+  Review and those existing failures remain. No commit or push; shared Git
+  metadata is read-only, preventing branch creation.
 - **Also-at shadow + lowest seen (Codex task 096, 2026-10-14; uncommitted, OFF):**
   every publish records private, bounded per-run comparison samples/counts in
   encrypted-state meta and the private growth report. Shared publication

@@ -330,12 +330,15 @@ def test_rendering_has_verdict_first_labels_units_and_unavailable():
     _, text = report.build_report(cfg, {"efficiency": {"day": "2026-10-13", **metrics()}}, {}, NOW.date())
     assert "== Efficiency (2026-10-13 UTC) ==\nEach Keepa token found 0.40 newly verified deals" in text
     assert "Tokens per useful recheck: 10.00; useful rechecks per token: 0.10" in text
-    assert "death within 6 h after click): unavailable" in text
+    assert "Expired-deal clicks (death within 6 h after click)" in text
+    assert "death within 6 h after click): unavailable" not in text
     assert "LLM dollars per first published deal: $0.2000" in text
     _, empty = report.build_report(cfg, {}, {}, NOW.date())
-    assert "Keepa tokens per newly verified deal: unavailable" in empty
-    assert "Critic calls avoided: unavailable" in empty
-    assert "within 1 / 3 / 12 h: latest unavailable / unavailable / unavailable" in empty
+    missing = next(line for line in empty.splitlines() if line.startswith("not measured yet:"))
+    assert "Keepa tokens per newly verified deal" in missing
+    assert "Critic calls avoided" in missing
+    assert "Shown Amazon new, confirmed within 1 / 3 / 12 h" in missing
+    assert "within 1 / 3 / 12 h: latest unavailable" not in empty
 
 
 def test_collection_is_read_only_and_makes_identical_external_requests(tmp_path, monkeypatch, caplog):
@@ -456,6 +459,9 @@ def test_recheck_report_does_not_turn_absent_periods_into_zero():
         data = report_data(db, NOW)
         assert "unavailable" in data["yesterday"] and "unavailable" in data["week"]
         _, text = report.build_report(cfg, {"price_recheck": data}, {}, NOW.date())
-        assert "yesterday: unavailable" in text and "week: unavailable" in text
+        missing = next(line for line in text.splitlines() if line.startswith("not measured yet:"))
+        assert "Keepa recheck yield (UTC, yesterday / last 7 days) — yesterday" in missing
+        assert "Keepa recheck yield (UTC, yesterday / last 7 days) — week" in missing
+        assert "yesterday: unavailable" not in text and "week: unavailable" not in text
     finally:
         db.close()

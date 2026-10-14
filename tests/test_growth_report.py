@@ -411,6 +411,10 @@ def client_for(fake: FakeApis) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(fake))
 
 
+def not_measured(text):
+    return next(line for line in text.splitlines() if line.startswith("not measured yet: "))
+
+
 # ------------------------------------------------------------------ Google auth
 
 
@@ -498,7 +502,8 @@ def test_search_counts_distinguish_observed_zero_and_missing_samples():
         for name in ("search_apply", "search_zero", "search_recovery"):
             data[period].pop(name)
     _, text = report.build_report(AppConfig(), {"ga4": data, "product": {"yesterday": {}, "window": {}}}, {}, date(2026, 10, 10))
-    assert "product.search_apply: unavailable / unavailable" in text
+    assert "product.search_apply" in not_measured(text)
+    assert "product.search_apply:" not in text
     assert "search_zero unavailable (no observed event) / unavailable (no observed event)" in text
 
 
@@ -595,7 +600,7 @@ def test_missing_visitor_classification_is_unavailable_not_inferred(cfg, classif
     assert data["window"]["deal_save"] == 41
     assert data["returning"] == {"unavailable": "visitor classification not returned"}
     _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
-    assert "Observed returning sessions (last 7 completed days): unavailable" in text
+    assert "Observed returning sessions (last 7 completed days)" in not_measured(text)
     assert "0 classified sessions" not in text and "0.0%" not in text
 
 
@@ -623,7 +628,7 @@ def test_visitor_classification_failure_preserves_saved_counts(cfg, monkeypatch,
     assert status["saved"] == status["ga4"] == "ok"
     assert data["saved"]["window"]["saved_deal_click"] == 17
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "visitor classification unavailable" in text
+    assert "Observed returning sessions (last 7 completed days)" in not_measured(text)
     assert GOOGLE_TOKEN not in text + caplog.text
 
 
@@ -635,14 +640,14 @@ def test_no_saved_rows_and_old_report_snapshots_are_unavailable(cfg):
         data = google.ga4_saved(client, GOOGLE_TOKEN, "987654", 7)
     assert all(value is None for value in data["window"].values())
     _, text = report.build_report(cfg, {"saved": data}, {}, date(2026, 10, 10))
-    assert "deal_save: unavailable (no observed event) / unavailable (no observed event)" in text
-    assert "product.watch_match: unavailable (no observed event) / unavailable (no observed event)" in text
+    assert "deal_save" in not_measured(text) and "deal_save:" not in text
+    assert "product.watch_match" in not_measured(text) and "product.watch_match:" not in text
     with client_for(FakeApis()) as client:
         old_ga = google.ga4(client, GOOGLE_TOKEN, "987654", 7)
     for status in ({}, {"saved": "skipped"}, {"saved": "error"}):
         _, text = report.build_report(cfg, {"ga4": old_ga}, status, date(2026, 10, 10))
-        assert "Feature actions and returning sessions: unavailable" in text
-        assert "product.watch_create: unavailable (no observed event) / unavailable (no observed event)" in text
+        assert "Feature actions and returning sessions" in not_measured(text)
+        assert "product.watch_create" in not_measured(text) and "product.watch_create:" not in text
 
 
 def test_new_only_classification_is_an_observed_zero_with_a_denominator(cfg):
@@ -865,8 +870,12 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     assert all(msg["chat_id"] == ADMIN_CHAT for msg in fake.telegram)  # admin only
     text = "".join(msg["text"] for msg in fake.telegram)
     lines = text.splitlines()
-    assert lines[0] == "Growth report for Sat Oct 10, 2026: yesterday / last 7 days"
-    assert lines[2:10] == [
+    assert lines[0] == "wowpriced daily report — Sat Oct 10"
+    assert lines[1] == "Real people only. Robots and search engines are NOT counted here."
+    assert lines[3] == "People who visited:      731,942 yesterday · 4,410,777 this week"
+    assert fake.telegram[1]["text"].startswith(report.TECHNICAL_HEADING)
+    technical = text.split(report.TECHNICAL_HEADING + "\n\n")[1]
+    assert technical.splitlines()[2:10] == [
         "Sessions: 812,345 / 5,120,333",
         "Clicks out yesterday: 9,001",
         "Visitors: 731,942 / 4,410,777",
@@ -970,7 +979,7 @@ def test_product_counts_are_unavailable_when_ga4_cannot_be_read(cfg, monkeypatch
     expected = "error" if reason == "api" else "skipped"
     assert status["product"] == expected and "product" not in data
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert f"product: not available ({expected})" in text and "product.home_load_attempts:" not in text
+    assert "product" in not_measured(text) and "product.home_load_attempts:" not in text
     assert "product.install_offer_shown:" not in text and "product.install_accepted:" not in text
     assert "product.standalone_session:" not in text
     assert "private failure" not in text + caplog.text and "private.example" not in text + caplog.text
@@ -990,10 +999,10 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
     for event in ("search_apply", "search_zero", "search_recovery"):
-        assert f"product.{event}: unavailable / unavailable" in text
+        assert f"product.{event}" in not_measured(text) and f"product.{event}:" not in text
     for event in ("install_offer_shown", "install_accepted", "standalone_session"):
         assert f"product.{event}: 0 / 0" in text
-    assert "product.deal_detail_views: unavailable (no observed event)" in text
+    assert "product.deal_detail_views" in not_measured(text) and "product.deal_detail_views:" not in text
 
 
 def test_deal_page_counts_use_standard_dimensions_and_paginate(cfg):
@@ -1027,7 +1036,7 @@ def test_insufficient_deal_page_sample_is_unavailable(cfg, metadata):
         data = google.ga4_deal_pages(client, GOOGLE_TOKEN, "987654", 7)
     assert "unavailable" in data
     _, text = report.build_report(cfg, {"deal_pages": data}, {"deal_pages": "skipped"}, date(2026, 10, 10))
-    assert "Device/page-family actions: unavailable" in text and "actions/view 0" not in text
+    assert "Device/page-family actions" in not_measured(text) and "actions/view 0" not in text
 
 
 def test_deal_page_api_failure_preserves_other_product_counts(cfg, monkeypatch, caplog):
@@ -1044,7 +1053,7 @@ def test_deal_page_api_failure_preserves_other_product_counts(cfg, monkeypatch, 
     assert data["product"]["yesterday"]["home_load_attempts"] == 400
     assert data["product"]["yesterday"]["deal_detail_views"] is None
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "Device/page-family actions: unavailable" in text and "PRIVATE" not in text + caplog.text
+    assert "Device/page-family actions" in not_measured(text) and "PRIVATE" not in text + caplog.text
 
 
 def test_device_get_deal_rate_uses_ga4_session_metric():
@@ -1090,9 +1099,9 @@ def test_unavailable_session_rate_keeps_filter_counts_private(cfg, monkeypatch, 
     assert data["product"]["yesterday"]["filter_apply"] == 38
     assert "unavailable" in data["product"]["deal_sessions"]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "Sessions with Get deal by device: unavailable" in text
+    assert "Sessions with Get deal by device" in not_measured(text)
     assert "PRIVATE" not in text + caplog.text and "23.45" not in text + caplog.text
-    assert "0.0%" not in next(line for line in text.splitlines() if line.startswith("Sessions with Get deal"))
+    assert "Sessions with Get deal by device:" not in text
 
 
 def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, monkeypatch):
@@ -1102,7 +1111,8 @@ def test_trials_fall_back_to_ga4_and_cost_per_trial_handles_zero(cfg, rsa_key, m
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "Trials started: 0 / 77" in text
     assert "Cost per trial: n/a / $1.12" in text
-    assert "Paying members" not in text
+    assert "Paying members:          not connected yet" in text
+    assert "Paying members" not in text.split(report.TECHNICAL_HEADING)[1]
 
 
 def test_email_goes_to_report_email_to_with_escaped_html(cfg, rsa_key, monkeypatch):
@@ -1385,7 +1395,8 @@ def test_traffic_totals_are_private_and_other_sections_still_run(cfg, monkeypatc
     assert data["bing"] == {"yesterday": {"clicks": 712345, "impressions": 1023456},
                             "window": {"clicks": 1837035, "impressions": 2770368}, "has_data": True}
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "Visitors (Cloudflare): yesterday 900,333, last 7 days 2,400,666; page views 3,601,665" in text
+    assert "Cloudflare traffic (mostly robots): uniques 900,333 / 2,400,666; page views 1,300,666 / 3,601,665; requests 2,300,999 / 6,602,664" in text
+    assert "Visitors (Cloudflare)" not in text
     assert "Cloudflare page views (yesterday / window): 1,300,666 / 3,601,665; requests 2,300,999 / 6,602,664" in text
     assert "Clicks (yesterday / window): 712,345 / 1,837,035; impressions 1,023,456 / 2,770,368" in text
     for secret in (CF_OPS_TOKEN, BING_KEY):
@@ -1530,7 +1541,8 @@ def test_traffic_uses_the_configured_window_and_excludes_today(cfg, monkeypatch)
     assert data["cloudflare_traffic"]["window"]["visitors"] == 1700555
     assert data["bing"]["window"]["clicks"] == 1324690
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "last 3 days 1,700,555" in text
+    assert "Cloudflare traffic (mostly robots): uniques 900,333 / 1,700,555" in text
+    assert "yesterday / last 3 days" in text
 
 
 @pytest.mark.parametrize("values", [
@@ -1544,8 +1556,11 @@ def test_indexnow_report_rows_show_receipts_zero_and_unavailable(cfg, values):
 
     _, text = report.build_report(cfg, {"indexnow": values}, {}, date(2026, 10, 10))
     for name in METRICS:
-        expected = "unavailable" if values[name] is None else str(values[name])
-        assert f"indexnow.{name}: {expected}" in text
+        if values[name] is None:
+            assert f"indexnow.{name}" in not_measured(text)
+            assert f"indexnow.{name}:" not in text
+        else:
+            assert f"indexnow.{name}: {values[name]}" in text
     assert "receipt does not promise indexing" in text
     assert "key_pending is included in received" in text
     assert "Google instant indexing" not in text
@@ -1570,4 +1585,31 @@ def test_indexnow_growth_collection_reads_receipts_without_writing_snapshot(cfg,
         data, status = report.collect(cfg, NOW, client, db_path=tmp_path / "missing.db")
     assert status["indexnow"] == "skipped"
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
-    assert "indexnow.received: unavailable" in text
+    assert "indexnow.received" in not_measured(text) and "indexnow.received:" not in text
+
+
+def test_newsletter_waiting_list_names_partner_sites_not_yet_mailing():
+    """Operator, 2026-10-14: list the partner newsletters still not arriving,
+    one row per site (Hip2Save has several feeds), at the end of the plain part."""
+    from dealradar.models import SourceConfig
+    srcs = [SourceConfig(name="hip2save_a", display_name="Hip2Save", site="https://hip2save.com/",
+                         method="rss", url="https://hip2save.com/feed/", crawl_permission="ok"),
+            SourceConfig(name="hip2save_b", display_name="Hip2Save", site="https://hip2save.com/",
+                         method="rss", url="https://hip2save.com/b/feed/", crawl_permission="ok"),
+            SourceConfig(name="clark_deals", display_name="Clark Deals", site="https://clarkdeals.com/",
+                         method="rss", url="https://clarkdeals.com/feed/", crawl_permission="ok"),
+            SourceConfig(name="no_permission", display_name="Other", site="https://other.example/",
+                         method="rss", url="https://other.example/feed/"),
+            SourceConfig(name="partner_newsletters", display_name="Inbox", site="", method="email",
+                         url="", crawl_permission="ok")]
+    received = {"hip2save_b": {"count": 2, "first_seen": "2026-10-14", "last_seen": "2026-10-15"}}
+    arrivals = report.newsletter_arrivals(received, srcs)
+    assert arrivals == {"since": "2026-10-14", "total": 2, "received": ["Hip2Save"],
+                        "missing": [{"name": "Clark Deals", "site": "https://clarkdeals.com/"}]}
+    lines = report._newsletter_lines({"newsletter_arrivals": arrivals})
+    assert lines[1:] == ["Newsletters still waiting on (tracking since 2026-10-14)",
+                         "Received from 1 of 2 partner sites.",
+                         "Not received yet. Try resubscribing with deals@wowpriced.com:",
+                         "  • Clark Deals: https://clarkdeals.com/",
+                         "(Some sites only email weekly, so give each one 7 days.)"]
+    assert report._newsletter_lines({"newsletter_arrivals": {"unavailable": "x"}}) == []

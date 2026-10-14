@@ -160,7 +160,8 @@ def test_section_runs_without_secrets_and_logs_only_status(clock, monkeypatch, c
     assert "private-token" not in caplog.text and "private response" not in caplog.text
     _, text = report.build_report(AppConfig(), data, status, NOW.date())
     if fail:
-        assert text.count("Get deal links: not available") == 1
+        assert next(line for line in text.splitlines() if line.startswith("not measured yet:")).count("Get deal links") == 1
+        assert "Get deal links: not available" not in text
     else:
         assert "Get deal links: 0 Amazon (tagged), 0 via Sovrn, 0 other stores, 0 source posts, 1 none" in text
     if not fail:
@@ -202,7 +203,8 @@ def test_money_link_mix_reuses_live_json_and_lists_top_five_hosts(clock):
 
 def test_money_link_mix_missing_site_is_one_line():
     _, text = report.build_report(AppConfig(), {}, {"site_health": "skipped"}, NOW.date())
-    assert text.count("Get deal links: not available") == 1
+    assert next(line for line in text.splitlines() if line.startswith("not measured yet:")).count("Get deal links") == 1
+    assert "Get deal links: not available" not in text
     assert "Other store hosts:" not in text and "Amazon links:" not in text
 
 
