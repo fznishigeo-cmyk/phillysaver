@@ -651,7 +651,7 @@ ebay:
 
 feature_flags:
   bestbuy_live: false          # also needs BESTBUY_API_KEY
-  ebay_live: false             # also needs EBAY_CLIENT_ID and EBAY_CLIENT_SECRET
+  ebay_live: true              # EBAY_CLIENT_ID + EBAY_CLIENT_SECRET added 2026-10-14 (Production keyset)
   threads: false               # off until app review passes
   instagram: false             # stubbed
   keepa: true                  # inert until the KEEPA_KEY secret is set

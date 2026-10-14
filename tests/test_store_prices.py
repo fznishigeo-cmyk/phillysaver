@@ -456,7 +456,8 @@ def test_credentials_and_api_content_never_persist_or_log(db, cfg, caplog):
 
 def test_configuration_defaults_overrides_and_workflow_env(tmp_path):
     default = load_config()
-    assert default.feature_flags["bestbuy_live"] is False and default.feature_flags["ebay_live"] is False
+    # eBay keys added 2026-10-14; Best Buy still waits for its key.
+    assert default.feature_flags["bestbuy_live"] is False and default.feature_flags["ebay_live"] is True
     for cfg in (default, AppConfig()):
         assert cfg.bestbuy_tolerance_pct == cfg.ebay_tolerance_pct == 5
         assert cfg.bestbuy_requests_per_second == 5
