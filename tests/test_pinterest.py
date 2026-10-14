@@ -33,6 +33,9 @@ def cfg(tmp_path, monkeypatch):
     # Fixture deals live only in deals.json; the stock-evidence rule
     # (sightings in the DB) is covered in tests/test_social_stock.py.
     config.social_require_stock_evidence = False
+    # The shipped app has Standard access (production); these fixtures
+    # exercise the same flow against the sandbox host unless a test says so.
+    config.pinterest = dict(config.pinterest, environment="sandbox")
     config.site_dir = str(tmp_path / "site")
     return config
 

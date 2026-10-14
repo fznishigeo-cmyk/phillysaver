@@ -534,7 +534,7 @@ social:
   extreme_pct: 80
   pinterest:
     enabled: true
-    environment: sandbox          # sandbox (Trial access) | production
+    environment: production       # sandbox (Trial access) | production; Standard access approved 2026-10-14
     redirect_uri: "https://wowpriced.com/"
     board_name: "Deals up to 90% off"
     pins_per_run: 2               # hourly lane
