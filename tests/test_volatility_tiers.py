@@ -19,7 +19,11 @@ from tests.test_wall_confirmation_coverage import remember
 
 @pytest.fixture
 def cfg():
-    return load_config()
+    cfg = load_config()
+    # These tests exercise the volatility scheduler itself; the shipped switch
+    # is off until its batching fix (2026-10-14).
+    cfg.keepa_volatility["enabled"] = True
+    return cfg
 
 
 @pytest.mark.parametrize("changes,reason", [

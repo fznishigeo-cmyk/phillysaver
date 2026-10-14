@@ -265,7 +265,10 @@ dedupe:
 keepa:
   tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
   volatility:
-    enabled: true
+    # Off 2026-10-14 ~19:50Z: live fast lanes ran out of time making many 1-4 ASIN
+    # calls (used wall within 1 h fell 97% -> 57%); the legacy scheduler batches
+    # fully. Re-enable after the batching fix (Codex 101).
+    enabled: false
     # Maximum paid-request ages in hours; observation clocks remain separate.
     targets:
       FAST:   {top: 0.5, wall: 0.5, rest: 6, hidden: 48}
