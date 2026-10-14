@@ -337,7 +337,12 @@ keepa:
   show_max_unconfirmed_used_h: 24
   # Operator request, 2026-10-13: optional live top readings; default OFF.
   # update=0 can cost 2 tokens/new ASIN; batches reserve that worst case.
-  recheck_top_live: false
+  # ON since 2026-10-14 (task 092 evidence): cached reads left Keepa's own
+  # clock fresh within 1 h for only 40% of top picks although we asked 97%
+  # within 45 min, so every run re-paid for them; ~300 tokens/h were also
+  # going unused. Live reads make "price checked" truly recent for the most
+  # seen prices, within the same 20/min plan (budget gates unchanged).
+  recheck_top_live: true
   focus_categories: ["Beauty & Personal Care", "Health & Household"]  # empty = off
   # NEW posts (not yet content-hashed: each costs an LLM parse, a critic
   # call and a keepa_check) emitted per pull; posts already handled ride
