@@ -34,6 +34,9 @@ def test_live_product_uses_published_facts_and_utc_publish_date(db, cfg, tmp_pat
     published = json.loads((tmp_path / "deals.json").read_text())["deals"][0]
     html = _page(tmp_path, _path(d)).read_text()
     product, crumbs = _blocks(html)
+    # A factual description from the page's own facts (Search Console asks for one).
+    meta = re.search(r'<meta name="description" content="(.*?)">', html).group(1)
+    assert product.pop("description") == unescape(meta)
     assert product == {
         "@context": "https://schema.org", "@type": "Product", "name": published["item"],
         "image": published["image_url"], "brand": {"@type": "Brand", "name": published["brand"]},
@@ -61,9 +64,13 @@ def test_optional_product_fields_omitted(db, cfg, tmp_path, image):
     cfg.paywall_open_access = True
     d = make_deal(image_url=image, brand="")
     _render(db, cfg, tmp_path, [d])
-    product = _blocks(_page(tmp_path, _path(d)).read_text())[0]
-    assert product["@type"] == "Product"
-    assert "image" not in product and "brand" not in product
+    # Without an https product photo there is no Product markup at all:
+    # Google treats a missing image as critical for merchant listings.
+    assert not [b for b in _blocks(_page(tmp_path, _path(d)).read_text()) if b.get("@type") == "Product"]
+    pictured = make_deal(dedupe_key="pictured", image_url="https://images.example/item.jpg", brand="")
+    _render(db, cfg, tmp_path, [pictured])
+    product = [b for b in _blocks(_page(tmp_path, _path(pictured)).read_text()) if b.get("@type") == "Product"][0]
+    assert product["image"] == "https://images.example/item.jpg" and "brand" not in product
 
 
 @pytest.mark.parametrize("mixed,cap", [(False, 3000), (True, 3000), (True, 5)])

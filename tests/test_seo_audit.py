@@ -23,7 +23,8 @@ def test_audit_fixture_counts_sparse_schema_broken_link_and_ended(db, cfg, tmp_p
     cfg.support_enabled = True
     cfg.seo_hub_min_items = 10
     deals = [make_deal(dedupe_key=f"audit{i}", item=f"Offer {i}", store="Walmart" if i < 15 else "Target",
-                       category="electronics" if i < 15 else "kitchen", codes=[]) for i in range(20)]
+                       category="electronics" if i < 15 else "kitchen", codes=[],
+                       image_url=f"https://images.example/{i}.jpg") for i in range(20)]
     ended = make_deal(dedupe_key="ended", status="dead", death="confirmed", died_at=NOW.isoformat())
     res = _render(db, cfg, tmp_path, deals + [ended])
     clean = res["seo_audit"]
@@ -134,7 +135,7 @@ def test_lastmod_and_html_stable_across_midnight_then_price_and_title_change(db,
     ("name", "Other product")])
 def test_every_required_schema_field_is_compared_to_visible_text(db, cfg, tmp_path, field, bad):
     cfg.paywall_open_access = True
-    d = make_deal(codes=[], conditions=[])
+    d = make_deal(codes=[], conditions=[], image_url="https://images.example/item.jpg")
     _render(db, cfg, tmp_path, [d])
     page = _page(tmp_path, _path(d))
     html = page.read_text()
