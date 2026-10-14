@@ -115,9 +115,10 @@ class TestInconclusiveWaitsItsWindow:
 class TestFairOrder:
     def test_longest_unchecked_used_deals_go_first(self, tmp_path, monkeypatch):
         db = DB(tmp_path / "state.db")
-        # Inserted newest-checked first, so rowid order is the wrong order.
-        _seed(db, "url|recent001", stamp=util.iso(NOW - timedelta(hours=25)))
-        _seed(db, "url|older0001", stamp=util.iso(NOW - timedelta(hours=30)))
+        # Due, visible rows, inserted newest-checked first. Hidden rows use
+        # task 091's separate value-ranked recovery allowance.
+        _seed(db, "url|recent001", stamp=util.iso(NOW - timedelta(hours=8)))
+        _seed(db, "url|older0001", stamp=util.iso(NOW - timedelta(hours=18)))
         _seed(db, "url|never0001")
         seen = []
 
@@ -376,10 +377,10 @@ class TestRecheckCadenceFitsThePlan:
         iso = util.iso
         for key, used, seen, last in (
                 ("url|fresh0001", False, NOW - timedelta(hours=5), NOW - timedelta(hours=5)),
-                ("url|older0001", False, NOW - timedelta(hours=40), NOW - timedelta(hours=5)),
-                ("url|olddue001", False, NOW - timedelta(hours=40), NOW - timedelta(hours=13)),
+                ("url|older0001", False, NOW - timedelta(hours=10), NOW - timedelta(hours=5)),
+                ("url|olddue001", False, NOW - timedelta(hours=40), NOW - timedelta(hours=10)),
                 ("url|used00001", True, NOW - timedelta(hours=40), NOW - timedelta(hours=7)),
-                ("url|useddue01", True, NOW - timedelta(hours=40), NOW - timedelta(hours=25))):
+                ("url|useddue01", True, NOW - timedelta(hours=40), NOW - timedelta(hours=20))):
             _seed(db, key, used=used, stamp=iso(last))
             row = db.get_deal(key)
             db.update_deal(key, payload=dict(row, first_seen_at=iso(seen)))
@@ -399,8 +400,8 @@ class TestRecheckCadenceFitsThePlan:
                 cfg.keepa_recheck_used_h) == (4.0, 8.0, 6.0)
         pipeline._recheck_prices(db, cfg, NOW)
         # The suspect leads, then longest-unchecked: the overdue old deal
-        # (13 h > 8 h), the fresh one (5 h > 4 h), then visible used
-        # offers over 6 h. The old new deal checked 5 h ago waits.
+        # (10 h > 8 h), the fresh one (5 h > 4 h), then visible used
+        # offers over 6 h. All these rows are inside their hide limits.
         assert checked == ["url|older0001", "url|olddue001", "url|fresh0001",
                            "url|useddue01", "url|used00001"]
         db.close()

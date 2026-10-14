@@ -192,7 +192,9 @@ def test_day_of_144_runs_meets_targets_inside_20_per_minute(db, cfg, monkeypatch
         hidden.append(stats["hidden_unconfirmed"]["new"])
         rows = {d["dedupe_key"]: d for d in db.all_deals()}
         shown = rank.site_deals(db, cfg, now)
-        assert all(not verify.is_amazon_deal(d) or verify.price_confirmation_recent(d, now, 12) for d in shown)
+        # Recovered off-wall used offers retain their 24 h display limit;
+        # the visible wall's stronger age target is asserted separately.
+        assert all(not verify.price_unconfirmed(d, cfg, now) for d in shown)
         ages = verify.confirmation_coverage([rows[d["dedupe_key"]] for d in wall], now)
         wall_shares.append(ages["new"]["within_2h"])
         top_shares.append(verify.confirmed_age([rows[d["dedupe_key"]] for d in top], now)["within_1h"])

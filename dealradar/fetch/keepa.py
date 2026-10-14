@@ -45,7 +45,7 @@ from ..db import DB
 from ..http_client import PoliteFetcher, api_fetcher
 from ..errors import AdapterNotConfigured, DeadlineExceeded
 from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
-                            response_payload)
+                            response_payload, run_gap_forecast)
 from ..keepa_categories import (NAMES_META, ROOTS_META, cached_meta,
                                category_from_name, remember_roots, root_id)
 from ..models import RawPost, SourceConfig
@@ -734,9 +734,10 @@ class KeepaDealsAdapter(SourceAdapter):
         pull.confirmations = _FeedConfirmations(pull.db, pull.now)
         pull.confirmations.confirmed = self.feed_confirmed
         pull.overflow_only = True
+        gap = run_gap_forecast(pull.db, cfg, pull.now)["minutes"]
         try:
             while passes and pull.pages - start_pages < cfg.keepa_overflow_extra_pages_max:
-                overflow = pull.budget.overflow(cfg.keepa_recheck_interval_minutes, pull.now)
+                overflow = pull.budget.overflow(gap, pull.now)
                 if overflow is None or overflow < DEAL_PAGE_COST:
                     break
                 if not pull.budget.allows(max(MIN_FOR_DEAL_QUERY, pull.reserve) + DEAL_PAGE_COST,

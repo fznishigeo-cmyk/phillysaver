@@ -43,6 +43,34 @@ MIN_FOR_RECHECK = 15.0
 MIN_FOR_IMAGE_BACKFILL = 60.0
 
 
+def run_gap_forecast(db, cfg, now: datetime) -> dict:
+    """Bounded EMA of actual fast/hourly starts, with slack for cron drift.
+
+    Read-only: repeated forecasts in a run see the same samples. The current
+    start participates once even before start_run has inserted its row.
+    """
+    options = cfg.keepa_recheck_gap
+    floor = cfg.keepa_recheck_interval_minutes
+    ceiling = max(floor, min(60, float(options.get("max_minutes", 45))))
+    count = max(1, min(48, int(options.get("samples", 12))))
+    alpha = max(.01, min(1, float(options.get("ema_alpha", .3))))
+    margin = max(0, min(60, float(options.get("margin_minutes", 10))))
+    rows = db.conn.execute(
+        "SELECT DISTINCT started_at FROM run_stats WHERE kind IN ('fast','hourly') "
+        "AND started_at<=? ORDER BY started_at DESC LIMIT ?",
+        (util.iso(now), count + 1)) if db is not None else []
+    starts = sorted({now} | {at for row in rows
+                             if (at := util.parse_iso(row["started_at"])) is not None and at <= now})
+    gaps = [min(ceiling, max(floor, (b - a).total_seconds() / 60))
+            for a, b in zip(starts, starts[1:])][-count:]
+    ema = gaps[0] if gaps else floor
+    for gap in gaps[1:]:
+        ema += alpha * (gap - ema)
+    expected = min(ceiling, max(floor, ema + (margin if gaps else 0)))
+    return {"minutes": expected, "ema_minutes": ema, "samples": len(gaps),
+            "floor_minutes": floor, "max_minutes": ceiling}
+
+
 def _num(v: Any) -> float | None:
     if isinstance(v, (int, float)) and not isinstance(v, bool):
         return float(v)

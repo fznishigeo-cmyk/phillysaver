@@ -329,6 +329,9 @@ class AppConfig:
     keepa_recheck_wall_n: int = 300
     keepa_recheck_wall_h: float = 2.0
     keepa_recheck_interval_minutes: float = 10.0
+    keepa_recheck_gap: dict[str, Any] = field(default_factory=dict)
+    keepa_hidden_new_tokens_per_run: int = 150
+    keepa_hidden_used_scans_per_run: int = 10
     keepa_recheck_idle_min_age_h: float = 0.5
     keepa_overflow_extra_pages_max: int = 8
     keepa_recheck_wall_max_age_h: float = 4.0
@@ -695,12 +698,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     for name in ("recheck_interval_minutes", "recheck_idle_min_age_h", "recheck_wall_max_age_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
-    for name in ("recheck_top_n", "recheck_wall_n", "overflow_extra_pages_max"):
+    for name in ("recheck_top_n", "recheck_wall_n", "overflow_extra_pages_max",
+                 "hidden_new_tokens_per_run", "hidden_used_scans_per_run"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0, int(g("keepa", name, default=getattr(cfg, attr)))))
     cfg.keepa_recheck_top_live = bool(g(
         "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
     cfg.keepa_recheck_adaptive = g("keepa", "recheck_adaptive", default={}) or {}
+    cfg.keepa_recheck_gap = g("keepa", "recheck_gap", default={}) or {}
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
     cfg.keepa_sweep_asins_per_pull = max(1, int(g(

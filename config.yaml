@@ -270,7 +270,7 @@ keepa:
   recheck_fresh_h: 4               # deals first seen in the last recheck_fresh_window_h
   recheck_fresh_window_h: 24
   recheck_new_h: 8                 # task 085: retry before the 12 h display limit
-  recheck_used_h: 6                # task 085: ONLY top/wall used offers (up to 13 tokens)
+  recheck_used_h: 6                # ordinary top/wall used offers (up to 13 tokens)
   # Operator request, 2026-10-13: highly accurate prices on the FIXED
   # 20 tokens/min plan. All new classes precede ordinary used scans;
   # used scans (including suspects) share this cap after the deal reserve.
@@ -283,13 +283,25 @@ keepa:
   recheck_tolerance_pct: 5
   # Operator request, 2026-10-13: suspects, then scored pick candidates,
   # then the first home cards, then the rest. Task 085: new checks always
-  # precede used scans, including suspects; off-wall used prices use free feeds.
+  # precede used scans, including suspects; hidden recovery is bounded below.
   recheck_top_n: 200               # up to 267 new tokens/hour before free confirmations
   recheck_wall_n: 300              # top overlap is checked once
   recheck_wall_h: 1.5              # task 085: retry slack before the 2 h wall target
   # Task 085: spend predicted overflow before the next fast run on the
   # oldest visible confirmations, top first. Never re-pay a just-read price.
-  recheck_interval_minutes: 10     # task 087: also the minimum gap between paid attempts
+  recheck_interval_minutes: 10     # forecast FLOOR and minimum gap between paid attempts
+  # Task 091: actual fast/hourly starts share one forecast. Slack accounts
+  # for GitHub cron jitter; long outages cannot predict more than 45 minutes.
+  recheck_gap:
+    samples: 12
+    ema_alpha: 0.3
+    max_minutes: 45
+    margin_minutes: 10
+  # After due work and discovery, recover hidden prices by pick value.
+  # These lanes preserve the 300-token reserve as well as the deal reserve;
+  # used scans also share used_scan_budget_share with the visible wall.
+  hidden_new_tokens_per_run: 150   # stats-only, 1 token each; 0 disables
+  hidden_used_scans_per_run: 10    # at most 13 tokens each; 0 = free feeds only
   recheck_idle_min_age_h: 0.5
   # Task 087b: after due checks, spend predicted overflow on discovery first,
   # then value-ranked early checks. Extra pages share the existing post caps.
@@ -318,8 +330,8 @@ keepa:
   # prices; hide stale prices until confirmed, without killing their rows.
   pick_max_unconfirmed_h: 3
   show_max_unconfirmed_h: 12       # task 085: older prices hide alive until confirmed
-  # Used/open-box: off-wall units get no paid scan (free Warehouse feed
-  # sightings only), so a 12 h limit could hide much of that inventory.
+  # Used/open-box: off-wall units use free Warehouse sightings, plus the
+  # small hidden-recovery allowance above once hidden.
   # 24 h until live counts (hidden_unconfirmed.used) say otherwise.
   show_max_unconfirmed_used_h: 24
   # Operator request, 2026-10-13: optional live top readings; default OFF.

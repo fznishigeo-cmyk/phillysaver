@@ -133,8 +133,8 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
 
 
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
-               require_confirmation: bool = True) -> float | None:
-    """Landing-page quality, with checkout effort and age factored in."""
+               require_confirmation: bool = True, allow_used: bool = False) -> float | None:
+    """Landing quality; internal recovery may score used items without featuring them."""
     from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
     from .verify import is_amazon_deal, price_confirmation_recent
 
@@ -144,13 +144,16 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
 
     options = cfg.front_page.get("top_picks")
     conditions = set(normalize_conditions(deal.get("conditions")))
+    excluded = set(normalize_conditions((options or {}).get("exclude_conditions", [])))
+    if allow_used:
+        excluded -= USED_CONDITIONS
     category = deal.get("category") or "other"
     if not options or deal.get("status", "alive") != "alive" or deal.get("locked") \
             or not str(deal.get("image_url") or "").startswith("https://") \
             or deal.get("price_is_range") or "range" in (deal.get("flags") or []) \
             or category == "other" or category in cfg.front_page.get("niche_categories", []) \
             or conditions & {"targeted", "new_customer", "in_store_only", "ymmv", "clearance_aisle"} \
-            or conditions & set(normalize_conditions(options.get("exclude_conditions", []))):
+            or conditions & excluded:
         return None
     quality = (options["pct_weight"] * float(deal.get("pct_at_checkout") or 0)
                + options["dollars_weight"] * math.log10(1 + float(deal.get("abs_savings") or 0)))

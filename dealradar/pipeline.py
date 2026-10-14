@@ -1192,8 +1192,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     """Visibility-first Keepa checks, correcting plain new prices in-place.
 
     New suspects/top/wall/rest, then visible used scans within their share.
-    Photos use only the remaining bucket. Every batch preserves the deal
-    lane's token reserve.
+    Discovery precedes bounded hidden recovery and idle checks; photos use
+    the remainder. Every batch preserves the deal lane's token reserve.
     """
     from datetime import timedelta
 
@@ -1202,11 +1202,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     from .dedupe import _DEAL_FIELDS, reprice_existing
     from .fetch.keepa import reprice_post
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
-                               MIN_FOR_RECHECK, KeepaBudget)
+                               MIN_FOR_RECHECK, KeepaBudget, run_gap_forecast)
     from .verify import (KEEPA_BATCH, KEEPA_OFFERS_BATCH, USED_RECHECK_TOKENS,
                          confirmation_coverage, is_amazon_deal, is_used_deal,
                          _live_new_price, _price_hidden_by_promo,
-                         keepa_observed_at, live_price_reading, price_confirmed_at, price_unconfirmed,
+                         _keepa_since_price, keepa_time, keepa_observed_at,
+                         live_price_reading, price_confirmed_at, price_unconfirmed,
                          recheck_amazon_prices, woot_offer_url)
     from .publish.site import PICKS_META, WALL_META
 
@@ -1229,6 +1230,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     schedule = Schedule(history, picks, wall)
     stats["yield"] = history.yield_stats
     base_hours = {}
+    attempted = set()
 
     def priority(d):
         return ("suspect" if d.get("gone_suspect_at") else
@@ -1237,16 +1239,33 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["wall_schedule"] = {name: 0 for name in (
         "new", "used", "top_overlap", "cadence_new", "cadence_used", "retry_new", "retry_used")}
 
+    def hidden_counts():
+        rows = db.all_deals(status="alive")
+        hidden = [d for d in rows if price_unconfirmed(d, cfg, now)
+                  and rank.is_publishable(d, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]]
+        reasons = {name: {"new": 0, "used": 0, "total": 0} for name in (
+            "never_checked", "retry_window", "suspect", "cadence_not_due",
+            "tried_this_run", "adaptive_requested_recently", "other")}
+        for deal in hidden:
+            key, used = deal["dedupe_key"], is_used_deal(deal)
+            reason = ("tried_this_run" if key in attempted or history.attempted(key) else
+                      "retry_window" if tried_recently(deal, used) else
+                      "suspect" if deal.get("gone_suspect_at") else
+                      "adaptive_requested_recently" if schedule.enabled and history.requested_recently(key) else
+                      "never_checked" if last_check(deal) is None else
+                      "cadence_not_due" if in_cadence(deal) else "other")
+            reasons[reason]["used" if used else "new"] += 1
+            reasons[reason]["total"] += 1
+        return {"new": sum(not is_used_deal(d) for d in hidden),
+                "used": sum(is_used_deal(d) for d in hidden),
+                "total": len(hidden), "reasons": reasons}
+
     def measurements():
         rows = db.all_deals(status="alive")
         stats["confirmed_age"] = {
             name: confirmation_coverage([d for d in rows if d["dedupe_key"] in keys], now)
             for name, keys in (("top_candidates", picks), ("wall", wall))}
-        hidden = [d for d in rows if price_unconfirmed(d, cfg, now)
-                  and rank.is_publishable(d, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]]
-        stats["hidden_unconfirmed"] = {"new": sum(not is_used_deal(d) for d in hidden),
-                                       "used": sum(is_used_deal(d) for d in hidden),
-                                       "total": len(hidden)}
+        stats["hidden_unconfirmed"] = hidden_counts()
 
     def tried_recently(deal: dict[str, Any], used: bool) -> bool:
         # An answered-but-inconclusive recheck waits its retry window: live
@@ -1268,12 +1287,36 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                  and (since is None or at >= since)]
         return max(valid) if valid else None
 
+    def cadence(deal):
+        seen = util.parse_iso(deal.get("first_seen_at") or "")
+        fresh = seen is not None and now - seen < timedelta(hours=cfg.keepa_recheck_fresh_window_h)
+        every = (cfg.keepa_recheck_used_h if is_used_deal(deal) else
+                 cfg.keepa_recheck_fresh_h if fresh else cfg.keepa_recheck_new_h)
+        if not is_used_deal(deal):
+            if cfg.keepa_recheck_top_h and deal["dedupe_key"] in picks:
+                every = min(every, cfg.keepa_recheck_top_h)
+            if cfg.keepa_recheck_wall_h and deal["dedupe_key"] in wall:
+                every = min(every, cfg.keepa_recheck_wall_h)
+        if deal.get("gone_suspect_at"):
+            every = _CONFIRM_GONE_H
+        base_hours[deal["dedupe_key"]] = every
+        return schedule.cadence(deal, priority(deal), every)
+
+    def in_cadence(deal):
+        last = last_check(deal)
+        return last is not None and timedelta() <= now - last < timedelta(hours=cadence(deal))
+
+    stats["hidden_unconfirmed_before"] = hidden_counts()
+    stats["hidden_recovery"] = {"tokens": 0, "estimated_tokens": 0, "requested": 0,
+                                "recovered": {"new": 0, "used": 0, "total": 0}}
     if not cfg.feature_flags.get("keepa"):
         measurements()
         return stats
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
     budget = KeepaBudget.load(db)
+    stats["run_gap"] = run_gap_forecast(db, cfg, now)
+    gap = stats["run_gap"]["minutes"]
     available = budget.available(now)
     stats["tokens"] = {"bucket_start": available, "bucket_end": None,
                        "capacity": budget.capacity(), "requested": 0,
@@ -1285,6 +1328,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     due_used: list[dict[str, Any]] = []
     photo: list[dict[str, Any]] = []
     idle: list[dict[str, Any]] = []
+    recovery: list[dict[str, Any]] = []
     for deal in db.all_deals(status="alive"):
         if not deal.get("asin") or not is_amazon_deal(deal):
             continue
@@ -1293,6 +1337,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             continue  # a post/expiry queues the first API reading for the next run
         used = is_used_deal(deal)
         key = deal["dedupe_key"]
+        hidden = price_unconfirmed(deal, cfg, now)
         if history.attempted(key) or (schedule.enabled and history.requested_recently(key)):
             continue
         condition = "used" if used else "new"
@@ -1301,20 +1346,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             stats["wall_schedule"]["top_overlap"] += int(key in picks)
         if used and key not in visible:
             stats["used_off_wall"] += 1
-            continue  # free Warehouse confirmations still refresh these rows
-        seen = util.parse_iso(deal.get("first_seen_at") or "")
-        fresh = seen is not None and \
-            now - seen < timedelta(hours=cfg.keepa_recheck_fresh_window_h)
-        every = cfg.keepa_recheck_used_h if used else \
-            cfg.keepa_recheck_fresh_h if fresh else cfg.keepa_recheck_new_h
-        if not used and cfg.keepa_recheck_top_h and deal["dedupe_key"] in picks:
-            every = min(every, cfg.keepa_recheck_top_h)  # what shoppers see first
-        if not used and cfg.keepa_recheck_wall_h and deal["dedupe_key"] in wall:
-            every = min(every, cfg.keepa_recheck_wall_h)
-        if deal.get("gone_suspect_at"):
-            every = _CONFIRM_GONE_H  # a suspect is asked again soon
-        base_hours[key] = every
-        every = schedule.cadence(deal, priority(deal), every)
+            if not hidden:
+                continue  # free Warehouse confirmations still refresh these rows
+        every = cadence(deal)
         last = last_check(deal)
         in_window = last is not None and timedelta() <= now - last < timedelta(hours=every)
         if key in wall and in_window:
@@ -1327,6 +1361,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                                          min_pct=min(cfg.min_pct, cfg.site_show_from_pct))
         if not ok:
             continue  # only spend tokens on deals that would publish
+        if hidden:
+            if not in_window and rank.is_publishable(
+                    deal, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
+                recovery.append(deal)
+            continue  # hidden prices use only the bounded recovery lanes
         if in_window and key in visible and not deal.get("gone_suspect_at") \
                 and now - last >= timedelta(hours=cfg.keepa_recheck_idle_min_age_h):
             idle.append(deal)
@@ -1404,16 +1443,17 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                ("suspect", True),
                ("top", True), ("wall", True), ("rest", True)]
     for name, used, is_idle in ([(name, used, False) for name, used in classes] +
+                               [("hidden", used, False) for used in (False, True)] +
                                [(name, used, True) for used in (False, True)
                                 for name in ("top", "wall")]):
-        rows = [d for d in idle if is_used_deal(d) == used] if is_idle else due_used if used else due
-        group = [d for d in rows if priority(d) == name]
+        rows = recovery if name == "hidden" else idle if is_idle else due_used if used else due
+        group = [d for d in rows if is_used_deal(d) == used and (name == "hidden" or priority(d) == name)]
         label = ("idle_" if is_idle else "") + name + ("_used" if used else "_new")
         stats["planned"][label], stats["done"][label] = len(group), 0
         # A suspect may also be a top candidate; partition its batch so
         # update=0 is paid only for configured top candidates.
         for live in (True, False):
-            batch_group = [d for d in group if bool(cfg.keepa_recheck_top_live
+            batch_group = [d for d in group if bool(name != "hidden" and cfg.keepa_recheck_top_live
                            and d["dedupe_key"] in picks) == live]
             cost = (USED_RECHECK_TOKENS if used else 1) + int(live)
             need = max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)
@@ -1421,27 +1461,51 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                            KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, label, live, used, is_idle))
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
     groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, "photo", False, False, False))
-    attempted = set()
+    # Reserve before each call, including lost answers; rerunning a run key
+    # cannot buy another allowance from a fresh copy of the hidden queue.
+    run_row = db.conn.execute(
+        "SELECT run_key FROM run_stats WHERE started_at=? AND kind IN ('fast','hourly') LIMIT 1",
+        (util.iso(now),)).fetchone()
+    recovery_run = run_row["run_key"] if run_row else util.iso(now)
+    try:
+        recovery_spent = json.loads(db.meta_get("keepa_hidden_recovery") or "{}")
+    except ValueError:
+        recovery_spent = {}
+    if not isinstance(recovery_spent, dict) or recovery_spent.get("run_key") != recovery_run:
+        recovery_spent = {"run_key": recovery_run, "new": 0, "used": 0}
+    rate_limited = rate_limited or recovery_spent.get("rate_limited", False)
+
+    def recovery_order(deal):
+        value = rank.pick_score(deal, cfg, now, require_confirmation=False, allow_used=True)
+        # Non-pick inventory (e.g. missing photos) follows scored candidates.
+        return (value is None, -value if value is not None else -rank.score(deal, cfg, now),
+                deal["dedupe_key"])
+
     discovery_done = False
     for group, need, per_deal, per_call, label, live, used, is_idle in groups:
         is_photo = label == "photo"
-        if is_idle and not discovery_done:
+        is_recovery = label.startswith("hidden_")
+        if (is_recovery or is_idle) and not discovery_done:
             discovery_done = True
             if overflow_discovery is not None and not rate_limited and (
                     deadline is None or time.monotonic() <= deadline):
                 stats["overflow_discovery"] = overflow_discovery(budget)
                 rate_limited = stats["overflow_discovery"].get("rate_limited", False)
-        if is_idle or is_photo:
+        if is_idle or is_photo or is_recovery:
             # Extra feed pages may have confirmed a price for free. Don't
             # overwrite that clock with a pre-discovery copy in either lane.
             group = [db.get_deal(d["dedupe_key"]) for d in group]
+        if is_recovery:
+            group = sorted((d for d in group if d["status"] == "alive"
+                            and price_unconfirmed(d, cfg, now) and not in_cadence(d)
+                            and not tried_recently(d, used)), key=recovery_order)
         if is_idle:
             group = [d for d in group if last_check(d) is None or now - last_check(d) >=
                      timedelta(hours=cfg.keepa_recheck_idle_min_age_h)]
         group = [d for d in group if d["dedupe_key"] not in attempted]
         i = 0
         while i < len(group):
-            overflow = budget.overflow(cfg.keepa_recheck_interval_minutes, now) if is_idle else None
+            overflow = budget.overflow(gap, now) if is_idle else None
             if is_idle and (overflow is None or overflow < per_deal):
                 break
             if deadline is not None and time.monotonic() > deadline:
@@ -1461,6 +1525,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 used_limit = max(0, avail - MIN_FOR_DEAL_QUERY) * cfg.keepa_used_scan_budget_share
             size = per_call if avail is None else max(1, min(
                 per_call, int((avail - MIN_FOR_DEAL_QUERY) / per_deal)))
+            if is_recovery:
+                limit = cfg.keepa_hidden_used_scans_per_run if used else cfg.keepa_hidden_new_tokens_per_run
+                left = max(0, limit - recovery_spent["used" if used else "new"])
+                reserve = max(MIN_FOR_DEAL_QUERY, cfg.keepa_reserve_tokens)
+                size = min(size, left, max(0, int((avail - reserve) / per_deal)) if avail is not None else 0)
+                if not size:
+                    break
             if is_idle:
                 size = min(size, int(overflow / per_deal))
             if used:
@@ -1471,10 +1542,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             remaining = group[i:]
             batch = schedule.batch(remaining, min(size, len(remaining)),
                                    label.removeprefix("idle_").rsplit("_", 1)[0],
-                                   base_hours, last_check, per_deal) if not is_photo else remaining[:size]
+                                   base_hours, last_check, per_deal) if not (is_photo or is_recovery) else remaining[:size]
             group[i:] = batch + [d for d in remaining if d not in batch]
             attempted.update(d["dedupe_key"] for d in batch)
             stats["tokens"]["requested"] += len(batch) * per_deal
+            if is_recovery:
+                recovery_spent["used" if used else "new"] += len(batch)
+                db.meta_set("keepa_hidden_recovery", json.dumps(recovery_spent))
+                stats["hidden_recovery"]["requested"] += len(batch) * per_deal
             if used:
                 used_spent += len(batch) * per_deal  # worst case, even on a lost response
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
@@ -1493,6 +1568,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 observed = keepa_observed_at(product, now, used=is_used_deal(deal))
                 previous = last_check(deal)
                 regressed = previous is not None and observed < previous
+                if is_recovery and product is not None:
+                    stamp = product.get("lastUpdate")
+                    offers = used and isinstance(product.get("offers"), list)
+                    if offers:
+                        product_stats = product.get("stats")
+                        stamp = product_stats.get("lastOffersUpdate") if isinstance(product_stats, dict) else None
+                    at = keepa_time(stamp)
+                    hide = cfg.keepa_show_max_unconfirmed_used_h if used else cfg.keepa_show_max_unconfirmed_h
+                    regressed = (regressed or at is None or at > now
+                                 or _keepa_since_price(stamp, deal) is not True
+                                 or (offers and product.get("offersSuccessful") is False)
+                                 or now - observed > timedelta(hours=hide))
                 if regressed:
                     verdict = None  # never replace newer paid/feed evidence with older data
                 if product is not None and not is_used_deal(deal) and not regressed:
@@ -1516,6 +1603,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 cost, estimated = getattr(verdicts, "costs", {}).get(deal["dedupe_key"],
                     (per_deal, per_deal) if deal["dedupe_key"] in verdicts else (0, 0))
                 current = db.get_deal(deal["dedupe_key"])
+                if is_recovery:
+                    stats["hidden_recovery"]["tokens"] += cost
+                    stats["hidden_recovery"]["estimated_tokens"] += estimated
+                    if current["status"] == "alive" and not price_unconfirmed(current, cfg, now) \
+                            and rank.is_publishable(current, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
+                        stats["hidden_recovery"]["recovered"]["used" if used else "new"] += 1
+                        stats["hidden_recovery"]["recovered"]["total"] += 1
                 if not is_photo:
                     history.record(original, product, verdict, observed, label, cost, estimated,
                                    dead=current["status"] == "dead" and original["status"] != "dead")
@@ -1526,12 +1620,15 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                          "Keepa photo", found, len(photo_less))
             i += len(batch)
     budget.save(db)
+    if rate_limited:
+        recovery_spent["rate_limited"] = True
+        db.meta_set("keepa_hidden_recovery", json.dumps(recovery_spent))
     stats["rate_limited"] = rate_limited
     stats["tokens"]["bucket_end"] = budget.available(now)
     stats["tokens"]["capacity"] = budget.capacity()
-    overflow = budget.overflow(cfg.keepa_recheck_interval_minutes, now)
+    overflow = budget.overflow(gap, now)
     stats["tokens"]["unused_per_hour_estimate"] = (
-        round(overflow * 60 / cfg.keepa_recheck_interval_minutes, 2) if overflow is not None else None)
+        round(overflow * 60 / gap, 2) if overflow is not None else None)
     measurements()
     log.info("price recheck plan/done: %s", ", ".join(
         f"{name}={planned}/{stats['done'][name]}" for name, planned in stats["planned"].items()))

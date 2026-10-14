@@ -190,6 +190,28 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Real run gaps + hidden recovery (Codex task 091, 2026-10-14; uncommitted):**
+  overflow discovery/idle checks share a bounded EMA of actual fast/hourly
+  starts (12 gaps, alpha .3, +10 min slack, 45 min ceiling; 10 min floor).
+  After due checks/discovery, pick-ranked hidden recovery allows 150 new
+  stats tokens and 10 used offer scans/run, preserving the 300-token/deal
+  reserves and used share. Free Warehouse matches avoid redundant scans;
+  retry windows, observation clocks, hide/evidence rules and social stock
+  gates stay intact. Summaries add before/after hidden reasons, recovery
+  costs/estimates and paid recoveries. Same-key retries retain allowances
+  and first-429 stops. Irregular 58-run day: unused refill **5,590 → 500**
+  (1.74%); initial 263 hidden new recover within 15 min, ending hidden 0/0,
+  top/new-wall 1h/2h coverage after each pass 100%. **All 36 new cases pass**.
+  Full suite: **3,428 passed, 12 failed, 1 deselected**. Five legacy fixtures
+  loaded before correction now pass (73 accuracy/recovery checks, 19 Keepa
+  review checks, both 144-run wall days with recovery enabled). Final guard
+  checks: **11 passed**. Only seven existing Stripe localhost-socket failures
+  remain; all reproduce on untouched HEAD (`Operation not permitted`).
+  Knobs, exact failure names, metric definitions and fixture
+  limits: **HANDOFF** in `docs/codex-tasks/091-real-run-gaps-and-hidden-recovery.md`.
+  Remaining: seven socket checks outside this sandbox, review and live
+  observations. No commit/push; shared Git metadata is read-only, preventing
+  branch creation.
 - **First-party click signal (Codex task 090, 2026-10-14; uncommitted, OFF):**
   `first_party_clicks.enabled: false` and empty endpoint preserve every site
   byte and make no click requests. Optional passive Get deal beacons honor

@@ -222,7 +222,9 @@ def test_scheduler_priority_used_cadence_and_wall_cadence(db, cfg, monkeypatch):
         asin = f"B0{i:08d}"
         used = name.startswith("used")
         changes = {"conditions": ["used"] if used else [],
-                   "price_rechecked_at": util.iso(NOW - timedelta(hours=25 if used else 13))}
+                   # Due but still visible: hidden rows have a separate
+                   # bounded recovery queue since task 091.
+                   "price_rechecked_at": util.iso(NOW - timedelta(hours=8 if used else 10))}
         if name == "suspect":
             changes["gone_suspect_at"] = util.iso(NOW - timedelta(hours=2))
         deals[name] = seed(db, cfg, asin=asin, **changes)
@@ -401,7 +403,8 @@ def test_hidden_count_and_critic_flags_survive_corrections(db, cfg):
                price_rechecked_at=util.iso(NOW - timedelta(hours=49)))
     cfg.feature_flags["keepa"] = False  # measurement itself needs no API
     summary = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
-    assert summary["hidden_unconfirmed"] == {"new": 1, "used": 0, "total": 1}
+    assert {k: summary["hidden_unconfirmed"][k] for k in ("new", "used", "total")} == {
+        "new": 1, "used": 0, "total": 1}
     old["flags"] = ["suspect_msrp", "newsletter", "unknown_shipping"]
     old["critic"] = {"plausible": False, "confidence": .9}
     db.update_deal(old["dedupe_key"], payload=old)
