@@ -7,11 +7,14 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 
+import httpx
+
 from dealradar import pipeline, verify
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.keepa import KeepaDealsAdapter
 from dealradar.publish.site import PICKS_META
+from tests.http_helpers import mock_keepa_get
 from tests.test_keepa import SRC
 from tests.test_quality_trio import NOW, _seed_amazon
 
@@ -113,3 +116,20 @@ def test_list_price_the_item_never_sold_near_is_ignored():
     # No list price at all: the averages, as before.
     assert "List Price" not in _priced(2253, -1, 2350, 2300).text
     assert load_config().keepa_list_price_min_avg_ratio == 0.9
+
+
+def test_rechecks_skip_price_history_and_flag_a_cut_off_answer(monkeypatch, caplog):
+    # Live 2026-10-14: a 62-ASIN recheck passed the 5 MB body cap; Keepa
+    # charged for every ASIN and no deal got an answer, silently.
+    seen = []
+
+    def get(url, params=None, timeout=None):
+        seen.append(params)
+        return httpx.Response(200, content=b'{"products": [{"asin": "B0LEG',
+                              request=httpx.Request("GET", url))
+
+    mock_keepa_get(monkeypatch, get)
+    with caplog.at_level("WARNING", logger="dealradar.verify"):
+        assert verify.keepa_products("k", ["B0LEGGINGS"], 1, None) == {}
+    assert seen[0]["history"] == "0"  # no history arrays: same tokens, small answer
+    assert "keepa product x1: unreadable answer" in caplog.text

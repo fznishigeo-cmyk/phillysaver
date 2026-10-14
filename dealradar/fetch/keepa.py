@@ -1009,7 +1009,8 @@ class KeepaDealsAdapter(SourceAdapter):
             try:
                 body = self._get(pull, PRODUCT_URL, {
                     "key": pull.key, "domain": DOMAIN_US,
-                    "asin": ",".join(asins), "stats": 1}, label + " products")
+                    "asin": ",".join(asins), "stats": 1, "history": 0},
+                    label + " products")
             except _TokensShort:
                 return
             except (RuntimeError, httpx.HTTPError) as e:

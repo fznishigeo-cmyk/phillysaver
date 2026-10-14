@@ -1153,8 +1153,8 @@ class TestWarehouseSweep:
             "categories_exclude": [283155, 133140011],
             "sort": [["current_SALES", "asc"]], "perPage": 100, "page": 0}]
         params = fake.product_params[0]
-        assert (params["key"], params["domain"], params["stats"]) == \
-            ("kkey", "1", "1")
+        assert (params["key"], params["domain"], params["stats"], params["history"]) == \
+            ("kkey", "1", "1", "0")
         assert params["asin"] == ",".join(products)
         by_asin = {p.uid.split(":")[0]: p for p in posts}
         assert set(by_asin) == {"B0SWAMZ001", "B0SWAVG001"}

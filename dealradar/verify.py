@@ -415,8 +415,12 @@ def keepa_products(key: str, asins: list[str], stats: int,
     shared token budget when given."""
     asins = [a for a in asins if a][
         :KEEPA_BATCH if offers is None else KEEPA_OFFERS_BATCH]
+    # history=0 drops the price-history arrays (unused; same token cost):
+    # with them a batch could pass the 5 MB body cap, and a cut-off answer
+    # paid for every ASIN in it and returned none (live, 2026-10-14).
     params: dict[str, Any] = {"key": key, "domain": 1,
-                              "asin": ",".join(asins), "stats": stats}
+                              "asin": ",".join(asins), "stats": stats,
+                              "history": 0}
     if offers is not None:
         params["offers"] = offers
     if live:
@@ -435,6 +439,9 @@ def keepa_products(key: str, asins: list[str], stats: int,
                     describe_429(payload))
         return None
     resp.raise_for_status()
+    if not isinstance(payload, dict):
+        log.warning("keepa product x%d: unreadable answer (%d bytes); no "
+                    "opinion this pass", len(asins), len(resp.content or b""))
     products = (payload.get("products") if isinstance(payload, dict)
                 else None) or []
     out: dict[str, dict[str, Any]] = {}
