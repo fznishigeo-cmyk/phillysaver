@@ -31,17 +31,38 @@ def add_counts(target, values):
 class History:
     def __init__(self, db, cfg, now):
         self.db, self.cfg, self.now = db, cfg, now
+        run = db.conn.execute(
+            "SELECT run_key FROM run_stats WHERE started_at=? AND kind IN ('fast','hourly') LIMIT 1",
+            (util.iso(now),)).fetchone()
+        self.run_key = run["run_key"] if run else None
         self.samples = {r["deal_key"]: json.loads(r["samples"]) for r in db.conn.execute(
             "SELECT deal_key, samples FROM keepa_recheck_history")}
         self.yield_stats = {"overall": empty_counts(), "classes": {}}
 
     def attempted(self, key):
-        return any(s["requested_at"] == util.iso(self.now) for s in self.samples.get(key, []))
+        return any(s["requested_at"] == util.iso(self.now) or
+                   (self.run_key is not None and s.get("run_key") == self.run_key)
+                   for s in self.samples.get(key, []))
 
     def requested_recently(self, key):
         interval = timedelta(minutes=self.cfg.keepa_recheck_interval_minutes)
-        return any(self.now - util.parse_iso(s["requested_at"]) < interval
-                   for s in self.samples.get(key, []))
+        latest = max(self.samples.get(key, []), key=lambda s: s["requested_at"], default=None)
+        return bool(latest and latest.get("answered", latest["reading"]) and
+                    self.now - util.parse_iso(latest["requested_at"]) < interval)
+
+    def request_age(self, deals):
+        """Paid price requests, including lost answers; never feed/photo clocks."""
+        amazon = [d for d in deals if verify.is_amazon_deal(d) and d.get("status", "alive") == "alive"]
+        ages = []
+        for deal in amazon:
+            stamps = [at for s in self.samples.get(deal["dedupe_key"], [])
+                      if (at := util.parse_iso(s["requested_at"])) is not None and at <= self.now]
+            if stamps:
+                ages.append((self.now - max(stamps)).total_seconds() / 3600)
+        return {"amazon": len(amazon), "unrequested": len(amazon) - len(ages),
+                **{name: sum(age <= hours for age in ages) / len(amazon) if amazon else None
+                   for name, hours in [("within_45m", .75), *((f"within_{h}h", h) for h in (1, 2, 3, 12))]},
+                "oldest_h": round(max(ages), 2) if ages else None}
 
     def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False):
         key = deal["dedupe_key"]
@@ -65,7 +86,8 @@ class History:
             changed = False  # a newer timestamp alone is not a newly discovered drift
         death = bool(dead and reading)
         last_change = verify.keepa_time((product or {}).get("lastPriceChange"))
-        sample = {"requested_at": util.iso(self.now), "observed_at": stamp,
+        sample = {"requested_at": util.iso(self.now), "run_key": self.run_key,
+                  "answered": product is not None, "observed_at": stamp,
                   "shown_price": shown, "live_price": live, "reading": bool(reading),
                   "changed": changed, "death": death, "tokens": tokens,
                   "last_change_at": util.iso(min(last_change, observed)) if last_change else ""}

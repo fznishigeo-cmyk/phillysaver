@@ -1054,10 +1054,13 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)
+    from ..keepa_rechecks import History
+    top_candidates = [d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]]
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {
-                "top_candidates": confirmation_coverage([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
+                "top_candidates": {**confirmation_coverage(top_candidates, now),
+                                   "request_age": History(db, cfg, now).request_age(top_candidates)},
                 "wall": confirmation_coverage([originals[d["dedupe_key"]] for d in wall
                                        if not d.get("locked") and d.get("dedupe_key") in originals], now)},
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,

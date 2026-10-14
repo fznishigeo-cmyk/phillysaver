@@ -122,7 +122,7 @@ def test_hidden_reason_partition_covers_each_condition(db, cfg):
                                    else {"new": 1, "used": 1, "total": 2})
     cfg.keepa_recheck_adaptive["enabled"] = True
     recent = hidden(db, cfg, 999)
-    History(db, cfg, NOW - timedelta(minutes=5)).record(recent, None, None, NOW, "hidden_new", 1, 1)
+    History(db, cfg, NOW - timedelta(minutes=5)).record(recent, product(), None, NOW, "hidden_new", 1, 1)
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     assert stats["hidden_unconfirmed"]["reasons"]["adaptive_requested_recently"]["total"] == 1
 
@@ -131,7 +131,7 @@ def test_recovery_new_is_bounded_value_ranked_and_same_start_idempotent(db, cfg,
     rows = [hidden(db, cfg, i, brand="Known" if i % 2 else "") for i in range(10)]
     cfg.keepa_hidden_new_tokens_per_run = 3
     cfg.keepa_recheck_top_live = True  # hidden stats checks must still cost 1
-    remember(db, top=rows)
+    # Off-wall recovery stays bounded; remembered top deadlines now lead it.
     expected = sorted(rows, key=lambda d: (-rank.pick_score(d, cfg, NOW, require_confirmation=False), d["dedupe_key"]))[:3]
     KeepaBudget(1000, 20, NOW).save(db)
     calls = checks(monkeypatch, [NOW])
@@ -419,7 +419,7 @@ def test_failed_used_scan_does_not_recover_matching_offer(db, cfg, monkeypatch):
 def test_expired_deadline_and_recent_history_skip_hidden_calls(db, cfg, monkeypatch):
     import time
     deal = hidden(db, cfg)
-    History(db, cfg, NOW - timedelta(minutes=5)).record(deal, None, None, NOW, "hidden_new", 1, 1)
+    History(db, cfg, NOW - timedelta(minutes=5)).record(deal, product(), None, NOW, "hidden_new", 1, 1)
     hidden(db, cfg, 1)
     KeepaBudget(1200, 20, NOW).save(db)
     calls = checks(monkeypatch, [NOW])

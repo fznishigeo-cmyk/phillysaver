@@ -1191,7 +1191,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     overflow_discovery=None, rate_limited=False) -> dict[str, Any]:
     """Visibility-first Keepa checks, correcting plain new prices in-place.
 
-    New suspects/top/wall/rest, then visible used scans within their share.
+    Overdue top/wall first, then new suspects/top/wall/rest and used scans.
     Discovery precedes bounded hidden recovery and idle checks; photos use
     the remainder. Every batch preserves the deal lane's token reserve.
     """
@@ -1231,9 +1231,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["yield"] = history.yield_stats
     base_hours = {}
     attempted = set()
+    deadlines = {}
 
     def priority(d):
-        return ("suspect" if d.get("gone_suspect_at") else
+        return (deadlines[d["dedupe_key"]] if d["dedupe_key"] in deadlines else
+                "suspect" if d.get("gone_suspect_at") else
                 "top" if d["dedupe_key"] in picks else
                 "wall" if d["dedupe_key"] in wall else "rest")
     stats["wall_schedule"] = {name: 0 for name in (
@@ -1248,12 +1250,13 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             "tried_this_run", "adaptive_requested_recently", "other")}
         for deal in hidden:
             key, used = deal["dedupe_key"], is_used_deal(deal)
+            urgent = overdue(deal)
             reason = ("tried_this_run" if key in attempted or history.attempted(key) else
-                      "retry_window" if tried_recently(deal, used) else
+                      "retry_window" if not urgent and tried_recently(deal, used) else
                       "suspect" if deal.get("gone_suspect_at") else
-                      "adaptive_requested_recently" if schedule.enabled and history.requested_recently(key) else
+                      "adaptive_requested_recently" if not urgent and schedule.enabled and history.requested_recently(key) else
                       "never_checked" if last_check(deal) is None else
-                      "cadence_not_due" if in_cadence(deal) else "other")
+                      "cadence_not_due" if not urgent and in_cadence(deal) else "other")
             reasons[reason]["used" if used else "new"] += 1
             reasons[reason]["total"] += 1
         return {"new": sum(not is_used_deal(d) for d in hidden),
@@ -1265,6 +1268,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         stats["confirmed_age"] = {
             name: confirmation_coverage([d for d in rows if d["dedupe_key"] in keys], now)
             for name, keys in (("top_candidates", picks), ("wall", wall))}
+        stats["confirmed_age"]["top_candidates"]["request_age"] = history.request_age(
+            [d for d in rows if d["dedupe_key"] in picks])
         stats["hidden_unconfirmed"] = hidden_counts()
 
     def tried_recently(deal: dict[str, Any], used: bool) -> bool:
@@ -1306,6 +1311,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         last = last_check(deal)
         return last is not None and timedelta() <= now - last < timedelta(hours=cadence(deal))
 
+    def overdue(deal):
+        key = deal["dedupe_key"]
+        if not schedule.enabled or key not in visible:
+            return False
+        name = "top" if key in picks else "wall"
+        last = last_check(deal)
+        # A suspect's second reading must still wait its full hour.
+        if deal.get("gone_suspect_at") and last is not None and now - last < timedelta(hours=_CONFIRM_GONE_H):
+            return False
+        at = last or util.parse_iso(deal.get("first_seen_at") or "")
+        return at is None or now - at >= timedelta(hours=schedule.max_age(deal, name))
+
     stats["hidden_unconfirmed_before"] = hidden_counts()
     stats["hidden_recovery"] = {"tokens": 0, "estimated_tokens": 0, "requested": 0,
                                 "recovered": {"new": 0, "used": 0, "total": 0}}
@@ -1338,7 +1355,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         used = is_used_deal(deal)
         key = deal["dedupe_key"]
         hidden = price_unconfirmed(deal, cfg, now)
-        if history.attempted(key) or (schedule.enabled and history.requested_recently(key)):
+        urgent = overdue(deal)
+        if history.attempted(key) or (not urgent and schedule.enabled and history.requested_recently(key)):
             continue
         condition = "used" if used else "new"
         if key in wall:
@@ -1353,7 +1371,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         in_window = last is not None and timedelta() <= now - last < timedelta(hours=every)
         if key in wall and in_window:
             stats["wall_schedule"]["cadence_" + condition] += 1
-        if tried_recently(deal, used):
+        if not urgent and tried_recently(deal, used):
             if key in wall:
                 stats["wall_schedule"]["retry_" + condition] += 1
             continue
@@ -1361,6 +1379,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                                          min_pct=min(cfg.min_pct, cfg.site_show_from_pct))
         if not ok:
             continue  # only spend tokens on deals that would publish
+        if urgent and (not hidden or rank.is_publishable(
+                deal, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]):
+            deadlines[key] = "top" if key in picks else "wall"
+            (due_used if used else due).append(deal)
+            continue
         if hidden:
             if not in_window and rank.is_publishable(
                     deal, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
@@ -1459,6 +1482,17 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             need = max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)
             groups.append((batch_group, need, cost,
                            KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, label, live, used, is_idle))
+    # A deadline is a pass-wide priority, not merely a tie-breaker within
+    # a lower class. Keep the original labels and the shared budget gates.
+    urgent_groups = []
+    remaining_groups = []
+    for group, *options in groups:
+        urgent = [d for d in group if d["dedupe_key"] in deadlines]
+        if urgent:
+            urgent_groups.append((urgent, *options))
+        remaining_groups.append(([d for d in group if d["dedupe_key"] not in deadlines], *options))
+    urgent_groups.sort(key=lambda g: (deadlines[g[0][0]["dedupe_key"]] != "top", g[6]))
+    groups = urgent_groups + remaining_groups
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
     groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, "photo", False, False, False))
     # Reserve before each call, including lost answers; rerunning a run key
@@ -1568,7 +1602,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 observed = keepa_observed_at(product, now, used=is_used_deal(deal))
                 previous = last_check(deal)
                 regressed = previous is not None and observed < previous
-                if is_recovery and product is not None:
+                if (is_recovery or price_unconfirmed(original, cfg, now)) and product is not None:
                     stamp = product.get("lastUpdate")
                     offers = used and isinstance(product.get("offers"), list)
                     if offers:

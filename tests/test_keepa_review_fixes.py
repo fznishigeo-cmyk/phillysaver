@@ -57,7 +57,7 @@ def _seed(db, key, *, used=True, stamp="", tried="", status="alive",
 
 
 class TestInconclusiveWaitsItsWindow:
-    def test_answered_none_is_not_repaid_every_run(self, tmp_path, monkeypatch):
+    def test_answered_none_waits_until_the_visible_deadline(self, tmp_path, monkeypatch):
         db = DB(tmp_path / "state.db")
         _seed(db, "url|stuck0001")
         calls = []
@@ -73,11 +73,14 @@ class TestInconclusiveWaitsItsWindow:
         row = db.get_deal("url|stuck0001")
         assert row["recheck_tried_at"] == util.iso(NOW)
         assert row["status"] == "alive" and not row["price_rechecked_at"]
-        for minutes in (10, 60, 300):  # fast runs inside the 6 h window
+        for minutes in (10, 60):
             pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=minutes))
         assert calls == ["url|stuck0001"]
-        pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=6, minutes=1))
+        # The visible wall's four-hour deadline overrides the six-hour retry.
+        pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=300))
         assert calls == ["url|stuck0001", "url|stuck0001"]
+        pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=6, minutes=1))
+        assert calls == ["url|stuck0001"] * 3
         db.close()
 
     def test_a_miss_without_an_answer_retries_next_run(self, tmp_path, monkeypatch):
@@ -128,7 +131,8 @@ class TestFairOrder:
 
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake)
         pipeline._recheck_prices(db, _cfg(), NOW)
-        assert seen[0] == ["url|never0001", "url|older0001", "url|recent001"]
+        # Overdue observations precede the newly inserted, never-checked row.
+        assert seen == [["url|older0001", "url|recent001"], ["url|never0001"]]
         db.close()
 
 
@@ -396,6 +400,7 @@ class TestRecheckCadenceFitsThePlan:
 
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake)
         cfg = _cfg()
+        cfg.keepa_recheck_adaptive["enabled"] = False  # legacy fixed-cadence order
         assert (cfg.keepa_recheck_fresh_h, cfg.keepa_recheck_new_h,
                 cfg.keepa_recheck_used_h) == (4.0, 8.0, 6.0)
         pipeline._recheck_prices(db, cfg, NOW)

@@ -189,9 +189,12 @@ def test_old_cache_cannot_make_rapid_reruns_buy_more_checks(db, cfg, monkeypatch
     deal = seed(db, cfg)
     remember(db, top=[deal])
     calls = api(monkeypatch, {deal["asin"]: dict(product(2500), lastUpdate=minutes(NOW - timedelta(hours=1)))})
+    db.start_run("same-run", "fast", NOW)
     pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
+    db.start_run("same-run", "fast", NOW + timedelta(minutes=1))
     pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=1), image_backfill=False)
     assert len(calls) == 1
+    db.start_run("next-run", "fast", NOW + timedelta(minutes=10))
     pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=10), image_backfill=False)
     assert len(calls) == 2
 

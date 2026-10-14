@@ -86,6 +86,11 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     cfg.keepa_recheck_top_h = 0
     calls.clear()
     pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1, minutes=5))
+    # Zero disables cadence acceleration, not the adaptive hard deadline.
+    assert calls == [["url|pick"]]
+    cfg.keepa_recheck_adaptive["enabled"] = False
+    calls.clear()
+    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=2, minutes=10))
     assert calls == []
     db.close()
 

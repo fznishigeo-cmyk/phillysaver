@@ -190,6 +190,31 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Top coverage regression (Codex task 092, 2026-10-14; uncommitted):**
+  overdue top/wall checks now precede every lower class and bypass ordinary
+  retry cooldowns; lost requests can retry next run, same-key retries cannot
+  re-buy checks. Off-wall recovery caps, reserves, used share, first-429 stop,
+  death/evidence clocks and social rules remain. Added private
+  `confirmed_age.top_candidates.request_age`, including the final publish's
+  candidate set. The 192-top/181-wall hourly → fast (+18 min) regression
+  failed before: 63 inconclusive rows were excluded before deadline selection;
+  after, all retry and two-hour top coverage is 100%. The cooldowns predate
+  091; its larger early-check allowance exposes the older-cache path. Live
+  aggregate logs cannot prove each ASIN's skip reason. All **16 new cases**
+  pass; final guards: **18 passed**. Both 144-run wall days, the value/token
+  comparison and irregular-gap targets pass. Full `.venv/bin/python -m
+  pytest -q`: **3,448 passed, 11 failed, 1 deselected**. Four legacy
+  expectations loaded before correction now pass (**26 review/price checks**);
+  the final added transport case also passes. Only seven existing Stripe
+  localhost-socket failures remain (`Operation not permitted`: yearly-price
+  change0–5 and no-price/no-key in `tests/test_workflows.py`), all reproduced
+  on untouched HEAD. Those seven checks outside this sandbox and review/live
+  observation remain. `recheck_top_live` remains **off**: a 45-minute
+  192-ASIN cadence would add ~256 tokens/hour; upgrading every 26.8-minute
+  run would add ~430/hour and exceed the observed spare ~300/hour. Exact
+  clock semantics, cost assumptions and transport sizing evidence:
+  **HANDOFF** in `docs/codex-tasks/092-top-coverage-regression.md`.
+  No commit/push; shared Git metadata blocks branch creation.
 - **Real run gaps + hidden recovery (Codex task 091, 2026-10-14; uncommitted):**
   overflow discovery/idle checks share a bounded EMA of actual fast/hourly
   starts (12 gaps, alpha .3, +10 min slack, 45 min ceiling; 10 min floor).
