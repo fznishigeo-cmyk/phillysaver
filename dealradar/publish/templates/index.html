@@ -310,6 +310,10 @@ header .dhole{background:var(--chip)}
 .credit a{color:var(--muted);text-decoration:underline}
 .how{font-size:12.5px;line-height:1.45;background:var(--chip);border-radius:8px;padding:6px 9px}
 .how b{font-weight:700}
+.how{overflow-wrap:anywhere}
+.how summary{cursor:pointer;min-height:44px;align-content:center}
+.how summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.how p{margin:6px 0}
 .code{font:700 12px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.04em;
       border:1.5px dashed currentColor;border-radius:6px;padding:4px 7px;margin:2px 4px 0 0;
       display:inline-block;background:transparent;color:inherit;cursor:pointer}
@@ -1692,19 +1696,22 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // links to the source post that explains them (d.url, set server-side)
     // and says how here; a code copies on tap.
     var how = "";
-    if (d.needs_steps && !dead) {
-      var codes = (d.codes || []).slice(0, 3).map(function (c) {
+    var extra = (d.checkout || {}).card || "";
+    if ((d.needs_steps || extra) && !dead) {
+      var codes = (d.codes || []).map(function (c) {
         return '<button type="button" class="code" data-code="' + esc(c) +
           '" aria-label="Copy code ' + esc(c) + '">' + esc(c) + "</button>";
       }).join("");
       var steps = (d.how || []).map(esc).join(" &rarr; ");
-      how = '<div class="how"><b>How to get this price:</b> ' +
-        (steps || (codes ? "" : "the steps are in the deal post")) +
+      // One open box, the codes copyable on tap; the deal page has the full terms.
+      how = '<div class="how" data-requirements><b>How to get this price:</b> ' +
+        (extra ? esc(extra) + (steps || codes ? "<br>" : "") : "") +
+        (steps || (codes || extra ? "" : "the steps are in the deal post")) +
         (codes ? (steps ? "<br>" : "") + "Code " + codes : "") + "</div>";
     }
     var actions = (url && !dead
       ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener"' +
-        (d.needs_steps ? ' title="Opens the deal post with the steps"' : "") + ">Get deal</a>"
+        ">Get deal</a>"
       : "") + '<span class="credit">' + credits + "</span>";
 
     return '<article class="card' + (d.spotlight ? " spotlight" : "") + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
@@ -2887,7 +2894,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     if (go && !go.hasAttribute("data-deal-outbound")) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });<!--engagement-->
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });
+      if (d.checkout && d.checkout.summary) track("requirements_deal_click", {method: "home"});<!--engagement-->
       if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement-->
     }
@@ -2925,7 +2933,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     if (go && !go.hasAttribute("data-deal-outbound")) {
       var k = go.closest(".card").getAttribute("data-key");
       var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
-      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });<!--engagement-->
+      track("deal_click", { store: String(d.store || ""), category: String(d.category || ""), method: "home" });
+      if (d.checkout && d.checkout.summary) track("requirements_deal_click", {method: "home"});<!--engagement-->
       if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement-->
 <!--saved-->      savedOutbound(d);
@@ -2938,6 +2947,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var k = go.closest(".card").getAttribute("data-key");
     var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
     track("deal_click", {store: String(d.store || ""), category: String(d.category || ""), method: "home"});
+    if (d.checkout && d.checkout.summary) track("requirements_deal_click", {method: "home"});
 <!--engagement-->    if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement--><!--saved-->    savedOutbound(d);
 <!--/saved-->  });
@@ -3123,6 +3133,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
               }) && ["locked", "alive", "gone", "needs_steps", "earns"].every(function (k) {
                 return d[k] == null || typeof d[k] === "boolean";
               }) && ["conditions", "codes", "how", "flags"].every(function (k) { return strings(d[k]); }) &&
+              (d.checkout == null || (record(d.checkout) &&
+                ["summary", "now", "shipping"].every(function (k) { return typeof d.checkout[k] === "string"; }) &&
+                (d.checkout.card == null || typeof d.checkout.card === "string") &&
+                typeof d.checkout.shipping_known === "boolean")) &&
               (d.credits == null || (Array.isArray(d.credits) && d.credits.every(function (c) {
                 return record(c) && ["name", "url"].every(function (k) { return c[k] == null || typeof c[k] === "string"; });
               })));

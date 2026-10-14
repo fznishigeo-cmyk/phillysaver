@@ -204,6 +204,30 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   remain (change0–change5 and no-price/no-key); run those outside the sandbox.
   Chromium launch and branch creation are sandbox-blocked; actual 360px
   visual/tap/focus QA remains. No commit or push.
+- **Checkout clarity (Codex task 078, 2026-10-14; working tree only):** audited
+  flags/conditions/codes/steps/rebates/rewards/shipping and both renderers. Found
+  four-step/90-character/three-code truncation, conditions lost behind steps,
+  missing Prime/membership/shipping/reward terms and misleading rebate copy.
+  Cards reuse the how box with a visible requirements summary and native expansion;
+  deal pages show all terms. Checkout labels use savings.py's price and shipping
+  knowledge; later rewards never lower it, and range/unit prices are qualified.
+  Codes/rewards now need verbatim evidence; checkout conditions need supporting
+  wording. Generic membership preserves its stated name in verified steps.
+  Public-live `checkout.known_shipping_share`/`requirement_coverage` plus counts
+  join run summaries; GA4-only requirement opens and outbound session rates join
+  private Product. Rates need `requirements_deal_click` registered as a GA4 key
+  event; absent data stays unavailable. Existing link routing stays intact.
+  Snapshot cases: four support-off home modes, four PWA-off trees (including the
+  restored-support check), and the no-link post-join tree's three variants.
+  Full `.venv/bin/python -m pytest -q`: **2,883 passed, 1 deselected**; only seven
+  existing Stripe socket checks in `tests/test_workflows.py` fail (`Operation
+  not permitted`): `test_deploy_checks_the_yearly_price_with_stripe` (change0–5)
+  and `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  Latest focused checkout/link checks: **50 passed**. Plain static card markup
+  matches its pre-change hash. Chromium fails at launch with `Operation not
+  permitted`: 360/390px and desktop layout/focus checks remain unmeasured.
+  Git metadata is read-only; no branch creation, commit or push. Full audit and
+  metric definitions are in `docs/codex-tasks/078-checkout-clarity.md`.
 - **Phone taps (Codex task 076, 2026-10-13; uncommitted):** shared invisible
   44px extensions, retained title clamps, neighbor guards and a probe-based
   audit (8 Node math checks). Only four support-off home/four PWA trees and

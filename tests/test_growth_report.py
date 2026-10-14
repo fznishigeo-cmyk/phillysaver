@@ -68,7 +68,7 @@ GA4_RESPONSE = {"reports": [
                                 ("filter_apply", (38, 300)), ("filter_empty", (7, 80)), ("back_restore", (21, 180)),
                                 ("search_apply", (19, 140)), ("search_zero", (5, 40)), ("search_recovery", (3, 20)),
                                 ("support_ask_shown", (30, 180)), ("support_ask_click", (4, 20)),
-                                ("support_ask_dismiss", (17, 88)))
+                                ("support_ask_dismiss", (17, 88)), ("requirements_open", (19, 109)))
           for period, count in zip(("yesterday", "window"), counts)]]},
     {"dimensionHeaders": [{"name": "sessionSourceMedium"}], "rows": [
         {"dimensionValues": [{"value": "google / organic"}], "metricValues": [{"value": "2500"}]},
@@ -251,6 +251,10 @@ class FakeApis:
                 if dims == [{"name": dim} for dim in ("eventName", "deviceCategory", "pagePath")]:
                     return httpx.Response(200, json=DEAL_PAGES_RESPONSE)
                 if dims == [{"name": "deviceCategory"}]:
+                    if queries[0]["metrics"][-1]["name"] == "sessionKeyEventRate:requirements_deal_click":
+                        response = json.loads(json.dumps(DEAL_SESSIONS_RESPONSE))
+                        response["reports"][0]["metricHeaders"][-1]["name"] = "sessionKeyEventRate:requirements_deal_click"
+                        return httpx.Response(200, json=response)
                     return httpx.Response(200, json=DEAL_SESSIONS_RESPONSE)
                 if dims == [{"name": "eventName"}]:
                     return httpx.Response(200, json=PRODUCT_RESPONSE)
@@ -513,7 +517,8 @@ def test_ga4_request_and_parsing():
         "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
         "install_offer_shown", "install_accepted", "standalone_session",
-        "filter_apply", "filter_empty", "back_restore", "search_apply", "search_zero", "search_recovery", "support_ask_shown", "support_ask_click", "support_ask_dismiss"]
+        "filter_apply", "filter_empty", "back_restore", "search_apply", "search_zero", "search_recovery", "support_ask_shown", "support_ask_click", "support_ask_dismiss",
+        "requirements_open"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
@@ -524,7 +529,8 @@ def test_ga4_request_and_parsing():
                                 "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
                                 "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
                                 "search_apply": 19, "search_zero": 5, "search_recovery": 3,
-                                "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17}
+                                "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
+                                "requirements_open": 19}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
@@ -894,6 +900,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
                       "search_apply": 19, "search_zero": 5, "search_recovery": 3,
                       "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
+                      "requirements_open": 19,
                       "watch_create": 3, "watch_match": None, "watch_deal_click": None},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
@@ -902,16 +909,21 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                    "filter_apply": 300, "filter_empty": 80, "back_restore": 180,
                    "search_apply": 140, "search_zero": 40, "search_recovery": 20,
                    "support_ask_shown": 180, "support_ask_click": 20, "support_ask_dismiss": 88,
+                   "requirements_open": 109,
                    "watch_create": 9, "watch_match": 5, "watch_deal_click": 2},
         "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
+                                   "desktop": {"sessions": 50, "rate": .4},
+                                   "tablet": {"sessions": 0, "rate": None}}
+                          for period in ("yesterday", "window")},
+        "requirements_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
                                    "desktop": {"sessions": 50, "rate": .4},
                                    "tablet": {"sessions": 0, "rate": None}}
                           for period in ("yesterday", "window")}}
     # Main totals/events/sources/pages + store query; load and feature counts add no request.
     # Single queries: saved-deal events (watch actions share it), new/returning (066),
-    # deal pages (068), device sessions (065).
+    # deal pages (068), device sessions (065), step-offer sessions (078).
     queries = [json.loads(r.content) for r in fake.requests if r.url.host == "analyticsdata.googleapis.com"]
-    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1, 1]
+    assert [len(q["requests"]) for q in queries] == [4, 2, 1, 1, 1, 1, 1]
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     for line in ("product.home_load_attempts: 400 / 2,500", "product.first_load_failures: 12 / 100",
                  "product.static_fallback_shown: 11 / 94", "product.first_load_recoveries: 5 / 45",
@@ -924,6 +936,8 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                  "product.search_apply: 19 / 140", "product.search_zero: 5 / 40", "product.search_recovery: 3 / 20",
                  "product.support_ask_shown: 30 / 180", "product.support_ask_click: 4 / 20",
                  "product.support_ask_dismiss: 17 / 88",
+                 "product.requirements_open: 19 / 109",
+                 "Step-offer outbound session action rate (share of all sessions; not purchases):",
                  "mobile: 25.0% of 100 sessions / 25.0% of 100 sessions",
                  "tablet: unavailable (0 sessions) / unavailable (0 sessions)"):
         assert line in text and line not in caplog.text

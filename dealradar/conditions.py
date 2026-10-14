@@ -2,7 +2,7 @@
 
 import re
 
-_CANONICAL = {"new_customer", "prime_only", "targeted", "subscribe_save", "in_cart",
+_CANONICAL = {"new_customer", "prime_only", "membership_only", "targeted", "subscribe_save", "in_cart",
               "limited_qty", "pricing_error", "in_store_only", "ymmv", "clearance_aisle",
               "multi_buy", "used", "open_box", "refurbished"}
 

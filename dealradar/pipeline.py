@@ -2000,6 +2000,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["published"] = site_res.get("published", 0)
         summary["price_recheck"]["confirmed_age"] = site_res["confirmed_age"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
+        summary["checkout"] = site_res.get("checkout", {})
         from .publish.indexnow import metrics as indexnow_metrics
         summary["indexnow"] = indexnow_metrics(db, cfg, now)
         try:

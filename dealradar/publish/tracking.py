@@ -205,6 +205,8 @@ _DISPATCH = """\
     first_load_recovered: { ga4Only: true },
     deal_detail_view: { ga4Only: true, methods: ["deal"] },
     deal_code_copy: { ga4Only: true, methods: ["home", "deal", "category", "store", "price", "best_today"] },
+    requirements_open: { ga4Only: true, methods: ["home", "deal", "category", "store", "price", "best_today"] },
+    requirements_deal_click: { ga4Only: true, methods: ["home", "deal", "category", "store", "price", "best_today"] },
     filter_apply: { ga4Only: true, methods: ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"] },
     filter_empty: { ga4Only: true, methods: ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"] },
     search_apply: { ga4Only: true, methods: ["query"] },

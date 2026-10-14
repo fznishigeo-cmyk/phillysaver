@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
-from ..savings import display_pct
+from ..savings import display_pct, known_shipping, parse_stack_step
 from ..config import AppConfig, load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_order, pick_score, top_picks
 from ..verify import (confirmed_age, is_amazon_deal, price_confirmed_at,
@@ -282,7 +282,7 @@ def _headline(deal: dict[str, Any]) -> str:
     if "range" in flags:
         parts.append("Price varies by option; the discount holds even at the highest price.")
     if "rebate_dependent" in flags:
-        parts.append("Needs a rebate to reach this price.")
+        parts.append("Rebate is later; not deducted from this price.")
     if "unknown_shipping" in flags:
         parts.append("Shipping cost unclear — check at checkout.")
     tier = deal.get("verify_tier", "unverified")
@@ -336,6 +336,7 @@ _CONDITION_HOW = {
     "new_customer": "New customers only", "targeted": "Price may vary by account",
     "ymmv": "Price may vary by account", "multi_buy": "Multi-buy price",
     "in_store_only": "In store only", "clearance_aisle": "In-store clearance",
+    "prime_only": "Prime membership required", "membership_only": "Membership required",
 }
 
 
@@ -461,16 +462,108 @@ def copy_variant(html: str, open_access: bool, support: bool = False) -> str:
 
 
 def _how(deal: dict[str, Any]) -> list[str]:
-    """The steps as the post stated them (stack steps, then rebates), short
-    and at most four: the card's "how to get this price" line. With none,
-    what the deal's conditions ask (once each)."""
-    steps = [str(x).strip() for x in
-             list(deal.get("stack_steps") or []) + list(deal.get("rebates") or [])]
-    steps = [x[:90] for x in steps if x]
-    if not steps:
-        steps = list(dict.fromkeys(_CONDITION_HOW[c] for c in deal.get("conditions") or []
-                                   if c in _CONDITION_HOW))
-    return steps[:4]
+    """All extracted instructions, without dropping conditions or truncating facts."""
+    steps = []
+    kinds = set()
+    for raw in list(deal.get("stack_steps") or []) + list(deal.get("rebates") or []):
+        raw = str(raw).strip()
+        if raw:
+            kind = parse_stack_step(raw)["kind"]
+            kinds.add(kind)
+            later = kind in {"rebate_abs", "rebate_pct", "deferred"}
+            steps.append(("After purchase (not deducted at checkout): " if later else "") + raw)
+    if deal.get("deferred_value"):
+        kinds.add("deferred")
+        steps.append("After purchase (not deducted at checkout): " + deal["deferred_value"].strip())
+    steps += _requirements(deal)
+    flags = set(deal.get("flags") or [])
+    if "range" in flags:
+        steps.append("Price varies by option; the displayed price is the verified upper bound.")
+    if "per_unit" in flags:
+        steps.append("Price is per unit; the checkout total depends on quantity.")
+    if deal.get("quantity_or_unit"):
+        steps.append("Quantity: " + deal["quantity_or_unit"])
+    if "rebate_dependent" in flags and not kinds & {"rebate_abs", "rebate_pct"}:
+        steps.append("Rebate is later; its terms are not stated here. Check the source post.")
+    if "deferred_value" in flags and "deferred" not in kinds:
+        steps.append("Later reward; its terms are not stated here. Check the source post.")
+    return list(dict.fromkeys(steps))
+
+
+def _requirements(deal: dict[str, Any]) -> list[str]:
+    informational = {"used", "open_box", "refurbished", "new", "online_only", "online only",
+                     "limited_qty", "pricing_error"}
+    return list(dict.fromkeys(_CONDITION_HOW.get(c, str(c).replace("_", " "))
+                              for c in deal.get("conditions") or [] if c not in informational))
+
+
+def _checkout(deal: dict[str, Any], steps: bool) -> dict[str, Any]:
+    """Copy requirements and label the savings result; never calculate a price."""
+    flags = set(deal.get("flags") or [])
+    summary = _requirements(deal)
+    if "range" in flags:
+        summary.append("Price varies by option")
+    if "per_unit" in flags:
+        summary.append("Price is per unit")
+    if deal.get("codes"):
+        summary.append("Promo code required")
+    raw_steps = deal.get("stack_steps") or []
+    if any(re.search(r"\bclip\b|\bcoupon\b(?!\s+code)", s, re.I) for s in raw_steps):
+        summary.append("Coupon required")
+    if any(re.search(r"subscribe|s&s", s, re.I) for s in raw_steps) and "subscribe_save" not in (deal.get("conditions") or []):
+        summary.append("Choose Subscribe & Save")
+    if any(re.search(r"\b(?:join|sign up|enroll)\b", s, re.I) for s in raw_steps):
+        summary.append("Sign-up required")
+    later = [parse_stack_step(s)["kind"] for s in raw_steps + (deal.get("rebates") or [])]
+    if ("rebate_dependent" in flags or any(k.startswith("rebate_") for k in later)
+            or any(parse_stack_step(s)["kind"] == "unknown" for s in deal.get("rebates") or [])):
+        summary.append("Rebate after purchase")
+    if deal.get("deferred_value") or "deferred_value" in flags or "deferred" in later:
+        summary.append("Reward after purchase")
+    shipping = str(deal.get("shipping_cost_or_threshold") or "").strip()
+    known = known_shipping(deal)
+    # Unconditional free shipping is information, not a requirement or a new card row.
+    free_shipping = re.fullmatch(
+        r"(?:free(?:\s+(?:standard\s+)?(?:shipping|delivery))?|"
+        r"(?:shipping|delivery)(?:\s+is)?\s+free|\$?0(?:\.0+)?)[.!]?", shipping, re.I)
+    if shipping and not free_shipping:
+        summary.append("Shipping: " + shipping + (" (included)" if known else ""))
+    elif "unknown_shipping" in flags:
+        summary.append("Shipping not confirmed")
+    if not summary and (steps or any(parse_stack_step(s)["kind"] == "unknown" for s in raw_steps)):
+        summary.append("Checkout steps required")
+    price = deal.get("final_price")
+    now = (f"Pay now: ${price:,.2f}" + (" including stated shipping; before tax." if known
+           else " before tax; shipping not confirmed.")) if price is not None else "Checkout amount not stated."
+    if "per_unit" in flags:
+        now = now.replace("Pay now:", "Price per unit:")
+    elif "range" in flags:
+        now = now.replace("Pay now:", "Price varies; up to")
+    if deal.get("status") == "dead":
+        now = now.replace("Pay now:", "Last checkout price:")
+    # The card keeps its one box (steps, then copyable codes) and adds only
+    # what neither the steps, the codes nor the condition chips already say:
+    # money that comes later, a price that varies, or shipping not included.
+    card = [s for s in dict.fromkeys(summary) if s in (
+        "Price varies by option", "Price is per unit", "Rebate after purchase",
+        "Reward after purchase", "Shipping not confirmed")
+        or (s.startswith("Shipping: ") and not known)]
+    return {"summary": " · ".join(dict.fromkeys(summary)), "card": " · ".join(card),
+            "now": now, "shipping_known": known,
+            "shipping": ("Shipping: " + shipping + ("." if not shipping.endswith(".") else ""))
+                        if shipping else "Shipping not stated; check the store for the total."}
+
+
+def checkout_metrics(deals: list[dict[str, Any]]) -> dict[str, Any]:
+    """Current public live offers only; empty denominators are unavailable."""
+    live = [d for d in deals if not d.get("locked") and d.get("status", "alive") == "alive"]
+    required = [d for d in live if d["checkout"]["summary"]]
+    covered = [d for d in required if not any("terms are not stated here" in s for s in d["how"])]
+    known = sum(d["checkout"]["shipping_known"] for d in live)
+    return {"known_shipping_share": known / len(live) if live else None,
+            "requirement_coverage": len(covered) / len(required) if required else None,
+            "public_live": len(live), "known_shipping": known,
+            "with_requirements": len(required), "covered": len(covered)}
 
 
 def _override_key(url: str) -> str:
@@ -517,6 +610,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)
+    checkout = _checkout(deal, steps)
     key = hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16]
     store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
                                    sovrn_enabled=sovrn_enabled, cuid=key,
@@ -567,7 +661,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "codes": deal.get("codes") or [],
         # The card shows how even when Get deal uses an earning store link.
         "needs_steps": steps,
-        "how": _how(deal) if steps else [],
+        "how": _how(deal) if checkout["summary"] else [],
+        "checkout": checkout,
         "conditions": deal.get("conditions") or [],
         "category": deal.get("category") or "other",
         "badge": deal.get("verify_tier", "unverified"),
@@ -954,6 +1049,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {
                 "top_candidates": confirmed_age([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
                 "wall": confirmed_age([originals[d["dedupe_key"]] for d in wall

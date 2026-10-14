@@ -42,7 +42,7 @@ _REBATE_RE = re.compile(r"\brebates?\b|\bmir\b|mail[\s-]?in")
 # value — it never reduces either percentage (a '10% cash back' step must not
 # be mistaken for a 10%-off code).
 _DEFERRED_RE = re.compile(
-    r"cash\s?back|gift\s?card|store\s+credit|statement\s+credit|portal")
+    r"cash[\s-]?back|gift[\s-]?card|store\s+credit|statement\s+credit|portal")
 _SALE_RE = re.compile(r"\b(?:sale|now|price)\b")
 _ABS_OFF_RE = re.compile(r"\boff\b|coupon|clip|discount|save")
 
@@ -117,6 +117,19 @@ def parse_stack_step(s: str) -> dict:
         return {"kind": "abs_off", "value": float(money_m.group(1))}
     logger.debug("unknown stack step, ignored for checkout math: %r", s)
     return {"kind": "unknown", "value": None}
+
+
+def known_shipping(deal: dict) -> bool:
+    """Whether the published savings result includes a known shipping cost.
+
+    A threshold alone is insufficient below that threshold. No amount is
+    added here: final_price already came from the savings engine.
+    """
+    if "unknown_shipping" in (deal.get("flags") or []):
+        return False
+    cost, threshold = parse_shipping(deal.get("shipping_cost_or_threshold") or "")
+    final = deal.get("final_price")
+    return cost is not None or (threshold is not None and final is not None and final >= threshold)
 
 
 # ---------------------------------------------------------------------------

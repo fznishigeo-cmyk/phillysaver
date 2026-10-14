@@ -15,6 +15,14 @@
     catch (e) { /* analytics never stops navigation or copying */ }
   }
   if (scope.querySelector("[data-deal-detail]")) track("deal_detail_view", {method: "deal"});
+  // Native details remains usable without JS. Only an actual opening counts;
+  // render, close and unrelated details (price watches) do not.
+  scope.addEventListener("toggle", function (e) {
+    var box = e.target;
+    if (box && box.open && box.hasAttribute("data-requirements") && scope.contains(box)) {
+      track("requirements_open", {method: method});
+    }
+  }, true);
   // Listing/related cards have no wall clock; keep their check age current.
   if (method !== "home" && scope.querySelector("[data-checked-at]")) {
     function paintChecked() {
@@ -71,6 +79,7 @@
     if (go && scope.contains(go)) {
       track("deal_click", {store: go.getAttribute("data-store") || "",
         category: go.getAttribute("data-category") || "other", method: method});
+      if (go.hasAttribute("data-step-offer")) track("requirements_deal_click", {method: method});
     }
     // Modified clicks, middle clicks and keyboard activation keep native navigation.
   }

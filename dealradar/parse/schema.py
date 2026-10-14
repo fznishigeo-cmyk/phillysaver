@@ -292,7 +292,7 @@ Rules:
   If you cannot quote it, leave the price null. Quotes are checked verbatim
   against the post; a quote that is not in the post gets the deal rejected.
 - conditions: use only this vocabulary, zero or more of: new_customer,
-  prime_only, targeted, subscribe_save, in_cart, limited_qty, pricing_error,
+  prime_only, membership_only, targeted, subscribe_save, in_cart, limited_qty, pricing_error,
   in_store_only, ymmv, clearance_aisle, multi_buy, used, open_box.
 - Used / open-box / refurbished / warehouse wording (e.g. Amazon Warehouse,
   Amazon Resale): add condition 'used' (and 'open_box' when stated). These
@@ -329,6 +329,10 @@ Rules:
 - Every stack step and rebate must be copied verbatim, including its numbers
   and wording. Unsupported shipping, steps, rebates or deal types drop the deal.
 - codes / rebates: promo codes and rebates exactly as written.
+- Membership other than Prime: add membership_only and copy the stated
+  membership name and requirement verbatim into stack_steps.
+- deferred_value: copy the full gift-card, store-credit or cashback wording
+  verbatim, including any amount and eligibility; never subtract it from final_price.
 - category: the single best fit from electronics, computers, home, kitchen,
   kids_baby, toys_games, fashion, beauty, health, grocery, pets, outdoors,
   sports, office, auto, books_media, gaming, other.

@@ -134,6 +134,32 @@ def verify_evidence(deal: ExtractedDeal, text: str) -> tuple[bool, str]:
             return False, f"pct_off: quote {nquote!r} carries no %% sign"
     from ..savings import parse_shipping, parse_stack_step
 
+    requirements = {
+        "prime_only": r"\bprime\b",
+        "membership_only": r"\bmember(?:ship|s)?\b|\b(?:join|enroll)\b",
+        "subscribe_save": r"subscribe\s*(?:&|and|\+)\s*save|\bs\s*&\s*s\b",
+        "in_cart": r"\bcart\b|at checkout",
+        "new_customer": r"\bnew\s+(?:customers?|users?|members?|accounts?)\b|first[ -](?:order|purchase)",
+        "targeted": r"targeted|select(?:ed)?\s+(?:accounts?|customers?|users?|members?)|check your account",
+        "multi_buy": r"\b(?:buy|purchase)\s+(?:\d+|two|three|four|one)\b|\b(?:bogo|multi[ -]?buy)\b|on\s+\d+\s+select"
+                     r"|\b\d+\s*(?:for|/)\s*\$",
+    }
+    for condition in deal.conditions:
+        pattern = requirements.get(condition)
+        if pattern and not re.search(pattern, ntext, re.I):
+            return False, "conditions: requirement has no supporting wording"
+
+    for code in deal.codes:
+        # Checkout codes are case-insensitive; the code must still appear as written.
+        if not code.strip() or not re.search(r"(?<![\w-])" + re.escape(code) + r"(?![\w-])", ntext, re.I):
+            return False, "codes: code not found verbatim in text"
+    if deal.deferred_value:
+        quote = _norm_ws(deal.deferred_value)
+        if (not quote or quote not in ntext or parse_stack_step(quote)["kind"] != "deferred"
+                or any(not _number_in_quote(float(n.replace(',', '')), quote, ntext)
+                       for n in re.findall(r"\d[\d,]*(?:\.\d+)?", quote))):
+            return False, "deferred_value: missing verbatim reward wording"
+
     # These free-form facts are mathematical inputs too. Copying a number
     # from elsewhere in the post cannot establish a coupon or shipping cost.
     math_quotes = set()

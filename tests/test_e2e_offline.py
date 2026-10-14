@@ -227,6 +227,10 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
     # set ("$150 value" fake MSRP) -> suspect_msrp -> only 2 publish.
     assert summary["critic"] == {"judged": 3, "suspect": 1, "reused": 0, "calls": 1}
     assert summary["published"] == 2
+    # The later corroborating post omits shipping; do not revive an old promise.
+    assert summary["checkout"] == {"public_live": 2, "known_shipping": 0,
+        "with_requirements": 2, "covered": 2, "known_shipping_share": 0,
+        "requirement_coverage": 1}
     assert set(summary["seo_audit"]["indexable_by_family"]) == {
         "home", "category", "store", "price", "best_today", "deal"}
     assert all(summary["seo_audit"][k] == 0 for k in (

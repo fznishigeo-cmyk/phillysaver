@@ -33,7 +33,8 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore",
                   "search_apply": "search_apply", "search_zero": "search_zero", "search_recovery": "search_recovery",
                   "support_ask_shown": "support_ask_shown", "support_ask_click": "support_ask_click",
-                  "support_ask_dismiss": "support_ask_dismiss"}
+                  "support_ask_dismiss": "support_ask_dismiss",
+                  "requirements_open": "requirements_open"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 WATCH_EVENTS = ("watch_create", "watch_match", "watch_deal_click")
@@ -182,14 +183,16 @@ def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:
     return out
 
 
-def ga4_deal_sessions(client: Any, token: str, property_id: str, days: int) -> dict:
+def ga4_deal_sessions(client: Any, token: str, property_id: str, days: int, *,
+                     requirements: bool = False) -> dict:
     """GA4's session rate, per device, rather than clicks divided by sessions.
 
     The documented sessionKeyEventRate metric requires deal_click to be a
     registered key event. Its absence must not turn event counts into a rate.
     https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema
     """
-    metric = "sessionKeyEventRate:deal_click"
+    event = "requirements_deal_click" if requirements else "deal_click"
+    metric = "sessionKeyEventRate:" + event
     resp = client.post(GA4_URL.format(quote(property_id, safe="")), json={"requests": [{
         "dateRanges": [{"startDate": "yesterday", "endDate": "yesterday", "name": "yesterday"},
                        {"startDate": f"{days}daysAgo", "endDate": "yesterday", "name": "window"}],
@@ -197,7 +200,7 @@ def ga4_deal_sessions(client: Any, token: str, property_id: str, days: int) -> d
         "metrics": [{"name": "sessions"}, {"name": metric}], "limit": 20,
     }]}, headers={"Authorization": f"Bearer {token}"})
     if resp.status_code == 400:
-        return {"unavailable": "GA4 session rate unavailable; register deal_click as a key event"}
+        return {"unavailable": f"GA4 session rate unavailable; register {event} as a key event"}
     resp.raise_for_status()
     result = resp.json()["reports"][0]
     dimensions = {h.get("name") for h in result.get("dimensionHeaders", [])}

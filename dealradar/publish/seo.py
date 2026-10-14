@@ -155,7 +155,8 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
     category = str(d.get("category") or "other")
     if not re.fullmatch(r"[a-z0-9_]{1,40}", category):
         category = "other"
-    return f' data-deal-outbound data-store="{escape(store)}" data-category="{escape(category)}"'
+    requirement = ' data-step-offer' if (d.get("checkout") or {}).get("summary") else ''
+    return f' data-deal-outbound data-store="{escape(store)}" data-category="{escape(category)}"' + requirement
 
 
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
@@ -221,12 +222,15 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         if _http(c.get("url")) else f"via {e(c.get('name'))}"
         for c in d.get("credits") or [])
     how = ""
-    if not dead and d.get("needs_steps"):  # url is the source post that explains the steps
+    checkout = d.get("checkout") or {}
+    if not dead and (checkout.get("summary") or d.get("needs_steps")):
         steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
-        codes = "".join(f'<code class="code">{e(c)}</code>' for c in (d.get("codes") or [])[:3])
-        how = (f'<div class="how"><b>How to get this price:</b> '
-               f'{steps or ("" if codes else "the steps are in the deal post")}'
-               f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</div>')
+        codes = "".join(f'<code class="code">{e(c)}</code>' for c in d.get("codes") or [])
+        how = (f'<details class="how" data-requirements><summary><b>How to get this price:</b> '
+               f'{e(checkout.get("summary"))}</summary><p>{e(checkout.get("now"))} '
+               f'{e(checkout.get("shipping"))}</p>'
+               f'{steps or ("" if codes or checkout.get("summary") else "the steps are in the deal post")}'
+               f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</details>')
     actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
     return (f'<article class="card{" gone" if dead else ""}{" spotlight" if spotlight else ""}"'
@@ -602,8 +606,12 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                    "corroborated": "Two or more independent sources confirmed this price."}
     content += (f'<p>{_TIER_LABEL.get(badge, "single source")}: '
                 f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
-    if d.get("needs_steps") or d.get("codes"):
+    checkout = d.get("checkout") or {}
+    checkout_text = (f'<p>{escape(checkout.get("now", ""))} '
+                     f'{escape(checkout.get("shipping", ""))}</p>') if checkout else ""
+    if checkout.get("summary") or d.get("needs_steps") or d.get("codes"):
         content += '<div class="how"><h2>How to get this price</h2>'
+        content += checkout_text
         if d.get("how"):
             content += '<ol>' + ''.join(f'<li>{escape(str(s))}</li>' for s in d.get("how") or []) + '</ol>'
         for c in d.get("codes") or []:
@@ -615,9 +623,11 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
             content += '</p>'
         if d.get("codes") and not dead:
             content += '<p class="code-status" role="status" aria-live="polite"></p>'
-        if not (d.get("how") or d.get("codes")):
+        if not (d.get("how") or d.get("codes") or checkout.get("summary")):
             content += '<p>The steps are in the deal post.</p>'
         content += '</div>'
+    else:
+        content += checkout_text
     seen = parse_iso(d.get("first_seen_at") or "")
     if seen:
         content += f'<p>First seen: <time datetime="{iso(seen)}">{_date(seen)}</time> (UTC)</p>'

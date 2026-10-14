@@ -110,6 +110,7 @@ def test_serialized_fields_have_consumers():
         "codes",  # index.html and SEO how-to box; e2e promo assertion
         "needs_steps",  # index.html and SEO how-to box/Get deal
         "how",  # index.html and SEO how-to steps
+        "checkout",  # card requirement summary and full checkout/shipping copy on detail pages
         "conditions",  # index.html labels/category filter; SEO; STUB_KEYS
         "category",  # index.html filter/click tracking; SEO hubs; STUB_KEYS
         "badge",  # index.html card badge; SEO cards

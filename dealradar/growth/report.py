@@ -213,6 +213,11 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
             data["product"]["deal_sessions"] = google.ga4_deal_sessions(client, token(), cfg.growth_ga4_property_id, days)
         except Exception:
             data["product"]["deal_sessions"] = {"unavailable": "device session rate unavailable"}
+        try:
+            data["product"]["requirements_sessions"] = google.ga4_deal_sessions(
+                client, token(), cfg.growth_ga4_property_id, days, requirements=True)
+        except Exception:
+            data["product"]["requirements_sessions"] = {"unavailable": "device session rate unavailable"}
     log.info("product: %s", status["product"])
     return data, status
 
@@ -388,6 +393,18 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")
     lines.append("Support ask counts are actions, not payments or amounts.")
     lines.append("Search counts are applied queries, empty results and recovery choices; absent event samples are unavailable.")
+    sessions = (product or {}).get("requirements_sessions") or {"unavailable": "no observed session data"}
+    lines.append("Step-offer outbound session action rate (share of all sessions; not purchases):")
+    if "unavailable" in sessions:
+        lines.append("  unavailable — " + sessions["unavailable"])
+    else:
+        for device in ("mobile", "desktop", "tablet"):
+            values = []
+            for period in ("yesterday", "window"):
+                row = sessions.get(period, {}).get(device) or {}
+                values.append(f"{row['rate']:.1%} of {_n(row['sessions'])} sessions"
+                              if row.get("rate") is not None and row.get("sessions") else "unavailable")
+            lines.append(f"  {device}: " + " / ".join(values))
     def observed(value):
         return _n(value) if value is not None else "unavailable (no observed event)"
 

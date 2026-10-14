@@ -78,7 +78,11 @@ function harness(html, path, {clipboard='ok', dynamic=false, tracking=true}={}) 
       preventDefault(){throw Error('navigation prevented');}, stopPropagation(){throw Error('bubbling stopped');}};
     for (const fn of handlers[e.type] || []) fn(e);
   }
-  return {ctx,scope,anchors,buttons,events,writes,status,click};
+  function toggle(open, requirements=true) {
+    const box={open,hasAttribute:name=>requirements && name==='data-requirements',scope};
+    for(const fn of handlers.toggle || []) fn({target:box});
+  }
+  return {ctx,scope,anchors,buttons,events,writes,status,click,toggle};
 }
 const flush = () => new Promise(resolve=>setImmediate(resolve));
 (async () => {
@@ -87,19 +91,24 @@ const flush = () => new Promise(resolve=>setImmediate(resolve));
     const html = fs.readFileSync(root + path + 'index.html', 'utf8');
     const h = harness(html,path);
     assert.equal(h.events.filter(e=>e.name==='deal_detail_view').length,kind==='deal'?1:0);
+    const beforeOpen=h.events.length;
+    h.toggle(false); h.toggle(true,false); assert.equal(h.events.length,beforeOpen);
+    h.toggle(true); assert.deepEqual(h.events.at(-1),{name:'requirements_open',params:{method:kind}});
     const links = h.anchors.filter(a=>a.hasAttribute('data-deal-outbound'));
     assert(links.length >= (kind === 'deal' ? 2 : 1)); // primary and related on detail
     for (const link of links) {
       const before = h.events.length;
       h.click(link,{ctrlKey:true});
-      assert.equal(h.events.length,before+1);
-      assert.deepEqual(h.events.at(-1),{name:'deal_click',params:{store:link.attrs['data-store'],
+      const actions=link.hasAttribute('data-step-offer')?2:1;
+      assert.equal(h.events.length,before+actions);
+      assert.deepEqual(h.events[before],{name:'deal_click',params:{store:link.attrs['data-store'],
         category:link.attrs['data-category'],method:kind}});
+      if(actions===2) assert.deepEqual(h.events.at(-1),{name:'requirements_deal_click',params:{method:kind}});
       for (const options of [{metaKey:true},{shiftKey:true},{altKey:true},{type:'click',button:1},
                             {type:'auxclick',button:1},{type:'auxclick',button:2},{button:0,detail:0}]) {
         const count = h.events.length;
         h.click(link,options);
-        assert.equal(h.events.length-count,(options.button===2 || options.type==='click' && options.button===1)?0:1);
+        assert.equal(h.events.length-count,(options.button===2 || options.type==='click' && options.button===1)?0:actions);
       }
     }
     for (const link of h.anchors.filter(a=>!a.hasAttribute('data-deal-outbound'))) {
@@ -120,22 +129,33 @@ const flush = () => new Promise(resolve=>setImmediate(resolve));
   }
   const h=harness(home,'/',{dynamic:true});
   const staticGet=h.anchors.find(a=>a.hasAttribute('data-deal-outbound'));
-  h.click(staticGet); assert.equal(h.events.length,1); // both real handlers registered
-  h.click(staticGet,{type:'auxclick',button:1}); assert.equal(h.events.length,2);
+  const staticActions=staticGet.hasAttribute('data-step-offer')?2:1;
+  h.click(staticGet); assert.equal(h.events.length,staticActions); // both real handlers registered
+  h.click(staticGet,{type:'auxclick',button:1}); assert.equal(h.events.length,staticActions*2);
   for (const phase of ['first','refresh']) {
     if(phase==='refresh') h.ctx.nextPayload={...payload,deals:payload.deals.map(d=>({...d,item:'Renamed title'}))};
     const pub=await h.ctx.fetchPublish(); h.ctx.state.deals=pub.deals;
     for (const d of pub.deals) {
       const html=h.ctx.cardHtml(d), title=html.match(/<h3 class="title">([\s\S]*?)<\/h3>/)[1];
+      const required=Boolean(d.checkout && d.checkout.summary);
+      assert.equal(html.includes('<details class="how" data-requirements>'),required);
+      if(required) {
+        assert(decode(html).includes(d.checkout.summary));
+        assert(decode(html).includes(d.checkout.now));
+        for(const step of d.how || []) assert(decode(html).includes(step));
+        for(const code of d.codes || []) assert(decode(html).includes(code));
+      }
       assert.match(title,new RegExp('href="'+(d.deal_path || d.url).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'"'));
       if(d.deal_path) assert(!title.includes('sponsored'));
       assert.equal(attributes(html.match(/<a class="getdeal"([^>]*)>/)[1]).href,d.url);
       const card={getAttribute:()=>d.key};
       const outbound=element({href:d.url,rel:'sponsored noopener',class:'getdeal'},h.scope,card);
       const before=h.events.length; h.click(outbound,{metaKey:true});
-      assert.equal(h.events.length,before+1); assert.equal(h.events.at(-1).params.method,'home');
-      h.click(outbound,{type:'click',button:1}); assert.equal(h.events.length,before+1);
-      h.click(outbound,{type:'auxclick',button:1}); assert.equal(h.events.length,before+2);
+      const actions=required?2:1;
+      assert.equal(h.events.length,before+actions); assert.equal(h.events[before].name,'deal_click');
+      if(required) assert.deepEqual(h.events.at(-1),{name:'requirements_deal_click',params:{method:'home'}});
+      h.click(outbound,{type:'click',button:1}); assert.equal(h.events.length,before+actions);
+      h.click(outbound,{type:'auxclick',button:1}); assert.equal(h.events.length,before+actions*2);
       if(d.deal_path) {
         const before=h.events.length; h.click(element({href:d.deal_path},h.scope,card));
         assert.equal(h.events.length,before);

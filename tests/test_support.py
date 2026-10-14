@@ -117,10 +117,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "9fd1200508467f82fb57a3a24b31a9481bcd7914e5275c416e4fdbb7b53cb2d2"),
-    (False, 49, "7fe72267b2e311822a956225dd860205fe548eefce80709261eb320d157dd7b2"),
-    (True, 0, "3e6c1b91e7f28c9f95a8b1a20f87dbdc3abc0e0ae4f47814971ef4eceb24fac1"),
-    (True, 49, "264455f99b87387ab2feb8c4050abd259f83a84b7c071c406f2814e959fb0433"),
+    (False, 0, "534fca119d62df5e79fffa161cf63f9904ac3f3c987be74e6cf3ddff7e709a8a"),
+    (False, 49, "61184ccd28a5f408031c7c31719074d666043490d3741f34bde71edd9e985475"),
+    (True, 0, "aaa5a502dd637b91b6074d8bcc0b90823e4c1d600e7711fc0d8fe0fc8915d99b"),
+    (True, 49, "6ff88c68966d14bbb58d8aa20028af336034b4735b9b18708cba717479762cce"),
 ])
 def test_support_off_index_bytes_match_task079_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 079 updates shared search/recovery in all four home modes.

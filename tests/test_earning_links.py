@@ -160,10 +160,13 @@ def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_a
              make_deal(dedupe_key="non-earning", canonical_url="https://cc.dealsofamerica.com/click")]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
     doc = json.loads((tmp_path / "site/deals.json").read_bytes())
-    # Task 068 adds an optional page path; every pre-existing byte/value,
+    # Tasks 068/078 add the page path and checkout facts; every pre-existing byte/value,
     # including earning URLs and opaque locked stubs, retains this baseline.
     for row in doc["deals"]:
         row.pop("deal_path", None)
+        if not row.get("locked"):
+            assert "checkout" in row
+            row.pop("checkout")
     baseline = json.dumps(doc, separators=(",", ":")).encode()
     assert hashlib.sha256(baseline).hexdigest() == expected
 
