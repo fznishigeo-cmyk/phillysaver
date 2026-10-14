@@ -285,7 +285,7 @@ def test_same_run_key_feed_confirmation_adds_no_rows_or_alerts(tmp_path, monkeyp
     fake = FakeKeepa(amazon=[dict(row(), title="")], tokens=500)
     with_db.close()
     config = tmp_path / "config.yaml"
-    config.write_text("publish:\n  output_dir: " + str(tmp_path / "site") +
+    config.write_text("publish:\n  site_dir: " + str(tmp_path / "site") +
                       "\nkeepa:\n  focus_categories: []\n  sweep_enabled: false\nfeature_flags:\n  keepa: true\n")
     monkeypatch.setenv("KEEPA_KEY", "offline-key")
     monkeypatch.delenv("DEALS_CLAUDE_API_KEY", raising=False)
@@ -300,6 +300,7 @@ def test_same_run_key_feed_confirmation_adds_no_rows_or_alerts(tmp_path, monkeyp
                             dry_run_telegram=True)
 
     first = run()
+    assert (tmp_path / "site" / "deals.json").is_file()
     database = DB(path)
     before = database.all_deals()
     tables = ["deals", "sightings", "price_history", "posts_seen", "alerts_sent"]
