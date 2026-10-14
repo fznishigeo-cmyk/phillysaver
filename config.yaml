@@ -139,6 +139,7 @@ publish:
       known_store_bonus: 5
       brand_bonus: 3
       fresh_half_life_h: 36
+      non_amazon_max_age_h: 24  # newest price post / store re-check; Keepa can't see these
       used_factor: 0.9
       cheap_factor: 0.8
       cheap_below: 5.0

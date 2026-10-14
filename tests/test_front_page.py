@@ -820,3 +820,19 @@ def test_spotlight_is_a_full_width_banner_on_wider_screens():
     assert ".spotlight-grid{grid-template-columns:minmax(0,1fr)}" in banner
     assert ".spotlight-grid .card.spotlight{flex-direction:row" in banner
     assert ".spotlight-grid .spotlight{grid-column:span 2}" in home
+
+
+def test_stale_non_amazon_price_is_no_top_pick(cfg, options):
+    """Live (2026-10-14): a $7 Walmart price posted four days earlier led
+    Trending. Keepa can't re-check other stores, so their price must have been
+    restated or re-checked within non_amazon_max_age_h to be a top pick."""
+    cfg.front_page = options
+    limit = options["top_picks"]["non_amazon_max_age_h"]
+    assert limit == 24
+    stale = pick_deal(store="Walmart", canonical_url="https://www.walmart.com/ip/1",
+                      price_published_at="2026-10-05T14:00:00Z", price_rechecked_at="")
+    assert pick_score(stale, cfg, NOW) is None
+    assert pick_score(dict(stale, price_rechecked_at="2026-10-09T13:00:00Z"), cfg, NOW) is not None
+    assert pick_score(dict(stale, price_published_at="2026-10-09T02:00:00Z"), cfg, NOW) is not None
+    # Internal recovery scoring (no confirmation required) is unaffected.
+    assert pick_score(stale, cfg, NOW, require_confirmation=False) is not None

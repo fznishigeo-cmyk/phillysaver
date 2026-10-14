@@ -143,6 +143,15 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     if require_confirmation and is_amazon_deal(deal) and not price_confirmation_recent(
             deal, now, cfg.keepa_pick_max_unconfirmed_h):
         return None
+    # Keepa can't re-check other stores: a price nobody restated or re-checked
+    # recently is no top pick (operator, 2026-10-14: a 4-day-old $7 Walmart price
+    # led Trending).
+    limit = (cfg.front_page.get("top_picks") or {}).get("non_amazon_max_age_h")
+    if require_confirmation and limit and not is_amazon_deal(deal):
+        keys = [k for k in ("price_published_at", "price_rechecked_at") if deal.get(k)] \
+            or [k for k in ("first_seen_at",) if deal.get(k)]
+        if not keys or min(_age_hours(deal[k], now) for k in keys) > float(limit):
+            return None
 
     options = cfg.front_page.get("top_picks")
     conditions = set(normalize_conditions(deal.get("conditions")))

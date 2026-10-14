@@ -240,3 +240,15 @@ def test_step_offer_session_rate_uses_ga4_session_metric_not_click_division():
         result = google.ga4_deal_sessions(client, "fake", "123", 7, requirements=True)
     assert "register requirements_deal_click as a key event" in result["unavailable"]
 
+
+
+def test_card_box_never_says_a_step_twice():
+    """Live card 2026-10-14: "Price is per unit" above "Price is per unit; the
+    checkout total depends on quantity." The step already says it."""
+    from dealradar.publish import site
+    from tests.test_publish_site import make_deal
+    deal = make_deal(flags=["per_unit"], codes=[])
+    checkout = site._checkout(deal, True)
+    assert "Price is per unit" in checkout["summary"]
+    assert "Price is per unit" not in checkout["card"]
+    assert any(s.startswith("Price is per unit;") for s in site._how(deal))

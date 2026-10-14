@@ -532,6 +532,10 @@ def _checkout(deal: dict[str, Any], steps: bool) -> dict[str, Any]:
         "Price varies by option", "Price is per unit", "Rebate after purchase",
         "Reward after purchase", "Shipping not confirmed")
         or (s.startswith("Shipping: ") and not known)]
+    # Never say a step twice in the one box (live card 2026-10-14: "Price is per
+    # unit" above "Price is per unit; the checkout total depends on quantity.").
+    said = _how(deal)
+    card = [s for s in card if not any(step.startswith(s) for step in said)]
     return {"summary": " · ".join(dict.fromkeys(summary)), "card": " · ".join(card),
             "now": now, "shipping_known": known,
             "shipping": ("Shipping: " + shipping + ("." if not shipping.endswith(".") else ""))
