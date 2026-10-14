@@ -374,7 +374,8 @@ def test_config_knobs_defaults_overrides_and_operator_comments(cfg, tmp_path):
                 "recheck_interval_minutes": 10, "recheck_idle_min_age_h": .5,
                 "show_max_unconfirmed_h": 12, "show_max_unconfirmed_used_h": 24,
                 "recheck_top_live": True}
-    assert {k: getattr(cfg, "keepa_" + k) for k in defaults} == defaults
+    shipped = load_config()  # the fixture pins cached reads; check the shipped file
+    assert {k: getattr(shipped, "keepa_" + k) for k in defaults} == defaults
     path = tmp_path / "config.yaml"
     overrides = {k: v + 1 if type(v) is not bool else True for k, v in defaults.items()}
     path.write_text("keepa: " + json.dumps(overrides))
