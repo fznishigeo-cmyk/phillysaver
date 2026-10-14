@@ -439,9 +439,10 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # so the next pass re-judges it, on Keepa data newer than the
         # revival (price_since); a post that says "sold out" (or a past
         # expiry) still ends it in the same run (pipeline.run,
-        # mark_expired_dead).
-        backed = new_final is not None and (
-            price_improved or new_final <= float(old_final) * 1.10 + 0.01)
+        # mark_expired_dead). A row with no stored price has nothing to back
+        # (live crash 2026-10-14: an older post merged into one).
+        backed = new_final is not None and (price_improved or (
+            old_final is not None and new_final <= float(old_final) * 1.10 + 0.01))
         # A recorded death is undone only by a post written after
         # the death (live review finding: an older article, merged in the
         # same batch, revived a deal a source had just declared sold out).

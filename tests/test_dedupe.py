@@ -870,3 +870,30 @@ def test_cloaked_same_host_links_are_product_links(tmp_path) -> None:
         == {item: f"IMG_90{i}.jpg" for i, (item, _l) in enumerate(TOYS)}
     # One deal parsed, its link resolved past the cloak: no collage.
     assert _ingest(tmp_path, html, TOYS[:1], url=url) == {TOYS[0][0]: ""}
+
+
+def test_older_priced_post_merges_into_a_row_without_a_price(tmp_path) -> None:
+    """Live crash (hourly 2026-10-14 10:21Z): a post older than the row's
+    price merged into a row with no stored final price; the revival check
+    compared against None and the whole run died. With no stored price
+    there is nothing to back: the sighting is recorded, nothing revives."""
+    db = DB(tmp_path / "state.db")
+    cfg = make_cfg()
+    ext = make_extracted(item="Widget basic", store="Amazon",
+                         product_url="https://www.amazon.com/dp/B0DDDDDDDD")
+    res = dedupe.upsert_extracted(
+        db, ext, make_savings(final=20.0, regular=40.0, pct=50.0, abs_s=20.0),
+        make_post("a", "a1"), cfg, NOW)
+    key = res["dedupe_key"]
+    db.update_deal(key, payload=dict(db.get_deal(key), died_at=util.iso(NOW)),
+                   status="dead", final_price=None, replace_prices=True)
+    assert db.get_deal(key)["final_price"] is None
+    older = dataclasses.replace(make_post("b", "b1"),
+                                published_at=NOW - timedelta(days=1))
+    res = dedupe.upsert_extracted(
+        db, ext, make_savings(final=19.0, regular=40.0, pct=52.5, abs_s=21.0),
+        older, cfg, NOW + timedelta(minutes=5))
+    assert res["revived"] is False
+    assert db.get_deal(key)["status"] == "dead"
+    assert len(db.sightings_for(res["deal_id"])) == 2
+    db.close()
