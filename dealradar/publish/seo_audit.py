@@ -170,7 +170,9 @@ class Page(HTMLParser):
         if self.invalid_schema or (self.ended and products):
             return True
         if not products:
-            return bool(price and not self.ended)
+            # Deal pages without a product photo carry no Product markup on
+            # purpose (Google needs an image for merchant listings).
+            return False
         if len(products) != 1 or page_family(self.path) != "deal" or not price:
             return True
         product = products[0]

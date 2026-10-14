@@ -102,14 +102,30 @@ def test_deal_page_facts_schema_disclosure_affiliate_and_related(db, cfg, tmp_pa
     assert "Oct 9, 2026</time> (UTC)" in html and "minutes ago" not in html
     assert "<img" not in html
     assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure"><a href="/disclosure.html">Disclosure</a>: affiliate links may earn a commission.</p>' in html
-    product = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', html).group(1))
-    assert product == {"@context": "https://schema.org", "@type": "Product", "name": d["item"],
-                       "brand": {"@type": "Brand", "name": d["brand"]},
-                       "offers": {"@type": "Offer", "price": "10.00", "priceCurrency": "USD",
-                                  "availability": "https://schema.org/InStock",
-                                  "url": "https://wowpriced.com" + _path(d),
-                                  "seller": {"@type": "Organization", "name": "Walmart"},
-                                  "itemCondition": "https://schema.org/UsedCondition"}}
+    # No product photo, no Product markup: Google needs an image for merchant
+    # listings (Search Console, 2026-10-14). Breadcrumbs may still be present.
+    blocks = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html)]
+    assert not [b for b in blocks if b.get("@type") == "Product"]
+    pictured = dict(d, dedupe_key="pictured", image_url="https://m.media-amazon.com/images/I/p.jpg",
+                    item="Ninja & Blender " + "Extra Long Name " * 12)
+    _render(db, cfg, tmp_path, [pictured] + related)
+    page = _page(tmp_path, _path(pictured)).read_text()
+    product = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', page)
+               if '"Product"' in b][0]
+    assert len(product["name"]) <= 150 and product["name"].endswith("…")
+    assert product["image"] == pictured["image_url"]
+    assert product["description"].startswith("$10.00 at Walmart") or "$10.00" in product["description"]
+    assert {k: product[k] for k in ("@context", "@type", "brand", "offers")} == {
+        "@context": "https://schema.org", "@type": "Product",
+        "brand": {"@type": "Brand", "name": d["brand"]},
+        "offers": {"@type": "Offer", "price": "10.00", "priceCurrency": "USD",
+                   "availability": "https://schema.org/InStock",
+                   "url": "https://wowpriced.com" + _path(pictured),
+                   "seller": {"@type": "Organization", "name": "Walmart"},
+                   "itemCondition": "https://schema.org/UsedCondition"}}
+    assert not {"review", "aggregateRating", "hasMerchantReturnPolicy", "shippingDetails"} & set(product)
+    assert not {"hasMerchantReturnPolicy", "shippingDetails"} & set(product["offers"])
+    _render(db, cfg, tmp_path, [d] + related + [make_deal(dedupe_key="other", category="pets")])
     assert '<strong>$10.00</strong>' in html and "Store: Walmart" in html
     assert 'href="/deals/home-kitchen/"' in html
     assert html.count('<article class="card">') == 6

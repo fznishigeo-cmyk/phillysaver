@@ -387,6 +387,15 @@ def _fill(template: str, **tokens: str) -> str:
     return re.sub(r"\{\{([A-Z_]+)\}\}", lambda m: tokens.get(m.group(1), m.group(0)), template)
 
 
+def _word_limit(text: str, limit: int) -> str:
+    """At most ``limit`` characters, cut at a word with an ellipsis."""
+    text = " ".join(str(text).split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit - 1].rsplit(" ", 1)[0] if " " in text[:limit - 1] else text[:limit - 1]
+    return cut.rstrip(" ,;:-") + "…"
+
+
 def _json_ld(data: dict[str, Any]) -> str:
     return '<script type="application/ld+json">' + json.dumps(data).replace('<', '\\u003c') + '</script>'
 
@@ -681,18 +690,24 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
             card_html(r, paths, now) for r in related) + '</div>'
     ld = ""
-    if not dead and d.get("final_price") is not None:
+    # Google requires a product image for merchant listings (Search Console,
+    # 2026-10-14: "Missing field image" is critical): no photo, no Product
+    # markup. Return policy, shipping, reviews and ratings are not ours to
+    # state (we are not the seller and have no reviews), so they stay absent.
+    if not dead and d.get("final_price") is not None \
+            and str(d.get("image_url") or "").startswith("https://"):
         conditions = set(d.get("conditions") or [])
         condition = "UsedCondition" if {"used", "open_box"} & conditions else \
             "RefurbishedCondition" if "refurbished" in conditions else "NewCondition"
-        product: dict[str, Any] = {"@context": "https://schema.org", "@type": "Product", "name": item,
+        product: dict[str, Any] = {"@context": "https://schema.org", "@type": "Product",
+                                  "name": _word_limit(item, 150),
+                                  "image": d["image_url"],
+                                  "description": _word_limit('; '.join(facts) + '.', 5000),
                                   "offers": {"@type": "Offer", "price": price,
                                              "priceCurrency": "USD", "availability": "https://schema.org/InStock",
                                              "url": site_url + path,
                                              "seller": {"@type": "Organization", "name": store},
                                              "itemCondition": "https://schema.org/" + condition}}
-        if str(d.get("image_url") or "").startswith("https://"):
-            product["image"] = d["image_url"]
         if d.get("brand"):
             product["brand"] = {"@type": "Brand", "name": d["brand"]}
         ld = _json_ld(product)
