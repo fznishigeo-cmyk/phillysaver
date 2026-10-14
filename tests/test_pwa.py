@@ -47,7 +47,7 @@ def tree_hash(out):
     ("membership", "ccb7fee8ac31706c30987bd15fb93428576558046220e65f4896926b3ba8e564"),
     ("open", "2db19caa85a76a9891c6894e89e60d96118ff912a22653b71dabe97d20383e8b"),
     ("support", "8afd6f3d7e8ed13c71a3635649726acc89036db0437e6f1e7b0d06295db4499a"),
-    ("shipped", "33bff670fa5382e613f9a98b1f157a67801dd1e8cf04f3ce20bec86bcbb0c64a"),
+    ("shipped", "e66b089099d787608dd3aa7ee17e1988388479ebd454ddd997a76458a92d5949"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Task 083 refreshes only shipped: RSS, detail discovery/sharing and its

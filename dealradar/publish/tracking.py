@@ -40,6 +40,7 @@ PATTERNS = {
     "pinterest_domain_verify": r"[A-Fa-f0-9]{32}",
     "facebook_domain_verification": r"[A-Za-z0-9]{10,64}",
     "impact_site_verification": r"[A-Za-z0-9-]{8,64}",
+    "impact_site_verification_2": r"[A-Za-z0-9-]{8,64}",
 }
 
 #: Site-ownership checks: config key -> meta tag name (every page carries them).
@@ -47,7 +48,8 @@ _VERIFY = (("google_site_verification", "google-site-verification"),
            ("bing_site_verification", "msvalidate.01"),
            ("pinterest_domain_verify", "p:domain_verify"),
            ("facebook_domain_verification", "facebook-domain-verification"),
-           ("impact_site_verification", "impact-site-verification"))
+           ("impact_site_verification", "impact-site-verification"),
+           ("impact_site_verification_2", "impact-site-verification"))
 
 _START, _END = "<!-- wp-tracking -->", "<!-- /wp-tracking -->"
 _BLOCK = re.compile(re.escape(_START) + r".*?" + re.escape(_END) + r"\n?", re.S)
@@ -305,7 +307,7 @@ def head_snippet(cfg) -> str:
     js = lambda key: json.dumps(ids[key])  # validated [A-Za-z0-9_-] only
     # Impact reads a `value` attribute; it rides beside `content`.
     metas = [f'<meta name="{name}"'
-             + (f' value="{html.escape(ids[key], quote=True)}"' if key == "impact_site_verification" else "")
+             + (f' value="{html.escape(ids[key], quote=True)}"' if name == "impact-site-verification" else "")
              + f' content="{html.escape(ids[key], quote=True)}">\n'
              for key, name in _VERIFY if key in ids]
     blocks = []

@@ -456,6 +456,9 @@ tracking:
   pinterest_domain_verify: "a24dd8688b84862029ffdb65db755ed9"  # p:domain_verify (32 hex characters)
   facebook_domain_verification: ""  # facebook-domain-verification
   impact_site_verification: "b4812b05-b7e3-4770-93fb-b84c8d745343"  # impact-site-verification (Impact.com sign-up)
+  # A second Impact verification (operator's reapplication, 2026-10-14); the
+  # first stays because the Walmart application runs through that account.
+  impact_site_verification_2: "46843b39-5068-4c26-bb6b-8e69aedf615e"
 
 social:
   require_earning_link: true

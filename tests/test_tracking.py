@@ -698,3 +698,13 @@ def test_detail_view_and_successful_copy_are_ga4_only_and_methods_are_bounded(tm
         sent = [e for e in methods["open"]["dataLayer"] if e[0] == "event"]
         assert [e[2].get("method") for e in sent] == [*kinds, None]
     assert "PRIVATE" not in json.dumps(methods)
+
+
+def test_a_second_impact_verification_keeps_the_first():
+    # Operator's reapplication (2026-10-14): both Impact accounts stay verified.
+    snippet = head_snippet(AppConfig(tracking={
+        "impact_site_verification": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+        "impact_site_verification_2": "46843b39-5068-4c26-bb6b-8e69aedf615e"}))
+    for value in ("1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d", "46843b39-5068-4c26-bb6b-8e69aedf615e"):
+        assert snippet.count(f'<meta name="impact-site-verification" value="{value}" '
+                             f'content="{value}">') == 1
