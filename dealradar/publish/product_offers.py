@@ -15,7 +15,7 @@ def blocks(live: list[dict], source: list[dict], paths: dict[str, str]) -> dict[
         facts = raw.get(d["dedupe_key"], {})
         product_id = facts.get("product_id")
         price = d.get("final_price")
-        if (not product_id or d.get("locked") or d.get("status") != "alive"
+        if (not product_id or d.get("locked") or d.get("price_unconfirmed") or d.get("status") != "alive"
                 or d["key"][:8] not in paths or not d.get("store")
                 or str(facts.get("currency") or "USD").upper() != "USD"
                 or {"range", "per_unit"} & set(d.get("flags") or [])

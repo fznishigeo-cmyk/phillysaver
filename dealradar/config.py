@@ -164,6 +164,9 @@ class AppConfig:
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
+    unconfirmed_label_enabled: bool = False
+    unconfirmed_label_max_h_new: float = 48.0
+    unconfirmed_label_max_h_used: float = 48.0
     # The site's public domain: canonical URLs, sitemap, IndexNow. (Actions
     # Pages deploys ignore the CNAME file; Settings -> Pages holds the domain.)
     custom_domain: str = ""
@@ -485,6 +488,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
+    for condition in ("new", "used"):
+        setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(
+            "site", "unconfirmed_label", "max_h_" + condition, default=48.0))))
     cfg.front_page = g("publish", "front_page", default={}) or {}
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}

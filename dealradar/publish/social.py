@@ -96,7 +96,7 @@ _AMAZON_SOLD = {"keepa", "keepa_amazon_drops"}
 def plenty_of_stock(db, deal: dict, cfg) -> bool:
     """Social posts reach many people at once; a one-off (one unit, one size,
     clearance) is gone after the first click (operator, 2026-10-13/14)."""
-    if (deal.get("category") or "") in set(cfg.social_exclude_categories):
+    if deal.get("price_unconfirmed") or (deal.get("category") or "") in set(cfg.social_exclude_categories):
         return False
     words = " ".join([str(deal.get("item") or ""), *map(str, deal.get("how") or []),
                       *map(str, deal.get("stack_steps") or [])])

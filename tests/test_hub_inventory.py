@@ -273,6 +273,7 @@ def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
     from tests.test_support import NOW as FIXED, render
 
     cfg = baseline_config("shipped")
+    cfg.unconfirmed_label_enabled = False  # this pin predates the task 094 display option
     cfg.traffic_product_families_enabled = cfg.traffic_hub_pagination_enabled = False
     monkeypatch.setattr(site, "util_now", lambda: FIXED)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())

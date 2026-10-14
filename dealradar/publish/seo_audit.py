@@ -160,10 +160,16 @@ class Page(HTMLParser):
     def ended(self):
         return self.first(cls="ended", scope=self.scope) is not None
 
+    @property
+    def unconfirmed(self):
+        detail = self.first(cls="deal-detail")
+        return bool(detail and any(isinstance(n, _Node) and n.has("price-unconfirmed")
+                                   for n in detail.children))
+
     def live_offers(self) -> int:
         if page_family(self.path) == "deal":
-            return int(self.first(cls="deal-detail") is not None and not self.ended)
-        return sum(not n.has("gone") for n in self.cards)
+            return int(self.first(cls="deal-detail") is not None and not self.ended and not self.unconfirmed)
+        return sum(not n.has("gone") and not self.first(cls="price-unconfirmed", scope=n) for n in self.cards)
 
     def products(self):
         def walk(value):
@@ -180,7 +186,7 @@ class Page(HTMLParser):
     def schema_mismatch(self) -> bool:
         products = self.products()
         price = self.first(cls="detail-price")
-        if self.invalid_schema or (self.ended and products):
+        if self.invalid_schema or ((self.ended or self.unconfirmed) and products):
             return True
         if not products:
             # Deal pages without a product photo carry no Product markup on

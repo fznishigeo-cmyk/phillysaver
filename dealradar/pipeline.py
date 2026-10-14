@@ -1242,12 +1242,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         "new", "used", "top_overlap", "cadence_new", "cadence_used", "retry_new", "retry_used")}
 
     def hidden_counts():
+        from .publish.price_labels import recovery_reason
         rows = db.all_deals(status="alive")
         hidden = [d for d in rows if price_unconfirmed(d, cfg, now)
                   and rank.is_publishable(d, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]]
         reasons = {name: {"new": 0, "used": 0, "total": 0} for name in (
             "never_checked", "retry_window", "suspect", "cadence_not_due",
-            "tried_this_run", "adaptive_requested_recently", "other")}
+            "tried_this_run", "adaptive_requested_recently", "missing_asin",
+            "current_price_never_confirmed", "used_hidden_recovery_due", "new_hidden_recovery_due")}
         for deal in hidden:
             key, used = deal["dedupe_key"], is_used_deal(deal)
             urgent = overdue(deal)
@@ -1256,7 +1258,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                       "suspect" if deal.get("gone_suspect_at") else
                       "adaptive_requested_recently" if not urgent and schedule.enabled and history.requested_recently(key) else
                       "never_checked" if last_check(deal) is None else
-                      "cadence_not_due" if not urgent and in_cadence(deal) else "other")
+                      "cadence_not_due" if not urgent and in_cadence(deal) else recovery_reason(deal))
             reasons[reason]["used" if used else "new"] += 1
             reasons[reason]["total"] += 1
         return {"new": sum(not is_used_deal(d) for d in hidden),
@@ -2305,6 +2307,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        summary["unconfirmed_label"] = site_res["unconfirmed_label"]
+        summary["unconfirmed_label"]["recheck_reasons"] = summary["price_recheck"].get(
+            "hidden_unconfirmed", {}).get("reasons", {})
+        from .publish.price_labels import META as label_report_meta
+        db.meta_set(label_report_meta, json.dumps(summary["unconfirmed_label"], sort_keys=True))
         summary["price_recheck"]["confirmed_age"] = site_res["confirmed_age"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["checkout"] = site_res.get("checkout", {})
@@ -2346,6 +2353,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:
                     fh.write(health_markdown(site_res["health"]))
+                    from .publish.price_labels import summary_lines as label_lines
+                    fh.write("\n" + "\n".join(label_lines(summary["unconfirmed_label"])) + "\n")
             except OSError as e:
                 log.warning("source health summary not written: %s", e)
         # The site got the teaser; members get the full payload through the

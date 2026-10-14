@@ -118,8 +118,14 @@ def test_hidden_reason_partition_covers_each_condition(db, cfg):
     reasons = stats["hidden_unconfirmed"]["reasons"]
     assert stats["hidden_unconfirmed"]["total"] == 12
     for reason in reasons:
-        assert reasons[reason] == ({"new": 0, "used": 0, "total": 0} if reason == "adaptive_requested_recently"
-                                   else {"new": 1, "used": 1, "total": 2})
+        expected = {"new": 1, "used": 1, "total": 2}
+        if reason in {"adaptive_requested_recently", "missing_asin", "current_price_never_confirmed"}:
+            expected = {"new": 0, "used": 0, "total": 0}
+        elif reason == "new_hidden_recovery_due":
+            expected = {"new": 1, "used": 0, "total": 1}
+        elif reason == "used_hidden_recovery_due":
+            expected = {"new": 0, "used": 1, "total": 1}
+        assert reasons[reason] == expected
     cfg.keepa_recheck_adaptive["enabled"] = True
     recent = hidden(db, cfg, 999)
     History(db, cfg, NOW - timedelta(minutes=5)).record(recent, product(), None, NOW, "hidden_new", 1, 1)

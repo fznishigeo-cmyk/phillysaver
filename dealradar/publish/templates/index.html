@@ -1517,7 +1517,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });
     return blockDeal(scored).concat(fresh.filter(function (d) { return d.ps == null; }));
   }
-  function ordered(rows, deferMix) {
+/*unconfirmed*/  function confirmedFirst(rows) {
+    return rows.filter(function (d) { return !d.price_unconfirmed; })
+      .concat(rows.filter(function (d) { return d.price_unconfirmed; }));
+  }
+/*/unconfirmed*/  function ordered(rows, deferMix) {
     // The teaser's unlocked deals (the top picks) always lead; the blurred
     // stubs follow, each group dealt within itself, whatever the sort.
     var fresh = state.sortKey === "fresh";
@@ -1533,7 +1537,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       locked = freshOrder(locked, false);
     }
     rows = open.concat(locked);
-    return !deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows;
+    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*unconfirmed*/)/*/unconfirmed*/;
   }
 
   function storeHue(s) {
@@ -1720,7 +1724,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       '<div class="body">' +
       (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
-      '<h3 class="title">' + title + "</h3>" +
+/*unconfirmed*/      (d.price_unconfirmed ? '<div class="price-unconfirmed">Price not confirmed</div>' : '') +
+/*/unconfirmed*/      '<h3 class="title">' + title + "</h3>" +
 <!--saved--><!--watch-->      savedWatchHtml(d) +
 <!--/watch--><!--/saved-->      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
       how +
@@ -1736,7 +1741,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // its items change, so a re-render never restarts the scroll.
   var TICKER_MAX = 16, TICKER_PX_S = 38, tickerSig = "";
   function tickerItems() {
-    var live = state.deals.filter(function (d) { return d.status !== "dead"; });
+    var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed/*/unconfirmed*/; });
     var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
     var open = live.filter(function (d) { return !isLocked(d); }).sort(byPct);
     var shut = live.filter(isLocked).sort(byPct);
@@ -1973,7 +1978,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     rows = placeGone(rows);
     var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
-    browseRows = spotlight.concat(rows);
+/*unconfirmed*/    rows = confirmedFirst(rows);
+/*/unconfirmed*/    browseRows = spotlight.concat(rows);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.
     var split = rows.findIndex(function (d, i) {

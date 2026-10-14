@@ -100,6 +100,8 @@ def maybe_send_digest(db, cfg, now: datetime, *,
         from dealradar import rank  # lazy: sibling module, avoid import at load
 
         deals = rank.published_deals(db, cfg, now)
+    from .price_labels import push_excluded
+    deals = [d for d in deals if not push_excluded(d, cfg, now)]
     fresh = []
     for deal in deals:
         first_seen = parse_iso(deal.get("first_seen_at") or "")

@@ -239,7 +239,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
             + (' role="region" aria-label="Today only deal"' if spotlight else "") + '>'
             f'<div class="media">{media}</div><div class="body">'
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
-            f'<h3 class="title">{title}</h3>'
+            + ('<div class="price-unconfirmed">Price not confirmed</div>' if d.get("price_unconfirmed") else "")
+            + f'<h3 class="title">{title}</h3>'
             + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") else "")
             + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
             "</div></article>")
@@ -354,8 +355,9 @@ def _store_pages(cfg, live: list[dict[str, Any]]) -> dict[str, tuple[str, list[d
         names.setdefault(key, name)
     floor = int(getattr(cfg, "seo_store_page_min_deals", 15))
     cap = int(getattr(cfg, "seo_store_pages_max", 12))
-    keys = sorted((k for k in groups if len(groups[k]) >= floor),
-                  key=lambda k: (-len(groups[k]), k))[:cap]
+    confirmed = {k: sum(not d.get("price_unconfirmed") for d in rows) for k, rows in groups.items()}
+    keys = sorted((k for k in groups if confirmed[k] >= floor),
+                  key=lambda k: (-confirmed[k], k))[:cap]
     pages = {}
     for k in keys:
         pages[f"/stores/{k}/"] = names[k], groups[k]
@@ -369,7 +371,7 @@ def _price_pages(cfg, live: list[dict[str, Any]]) -> dict[str, tuple[str, list[d
         slug = f"under-{n}"
         assert slug not in hubs, f"Price page collides with category hub: {slug}"
         rows = [d for d in live if d.get("final_price") is not None and d["final_price"] <= n]
-        if len(rows) >= max(1, int(cfg.seo_price_page_min_deals)):
+        if sum(not d.get("price_unconfirmed") for d in rows) >= max(1, int(cfg.seo_price_page_min_deals)):
             pages[f"/deals/{slug}/"] = f"Deals under ${n}", rows
     return pages
 
@@ -558,7 +560,7 @@ def _listing_pages(template, heading, intro, root, site_url, rows, paths, now,
         breadcrumbs = [(heading, root), (f"Page {number}", path)] if number > 1 else None
         yield path, _landing_page(template, f"{page_heading} | wowpriced", page_heading, intro,
             path, site_url, content, intro=intro, extra_head=_item_list(shown, paths, site_url),
-            breadcrumbs=breadcrumbs, indexable=len(shown) >= floor)
+            breadcrumbs=breadcrumbs, indexable=sum(not d.get("price_unconfirmed") for d in shown) >= floor)
 
 
 def _write_page(out: Path, path: str, html: str) -> None:
@@ -588,7 +590,8 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
     ring = sorted((r for r in live if r.get("key") != d.get("key") and in_group(r, group)),
                   key=lambda r: str(r.get("key")))
     after = [r for r in ring if str(r.get("key")) > str(d.get("key"))]
-    return (after + [r for r in ring if str(r.get("key")) < str(d.get("key"))])[:6]
+    return sorted(after + [r for r in ring if str(r.get("key")) < str(d.get("key"))],
+                  key=lambda r: bool(r.get("price_unconfirmed")))[:6]
 
 
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
@@ -619,6 +622,9 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         price = f'{float(d["final_price"]):.2f}'
         content += f'<p class="detail-price">Sale price: <strong>${price}</strong> USD</p>'
         facts.insert(0, f"${price}")
+    if d.get("price_unconfirmed"):
+        content += ('<div class="price-unconfirmed">Price not confirmed</div>'
+                    '<p class="price-unconfirmed">We couldn\'t re-check this price recently; it may have changed.</p>')
     if d.get("regular_price") is not None:
         regular = f'{float(d["regular_price"]):.2f}'
         basis = _basis_label(d)
@@ -634,7 +640,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if not {"used", "open_box", "refurbished"} & set(d.get("conditions") or []):
         conds.insert(0, "new")
     content += '<p>Condition: ' + escape(", ".join(conds)) + '</p>'
-    if not dead:
+    if not dead and not d.get("price_unconfirmed"):
         content += '<p class="detail-availability">Availability: Live offer</p>'
     badge = d.get("badge") or "unverified"
     explanation = {"history-checked": "The price was checked against price history.",
@@ -685,7 +691,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     # 2026-10-14: "Missing field image" is critical): no photo, no Product
     # markup. Return policy, shipping, reviews and ratings are not ours to
     # state (we are not the seller and have no reviews), so they stay absent.
-    if not dead and d.get("final_price") is not None \
+    if not dead and not d.get("price_unconfirmed") and d.get("final_price") is not None \
             and str(d.get("image_url") or "").startswith("https://"):
         conditions = set(d.get("conditions") or [])
         condition = "UsedCondition" if {"used", "open_box"} & conditions else \
@@ -809,11 +815,15 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                      DEAL_ACTIONS_SCRIPT=actions)
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support)
+    if cfg.unconfirmed_label_enabled:
+        from .price_labels import STYLE
+        template = template.replace("</style>", STYLE + "</style>", 1)
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
-    live.sort(key=lambda d: order[d["dedupe_key"]])
+    live.sort(key=lambda d: (bool(d.get("price_unconfirmed")), order[d["dedupe_key"]]))
     stores, prices = _store_pages(cfg, live), _price_pages(cfg, live)
-    families, family_members = inventory.product_families(cfg, live, source_deals)
+    families, family_members = inventory.product_families(
+        cfg, [d for d in live if not d.get("price_unconfirmed")], source_deals)
     inventory_paths = []
     store_links = [(path, name) for path, (name, _rows) in stores.items()]
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
@@ -827,11 +837,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     for d in deal_rows:
         path = paths[d["key"][:8]]
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
-        sharing, share_head = traffic.share_html(d, path, site_url) if cfg.traffic_share_enabled else ("", "")
+        sharing, share_head = traffic.share_html(d, path, site_url) if (
+            cfg.traffic_share_enabled and not d.get("price_unconfirmed")) else ("", "")
         discovery = traffic.related_hubs(d, stores, prices) if cfg.traffic_related_hubs_enabled else ""
         discovery += inventory.family_link(d, family_members)
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
-                          observations, now, indexable=floors["deal"] <= 1,
+                          observations, now, indexable=floors["deal"] <= 1 and not d.get("price_unconfirmed"),
                           discovery=discovery, sharing=sharing, share_head=share_head,
                           also_at=also_at.get(d["dedupe_key"], ""))
         folder = out / path.strip("/")
@@ -839,11 +850,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         (folder / "index.html").write_text(html, encoding="utf-8")
     best_path = "/best-deals-today/"
     best_title = "Best deals today | wowpriced"
-    n = sum(d.get("status") == "alive" for d in teaser)
+    n = sum(d.get("status") == "alive" and not d.get("price_unconfirmed") for d in teaser)
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
-    intro = f"The {min(30, len(live))} best of {count} live deals right now, ranked like the live wall."
-    best_rows = pick_order(live, cfg.front_page)[:30]
+    confirmed = [d for d in live if not d.get("price_unconfirmed")]
+    intro = f"The {min(30, len(confirmed))} best of {count} live deals right now, ranked like the live wall."
+    best_rows = pick_order(confirmed, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url,
                               '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths, now) for d in best_rows) + '</div>',
@@ -854,9 +866,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     browse_pages = stores | prices
     for path, (name, rows) in browse_pages.items():
         heading = f"{name} deals today" if path in stores else f"{name} today"
-        count = ("1,000+" if len(rows) >= 1000 else f"{len(rows) // 100 * 100:,}+"
-                 if len(rows) >= 100 else str(len(rows)))
-        pcts = [float(d["pct_at_checkout"]) for d in rows if d.get("pct_at_checkout") is not None]
+        confirmed_rows = [d for d in rows if not d.get("price_unconfirmed")]
+        count = ("1,000+" if len(confirmed_rows) >= 1000 else f"{len(confirmed_rows) // 100 * 100:,}+"
+                 if len(confirmed_rows) >= 100 else str(len(confirmed_rows)))
+        pcts = [float(d["pct_at_checkout"]) for d in confirmed_rows if d.get("pct_at_checkout") is not None]
         intro = f"{count} live deals right now"
         if path in stores and pcts:
             intro += f", median {_pct(statistics.median(pcts))}% off"
@@ -883,10 +896,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     listed = 0
     for label, group, slug in HUB_GROUPS:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
+        rows.sort(key=lambda d: bool(d.get("price_unconfirmed")))
         free = sum(not d.get("locked") for d in rows)
         count = max(1, math.ceil(free / _HUB_MAX)) if cfg.traffic_hub_pagination_enabled else 1
         for number in range(1, count + 1):
-            indexable = min(free - (number - 1) * _HUB_MAX, _HUB_MAX) >= floors["category"]
+            visible = [d for d in rows if not d.get("locked")][(number - 1) * _HUB_MAX:number * _HUB_MAX]
+            indexable = sum(not d.get("price_unconfirmed") for d in visible) >= floors["category"]
             html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
                              site_url, open_access, paths, now, page_number=number, page_count=count,
                              paginate=cfg.traffic_hub_pagination_enabled)
@@ -934,15 +949,19 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if _KEY_RE.fullmatch(key):
         def _read(path: str) -> str:
-            return wall if path == "/" else (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
-                                                   path.lstrip("/"))).read_text(encoding="utf-8")
+            content = wall if path == "/" else (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
+                                                      path.lstrip("/"))).read_text(encoding="utf-8")
+            # Labeled card prices cannot cause pings of listings or neighbours.
+            return re.sub(r'<article\b[^>]*>.*?</article>',
+                          lambda m: "" if 'class="price-unconfirmed"' in m[0] else m[0], content, flags=re.S)
         contents = {site_url + path: _read(path) for path in indexable}
         # Ended deal pages (noindex, out of the sitemap) still tell engines
         # they changed (task 072).
         contents.update({site_url + path: _read(path) for path in emitted
                          if path.startswith("/deal/") and site_url + path not in contents
                          and (out / path.strip("/") / "index.html").exists()})
-        due = indexnow_due(db, cfg, now, contents, site_dir=out)
+        excluded = {site_url + path for path, page in pages.items() if page.unconfirmed}
+        due = indexnow_due(db, cfg, now, contents, site_dir=out, excluded=excluded)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))
     return pages

@@ -112,6 +112,16 @@ def _price_recheck(db_path, now: datetime) -> dict:
         db.close()
 
 
+def _unconfirmed_label(db_path) -> dict:
+    from ..publish.price_labels import report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db)
+    finally:
+        db.close()
+
+
 def _newsletter_senders(db_path) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -170,6 +180,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                    lambda: _intake(db_path, cfg, now)),
         "price_recheck": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _price_recheck(db_path, now)),
+        "unconfirmed_label": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                              lambda: _unconfirmed_label(db_path)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -411,6 +423,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         reason = yield_data["unavailable"] if yield_data else "state snapshot unavailable"
         lines.append(f"AI yield: n/a ({reason})")
 
+    from ..publish.price_labels import summary_lines as label_lines
+    lines += label_lines(data.get("unconfirmed_label"))
     rechecks = data.get("price_recheck")
     lines.append("Keepa recheck yield (UTC, yesterday / last 7 days):")
     if not rechecks or "unavailable" in rechecks:

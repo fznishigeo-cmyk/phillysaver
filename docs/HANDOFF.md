@@ -190,6 +190,23 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Price not confirmed label (Codex task 094, 2026-10-14; uncommitted):**
+  shipped switch admits otherwise publishable, non-suspect hidden prices under
+  48 h with a muted AA label, after confirmed offers. No promotion/pushes or
+  Product/Offer markup; confirmed offers alone meet SEO floors. Existing
+  scheduler sets/lanes stay unchanged; private run/growth diagnostics include
+  eligibility, shown/hidden new/used counts and named recovery reasons.
+  **42 new tests pass; final focused run: 48 passed, 7 failed.** Full suite:
+  **3,490 passed, 13 failed, 1 deselected**. Six legacy harness/fixture cases
+  loaded before correction now pass; only seven existing Stripe localhost
+  socket failures remain (`Operation not permitted`, all reproduced on HEAD).
+  The two 144-run wall days, efficiency day and both offline idempotency modes
+  pass. Disabled output matches untouched HEAD across all four access modes.
+  Only the shipped PWA-off tree hash changed. The seven socket checks outside
+  this sandbox and review/live-count observation remain.
+  Details/live-count limitation: HANDOFF in
+  `docs/codex-tasks/094-price-not-confirmed-label.md`. No commit/push;
+  read-only shared Git metadata prevents branch creation.
 - **Top coverage regression (Codex task 092, 2026-10-14; uncommitted):**
   overdue top/wall checks now precede every lower class and bypass ordinary
   retry cooldowns; lost requests can retry next run, same-key retries cannot

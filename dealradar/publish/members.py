@@ -159,6 +159,8 @@ def send_member_alerts(db, cfg, now: datetime, *,
         from dealradar import rank  # lazy: sibling module, avoid import at load
 
         deals = rank.published_deals(db, cfg, now)
+    from .price_labels import push_excluded
+    deals = [d for d in deals if not push_excluded(d, cfg, now)]
     last = parse_iso(db.meta_get(META_LAST_EMAIL) or "")
     window = timedelta(minutes=int(getattr(cfg, "members_email_every_minutes", 60)))
     daily = window >= timedelta(days=1)

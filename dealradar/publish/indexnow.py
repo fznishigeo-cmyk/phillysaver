@@ -73,7 +73,7 @@ def _ready(row: dict, cfg, now: datetime) -> bool:
 
 
 def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
-                 site_dir: str | Path | None = None) -> list[str]:
+                 site_dir: str | Path | None = None, excluded: set[str] | None = None) -> list[str]:
     """Discover versions without acknowledging them. Keep failed work pending
     through content churn; noindex/removed formerly public pages are changes too."""
     identity = _hash(f"{cfg.custom_domain}|{cfg.seo_indexnow_key}".encode())
@@ -95,10 +95,11 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
         db.meta_set("indexnow_identity", identity)
     if db.meta_get("indexnow_since") is None:
         db.meta_set("indexnow_since", iso(now))
-    versions = {url: _hash(content.encode("utf-8")) for url, content in pages.items()}
+    excluded = excluded or set()
+    versions = {url: _hash(content.encode("utf-8")) for url, content in pages.items() if url not in excluded}
     out = Path(site_dir) if site_dir is not None else None
     for url in known_urls:
-        if url in versions:
+        if url in versions or url in excluded:
             continue
         try:
             # A changed domain does not turn the old host's URLs into work.
@@ -108,15 +109,16 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
         path = path if out is not None else None
         versions[url] = _hash(path.read_bytes()) if path is not None and path.is_file() else "removed"
     db.indexnow_discover(versions, now, cfg.seo_indexnow_resubmit_days)
-    return [url for url, row in sorted(db.indexnow_pages().items()) if _ready(row, cfg, now)]
+    return [url for url, row in sorted(db.indexnow_pages().items()) if url not in excluded and _ready(row, cfg, now)]
 
 
-def seal_publish(db, cfg, now: datetime, out: Path, run_key: str | None = None) -> None:
+def seal_publish(db, cfg, now: datetime, out: Path, run_key: str | None = None, *,
+                 excluded: set[str] | None = None) -> None:
     """Called after the last page writer, so partial/failed publishes have no
     usable manifest. Hash final bytes separately from the stable content hashes."""
     if not enabled(cfg):
         return
-    rows = db.indexnow_pages()
+    rows = {url: row for url, row in db.indexnow_pages().items() if url not in (excluded or set())}
     manifest = {"run_key": delivery_run_key(now, run_key), "host": cfg.custom_domain,
                 "identity": db.meta_get("indexnow_identity"),
                 "versions": {url: row["content_hash"] for url, row in rows.items()},

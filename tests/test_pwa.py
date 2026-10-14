@@ -47,11 +47,11 @@ def tree_hash(out):
     ("membership", "28a7d364e9463f092705cc1f1e7814b48afd926c83b3e8be6a34642e692c0c7f"),
     ("open", "f463cd5514b84f3a3740ba386fa315bf3ea745f00902f2de03b0df0e95f8c3d5"),
     ("support", "27682c4fe47e23632f74f65484280afec4db71557566bfe9e4400f246822ee5f"),
-    ("shipped", "dbee2e700d343084bebdd6964c1520f683b4150d28f64f50a77d262544cccd05"),
+    ("shipped", "3aaf2fb84502a9a32d8ce531c64119d9aa3dc3d2d6784fb7c09b3fcabf724973"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
-    # Task 086 refreshes only shipped: inventory action/tracking/version bytes.
-    # Both new switches off still match the task 083 tree (test_hub_inventory).
+    # Task 094 refreshes only shipped: optional price-label CSS/JS/version bytes.
+    # The label switch off still matches untouched HEAD (test_unconfirmed_label).
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())

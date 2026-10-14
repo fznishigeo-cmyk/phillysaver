@@ -354,6 +354,8 @@ def send_daily_newsletter(db, cfg, now: datetime, *,
         from dealradar import rank  # lazy: sibling module, avoid import at load
 
         deals = rank.published_deals(db, cfg, now)
+    from .price_labels import push_excluded
+    deals = [d for d in deals if not push_excluded(d, cfg, now)]
     if not deals:
         return skip("no published deals yet today")  # tried again next run
     if deadline is not None and time.monotonic() > deadline:

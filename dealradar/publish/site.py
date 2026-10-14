@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import click_signal, indexnow, inventory, pwa, seo, seo_audit, traffic
+from . import click_signal, indexnow, inventory, price_labels, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -68,6 +68,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     when only the optional support variant changes."""
     import hashlib
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    html = price_labels.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
@@ -666,6 +667,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         public["regular_price_basis"] = deal["regular_price_basis"]
     if deal.get("spotlight"):
         public["spotlight"] = deal["spotlight"]
+    if deal.get("price_unconfirmed"):
+        public["price_unconfirmed"] = True
     return public
 
 
@@ -733,7 +736,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     db.meta_set(PICKS_META, json.dumps([d["dedupe_key"] for d, _ in
                                       candidate_scores[:cfg.keepa_recheck_top_n]]))
     # Keep hidden candidates above so rechecks can bring them back by themselves.
-    deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)]
+    before_labels = deals
+    labeled = [dict(d, price_unconfirmed=True) for d in deals if price_labels.qualifies(d, cfg, now)]
+    deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)] + labeled
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
@@ -753,7 +758,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         recent = [str(k) for k in json.loads(db.meta_get(_TEASER_META) or "[]")]
     except (TypeError, ValueError):
         recent = []
-    teaser, locked_count = split_teaser(serialized, cfg, recent)
+    # Keep the original rotation and scheduler wall unchanged. Labeled offers
+    # are appended only for display; they cannot displace confirmed free picks.
+    teaser, locked_count = split_teaser([d for d in serialized if not d.get("price_unconfirmed")], cfg, recent)
+    if is_open(cfg):
+        teaser += [d for d in serialized if d.get("price_unconfirmed")]
+    else:
+        from .paywall import _stub
+        extras = [d for d in serialized if d.get("price_unconfirmed")]
+        teaser += [dict(_stub(d), price_unconfirmed=True) for d in extras]
+        locked_count += len(extras)
     unlocked = {d["dedupe_key"] for d in teaser if not d.get("locked")}
     spotlight = [_serialize_deal(d, now, amazon_tag, overrides, **link_options)
                  for d in daily_spotlight([d for d in spotlight_rows
@@ -769,7 +783,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     picked = top_picks(confirmed_candidates, cfg.front_page)
     for n, d in enumerate(picked, 1):
         d["pick"] = n
-    wall = seo.place_gone(pick_order(teaser, cfg.front_page))[:cfg.keepa_recheck_wall_n]
+    wall = seo.place_gone(pick_order([d for d in teaser if not d.get("price_unconfirmed")],
+                                   cfg.front_page))[:cfg.keepa_recheck_wall_n]
     db.meta_set(WALL_META, json.dumps([d["dedupe_key"] for d in wall
                                      if not d.get("locked") and d.get("status") == "alive"]))
     # Select once, before JSON is written: remembered URLs only for pages
@@ -786,7 +801,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     link = support_link(getattr(cfg, "support_payment_link", ""))
     monthly = support_link(getattr(cfg, "support_monthly_link", "")) if link else ""
     if not open_access:  # open: the rotation pauses, to resume when it closes
-        db.meta_set(_TEASER_META, json.dumps(teaser_memory(teaser, recent, cfg)))
+        db.meta_set(_TEASER_META, json.dumps(teaser_memory(
+            [d for d in teaser if not d.get("price_unconfirmed")], recent, cfg)))
     # The mode changes the published wording: a flip reloads open tabs.
     browse_script = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
     price_presets = sorted({n for n in cfg.seo_price_pages if type(n) is int and n > 0})
@@ -794,6 +810,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = site_template_version(price_presets) + ("-open" if open_access else "")
     if support:
         home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+        home = price_labels.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
@@ -815,6 +832,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
     if cfg.engagement:
         engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
+        engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled)
         engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
                                    lambda m: m.group(1) if saved_deals else "",
                                    engagement_script, flags=re.S)
@@ -826,6 +844,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         ).hexdigest()[:12]
     if traffic.enabled(cfg):
         site_version = traffic.site_version(site_version, cfg)
+    if cfg.unconfirmed_label_enabled:
+        site_version = hashlib.sha256((site_version + price_labels.STYLE).encode()
+            + "".join(price_labels.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -909,6 +930,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
+        html = price_labels.template(html, cfg.unconfirmed_label_enabled)
+        if cfg.unconfirmed_label_enabled and name == "index.html":
+            html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
         if name == "index.html":
             html = html.replace("{{BROWSE_SCRIPT}}", browse_script)
             html = html.replace("{{PRICE_OPTIONS}}", "".join(
@@ -1029,7 +1053,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 path.write_text(updated, encoding="utf-8")
 
     pwa.publish(out, cfg)
-    traffic.publish(out, cfg, deal_pages[1], paths, site_url)
+    traffic.publish(out, cfg, [d for d in deal_pages[1] if not d.get("price_unconfirmed")], paths, site_url)
     inventory.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
@@ -1038,7 +1062,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     click_signal.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
-    indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"))
+    indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
+                         excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed})
 
     if clicks.enabled(cfg):
         try:
@@ -1056,7 +1081,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 meta["count"], locked_count, out)
     from ..keepa_rechecks import History
     top_candidates = [d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]]
+    label_report = price_labels.diagnostic(before_labels, cfg, now, teaser)
+    db.meta_set(price_labels.META, json.dumps(label_report, sort_keys=True))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),

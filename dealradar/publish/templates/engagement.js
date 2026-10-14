@@ -125,7 +125,7 @@
     updateEngagementLine(true);
   }
   function hotSignals(d) {
-    if (!engagementOn("hot_meter") || d.status === "dead" || isLocked(d)) return [];
+    if (!engagementOn("hot_meter") || d.status === "dead" || isLocked(d)/*unconfirmed*/ || d.price_unconfirmed/*/unconfirmed*/) return [];
     var signals = [], pct = Number(d.pct_at_checkout), seen = Date.parse(d.first_seen_at || "");
     if (Number.isFinite(pct) && pct >= 60) signals.push(pct + "% off");
     if (d.badge === "corroborated") {
@@ -145,7 +145,7 @@
   }
   function surpriseRows() {
     // Match the wall's floor split as well as its current filters and sort.
-    var rows = ordered(filtered()).filter(function (d) { return d.status !== "dead" && !isLocked(d); });
+    var rows = ordered(filtered()).filter(function (d) { return d.status !== "dead" && !isLocked(d)/*unconfirmed*/ && !d.price_unconfirmed/*/unconfirmed*/; });
     var floor = num((state.meta.floors || {}).min_pct);
     if (floor != null) rows = rows.filter(function (d) { return num(d.pct_at_checkout) >= floor; })
       .concat(rows.filter(function (d) { return num(d.pct_at_checkout) < floor; }));
@@ -286,7 +286,7 @@
     return savedDeals.publicDeals.find(function (d) { return d.key === key; });
   }
   function savedWatchMatch(entry, current) {
-    if (!current || isLocked(current) || current.status !== "alive" || current.gone === true ||
+    if (!current || isLocked(current)/*unconfirmed*/ || current.price_unconfirmed/*/unconfirmed*/ || current.status !== "alive" || current.gone === true ||
         current.alive === false || current.key !== entry.key || entry.condition === null) return null;
     var price = watchPrice(current.final_price), condition = watchCondition(current.conditions);
     if (price === null || condition === null || JSON.stringify(condition) !== JSON.stringify(entry.condition)) return null;
@@ -346,7 +346,7 @@
     if (!current || isLocked(current) || current.status !== "alive" || current.gone === true || current.alive === false) return false;
     var entry = savedEntry({key: dealKey(current), label: String(current.item || "").slice(0, 200),
       store: String(current.store || "").slice(0, 80), path: current.deal_path,
-      final_price: current.final_price, condition: current.conditions});
+      final_price: /*unconfirmed*/current.price_unconfirmed ? null : /*/unconfirmed*/current.final_price, condition: current.conditions});
     if (!entry) return false;
     if (savedDeals.entries.length >= savedLimit()) {
       toast("Saved list is full (" + savedLimit() + "). Remove a deal to save another.");
@@ -445,7 +445,9 @@
     if (!savedDeals.entries.length) return '<h2 class="secth">Saved deals (0)</h2><p class="empty">Save a deal to revisit it here.</p>';
     return '<h2 class="secth">Saved deals (' + savedDeals.entries.length + ')</h2><div class="grid">' +
       savedDeals.entries.filter(function (entry) { return savedDeals.matches.has(entry.key); })
-      .concat(savedDeals.entries.filter(function (entry) { return !savedDeals.matches.has(entry.key); })).map(function (entry) {
+      .concat(savedDeals.entries.filter(function (entry) { return !savedDeals.matches.has(entry.key); }))/*unconfirmed*/.sort(function (a, b) {
+        return Number(!!(savedPublicMatch(a.key) || {}).price_unconfirmed) - Number(!!(savedPublicMatch(b.key) || {}).price_unconfirmed);
+      })/*/unconfirmed*/.map(function (entry) {
         var current = savedPublicMatch(entry.key);
         return current && !isLocked(current) && current.status === "alive"
           ? cardHtml(current) : savedUnavailableHtml(entry, current);
