@@ -1821,6 +1821,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 counts[reason] = counts.get(reason, 0) + 1
 
     try:
+        from . import clicks
+        if clicks.enabled(cfg):
+            summary["click_signal"] = clicks.ingest(db, cfg, now, fetcher, run_key, deadline=deadline)
         efficiency.start(db, now, run_key)
         db.backfill_products(cfg.product_entities_backfill_per_run, run_key=run_key)
         ai_yield.start(db, cfg, now, run_key)

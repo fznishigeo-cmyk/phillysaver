@@ -46,6 +46,7 @@ SECRET_NAMES = [
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
     "NEWSLETTER_SECRET",  # bearer token for the Worker: /list (newsletter) and /api/publish (paywall)
     "NEWSLETTER_INBOX_TOKEN", "NEWSLETTER_FORWARD_TO",
+    "CLICK_SIGNAL_TOKEN",
     "PINTEREST_APP_ID", "PINTEREST_APP_SECRET", "META_SYSTEM_TOKEN",
 ]
 

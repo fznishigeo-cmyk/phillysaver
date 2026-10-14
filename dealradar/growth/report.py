@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from ..config import get_secret
+from .. import clicks
 from ..db import DB
 from ..fetch.newsletter import unknown_sender_counts, unknown_sender_text
 from ..publish.admin_alerts import send_admin_text
@@ -58,6 +59,15 @@ def _efficiency(db_path, cfg, now: datetime) -> dict:
     db = DB(db_path, read_only=True)
     try:
         return daily(db, cfg, now)
+    finally:
+        db.close()
+
+
+def _click_signal(db_path, cfg):
+    from ..clicks import report_data
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, cfg)
     finally:
         db.close()
 
@@ -144,6 +154,9 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "click_signal": ([("first_party_clicks.enabled", clicks.enabled(cfg)),
+                          ("state.db", bool(db_path) and Path(db_path).is_file())],
+                         lambda: _click_signal(db_path, cfg)),
         "efficiency": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                        lambda: _efficiency(db_path, cfg, now)),
         "audit": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -321,6 +334,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     efficiency = data.get("efficiency")
     day = efficiency.get("day", "yesterday") if efficiency else "yesterday"
     lines += ["", f"== Efficiency ({day} UTC) ==", *efficiency_lines(efficiency, cfg)]
+    from ..clicks import enabled as clicks_enabled, report_lines as click_lines
+    if clicks_enabled(cfg):
+        lines += ["", *click_lines(data.get("click_signal"))]
 
     lines += ["", "== Money =="]
     mix = data.get("site_health", {}).get("link_mix")

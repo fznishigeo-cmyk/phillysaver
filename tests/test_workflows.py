@@ -42,7 +42,7 @@ SECRET_NAMES = [
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "SOVRN_API_KEY", "THREADS_TOKEN",
     "BESTBUY_API_KEY", "EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET",
-    "STRIPE_SECRET_KEY", "NEWSLETTER_SECRET", "NEWSLETTER_INBOX_TOKEN",
+    "STRIPE_SECRET_KEY", "NEWSLETTER_SECRET", "NEWSLETTER_INBOX_TOKEN", "CLICK_SIGNAL_TOKEN",
 ]
 
 
@@ -357,7 +357,7 @@ def test_deploy_subscribe_worker_shape() -> None:
     assert "GITHUB_STEP_SUMMARY" in body and "newsletter.worker_url" in body
     assert "git push" not in body
     # The list secret reaches wrangler through the step env only.
-    put = next(s for s in steps if "wrangler secret put" in s.get("run", ""))
+    put = next(s for s in steps if "wrangler secret put NEWSLETTER_SECRET" in s.get("run", ""))
     assert put["env"] == {"NEWSLETTER_SECRET": "${{ secrets.NEWSLETTER_SECRET }}"}
 
 
@@ -502,7 +502,7 @@ def test_no_workflow_pushes_to_main() -> None:
 def test_no_secret_is_echoed() -> None:
     """`${{ secrets.X }}` appears only as env-map values, never inside run/echo."""
     # One secret, or a renamed secret with its old name as fallback.
-    env_line = re.compile(r"^\s+[A-Z_]+: \$\{\{ secrets\.[A-Z0-9_]+( \|\| secrets\.[A-Z0-9_]+)? \}\}$")
+    env_line = re.compile(r"^\s+[A-Z_][A-Z0-9_]*: \$\{\{ secrets\.[A-Z0-9_]+( \|\| secrets\.[A-Z0-9_]+)? \}\}$")
     for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
         for line in p.read_text().splitlines():
             if "secrets." in line:

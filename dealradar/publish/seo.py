@@ -156,6 +156,8 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
     if not re.fullmatch(r"[a-z0-9_]{1,40}", category):
         category = "other"
     requirement = ' data-step-offer' if (d.get("checkout") or {}).get("summary") else ''
+    if re.fullmatch(r"[0-9a-f]{16}", str(d.get("_click_key") or "")):
+        requirement += f' data-click-key="{d["_click_key"]}"'
     return f' data-deal-outbound data-store="{escape(store)}" data-category="{escape(category)}"' + requirement
 
 
@@ -763,6 +765,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     spotlight = spotlight or []
     open_access = is_open(cfg)
     paths, deal_rows, _previous_dates = deal_pages
+    from .. import clicks
+    if clicks.enabled(cfg) and clicks.endpoint(cfg):
+        # Render-only copies: no new fields in public/member JSON or features.
+        def marked(rows):
+            return [dict(d, _click_key=d.get("key", "")) if not d.get("locked") else d for d in rows]
+        teaser, spotlight, deal_rows = marked(teaser), marked(spotlight), marked(deal_rows)
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")

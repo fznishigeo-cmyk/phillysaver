@@ -614,3 +614,17 @@ feature_flags:
   threads: false               # off until app review passes
   instagram: false             # stubbed
   keepa: true                  # inert until the KEEPA_KEY secret is set
+
+# Built off: operator approval is required before activating collection.
+# docs/first-party-clicks.md; all ranking use remains shadow-only.
+first_party_clicks:
+  enabled: false
+  endpoint: ""  # our existing newsletter.worker_url (cookie-free *.workers.dev origin)
+  hourly_cap: 1000  # atomic across isolates; hard maximum 3000 (72k D1 writes/day)
+  isolate_per_minute: 120
+  deal_per_minute: 12
+  retention_days: 30  # local aggregates; Worker keeps 7 days for bounded catch-up
+  lookback_hours: 168
+  max_publish_gap_minutes: 30  # longer gaps have unknown publication exposure
+  prior_hours: 2
+  shadow_weight: 10  # positions per log(1 + clicks/(shown hours + prior))

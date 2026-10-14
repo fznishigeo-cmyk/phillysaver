@@ -190,6 +190,28 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **First-party click signal (Codex task 090, 2026-10-14; uncommitted, OFF):**
+  `first_party_clicks.enabled: false` and empty endpoint preserve every site
+  byte and make no click requests. Optional passive Get deal beacons honor
+  GPC/opt-out; the existing subscribe Worker aggregates only public deal keys
+  per UTC hour in free D1, with atomic 1,000/hour default caps, anonymous
+  abuse limits and no IP/cookie/raw-event storage. One token-protected read
+  per run ingests absolute counts idempotently; missing collection hours stay
+  unavailable. Publication-time proxies, documented internal features and
+  top-120 shadow moves feed the private report; live ranking is unchanged.
+  Untouched-HEAD comparisons match all files in four access modes. Worker
+  checks: **74 passed**; final signal checks: **34 passed**; signal + offline
+  rerun checks: **42 passed**. Full `.venv/bin/python -m pytest -q`: **3,395
+  passed, 7 failed, 1 deselected**; only the Stripe localhost-socket tests
+  failed (`Operation not permitted`), all reproduced on untouched HEAD. Six
+  signal cases added after the full run began pass in the final focused run.
+  Activation steps and repository secrets `CLICK_SIGNAL_TOKEN` and
+  `CLICK_SIGNAL_D1_ID`: `docs/codex-tasks/090-first-party-click-signal.md`;
+  definitions/free-tier sources: `docs/first-party-clicks.md`. No dependency,
+  model, paid service, email, headless browser, commit, push or deployment.
+  Remaining: the seven socket checks outside this sandbox, review, and
+  operator-approved activation followed by D1 quota/CPU and beacon observations. Git metadata
+  is read-only in this worktree; changes are left for the owning reviewer.
 - **Keepa/metrics/product merge (Codex task 087c, 2026-10-14; working tree only):**
   all five conflict files resolved, preserving the 087/087b and 088/089
   sections below. One `TokenUsage` tracks actual receipts and separate

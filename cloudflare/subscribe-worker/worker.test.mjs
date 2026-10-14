@@ -6,6 +6,7 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign as rsaSign, createHash, createHmac, pbkdf2Sync } from "node:crypto";
 
+import "./clicks.test.mjs";
 import worker from "./worker.js";
 import { signSession } from "./auth.js";
 import { memGet, memClear } from "./util.js";

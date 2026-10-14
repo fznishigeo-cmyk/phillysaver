@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import indexnow, inventory, pwa, seo, seo_audit, traffic
+from . import click_signal, indexnow, inventory, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -830,6 +830,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
         site_version = pwa.site_version(site_version, cfg)
+    from .. import clicks
+    if clicks.enabled(cfg) and clicks.endpoint(cfg):
+        site_version = hashlib.sha256((site_version + clicks.endpoint(cfg)).encode()
+            + (TEMPLATES_DIR / "click-signal.js").read_bytes()).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -1031,9 +1035,22 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
     # into every page written above or by another pass, nested ones included.
     apply_tracking(out, cfg)
+    click_signal.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"))
+
+    if clicks.enabled(cfg):
+        try:
+            public_rows = [d for d in spotlight + pick_order(teaser, cfg.front_page)
+                           if not d.get("locked") and d.get("status") == "alive"]
+            public_rows = list({d["key"]: d for d in public_rows}.values())
+            clicks.record_shadow(db, cfg, now, public_rows, run_key=(last_run or {}).get("run_key"))
+        except Exception as exc:
+            logger.warning("click shadow unavailable: %s", type(exc).__name__)
+    else:
+        # Do not count a disabled interval if the operator later re-enables it.
+        clicks.observe_publication(db, cfg, now, [])
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)

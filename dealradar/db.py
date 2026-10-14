@@ -39,6 +39,29 @@ def _publisher_sites() -> dict[str, str]:
             for s in primary + backup}
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS deal_clicks (
+    deal_key TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    count INTEGER NOT NULL CHECK(count >= 0),
+    PRIMARY KEY(deal_key, hour)
+);
+CREATE TABLE IF NOT EXISTS deal_click_shown (
+    deal_key TEXT NOT NULL,
+    hour INTEGER NOT NULL,
+    seconds REAL NOT NULL CHECK(seconds BETWEEN 0 AND 3600),
+    position INTEGER NOT NULL,
+    PRIMARY KEY(deal_key, hour)
+);
+CREATE TABLE IF NOT EXISTS deal_click_coverage (
+    hour INTEGER PRIMARY KEY,
+    capped INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deal_click_runs (
+    run_key TEXT PRIMARY KEY,
+    hour INTEGER NOT NULL,
+    ingested INTEGER NOT NULL DEFAULT 0,
+    published INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS delivery_batches (
     channel TEXT NOT NULL,
     run_key TEXT NOT NULL,

@@ -65,6 +65,9 @@ jobs:
       - name: Install wrangler
         run: npm install -g wrangler@4
 
+      - name: Install config reader
+        run: python3 -m pip install PyYAML
+
       # The yearly price the Worker sells must be the one the page shows:
       # asked of Stripe before anything deploys (read-only; the key is read
       # from the environment, never printed or put on a command line).
@@ -140,6 +143,8 @@ jobs:
       - name: Deploy the Worker
         id: deploy
         env:
+          CLICK_SIGNAL_TOKEN: ${{ secrets.CLICK_SIGNAL_TOKEN }}
+          CLICK_SIGNAL_D1_ID: ${{ secrets.CLICK_SIGNAL_D1_ID }}
           KV_ID: ${{ steps.kv.outputs.id }}
           GOOGLE_CLIENT_ID: ${{ inputs.google_client_id }}
           STRIPE_PAYMENT_LINK: ${{ inputs.stripe_payment_link }}
@@ -166,7 +171,14 @@ jobs:
               console.log("set " + name + " from the workflow input");
             }
             fs.writeFileSync("wrangler.deploy.toml", toml);'
+          clicks_enabled="$(python3 ../../scripts/click_signal_deploy.py wrangler.deploy.toml)"
+          if [ "$clicks_enabled" = true ]; then
+            wrangler d1 execute wowpriced-clicks --remote --config wrangler.deploy.toml --file clicks-schema.sql
+          fi
           wrangler deploy --config wrangler.deploy.toml | tee deploy.log
+          if [ "$clicks_enabled" = true ]; then
+            printf '%s' "$CLICK_SIGNAL_TOKEN" | wrangler secret put CLICK_SIGNAL_TOKEN --config wrangler.deploy.toml
+          fi
           url="$(grep -o 'https://[A-Za-z0-9.-]*\.workers\.dev' deploy.log | head -1 || true)"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 

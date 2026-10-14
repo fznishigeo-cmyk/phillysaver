@@ -9,7 +9,11 @@ main = "worker.js"
 compatibility_date = "2025-10-01"
 workers_dev = true
 
+[observability]
+enabled = false  # click requests must not enter Workers request logs
+
 [vars]
+CLICK_SIGNAL_ENABLED = "false"  # deployment derives click knobs from config.yaml
 # Browser origins allowed to call the Worker cross-origin (comma list).
 ALLOWED_ORIGINS = "https://wowpriced.com,https://www.wowpriced.com,https://fznishigeo-cmyk.github.io"
 # Public paywall settings. The deploy workflow's inputs override these on the

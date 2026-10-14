@@ -35,6 +35,7 @@
 import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
 import { page, isConfirmed, getSub, putSub, confirm, unsubscribe } from "./subscribers.js";
 import { handleApi } from "./api.js";
+import { handleClicks } from "./clicks.js";
 
 const MAX_POSTS_PER_IP_PER_HOUR = 20;
 const LIST_MAX = 10000;
@@ -132,6 +133,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const { method } = request;
+    if (url.pathname === "/c" || url.pathname === "/c/counts") return handleClicks(request, env);
     if (method === "OPTIONS") {
       const cors = corsHeaders(request, env);
       return new Response(null, { status: Object.keys(cors).length ? 204 : 403, headers: cors });
