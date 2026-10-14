@@ -302,6 +302,8 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
     # sufficient history, so the always-on shadow actually has work to do.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
+    if mode == "shipped":
+        cfg.raw["first_party_clicks"]["enabled"] = False  # pin predates the click signal switch-on
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"
