@@ -518,21 +518,36 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     from .parse.schema import LLMDeal, to_extracted
     from .savings import compute_savings
     from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal
+    from .store_prices import plain_price, store_offer
 
     current = db.get_deal(deal["dedupe_key"])
-    if current is None or current.get("status") != "alive" or not is_amazon_deal(current) \
-            or is_used_deal(current) or _price_hidden_by_promo(current):
+    if current is None or current.get("status") != "alive":
+        return False
+    store, identity = store_offer(current)
+    retailer = bool(store and post.source_name == store + "_live"
+                    and store_offer({"canonical_url": (post.structured or {}).get("product_url")})
+                    == (store, identity))
+    if retailer:
+        if not plain_price(current) or (store == "bestbuy" and is_used_deal(current)):
+            return False
+    elif not is_amazon_deal(current) or is_used_deal(current) or _price_hidden_by_promo(current):
         return False
 
     extracted = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", now)
     if not verify_evidence(extracted, post.text)[0]:
         return False
-    savings = compute_savings(extracted)
+    savings = compute_savings(extracted, allow_price_only=True) if retailer else compute_savings(extracted)
     if not savings.computable or savings.final_price is None:
         return False
     shown = current.get("final_price")
-    if not shown or shown == savings.final_price \
-            or abs(savings.final_price - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct:
+    if retailer:
+        unchanged = (shown == savings.final_price
+                     and current.get("regular_price") == savings.regular_price
+                     and current.get("regular_price_basis") == post.structured["regular_price_basis"])
+    else:
+        unchanged = (not shown or shown == savings.final_price
+                     or abs(savings.final_price - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct)
+    if unchanged:
         return False  # double-apply does not touch the row or add history
     payload = {k: v for k, v in current.items() if k not in ("id", "normalized_item")}
     if not payload.get("image_url") and deal.get("image_url"):

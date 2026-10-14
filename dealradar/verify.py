@@ -11,10 +11,8 @@ Tiers (best to worst):
 - 'unverified'     — single source / list-price claim. Still published, but
                      visibly flagged and ranked lower.
 
-Verification NEVER fetches retailer pages: it relies only on corroboration
-across sources and our own accumulated price history. The optional Keepa
-adapter (paid API, feature-flagged, off by default) is the only sanctioned
-external check and is a deliberate stub below.
+Verification NEVER fetches retailer pages. External price checks use official
+keyed APIs only: Keepa below, Best Buy and eBay in store_prices.py.
 """
 
 from __future__ import annotations
@@ -133,12 +131,16 @@ def woot_offer_url(deal: dict[str, Any]) -> str:
     return ""
 
 
-def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime) -> bool:
+def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime, cfg=None) -> bool:
     """Queue an API check when possible; otherwise hide the dead deal."""
     if deal.get("status") == "dead":
         return False
     payload = dict(deal)
-    if deal.get("asin") or woot_offer_url(deal):
+    from .store_prices import enabled, store_offer
+    store = store_offer(deal)[0]
+    store_check = (cfg is not None and enabled(store, cfg)
+                   and not (store == "bestbuy" and is_used_deal(deal)))
+    if deal.get("asin") or woot_offer_url(deal) or store_check:
         if deal.get("gone_suspect_at"):
             return False
         payload.update(gone_suspect_at=iso(now), death=reason,
@@ -188,7 +190,7 @@ def mark_expired_dead(db, cfg, now: datetime) -> int:
                 checked = parse_iso(deal.get("price_rechecked_at") or "")
                 # A live reading after this expiry has already overruled it.
                 if checked is None or checked < dt:
-                    n += mark_unconfirmed_dead(db, deal, "stated_expiry", now)
+                    n += mark_unconfirmed_dead(db, deal, "stated_expiry", now, cfg)
     if n:
         log.info("marked %d expired deal(s) dead", n)
     return n
@@ -216,7 +218,7 @@ def post_marks_dead(post, extracted) -> bool:
     return False
 
 
-def mark_ended_post(db, post, now: datetime) -> None:
+def mark_ended_post(db, post, now: datetime, cfg=None) -> None:
     """An updated single-product title can end its old sighting without a parse."""
     if not text_marks_dead(post.title):
         return
@@ -227,7 +229,7 @@ def mark_ended_post(db, post, now: datetime) -> None:
     price_at = parse_iso(deal.get("price_published_at") or deal.get("last_seen_at") or "")
     post_at = post.published_at or post.fetched_at
     if price_at is None or post_at >= price_at:
-        mark_unconfirmed_dead(db, deal, "post_says_over", now)
+        mark_unconfirmed_dead(db, deal, "post_says_over", now, cfg)
 
 
 _IMAGE_NAME_RE = re.compile(r"[\w.,+%-]+")

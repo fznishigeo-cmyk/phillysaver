@@ -216,6 +216,9 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
 
     assert summary["items_fetched"] == 5
     assert summary["posts_new"] == 5
+    assert summary["store_checks"] == {
+        store: dict(checked=0, confirmed=0, repriced=0, suspect=0, gone=0, errors=0)
+        for store in ("bestbuy", "ebay")}
     assert summary["state_db_bytes"] == Path(env["db"]).stat().st_size > 0
     # config.yaml pins parse.model; unset it falls back to the cheapest-model
     # heuristic (covered in test_claude_client).

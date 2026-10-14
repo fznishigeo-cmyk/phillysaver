@@ -1,0 +1,18 @@
+{
+  "from": 1,
+  "to": 1,
+  "currentPage": 1,
+  "total": 1,
+  "totalPages": 1,
+  "products": [
+    {
+      "sku": 6534605,
+      "salePrice": 25.0,
+      "regularPrice": 100.0,
+      "onSale": true,
+      "orderable": "Available",
+      "onlineAvailability": true,
+      "url": "https://www.bestbuy.com/site/widget/6534605.p?skuId=6534605"
+    }
+  ]
+}

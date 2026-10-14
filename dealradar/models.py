@@ -206,7 +206,7 @@ class Deal:
     pct_with_rebates: float | None = None
     abs_savings: float | None = None
     basis: str = ""
-    regular_price_basis: str = ""          # licensed Amazon average used by a reprice
+    regular_price_basis: str = ""          # API reference price used by a reprice
     flags: list[str] = field(default_factory=list)
     codes: list[str] = field(default_factory=list)
     stack_steps: list[str] = field(default_factory=list)
@@ -225,7 +225,7 @@ class Deal:
     # Deal-critic verdict {plausible, confidence, reason} or None (not judged).
     # Implausible => 'suspect_msrp' in flags => never published (configurable).
     critic: dict[str, Any] | None = None
-    # ISO UTC of the last live price re-check (Amazon deals, via Keepa).
+    # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
     keepa_warehouse_seen_at: str = ""     # exact used price in the Warehouse lane

@@ -658,7 +658,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "age_hours": age_hours,
         "credits": credits,
     }
-    checked = price_confirmed_at(deal) if is_amazon_deal(deal) else None
+    from ..store_prices import store_offer
+    checked = price_confirmed_at(deal) if is_amazon_deal(deal) or store_offer(deal)[0] else None
     if checked is not None and checked <= now:
         public["checked_at"] = iso(checked)
     if deal.get("regular_price_basis"):

@@ -70,6 +70,9 @@ jobs:
           WOOT_API_KEY: ${{ secrets.WOOT_API_KEY }}
           MEH_API_KEY: ${{ secrets.MEH_API_KEY }}
           KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
+          BESTBUY_API_KEY: ${{ secrets.BESTBUY_API_KEY }}
+          EBAY_CLIENT_ID: ${{ secrets.EBAY_CLIENT_ID }}
+          EBAY_CLIENT_SECRET: ${{ secrets.EBAY_CLIENT_SECRET }}
           SOVRN_API_KEY: ${{ secrets.SOVRN_API_KEY2 || secrets.SOVRN_API_KEY }}
           THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}

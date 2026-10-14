@@ -1,0 +1,17 @@
+{
+  "itemId": "v1|123456789012|0",
+  "legacyItemId": "123456789012",
+  "price": {"value": "25.00", "currency": "USD"},
+  "marketingPrice": {
+    "originalPrice": {"value": "100.00", "currency": "USD"},
+    "discountPercentage": "75.00",
+    "discountAmount": {"value": "75.00", "currency": "USD"}
+  },
+  "buyingOptions": ["FIXED_PRICE", "BEST_OFFER"],
+  "estimatedAvailabilities": [
+    {"estimatedAvailabilityStatus": "IN_STOCK", "estimatedAvailableQuantity": 3}
+  ],
+  "itemWebUrl": "https://www.ebay.com/itm/123456789012",
+  "condition": "New",
+  "conditionId": "1000"
+}

@@ -534,7 +534,21 @@ retention:
   http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
   outgoing_days: 60          # failed (rejected) attempts only; sent records and pending guards never expire
 
+bestbuy:
+  tolerance_pct: 5
+  recheck_h: 4
+  requests_per_second: 5       # upper bound; the repo's 1 request/s/host still applies
+  max_requests_per_run: 5      # up to 100 SKUs/request; retries also consume this cap
+
+ebay:
+  tolerance_pct: 5
+  recheck_h: 4
+  requests_per_second: 1
+  max_requests_per_run: 25     # includes OAuth token requests and retries
+
 feature_flags:
+  bestbuy_live: false          # also needs BESTBUY_API_KEY
+  ebay_live: false             # also needs EBAY_CLIENT_ID and EBAY_CLIENT_SECRET
   threads: false               # off until app review passes
   instagram: false             # stubbed
   keepa: true                  # inert until the KEEPA_KEY secret is set

@@ -210,6 +210,27 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   360/390px visual/tap QA remains unmeasured. Git metadata is read-only;
   no branch creation, commit or push. Remaining: those seven checks outside
   the sandbox, review, manual phone QA and observed traffic after deployment.
+- **Best Buy/eBay live prices (Codex task 084, 2026-10-14; uncommitted):**
+  official Products/Browse clients share polite pacing and bounded backoff;
+  OAuth stays in memory, request caps include retries/token calls, and API
+  content never reaches state. Suspects/top candidates/wall/rest scheduling,
+  evidence-verified same-row repricing through savings.py, one-hour agreeing
+  deaths, `store_checks` and existing public check clocks are wired into both
+  runs. Missing regular prices clear old discount claims; source credits,
+  critic flags and EPN links remain. Both flags default off and missing secrets
+  skip safely. Activation instructions are at the end of
+  `docs/codex-tasks/084-bestbuy-ebay-live-prices.md`. Offline fixtures cover
+  successful checks, failures, caps, cadences, evidence, timestamps and reruns.
+  All **114 new store tests passed**. Full `.venv/bin/python -m pytest -q`:
+  **3,076 passed, 9 failed, 1 deselected**. Two workflow secret-allowlist
+  assertions were updated for the new env names and their rerun is **2 passed**.
+  Only the seven existing Stripe yearly-deploy socket failures remain:
+  `test_deploy_checks_the_yearly_price_with_stripe` (change0–5) and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`
+  in `tests/test_workflows.py` (`Operation not permitted`). A green full run
+  outside the sandbox and live credential/API verification after the keys
+  arrive remain. Git branch creation is blocked by read-only metadata;
+  no commit or push.
 - **Search precision (Codex task 079, 2026-10-14; working tree only):**
   digit-bearing identifiers/sizes match whole tokens; ordinary words of 5+
   letters allow one edit. Current public inventory drives excluding-filter

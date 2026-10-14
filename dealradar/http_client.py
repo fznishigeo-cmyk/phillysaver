@@ -323,7 +323,8 @@ class PoliteFetcher:
             self._client.close()
 
     def api_get(self, url: str, *, params=None, headers=None, deadline=None,
-                max_attempts=None, respect_robots: bool = True) -> httpx.Response:
+                max_attempts=None, respect_robots: bool = True,
+                conditional: bool = True, follow_redirects: bool = True) -> httpx.Response:
         """An API response through the same robots, pacing and retry policy.
 
         ``respect_robots=False`` is only for an official API we hold a key or
@@ -334,9 +335,18 @@ class PoliteFetcher:
 
         Validators persist under an opaque key; response bodies stay in memory.
         A fresh run re-fetches a 304 unconditionally when its body is unavailable.
+        ``conditional=False`` disables both caches for fresh live-price readings;
+        ``follow_redirects=False`` confines keyed requests to the requested API.
         """
         req = httpx.Request("GET", url, params=params, headers=headers)
         target = str(req.url)
+        if not conditional:
+            result, resp_headers = self._request_with_retries(
+                "GET", target, dict(headers or {}), deadline=deadline,
+                conditional=False, follow_redirects=follow_redirects, read_body=True,
+                max_attempts=max_attempts, keep_error_body=True,
+                respect_robots=respect_robots)
+            return self._api_response(req, result, resp_headers)
         cache_key = "api:" + hashlib.sha256(target.encode()).hexdigest()
         hdrs = dict(headers or {})
         etag, modified = self.db.get_validators(cache_key)
@@ -346,13 +356,13 @@ class PoliteFetcher:
             hdrs["If-Modified-Since"] = modified
         result, resp_headers = self._request_with_retries(
             "GET", target, hdrs, deadline=deadline, conditional=True,
-            follow_redirects=True, read_body=True, validator_key=cache_key,
+            follow_redirects=follow_redirects, read_body=True, validator_key=cache_key,
             max_attempts=max_attempts, keep_error_body=True,
             respect_robots=respect_robots)
         if result.status == 304 and cache_key not in self._api_bodies:
             result, resp_headers = self._request_with_retries(
                 "GET", target, dict(headers or {}), deadline=deadline,
-                conditional=True, follow_redirects=True, read_body=True,
+                conditional=True, follow_redirects=follow_redirects, read_body=True,
                 validator_key=cache_key, max_attempts=max_attempts,
                 keep_error_body=True, respect_robots=respect_robots)
         if result.status == 304 and cache_key in self._api_bodies:
@@ -362,7 +372,8 @@ class PoliteFetcher:
         return self._api_response(req, result, resp_headers)
 
     def api_post(self, url: str, *, data=None, auth=None, headers=None,
-                 deadline=None, respect_robots: bool = True) -> httpx.Response:
+                 deadline=None, respect_robots: bool = True,
+                 max_attempts=None) -> httpx.Response:
         """OAuth token requests share the host gap (robots as in ``api_get``)."""
         req = httpx.Request("POST", url, data=data, headers=headers)
         hdrs = dict(req.headers)
@@ -372,7 +383,8 @@ class PoliteFetcher:
         result, resp_headers = self._request_with_retries(
             "POST", url, hdrs, deadline=deadline, conditional=False,
             follow_redirects=False, read_body=True, content=req.content,
-            keep_error_body=True, respect_robots=respect_robots)
+            keep_error_body=True, respect_robots=respect_robots,
+            max_attempts=max_attempts)
         return self._api_response(req, result, resp_headers)
 
     @staticmethod
@@ -458,13 +470,18 @@ class PoliteFetcher:
 
     # ------------------------------------------------------- politeness/time
 
-    def _rate_wait(self, host: str) -> None:
+    def _rate_wait(self, host: str, deadline: float | None = None) -> None:
         """Enforce at most one request per cfg.min_host_interval_s per host."""
         interval = float(self.cfg.min_host_interval_s)
+        store = {"api.bestbuy.com": "bestbuy", "api.ebay.com": "ebay"}.get(host)
+        if store:
+            interval = max(interval, 1.0, 1.0 / max(
+                0.01, getattr(self.cfg, store + "_requests_per_second")))
         last = self._last_request_at.get(host)
         if last is not None and interval > 0:
             wait = interval - (self._clock() - last)
             if wait > 0:
+                self._check_deadline(deadline, upcoming_sleep=wait)
                 self._sleep(wait)
         self._last_request_at[host] = self._clock()
 
@@ -601,7 +618,8 @@ class PoliteFetcher:
         attempts = max(1, int(max_attempts or self.cfg.max_retries))
         for attempt in range(attempts):
             self._check_deadline(deadline)
-            self._rate_wait(host)
+            self._rate_wait(host, deadline)
+            self._check_deadline(deadline)
             try:
                 resp, body = self._send(method, url, headers,
                                         read_body=read_body,

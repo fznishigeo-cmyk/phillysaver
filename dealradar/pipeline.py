@@ -1783,7 +1783,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         parse_posts = weighted_posts if cfg.intake_mode == "on" else new_posts
         log.info("fetched %d items, %d new (content-hash)", len(posts), len(new_posts))
         for post in new_posts:
-            mark_ended_post(db, post, now)
+            mark_ended_post(db, post, now, cfg)
         record_deaths()
 
         candidate_counts = prefilter_post_counts(new_posts, cfg)
@@ -1890,7 +1890,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             deals_upserted += 1
             if post_marks_dead(post, extracted):
                 if mark_unconfirmed_dead(db, db.get_deal(res["dedupe_key"]),
-                                         "post_says_over", now):
+                                         "post_says_over", now, cfg):
                     counts = summary["deaths_by_reason"]
                     counts["post_says_over"] = counts.get("post_says_over", 0) + 1
                     recorded_deaths.add((res["dedupe_key"], util.iso(now), "post_says_over"))
@@ -1950,6 +1950,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
+        from .store_prices import recheck_store_prices
+        summary["store_checks"] = recheck_store_prices(
+            db, cfg, now, fetcher=fetcher, deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 

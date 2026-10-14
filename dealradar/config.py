@@ -42,6 +42,7 @@ SECRET_NAMES = [
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "TELEGRAM_ADMIN_CHAT_ID",
     "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
     "WOOT_API_KEY", "MEH_API_KEY", "KEEPA_KEY", "THREADS_TOKEN",
+    "BESTBUY_API_KEY", "EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET",
     "STRIPE_SECRET_KEY",  # read-only restricted key: member list for alerts
     "NEWSLETTER_SECRET",  # bearer token for the Worker: /list (newsletter) and /api/publish (paywall)
     "NEWSLETTER_INBOX_TOKEN", "NEWSLETTER_FORWARD_TO",
@@ -320,6 +321,16 @@ class AppConfig:
     # -- woot --
     woot_max_items_per_run: int = 300
     woot_max_new_items_per_run: int = 20      # unseen posts per run
+
+    # -- official store price checks (flags and secrets required) --
+    bestbuy_tolerance_pct: float = 5.0
+    bestbuy_recheck_h: float = 4.0
+    bestbuy_requests_per_second: float = 5.0  # also bounded by the host gap
+    bestbuy_max_requests_per_run: int = 5
+    ebay_tolerance_pct: float = 5.0
+    ebay_recheck_h: float = 4.0
+    ebay_requests_per_second: float = 1.0
+    ebay_max_requests_per_run: int = 25       # includes OAuth and retries
 
     # -- retention / flags --
     posts_seen_days: int = 30
@@ -648,6 +659,16 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "woot", "max_items_per_run", default=cfg.woot_max_items_per_run)))
     cfg.woot_max_new_items_per_run = max(0, int(g(
         "woot", "max_new_items_per_run", default=cfg.woot_max_new_items_per_run)))
+
+    for store in ("bestbuy", "ebay"):
+        for name, floor in (("tolerance_pct", 0.0), ("recheck_h", 0.5),
+                            ("requests_per_second", 0.01)):
+            attr = store + "_" + name
+            value = float(g(store, name, default=getattr(cfg, attr)))
+            if math.isfinite(value):
+                setattr(cfg, attr, max(floor, value))
+        attr = store + "_max_requests_per_run"
+        setattr(cfg, attr, max(0, int(g(store, "max_requests_per_run", default=getattr(cfg, attr)))))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.post_parses_days = int(g("retention", "post_parses_days", default=cfg.post_parses_days))
