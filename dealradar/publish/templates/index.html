@@ -390,6 +390,12 @@ header .dhole{background:var(--chip)}
        text-decoration:underline;text-underline-offset:2px}
 .totop:hover,.totop:focus-visible{color:var(--fg)}
 .empty{color:var(--muted);padding:34px 0;text-align:center}
+.search-recovery{max-width:680px;min-width:0;margin:24px auto;padding:16px;border:1px solid var(--line);border-radius:12px;color:var(--muted);overflow-wrap:anywhere}
+.search-recovery h2{font-size:18px;color:var(--fg);margin:0 0 8px}
+.search-recovery p{margin:8px 0}
+.search-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
+.search-actions button{min-width:44px;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer}
+.search-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .load-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
              margin:12px 0;color:var(--muted);font-size:13px}
 .load-status .pwbtn{min-width:44px;min-height:44px;flex:0 0 auto}
@@ -1210,18 +1216,63 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
   function searchText() { return document.getElementById("q").value.trim(); }
   function normalizeSearch(value) {
-    return String(value || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-      .replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+    var parts = String(value || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\u2010-\u2015]/g, "-").replace(/&/g, " and ").match(/[a-z0-9]+(?:[./-][a-z0-9]+)*\+?/g) || [];
+    // Preserve the whole digit-bearing identifier, including model
+    // separators, decimals and fractions. Ordinary punctuation separates words.
+    return parts.map(function (part) { return /[0-9]/.test(part) ? part : part.replace(/[./+-]/g, " "); }).join(" ");
   }
-  function matchesSearch(d, words) {
+  function searchWords(value) { return normalizeSearch(value).split(" ").filter(Boolean); }
+  var searchIndex = new WeakMap();
+  function indexedWords(d) {
+    var cached = searchIndex.get(d);
+    if (cached) return cached;
     var labels = CATGROUPS.filter(function (g) {
       return Array.isArray(g[1]) && g[1].indexOf(d.category || "other") !== -1;
     }).map(function (g) { return g[0]; });
-    var hay = normalizeSearch([d.item, d.brand, d.store, d.category, labels.join(" "),
-                               (d.conditions || []).join(" ")].join(" "));
-    var compact = hay.replace(/ /g, ""), parts = hay.split(" ");
-    return words.every(function (word) {
-      return compact.indexOf(word) !== -1 || parts.some(function (part) { return part.indexOf(word) === 0; });
+    var text = [d.item, d.brand, d.store, d.category, labels.join(" "), (d.conditions || []).join(" ")].join(" ");
+    var parts = searchWords(text);
+    // Retain BestOffice and its written camel-case words; never join
+    // unrelated fields or split an alphanumeric model into partial numbers.
+    (text.match(/[a-zA-Z]+/g) || []).forEach(function (word) {
+      if (/[a-z][A-Z]/.test(word) && parts.indexOf(word.toLowerCase()) !== -1) {
+        parts = parts.concat(searchWords(word.replace(/([a-z])([A-Z])/g, "$1 $2")));
+      }
+    });
+    // A model's own segments match too ("1000xm5" in "wh-1000xm5"), never a
+    // partial number ("65" stays out of "6500").
+    parts.slice().forEach(function (part) {
+      part.split("-").forEach(function (seg) {
+        if (/[a-z]/.test(seg) && /[0-9]/.test(seg) && seg !== part) parts.push(seg);
+      });
+    });
+    var unique = Array.from(new Set(parts));
+    cached = {exact: new Set(unique),
+              words: unique.filter(function (w) { return !/[0-9]/.test(w); }),
+              ordinary: unique.filter(function (w) { return /^[a-z]{4,}$/.test(w); })};
+    searchIndex.set(d, cached);
+    return cached;
+  }
+  function oneSearchEdit(a, b) {
+    if (Math.abs(a.length - b.length) > 1) return false;
+    var i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] === b[j]) { i++; j++; continue; }
+      if (++edits > 1) return false;
+      if (a.length >= b.length) i++;
+      if (b.length >= a.length) j++;
+    }
+    return edits + Number(i < a.length || j < b.length) <= 1;
+  }
+  function matchesSearch(d, words) {
+    var index = indexedWords(d);
+    return words.length > 0 && words.every(function (word) {
+      if (index.exact.has(word)) return true;
+      if (/[0-9]/.test(word)) return false;  // numbers and models match exactly
+      // Ordinary words match as typed so far ("vac" -> vacuum, "shoe" ->
+      // shoes), and 5+ letter words forgive one typo.
+      return index.words.some(function (part) { return part.indexOf(word) === 0; }) ||
+        (/^[a-z]{5,}$/.test(word) && index.ordinary.some(function (part) { return oneSearchEdit(word, part); }));
     });
   }
   function renderSearchCount(rows) {
@@ -1229,7 +1280,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     document.getElementById("clearsearch").hidden = !document.getElementById("q").value;
     document.getElementById("searchcount").textContent = !q ? "" : count
       ? plural(count, "deal") + ' match' + (count === 1 ? 'es' : '') + ' "' + q + '"'
-      : 'No deals match "' + q + '" : try fewer words';
+      : 'No deals match "' + q + '". Try fewer words or the options below.';
   }
 
   function renderTabs() {
@@ -1256,24 +1307,129 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     });
   }
 
-  function filtered(rows) {
-    var q = searchText(), words = normalizeSearch(q).split(" ").filter(Boolean);
+  function filtered(rows, skip) {
+    skip = skip || [];
+    var q = searchText(), words = searchWords(q);
     var store = document.getElementById("storesel").value;
-    var group = (CATGROUPS[q ? 0 : state.catTab] || CATGROUPS[0])[1];
+    var group = (CATGROUPS[q || skip.indexOf("category") !== -1 ? 0 : state.catTab] || CATGROUPS[0])[1];
     var minpct = Number(document.getElementById("minpct").value) || 0;
     return (rows || state.deals).filter(function (d) {
-      if (q && !matchesSearch(d, words)) return false;
-      if (store && storeKey(d.store) !== store) return false;
+      if (q && skip.indexOf("query") === -1 && !matchesSearch(d, words)) return false;
+      if (store && skip.indexOf("store") === -1 && storeKey(d.store) !== store) return false;
+      if (group && d.spotlight && d.pct_at_checkout == null) return false;
       if (group === "USED") {
         var conds = d.conditions || [];
         if (conds.indexOf("used") === -1 && conds.indexOf("open_box") === -1) return false;
       } else if (group && group.indexOf(d.category || "other") === -1) {
         return false;
       }
-      if (minpct > 0 && !(num(d.pct_at_checkout) >= minpct)) return false;
-      return matchesEligibility(d);
+      if (minpct > 0 && skip.indexOf("minimum") === -1 && !(num(d.pct_at_checkout) >= minpct)) return false;
+      return matchesEligibility(d, skip);
     });
   }
+
+  function searchInventory() {
+    var seen = new Set();
+    return state.deals.concat((state.spotlight || []).filter(function (d) {
+      return d.spotlight && Date.parse(d.spotlight.until) > Date.now();
+    })).filter(function (d) {
+      var key = dealKey(d);
+      if (isLocked(d) || d.status === "dead" || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  function searchRecoveryOptions() {
+    var inventory = searchInventory();
+    if (filtered(inventory).length) return [];
+    var filters = [["store", "Clear store filter"], ["category", "Clear department filter"],
+      ["minimum", "Clear minimum discount"], ["price", "Clear price limit"],
+      ["new", "Include other conditions"], ["steps", "Include deals with steps"]];
+    var names = filters.map(function (f) { return f[0]; });
+    var candidates = filtered(inventory, names), options = [];
+    filters.forEach(function (f) {
+      // A filter is excluding inventory even when a second filter also
+      // blocks it. Show both resets, without promising immediate results.
+      if (filtered(candidates, names.filter(function (name) { return name !== f[0]; })).length < candidates.length) {
+        options.push({kind: "clear", value: f[0], label: f[1]});
+      }
+    });
+    if (!searchText()) return options;
+    var eligible = filtered(inventory, ["query", "category"]);
+    if (eligible.length) options.push({kind: "clear", value: "query", label: "Clear search"});
+    var stores = Object.create(null), departments = Object.create(null);
+    eligible.forEach(function (d) {
+      var key = storeKey(d.store);
+      if (key) {
+        if (!stores[key]) stores[key] = {kind: "store", value: key, label: (d.store || "").trim().replace(/\.com$/i, ""), count: 0};
+        stores[key].count++;
+      }
+      CATGROUPS.forEach(function (g, i) {
+        if (!(d.spotlight && d.pct_at_checkout == null) && Array.isArray(g[1]) && g[1].indexOf(d.category || "other") !== -1) {
+          if (!departments[i]) departments[i] = {kind: "category", value: String(i), label: g[0], count: 0};
+          departments[i].count++;
+        }
+      });
+    });
+    function best(values) {
+      var words = searchWords(searchText());
+      return Object.values(values).sort(function (a, b) {
+        function relevant(o) {
+          var label = searchWords(o.label);
+          return words.some(function (w) { return label.indexOf(w) !== -1; });
+        }
+        return Number(relevant(b)) - Number(relevant(a)) || b.count - a.count || a.label.localeCompare(b.label);
+      }).slice(0, 3);
+    }
+    return options.concat(best(stores), best(departments));
+  }
+  function searchRecoveryHtml() {
+    var options = searchRecoveryOptions();
+    function buttons(kind) {
+      return options.filter(function (o) { return (o.kind === "clear") === (kind === "clear"); }).map(function (o) {
+        return '<button type="button" data-search-kind="' + o.kind + '" data-search-value="' + esc(o.value) + '">' +
+          esc(o.label) + (o.count ? " (" + o.count + ")" : "") + '</button>';
+      }).join("");
+    }
+    var clear = buttons("clear"), suggestions = buttons("suggestion");
+    return '<section class="search-recovery" aria-labelledby="search-recovery-title"><h2 id="search-recovery-title">No matching live deals</h2>' +
+      '<p>' + (searchText() ? 'Try fewer words or check the model number.' : 'Try clearing a filter.') + '</p>' +
+      (clear ? '<div class="search-actions">' + clear + '</div>' : '') +
+      (suggestions ? '<p>Browse available deals instead:</p><div class="search-actions">' + suggestions + '</div>' : '') + '</section>';
+  }
+  function recoverSearch(kind, value) {
+    // Recheck current inventory: a publish or expiry may have removed an
+    // option since it was painted. Never revive an unavailable choice.
+    if (!searchRecoveryOptions().some(function (o) { return o.kind === kind && o.value === value; })) return;
+    clearTimeout(searchTimer);
+    if (kind === "clear") {
+      if (value === "query") { document.getElementById("q").value = ""; state.catTab = 0; }
+      if (value === "store") document.getElementById("storesel").value = "";
+      if (value === "category") state.catTab = 0;
+      if (value === "minimum") document.getElementById("minpct").value = "0";
+      if (value === "price") { browseFilters.preset = ""; browseFilters.max = ""; }
+      if (value === "new") browseFilters.newOnly = false;
+      if (value === "steps") browseFilters.plainOnly = false;
+    } else {
+      document.getElementById("q").value = "";
+      state.catTab = kind === "category" ? Number(value) : 0;
+      if (kind === "store") document.getElementById("storesel").value = value;
+    }
+    paintEligibility();
+    renderTabs();
+    resetWall();
+    rememberBrowse(true);
+    browseSignature = actionSignature();
+    appliedSearch = searchText();
+    track("search_recovery", {method: kind === "clear" ? value : kind === "store" ? "suggest_store" : "suggest_category"});
+    var content = document.getElementById("content");
+    content.setAttribute("tabindex", "-1");
+    content.focus({preventScroll: true});
+  }
+  document.getElementById("content").addEventListener("click", function (e) {
+    var button = e.target.closest("button[data-search-kind]");
+    if (button) recoverSearch(button.getAttribute("data-search-kind"), button.getAttribute("data-search-value"));
+  });
 
   function cmp(a, b) {
     var ka = sortVal(a, state.sortKey), kb = sortVal(b, state.sortKey);
@@ -1789,8 +1945,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }) : [];
     renderSearchCount(rows.concat(spotlight));
     updatePaywall(rows.some(isLocked) || openNudge());
-    if (!state.deals.length && !spotlight.length) {
+    if (!state.deals.length && !searchInventory().length) {
       content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No qualifying deals right now</p>';
+      return;
+    }
+    if (!rows.some(function (d) { return d.status !== "dead"; }) && !spotlight.length) {
+      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->searchRecoveryHtml();
       return;
     }
     if (!rows.length) {
@@ -2817,15 +2977,21 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     render();
   }
 
-  var searchTimer;
+  var searchTimer, appliedSearch = "";
   function updateSearch() {
     clearTimeout(searchTimer);
+    var changed = searchText() !== appliedSearch;
+    appliedSearch = searchText();
 <!--saved-->    savedDeals.view = false;
     renderSavedControls();
 <!--/saved-->    renderTabs();
     resetWall();
     rememberBrowse(false);
     browseSignature = actionSignature();
+    if (loadedOnce && changed && searchText()) {
+      track("search_apply", {method: "query"});
+      if (!filtered(searchInventory()).length) track("search_zero", {method: "query"});
+    }
   }
   function clearSearch() {
     document.getElementById("q").value = "";
@@ -2838,7 +3004,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     searchTimer = setTimeout(updateSearch, 150);
   });
   document.getElementById("q").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") e.preventDefault();
+    if (e.key === "Enter") { e.preventDefault(); updateSearch(); }
     if (e.key === "Escape") { e.preventDefault(); clearSearch(); }
   });
   document.getElementById("clearsearch").addEventListener("click", clearSearch);
@@ -2883,6 +3049,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--saved-->    savedDeals.view = false;
     renderSavedControls();
 <!--/saved-->    document.getElementById("q").value = "";
+    appliedSearch = "";
     document.getElementById("storesel").value = "amazon";
     document.getElementById("minpct").value = "0";
     clearEligibility();

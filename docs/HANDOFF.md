@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-13)
+# Handoff — state of wowpriced.com (updated 2026-10-14)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -190,6 +190,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Search precision (Codex task 079, 2026-10-14; working tree only):**
+  digit-bearing identifiers/sizes match whole tokens; ordinary words of 5+
+  letters allow one edit. Current public inventory drives excluding-filter
+  resets and up to six counted store/department choices, with wrapping 44px
+  controls and focus returned to results. GA4-only apply/zero/recovery counts
+  carry bounded methods only; missing samples stay unavailable. Node checks
+  include 5,000-deal timings; all nine requested byte pins are listed in the
+  task brief. Focused checks: **203 passed**, plus **4 legacy harness checks**.
+  Full `.venv/bin/python -m pytest -q`: **2,835 passed, 8 failed, 1 deselected**;
+  one stale engagement stub is fixed and its focused rerun passes. Only the
+  seven existing Stripe yearly-deploy socket failures in `test_workflows.py`
+  remain (change0–change5 and no-price/no-key); run those outside the sandbox.
+  Chromium launch and branch creation are sandbox-blocked; actual 360px
+  visual/tap/focus QA remains. No commit or push.
 - **Phone taps (Codex task 076, 2026-10-13; uncommitted):** shared invisible
   44px extensions, retained title clamps, neighbor guards and a probe-based
   audit (8 Node math checks). Only four support-off home/four PWA trees and

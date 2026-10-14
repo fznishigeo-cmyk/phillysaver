@@ -31,6 +31,7 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "install_offer_shown": "install_offer_shown", "install_accepted": "install_accepted",
                   "standalone_session": "standalone_session",
                   "filter_apply": "filter_apply", "filter_empty": "filter_empty", "back_restore": "back_restore",
+                  "search_apply": "search_apply", "search_zero": "search_zero", "search_recovery": "search_recovery",
                   "support_ask_shown": "support_ask_shown", "support_ask_click": "support_ask_click",
                   "support_ask_dismiss": "support_ask_dismiss"}
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
@@ -136,7 +137,7 @@ def ga4(client: Any, token: str, property_id: str, days: int) -> dict:
     out: dict[str, Any] = {}
     for key in ("yesterday", "window"):
         out[key] = {"sessions": 0, "totalUsers": 0, "newUsers": 0,
-                    **{e: 0 for e in EVENTS}}
+                    **{e: None if e in ("search_apply", "search_zero", "search_recovery") else 0 for e in EVENTS}}
     for dims, (sessions, users, new) in _rows(totals):
         if dims.get("dateRange") in out:
             out[dims["dateRange"]].update(sessions=sessions, totalUsers=users, newUsers=new)

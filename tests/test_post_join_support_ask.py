@@ -41,8 +41,9 @@ def test_missing_support_link_preserves_every_published_byte(tmp_path, monkeypat
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     out, *_ = render(tmp_path, AppConfig(support_enabled=True, support_payment_link=link,
                                        support_monthly_link=monthly, tracking=SAMPLE), sample_deals())
-    # Captured before task 075: HTML, JSON, sitemap, versions and tracking included.
-    assert tree_hash(out) == "f5246fb885b0cf636ee84de8dfee35d689a31a607f332f29cba03a95686cd7e8"
+    # Task 079 refresh: shared home search/recovery, tracking and version.
+    # The missing-link variants still contain no post-join support ask.
+    assert tree_hash(out) == "2b9b9ec692015e4894291d4aa9053617e9845982a709c98deb55d213195ffaa9"
     for path in out.rglob("*.html"):
         assert "support_ask_" not in path.read_text()
 

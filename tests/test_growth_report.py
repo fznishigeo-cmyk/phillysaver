@@ -66,6 +66,7 @@ GA4_RESPONSE = {"reports": [
                                 ("install_offer_shown", (8, 51)), ("install_accepted", (2, 9)),
                                 ("standalone_session", (3, 17)),
                                 ("filter_apply", (38, 300)), ("filter_empty", (7, 80)), ("back_restore", (21, 180)),
+                                ("search_apply", (19, 140)), ("search_zero", (5, 40)), ("search_recovery", (3, 20)),
                                 ("support_ask_shown", (30, 180)), ("support_ask_click", (4, 20)),
                                 ("support_ask_dismiss", (17, 88)))
           for period, count in zip(("yesterday", "window"), counts)]]},
@@ -478,6 +479,25 @@ def test_a_jwt_signed_with_another_key_is_refused(rsa_key, tmp_path):
 # ------------------------------------------------------------------ parsing
 
 
+def test_search_counts_distinguish_observed_zero_and_missing_samples():
+    body = {"reports": [{}, {"dimensionHeaders": [{"name": "eventName"}, {"name": "dateRange"}],
+        "rows": [{"dimensionValues": [{"value": "search_apply"}, {"value": "yesterday"}],
+                  "metricValues": [{"value": "0"}]}]}, {}, {}]}
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body))) as client:
+        data = google.ga4(client, GOOGLE_TOKEN, "987654", 7)
+    assert data["yesterday"]["search_apply"] == 0
+    assert data["window"]["search_apply"] is None
+    assert data["yesterday"]["search_zero"] is None
+    assert data["yesterday"]["search_recovery"] is None
+    # Pre-feature snapshots also render unavailable, without inventing zeroes.
+    for period in ("yesterday", "window"):
+        for name in ("search_apply", "search_zero", "search_recovery"):
+            data[period].pop(name)
+    _, text = report.build_report(AppConfig(), {"ga4": data, "product": {"yesterday": {}, "window": {}}}, {}, date(2026, 10, 10))
+    assert "product.search_apply: unavailable / unavailable" in text
+    assert "search_zero unavailable (no observed event) / unavailable (no observed event)" in text
+
+
 def test_ga4_request_and_parsing():
     fake = FakeApis()
     with client_for(fake) as client:
@@ -493,7 +513,7 @@ def test_ga4_request_and_parsing():
         "sign_up", "begin_checkout", "start_trial", "deal_click", "support_click",
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
         "install_offer_shown", "install_accepted", "standalone_session",
-        "filter_apply", "filter_empty", "back_restore", "support_ask_shown", "support_ask_click", "support_ask_dismiss"]
+        "filter_apply", "filter_empty", "back_restore", "search_apply", "search_zero", "search_recovery", "support_ask_shown", "support_ask_click", "support_ask_dismiss"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
@@ -503,6 +523,7 @@ def test_ga4_request_and_parsing():
                                 "static_fallback_shown": 11, "first_load_recovered": 5,
                                 "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
                                 "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
+                                "search_apply": 19, "search_zero": 5, "search_recovery": 3,
                                 "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
@@ -871,6 +892,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "install_offer_shown": 8, "install_accepted": 2, "standalone_session": 3,
                       "deal_detail_views": 100, "deal_detail_outbound_clicks": 25, "deal_code_copies": 8,
                       "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
+                      "search_apply": 19, "search_zero": 5, "search_recovery": 3,
                       "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
                       "watch_create": 3, "watch_match": None, "watch_deal_click": None},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
@@ -878,6 +900,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                    "install_offer_shown": 51, "install_accepted": 9, "standalone_session": 17,
                    "deal_detail_views": 40, "deal_detail_outbound_clicks": 60, "deal_code_copies": None,
                    "filter_apply": 300, "filter_empty": 80, "back_restore": 180,
+                   "search_apply": 140, "search_zero": 40, "search_recovery": 20,
                    "support_ask_shown": 180, "support_ask_click": 20, "support_ask_dismiss": 88,
                    "watch_create": 9, "watch_match": 5, "watch_deal_click": 2},
         "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
@@ -898,6 +921,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                  "yesterday mobile/deal: 100 views, 25 outbound actions, actions/view 25.0%",
                  "window desktop/deal: 40 views, 60 outbound actions, actions/view 150.0%",
                  "product.filter_apply: 38 / 300", "product.filter_empty: 7 / 80", "product.back_restore: 21 / 180",
+                 "product.search_apply: 19 / 140", "product.search_zero: 5 / 40", "product.search_recovery: 3 / 20",
                  "product.support_ask_shown: 30 / 180", "product.support_ask_click: 4 / 20",
                  "product.support_ask_dismiss: 17 / 88",
                  "mobile: 25.0% of 100 sessions / 25.0% of 100 sessions",
@@ -941,11 +965,14 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))) as client:
         data, status = report.collect(cfg, NOW, client)
     assert status["ga4"] == status["product"] == "ok"
-    assert all(data["product"][period][name] == 0 for period in ("yesterday", "window") for name in google.PRODUCT_EVENTS)
+    assert all(data["product"][period][name] == (None if name.startswith("search_") else 0)
+               for period in ("yesterday", "window") for name in google.PRODUCT_EVENTS)
     assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.DEAL_PAGE_COUNTS)
     assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.WATCH_EVENTS)
     _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
     assert "product.home_load_attempts: 0 / 0" in text
+    for event in ("search_apply", "search_zero", "search_recovery"):
+        assert f"product.{event}: unavailable / unavailable" in text
     for event in ("install_offer_shown", "install_accepted", "standalone_session"):
         assert f"product.{event}: 0 / 0" in text
     assert "product.deal_detail_views: unavailable (no observed event)" in text

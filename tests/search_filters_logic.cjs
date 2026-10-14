@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const {performance} = require('node:perf_hooks');
 const html = fs.readFileSync(process.argv[2], 'utf8');
 const payload = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 const snippet = (start, end) => {
@@ -21,16 +22,16 @@ function element(id) {
     focus() {this.focused = true;}, querySelectorAll() {return [];}, scrollIntoView(options) {this.scrolled = options;}};
 }
 element('storesel').options.push({value:''});
-const session = new Map(), saved = new Map();
+const session = new Map(), saved = new Map(), searchEvents = [];
 const ctx = {URL, URLSearchParams, Set, state:{deals:payload.deals, catTab:2, shown:600, dataKey:'old'}, PAGE_CARDS:60,
-  CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]), cardEls:()=>[], track(){}, activeSpotlight:()=>[],
+  CATGROUPS:JSON.parse(html.match(/var CATGROUPS = (.*);/)[1]), cardEls:()=>[], track:(...args)=>searchEvents.push(args), activeSpotlight:()=>[], dealKey:d=>d.key || d.dedupe_key || "",
   document:{hidden:false, getElementById:element, createElement:()=>({}),
     addEventListener(type, fn) {handlers['document:'+type] = fn;}},
   window:{innerHeight:844, scrollY:0, scrollTo(){}, addEventListener(type, fn) {handlers['window:'+type] = fn;}},
   Date:class extends Date {constructor(){super(now);} static now(){return now;}},
   setTimeout(fn, delay) {timers.set(++timerID, {fn, delay}); return timerID;},
   clearTimeout(id) {timers.delete(id);},
-  num:v=>v == null ? null : Number(v), esc:s=>s, isLocked:d=>!!d.locked, noop:()=>{},
+  num:v=>v == null ? null : Number(v), esc:s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])), isLocked:d=>!!d.locked, noop:()=>{},
   render() {renders++; ctx.renderSearchCount(ctx.filtered());},
   clock:{tag:''}, dataKey:meta=>meta.published_at,
   isNewPublish:pub=>pub.key !== ctx.state.dataKey,
@@ -93,7 +94,7 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
     populateStores(){firstAdoptions++;}, refreshStores(){}, renderMeta(){}, sinceLastVisit(){}, rememberSeen(){},
     selectAmazonDeals(){}, openFromHash(){}, initEngagement(){}, engagementLineHtml:()=>'',
     paintTicker(){renders++;}, renderSearchCount(){}, filtered:()=>c.state.deals, ordered:rows=>rows,
-    searchText:()=>el('q').value.trim(),
+    searchText:()=>el('q').value.trim(), searchInventory:()=>c.state.deals,
     isLocked:d=>d.locked===true, openNudge:()=>false,
     updatePaywall(){notices.push(c.auth.checking);}, openAccess:()=>!!c.state.meta.open_access,
     canJoin:()=>false, placeGone:rows=>rows, frontPageView:()=>false, openBand:()=>'', activeSpotlight:()=>[],
@@ -232,13 +233,13 @@ async function checkFirstLoad() {
   }
 }
 (async()=>{
-  for(const q of ['best office', 'bestoffice', 'best offi', 'BEST-OFFICE'])
+  for(const q of ['best office', 'bestoffice', 'BEST-OFFICE'])
     assert.deepEqual(items(query(q)), ['BestOffice 4-Shelf Bookcase']);
   assert.deepEqual(items(query('ninja blender')), ['Ninja Professional Plus Blender']);
   assert.deepEqual(items(query('cafe and the')), ['Café & Thé Espresso']);
   assert.deepEqual(items(query('CAFÉ & THÉ')), ['Café & Thé Espresso']);
   assert.equal(query('ninja missing').length,0);
-  assert.equal(element('searchcount').textContent,'No deals match "ninja missing" : try fewer words');
+  assert.equal(element('searchcount').textContent,'No deals match "ninja missing". Try fewer words or the options below.');
   assert.equal(query('lego').length,5); // brand, even when absent from the item title
   assert.equal(query('online only').length,5);
   assert.equal(element('searchcount').textContent,'5 deals match "online only"');
@@ -348,5 +349,135 @@ async function checkFirstLoad() {
   handlers['window:pageshow']({persisted:true}); handlers['window:pageshow']({persisted:true});
   await flush(); assert.equal(requests.length,reqBefore+1);
   await checkFirstLoad();
+  const recoveryPage=loadHarness({body:goodPublish()}); await flush();
+  for(const [a,b] of [['  function storeKey(', '  function cmp(']]) vm.runInContext(snippet(a,b),recoveryPage.c);
+  recoveryPage.el('q').value='nonexistent'; recoveryPage.c.render();
+  assert.match(recoveryPage.el('content').innerHTML,/class="search-recovery"/);
+  assert.match(recoveryPage.el('content').innerHTML,/data-search-kind="store"/);
+  assert.ok(!recoveryPage.el('content').innerHTML.includes('class="card"'));
+  recoveryPage.listeners['content:click']({target:{closest:()=>({getAttribute:name=>name==='data-search-kind'?'clear':'query'})}});
+  assert.equal(recoveryPage.el('q').value,'');
+  assert.ok(!recoveryPage.el('content').innerHTML.includes('class="search-recovery"'));
+  assert.equal(recoveryPage.count('search_recovery'),1);
+  checkPrecisionAndRecovery();
   console.log('search, filters, cache refresh and static fallback passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
+function checkPrecisionAndRecovery() {
+  const match=(item,q,extra={})=>ctx.matchesSearch({item,...extra},ctx.searchWords(q));
+  for(const [item,q] of [['TV 65 inch','65'],['UN65U7K television','un65u7k'],['WH-1000XM5 headphones','wh-1000xm5'],
+    ['TV 65-inch','65-inch'],['AX-65 television','ax-65'],['Model S24+','s24+'],['Board 1-1/2 inch','1-1/2'],
+    ['Board 1.5 inch','1.5'],['Socket 1/2 inch','1/2'],['Rug 10x12','10x12'],['BestOffice bookcase','best office'],
+    ['keyboard','keybord'],['keyboard','keyboaard'],['keyboard','keyboart'],
+    // Typing in progress, plurals and a model's own segment still find the deal.
+    ['keyboard','key'],['BestOffice','best offi'],['Robot vacuum','vac'],['Running shoes','shoe'],
+    ['Running shoe','shoes'],['WH-1000XM5','1000xm5']]) assert.ok(match(item,q),`${item} / ${q}`);
+  for(const [item,q] of [['TV 6500','65'],['TV 165','65'],['UN65U7K','65'],['UN65U7K','un65u7'],
+    ['WH-1000XM50','wh-1000xm5'],['AX-65','65'],['Board 1-1/2','1/2'],['S24+','s24'],['Rug 10x120','10x12'],['Board 1.5','1'],['Board 1.50','1.5'],
+    ['Socket 11/2','1/2'],['Socket 1/2','2'],['TV 065','65'],['keyboard','kybard'],
+    ['keyboard','keybaord'],['cards','cars'],['65inch','65'],
+    ['1000keyboard','keyboard']]) assert.ok(!match(item,q),`${item} / ${q}`);
+  assert.ok(!match('Printer 65','6500')); assert.ok(!match('Printer 6500','65'));
+  assert.ok(!match('keyboard','!!!'));
+  assert.ok(!match('keyboard','keyboard absent')); // every token, no substring across fields
+  assert.ok(!match('key','keyboard',{brand:'board'}));
+  assert.ok(match('unrelated','brandname walmart new',{brand:'BrandName',store:'Walmart',conditions:['new']}));
+  assert.ok(!match('unrelated','private-source',{sources:[{name:'private-source'}]}));
+  const row=(key,changes={})=>({key,item:'Ninja Blender 65',store:'Walmart',category:'kitchen',status:'alive',
+    final_price:20,pct_at_checkout:70,conditions:[],needs_steps:false,...changes});
+  const base=[row('w1'),row('w2'),row('a1',{store:'Amazon',item:'Samsung TV 6500',category:'electronics'}),
+    row('dead',{store:'Gone',status:'dead'}),row('locked',{store:'Secret',locked:true})];
+  const reset=()=>{ctx.state.deals=base.slice();ctx.state.spotlight=[];ctx.state.catTab=0;
+    element('q').value='';element('storesel').value='';element('minpct').value='0';ctx.clearEligibility();ctx.browseSignature='';ctx.appliedSearch='';};
+  const options=()=>Array.from(ctx.searchRecoveryOptions());
+  const clears=()=>options().filter(o=>o.kind==='clear').map(o=>o.value);
+  reset();query('ninja');assert.deepEqual(options(),[]);
+  element('storesel').value='amazon';handlers['storesel:change']();query('ninja');
+  assert.deepEqual(clears(),['store','query']);
+  const oldEvents=searchEvents.length;
+  ctx.updateSearch();ctx.render();assert.equal(searchEvents.length,oldEvents); // no repeat on Enter or render
+  assert.equal(searchEvents.at(-1)[0],'search_zero');
+  ctx.recoverSearch('clear','store');assert.equal(ctx.filtered().length,4); // dead and locked rows retain wall rules
+  assert.equal(ctx.filtered(ctx.searchInventory()).length,2);
+  assert.equal(element('q').value,'ninja');assert.equal(element('storesel').value,'');
+  assert.equal(searchEvents.at(-1)[0],'search_recovery');assert.equal(searchEvents.at(-1)[1].method,'store');
+  assert.ok(element('content').focused);assert.equal(ctx.state.shown,60);
+  const afterRecovery=searchEvents.length;ctx.recoverSearch('clear','store');assert.equal(searchEvents.length,afterRecovery);
+  // A filter changed before the debounce must not swallow the applied query.
+  reset();query('ninja');element('q').value='samsung';handlers['q:input'].call(element('q'));
+  element('storesel').value='walmart';handlers['storesel:change']();
+  const applies=searchEvents.filter(e=>e[0]==='search_apply').length;
+  ctx.updateSearch();assert.equal(searchEvents.filter(e=>e[0]==='search_apply').length,applies+1);
+  ctx.updateSearch();assert.equal(searchEvents.filter(e=>e[0]==='search_apply').length,applies+1);
+  // Every excluding filter is offered, including intersecting blockers.
+  for(const filter of ['store','minimum','price','new','steps']) {
+    reset();query('ninja');
+    if(filter==='store') element('storesel').value='amazon';
+    if(filter==='minimum') element('minpct').value='90';
+    if(filter==='price') ctx.browseFilters.max='10';
+    if(filter==='new') {ctx.browseFilters.newOnly=true;ctx.state.deals=[row('used',{conditions:['used']})];}
+    if(filter==='steps') {ctx.browseFilters.plainOnly=true;ctx.state.deals=[row('step',{needs_steps:true})];}
+    assert.ok(clears().includes(filter),filter);
+    ctx.recoverSearch('clear',filter);assert.ok(ctx.filtered(ctx.searchInventory()).length,filter);
+  }
+  reset();query('ninja');element('storesel').value='amazon';element('minpct').value='90';
+  assert.deepEqual(clears(),['store','minimum']);
+  ctx.recoverSearch('clear','store');assert.deepEqual(clears(),['minimum']);
+  ctx.recoverSearch('clear','minimum');assert.equal(ctx.filtered(ctx.searchInventory()).length,2);
+  reset();ctx.state.catTab=4;assert.deepEqual(clears(),['category']);
+  ctx.recoverSearch('clear','category');assert.ok(ctx.filtered(ctx.searchInventory()).length);
+  // Inactive department (search crosses tabs) and irrelevant conditions never appear as blockers.
+  reset();ctx.state.catTab=4;ctx.browseFilters.newOnly=true;query('missing');
+  assert.deepEqual(clears(),['query']);
+  const suggestions=options().filter(o=>o.kind!=='clear');
+  assert.ok(suggestions.length<=6);
+  assert.deepEqual(suggestions.filter(o=>o.kind==='store').map(o=>[o.value,o.count]),[['walmart',2],['amazon',1]]);
+  assert.ok(!JSON.stringify(options()).match(/Secret|Gone/));
+  for(const option of suggestions) {
+    element('q').value='missing';ctx.state.catTab=4;element('storesel').value='';
+    ctx.recoverSearch(option.kind,option.value);
+    assert.equal(ctx.filtered(ctx.searchInventory()).length,option.count,option.label);
+    assert.equal(element('q').value,'');
+  }
+  reset();query('missing');ctx.browseFilters.max='20';ctx.browseFilters.newOnly=true;ctx.browseFilters.plainOnly=true;
+  ctx.state.deals.push(row('expensive',{store:'Expensive',final_price:30}),row('used',{store:'Used',conditions:['used']}),
+    row('steps',{store:'Steps',needs_steps:true}),row('unknown',{store:'Unknown',final_price:null}));
+  assert.ok(!JSON.stringify(options()).match(/Expensive|Used|Steps|Unknown/));
+  // Current spotlight counts once; expired, ended and locked inventory contributes nothing.
+  reset();query('missing');ctx.state.spotlight=[base[0],row('spot',{store:'Spot',pct_at_checkout:null,
+    spotlight:{until:new Date(now+1000).toISOString()}}),row('expired',{store:'Expired',spotlight:{until:new Date(now-1).toISOString()}})];
+  assert.equal(options().find(o=>o.value==='walmart').count,2);
+  assert.equal(options().find(o=>o.value==='spot').count,1);
+  assert.ok(!JSON.stringify(options()).includes('Expired'));
+  assert.equal(options().find(o=>o.kind==='category' && o.label==='Home & Kitchen').count,2);
+  ctx.recoverSearch('store','spot');assert.equal(ctx.filtered(ctx.searchInventory()).length,1);
+  element('storesel').value='';element('q').value='missing';
+  ctx.state.spotlight=[];const beforeStale=searchEvents.length;ctx.recoverSearch('store','spot');
+  assert.equal(searchEvents.length,beforeStale);assert.equal(element('q').value,'missing');
+  // Labels are escaped and counts come from distinct public keys, including refreshed inventory.
+  ctx.state.deals=[row('unsafe',{store:'<img src=x onerror=boom>'})];
+  assert.ok(!ctx.searchRecoveryHtml().includes('<img'));
+  assert.ok(ctx.searchRecoveryHtml().includes('&lt;img'));
+  ctx.state.deals=[];assert.deepEqual(options(),[]);
+  ctx.state.deals=[row('fresh',{store:'Fresh',item:'Keyboard'})];
+  assert.equal(options().find(o=>o.kind==='store').label,'Fresh');
+  ctx.state.deals=Array.from({length:50},(_,i)=>row('s'+i,{store:'Store '+i,category:['home','electronics','beauty','auto','pets'][i%5]}));
+  assert.equal(options().filter(o=>o.kind!=='clear').length,6);
+  // Metrics carry bounded action labels only, never the query or product/filter facts.
+  assert.ok(searchEvents.some(e=>e[0]==='search_apply'));
+  for(const [name,params] of searchEvents.filter(e=>e[0].startsWith('search_'))) {
+    assert.deepEqual(Object.keys(params),['method']);
+    assert.ok(['query','filter','store','category','minimum','price','new','steps','suggest_store','suggest_category'].includes(params.method));
+  }
+  reset();
+  ctx.state.deals=Array.from({length:5000},(_,i)=>row('perf'+i,{item:`Samsung television ${i%2?65:6500} model UN${i} keyboard`,
+    store:i%2?'Amazon':'Walmart',brand:'Samsung',category:'electronics',conditions:['online_only']}));
+  const queries=['65','6500','un3011','samsung television','televison','keybord','missing keyboard','amazon 65'];
+  const run=()=>{const start=performance.now();const counts=[];
+    for(const q of queries){element('q').value=q;counts.push(ctx.filtered().length);}return {ms:performance.now()-start,counts};};
+  const cold=run(),warm=run();assert.deepEqual(cold.counts,[2500,2500,1,5000,5000,5000,0,2500]);
+  assert.deepEqual(warm.counts,cold.counts);
+  element('q').value='missing';const start=performance.now();options();const recovery=performance.now()-start;
+  assert.ok(cold.ms<2000 && warm.ms<1000 && recovery<1000,'5,000-deal search/recovery budget');
+  console.log(JSON.stringify({deals:5000,queries:queries.length,cold_ms:+cold.ms.toFixed(1),warm_ms:+warm.ms.toFixed(1),recovery_ms:+recovery.toFixed(1)}));
+}

@@ -44,15 +44,14 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "09faa24f0ac60185f05262553dc7e80240df5d66e3d05f7e82ab5958a882b560"),
-    ("open", "37af119632dba4ad624b0b0d763c642576d0195cb9d95c2660a27c41c71e8f6e"),
-    ("support", "9c91d584767cbf39211b77c4d55289c28f069a5db8ca0a94f9d107103c25be31"),
-    ("shipped", "331e0ed467459b0a7f3ea31e4eba76d6d3ecd857f1398f71245571d191d38ff6"),
+    ("membership", "f24c0763e13a3e535b7c240d63b27354bd8aa7886bb942adcc03c2c085564064"),
+    ("open", "43700f0d73b2d8999d9c57def5c50dc230d10a17641f696aee647de36ce7d9a7"),
+    ("support", "6fb6df538da6dad5022d7401285c6cafd97a7dc5af829d01fec96ca13332ee1b"),
+    ("shipped", "742bc479717c7e0d6ba8fb508c3bbf5639191b6ef5da7d6af6f06f950762b010"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
-    # Task 076 updates all four trees: shared phone target CSS changes
-    # every footer page and the template version, without any PWA output.
-    # Only shipped has support links and task 075's post-join ask.
+    # Task 079 refreshes all four trees for shared search/recovery, the
+    # GA4 event registry and template version; PWA output stays disabled.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
@@ -156,7 +155,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "9c91d584767cbf39211b77c4d55289c28f069a5db8ca0a94f9d107103c25be31"
+    assert tree_hash(out) == "6fb6df538da6dad5022d7401285c6cafd97a7dc5af829d01fec96ca13332ee1b"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

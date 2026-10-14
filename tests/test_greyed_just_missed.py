@@ -199,13 +199,13 @@ def test_ticker_and_search_use_liveness_correctly():
     rows = [_serialize_deal(make_deal(dedupe_key=str(i), item=f"Lamp {i}", status="dead" if i == 0 else "alive"), NOW) for i in range(3)]
     script = '''
     var state = {deals: JSON.parse(require("fs").readFileSync(0,"utf8")), catTab:0};
-    var TICKER_MAX = 16, CATGROUPS = [["Trending", null, ""]];
+    var TICKER_MAX = 16, CATGROUPS = [["Trending", null, ""]], searchIndex = new WeakMap();
     var num = Number, isLocked = () => false, offer = () => ({}), esc = String, dealKey = d => d.key;
     var matchesEligibility = () => true; // Eligibility intersections have their own published-page harness.
     var values = {q:"Lamp 0", storesel:"", minpct:""};
     var document = {getElementById: id => ({value: values[id]})};
     ''' + '\n'.join(js_function(n) for n in (
-        "tickerItems", "searchText", "normalizeSearch", "matchesSearch", "filtered"))
+        "tickerItems", "searchText", "normalizeSearch", "searchWords", "indexedWords", "oneSearchEdit", "matchesSearch", "filtered"))
     script += '\nconsole.log(JSON.stringify({ticker:tickerItems(), filtered:filtered()}));'
     result = run_js(script, rows)
     assert [d["key"] for d in result["ticker"]] == [d["key"] for d in rows[1:]]

@@ -387,6 +387,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines.append(f"product: not available ({status.get('product', 'skipped')})")
     lines.append("Install offers and acceptances are actions; standalone_session counts session launches, not retained users.")
     lines.append("Support ask counts are actions, not payments or amounts.")
+    lines.append("Search counts are applied queries, empty results and recovery choices; absent event samples are unavailable.")
     def observed(value):
         return _n(value) if value is not None else "unavailable (no observed event)"
 
@@ -439,7 +440,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines += ["", "== Google Analytics ==",
                   "Sessions: " + _pair(_n, y["sessions"], w["sessions"]),
                   "New users: " + _pair(_n, y["newUsers"], w["newUsers"]),
-                  "Events: " + ", ".join(f"{e} {_pair(_n, y[e], w[e])}" for e in google.EVENTS),
+                  "Events: " + ", ".join(f"{e} {_pair(observed, y.get(e), w.get(e))}" for e in google.EVENTS),
                   f"Top sources ({days} days, sessions):"]
         lines += [f"  {name or '(not set)'}: {_n(n)}" for name, n in ga["sources"]]
         lines.append(f"Top landing pages ({days} days, sessions):")

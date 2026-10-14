@@ -10,7 +10,7 @@ function fragment(start, end) {
   return home.slice(a, b);
 }
 let now = Date.parse('2026-10-09T14:00:00Z'), html = '', countdowns = [];
-const content = {querySelector:()=>null, appendChild(){},
+const content = {querySelector:()=>null, appendChild(){}, addEventListener(){},
   get innerHTML() {return html;},
   set innerHTML(value) {
     html = value;

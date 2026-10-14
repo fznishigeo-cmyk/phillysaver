@@ -77,6 +77,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
       setItem(k,v) {if (throwing==='write') throw Error('readonly'); storage.set(k,v);},
       removeItem(k) {if (throwing==='write') throw Error('readonly'); storage.delete(k);}},
     ordered:rows=>rows, filtered:()=>wall, isLocked:d=>d.locked===true,
+    searchInventory:()=>ctx.state.deals, searchRecoveryHtml:()=>'<section class="search-recovery"></section>',
     cardEls:cards, moreObserver:null, renderSearchCount(){}, paintTicker(){}, updatePaywall(){},
     openNudge:()=>false, openBand:()=>'', panel:{}, reduceMotion:()=>reduced,
     setTimeout:cb=>timers.push(cb), cardImageIndex:0, ageText:()=>'',

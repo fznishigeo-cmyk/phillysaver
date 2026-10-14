@@ -38,6 +38,10 @@ def test_search_filters_and_refresh(tmp_path, support, open_access):
     assert home.index('id="load-status"') < home.index('id="content"')
     assert 'id="load-retry" type="button" class="pwbtn alt">Retry</button>' in home
     assert '.load-status .pwbtn{min-width:44px;min-height:44px;flex:0 0 auto}' in home
+    assert '.search-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}' in home
+    assert 'min-width:44px;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere' in home
+    assert '.search-actions button:focus-visible' in home
+    assert 'aria-labelledby="search-recovery-title"' in home
     wall = home.split('<div id="content"', 1)[1].split('<div id="paywall"', 1)[0]
     assert 'class="getdeal" href="https://' in wall and 'class="credit">via <a href="https://' in wall
     assert '<noscript>' in wall and 'id="load-status"' not in wall
@@ -48,6 +52,7 @@ def test_search_filters_and_refresh(tmp_path, support, open_access):
     result = subprocess.run(['node', str(Path(__file__).with_name('search_filters_logic.cjs')),
                              str(out / 'index.html'), str(out / 'deals.json')], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
 
 
 @pytest.mark.parametrize("support", [True, False])

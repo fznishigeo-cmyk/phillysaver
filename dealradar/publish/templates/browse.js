@@ -13,11 +13,12 @@
       Number.isFinite(Number(v)) && Number(v) >= 0 ? v.trim() : "";
   }
   function eligibilityActive() { return !!(browseFilters.preset || browseFilters.max || browseFilters.newOnly || browseFilters.plainOnly); }
-  function matchesEligibility(d) {
+  function matchesEligibility(d, skip) {
+    skip = skip || [];
     var ceiling = browseFilters.max || browseFilters.preset;
-    if (ceiling && !(typeof d.final_price === "number" && Number.isFinite(d.final_price) && d.final_price <= Number(ceiling))) return false;
-    if (browseFilters.plainOnly && d.needs_steps !== false) return false;
-    if (browseFilters.newOnly) {
+    if (ceiling && skip.indexOf("price") === -1 && !(typeof d.final_price === "number" && Number.isFinite(d.final_price) && d.final_price <= Number(ceiling))) return false;
+    if (browseFilters.plainOnly && skip.indexOf("steps") === -1 && d.needs_steps !== false) return false;
+    if (browseFilters.newOnly && skip.indexOf("new") === -1) {
       if (!Array.isArray(d.conditions)) return false;
       if (d.conditions.some(function (c) {
         if (typeof c !== "string") return true;
@@ -149,6 +150,7 @@
 <!--saved-->    savedDeals.view = savedOn() && s.savedView === true && (!useURL || !s.url || s.url === browseURL() || s.url === "/" + (location.search || ""));
     renderSavedControls();
 <!--/saved-->    paintEligibility();
+    appliedSearch = searchText();
     browseSignature = actionSignature();
   }
   function finishBrowseAction(method, push) {
@@ -161,7 +163,10 @@
     // Sorting changes the order, not the eligibility of an offer.
     if (method === "sort") return;
     track("filter_apply", {method: method});
-    if (!filtered().concat(activeSpotlight()).some(function (d) { return d.status !== "dead"; })) track("filter_empty", {method: method});
+    if (!filtered().concat(activeSpotlight()).some(function (d) { return d.status !== "dead"; })) {
+      track("filter_empty", {method: method});
+      if (searchText()) track("search_zero", {method: "filter"});
+    }
   }
   function navigationMethod() {
     try {
@@ -272,6 +277,7 @@
   document.getElementById("filterclear").addEventListener("click", function () {
     if (!loadedOnce || document.getElementById("filterfields").disabled) return;
     document.getElementById("q").value = "";
+    appliedSearch = "";
     document.getElementById("storesel").value = "";
     document.getElementById("minpct").value = "0";
     state.catTab = 0;

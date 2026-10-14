@@ -481,6 +481,8 @@ def test_disabled_or_dormant_saved_events_are_not_registered(support, enabled):
 def test_filter_and_back_events_are_ga4_only_with_bounded_method(tmp_path, ids):
     methods = {"filter_apply": ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"],
                "filter_empty": ["sheet", "desktop", "clear", "store", "minimum", "category", "amazon"],
+               "search_apply": ["query"], "search_zero": ["query", "filter"],
+               "search_recovery": ["query", "store", "category", "minimum", "price", "new", "steps", "suggest_store", "suggest_category"],
                "back_restore": ["back", "reload", "history"]}
     calls = [[event, {"method": method, "query": "PRIVATE-QUERY", "maxprice": "PRIVATE-PRICE",
                       "price": 23.45, "threshold": 80, "item": "PRIVATE-ITEM", "key": "PRIVATE-KEY",

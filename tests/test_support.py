@@ -117,13 +117,13 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "3c6a66c8df2e8f1f861684779ebf70e77b067cf76e714ccc5523d8291879f553"),
-    (False, 49, "f706965597d750bca93c2b6c8b8378169827f2cfe93af4e9015f63f8c5c10e32"),
-    (True, 0, "688232d8754ec587de0f027e19c6a3190e182cd8e59e874bb11bf571659365e8"),
-    (True, 49, "5b4b70a803494204010508856538e30edab9e8f145f9b6b43e8da9d331c02117"),
+    (False, 0, "9fd1200508467f82fb57a3a24b31a9481bcd7914e5275c416e4fdbb7b53cb2d2"),
+    (False, 49, "7fe72267b2e311822a956225dd860205fe548eefce80709261eb320d157dd7b2"),
+    (True, 0, "3e6c1b91e7f28c9f95a8b1a20f87dbdc3abc0e0ae4f47814971ef4eceb24fac1"),
+    (True, 49, "264455f99b87387ab2feb8c4050abd259f83a84b7c071c406f2814e959fb0433"),
 ])
-def test_support_off_index_bytes_match_task076_baseline(tmp_path, monkeypatch, mode, yearly, expected):
-    # Task 076 changes only phone hit-area CSS in all four home modes.
+def test_support_off_index_bytes_match_task079_baseline(tmp_path, monkeypatch, mode, yearly, expected):
+    # Task 079 updates shared search/recovery in all four home modes.
     # Snapshot without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
     out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
