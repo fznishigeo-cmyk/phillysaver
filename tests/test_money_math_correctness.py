@@ -35,6 +35,8 @@ def audit_cfg(tmp_path, monkeypatch):
     cfg.site_dir = str(tmp_path / "site")
     cfg.critic_shadow_batches_per_day = 0
     cfg.feature_flags["keepa"] = False
+    # Fixture deals carry no sightings; the stock rule is tests/test_social_stock.py.
+    cfg.social_require_stock_evidence = False
     return cfg
 
 

@@ -136,6 +136,7 @@ def test_all_social_channels_share_earning_gate(tmp_path, db, require):
     cfg = load_config()
     cfg.site_dir = str(tmp_path / "site")
     cfg.social_require_earning_link = require
+    cfg.social_require_stock_evidence = False  # DB evidence: tests/test_social_stock.py
     rows = [candidate("non-earning", 1, earns=False), candidate("earning", 2),
             candidate("missing", 3)]
     rows[-1].pop("earns")
@@ -176,6 +177,7 @@ def test_social_channels_never_post_used_items(tmp_path, db, condition):
     """A one-unit used item is gone after the first click (operator, 2026-10-13)."""
     cfg = load_config()
     cfg.site_dir = str(tmp_path / "site")
+    cfg.social_require_stock_evidence = False  # DB evidence: tests/test_social_stock.py
     published(db, cfg, [candidate("used-one", 1, conditions=[condition]),
                         candidate("new-one", 2, conditions=["online_only"])])
     for module in (pinterest, meta, telegram_pub):

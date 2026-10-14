@@ -1538,6 +1538,7 @@ class TestCarefulDeath:
         # These are Warehouse (used) units: social posts skip used items
         # (operator, 2026-10-13); this helper counts alertability, so lift that.
         cfg.social_exclude_conditions = []
+        cfg.social_require_stock_evidence = False
         cfg.front_page = dict(cfg.front_page, top_picks=dict(
             cfg.front_page["top_picks"], exclude_conditions=[]))
         render_site(db, cfg, now)  # channel candidates come from the published picks
