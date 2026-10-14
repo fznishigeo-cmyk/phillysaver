@@ -560,8 +560,31 @@ social:
     environment: production       # sandbox (Trial access) | production; Standard access approved 2026-10-14
     redirect_uri: "https://wowpriced.com/"
     board_name: "Deals up to 90% off"
+    # Created only for an eligible pin; existing names are never changed.
+    category_boards:
+      kitchen: "Kitchen Deals"
+      home: "Home Deals"
+      kids_baby: "Baby & Kids Deals"
+      beauty: "Beauty Deals"
+      electronics: "Tech Deals"
+      computers: "Tech Deals"
+      gaming: "Tech Deals"
+      toys_games: "Toys & Games Deals"
+      pets: "Pet Deals"
+      outdoors: "Outdoor & Sports Deals"
+      sports: "Outdoor & Sports Deals"
+    max_consecutive_board: 2      # across runs; wait if no other board is eligible
     pins_per_run: 2               # hourly lane
     daily_max: 20                 # per UTC day
+    ramp:
+      enabled: false
+      # Optional dated overrides: [{from: "2026-11-01", daily_max: 25, pins_per_run: 2}]
+      schedule: []
+    analytics:
+      enabled: true              # production only; Pinterest disables sandbox analytics
+      max_requests_per_day: 60    # oldest checked pins first, from the last 30 UTC days
+      max_seconds: 90             # request timeout is also bounded by the time left
+      # Partial coverage is explicit; daily rows expire after 30 days.
     disclosure: "#ad"             # last word of every description
   meta:                           # Facebook Page + Instagram (operator, 2026-10-12)
     # Paused 2026-10-13 after Meta restricted the new account (review
@@ -593,6 +616,21 @@ digest:
 alerting:
   min_items_ratio: 0.5         # warn if run items < 50% of 7-day hourly average
   tripped_sources_warn: 5      # warn if >=5 sources tripped
+
+ads:
+  # Only the operator's exact typed sentence may change authorized_daily_usd.
+  # Nothing in code ever raises it. Copy the sentence verbatim into authorized_quote
+  # and its ISO date into authorized_on. Example: AUTHORIZE ADS: $10 per day
+  authorized_daily_usd: 10      # 0 = no ad spend allowed
+  authorized_on: "2026-10-14"
+  authorized_quote: "AUTHORIZE ADS: $10 per day — Authorized by Arslan"
+  hard_max_daily_usd: 10       # absolute ceiling; excess authorization is clamped + alerted
+  performance:
+    lookback_days: 30         # completed days, matched Google Ads / GA4 dates
+    zero_signup_cost_usd: 15
+    min_deal_clicks: 10
+    cost_per_deal_click_usd: 1.50
+    cost_per_click_min_spend_usd: 20
 
 growth:
   # The daily PRIVATE growth report (python -m dealradar growth-report,

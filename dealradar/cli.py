@@ -122,6 +122,14 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     return run(load_config(args.config), db_path=args.db)
 
 
+def cmd_ads_guard(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .growth.ads_guard import run
+
+    return run(load_config(args.config), db_path=args.db,
+               state_unavailable=args.state_unavailable)
+
+
 def cmd_source_audit(args: argparse.Namespace) -> int:
     from .config import load_config
     from .source_audit import run
@@ -229,6 +237,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="daily private growth report (operator email / Telegram admin)")
     common(sp)
     sp.set_defaults(fn=cmd_growth_report)
+
+    sp = sub.add_parser("ads-guard", help="pause-only Google Ads spend guard (admin Telegram)")
+    common(sp)
+    sp.add_argument("--state-unavailable", action="store_true",
+                    help="state restore failed; pause defensively without writing state")
+    sp.set_defaults(fn=cmd_ads_guard)
 
     for command, help_text in (
         ("pinterest-auth-url", "print the Pinterest authorization URL"),

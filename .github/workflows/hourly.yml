@@ -38,12 +38,33 @@ jobs:
           cache: pip
 
       - name: Install dealradar
+        id: install
         run: pip install -e .
 
       - name: Restore state from data branch
+        id: restore
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/restore_state.sh
+
+      - name: Guard Google Ads spending
+        id: ads_guard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        continue-on-error: true  # finish the pipeline; surface guard failure at the end
+        env:
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          STATE_RESTORED: ${{ steps.restore.outcome == 'success' }}
+        run: |
+          if [ "$STATE_RESTORED" = "true" ]; then
+            python -m dealradar ads-guard
+          else
+            python -m dealradar ads-guard --state-unavailable
+          fi
 
       - name: Run pipeline
         id: pipeline
@@ -80,7 +101,7 @@ jobs:
 
       - name: Commit state to data branch
         # Save billed calls and pending deliveries even when the pipeline fails.
-        if: ${{ !cancelled() && steps.pipeline.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && (steps.pipeline.outcome != 'skipped' || steps.ads_guard.outcome != 'skipped') }}
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/commit_state.sh
@@ -151,3 +172,7 @@ jobs:
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
         run: bash scripts/commit_state.sh
+
+      - name: Surface Ads guard failure
+        if: ${{ !cancelled() && steps.ads_guard.outcome == 'failure' }}
+        run: exit 1

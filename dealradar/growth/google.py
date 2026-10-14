@@ -190,6 +190,61 @@ def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:
     return out
 
 
+def ga4_ads_outcomes(client, token, property_id, start, end, account_timezone):
+    """One attributed event row, counted once. No attribution is unavailable.
+
+    Linked Ads ID wins; explicit google/cpc UTM IDs (utm_id or a numeric
+    utm_campaign) are the fallback. Never match display names or all-site totals.
+    """
+    dimensions = ["sessionGoogleAdsCampaignId", "sessionGoogleAdsCustomerId",
+                  "sessionManualCampaignId", "sessionManualCampaignName",
+                  "sessionSourceMedium", "eventName"]
+    request = {"dateRanges": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
+               "dimensions": [{"name": d} for d in dimensions],
+               "metrics": [{"name": "eventCount"}], "limit": 10000,
+               "dimensionFilter": {"filter": {"fieldName": "eventName", "inListFilter": {
+                   "values": ["session_start", "deal_click", "sign_up"]}}}}
+    out, offset, seen = {}, 0, set()
+    while True:
+        resp = client.post(GA4_URL.format(quote(property_id, safe="")),
+            headers={"Authorization": "Bearer " + token},
+            json={"requests": [{**request, "offset": offset}]})
+        resp.raise_for_status()
+        result = resp.json()["reports"][0]
+        meta = result.get("metadata") or {}
+        if (meta.get("subjectToThresholding") or meta.get("samplingMetadatas")
+                or meta.get("dataLossFromOtherRow") or meta.get("timeZone") != account_timezone):
+            raise ValueError("incomplete or timezone-mismatched outcomes")
+        if ([h["name"] for h in result["dimensionHeaders"]] != dimensions
+                or [h["name"] for h in result["metricHeaders"]] != ["eventCount"]):
+            raise ValueError("invalid outcome dimensions")
+        for row in result.get("rows", []):
+            values = [v["value"] for v in row["dimensionValues"]]
+            if len(values) != len(dimensions) or tuple(values) in seen:
+                raise ValueError("incomplete or duplicate outcome row")
+            seen.add(tuple(values))
+            linked, customer, manual, name, source, event = values
+            cid = linked if linked.isdecimal() else (
+                manual if manual.isdecimal() else name if name.isdecimal() else "")
+            if not cid or (not linked.isdecimal() and source.lower() != "google / cpc"):
+                continue
+            count = row["metricValues"][0]["value"]
+            if len(row["metricValues"]) != 1 or not count.isdecimal():
+                raise ValueError("invalid outcome count")
+            # The linked customer prevents accidental matches to another Ads account.
+            key = (customer.replace("-", "") if linked.isdecimal() else "utm", cid)
+            totals = out.setdefault(key, {"session_start": 0, "sign_up": 0, "deal_click": 0})
+            if event not in totals:
+                raise ValueError("invalid outcome event")
+            totals[event] += int(count)
+        rows = result.get("rows", [])
+        offset += len(rows)
+        if offset >= int(result.get("rowCount", len(rows))):
+            return out
+        if not rows:
+            raise ValueError("incomplete outcome pagination")
+
+
 def ga4_deal_sessions(client: Any, token: str, property_id: str, days: int, *,
                      requirements: bool = False) -> dict:
     """GA4's session rate, per device, rather than clicks divided by sessions.

@@ -1,0 +1,68 @@
+# Pause-only guard. Private state, admin Telegram; no email or deal pipeline.
+name: ads guard
+
+on:
+  # Manual only. The hourly run checks every hour; a separate schedule in the
+  # shared dealradar lock would cancel queued pipeline runs. Google's own daily
+  # budget (<= cap/2) is the real-time cap.
+  workflow_dispatch:
+
+# All state writers share this lock; never overwrite a newer pipeline snapshot.
+concurrency:
+  group: dealradar
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        id: install
+        run: pip install -e .
+
+      - name: Restore state from data branch
+        id: restore
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/restore_state.sh
+
+      - name: Guard Google Ads spending
+        id: ads_guard
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        env:
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          STATE_RESTORED: ${{ steps.restore.outcome == 'success' }}
+        run: |
+          if [ "$STATE_RESTORED" = "true" ]; then
+            python -m dealradar ads-guard
+          else
+            python -m dealradar ads-guard --state-unavailable
+          fi
+
+      - name: Save guard state even after an API failure
+        if: ${{ !cancelled() && steps.restore.outcome == 'success' && steps.ads_guard.outcome != 'skipped' }}
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/commit_state.sh

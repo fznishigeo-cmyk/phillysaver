@@ -257,7 +257,10 @@ def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
         "run": "python -m dealradar meta-post",
     }
     commit = steps[post + 2]
-    assert commit is steps[-1]
+    assert commit is steps[-2]
+    assert steps[-1] == {"name": "Surface Ads guard failure",
+                        "if": "${{ !cancelled() && steps.ads_guard.outcome == 'failure' }}",
+                        "run": "exit 1"}
     assert commit["run"] == "bash scripts/commit_state.sh"
     assert commit["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
     assert commit["name"] == "Commit social state to data branch"

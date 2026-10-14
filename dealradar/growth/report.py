@@ -29,7 +29,7 @@ from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..publish import indexnow
 from ..util import now_utc
-from . import bing, cloudflare_traffic, google, google_ads, meta, site_health, stripe_stats, subscribers
+from . import ads_guard, bing, cloudflare_traffic, google, google_ads, meta, site_health, stripe_stats, subscribers
 
 log = logging.getLogger("dealradar.growth")
 
@@ -68,6 +68,14 @@ def _click_signal(db_path, cfg):
     db = DB(db_path, read_only=True)
     try:
         return report_data(db, cfg)
+    finally:
+        db.close()
+
+
+def _ads_guard(db_path, cfg, now):
+    db = DB(db_path, read_only=True)
+    try:
+        return ads_guard.report_data(db, cfg, now)
     finally:
         db.close()
 
@@ -132,6 +140,16 @@ def _product_shadow(db_path, cfg, now) -> dict:
         db.close()
 
 
+def _pinterest(db_path, cfg, now) -> dict:
+    from .pinterest import report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _newsletter_senders(db_path) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -174,6 +192,12 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "pinterest": ([("social.pinterest.analytics.enabled",
+                        (cfg.pinterest.get("analytics") or {}).get("enabled", False)),
+                       ("state.db", bool(db_path) and Path(db_path).is_file())],
+                      lambda: _pinterest(db_path, cfg, now)),
+        "ads_guard": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                      lambda: _ads_guard(db_path, cfg, now)),
         "click_signal": ([("first_party_clicks.enabled", clicks.enabled(cfg)),
                           ("state.db", bool(db_path) and Path(db_path).is_file())],
                          lambda: _click_signal(db_path, cfg)),
@@ -351,6 +375,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
 
     if "site_health" in data:
         lines += site_health.lines(data["site_health"])
+    lines += ["", *ads_guard.report_lines(data.get("ads_guard"))]
     lines += ["", *indexnow.summary_lines(data.get("indexnow") or {
         **dict.fromkeys(indexnow.METRICS), "unavailable": "state snapshot unavailable"})]
 
@@ -363,6 +388,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines += ["", *click_lines(data.get("click_signal"))]
     from ..product_shadow import report_lines as product_shadow_lines
     lines += ["", *product_shadow_lines(data.get("product_shadow"))]
+    if (cfg.pinterest.get("analytics") or {}).get("enabled", False):
+        from .pinterest import report_lines as pinterest_lines
+        lines += ["", *pinterest_lines(data.get("pinterest"))]
 
     lines += ["", "== Money =="]
     mix = data.get("site_health", {}).get("link_mix")

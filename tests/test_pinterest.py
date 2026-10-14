@@ -196,6 +196,7 @@ def test_unavailable_is_one_safe_line_and_no_network(db, cfg, caplog, monkeypatc
 
 @pytest.mark.parametrize("create", [False, True])
 def test_board_found_or_created_and_remembered(db, cfg, create):
+    cfg.pinterest["max_consecutive_board"] = 3
     seed_auth(db)
     published(db, cfg)
     calls = []
@@ -243,8 +244,8 @@ def test_candidates_pick_order_image_live_public_and_page_filters(db, cfg):
     assert [p["alt_text"] for p in pins] == ["Product first", "Product second"]
     for pin, row in zip(pins, [rows[2], rows[0]]):
         assert pin["link"] == "https://wowpriced.com" + paths[row["key"][:8]]
-        assert pin["title"] == f"80% off {row['item']}"
-        assert pin["description"] == f"{row['item']}. 80% off at Amazon, verified by wowpriced. #ad"
+        assert pin["title"] == f"{row['item']} | Deal"
+        assert pin["description"] == f"{row['item']}. Deal on wowpriced. #ad"
         assert pin["media_source"] == {"source_type": "image_url", "url": row["image_url"]}
         assert pin["board_id"] == "board-one"
         assert "$" not in pin["title"] + pin["description"]
@@ -287,7 +288,7 @@ def test_failed_pin_status_only_and_retry_next_run(db, cfg, caplog, status):
     calls = []
     with caplog.at_level("INFO", logger=pinterest.__name__):
         pinterest.post(db, cfg, transport=httpx.MockTransport(api_handler(db, calls, pin_status=status)), now=NOW)
-    assert sum(r.url.path == "/v5/pins" for r in calls) == (1 if status == 401 else 2)
+    assert sum(r.url.path == "/v5/pins" for r in calls) == (1 if status in {401, 429} else 2)
     assert db.meta_get("pinterest_posted") is None
     assert f"HTTP {status}" in caplog.text
     for secret in (ACCESS, REFRESH, APP_SECRET, CODE):
@@ -320,14 +321,14 @@ def test_title_description_word_limits_prices_and_disclosure():
     deal = candidate("long", 1, item=item, store="Store " * 50)
     pin = pinterest.pin_payload(deal, "/deal/long/", "b", "#ad")
     assert 0 < len(pin["title"]) <= 100 and len(pin["description"]) <= 500
-    assert len(pin["title"].removeprefix("80% off ")) <= 70
-    assert pin["title"].split()[-1] in {"Fantastic", "product"}
-    assert pin["description"].endswith("verified by wowpriced. #ad")
-    assert pin["alt_text"] == pinterest._without_prices(item)
+    assert len(pin["title"].removesuffix(" | Deal")) <= 70
+    assert pin["title"].removesuffix(" | Deal").split()[-1] in {"Fantastic", "product"}
+    assert pin["description"].endswith("Deal on wowpriced. #ad")
+    assert pin["alt_text"] == pinterest._word_trim(pinterest._without_prices(item), 500)
     assert "$" not in pin["title"] + pin["description"]
     short = pinterest.pin_payload(candidate("price", 1, item="Gift card $19.99 USD 50 100 USD"), "/deal/gift/", "b", "#ad")
-    assert short["title"] == "80% off Gift card"
-    assert short["description"] == "Gift card. 80% off at Amazon, verified by wowpriced. #ad"
+    assert short["title"] == "Gift card | Deal"
+    assert short["description"] == "Gift card. Deal on wowpriced. #ad"
 
 
 def test_tokens_code_and_secret_never_in_published_files(db, cfg, caplog, capsys):

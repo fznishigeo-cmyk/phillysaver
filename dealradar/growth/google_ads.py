@@ -1,4 +1,4 @@
-"""Google Ads API (read-only): spend, impressions, clicks and conversions.
+"""Google Ads reporting and the guard's sole write operation: pause a campaign.
 
 OAuth refresh-token flow (GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,
 GOOGLE_ADS_REFRESH_TOKEN, from the Cloud project that holds the API access
@@ -27,7 +27,7 @@ class GoogleAdsError(Exception):
     invalid_grant or USER_PERMISSION_DENIED): safe for the public logs."""
 
 
-def _codes(resp: Any) -> str:
+def _codes(resp: Any, *, codes_only: bool = False) -> str:
     try:
         body = resp.json()
     except ValueError:
@@ -41,14 +41,14 @@ def _codes(resp: Any) -> str:
             for e in detail.get("errors") or []:
                 found += [v for v in (e.get("errorCode") or {}).values() if isinstance(v, str)]
     codes = " ".join(dict.fromkeys(c for c in found if _CODE.fullmatch(c)))
-    if isinstance(err, dict) and note:
+    if isinstance(err, dict) and note and not codes_only:
         codes += f' "{note}"'
     return codes
 
 
-def _check(resp: Any, context: str = "") -> None:
-    if resp.status_code >= 400:
-        raise GoogleAdsError(" ".join(p for p in (f"HTTP {resp.status_code}", _codes(resp),
+def _check(resp: Any, context: str = "", *, codes_only: bool = False) -> None:
+    if resp.status_code >= 400 or (codes_only and not 200 <= resp.status_code < 300):
+        raise GoogleAdsError(" ".join(p for p in (f"HTTP {resp.status_code}", _codes(resp, codes_only=codes_only),
                                                   context.strip()) if p))
 
 
@@ -69,11 +69,12 @@ def _manager_accounts(client: Any, version: str, manager_id: str, headers: dict)
     return "; under the manager: " + (", ".join(found[:6]) or "none")
 
 
-def access_token(client: Any, client_id: str, client_secret: str, refresh_token: str) -> str:
+def access_token(client: Any, client_id: str, client_secret: str, refresh_token: str,
+                 *, codes_only: bool = False) -> str:
     resp = client.post(TOKEN_URL, data={"grant_type": "refresh_token", "client_id": client_id,
                                         "client_secret": client_secret,
                                         "refresh_token": refresh_token})
-    _check(resp)
+    _check(resp, codes_only=codes_only)
     return resp.json()["access_token"]
 
 
@@ -133,3 +134,106 @@ def insights(client: Any, token: str, version: str, customer_id: str, login_cust
                 "conversions": sum(float(m.get("conversions") or 0) for m in picked)}
 
     return {"yesterday": total(yesterday), "window": total(start)}
+
+
+def nonnegative_int(value: Any) -> int:
+    if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)):
+        raise GoogleAdsError("INVALID_RESPONSE")
+    return int(value)
+
+
+class GuardAPI:
+    """Explicit dates in the account timezone; paginated, uncached reads.
+
+    No generic mutation interface: callers can only pause an existing campaign.
+    """
+
+    def __init__(self, client, cfg):
+        self.client = client
+        self.version = cfg.growth_google_ads_api_version
+        self.customer = cfg.growth_google_ads_customer_id
+        if not re.fullmatch(r"v[0-9]+", self.version) or not re.fullmatch(r"[0-9]+", self.customer):
+            raise GoogleAdsError("INVALID_CONFIG")
+        from ..config import get_secret
+        credentials = [get_secret(name) for name in
+                       ("GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN")]
+        if not all(credentials):
+            raise GoogleAdsError("MISSING_CREDENTIALS")
+        self.headers = {"Authorization": "Bearer " + access_token(
+            client, *credentials, codes_only=True)}
+        if cfg.growth_google_ads_login_customer_id:
+            self.headers["login-customer-id"] = cfg.growth_google_ads_login_customer_id
+
+    def search(self, query):
+        rows, page, seen = [], "", set()
+        while True:
+            resp = self.client.post(SEARCH.format(self.version, self.customer), headers=self.headers,
+                json={"query": query, **({"pageToken": page} if page else {})})
+            _check(resp, codes_only=True)
+            body = resp.json()
+            if not isinstance(body, dict) or not isinstance(body.get("results", []), list):
+                raise GoogleAdsError("INVALID_RESPONSE")
+            rows.extend(body.get("results", []))
+            page = body.get("nextPageToken") or ""
+            if not page:
+                return rows
+            if not isinstance(page, str) or page in seen:
+                raise GoogleAdsError("INVALID_PAGINATION")
+            seen.add(page)
+
+    def account(self):
+        rows = self.search("SELECT customer.time_zone, customer.currency_code FROM customer")
+        if len(rows) != 1:
+            raise GoogleAdsError("INVALID_RESPONSE")
+        return rows[0]["customer"]
+
+    def campaigns(self):
+        # No metrics/date segment here: enabled campaigns with zero traffic must appear.
+        rows = self.search("SELECT campaign.id, campaign.status FROM campaign "
+                           "WHERE campaign.status != 'REMOVED'")
+        out = {}
+        for row in rows:
+            c = row["campaign"]
+            cid = str(nonnegative_int(c["id"]))
+            if cid in out or c["status"] not in {"ENABLED", "PAUSED"}:
+                raise GoogleAdsError("INVALID_RESPONSE")
+            out[cid] = {"id": cid, "status": c["status"]}
+        return out
+
+    def budgets(self):
+        rows = self.search("SELECT campaign.id, campaign.payment_mode, "
+            "campaign_budget.amount_micros, campaign_budget.period FROM campaign "
+            "WHERE campaign.status = 'ENABLED'")
+        return {str(nonnegative_int(r["campaign"]["id"])): {
+            "budget_micros": nonnegative_int(r["campaignBudget"].get("amountMicros", 0)),
+            "period": r["campaignBudget"].get("period"),
+            "payment_mode": r["campaign"].get("paymentMode"),
+        } for r in rows}
+
+    def costs(self, start: date, end: date, *, account=False):
+        resource = "customer" if account else "campaign"
+        fields = "" if account else "campaign.id, "
+        rows = self.search(f"SELECT {fields}metrics.cost_micros, metrics.clicks FROM {resource} "
+                           f"WHERE segments.date BETWEEN '{start.isoformat()}' AND '{end.isoformat()}'")
+        out = {}
+        for row in rows:
+            key = "account" if account else str(nonnegative_int(row["campaign"]["id"]))
+            if key in out:
+                raise GoogleAdsError("INVALID_RESPONSE")
+            m = row["metrics"]
+            out[key] = {"cost_micros": nonnegative_int(m.get("costMicros", 0)),
+                        "clicks": nonnegative_int(m.get("clicks", 0))}
+        return out
+
+    def pause(self, campaign_id: str):
+        if not re.fullmatch(r"[0-9]+", campaign_id):
+            raise GoogleAdsError("INVALID_CAMPAIGN_ID")
+        resource = f"customers/{self.customer}/campaigns/{campaign_id}"
+        resp = self.client.post(
+            f"https://googleads.googleapis.com/{self.version}/customers/{self.customer}/campaigns:mutate",
+            headers=self.headers, json={"operations": [{"updateMask": "status", "update": {
+                "resourceName": resource, "status": "PAUSED"}}]})
+        _check(resp, codes_only=True)
+        body = resp.json()
+        if body.get("partialFailureError") or body.get("results") != [{"resourceName": resource}]:
+            raise GoogleAdsError("PAUSE_NOT_CONFIRMED")

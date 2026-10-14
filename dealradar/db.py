@@ -39,6 +39,19 @@ def _publisher_sites() -> dict[str, str]:
             for s in primary + backup}
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS pinterest_pin_daily (
+    environment TEXT NOT NULL,
+    pin_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    board TEXT NOT NULL,
+    category TEXT NOT NULL,
+    posted_at TEXT NOT NULL,
+    impressions INTEGER NOT NULL CHECK(impressions >= 0),
+    saves INTEGER NOT NULL CHECK(saves >= 0),
+    pin_clicks INTEGER NOT NULL CHECK(pin_clicks >= 0),
+    outbound_clicks INTEGER NOT NULL CHECK(outbound_clicks >= 0),
+    PRIMARY KEY(environment, pin_id, day)
+);
 CREATE TABLE IF NOT EXISTS deal_clicks (
     deal_key TEXT NOT NULL,
     hour INTEGER NOT NULL,

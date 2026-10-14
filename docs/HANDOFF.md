@@ -187,9 +187,49 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   (reason + manual review). The account still joins brands through their own
   sign-up pages: Walmart, Target, Home Depot, Kohl's (skip Lowe's, 0% pay).
   Each approval → one tracking link → wire that store.
-- **Pinterest Standard access:** screen-recording script, then submission.
+- **Pinterest Standard access:** APPROVED 2026-10-14; operator reconnects the
+  production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Pinterest growth (Codex task 098, 2026-10-14; uncommitted):** eight public
+  category boards created lazily and cached per environment; catch-all stays.
+  Factual brand/item/category copy, bounded alt text and final `#ad`; stock,
+  image/link rules and dead/suspect/unconfirmed exclusions remain. Board streak
+  cap 2 spans runs (waits without an eligible alternative; uncertain sends
+  count). Pace stays **2/run, 20/UTC day**; dated ramp overrides remain off.
+  Production analytics claims/checkpoints once per UTC day: **60 reads/90 s**
+  by default, least recently checked pins first, prior 30 UTC days. READY
+  counts upsert by environment/pin/day, retain 30 days, stop/back off on errors
+  and honor Retry-After. Private report: coverage/partial totals, top boards/
+  categories, outbound clicks/100 impressions, descriptive posting hours and
+  category weights (**shadow only**). Legacy pins lacking an environment keep
+  dedupe but skip analytics. [Pinterest's v5 contract](https://github.com/pinterest/api-description/blob/main/v5/openapi.yaml)
+  disables sandbox analytics; bulk is beta, so these are per-pin reads.
+  **42 new checks pass**, plus **231 focused checks** and **11 final guards**
+  including offline reruns. Full suite: **3,640 passed, 7 failed, 1 deselected**;
+  all seven Stripe localhost-socket failures reproduce on untouched HEAD
+  (`Operation not permitted`). Five checks added after the full run started
+  pass in the final 42-check run. Remaining: those seven checks outside this
+  sandbox, review, reconnect and production board/count verification. No
+  dependency, LLM call, scheduler/product/label change, live write, commit or
+  push. Shared Git metadata blocks branch creation in this worktree.
+- **Ads spend guard (Codex task 099, 2026-10-14; uncommitted):** authorization
+  stays **$0**, hard ceiling **$10**. Pause-only guard runs before hourly intake
+  and at :13/:43 in its own workflow, sharing the state lock. It checks account
+  timezone spend, individual/combined budgets and 30 completed days of attributed
+  GA4 outcomes; missing outcomes at the spending threshold pause conservatively.
+  Click-table totals remain unattributed. Encrypted shadow/receipt records feed
+  the private report; pauses and every unresolved API failure alert admin Telegram
+  with manual steps. No enable/budget writes, email, LLM/Keepa or new dependency.
+  **75 guard tests pass; 225 focused checks pass** (seven Stripe socket checks
+  excluded). Full `.venv/bin/python -m pytest -q`: **3,646 passed, 9 failed,
+  6 deselected**. All nine reproduce on untouched HEAD: seven Stripe localhost
+  socket failures, the shipped product-shadow tree pin, and the 1,600-deal file
+  count (1,772 vs 1,771). The 25 cases added after the full run started pass in
+  the final 75-check run. Setup and timing/attribution limits: `docs/ads-guard.md`.
+  Baseline test repairs, review/deployment and live OAuth/GA4/admin verification
+  remain; polling cannot guarantee a real-time ceiling without Google-side budget
+  protections. No live API action, commit or push.
 - **Also-at shadow + lowest seen (Codex task 096, 2026-10-14; uncommitted, OFF):**
   every publish records private, bounded per-run comparison samples/counts in
   encrypted-state meta and the private growth report. Shared publication

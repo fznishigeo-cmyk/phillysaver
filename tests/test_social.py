@@ -36,8 +36,8 @@ def test_real_draft_titles_and_network_copy(item, brand, title, pct, store):
         f"🔥 {pct}% OFF: {title}\nAt {store}, verified by wowpriced.\n"
         "Tap the link in our bio for today's deals.\n#deals #wowpriced\n#ad")
     pin = pinterest.pin_payload(deal, path, "board", "#ad")
-    assert pin["title"] == f"{pct}% off {title}"
-    assert pin["description"] == f"{title}. {pct}% off at {store}, verified by wowpriced. #ad"
+    assert pin["title"] == f"{title} | Deal"
+    assert pin["description"] == f"{title}. Deal on wowpriced. #ad"
     assert pin["alt_text"] == item
 
 
@@ -90,4 +90,4 @@ def test_all_networks_remove_prices_even_from_fallbacks_and_disclosures():
                        ("$", "£", "€", "USD", "19.99", "30", "40", "50", "100", "60",
                         "9.99", "12.34", "56.78", "B0C1234XYZ"))
         assert all(text.endswith("#ad") for text in texts[:3] + [pin["description"]])
-        assert pin["alt_text"] == pinterest._without_prices(item)
+        assert pin["alt_text"] == (pinterest._without_prices(item) or "Product photo")

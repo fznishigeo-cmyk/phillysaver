@@ -16,7 +16,6 @@ from urllib.parse import urlencode
 
 import httpx
 
-from ..savings import display_pct
 from ..persistence import delivery_run_key, prepare_delivery
 from .. import util
 from ..config import get_secret, redact_secrets
@@ -84,6 +83,7 @@ class _API:
         self.base = API_BASES[_environment(cfg)]
         self.interval = max(1.0, cfg.min_host_interval_s)
         self.last_request = None
+        self.stopped = False
         self.client = httpx.Client(
             transport=transport, timeout=cfg.request_timeout_s,
             headers={"User-Agent": cfg.resolved_user_agent()},
@@ -98,6 +98,8 @@ class _API:
         except httpx.HTTPError:
             raise _APIError() from None
         if not response.is_success:
+            if response.status_code in {401, 403, 429}:
+                self.stopped = True
             try:
                 body = response.json()
                 code, reason = body.get("code"), body.get("message")
@@ -111,7 +113,19 @@ class _API:
                 reason = ""
             reason = re.sub(r"pina_\S*|\S{16,}", "<masked>",
                             redact_secrets(" ".join(reason.split())))[:120]
-            raise _APIError(response.status_code, code if type(code) is int else None, where, reason)
+            error = _APIError(response.status_code, code if type(code) is int else None, where, reason)
+            # Analytics defers retries, including a server-requested wait that
+            # extends past midnight. Never retain the response or its headers.
+            from email.utils import parsedate_to_datetime
+            retry = response.headers.get("Retry-After", "")
+            try:
+                error.retry_after = max(0, int(retry))
+            except ValueError:
+                try:
+                    error.retry_after = max(0, (parsedate_to_datetime(retry) - util.now_utc()).total_seconds())
+                except (ValueError, TypeError, OverflowError):
+                    error.retry_after = 0
+            raise error
         try:
             data = response.json()
         except ValueError:
@@ -211,11 +225,12 @@ def _find_board(api: _API, headers: dict, name: str, privacy: str = "") -> dict 
             params["privacy"] = privacy
         try:
             data = api.request("GET", "/boards", headers=headers, params=params)
-        except _APIError:
-            if privacy:
+        except _APIError as error:
+            if privacy and error.status not in {401, 403, 429}:
                 return None  # the extra privacy filter is a best-effort second look
             raise
-        board = next((b for b in data.get("items", []) if _same_name(b.get("name"), name)), None)
+        board = next((b for b in data.get("items", []) if _same_name(b.get("name"), name)
+                      and b.get("privacy", "PUBLIC") == "PUBLIC"), None)
         if board:
             return board
         bookmark = data.get("bookmark")
@@ -226,12 +241,22 @@ def _find_board(api: _API, headers: dict, name: str, privacy: str = "") -> dict 
         seen.add(bookmark)
 
 
-def _board(db, cfg, api: _API, headers: dict) -> str:
-    name = cfg.pinterest.get("board_name", "Deals up to 90% off")
+def board_name(cfg, category: str = "other") -> str:
+    return (cfg.pinterest.get("category_boards", {}).get(category)
+            or cfg.pinterest.get("board_name", "Deals up to 90% off"))
+
+
+def _board(db, cfg, api: _API, headers: dict, name: str | None = None) -> str:
+    name = name or board_name(cfg)
     environment = _environment(cfg)
-    board = _meta(db, "pinterest_board")
-    if board.get("name") == name and board.get("environment") == environment and board.get("id"):
-        return board["id"]
+    cache = _meta(db, "pinterest_boards")
+    boards = cache.setdefault(environment, {})
+    legacy = _meta(db, "pinterest_board")
+    if legacy.get("environment") == environment and legacy.get("id"):
+        boards.setdefault(legacy["name"], legacy["id"])
+    if boards.get(name):
+        db.meta_set("pinterest_boards", json.dumps(cache))
+        return boards[name]
     board = _find_board(api, headers, name)
     if not board:
         try:
@@ -250,28 +275,79 @@ def _board(db, cfg, api: _API, headers: dict) -> str:
                     "POST", "/boards", headers=headers, json={"name": alt, "privacy": "PUBLIC"})
                 log.info("pinterest: board name taken but not listed; using %r", alt)
     board_id = str(board["id"])
-    db.meta_set("pinterest_board", json.dumps({
-        "id": board_id, "name": name, "environment": environment,
-    }))
+    boards[name] = board_id
+    db.meta_set("pinterest_boards", json.dumps(cache))
+    if name == board_name(cfg):
+        db.meta_set("pinterest_board", json.dumps({
+            "id": board_id, "name": name, "environment": environment,
+        }))
     return board_id
 
 
 def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
-    item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
-    store = _without_prices(str(deal.get("store") or ""))
-    pct = display_pct(deal["pct_at_checkout"])
-    # Reserve the facts and disclosure before trimming a long item name.
-    disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
-    suffix = f". {pct}% off at {_word_trim(store, 100)}, verified by wowpriced. {disclosure}"
-    description = _word_trim(item, 500 - len(suffix)) + suffix
+    brand = _without_prices(str(deal.get("brand") or ""))
+    original = _without_prices(str(deal.get("item") or ""))
+    if brand and not re.search(r"\b" + re.escape(brand) + r"\b", original, re.I):
+        original = f"{brand} {original}"
+    item = social_title(original, brand)
+    category = str(deal.get("category") or "other")
+    from ..parse.schema import CATEGORIES
+    category = category.replace("_", " & ") if category in CATEGORIES and category != "other" else ""
+    # No discount/verification claims. Reserve the category and final #ad.
+    suffix = f" | {category.title()} deal" if category else " | Deal"
+    disclosure = _word_trim(re.sub(r"(?i)#ad\b", "", _without_prices(disclosure)), 96)
+    description = f"{item}. {category.capitalize() + ' deal' if category else 'Deal'} on wowpriced. "
+    description += (disclosure + " " if disclosure else "") + "#ad"
     return {
         "board_id": board_id,
-        "title": _word_trim(f"{pct}% off {item}", 100),
+        "title": _word_trim(item, 100 - len(suffix)) + suffix,
         "description": description,
         "link": "https://wowpriced.com" + path,
-        "alt_text": _without_prices(str(deal.get("item") or "")),
+        "alt_text": _word_trim(_without_prices(str(deal.get("item") or "")), 500) or "Product photo",
         "media_source": {"source_type": "image_url", "url": deal["image_url"]},
     }
+
+
+def _pin_candidates(db, cfg, posted):
+    candidates = []
+    for deal, path in _candidates(db, cfg, posted):
+        row = db.get_deal(deal["dedupe_key"]) or {}
+        if any(d.get("price_unconfirmed") or d.get("gone_suspect_at")
+               or d.get("status", "alive") != "alive"
+               or "suspect_msrp" in (d.get("flags") or []) for d in (deal, row)):
+            continue
+        candidates.append((dict(deal, brand=deal.get("brand") or row.get("brand") or ""), path))
+    return candidates
+
+
+def _spread(candidates, cfg, state, limit):
+    """Preserve pick rank except when the board streak requires another board."""
+    pending, chosen = list(candidates), []
+    last, count = state.get("board"), state.get("count", 0)
+    maximum = max(1, int(cfg.pinterest.get("max_consecutive_board", 2)))
+    while pending and len(chosen) < limit:
+        index = next((i for i, (deal, _) in enumerate(pending)
+                      if count < maximum or board_name(cfg, deal.get("category")) != last), None)
+        if index is None:
+            break
+        row = pending.pop(index)
+        board = board_name(cfg, row[0].get("category"))
+        count = count + 1 if board == last else 1
+        last = board
+        chosen.append(row)
+    return chosen
+
+
+def _pace(cfg, now):
+    daily = max(0, int(cfg.pinterest.get("daily_max", 20)))
+    per_run = max(0, int(cfg.pinterest.get("pins_per_run", 2)))
+    ramp = cfg.pinterest.get("ramp") or {}
+    if ramp.get("enabled", False):
+        for step in sorted(ramp.get("schedule") or [], key=lambda s: str(s["from"])):
+            if datetime.fromisoformat(str(step["from"])).date() <= now.date():
+                daily = max(0, int(step.get("daily_max", daily)))
+                per_run = max(0, int(step.get("pins_per_run", per_run)))
+    return daily, per_run
 
 
 def post(db, cfg, *, transport=None, now: datetime | None = None,
@@ -283,48 +359,70 @@ def post(db, cfg, *, transport=None, now: datetime | None = None,
         log.info("pinterest: no secrets")
         return 0
     api = None
+    headers = None
     try:
         api = _API(cfg, transport=transport)
         now = (now or util.now_utc()).astimezone(timezone.utc)
         token = _access_token(db, cfg, api, now)
         if not token:
             return 0
+        headers = {"Authorization": f"Bearer {token}"}
         posted = _meta(db, "pinterest_posted")
         outgoing = db.outgoing_for("pinterest")
         for entry in outgoing:
             posted.setdefault(entry["dedup_token"], {"at": entry["started_at"]})
         today = sum(1 for entry in posted.values()
                     if (at := util.parse_iso(entry.get("at"))) and at.date() == now.date())
-        daily_max = max(0, int(cfg.pinterest.get("daily_max", 20)))
-        limit = min(max(0, int(cfg.pinterest.get("pins_per_run", 2))), max(0, daily_max - today))
-        candidates = _candidates(db, cfg, posted)[:limit] if limit else []
+        daily_max, per_run = _pace(cfg, now)
+        limit = min(per_run, max(0, daily_max - today))
+        spread = _meta(db, "pinterest_spread")
+        environment = _environment(cfg)
+        streak = spread.get(environment, {})
+        eligible = _pin_candidates(db, cfg, posted) if limit else []
+        candidates = _spread(eligible, cfg, streak, limit)
         selected = db.delivery_batch("pinterest", delivery_run_key(now, run_key),
                                      [d["dedupe_key"] for d, _ in candidates])
-        candidates = [(d, path) for d, path in _candidates(db, cfg, posted)
-                      if d["dedupe_key"] in selected][:limit] if limit else []
+        by_key = {d["dedupe_key"]: (d, path) for d, path in eligible}
+        candidates = [by_key[key] for key in selected if key in by_key][:limit]
         if not candidates:
             log.info("pinterest: posted 0 (today %d/%d)", today, daily_max)
             return 0
-        headers = {"Authorization": f"Bearer {token}"}
-        board_id = _board(db, cfg, api, headers)
         count = 0
         for deal, path in candidates:
             key = deal["dedupe_key"]
+            if not _spread([(deal, path)], cfg, streak, 1):
+                continue
+            name = board_name(cfg, deal.get("category"))
+            board_id = _board(db, cfg, api, headers, name)
+            previous = streak
+            streak = {"board": name, "count": previous.get("count", 0) + 1
+                      if previous.get("board") == name else 1}
+            spread[environment] = streak
+            db.meta_set("pinterest_spread", json.dumps(spread))
             try:
                 if not prepare_delivery(db, "pinterest", key, now, run_key):
+                    streak = previous
+                    spread[environment] = streak
+                    db.meta_set("pinterest_spread", json.dumps(spread))
                     continue
                 pin = api.request("POST", "/pins", headers=headers,
                                   json=pin_payload(deal, path, board_id,
                                                    cfg.pinterest.get("disclosure", "#ad")))
-                posted[deal["dedupe_key"]] = {"pin_id": str(pin["id"]), "at": util.iso(now)}
+                posted[deal["dedupe_key"]] = {
+                    "pin_id": str(pin["id"]), "at": util.iso(now), "environment": environment,
+                    "board": name, "board_id": board_id, "category": deal.get("category") or "other",
+                }
                 db.meta_set("pinterest_posted", json.dumps(posted))
                 db.finish_outgoing("pinterest", key, now)
                 count += 1
             except _APIError as error:
                 if error.status is not None and 400 <= error.status < 500:
                     db.finish_outgoing("pinterest", key, now, rejected=True)
+                    streak = previous
+                    spread[environment] = streak
+                    db.meta_set("pinterest_spread", json.dumps(spread))
                 log.warning("pinterest: %s%s", "not connected, " if error.status == 401 else "", error)
-                if error.status == 401:
+                if api.stopped:
                     break
         log.info("pinterest: posted %d (today %d/%d), board ok", count, today + count, daily_max)
     except _APIError as error:
@@ -333,5 +431,8 @@ def post(db, cfg, *, transport=None, now: datetime | None = None,
         log.warning("pinterest: invalid state or response")
     finally:
         if api:
+            if headers and not api.stopped:
+                from ..growth.pinterest import collect_daily
+                collect_daily(db, cfg, api, headers, now)
             api.client.close()
     return 0
