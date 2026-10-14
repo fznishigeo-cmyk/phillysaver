@@ -123,11 +123,15 @@ def test_up_down_and_exact_threshold_reprice_the_original_source_row(db, cfg, mo
     monkeypatch.setattr("dealradar.parse.claude_client.critique_deals",
                         lambda *a, **kw: pytest.fail("correction must not add an LLM call"))
     assert pipeline._run_critic(db, cfg, object(), NOW)["calls"] == 0
+    audited = db.get_deal(before["dedupe_key"])
+    assert audited["audit"]["outcome"] == "verified"
+    assert {k: v for k, v in audited.items() if k != "audit"} == {
+        k: v for k, v in after.items() if k != "audit"}
     # The identical paid record has no second mutation or history observation.
     post = reprice_post(record, before, cfg, NOW)
     counts = db.conn.execute("SELECT count(*) FROM price_history").fetchone()[0]
     assert not dedupe.reprice_existing(db, before, post, cfg, NOW)
-    assert db.get_deal(before["dedupe_key"]) == after
+    assert db.get_deal(before["dedupe_key"]) == audited
     assert db.conn.execute("SELECT count(*) FROM price_history").fetchone()[0] == counts
     assert pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)["checked"] == 0
     assert len(calls) == 1

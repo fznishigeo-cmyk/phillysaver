@@ -338,8 +338,13 @@ def test_shadow_output_matches_off_and_lower_site_floor_preserves_useful_posts(e
     assert [dataclasses.asdict(d) for _, d in off] == [dataclasses.asdict(d) for _, d in shadow]
     assert stats["prefilter"]["would_skip"] == 1
     cfg_path = Path(env["cfg"])
-    cfg_path.write_text(cfg_path.read_text().replace("site_show_from_pct: 40", "site_show_from_pct: 10"))
-    messages = FakeMessagesWithParse(parse_responses=[FakeParseResponse(LLMDeals(deals=[raw]), FakeUsage(100, 50))])
+    cfg_path.write_text(cfg_path.read_text().replace("site_show_from_pct: 40", "site_show_from_pct: 10")
+                       .replace("critic_shadow_batches_per_day: 12", "critic_shadow_batches_per_day: 0"))
+    # The legitimacy audit includes the site's lower-floor offers too.
+    messages = FakeMessagesWithParse(parse_responses=[
+        FakeParseResponse(LLMDeals(deals=[raw]), FakeUsage(100, 50)),
+        FakeParseResponse(CriticVerdicts.model_validate({"verdicts": [
+            dict(index=0, plausible=True, confidence=.9, reason="OK")]}), FakeUsage(100, 50))])
     monkeypatch.setattr(pipeline, "_fetch_all", lambda *a, **kw: ([post], {}))
     db = DB(env["db"])
     db.meta_set("recategorized_v2", "1")
@@ -351,6 +356,7 @@ def test_shadow_output_matches_off_and_lower_site_floor_preserves_useful_posts(e
     assert summary["prefilter"] == dict(would_skip=0, would_skip_publishable=0,
                                         unevaluated=0, by_source={})
     assert summary["extract_by_source"]["blogone"]["publishable"] == 1
+    assert summary["critic"]["judged"] == 1
     db = DB(env["db"])
     assert "PRIVATE BODY MARKER" not in "\n".join(db.conn.iterdump())
     db.close()

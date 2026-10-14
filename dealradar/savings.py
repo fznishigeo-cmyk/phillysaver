@@ -55,6 +55,11 @@ def display_pct(value: float) -> int:
     return math.floor(float(value) + .5)
 
 
+def clears_reference_floor(final: float, reference: float, min_pct: float) -> bool:
+    """Audit a stored checkout price against an independently supported basis."""
+    return reference > 0 and final <= reference * max(0.0, 1 - min_pct / 100) + 1e-9
+
+
 # ---------------------------------------------------------------------------
 # public parsers
 # ---------------------------------------------------------------------------

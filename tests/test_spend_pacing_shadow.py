@@ -241,9 +241,9 @@ def test_critic_keeps_its_share_of_the_run_allowance(env, monkeypatch, share, pa
         caps["parse"] = parser.run_cap_usd
         return real_parse(posts, parser, *a, **k)
 
-    def critic(db, cfg, parser, now):
+    def critic(db, cfg, parser, now, **kwargs):
         caps["critic"] = parser.run_cap_usd
-        return real_critic(db, cfg, parser, now)
+        return real_critic(db, cfg, parser, now, **kwargs)
 
     monkeypatch.setattr(pipeline, "_parse_new_posts", parse)
     monkeypatch.setattr(pipeline, "_run_critic", critic)

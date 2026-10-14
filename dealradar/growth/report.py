@@ -52,6 +52,16 @@ def _critic_shadow(db_path, now: datetime) -> dict:
         db.close()
 
 
+def _legitimacy_audit(db_path, cfg, now: datetime) -> dict:
+    from ..legitimacy import daily_stats
+
+    db = DB(db_path, read_only=True)
+    try:
+        return daily_stats(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _ai_yield(db_path, cfg, now: datetime) -> dict:
     from ..ai_yield import report_data
 
@@ -114,6 +124,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "audit": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                  lambda: _legitimacy_audit(db_path, cfg, now)),
         # Only an explicit snapshot (the CLI passes --db): never a stray local file.
         "ai_yield": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                      lambda: _ai_yield(db_path, cfg, now)),
@@ -309,6 +321,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     else:
         reason = subs["unavailable"] if subs else status.get("subscribers", "skipped")
         lines.append(f"subscribers: not available ({reason})")
+
+    from ..legitimacy import daily_line
+    lines.append(daily_line(data.get("audit")))
 
     shadow = data.get("critic_shadow")
     if shadow is not None:

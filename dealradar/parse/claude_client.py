@@ -525,15 +525,7 @@ class ClaudeParser:
         return IncompleteExtraction()
 
 
-def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = False,
-                   reserve_shadow: Callable[[], bool] | None = None) -> list[dict | None]:
-    """Judge a bounded batch independently; bad/missing indices stay unjudged."""
-    opinions = [None] * len(deals)
-    cfg = parser.cfg
-    if not cfg.critic_enabled or not cfg.critic_model:
-        return opinions
-    if len(deals) > cfg.critic_batch_size:
-        raise ValueError("critic batch exceeds parse.critic_batch_size")
+def _critic_entries(deals: list[dict]) -> list[dict]:
     entries = []
     for index, deal in enumerate(deals):
         if deal.get("regular_price") is None or deal.get("final_price") is None:
@@ -544,6 +536,40 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
                         "final_price": deal["final_price"],
                         "category": deal.get("category", "other"),
                         "conditions": deal.get("conditions") or []})
+    return entries
+
+
+def estimate_critic_cost(parser, deals: list[dict]) -> float | None:
+    """Uncached estimate using the critic's actual model/rates, never parse.model.
+
+    Four UTF-8 bytes per input token and the full output allowance. This is
+    an estimate (cache hits and actual output change billing), not a ledger entry.
+    """
+    if not deals:
+        return 0.0
+    if not hasattr(parser, "_pricing"):
+        return None
+    entries = _critic_entries(deals)
+    if not entries:
+        return 0.0
+    pricing = parser._pricing(parser.cfg.critic_model)
+    if not pricing.get("input") or not pricing.get("output"):
+        return None
+    prompt = CRITIC_SYSTEM_PROMPT + json.dumps(entries) + json.dumps(CriticVerdicts.model_json_schema())
+    return (len(prompt.encode()) / 4 * pricing["input"]
+            + (100 + 80 * len(entries)) * pricing["output"]) / 1e6
+
+
+def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = False,
+                   reserve_shadow: Callable[[], bool] | None = None) -> list[dict | None]:
+    """Judge a bounded batch independently; bad/missing indices stay unjudged."""
+    opinions = [None] * len(deals)
+    cfg = parser.cfg
+    if not cfg.critic_enabled or not cfg.critic_model:
+        return opinions
+    if len(deals) > cfg.critic_batch_size:
+        raise ValueError("critic batch exceeds parse.critic_batch_size")
+    entries = _critic_entries(deals)
     if not entries:
         return opinions
 

@@ -301,7 +301,21 @@ def is_publishable(deal: dict[str, Any], cfg,
 
     sources = [deal.get("source_name", "")] + [
         s.get("source_name", "") for s in deal.get("sightings") or []]
-    if require_critic and any(str(s or "").casefold().startswith("keepa") for s in sources):
+    if require_critic and cfg.audit_mode == "enforce":
+        from .legitimacy import fingerprint, settled_critic, valid_code_basis
+
+        audit = deal.get("audit") or {}
+        if audit.get("outcome") == "reject" and audit.get("fingerprint") == fingerprint(deal, cfg):
+            return False, "audit: suspect_msrp (" + audit["reason"] + ")"
+        verdict = deal.get("critic")
+        if isinstance(verdict, dict) and verdict.get("plausible") is False:
+            return False, "critic: suspect_msrp"
+        if not valid_code_basis(deal, cfg):
+            if (not settled_critic(verdict) or not verdict["plausible"]
+                    or (verdict.get("audit_fingerprint")
+                        and verdict["audit_fingerprint"] != fingerprint(deal, cfg))):
+                return False, "audit: awaits a verified code basis or critic verdict"
+    elif require_critic and any(str(s or "").casefold().startswith("keepa") for s in sources):
         verdict = deal.get("critic")
         if not isinstance(verdict, dict) or type(verdict.get("plausible")) is not bool:
             return False, "critic: Keepa deal awaits a valid verdict"

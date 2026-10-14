@@ -17,6 +17,15 @@ fetch:
   circuit_breaker_cooldown_h: 6
   redirect_max_hops: 5
 
+audit:
+  mode: shadow                 # enforce only after reviewing agreement by reason
+  near_price_pct: 10           # recorded checkout prices near the claimed regular price
+  history_min_near: 2          # plus verify.history_min_observations total checks
+  history_min_span_h: 48
+  extreme_pct: 85              # new, no clearance wording: needs a critic
+  round_price_multiple: 50     # round reference without support: needs a critic
+  reference_max_excess_pct: 10 # claimed regular above a stored Amazon reference: reject
+
 parse:
   # Primary extraction model. Haiku handles the first read of every post at
   # roughly a third of Sonnet's price — the volume work. Sonnet stays where

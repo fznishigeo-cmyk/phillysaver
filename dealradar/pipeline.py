@@ -1449,20 +1449,22 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     return stats
 
 
-def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]:
-    """Deal critic: a stronger model judges whether each about-to-publish
-    deal's claimed regular price is honest. An implausible verdict adds the
-    'suspect_msrp' flag, which the publish gate excludes (configurable).
-    One verdict per deal; a price change clears it for re-judging (dedupe).
+def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
+                audit_stats: dict | None = None) -> dict[str, Any]:
+    """Audit publication candidates, then judge unresolved regular-price claims.
+
+    Shadow preserves paid judging; enforce admits a current code basis or a
+    critic verdict. Audit-owned rejections carry suspect_msrp and a reason.
     """
-    from . import rank
+    from . import rank, legitimacy
     from .dedupe import _DEAL_FIELDS
     from .http_client import extract_asin
     from .parse.claude_client import critique_deals
 
     stats = {"judged": 0, "suspect": 0, "reused": 0, "calls": 0}
-    if parser is None or not cfg.critic_enabled or not cfg.critic_model:
-        return stats
+    audit_stats = audit_stats if audit_stats is not None else {}
+    audit_stats.update(legitimacy.empty_stats(cfg))
+    enabled = parser is not None and cfg.critic_enabled and cfg.critic_model
     stored = db.all_deals()
 
     def asin(deal):
@@ -1500,6 +1502,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
             if (not isinstance(verdict, dict) or type(verdict.get("plausible")) is not bool
                     or not basis or basis <= 0):
                 continue
+            if verdict.get("audit_fingerprint") and verdict["audit_fingerprint"] != legitimacy.fingerprint(other, cfg):
+                continue
             if condition_class(other) != condition_class(deal):
                 continue
             if abs(reg - basis) > basis * 0.02 + 1e-9:
@@ -1514,6 +1518,7 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
 
     def save(deal, verdict, *, reused=False):
         verdict = dict(verdict)
+        verdict["audit_fingerprint"] = legitimacy.fingerprint(deal, cfg)
         if deal.get("critic"):
             verdict["rechecked"] = True
         stats["reused" if reused else "judged"] += 1
@@ -1529,19 +1534,28 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
                         deal["dedupe_key"], verdict.get("reason", ""))
         db.update_deal(deal["dedupe_key"], payload=payload)
         deal["critic"] = verdict  # available for reuse by later batches
+        legitimacy.compare(db, deal, verdict, cfg, now, audit_stats)
 
     pending = []
     for deal in stored:
         if deal.get("status") != "alive":
             continue
-        prior = deal.get("critic")
-        valid_prior = isinstance(prior, dict) and type(prior.get("plausible")) is bool
-        if valid_prior and not (prior.get("plausible")
-                                and float(prior.get("confidence") or 0.0) < 0.7
-                                and not prior.get("rechecked")):
-            continue
-        ok, _reason = rank.is_publishable(deal, cfg, require_critic=False)
+        probe = dict(deal, flags=[f for f in deal.get("flags") or [] if f != "suspect_msrp"])
+        ok, _reason = rank.is_publishable(probe, cfg, require_critic=False,
+                                         min_pct=min(cfg.min_pct, cfg.site_show_from_pct),
+                                         allow_spotlight_price=True)
         if not ok:
+            continue
+        legitimacy.evaluate(db, deal, cfg, now, audit_stats)
+        prior = deal.get("critic")
+        valid_prior = legitimacy.settled_critic(prior)
+        if valid_prior and (not prior.get("audit_fingerprint")
+                            or prior["audit_fingerprint"] == legitimacy.fingerprint(deal, cfg)):
+            legitimacy.compare(db, deal, prior, cfg, now, audit_stats)
+            continue
+        if not enabled:
+            continue
+        if cfg.audit_mode == "enforce" and deal["audit"].get("critic_avoided"):
             continue
         verdict = reusable(deal)
         if verdict is not None:
@@ -1549,6 +1563,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
         else:
             pending.append(deal)
 
+    if not enabled:
+        return stats
     size = max(1, cfg.critic_batch_size)
     calls_before = getattr(parser, "critic_calls", 0)
     shadow_batches = []
@@ -1565,12 +1581,20 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime) -> dict[str, Any]
                 batch.append(deal)
         if not batch:
             continue
+        remaining = [d for d in batch if d["audit"]["outcome"] == "needs_critic"]
+        original = batch
+        if cfg.audit_mode == "enforce":
+            batch = remaining
+            if not batch:
+                legitimacy.record_batch(db, original, remaining, cfg, parser, now, audit_stats)
+                continue
         try:
             verdicts = critique_deals(parser, batch)
         except SpendCapReached:
             log.warning("spend cap reached in deal critic; remaining deals "
                         "stay unjudged and retry next run")
             break
+        legitimacy.record_batch(db, original, remaining, cfg, parser, now, audit_stats)
         for deal, verdict in zip(batch, verdicts):
             if verdict is not None:
                 save(deal, verdict)
@@ -1936,7 +1960,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         if parser is not None:
             parser.run_cap_usd = run_cap
-        summary["critic"] = _run_critic(db, cfg, parser, now)
+        summary["audit"] = {}
+        summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"])
 
         if fast_lane:
             _links_from_posts(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
@@ -1987,6 +2012,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                                  and type(verdict.get("plausible")) is bool
                                  and (not verdict["plausible"] or verdict.get("rechecked")
                                       or float(verdict.get("confidence") or 0) >= .7))
+                        if cfg.audit_mode == "enforce":
+                            from .legitimacy import fingerprint, valid_code_basis
+
+                            decision = deal.get("audit") or {}
+                            valid = valid or valid_code_basis(deal, cfg) or (
+                                decision.get("outcome") == "reject"
+                                and decision.get("fingerprint") == fingerprint(deal, cfg))
                         if (not valid or deal.get("final_price") != sav.final_price
                                 or deal.get("regular_price") != sav.regular_price):
                             judgment_complete = False

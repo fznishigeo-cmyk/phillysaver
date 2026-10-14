@@ -335,6 +335,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         price_changed = current and (
             new_final != old_final or savings.regular_price != existing.get("regular_price"))
         if current:
+            # Keep the independent licensed reference across partner claims.
+            # A new Keepa basis replaces it below; audit fingerprints invalidate
+            # decisions whenever the active checkout facts change.
             payload["final_price"] = savings.final_price
             payload["regular_price"] = savings.regular_price
             payload["pct_at_checkout"] = savings.pct_at_checkout
@@ -489,7 +492,13 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             if at is not None and (previous is None or at > previous):
                 payload[field] = util.iso(min(at, now))
         if (post.structured or {}).get("regular_price_basis"):
+            from .verify import is_used_deal
+
             payload["regular_price_basis"] = post.structured["regular_price_basis"]
+            payload["audit_reference"] = {
+                "asin": payload.get("asin"), "price": savings.regular_price,
+                "basis": payload["regular_price_basis"],
+                "condition": "used" if is_used_deal(payload) else "new"}
         db.update_deal(key, payload=payload)
 
     if savings.final_price is not None:
@@ -556,6 +565,10 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
                  "abs_savings", "basis"):
         payload[name] = getattr(savings, name)
     payload["regular_price_basis"] = post.structured["regular_price_basis"]
+    payload["audit"] = None
+    payload["audit_reference"] = {
+        "asin": current.get("asin"), "price": savings.regular_price,
+        "basis": payload["regular_price_basis"], "condition": "new"}
     obsolete = {"price_moved", "unbacked_price", "range", "unknown_shipping",
                 "rebate_dependent", "per_unit", "deferred_value"}
     payload["flags"] = _union(savings.flags, [f for f in current.get("flags") or [] if f not in obsolete])

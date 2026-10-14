@@ -401,11 +401,15 @@ def test_audit_tracks_evidence_rejects_without_storing_rejected_content(env, mon
     db.close()
 
 
-def test_rerun_is_idempotent(env, capsys):
+@pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
+def test_rerun_is_idempotent(env, capsys, audit_mode):
     from dealradar.config import load_config
     from dealradar.publish import indexnow
 
+    path = Path(env["cfg"])
+    path.write_text(path.read_text().replace("mode: shadow                 # enforce", f"mode: {audit_mode}                 # enforce"))
     first = _run(env)
+    assert first["audit"]["mode"] == audit_mode
     assert first["telegram"]["sent"] == 1
     db = DB(env["db"])
     cfg = load_config(env["cfg"])
@@ -421,7 +425,7 @@ def test_rerun_is_idempotent(env, capsys):
     assert len(requests) == 1
     before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
               for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts",
-                            "indexnow_pages", "indexnow_batches")}
+                            "indexnow_pages", "indexnow_batches", "legitimacy_audits", "legitimacy_batches")}
     audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
     receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
     db.close()

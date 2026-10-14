@@ -135,6 +135,13 @@ class AppConfig:
     critic_shadow_model: str = "claude-haiku-5-5"
     critic_shadow_batches_per_day: int = 12
     exclude_suspect_msrp: bool = True
+    audit_mode: str = "shadow"
+    audit_near_price_pct: float = 10.0
+    audit_history_min_near: int = 2
+    audit_history_min_span_h: float = 48.0
+    audit_extreme_pct: float = 85.0
+    audit_round_price_multiple: float = 50.0
+    audit_reference_max_excess_pct: float = 10.0
 
     # -- useful-yield intake (off preserves the original rotation/interleave) --
     intake_mode: str = "off"  # off | shadow | on
@@ -413,6 +420,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.critic_shadow_batches_per_day = max(0, int(g(
         "parse", "critic_shadow_batches_per_day", default=cfg.critic_shadow_batches_per_day)))
     cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
+    cfg.audit_mode = str(g("audit", "mode", default=cfg.audit_mode))
+    if cfg.audit_mode not in {"shadow", "enforce"}:
+        raise ValueError("audit.mode must be shadow or enforce")
+    for name in ("near_price_pct", "history_min_near", "history_min_span_h",
+                 "extreme_pct", "round_price_multiple", "reference_max_excess_pct"):
+        field_name = "audit_" + name
+        value = float(g("audit", name, default=getattr(cfg, field_name)))
+        if not math.isfinite(value) or value <= 0 or (name.endswith("pct") and value >= 100):
+            raise ValueError(f"audit.{name} must be positive and percentages below 100")
+        if name == "history_min_near":
+            if not value.is_integer():
+                raise ValueError("audit.history_min_near must be an integer")
+            value = int(value)
+        setattr(cfg, field_name, value)
     cfg.model_pricing_per_mtok = g("parse", "model_pricing_per_mtok", default={}) or {}
 
     mode = g("intake", "mode", default=cfg.intake_mode)

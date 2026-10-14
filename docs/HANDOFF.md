@@ -231,6 +231,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   outside the sandbox and live credential/API verification after the keys
   arrive remain. Git branch creation is blocked by read-only metadata;
   no commit or push.
+- **Legitimacy audit (Codex task 082, 2026-10-14; uncommitted):** stored
+  Amazon references/history can verify; unit/pack mismatches and an inflated
+  claim above a stored reference reject; ambiguous claims keep the critic.
+  `audit.mode: shadow` retains paid judging and records deduped agreement by
+  reason. Enforce gates every store on current code support or a critic
+  verdict. No new Keepa calls or budget/model changes. Private daily UTC
+  counts and per-run actual/potential call/token savings estimates added;
+  existing verdict reuse is excluded. Controlled fixture: 3 → 1 critic calls;
+  live savings unknown. **65 audit tests and 112 focused checks passed**;
+  final full suite: **3,030 passed, 1 deselected**; only seven existing
+  Stripe checks in `tests/test_workflows.py` failed at local socket creation
+  (`Operation not permitted`: yearly-price change0–5 and no-price/no-key).
+  Run those outside the sandbox. Rules and shadow watchpoints:
+  `docs/codex-tasks/082-legitimacy-audit.md`.
+  No commit or push; review shadow evidence before enabling enforcement.
 - **Search precision (Codex task 079, 2026-10-14; working tree only):**
   digit-bearing identifiers/sizes match whole tokens; ordinary words of 5+
   letters allow one edit. Current public inventory drives excluding-filter

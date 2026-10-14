@@ -102,6 +102,28 @@ CREATE TABLE IF NOT EXISTS source_audit_breakers (
     trips INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS legitimacy_audits (
+    event_key TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    agreement INTEGER,
+    compared_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_legitimacy_seen ON legitimacy_audits(observed_at);
+CREATE INDEX IF NOT EXISTS idx_legitimacy_compared ON legitimacy_audits(compared_at);
+CREATE TABLE IF NOT EXISTS legitimacy_batches (
+    batch_key TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    model TEXT NOT NULL,
+    deals_avoided INTEGER NOT NULL,
+    calls_avoided INTEGER NOT NULL,
+    estimated_usd_saved REAL
+);
+CREATE INDEX IF NOT EXISTS idx_legitimacy_batches_seen ON legitimacy_batches(observed_at);
+
 CREATE TABLE IF NOT EXISTS critic_shadow_daily (
     day TEXT PRIMARY KEY,
     batches INTEGER NOT NULL DEFAULT 0,
@@ -511,7 +533,8 @@ class DB:
 
     def distinct_sources_within(self, deal_id: int, since: datetime,
                                 final_price: float | None = None,
-                                now: datetime | None = None) -> int:
+                                now: datetime | None = None, *,
+                                tolerance_pct: float = 10.0) -> int:
         if final_price is None:
             row = self.conn.execute("SELECT final_price FROM deals WHERE id=?", (deal_id,)).fetchone()
             final_price = row[0] if row else None
@@ -529,7 +552,8 @@ class DB:
             if publisher:
                 latest.setdefault(publisher, row["final_price"])
         # Use the live-price check's existing 10% plus one-cent tolerance.
-        return sum(price is not None and abs(price - final_price) <= abs(final_price) * .10 + .01
+        epsilon = .01 if tolerance_pct else .001
+        return sum(price is not None and abs(price - final_price) <= abs(final_price) * tolerance_pct / 100 + epsilon
                    for price in latest.values())
 
     def deals_for_post(self, source_name: str, source_url: str) -> list[dict[str, Any]]:
@@ -1045,7 +1069,9 @@ class DB:
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
         yield_cutoff = iso(now - timedelta(days=run_stats_days))
-        for table, stamp in (("ai_yield_events", "observed_at"),
+        for table, stamp in (("legitimacy_audits", "observed_at"),
+                             ("legitimacy_batches", "observed_at"),
+                             ("ai_yield_events", "observed_at"),
                              ("ai_yield_runs", "started_at"),
                              ("ai_prefilter_posts", "first_seen_at")):
             self.conn.execute(f"DELETE FROM {table} WHERE {stamp} < ?", (yield_cutoff,))

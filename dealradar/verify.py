@@ -113,6 +113,79 @@ def refresh_tiers(db, cfg, now: datetime, *, fetcher: PoliteFetcher | None = Non
         db.update_deal(deal["dedupe_key"], verify_tier=tier)
 
 
+def audit_verdict(db, deal: dict[str, Any], cfg, now: datetime) -> dict[str, str]:
+    """Legitimacy from stored facts only. Absence of evidence is not a rejection.
+
+    History records observed offers, not purchases. Corroboration supports the
+    checkout price only; it cannot by itself authenticate a regular price.
+    """
+    from .savings import clears_reference_floor
+
+    def verdict(outcome, reason):
+        return {"outcome": outcome, "reason": reason}
+
+    flags = set(deal.get("flags") or [])
+    if flags & {"unit_mismatch", "pack_mismatch"}:
+        return verdict("reject", "unit_pack_mismatch")
+    regular, final = deal.get("regular_price"), deal.get("final_price")
+    if any(isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p)
+           for p in (regular, final)) or regular <= 0 or final < 0:
+        return verdict("needs_critic", "missing_price_basis")
+    # History has no condition/unit columns. Never compare a used unit or
+    # per-unit/range claim with observations of an unknown pack or condition.
+    if is_used_deal(deal):
+        return verdict("needs_critic", "used_comparison")
+    if flags & {"per_unit", "range"} or deal.get("price_is_range") or deal.get("quantity_or_unit"):
+        return verdict("needs_critic", "unit_or_range_uncertain")
+
+    reference = deal.get("audit_reference") or {}
+    label = str(deal.get("regular_price_basis") or "")
+    labels = {"List Price on Amazon", "30-day average on Amazon", "90-day average on Amazon"}
+    amazon_basis = None
+    if is_amazon_deal(deal) and deal.get("asin"):
+        if (reference.get("asin") == deal["asin"] and reference.get("basis") in labels
+                and reference.get("condition") == "new"):
+            price = reference.get("price")
+            if type(price) in (float, int) and math.isfinite(price) and price > 0:
+                amazon_basis = price
+        elif not reference and label in labels and (stamp := parse_iso(deal.get("keepa_price_seen_at") or "")) \
+                and stamp <= now:
+            # Legacy rows: this label is written only by the licensed adapter
+            # and cleared on a later partner price. The value is regular_price.
+            amazon_basis = regular
+    if amazon_basis is not None and regular > amazon_basis * (1 + cfg.audit_reference_max_excess_pct / 100):
+        return verdict("reject", "amazon_reference_exceeded")
+
+    text = " ".join([str(deal.get("item") or ""), *(deal.get("stack_steps") or [])])
+    clearance = bool(re.search(r"\b(?:clearance|closeout|liquidation)\b", text, re.I))
+    if (deal.get("pct_at_checkout") or 0) > cfg.audit_extreme_pct and not clearance:
+        return verdict("needs_critic", "extreme_new_discount")
+
+    if amazon_basis is not None and clears_reference_floor(final, amazon_basis, cfg.min_pct):
+        return verdict("verified", "amazon_reference")
+
+    rows = db.price_observations(deal["dedupe_key"], datetime.min.replace(tzinfo=timezone.utc), now)
+    prices = [r for r in rows if type(r["price"]) in (int, float)
+              and math.isfinite(r["price"]) and r["price"] > 0]
+    near = [r for r in prices if abs(r["price"] - regular) <= regular * cfg.audit_near_price_pct / 100]
+    # Require repeated support spread over time; repeated feeds on one day
+    # cannot manufacture a historical basis.
+    if len(prices) >= cfg.history_min_observations and len(near) >= cfg.audit_history_min_near:
+        span = (parse_iso(near[-1]["observed_at"]) - parse_iso(near[0]["observed_at"])).total_seconds() / 3600
+        basis = min(r["price"] for r in near)
+        if span >= cfg.audit_history_min_span_h and clears_reference_floor(final, basis, cfg.min_pct):
+            return verdict("verified", "recorded_regular_price")
+
+    corroborated = db.distinct_sources_within(
+        deal["id"], now - timedelta(hours=cfg.corroborate_window_h), final, now,
+        tolerance_pct=0) >= 2
+    if corroborated:
+        return verdict("needs_critic", "corroborated_price_only")
+    if not near and math.isclose(regular % cfg.audit_round_price_multiple, 0, abs_tol=1e-9):
+        return verdict("needs_critic", "round_regular_without_history")
+    return verdict("needs_critic", "unsupported_regular_price")
+
+
 #: Sources whose end date comes from the store's own API (Woot's EndDate):
 #: a deal seen ONLY there ended for sure when it passes ("api_ended").
 API_END_SOURCES = frozenset({"woot"})

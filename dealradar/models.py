@@ -225,6 +225,8 @@ class Deal:
     # Deal-critic verdict {plausible, confidence, reason} or None (not judged).
     # Implausible => 'suspect_msrp' in flags => never published (configurable).
     critic: dict[str, Any] | None = None
+    audit: dict[str, Any] | None = None  # code verdict, bound to the audited facts
+    audit_reference: dict[str, Any] | None = None  # licensed Keepa price basis
     # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
