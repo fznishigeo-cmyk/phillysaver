@@ -230,6 +230,7 @@ class Deal:
     audit_reference: dict[str, Any] | None = None  # licensed Keepa price basis
     # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
+    woot_listed_at: str = ""              # Woot's feed still lists it at <= this price
     source_recheck_tried_at: str = ""
     source_recheck_run: str = ""
     store_recheck_run: str = ""

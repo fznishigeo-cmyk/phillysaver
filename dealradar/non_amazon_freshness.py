@@ -29,6 +29,7 @@ def evidence_at(deal, now):
     stamps = []
     if api_path(deal) and not deal.get("gone_suspect_at") and not deal.get("death"):
         stamps.append(util.parse_iso(deal.get("price_rechecked_at") or ""))
+        stamps.append(util.parse_iso(deal.get("woot_listed_at") or ""))
     first = {}
     for sighting in deal.get("sightings") or []:
         if sighting.get("final_price") is not None and sighting["final_price"] == deal.get("final_price"):

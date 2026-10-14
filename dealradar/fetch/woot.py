@@ -190,6 +190,13 @@ def _recheck_offers(db: DB, items: list, now: datetime) -> None:
             payload.update(death="api_ended", died_at=util.iso(now), gone_suspect_at="")
             db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
             continue
+        low = _single_price(item.get("SalePrice"), high=False)
+        if (item.get("IsSoldOut") is False and low is not None and deal.get("final_price") is not None
+                and not deal.get("gone_suspect_at") and low <= float(deal["final_price"]) + 0.01):
+            # Woot's own feed still sells it at (or below) our price, variant
+            # ranges included: fresh evidence for the non-Amazon age gate.
+            payload["woot_listed_at"] = util.iso(now)
+            db.update_deal(deal["dedupe_key"], payload=payload)
         checked = util.parse_iso(deal.get("price_rechecked_at") or "")
         every = CONFIRM_GONE_H if deal.get("gone_suspect_at") else 3.0
         if checked and (now - checked).total_seconds() < every * 3600:

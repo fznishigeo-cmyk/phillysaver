@@ -456,3 +456,23 @@ def test_confirmed_gone_card_keeps_its_existing_display(db, cfg, monkeypatch):
     result = site.render_site(db, cfg, NOW, deals=rows[:-1] + [gone])
     public = next(d for d in result["public_deals"] if d["status"] == "dead")
     assert public["gone"] and not public.get("price_aged")
+
+
+@pytest.mark.parametrize("offer,fresh_after", [
+    ({"IsSoldOut": False, "SalePrice": {"Minimum": 20, "Maximum": 21.5}}, True),
+    ({"IsSoldOut": False, "SalePrice": {"Minimum": 20, "Maximum": 35}}, False),  # too wide to say
+    ({"IsSoldOut": False, "SalePrice": 20}, True),
+    ({"IsSoldOut": True, "SalePrice": 20}, False),
+    ({"IsSoldOut": False, "SalePrice": {"Minimum": 25, "Maximum": 35}}, False),
+])
+def test_woot_feed_listing_keeps_its_offer_fresh(db, cfg, offer, fresh_after):
+    # Live 2026-10-14: 142 Woot offers still in Woot's own feed (variant price
+    # ranges never re-confirm the exact price) left the site at 48 h.
+    from dealradar.fetch.woot import _recheck_offers
+    url = "https://www.woot.com/offers/widget-one"
+    deal, _, _ = seed(db, cfg, hours=60, store="Woot", product_url=url)
+    assert fresh.hidden(deal, cfg, NOW)
+    _recheck_offers(db, [dict(offer, Url=url, EndDate=util.iso(NOW + timedelta(days=2)))], NOW)
+    row = db.get_deal(deal["dedupe_key"])
+    assert fresh.hidden(row, cfg, NOW) is not fresh_after
+    assert fresh.age_h(row, NOW) == (0 if fresh_after else 60)
