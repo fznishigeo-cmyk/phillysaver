@@ -1,9 +1,41 @@
 # First-party click signal (090, built OFF)
 
-`first_party_clicks.enabled: false` is the shipped default. No model, live
-ranking change, deployed resource, email or paid API is part of this task.
-The operator must approve activation. Instructions are at the end of
-[codex-tasks/090-first-party-click-signal.md](codex-tasks/090-first-party-click-signal.md).
+`first_party_clicks.enabled: false` remains the shipped default. The operator
+approved collection on 2026-10-14; activation waits for the secret below.
+Live ranking stays unchanged.
+
+## Activation (097: one secret)
+
+Operator:
+
+1. In the GitHub repository, open **Settings → Secrets and variables →
+   Actions → New repository secret**. Name it `CLICK_SIGNAL_TOKEN` and set
+   it to a long random string of at least 32 characters. Save it there only;
+   never paste it into chat or a log.
+2. Tell Claude: "CLICK_SIGNAL_TOKEN is saved; turn on the click signal."
+
+Engineer (after the secret exists):
+
+1. Flip `first_party_clicks.enabled: true` in `config.yaml`, validate and
+   ship the change. The endpoint already matches `newsletter.worker_url`
+   and `paywall.api_url`: `https://wowpriced-subscribe.wowpriced.workers.dev`.
+2. Run **deploy subscribe worker** from GitHub Actions on that revision.
+   It finds `wowpriced-clicks` with `wrangler d1 list --json`, creates it only
+   if missing, substitutes its UUID into the deploy copy's `CLICKS` binding,
+   applies the schema, and installs `CLICK_SIGNAL_TOKEN` on the Worker.
+   No manual D1 creation is needed. `CLICK_SIGNAL_D1_ID` is optional; an
+   explicit repository secret overrides lookup/creation. The existing
+   `CLOUDFLARE_API_TOKEN` needs **Account → D1 → Edit** for this account;
+   a list/create failure names that permission without printing API output.
+3. Verify `click_signal.status: ok` in the next fast/hourly run's summary.
+   Both workflows already pass the same repository `CLICK_SIGNAL_TOKEN`.
+   Initial hours may be unavailable while polling catches up; zero clicks
+   are valid. Check coverage after the first collection hour closes.
+
+This change leaves the switch **off**. While off, no D1 lookup, creation,
+schema setup, token installation or click ingestion runs, and site output
+is byte-identical. Storage stays on the existing free Cloudflare account;
+the privacy and quota contracts below are unchanged.
 
 ## Collection and privacy
 

@@ -22,8 +22,12 @@ def configure(path, cfg):
     base = endpoint(cfg)
     database = os.environ.get("CLICK_SIGNAL_D1_ID", "")
     token = os.environ.get("CLICK_SIGNAL_TOKEN", "")
-    if not base or not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", database) or len(token) < 32:
-        raise ValueError("click signal requires our cookie-free Worker endpoint, D1 ID and token (32+ characters)")
+    if len(token) < 32:
+        raise ValueError("CLICK_SIGNAL_TOKEN repository secret must be set to a long random string (32+ characters)")
+    if not base:
+        raise ValueError("first_party_clicks.endpoint must be our cookie-free Worker endpoint")
+    if not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", database):
+        raise ValueError("click signal D1 database UUID is missing or invalid; check the D1 setup step or CLICK_SIGNAL_D1_ID")
     domain = cfg.custom_domain.removeprefix("www.")
     values = {"CLICK_SIGNAL_ENABLED": "true", "CLICK_SIGNAL_ORIGINS": f"https://{domain},https://www.{domain}",
               "CLICK_SIGNAL_HOURLY_CAP": str(options["hourly_cap"]),
@@ -40,6 +44,6 @@ if __name__ == "__main__":
     try:
         active = configure(Path(sys.argv[1]), load_config())
     except ValueError as exc:
-        raise SystemExit(str(exc)) from None
+        raise SystemExit("::error::" + str(exc)) from None
     # Public switch only; never print the config, database binding or secrets.
     print("true" if active else "false")

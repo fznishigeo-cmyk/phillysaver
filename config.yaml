@@ -656,11 +656,11 @@ feature_flags:
   instagram: false             # stubbed
   keepa: true                  # inert until the KEEPA_KEY secret is set
 
-# Built off: operator approval is required before activating collection.
+# Approved 2026-10-14; stays off until CLICK_SIGNAL_TOKEN exists and Worker setup runs.
 # docs/first-party-clicks.md; all ranking use remains shadow-only.
 first_party_clicks:
   enabled: false
-  endpoint: ""  # our existing newsletter.worker_url (cookie-free *.workers.dev origin)
+  endpoint: "https://wowpriced-subscribe.wowpriced.workers.dev"  # same as newsletter.worker_url; cookie-free origin
   hourly_cap: 1000  # atomic across isolates; hard maximum 3000 (72k D1 writes/day)
   isolate_per_minute: 120
   deal_per_minute: 12

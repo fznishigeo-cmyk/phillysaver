@@ -208,6 +208,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `docs/product-entities.md`. Real shadow sampling/review after deployment
   and the seven socket checks outside this sandbox remain. No scheduler,
   evidence gate, request, dependency, commit or push.
+- **Click signal one-step setup (Codex task 097, 2026-10-14; uncommitted, OFF):**
+  Worker deployment now finds/creates `wowpriced-clicks` only when enabled;
+  an explicit `CLICK_SIGNAL_D1_ID` still wins. Missing-token and D1 permission
+  errors are clear and keep API output private. The endpoint is prefilled
+  with the existing subscribe Worker; both pipelines already use the same
+  `CLICK_SIGNAL_TOKEN`. Operator/engineer activation steps are in
+  `docs/first-party-clicks.md`. **51 focused checks passed**, including
+  executable lookup/create/re-run/override/failure cases and byte-identical
+  disabled output across four access modes. Full suite: **3,513 passed,
+  7 failed, 1 deselected**; only the existing Stripe localhost-socket tests
+  failed (`Operation not permitted`), all seven reproduced on untouched HEAD.
+  Remaining: those checks outside this sandbox, review, then activation after
+  the token exists and verification of the first ingestion summary. No commit,
+  push or deployment; tasks 095/096 and the privacy contract are untouched.
 - **Price not confirmed label (Codex task 094, 2026-10-14; uncommitted):**
   shipped switch admits otherwise publishable, non-suspect hidden prices under
   48 h with a muted AA label, after confirmed offers. No promotion/pushes or
@@ -310,10 +324,10 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   passed, 7 failed, 1 deselected**; only the Stripe localhost-socket tests
   failed (`Operation not permitted`), all reproduced on untouched HEAD. Six
   signal cases added after the full run began pass in the final focused run.
-  Activation steps and repository secrets `CLICK_SIGNAL_TOKEN` and
-  `CLICK_SIGNAL_D1_ID`: `docs/codex-tasks/090-first-party-click-signal.md`;
-  definitions/free-tier sources: `docs/first-party-clicks.md`. No dependency,
-  model, paid service, email, headless browser, commit, push or deployment.
+  Activation now needs only repository secret `CLICK_SIGNAL_TOKEN` (task 097);
+  current setup, definitions/free-tier sources: `docs/first-party-clicks.md`.
+  No dependency, model, paid service, email, headless browser, commit, push
+  or deployment.
   Remaining: the seven socket checks outside this sandbox, review, and
   operator-approved activation followed by D1 quota/CPU and beacon observations. Git metadata
   is read-only in this worktree; changes are left for the owning reviewer.

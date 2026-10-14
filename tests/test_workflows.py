@@ -501,8 +501,8 @@ def test_no_workflow_pushes_to_main() -> None:
 
 def test_no_secret_is_echoed() -> None:
     """`${{ secrets.X }}` appears only as env-map values, never inside run/echo."""
-    # One secret, or a renamed secret with its old name as fallback.
-    env_line = re.compile(r"^\s+[A-Z_][A-Z0-9_]*: \$\{\{ secrets\.[A-Z0-9_]+( \|\| secrets\.[A-Z0-9_]+)? \}\}$")
+    # One secret, optionally with an old secret or discovered resource fallback.
+    env_line = re.compile(r"^\s+[A-Z_][A-Z0-9_]*: \$\{\{ secrets\.[A-Z0-9_]+( \|\| (secrets\.[A-Z0-9_]+|steps\.[a-z_]+\.outputs\.id))? \}\}$")
     for p in (HOURLY, FAST, SQUASH, DEPLOY_WORKER, GROWTH):
         for line in p.read_text().splitlines():
             if "secrets." in line:

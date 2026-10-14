@@ -57,7 +57,7 @@ def test_off_output_identical_and_on_then_off_removes_assets(db, cfg, tmp_path, 
     cfg.support_enabled, cfg.paywall_open_access = support, open_access
     a, b = tmp_path / 'baseline', tmp_path / 'off'
     db.meta_set("teaser_recent", "[]"); _render(db,cfg,a)
-    cfg.raw['first_party_clicks'] = {'enabled':False,'endpoint':'https://click.wowpriced.com'}
+    cfg.raw['first_party_clicks'] = copy.deepcopy(load_config().raw['first_party_clicks'])
     db.meta_set("teaser_recent", "[]"); _render(db,cfg,b)
     assert tree(a) == tree(b)
     enable(cfg); db.meta_set("teaser_recent", "[]"); _render(db,cfg,b)

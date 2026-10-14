@@ -2,7 +2,8 @@
 # email list's subscribe endpoints and the paywall API (accounts, sessions,
 # membership, the members-only deals), one Worker on the Cloudflare account
 # behind CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID. Idempotent: creates the
-# KV namespace once, redeploys the code, re-puts NEWSLETTER_SECRET (required),
+# KV namespace once (and wowpriced-clicks D1 when enabled), redeploys the code,
+# re-puts NEWSLETTER_SECRET (required),
 # SESSION_SECRET and STRIPE_SECRET_KEY (each skipped with a notice when the
 # repository secret is empty) on the Worker, and prints the Worker URL in the
 # job summary (paste it into config.yaml newsletter.worker_url and
@@ -140,11 +141,63 @@ jobs:
           [ -n "$id" ] || { echo "::error::KV namespace wowpriced_subs not found after creating it"; exit 1; }
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
+      - name: Find or create the click signal D1 database
+        id: clicks
+        env:
+          CLICK_SIGNAL_TOKEN: ${{ secrets.CLICK_SIGNAL_TOKEN }}
+          CLICK_SIGNAL_D1_ID: ${{ secrets.CLICK_SIGNAL_D1_ID }}
+        run: |
+          set -euo pipefail
+          enabled="$(python3 -c 'import yaml; print("true" if yaml.safe_load(open("../../config.yaml")).get("first_party_clicks", {}).get("enabled") is True else "false")')"
+          [ "$enabled" = true ] || exit 0
+          [ -n "$CLICK_SIGNAL_TOKEN" ] || { echo "::error::CLICK_SIGNAL_TOKEN repository secret is not set; add a long random string (32+ characters) before enabling the click signal"; exit 1; }
+          [ "${#CLICK_SIGNAL_TOKEN}" -ge 32 ] || { echo "::error::CLICK_SIGNAL_TOKEN repository secret must be a long random string (32+ characters)"; exit 1; }
+          find_id() {
+            local databases
+            # Keep API responses out of logs, including authentication errors.
+            if ! databases="$(wrangler d1 list --json 2>/dev/null)"; then
+              echo "::error::Cannot list D1 databases; CLOUDFLARE_API_TOKEN needs Account → D1 → Edit permission for this account" >&2
+              return 1
+            fi
+            printf '%s' "$databases" | node -e '
+              let s = "";
+              process.stdin.on("data", (d) => (s += d)).on("end", () => {
+                try {
+                  const arr = JSON.parse(s);
+                  const db = arr.find((d) => d.name === "wowpriced-clicks");
+                  if (db && (typeof db.uuid !== "string" || !db.uuid)) throw new Error();
+                  process.stdout.write(db ? db.uuid : "");
+                } catch {
+                  console.error("::error::Cannot read the D1 database list returned by wrangler");
+                  process.exitCode = 1;
+                }
+              });'
+          }
+          # An explicit repository secret wins without any list/create calls.
+          id="$CLICK_SIGNAL_D1_ID"
+          if [ -z "$id" ]; then
+            id="$(find_id)"
+            if [ -z "$id" ]; then
+              if ! wrangler d1 create wowpriced-clicks --update-config=false >/dev/null 2>&1; then
+                echo "::error::Cannot create D1 database wowpriced-clicks; CLOUDFLARE_API_TOKEN needs Account → D1 → Edit permission for this account"
+                exit 1
+              fi
+              id="$(find_id)"
+            fi
+          fi
+          [ -n "$id" ] || { echo "::error::D1 database wowpriced-clicks not found after creating it"; exit 1; }
+          [[ "$id" =~ ^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$ ]] || { echo "::error::Click signal D1 ID must be a database UUID; check CLICK_SIGNAL_D1_ID or the wrangler D1 list"; exit 1; }
+          # GitHub suppresses outputs containing repository secrets; keep an
+          # explicit ID in the deploy step environment instead.
+          if [ -z "$CLICK_SIGNAL_D1_ID" ]; then
+            echo "id=$id" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Deploy the Worker
         id: deploy
         env:
           CLICK_SIGNAL_TOKEN: ${{ secrets.CLICK_SIGNAL_TOKEN }}
-          CLICK_SIGNAL_D1_ID: ${{ secrets.CLICK_SIGNAL_D1_ID }}
+          CLICK_SIGNAL_D1_ID: ${{ secrets.CLICK_SIGNAL_D1_ID || steps.clicks.outputs.id }}
           KV_ID: ${{ steps.kv.outputs.id }}
           GOOGLE_CLIENT_ID: ${{ inputs.google_client_id }}
           STRIPE_PAYMENT_LINK: ${{ inputs.stripe_payment_link }}
