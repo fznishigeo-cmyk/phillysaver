@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -32,6 +33,10 @@ _PRICE = re.compile(r"\$\s?\d|\d\s?%")
 _HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
                    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 UNKNOWN_SENDERS_META_KEY = "newsletter:unknown_senders"
+# Which partners' newsletters actually arrive (operator, 2026-10-14: list the
+# ones that never do, so they can be resubscribed). Partner IDs, counts, dates.
+PARTNER_MAIL_META_KEY = "newsletter:partner_mail"
+log = logging.getLogger(__name__)
 _NAV = {"about", "contact", "privacy", "terms", "subscribe", "unsubscribe",
         "newsletter", "newsletters", "confirm", "preferences", "category",
         "tag", "author", "feed", "rss", "search", "page", "go", "out",
@@ -94,23 +99,35 @@ def match_sender(address: str, sources: list[SourceConfig]) -> SourceConfig | No
     return ranked[0] if ranked else None
 
 
-def _record_unknown_senders(db, messages: list[tuple[str, str]], now: datetime) -> None:
+def _tally(db, meta_key: str, field: str, messages: list[tuple[str, str]],
+           now: datetime, *, first_seen: bool = False) -> None:
     """Counts and dates only; opaque delivery IDs make failed ack retries harmless."""
     if not messages:
         return
-    state = json.loads(db.meta_get(UNKNOWN_SENDERS_META_KEY) or '{"senders":{},"messages":{}}')
+    state = json.loads(db.meta_get(meta_key) or json.dumps({field: {}, "messages": {}}))
     day = now.astimezone(timezone.utc).date().isoformat()
     cutoff = (now.astimezone(timezone.utc) - timedelta(days=7)).date().isoformat()
     seen = {key: date for key, date in state["messages"].items() if date >= cutoff}
-    for key, address in messages:
+    for key, name in messages:
         if key in seen:
             continue
-        sender = state["senders"].setdefault(address, {"count": 0, "last_seen": day})
-        sender["count"] += 1
-        sender["last_seen"] = max(day, sender["last_seen"])
+        row = state[field].setdefault(name, {"count": 0, "last_seen": day})
+        if first_seen:
+            row.setdefault("first_seen", day)
+        row["count"] += 1
+        row["last_seen"] = max(day, row["last_seen"])
         seen[key] = day
     state["messages"] = seen
-    db.meta_set(UNKNOWN_SENDERS_META_KEY, json.dumps(state, sort_keys=True))
+    db.meta_set(meta_key, json.dumps(state, sort_keys=True))
+
+
+def _record_unknown_senders(db, messages: list[tuple[str, str]], now: datetime) -> None:
+    _tally(db, UNKNOWN_SENDERS_META_KEY, "senders", messages, now)
+
+
+def partner_mail(db) -> dict[str, dict]:
+    """Partner ID -> {count, first_seen, last_seen} of newsletters received."""
+    return json.loads(db.meta_get(PARTNER_MAIL_META_KEY) or '{"partners":{}}')["partners"]
 
 
 def unknown_sender_counts(db) -> dict[str, int]:
@@ -333,7 +350,7 @@ class NewsletterAdapter(SourceAdapter):
                 if not next_cursor or len(messages) >= cfg.newsletter_inbox_max_messages:
                     break
                 cursor = next_cursor
-            unknown = []
+            unknown, known = [], []
             for message in messages:
                 self._check(deadline)
                 if not isinstance(message, dict) or not _ID.fullmatch(str(message.get("id") or "")):
@@ -343,9 +360,17 @@ class NewsletterAdapter(SourceAdapter):
                 posts = email_posts(message, partner, now) if partner is not None else []
                 if partner is None:
                     unknown.append((message["id"], address))
+                else:
+                    known.append((message["id"], partner.name))
                 self._pending[message["id"]] = posts
                 self._posts.extend(posts)
             _record_unknown_senders(db, unknown, now)
+            _tally(db, PARTNER_MAIL_META_KEY, "partners", known, now, first_seen=True)
+            received = partner_mail(db)
+            log.info("partner newsletters: %d message(s) this pull (%d unknown sender); "
+                     "%d partner(s) have sent mail: %s", len(messages), len(unknown),
+                     len(received), ", ".join(f"{name} ({row['count']}, last {row['last_seen']})"
+                                              for name, row in sorted(received.items())) or "none")
             self._loaded = True
         return self._posts
 

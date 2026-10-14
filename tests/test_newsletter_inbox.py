@@ -16,8 +16,8 @@ from dealradar.db import DB
 from dealradar.errors import AdapterNotConfigured, DeadlineExceeded
 from dealradar.fetch.base import run_source
 from dealradar.fetch.newsletter import (UNKNOWN_SENDERS_META_KEY, NewsletterAdapter,
-                                       email_posts, match_sender, registrable_domain,
-                                       unknown_sender_counts)
+                                       email_posts, match_sender, partner_mail,
+                                       registrable_domain, unknown_sender_counts)
 from dealradar.fetch.registry import get_adapter
 from dealradar.fetch.validate import _validate_one, save_effective_sources
 from dealradar.models import Evidence, ExtractedDeal, SourceConfig
@@ -190,6 +190,22 @@ def test_unknown_senders_store_only_counts_dates_and_idempotency_ids(env):
     reader(env, inbox).fetch_posts(inbox_source(), None, db, cfg, inbox.now, None)
     assert json.loads(db.meta_get(UNKNOWN_SENDERS_META_KEY))["senders"] == {
         "sender@unmapped.example": {"count": 3, "last_seen": "2026-10-14"}}
+
+
+def test_partner_mail_counts_each_delivery_once_for_the_resubscribe_list(env):
+    """Operator, 2026-10-14: which partners' newsletters arrive at all."""
+    cfg, db, _ = env
+    inbox = Inbox([message(), message(2), message(3, **{"from": "sender@unmapped.example"})])
+    reader(env, inbox).fetch_posts(inbox_source(), None, db, cfg, NOW, None)
+    expected = {source().name: {"count": 2, "first_seen": "2026-10-13", "last_seen": "2026-10-13"}}
+    assert partner_mail(db) == expected
+    reader(env, inbox).fetch_posts(inbox_source(), None, db, cfg, NOW, None)  # unacked retry
+    assert partner_mail(db) == expected
+    inbox.now = NOW + timedelta(days=1)
+    inbox.messages = [message(4)]
+    reader(env, inbox).fetch_posts(inbox_source(), None, db, cfg, inbox.now, None)
+    assert partner_mail(db) == {source().name: {"count": 3, "first_seen": "2026-10-13",
+                                                "last_seen": "2026-10-14"}}
 
 
 def test_mapped_senders_leave_the_unknown_report(env, monkeypatch):
