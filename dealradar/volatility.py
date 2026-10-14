@@ -122,6 +122,8 @@ class Plan:
                      and rank.is_publishable(d, self.cfg, require_critic=False,
                          min_pct=min(self.cfg.min_pct, self.cfg.site_show_from_pct))[0]}
         self.facts, self.visibility, self.costs = {}, {}, {}
+        from .keepa_rechecks import CallHistory
+        self.calls = CallHistory(history.db, self.now)
         samples_by_mode = defaultdict(list)
         samples_by_deal_mode = defaultdict(list)
         for key, samples in history.samples.items():
@@ -133,8 +135,20 @@ class Plan:
                     mode = bool(s.get("used")), bool(s.get("live"))
                     samples_by_mode[mode].append(s["request_tokens"])
                     samples_by_deal_mode[key, *mode].append(s["request_tokens"])
+        self.cost_sources = {}
+        for used in (False, True):
+            for live in (False, True):
+                mode = used, live
+                name = f"{'used' if used else 'new'}{'_live' if live else ''}"
+                self.cost_sources[name] = "deal_receipts" if samples_by_mode[mode] else "ceiling"
+                if not samples_by_mode[mode]:
+                    for s in self.calls.samples:
+                        if (s.get("used"), s.get("live")) == mode and s.get("tokens") is not None:
+                            samples_by_mode[mode].extend([s["tokens"] / s["count"]] * s["count"])
+                    if samples_by_mode[mode]:
+                        self.cost_sources[name] = "shared_call_receipts"
         self.cost_samples = {f"{'used' if u else 'new'}{'_live' if l else ''}": len(v)
-                             for (u, l), v in samples_by_mode.items()}
+                             for (u, l), v in samples_by_mode.items() if v}
         for key, deal in self.rows.items():
             observations = history.db.price_observations(key, self.now - timedelta(days=90), self.now)
             observations += [dict(s, price=s.get("shown_price") if verify._price_hidden_by_promo(deal)
@@ -167,6 +181,63 @@ class Plan:
                 "WHERE c.hour>=? AND c.hour<? GROUP BY c.deal_key HAVING SUM(c.count)>0", (end - hours, end)))
             self.clicked = {k for k in self.rows if hashlib.sha256(k.encode()).hexdigest()[:16] in public}
         self.boosted = set()
+
+    def seconds_per_call(self, used, live):
+        options = self.options.get("batching", {})
+        samples = sorted(s["seconds"] for s in self.calls.samples
+                         if (s.get("used"), s.get("live")) == (used, live))
+        observed = samples[math.ceil(len(samples) * .9) - 1] if samples else 0
+        fallback = float(options.get("offers_seconds" if used else "stats_seconds", 6 if used else 1))
+        return max(1, fallback, observed) * max(1, float(options.get("latency_margin", 1.2)))
+
+    def batches(self, entries, deadlines, *, available, used_left, seconds, overflow=None,
+                recovery_left=None):
+        """Select by rank first; then pack selected rows by API mode.
+
+        Each entry carries the existing lane's gates/label. Call packing may
+        cross labels, but never the overdue-top or discovery/recovery barriers.
+        Estimates size the plan; the caller still enforces every actual gate.
+        """
+        from .keepa_budget import MIN_FOR_DEAL_QUERY
+        margin = max(0, float(self.options.get("batching", {}).get("time_margin_seconds", 5)))
+        seconds = max(0, seconds - margin)
+        left = available
+        groups, selected = {}, 0
+        for deal, options in entries:
+            need, ceiling, size, label, live, used, idle = options
+            key = deal["dedupe_key"]
+            hidden = label.startswith("hidden_")
+            reserve = max(MIN_FOR_DEAL_QUERY, self.cfg.keepa_reserve_tokens) if hidden else MIN_FOR_DEAL_QUERY
+            cost = min(ceiling, max(0, self.costs.get(key, ceiling)))
+            if left is not None and (left < need or left - cost < reserve):
+                continue
+            if used and used_left < ceiling:
+                continue
+            if hidden and recovery_left[used] <= 0:
+                continue
+            if idle and (overflow is None or overflow < ceiling):
+                continue
+            # No non-deadline work can hitch a ride ahead of another mode's
+            # overdue top batch. Within that boundary, labels do not split calls.
+            mode = deadlines.get(key) == "top", used, live
+            group = groups.get(mode)
+            extra = self.seconds_per_call(used, live) if group is None or len(group[0]) % size == 0 else 0
+            if extra > seconds:
+                continue
+            seconds -= extra
+            if left is not None:
+                left -= cost
+            if used:
+                used_left -= ceiling
+            if hidden:
+                recovery_left[used] -= 1
+            if idle:
+                overflow -= cost
+            if group is None:
+                group = groups[mode] = ([], *options)
+            group[0].append(deal)
+            selected += 1
+        return list(groups.values()), len(entries) - selected
 
     def prepare_clicks(self):
         """Freeze the allowance per run key, including process/retry restarts."""
@@ -270,7 +341,8 @@ class Plan:
                   "rechecks_granted_per_minute": self.granted,
                   "allocated_per_minute": sum(self.demand[t] / self.factors[t] for t in TIERS),
                   "discovery_per_minute": self.discovery, "discovery_source": self.discovery_source,
-                  "cost_samples": self.cost_samples, "click_boosted": len(self.boosted), "tiers": {}}
+                  "cost_samples": self.cost_samples, "cost_sources": self.cost_sources,
+                  "click_boosted": len(self.boosted), "tiers": {}}
         for name in TIERS:
             classes = {}
             for visibility in VISIBILITY:

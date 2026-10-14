@@ -1540,8 +1540,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     urgent_groups.sort(key=lambda g: (deadlines[g[0][0]["dedupe_key"]] != "top", g[6]))
     groups = urgent_groups + remaining_groups
     if plan is not None:
-        # Sort across price/condition classes, then coalesce adjacent transport
-        # modes. A batch cannot jump a more valuable item of another mode.
+        # Freeze selection order independently of transport labels/modes.
         by_key = {d["dedupe_key"]: (d, options) for rows, *options in groups for d in rows}
         ranked = plan.order([d for d, _ in by_key.values()], deadlines)
         positions = {d["dedupe_key"]: i for i, d in enumerate(ranked)}
@@ -1551,14 +1550,6 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     1 if d["dedupe_key"] in picks else 2)
         entries = sorted(by_key.values(), key=lambda row: (
             phase(*row), recovery_order(row[0]) if phase(*row) == 3 else (positions[row[0]["dedupe_key"]],)))
-        groups = []
-        for deal, options in entries:
-            if groups and list(groups[-1][1:]) == options:
-                groups[-1][0].append(deal)
-            else:
-                groups.append(([deal], *options))
-        # Even with no recovery/idle candidates, discovery keeps its place.
-        groups.append(([], MIN_FOR_RECHECK, 1, KEEPA_BATCH, "idle_wall_new", False, False, True))
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
     groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, "photo", False, False, False))
     # Reserve before each call, including lost answers; rerunning a run key
@@ -1576,15 +1567,57 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     rate_limited = rate_limited or recovery_spent.get("rate_limited", False)
 
     discovery_done = False
-    for group, need, per_deal, per_call, label, live, used, is_idle in groups:
+    labels = {}
+
+    def discover():
+        nonlocal discovery_done, rate_limited
+        discovery_done = True
+        if overflow_discovery is not None and not rate_limited and (
+                deadline is None or time.monotonic() <= deadline):
+            stats["overflow_discovery"] = overflow_discovery(budget)
+            rate_limited = stats["overflow_discovery"].get("rate_limited", False)
+
+    def planned_groups():
+        # Plan each side of discovery against its actual remaining budget:
+        # free feed confirmations and receipts can change the later selection.
+        for lane in ("due", "hidden", "idle", "photo"):
+            if lane == "hidden":
+                discover()
+            if rate_limited:
+                return
+            candidates = []
+            source = [(d, list(groups[-1][1:])) for d in photo] if lane == "photo" else entries
+            for deal, options in source:
+                label, used, is_idle = options[3], options[5], options[6]
+                own_lane = "photo" if label == "photo" else "idle" if is_idle else "hidden" if label.startswith("hidden_") else "due"
+                if own_lane != lane or deal["dedupe_key"] in attempted:
+                    continue
+                if lane != "due":
+                    deal = db.get_deal(deal["dedupe_key"])
+                if lane == "hidden" and (deal["status"] != "alive" or not price_unconfirmed(deal, cfg, now)
+                        or in_cadence(deal) or tried_recently(deal, used)):
+                    continue
+                if is_idle and not idle_eligible(deal):
+                    continue
+                candidates.append((deal, options))
+                labels[deal["dedupe_key"]] = label
+            selected, skipped = plan.batches(candidates, deadlines,
+                available=budget.available(now), used_left=max(0, (used_limit or 0) - used_spent),
+                seconds=max(0, deadline - time.monotonic()) if deadline is not None else float("inf"),
+                overflow=budget.overflow(gap, now), recovery_left={
+                    False: max(0, cfg.keepa_hidden_new_tokens_per_run - recovery_spent["new"]),
+                    True: max(0, cfg.keepa_hidden_used_scans_per_run - recovery_spent["used"])})
+            stats["tokens_short"] += skipped
+            selected_keys = {d["dedupe_key"] for group, *_ in selected for d in group}
+            stats["used_skipped_budget"] += sum(options[5] and d["dedupe_key"] not in selected_keys
+                                                for d, options in candidates)
+            yield from selected
+
+    for group, need, per_deal, per_call, label, live, used, is_idle in (planned_groups() if plan is not None else groups):
         is_photo = label == "photo"
         is_recovery = label.startswith("hidden_")
         if (is_recovery or is_idle) and not discovery_done:
-            discovery_done = True
-            if overflow_discovery is not None and not rate_limited and (
-                    deadline is None or time.monotonic() <= deadline):
-                stats["overflow_discovery"] = overflow_discovery(budget)
-                rate_limited = stats["overflow_discovery"].get("rate_limited", False)
+            discover()
         if is_idle or is_photo or is_recovery:
             # Extra feed pages may have confirmed a price for free. Don't
             # overwrite that clock with a pre-discovery copy in either lane.
@@ -1601,7 +1634,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             overflow = budget.overflow(gap, now) if is_idle else None
             if is_idle and (overflow is None or overflow < per_deal):
                 break
-            if deadline is not None and time.monotonic() > deadline:
+            call_seconds = plan.seconds_per_call(used, live) if plan is not None else 0
+            margin = max(0, float(plan.options.get("batching", {}).get("time_margin_seconds", 5))) if plan is not None else 0
+            if deadline is not None and time.monotonic() + call_seconds + margin > deadline:
                 stats["tokens_short"] += len(group) - i
                 log.info("price recheck: out of time with %d deals left; "
                          "they ride the next run", len(group) - i)
@@ -1649,14 +1684,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             options = {"live": True} if live else {}
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
                                              used_offers=not is_photo, fetcher=fetcher, **options)
+            if plan is not None:
+                from .keepa_rechecks import CallHistory
+                plan.calls = CallHistory(db, util.now_utc())
             rate_limited = getattr(verdicts, "rate_limited", False)
             if is_photo:
                 stats["image_backfill"] += len(batch)
             for deal in batch:
+                deal_label = labels.get(deal["dedupe_key"], label)
                 original = dict(deal)
                 verdict = verdicts.get(deal["dedupe_key"])
                 if deal["dedupe_key"] in verdicts:
-                    stats["done"][label] += 1
+                    stats["done"][deal_label] += 1
                 product = getattr(verdicts, "products", {}).get(deal["dedupe_key"])
                 observed = keepa_observed_at(product, now, used=is_used_deal(deal))
                 previous = observed_check(deal)
@@ -1704,7 +1743,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                         stats["hidden_recovery"]["recovered"]["used" if used else "new"] += 1
                         stats["hidden_recovery"]["recovered"]["total"] += 1
                 if not is_photo:
-                    history.record(original, product, verdict, observed, label, cost, estimated,
+                    history.record(original, product, verdict, observed, deal_label, cost, estimated,
                                    dead=current["status"] == "dead" and original["status"] != "dead", live_request=live)
             found = sum(1 for d in batch
                         if d["dedupe_key"] in photo_less and d.get("image_url"))

@@ -17,6 +17,40 @@ from . import util, verify
 COUNTS = ("tokens", "estimated_tokens", "readings", "changed", "deaths", "useful")
 
 
+class CallHistory:
+    """Bounded shared transport receipts, independent of per-deal history.
+
+    Both hourly and fast runs write the same state. Missing/estimated receipts
+    can teach latency, but never masquerade as measured token costs.
+    """
+    META = "keepa_product_calls"
+
+    def __init__(self, db, now):
+        self.db, self.now = db, now
+        try:
+            saved = json.loads(db.meta_get(self.META) or "[]") if db else []
+        except ValueError:
+            saved = []
+        self.samples = [s for s in saved if isinstance(s, dict)
+                        and (at := util.parse_iso(s.get("at") or "")) is not None
+                        and now - timedelta(days=2) <= at <= now] if isinstance(saved, list) else []
+
+    def record(self, *, used, live, count, seconds, tokens):
+        if self.db is None or count <= 0:
+            return
+        self.samples.append(dict(at=util.iso(self.now), used=used, live=live,
+                                 count=count, seconds=max(1, seconds), tokens=tokens))
+        # At most 24 calls per transport mode, including errors; no product bodies.
+        counts = {}
+        kept = []
+        for sample in reversed(self.samples):
+            mode = sample["used"], sample["live"]
+            counts[mode] = counts.get(mode, 0) + 1
+            if counts[mode] <= 24:
+                kept.append(sample)
+        self.db.meta_set(self.META, json.dumps(list(reversed(kept)), separators=(",", ":")))
+
+
 def empty_counts():
     return {**dict.fromkeys(COUNTS, 0), "tokens_per_useful_reading": None}
 

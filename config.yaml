@@ -281,6 +281,11 @@ keepa:
     # Before receipts exist, reserve the configured ordinary + overflow
     # /deal page ceiling (currently 140 tokens/run), not an assumed yield.
     discovery_history_runs: 12    # use saved actual feed receipts when available
+    batching:
+      offers_seconds: 6          # cold-start latency, including polite pacing
+      stats_seconds: 1
+      latency_margin: 1.2        # apply to observed p90 call times too
+      time_margin_seconds: 5     # leave time for applying answers / saving state
     idle_lookahead_runs: 2        # overflow may cover the following run's deadline
     click_boost_per_run: 20       # only with first_party_clicks.enabled
     click_lookback_hours: 6        # already ingested hourly counts only

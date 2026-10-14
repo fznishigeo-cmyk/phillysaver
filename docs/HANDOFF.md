@@ -191,6 +191,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Volatility batching (Codex task 101, 2026-10-14; uncommitted, OFF):**
+  ranked selection fits tokens and remaining time before packing 20-offer /
+  100-stats ASIN calls across labels; overdue top and discovery boundaries,
+  reserves, used share, first-429 stop and honest clocks remain. Shared bounded
+  hourly/fast transport receipts supply missing costs and p90 latency (+20%,
+  5 s margin). The 80 s reproduction improves **14/85 → 85/85 used checks**
+  in five offers calls. A 58-fast-run day at 60/min, 15–35 min gaps, 4–6 s
+  offers / 1 s stats: **100% top and used-wall within 1 h**, before and after
+  runs; max **41/80 s**, unused **73/hour (2.0%)**, versus legacy **942/hour**
+  and 95.45% worst pre-run used coverage (post-run 100%). Fixture: 190 top,
+  110 used wall, 980 other new, 13-token scans, fresh answers, no free matches.
+  Cheaper 7-token scans / 85 used wall leave less eligible demand: **1,301/h**
+  unused versus legacy **2,024/h**, both 100% coverage; no extra checks just
+  to exhaust tokens. **14 new, 48 focused and 213 broader Keepa checks pass**
+  (overlapping sets). Full `.venv/bin/python -m pytest -q`: **3,724 passed,
+  8 failed, 6 deselected**. Seven are Stripe localhost-socket restrictions,
+  all reproduced on untouched HEAD (`tests/test_workflows.py`). The eighth
+  loaded the earlier low-demand fixture before its replacement; the final
+  14-test run and a post-suite rerun of that case pass. Both capacity
+  comparisons pass; the slow sweet-spot test stays marked slow.
+  **Do not switch on yet:** review, the seven checks outside this sandbox,
+  and live cached-clock/receipt validation remain. Task 102's store/
+  source code untouched; no commit/push (shared Git metadata is read-only).
 - **Pinterest growth (Codex task 098, 2026-10-14; uncommitted):** eight public
   category boards created lazily and cached per environment; catch-all stays.
   Factual brand/item/category copy, bounded alt text and final `#ad`; stock,

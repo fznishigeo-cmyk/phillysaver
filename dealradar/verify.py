@@ -20,12 +20,14 @@ from __future__ import annotations
 import logging
 import math
 import re
+import time
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlsplit
 
 from .config import get_secret, error_summary, load_config
+from . import util
 from .db import DB
 from .http_client import PoliteFetcher
 from .conditions import USED_CONDITIONS, normalize_conditions
@@ -527,6 +529,7 @@ def keepa_products(key: str, asins: list[str], stats: int,
     if budget is not None:
         budget.reserve(reserved)
     payload, resp = None, None
+    started = time.monotonic()
     try:
         resp = fetcher.api_get("https://api.keepa.com/product", params=params,
                                max_attempts=1, respect_robots=False)
@@ -535,6 +538,15 @@ def keepa_products(key: str, asins: list[str], stats: int,
         if budget is not None:
             budget.usage.note(payload, estimate=reserved,
                               rate_limited=resp is not None and resp.status_code == 429)
+            from .keepa_rechecks import CallHistory
+            tokens = payload.get("tokensConsumed") if isinstance(payload, dict) else None
+            if (not isinstance(tokens, (int, float)) or isinstance(tokens, bool)
+                    or not math.isfinite(tokens) or tokens < 0
+                    or resp is None or resp.status_code != 200):
+                tokens = None
+            CallHistory(budget.db, util.now_utc()).record(
+                used=offers is not None, live=live, count=len(asins),
+                seconds=time.monotonic() - started, tokens=tokens)
     if budget is not None:
         budget.note(payload)
     if resp.status_code == 429:
