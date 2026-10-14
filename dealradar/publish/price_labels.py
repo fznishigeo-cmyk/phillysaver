@@ -54,7 +54,8 @@ def qualifies(deal, cfg, now):
 def push_excluded(deal, cfg, now):
     # Raw alert candidates have no display marker. Even those past the outer
     # limit must stay out of pushes while the display exception is enabled.
-    return bool(deal.get("price_unconfirmed") or
+    from ..non_amazon_freshness import promotion_excluded
+    return bool(promotion_excluded(deal, cfg, now) or deal.get("price_unconfirmed") or
                 (cfg.unconfirmed_label_enabled and price_unconfirmed(deal, cfg, now)))
 
 

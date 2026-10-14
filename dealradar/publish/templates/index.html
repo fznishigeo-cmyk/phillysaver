@@ -1518,8 +1518,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return blockDeal(scored).concat(fresh.filter(function (d) { return d.ps == null; }));
   }
 /*unconfirmed*/  function confirmedFirst(rows) {
-    return rows.filter(function (d) { return !d.price_unconfirmed; })
-      .concat(rows.filter(function (d) { return d.price_unconfirmed; }));
+    return rows.filter(function (d) { return !d.price_unconfirmed && !d.price_aged; })
+      .concat(rows.filter(function (d) { return d.price_unconfirmed || d.price_aged; }));
   }
 /*/unconfirmed*/  function ordered(rows, deferMix) {
     // The teaser's unlocked deals (the top picks) always lead; the blurred
@@ -1725,6 +1725,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       (isFreePick(d) ? '<div class="freetag"><i></i>free this drop</div>' : "") +
       '<div class="pricerow">' + (price || "&nbsp;") + "</div>" +
 /*unconfirmed*/      (d.price_unconfirmed ? '<div class="price-unconfirmed">Price not confirmed</div>' : '') +
+      (d.price_aged ? '<div class="price-aged">' + esc(d.price_aged) + '</div>' : '') +
 /*/unconfirmed*/      '<h3 class="title">' + title + "</h3>" +
 <!--saved--><!--watch-->      savedWatchHtml(d) +
 <!--/watch--><!--/saved-->      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
@@ -1741,7 +1742,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // its items change, so a re-render never restarts the scroll.
   var TICKER_MAX = 16, TICKER_PX_S = 38, tickerSig = "";
   function tickerItems() {
-    var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed/*/unconfirmed*/; });
+    var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed && !d.price_aged/*/unconfirmed*/; });
     var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
     var open = live.filter(function (d) { return !isLocked(d); }).sort(byPct);
     var shut = live.filter(isLocked).sort(byPct);

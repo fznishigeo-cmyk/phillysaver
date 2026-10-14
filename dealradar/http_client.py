@@ -257,6 +257,7 @@ class PoliteFetcher:
         headers: Mapping[str, str] | None = None,
         deadline: float | None = None,
         robots_override_host: str | None = None,
+        follow_redirects: bool = True,
     ) -> FetchResult:
         """Polite GET.
 
@@ -291,7 +292,7 @@ class PoliteFetcher:
                 hdrs.setdefault("If-Modified-Since", last_modified)
         result, _ = self._request_with_retries(
             "GET", url, hdrs, deadline=deadline, conditional=conditional,
-            follow_redirects=True, read_body=True,
+            follow_redirects=follow_redirects, read_body=True,
             robots_override_host=override,
         )
         return result

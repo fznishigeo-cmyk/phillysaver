@@ -2090,10 +2090,23 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         tz_by_source = {s.name: s.tz for s in sources}
 
         # ---- fetch ----
+        from . import non_amazon_freshness as freshness
+        from .store_prices import recheck_store_prices
+        before_freshness, before_scope = freshness.before_snapshot(db, cfg, now)
+        summary["store_checks"] = recheck_store_prices(
+            db, cfg, now, fetcher=fetcher, deadline=deadline - _RESERVE_FOR_PARSE_S,
+            run_key=run_key)
         feed_confirmed = {"new": set(), "used": set()}
         early_recheck = {}
         posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
                                          deadline, fast_lane, feed_confirmed, early_recheck)
+        rereads, source_checks = freshness.source_rechecks(
+            db, cfg, sources, posts, fetcher, now, run_key,
+            deadline=min(deadline - _RESERVE_FOR_PARSE_S / 2,
+                         time.monotonic() + cfg.non_amazon_source_recheck_budget_s))
+        # Rereads lead the same bounded/capped parse queue and retain its evidence gate.
+        reread_urls = {(p.source_name, p.url) for p in rereads}
+        posts = rereads + [p for p in posts if (p.source_name, p.url) not in reread_urls]
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             tz_by_source.update({s.name: s.tz for s in inbox.sources})
@@ -2110,7 +2123,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         seen_this_batch: set[str] = set()
         for post in posts:
             h = post.content_hash
-            if h in seen_this_batch or db.post_is_known(h):
+            if h in seen_this_batch or (db.post_is_known(h) and not post.price_recheck):
                 continue
             seen_this_batch.add(h)
             new_posts.append(post)
@@ -2304,9 +2317,6 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
-        from .store_prices import recheck_store_prices
-        summary["store_checks"] = recheck_store_prices(
-            db, cfg, now, fetcher=fetcher, deadline=deadline - _RESERVE_FOR_TAIL_S / 2)
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 
@@ -2403,6 +2413,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        summary["non_amazon_freshness"] = freshness.record_snapshot(
+            db, cfg, now, before_freshness, site_res["public_deals"], source_checks, before_scope)
         summary["unconfirmed_label"] = site_res["unconfirmed_label"]
         summary["unconfirmed_label"]["recheck_reasons"] = summary["price_recheck"].get(
             "hidden_unconfirmed", {}).get("reasons", {})
@@ -2453,6 +2465,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                     fh.write(health_markdown(site_res["health"]))
                     from .publish.price_labels import summary_lines as label_lines
                     fh.write("\n" + "\n".join(label_lines(summary["unconfirmed_label"])) + "\n")
+                    fh.write("\n" + "\n".join(freshness.summary_lines(summary["non_amazon_freshness"])) + "\n")
             except OSError as e:
                 log.warning("source health summary not written: %s", e)
         # The site got the teaser; members get the full payload through the

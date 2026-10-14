@@ -39,6 +39,7 @@ def cfg(tmp_path, monkeypatch):
     config = load_config()
     config.site_dir = str(tmp_path / "site")
     config.feature_flags["keepa"] = False
+    config.non_amazon_freshness_enabled = False  # days-old fixtures; the age gate has its own tests
     return config
 
 

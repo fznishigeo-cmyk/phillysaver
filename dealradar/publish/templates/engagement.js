@@ -125,7 +125,7 @@
     updateEngagementLine(true);
   }
   function hotSignals(d) {
-    if (!engagementOn("hot_meter") || d.status === "dead" || isLocked(d)/*unconfirmed*/ || d.price_unconfirmed/*/unconfirmed*/) return [];
+    if (!engagementOn("hot_meter") || d.status === "dead" || isLocked(d)/*unconfirmed*/ || d.price_unconfirmed || d.price_aged/*/unconfirmed*/) return [];
     var signals = [], pct = Number(d.pct_at_checkout), seen = Date.parse(d.first_seen_at || "");
     if (Number.isFinite(pct) && pct >= 60) signals.push(pct + "% off");
     if (d.badge === "corroborated") {
@@ -145,7 +145,7 @@
   }
   function surpriseRows() {
     // Match the wall's floor split as well as its current filters and sort.
-    var rows = ordered(filtered()).filter(function (d) { return d.status !== "dead" && !isLocked(d)/*unconfirmed*/ && !d.price_unconfirmed/*/unconfirmed*/; });
+    var rows = ordered(filtered()).filter(function (d) { return d.status !== "dead" && !isLocked(d)/*unconfirmed*/ && !d.price_unconfirmed && !d.price_aged/*/unconfirmed*/; });
     var floor = num((state.meta.floors || {}).min_pct);
     if (floor != null) rows = rows.filter(function (d) { return num(d.pct_at_checkout) >= floor; })
       .concat(rows.filter(function (d) { return num(d.pct_at_checkout) < floor; }));
@@ -286,7 +286,7 @@
     return savedDeals.publicDeals.find(function (d) { return d.key === key; });
   }
   function savedWatchMatch(entry, current) {
-    if (!current || isLocked(current)/*unconfirmed*/ || current.price_unconfirmed/*/unconfirmed*/ || current.status !== "alive" || current.gone === true ||
+    if (!current || isLocked(current)/*unconfirmed*/ || current.price_unconfirmed || current.price_aged/*/unconfirmed*/ || current.status !== "alive" || current.gone === true ||
         current.alive === false || current.key !== entry.key || entry.condition === null) return null;
     var price = watchPrice(current.final_price), condition = watchCondition(current.conditions);
     if (price === null || condition === null || JSON.stringify(condition) !== JSON.stringify(entry.condition)) return null;

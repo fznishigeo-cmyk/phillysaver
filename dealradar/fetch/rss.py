@@ -408,6 +408,8 @@ def _permission_host(source, cfg=None) -> str | None:
 class RssAdapter(SourceAdapter):
     """Adapter for method='rss' sources (and 'html' sources via autodiscovered feeds)."""
 
+    follow_redirects = True
+
     def fetch_posts(
         self,
         source: SourceConfig,
@@ -418,6 +420,8 @@ class RssAdapter(SourceAdapter):
         deadline: Any = None,
     ) -> list[RawPost]:
         kw = {}
+        if not self.follow_redirects:
+            kw["follow_redirects"] = False
         from ..source_policy import image_granted
         override = _permission_host(source, cfg)
         images = image_granted(source, cfg)

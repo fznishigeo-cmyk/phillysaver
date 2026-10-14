@@ -232,6 +232,7 @@ def test_http_failures_never_confirm_or_kill_and_retries_are_capped(db, cfg, sto
     before = seed(db, cfg, store)
     api = API(db, cfg, status=status)
     result = api.run(db, cfg)[store]
+    assert result.pop("diagnostics")[f"product:http_{status}"] >= 1
     assert result == dict(checked=0, confirmed=0, repriced=0, suspect=0, gone=0, errors=1)
     row = db.get_deal(before["dedupe_key"])
     assert row["final_price"] == 25 and row["status"] == "alive"
@@ -321,6 +322,7 @@ def test_ebay_token_reused_until_expiry_only_in_memory(db, cfg):
 
 
 def test_visibility_priority_cadence_and_deadline(db, cfg):
+    cfg.ebay_recheck_h = 4  # explicit legacy cadence; shipped checks now run each pass
     rows = {name: seed(db, cfg, "ebay", str(123456789012 + n))
             for n, name in enumerate(("rest", "wall", "top", "suspect"))}
     suspect = rows["suspect"]

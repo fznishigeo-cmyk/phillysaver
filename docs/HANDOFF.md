@@ -214,6 +214,45 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   **Do not switch on yet:** review, the seven checks outside this sandbox,
   and live cached-clock/receipt validation remain. Task 102's store/
   source code untouched; no commit/push (shared Git metadata is read-only).
+- **Non-Amazon freshness (Codex task 102, 2026-10-14; uncommitted):** shipped
+  config enables 12 h partner rereads (20 posts/60 s per run), 24 h muted
+  `Posted N days ago`/promotion exclusion, and 48 h hide-only limits with store
+  overrides. Current-price evidence, source permissions/breakers/robots,
+  conditional GETs and existing capped parsing govern refreshes; Slickdeals
+  stays RSS-only, redirects/retailer pages are not fetched by this pass.
+  Claude's review: rereads of the same post (changed bytes or 304) can end or
+  reprice a deal but never extend its clock; eBay capped at 30 requests/run.
+  eBay/Best Buy are due each run, with oldest-first rotation, persistent run/day
+  caps and status-only token/HTTP diagnostics. Keepa scheduler, ads/Pinterest,
+  stock rules and AI caps unchanged. Runtime/private before/after tables are
+  wired; **live counts unavailable** (parent state has zero deals and its site
+  file is an unrelated old fixture). Walmart adapter **not available**: the
+  official index lists Product Lookup, but its current lookup/auth contract
+  could not be retrieved; no guessed adapter or retailer fallback. Quota
+  citations, setup and limits: [docs/non-amazon-freshness.md](non-amazon-freshness.md).
+  Final regression run: **334 passed**, including all 43 freshness checks.
+  Full `.venv/bin/python -m pytest -q`: **3,735 passed, 20 failed, 6 deselected**;
+  all 13 implementation/fixture failures were corrected and pass in that final
+  run. The remaining seven Stripe localhost-socket failures reproduce on
+  untouched HEAD (`Operation not permitted`). Both 144-cycle wall simulations
+  and the volatility simulation pass. Review, live measurements, the Walmart
+  contract and socket checks outside this sandbox remain. No commit/push;
+  shared Git metadata is read-only.
+
+  Reproducible **offline fixture**, not live results:
+  `test_non_amazon_freshness.py::test_documented_before_after_table`. Each store
+  starts with five offers aged 6/18/36/60/120 h; a verified second source
+  refreshes the 120 h offer, and the 60 h offer hides. All 25 stay alive.
+  Bucket order: **<12 / 12–24 / 24–48 / 48–96 / >96 h**.
+
+  | Store | Before | After refresh + hide | API-path / source-only, before → after |
+  |---|---|---|---|
+  | Walmart | 1 / 1 / 1 / 1 / 1 | 2 / 1 / 1 / 0 / 0 | 0 / 5 → 0 / 4 |
+  | Target | 1 / 1 / 1 / 1 / 1 | 2 / 1 / 1 / 0 / 0 | 0 / 5 → 0 / 4 |
+  | Best Buy | 1 / 1 / 1 / 1 / 1 | 2 / 1 / 1 / 0 / 0 | 5 / 0 → 4 / 0 |
+  | eBay | 1 / 1 / 1 / 1 / 1 | 2 / 1 / 1 / 0 / 0 | 5 / 0 → 4 / 0 |
+  | Macy's | 1 / 1 / 1 / 1 / 1 | 2 / 1 / 1 / 0 / 0 | 0 / 5 → 0 / 4 |
+
 - **Pinterest growth (Codex task 098, 2026-10-14; uncommitted):** eight public
   category boards created lazily and cached per environment; catch-all stays.
   Factual brand/item/category copy, bounded alt text and final `#ad`; stock,

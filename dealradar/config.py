@@ -357,14 +357,23 @@ class AppConfig:
     woot_max_new_items_per_run: int = 20      # unseen posts per run
 
     # -- official store price checks (flags and secrets required) --
+    non_amazon_freshness_enabled: bool = False
+    non_amazon_source_recheck_h: float = 12.0
+    non_amazon_source_rechecks_per_run: int = 20
+    non_amazon_source_recheck_budget_s: float = 60.0
+    non_amazon_stale_label_h: float = 24.0
+    non_amazon_stale_hide_h: float = 48.0
+    non_amazon_stores: dict = field(default_factory=dict)
     bestbuy_tolerance_pct: float = 5.0
     bestbuy_recheck_h: float = 4.0
     bestbuy_requests_per_second: float = 5.0  # also bounded by the host gap
     bestbuy_max_requests_per_run: int = 5
+    bestbuy_max_requests_per_day: int = 45000
     ebay_tolerance_pct: float = 5.0
     ebay_recheck_h: float = 4.0
     ebay_requests_per_second: float = 1.0
     ebay_max_requests_per_run: int = 25       # includes OAuth and retries
+    ebay_max_requests_per_day: int = 4500
 
     # -- retention / flags --
     posts_seen_days: int = 30
@@ -740,8 +749,17 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.woot_max_new_items_per_run = max(0, int(g(
         "woot", "max_new_items_per_run", default=cfg.woot_max_new_items_per_run)))
 
+    cfg.non_amazon_freshness_enabled = bool(g("non_amazon_freshness", "enabled", default=False))
+    for name in ("source_recheck_h", "source_recheck_budget_s", "stale_label_h", "stale_hide_h"):
+        attr = "non_amazon_" + name
+        value = float(g("non_amazon_freshness", name, default=getattr(cfg, attr)))
+        if math.isfinite(value) and value > 0:
+            setattr(cfg, attr, value)
+    cfg.non_amazon_source_rechecks_per_run = max(0, int(g(
+        "non_amazon_freshness", "source_rechecks_per_run", default=20)))
+    cfg.non_amazon_stores = g("non_amazon_freshness", "stores", default={}) or {}
     for store in ("bestbuy", "ebay"):
-        for name, floor in (("tolerance_pct", 0.0), ("recheck_h", 0.5),
+        for name, floor in (("tolerance_pct", 0.0), ("recheck_h", 0.0),
                             ("requests_per_second", 0.01)):
             attr = store + "_" + name
             value = float(g(store, name, default=getattr(cfg, attr)))
@@ -749,6 +767,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                 setattr(cfg, attr, max(floor, value))
         attr = store + "_max_requests_per_run"
         setattr(cfg, attr, max(0, int(g(store, "max_requests_per_run", default=getattr(cfg, attr)))))
+        attr = store + "_max_requests_per_day"
+        setattr(cfg, attr, max(0, int(g(store, "max_requests_per_day", default=getattr(cfg, attr)))))
 
     cfg.posts_seen_days = int(g("retention", "posts_seen_days", default=cfg.posts_seen_days))
     cfg.post_parses_days = int(g("retention", "post_parses_days", default=cfg.post_parses_days))

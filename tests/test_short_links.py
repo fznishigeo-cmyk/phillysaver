@@ -13,6 +13,7 @@ from dealradar.errors import DeadlineExceeded
 from dealradar.http_client import PoliteFetcher
 from dealradar.publish.site import _serialize_deal
 from tests.test_pipeline_sources import TestProductImageBackfill as PhotoFixture
+from tests.test_pipeline_sources import NOW as PHOTO_NOW
 from tests.test_sovrn_links import KEY
 
 
@@ -240,6 +241,7 @@ def test_deadline_leaves_deal_unflagged(setup, monkeypatch):
 
 @pytest.mark.parametrize("host,trackers_resolved", [("on.ltk.com", 0), ("cc.dealsofamerica.com", 1)])
 def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, trackers_resolved):
+    monkeypatch.setattr(util, "now_utc", lambda: PHOTO_NOW)
     step_summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST", "DEALS_CLAUDE_API_KEY"):

@@ -16,7 +16,7 @@ from .config import get_secret, error_summary
 from .errors import DeadlineExceeded
 from .http_client import api_fetcher
 from .models import RawPost
-from .util import iso, parse_iso
+from .util import iso, parse_iso, now_utc
 
 log = logging.getLogger("dealradar.store_prices")
 BESTBUY_URL = "https://api.bestbuy.com/v1/products"
@@ -37,7 +37,8 @@ def store_offer(deal: dict) -> tuple[str, str]:
             return "", ""
         query = parse_qs(url.query)
         if host == "bestbuy.com" or host.endswith(".bestbuy.com"):
-            match = re.fullmatch(r"/site/.*[/-](\d{1,16})\.p", url.path)
+            match = (re.fullmatch(r"/site/.*[/-](\d{1,16})\.p", url.path)
+                     or re.fullmatch(r"/product/.+/sku/(\d{1,16})/?", url.path))
             ids = query.get("skuId", []) + ([match[1]] if match else [])
             if ids and len(set(ids)) == 1 and re.fullmatch(r"\d{1,16}", ids[0]):
                 return "bestbuy", ids[0]
@@ -135,12 +136,46 @@ def ebay_reading(item: dict, identity: str, now: datetime) -> Reading | None:
 class StoreAPI:
     """One run's hard request cap, including OAuth and all retry attempts."""
 
-    def __init__(self, store, cfg, fetcher, deadline=None):
+    def __init__(self, store, cfg, fetcher, deadline=None, run_key=None):
         self.store, self.cfg, self.fetcher, self.deadline = store, cfg, fetcher, deadline
         self.remaining = getattr(cfg, store + "_max_requests_per_run")
         self.stopped = False
         self.token = ""
         self.token_expires = 0.0
+        self.diagnostics = {}
+        self.now = now_utc()
+        self.run_key = run_key
+        self.run_requests = 0
+        if run_key:
+            receipt = json.loads(fetcher.db.meta_get("store_api_run:" + store) or "{}")
+            self.run_requests = receipt.get("requests", 0) if receipt.get("run") == run_key else 0
+            self.remaining = max(0, self.remaining - self.run_requests)
+
+    def warning(self, phase, status, code=""):
+        # Never log response bodies, URLs, auth headers, or arbitrary API text.
+        reason = f"{phase}:" + (f"http_{status}" if isinstance(status, int) else str(status))
+        reason += ":" + code if code else ""
+        self.diagnostics[reason] = self.diagnostics.get(reason, 0) + 1
+        log.warning("%s live check %s", self.store, reason)
+
+    def reserve_request(self):
+        key = "store_api_daily:" + self.store
+        day = self.now.date().isoformat()
+        try:
+            usage = json.loads(self.fetcher.db.meta_get(key) or "{}")
+        except (TypeError, ValueError):
+            usage = {}
+        count = usage.get("requests", 0) if usage.get("day") == day else 0
+        if count >= getattr(self.cfg, self.store + "_max_requests_per_day"):
+            self.stopped = True
+            self.warning("quota", "daily_cap")
+            return False
+        self.fetcher.db.meta_set(key, json.dumps({"day": day, "requests": count + 1}))
+        if self.run_key:
+            self.run_requests += 1
+            self.fetcher.db.meta_set("store_api_run:" + self.store,
+                json.dumps({"run": self.run_key, "requests": self.run_requests}))
+        return True
 
     def request(self, method, url, **kwargs):
         response = None
@@ -154,6 +189,8 @@ class StoreAPI:
                 if self.remaining <= 0 or self.stopped:
                     break
                 self.fetcher._check_deadline(self.deadline)
+                if not self.reserve_request():
+                    break
                 self.remaining -= 1
                 try:
                     options = dict(deadline=self.deadline, respect_robots=False, max_attempts=1)
@@ -165,6 +202,14 @@ class StoreAPI:
                 except httpx.HTTPError as exc:
                     response = None
                     log.warning("%s live check: %s", self.store, error_summary(exc))
+                    self.warning("token" if url == TOKEN_URL else "product", "transport")
+                if response is not None and response.status_code >= 400:
+                    code = ""
+                    if url == TOKEN_URL:
+                        error = self.body(response).get("error")
+                        code = error if error in ("invalid_client", "invalid_scope", "invalid_request",
+                                                  "unauthorized_client", "unsupported_grant_type") else "other"
+                    self.warning("token" if url == TOKEN_URL else "product", response.status_code, code)
                 if response is not None and response.status_code != 429 \
                         and response.status_code < 500:
                     if response.status_code in (401, 403):
@@ -221,6 +266,8 @@ class StoreAPI:
             if response is None or response.status_code != 200 or not isinstance(token, str) \
                     or not token or expires is None or expires <= 0:
                 self.stopped = True
+                if response is not None and response.status_code == 200:
+                    self.warning("token", 200, "invalid_response")
                 return None
             self.token, self.token_expires = token, started + expires
         if self.remaining <= 0:
@@ -274,8 +321,8 @@ def reprice_post(store: str, reading: Reading, deal: dict, now: datetime) -> Raw
                                  "shipping_quote": ship_quote}})
 
 
-def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None) -> dict:
-    """Suspects, top candidates, wall, then oldest unchecked; bounded per store."""
+def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None, run_key=None) -> dict:
+    """Suspects, then oldest checked; picks/wall break ties, bounded per store."""
     from . import rank
     from .dedupe import reprice_existing
     from .parse.extractor import verify_evidence
@@ -309,7 +356,8 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None)
             every = CONFIRM_GONE_H if deal.get("gone_suspect_at") else getattr(cfg, store + "_recheck_h")
             stamps = [parse_iso(deal.get(k) or "") for k in ("price_rechecked_at", "recheck_tried_at")]
             last = max((t for t in stamps if t is not None), default=None)
-            if last is not None and timedelta() <= now - last < timedelta(hours=every):
+            if (run_key and deal.get("store_recheck_run") == run_key) or (last is not None and
+                    (last >= now or now - last < timedelta(hours=every))):
                 continue
             if not rank.is_publishable(deal, cfg, require_critic=False,
                                        min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
@@ -317,7 +365,9 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None)
             priority = (0 if deal.get("gone_suspect_at") else 1 if deal["dedupe_key"] in picks
                         else 2 if deal["dedupe_key"] in wall else 3)
             due.append((priority, iso(last) if last else "", deal["dedupe_key"], identity, deal))
-        due.sort(key=lambda d: d[:3])
+        # When checks are due every run, rotate oldest first so a large top set
+        # cannot permanently starve the rest of the store's inventory.
+        due.sort(key=lambda d: (0 if d[0] == 0 else 1, d[1], d[0], d[2]))
         if not due or getattr(cfg, store + "_max_requests_per_run") <= 0:
             continue
         grouped = {}
@@ -327,11 +377,17 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None)
         batch_size = 100 if store == "bestbuy" else 1
         counts = stats[store]
         with api_fetcher(fetcher, db, cfg) as client:
-            api = StoreAPI(store, cfg, client, deadline)
+            api = StoreAPI(store, cfg, client, deadline, run_key)
+            api.now = now
             for start in range(0, len(ids), batch_size):
                 if api.remaining <= 0 or api.stopped:
                     break
                 batch = ids[start:start + batch_size]
+                for identity in batch:
+                    for deal in grouped[identity]:
+                        if run_key:
+                            deal["store_recheck_run"] = run_key
+                            db.update_deal(deal["dedupe_key"], payload=deal)
                 try:
                     client._check_deadline(deadline)
                     readings = api.bestbuy(batch) if store == "bestbuy" else {batch[0]: api.ebay(batch[0], now)}
@@ -369,5 +425,7 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None)
                         counts[{"live": "confirmed", "suspect": "suspect", "waiting": "suspect", "dead": "gone"}[outcome]] += 1
                         db.update_deal(deal["dedupe_key"], payload=payload,
                                        status="dead" if outcome == "dead" else None)
+            if api.diagnostics:
+                counts["diagnostics"] = api.diagnostics
         log.info("%s live checks: %s", store, counts)
     return stats

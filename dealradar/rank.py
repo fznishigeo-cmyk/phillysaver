@@ -138,7 +138,8 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
     from .verify import is_amazon_deal, price_confirmation_recent
 
-    if deal.get("price_unconfirmed"):
+    from .non_amazon_freshness import promotion_excluded
+    if deal.get("price_unconfirmed") or promotion_excluded(deal, cfg, now):
         return None
     if require_confirmation and is_amazon_deal(deal) and not price_confirmation_recent(
             deal, now, cfg.keepa_pick_max_unconfirmed_h):
@@ -207,7 +208,7 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
     picked, last, run = [], "", 0
     for deal, _score in sorted((pair for pair in scored if pair[1] is not None),
                                key=lambda pair: pair[1], reverse=True):
-        if deal.get("price_unconfirmed"):
+        if deal.get("price_unconfirmed") or deal.get("price_aged"):
             continue
         if len(picked) >= picks["count"]:
             break
@@ -235,8 +236,8 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
 def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
     """Published pick order followed by the existing order of the rest."""
     if not options.get("top_picks"):
-        return sorted(front_page_mix(rows, options), key=lambda d: bool(d.get("price_unconfirmed")))
-    return sorted(rows, key=lambda d: (bool(d.get("price_unconfirmed")), d.get("pick", math.inf)))
+        return sorted(front_page_mix(rows, options), key=lambda d: bool(d.get("price_unconfirmed") or d.get("price_aged")))
+    return sorted(rows, key=lambda d: (bool(d.get("price_unconfirmed") or d.get("price_aged")), d.get("pick", math.inf)))
 
 
 def spotlight_sources(cfg) -> set[str]:
@@ -426,6 +427,7 @@ def site_deals(db, cfg, now: datetime, *, include_unconfirmed: bool = False) -> 
     removed for its age."""
     from datetime import timedelta
     from .verify import price_unconfirmed
+    from .non_amazon_freshness import hidden, promotion_excluded, label
 
     site_floor = min(cfg.min_pct,
                      getattr(cfg, "site_show_from_pct", cfg.min_pct))
@@ -433,6 +435,10 @@ def site_deals(db, cfg, now: datetime, *, include_unconfirmed: bool = False) -> 
     out: list[dict[str, Any]] = []
     for status in ("alive", "dead"):
         for deal in db.all_deals(status=status):
+            if status == "alive" and hidden(deal, cfg, now):
+                continue
+            if status == "alive" and promotion_excluded(deal, cfg, now):
+                deal = dict(deal, price_aged=label(deal, now))
             if status == "alive" and not include_unconfirmed and price_unconfirmed(deal, cfg, now):
                 continue
             if status == "dead":
@@ -454,5 +460,5 @@ def site_deals(db, cfg, now: datetime, *, include_unconfirmed: bool = False) -> 
             deal["verify_tier"] = deal.get("verify_tier", "unverified")
             deal["score"] = score(deal, cfg, now)
             out.append(deal)
-    out.sort(key=lambda d: d["score"], reverse=True)
+    out.sort(key=lambda d: (bool(d.get("price_aged")), -d["score"]))
     return out

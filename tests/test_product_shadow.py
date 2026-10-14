@@ -296,11 +296,12 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
     ("membership", "c44e0fc5de6a76c52378cfa60124a886a9f534d9ba6c08531d9cae0b7dbe5dd2"),
     ("open", "cbf5ec092e4833d5bb1b6e6f61f2f8ae613697383e59e4ba80f64c7cdb123daa"),
     ("support", "5ddcfd43da3883235e72fe9f0aae03c5248b862d8f74dfa51d1ccae008c42abe"),
-    ("shipped", "273dda6d186825cf4aa3892943376738859c5a5bb9d9bb861f112364698aa673"),
+    ("shipped", "58e22397bcd9987e3cef1f0d58584820867dbaff6283b717f08d697861f9e7fa"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
     # sufficient history, so the always-on shadow actually has work to do.
+    # Task 102 refreshes shipped CSS/JS/version; other modes retain their pins.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     if mode == "shipped":
         cfg.raw["first_party_clicks"]["enabled"] = False  # pin predates the click signal switch-on

@@ -673,6 +673,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         public["spotlight"] = deal["spotlight"]
     if deal.get("price_unconfirmed"):
         public["price_unconfirmed"] = True
+    if deal.get("price_aged"):
+        public["price_aged"] = deal["price_aged"]
     return public
 
 
@@ -741,6 +743,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                       candidate_scores[:cfg.keepa_recheck_top_n]]))
     # Keep hidden candidates above so rechecks can bring them back by themselves.
     before_labels = deals
+    from ..non_amazon_freshness import hidden, promotion_excluded, label, STYLE as AGED_STYLE
+    deals = [dict(d, price_aged=label(d, now)) if d.get("status") != "dead" and promotion_excluded(d, cfg, now) else d
+             for d in deals if d.get("status") == "dead" or not hidden(d, cfg, now)]
+    deals.sort(key=lambda d: bool(d.get("price_aged")))
     labeled = [dict(d, price_unconfirmed=True) for d in deals if price_labels.qualifies(d, cfg, now)]
     deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)] + labeled
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, **link_options) for d in deals
@@ -836,7 +842,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
     if cfg.engagement:
         engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
-        engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled)
+        engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
                                    lambda m: m.group(1) if saved_deals else "",
                                    engagement_script, flags=re.S)
@@ -848,9 +854,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         ).hexdigest()[:12]
     if traffic.enabled(cfg):
         site_version = traffic.site_version(site_version, cfg)
-    if cfg.unconfirmed_label_enabled:
+    if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + price_labels.STYLE).encode()
             + "".join(price_labels.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+    if cfg.non_amazon_freshness_enabled:
+        site_version = hashlib.sha256((site_version + AGED_STYLE).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -934,9 +942,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for name in pages:
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
-        html = price_labels.template(html, cfg.unconfirmed_label_enabled)
-        if cfg.unconfirmed_label_enabled and name == "index.html":
+        html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
+        if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and name == "index.html":
             html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
+        if cfg.non_amazon_freshness_enabled and name == "index.html":
+            html = html.replace("</style>", AGED_STYLE + "</style>", 1)
         if name == "index.html":
             html = html.replace("{{BROWSE_SCRIPT}}", browse_script)
             html = html.replace("{{PRICE_OPTIONS}}", "".join(
@@ -1102,6 +1112,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         tier_coverage = {name: {"tiers": plan.coverage(rows)}
                          for name, rows in (("top_candidates", top_candidates), ("wall", wall_rows))}
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "public_deals": teaser + spotlight_only,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {

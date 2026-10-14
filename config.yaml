@@ -684,17 +684,29 @@ retention:
   http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
   outgoing_days: 60          # failed (rejected) attempts only; sent records and pending guards never expire
 
+non_amazon_freshness:
+  enabled: true
+  source_recheck_h: 12
+  source_rechecks_per_run: 20
+  source_recheck_budget_s: 60  # preserve time for evidence parsing and publication
+  stale_label_h: 24
+  stale_hide_h: 48
+  stores: {}                  # e.g. Walmart: {stale_hide_h: 36}
+
+# Official quotas and activation: docs/non-amazon-freshness.md
 bestbuy:
   tolerance_pct: 5
-  recheck_h: 4
+  recheck_h: 0                 # due each run; same-run retries do not buy checks again
   requests_per_second: 5       # upper bound; the repo's 1 request/s/host still applies
-  max_requests_per_run: 5      # up to 100 SKUs/request; retries also consume this cap
+  max_requests_per_run: 20     # up to 100 SKUs/request; retries also consume this cap
+  max_requests_per_day: 45000  # below the official 50,000/day limit
 
 ebay:
   tolerance_pct: 5
-  recheck_h: 4
+  recheck_h: 0
   requests_per_second: 1
-  max_requests_per_run: 25     # includes OAuth token requests and retries
+  max_requests_per_run: 30     # includes OAuth and retries; ~30 s at 1/s before intake
+  max_requests_per_day: 4500   # below Browse's 5,000/day limit; shared across runs
 
 feature_flags:
   bestbuy_live: false          # also needs BESTBUY_API_KEY

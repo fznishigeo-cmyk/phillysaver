@@ -38,7 +38,8 @@ from .util import iso, parse_iso
 log = logging.getLogger("dealradar.verify")
 
 _DEAD_RE = re.compile(
-    r"\b(expired|deal\s+is\s+dead|dead\s+deal|sold\s+out|out\s+of\s+stock|oos)\b",
+    r"\b(expired|deal\s+is\s+dead|dead\s+deal|sold\s+out|out\s+of\s+stock|oos"
+    r"|no\s+longer\s+available|price\s+went\s+up)\b",
     re.IGNORECASE)
 
 
@@ -215,7 +216,7 @@ def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime, 
     store = store_offer(deal)[0]
     store_check = (cfg is not None and enabled(store, cfg)
                    and not (store == "bestbuy" and is_used_deal(deal)))
-    if deal.get("asin") or woot_offer_url(deal) or store_check:
+    if (is_amazon_deal(deal) and deal.get("asin")) or woot_offer_url(deal) or store_check:
         if deal.get("gone_suspect_at"):
             return False
         payload.update(gone_suspect_at=iso(now), death=reason,

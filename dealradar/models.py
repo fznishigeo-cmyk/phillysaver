@@ -94,6 +94,7 @@ class RawPost:
     parsed: list[tuple[str, str]] = field(default_factory=list)
     structured: dict | None = None  # API facts + quotes; transient like text
     via_email: bool = False        # never fetch this newsletter's partner pages
+    price_recheck: bool = False    # current permitted post/feed read, bypasses seen hash
 
     @property
     def content_hash(self) -> str:
@@ -229,6 +230,9 @@ class Deal:
     audit_reference: dict[str, Any] | None = None  # licensed Keepa price basis
     # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
+    source_recheck_tried_at: str = ""
+    source_recheck_run: str = ""
+    store_recheck_run: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
     keepa_warehouse_seen_at: str = ""     # exact used price in the Warehouse lane
     keepa_checked: bool = False           # the one-time Keepa cross-check ran

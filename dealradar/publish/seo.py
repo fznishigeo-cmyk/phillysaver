@@ -240,6 +240,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
             f'<div class="media">{media}</div><div class="body">'
             f'<div class="pricerow">{price or "&nbsp;"}</div>'
             + ('<div class="price-unconfirmed">Price not confirmed</div>' if d.get("price_unconfirmed") else "")
+            + (f'<div class="price-aged">{e(d["price_aged"])}</div>' if d.get("price_aged") else "")
             + f'<h3 class="title">{title}</h3>'
             + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") else "")
             + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
@@ -625,6 +626,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if d.get("price_unconfirmed"):
         content += ('<div class="price-unconfirmed">Price not confirmed</div>'
                     '<p class="price-unconfirmed">We couldn\'t re-check this price recently; it may have changed.</p>')
+    if d.get("price_aged"):
+        content += f'<div class="price-aged">{escape(d["price_aged"])}</div>'
     if d.get("regular_price") is not None:
         regular = f'{float(d["regular_price"]):.2f}'
         basis = _basis_label(d)
@@ -818,9 +821,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                      DEAL_ACTIONS_SCRIPT=actions)
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support)
-    if cfg.unconfirmed_label_enabled:
+    if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
         from .price_labels import STYLE
         template = template.replace("</style>", STYLE + "</style>", 1)
+    if cfg.non_amazon_freshness_enabled:
+        from ..non_amazon_freshness import STYLE as AGED_STYLE
+        template = template.replace("</style>", AGED_STYLE + "</style>", 1)
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
     live.sort(key=lambda d: (bool(d.get("price_unconfirmed")), order[d["dedupe_key"]]))
@@ -859,7 +865,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     n = sum(d.get("status") == "alive" and not d.get("price_unconfirmed") for d in teaser)
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
-    confirmed = [d for d in live if not d.get("price_unconfirmed")]
+    confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
     intro = f"The {min(30, len(confirmed))} best of {count} live deals right now, ranked like the live wall."
     best_rows = pick_order(confirmed, cfg.front_page)[:30]
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
