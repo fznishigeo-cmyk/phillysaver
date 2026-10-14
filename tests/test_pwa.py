@@ -47,7 +47,7 @@ def tree_hash(out):
     ("membership", "28a7d364e9463f092705cc1f1e7814b48afd926c83b3e8be6a34642e692c0c7f"),
     ("open", "f463cd5514b84f3a3740ba386fa315bf3ea745f00902f2de03b0df0e95f8c3d5"),
     ("support", "27682c4fe47e23632f74f65484280afec4db71557566bfe9e4400f246822ee5f"),
-    ("shipped", "3aaf2fb84502a9a32d8ce531c64119d9aa3dc3d2d6784fb7c09b3fcabf724973"),
+    ("shipped", "24973745f4285b28e6d8a16dd4ff4c804f9dc92f20ffdbc04309c66d8bfe2bf9"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Task 094 refreshes only shipped: optional price-label CSS/JS/version bytes.

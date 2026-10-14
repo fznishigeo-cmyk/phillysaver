@@ -1,6 +1,7 @@
 """Run the click setup/deploy workflow scripts offline with a fake Wrangler."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -164,7 +165,9 @@ def test_setup_fails_clearly_without_leaking_api_output(tmp_path, setup_env, cha
 
 
 def test_disabled_setup_and_deploy_need_no_click_secrets_or_d1(tmp_path, setup_env):
-    shutil.copyfile(ROOT / "config.yaml", tmp_path / "config.yaml")
+    shipped = (ROOT / "config.yaml").read_text()
+    (tmp_path / "config.yaml").write_text(re.sub(
+        r"(first_party_clicks:\n  enabled:) true[^\n]*", r"\1 false", shipped))
     env = dict(setup_env, CLICK_SIGNAL_TOKEN="", CLICK_SIGNAL_D1_ID="")
     assert run_step(tmp_path, env).returncode == 0
     assert calls(tmp_path) == [] and not (tmp_path / "output").exists()
@@ -178,7 +181,7 @@ def test_disabled_setup_and_deploy_need_no_click_secrets_or_d1(tmp_path, setup_e
 
 def test_config_docs_and_workflows_share_one_secret_and_existing_worker():
     cfg = load_config()
-    assert cfg.raw["first_party_clicks"]["enabled"] is False
+    assert cfg.raw["first_party_clicks"]["enabled"] is True  # switched on 2026-10-14
     assert clicks.endpoint(cfg) == cfg.newsletter_worker_url == cfg.paywall_api_url
     docs = (ROOT / "docs/first-party-clicks.md").read_text()
     operator = docs.split("Operator:\n", 1)[1].split("Engineer", 1)[0]
@@ -201,6 +204,7 @@ def test_config_docs_and_workflows_share_one_secret_and_existing_worker():
 
 def test_shipped_config_only_needs_switch_and_token_for_ingestion(db, monkeypatch):
     cfg = load_config()
+    cfg.raw["first_party_clicks"]["enabled"] = False  # shipped on since 2026-10-14; start from off
     monkeypatch.setenv("CLICK_SIGNAL_TOKEN", TOKEN)
     requests = []
 

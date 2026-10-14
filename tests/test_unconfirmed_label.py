@@ -313,6 +313,8 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
 
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.unconfirmed_label_enabled = False
+    if mode == "shipped":
+        cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"

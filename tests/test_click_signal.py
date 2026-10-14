@@ -35,7 +35,7 @@ def published(n=3):
 
 
 def test_default_off_and_config_caps():
-    assert not clicks.enabled(AppConfig()) and not clicks.enabled(load_config())
+    assert not clicks.enabled(AppConfig()) and clicks.enabled(load_config())  # shipped on 2026-10-14
     cfg = AppConfig(raw={"first_party_clicks": {"enabled": "true", "hourly_cap": 999999, "shadow_weight": float('nan')}})
     assert not clicks.enabled(cfg)
     assert clicks.settings(cfg)["hourly_cap"] == 3000

@@ -659,7 +659,7 @@ feature_flags:
 # Approved 2026-10-14; stays off until CLICK_SIGNAL_TOKEN exists and Worker setup runs.
 # docs/first-party-clicks.md; all ranking use remains shadow-only.
 first_party_clicks:
-  enabled: false
+  enabled: true   # operator approved 2026-10-14 ("listen for used items"); CLICK_SIGNAL_TOKEN added
   endpoint: "https://wowpriced-subscribe.wowpriced.workers.dev"  # same as newsletter.worker_url; cookie-free origin
   hourly_cap: 1000  # atomic across isolates; hard maximum 3000 (72k D1 writes/day)
   isolate_per_minute: 120
