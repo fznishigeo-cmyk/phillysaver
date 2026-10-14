@@ -23,7 +23,7 @@ from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, ur
 from ..savings import display_pct, known_shipping, parse_stack_step
 from ..config import AppConfig, load_sources, redact_secrets, support_link
 from ..rank import daily_spotlight, pick_order, pick_score, top_picks
-from ..verify import (confirmed_age, is_amazon_deal, price_confirmed_at,
+from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
@@ -1037,8 +1037,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {
-                "top_candidates": confirmed_age([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
-                "wall": confirmed_age([originals[d["dedupe_key"]] for d in wall
+                "top_candidates": confirmation_coverage([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
+                "wall": confirmation_coverage([originals[d["dedupe_key"]] for d in wall
                                        if d.get("dedupe_key") in originals], now)},
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,

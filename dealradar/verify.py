@@ -407,10 +407,18 @@ def confirmed_age(deals: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
     amazon = [d for d in deals if is_amazon_deal(d) and d.get("status", "alive") == "alive"]
     ages = [(now - at).total_seconds() / 3600 for d in amazon
             if (at := price_confirmed_at(d)) is not None and at <= now]
-    return {"amazon": len(amazon), "unconfirmed": len(amazon) - len(ages),
+    result = {"amazon": len(amazon), "unconfirmed": len(amazon) - len(ages),
             **{f"within_{h}h": sum(age <= h for age in ages) / len(amazon)
-               if amazon else None for h in (1, 3, 12)},
+               if amazon else None for h in (1, 2, 3, 12)},
             "oldest_h": round(max(ages), 2) if ages else None}
+    return result
+
+
+def confirmation_coverage(deals: list[dict[str, Any]], now: datetime) -> dict[str, Any]:
+    """Whole-set and condition-specific shares use the same confirmation rules."""
+    return {**confirmed_age(deals, now),
+            "new": confirmed_age([d for d in deals if not is_used_deal(d)], now),
+            "used": confirmed_age([d for d in deals if is_used_deal(d)], now)}
 
 
 #: Keepa timestamps count minutes from 2011-01-01T00:00Z; that moment is
@@ -503,6 +511,8 @@ def keepa_products(key: str, asins: list[str], stats: int,
     fetcher = fetcher if fetcher is not None else _standalone_keepa_fetcher()
     # Keyed API (robots.txt is for crawlers); a 429 is an empty token bucket,
     # answered next pass, so it is not retried here.
+    if budget is not None:
+        budget.reserve(len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live)))
     resp = fetcher.api_get("https://api.keepa.com/product", params=params,
                            max_attempts=1, respect_robots=False)
     payload = response_payload(resp)

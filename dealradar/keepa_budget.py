@@ -107,7 +107,32 @@ class KeepaBudget:
         now = now or util.now_utc()
         elapsed_min = max(0.0, (now - self.seen_at).total_seconds() / 60.0)
         rate = self.refill_rate or 0.0
-        return self.tokens_left + rate * min(elapsed_min, MAX_REFILL_MINUTES)
+        estimate = self.tokens_left + rate * min(elapsed_min, MAX_REFILL_MINUTES)
+        cap = self.capacity()
+        return min(estimate, cap) if cap is not None else estimate
+
+    def capacity(self) -> float | None:
+        """The plan holds one hour of refill, including the last reading."""
+        return self.refill_rate * MAX_REFILL_MINUTES if self.refill_rate else None
+
+    def reserve(self, cost: float, now: datetime | None = None) -> None:
+        """Debit a request before sending; an API reading replaces this estimate.
+
+        A lost/unreadable response may still have cost tokens. It must not
+        let the following batch spend the same balance again.
+        """
+        now = now or util.now_utc()
+        available = self.available(now)
+        if available is not None:
+            self.tokens_left = available - cost
+            self.seen_at = now
+
+    def overflow(self, minutes: float, now: datetime | None = None) -> float | None:
+        """Refill lost before the next pass if no other calls spend tokens."""
+        available, cap = self.available(now), self.capacity()
+        if available is None or cap is None:
+            return None
+        return max(0.0, available + self.refill_rate * minutes - cap)
 
     def allows(self, need: float, now: datetime | None = None) -> bool:
         """True when the estimate clears ``need`` — or is unknown."""

@@ -438,7 +438,7 @@ class TestKeepaBudget:
         assert b.available(NOW) == pytest.approx(12.0)
         assert b.available(NOW + timedelta(minutes=10)) == pytest.approx(62.0)
         # Keepa's bucket never holds more than an hour of refill.
-        assert b.available(NOW + timedelta(hours=3)) == pytest.approx(312.0)
+        assert b.available(NOW + timedelta(hours=3)) == pytest.approx(300.0)
         # A reading from the future (clock skew) credits nothing.
         assert b.available(NOW - timedelta(minutes=5)) == pytest.approx(12.0)
         assert b.allows(60, NOW + timedelta(minutes=10))

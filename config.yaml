@@ -262,8 +262,8 @@ keepa:
   # 6 h every deal, rechecks wanted ~23,000 a day and starved the deal feed.
   recheck_fresh_h: 4               # deals first seen in the last recheck_fresh_window_h
   recheck_fresh_window_h: 24
-  recheck_new_h: 12                # older new-condition deals (1 token each)
-  recheck_used_h: 24               # used/open-box (offers scan, up to 13 tokens each)
+  recheck_new_h: 8                 # task 085: retry before the 12 h display limit
+  recheck_used_h: 6                # task 085: ONLY top/wall used offers (up to 13 tokens)
   # Operator request, 2026-10-13: highly accurate prices on the FIXED
   # 20 tokens/min plan. All new classes precede ordinary used scans;
   # used scans (including suspects) share this cap after the deal reserve.
@@ -272,18 +272,26 @@ keepa:
   # showed $4.11). Correct plain new prices from the SAME paid reading,
   # with both Amazon averages; otherwise retain the existing kill tolerance.
   reprice_min_pct: 1
-  recheck_top_h: 1
+  recheck_top_h: 0.75              # task 085: leave a run to retry before 1 h
   recheck_tolerance_pct: 5
   # Operator request, 2026-10-13: suspects, then scored pick candidates,
-  # then the first home cards, then the rest. Used cadence stays 24 h.
-  recheck_top_n: 200               # up to 200 new tokens/hour (overlap is checked once)
-  recheck_wall_n: 300              # up to 150 new tokens/hour before top overlap
-  recheck_wall_h: 2
+  # then the first home cards, then the rest. Task 085: new checks always
+  # precede used scans, including suspects; off-wall used prices use free feeds.
+  recheck_top_n: 200               # up to 267 new tokens/hour before free confirmations
+  recheck_wall_n: 300              # top overlap is checked once
+  recheck_wall_h: 1.5              # task 085: retry slack before the 2 h wall target
+  # Task 085: spend predicted overflow before the next fast run on the
+  # oldest visible confirmations, top first. Never re-pay a just-read price.
+  recheck_interval_minutes: 10
+  recheck_idle_min_age_h: 0.5
   # Operator request, 2026-10-13: feature only recently confirmed Amazon
   # prices; hide stale prices until confirmed, without killing their rows.
   pick_max_unconfirmed_h: 3
-  show_max_unconfirmed_h: 48
-  show_max_unconfirmed_used_h: 72
+  show_max_unconfirmed_h: 12       # task 085: older prices hide alive until confirmed
+  # Used/open-box: off-wall units get no paid scan (free Warehouse feed
+  # sightings only), so a 12 h limit could hide much of that inventory.
+  # 24 h until live counts (hidden_unconfirmed.used) say otherwise.
+  show_max_unconfirmed_used_h: 24
   # Operator request, 2026-10-13: optional live top readings; default OFF.
   # update=0 can cost 2 tokens/new ASIN; batches reserve that worst case.
   recheck_top_live: false

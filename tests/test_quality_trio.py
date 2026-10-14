@@ -1081,6 +1081,10 @@ def _seed_amazon(db, key: str, asin: str, *, used: bool = False,
                    pct_at_checkout=d["pct_at_checkout"],
                    abs_savings=d["abs_savings"], online_only="true",
                    expires_at="", now=NOW)
+    if used:
+        # Offer-scan fixtures are on the remembered home wall (task 085).
+        wall = json.loads(db.meta_get("published_wall") or "[]")
+        db.meta_set("published_wall", json.dumps(wall + [key]))
     return d
 
 
@@ -1327,7 +1331,7 @@ class TestCarefulDeath:
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
         # The 3 h / 6 h cadence this test was written for (config.yaml
-        # keepa.recheck_* now says 4/12/24 h; the mechanism is the same).
+        # keepa.recheck_* now says 4/8/6 h; the mechanism is the same).
         cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0
         cfg.keepa_recheck_used_h = 6.0
         calls = []
@@ -1356,7 +1360,7 @@ class TestCarefulDeath:
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
         # The 3 h / 6 h cadence this test was written for (config.yaml
-        # keepa.recheck_* now says 4/12/24 h; the mechanism is the same).
+        # keepa.recheck_* now says 4/8/6 h; the mechanism is the same).
         cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0
         cfg.keepa_recheck_used_h = 6.0
         calls = []
@@ -1642,6 +1646,8 @@ class TestCarefulDeath:
                 "tokens_left": tokens, "refill_rate": 0,
                 "seen_at": NOW.isoformat()}))
 
+        # This repair fixture explicitly selects both former wall cards.
+        db.meta_set("published_wall", json.dumps(["url|wh", "url|sold"]))
         # Tokens short (below one offers scan plus the deal lane's 10).
         reading(20)
         stats = pipeline._recheck_prices(db, cfg, NOW)
@@ -1650,6 +1656,7 @@ class TestCarefulDeath:
         assert self._published(db, cfg, NOW) == (set(), set(), 0)
 
         # No opinion: Keepa omits the live order; the stats show nothing.
+        db.meta_set("published_wall", json.dumps(["url|wh", "url|sold"]))
         reading(500)
         none = {"offers": [_offer(1, 99999)], "liveOffersOrder": None,
                 "stats": {"current": [-1] * 10,
@@ -1672,6 +1679,7 @@ class TestCarefulDeath:
         answers["B0SOLDUNIT"] = {
             "offers": [_offer(1, 99999)], "liveOffersOrder": [0],
             "stats": {"lastOffersUpdate": _km(later)}}
+        db.meta_set("published_wall", json.dumps(["url|wh", "url|sold"]))
         stats = pipeline._recheck_prices(db, cfg, later)
         assert stats["checked"] == 2 and stats["dead"] == 0
         row = db.get_deal("url|wh")
@@ -1705,6 +1713,7 @@ class TestCarefulDeath:
         monkeypatch.setenv("KEEPA_KEY", "kkey")
         url = "https://www.amazon.com/dp/B0BKQSDF5C"
         key = "url|" + url
+        db.meta_set("published_wall", json.dumps([key]))
 
         def sight(final, pct, at):
             ext = ExtractedDeal(item="Open-box binoculars", store="Amazon",
@@ -1771,6 +1780,7 @@ class TestCarefulDeath:
         monkeypatch.setenv("KEEPA_KEY", "kkey")
         url = "https://www.amazon.com/dp/B0BKQSDF5C"
         key = "url|" + url
+        db.meta_set("published_wall", json.dumps([key]))
 
         def sight(source, at):
             ext = ExtractedDeal(item="Open-box binoculars", store="Amazon",

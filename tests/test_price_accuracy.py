@@ -70,7 +70,7 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     db.meta_set(PICKS_META, json.dumps(["url|pick", "url|usedpick"]))
     cfg = load_config()
     cfg.feature_flags["keepa"] = True
-    assert cfg.keepa_recheck_top_h == 1
+    assert cfg.keepa_recheck_top_h == .75
     calls = []
 
     def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):

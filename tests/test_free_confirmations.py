@@ -123,6 +123,8 @@ def test_feed_confirmation_skips_paid_cadence_and_restores_hidden_deal(db, cfg, 
     bucket(db, 500)
     assert pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)["checked"] == 0
     assert calls == [] and len(rank.site_deals(db, cfg, NOW)) == 1
+    if used:
+        db.meta_set(site.WALL_META, json.dumps([deal["dedupe_key"]]))
     hours = cfg.keepa_recheck_used_h if used else cfg.keepa_recheck_new_h
     due = NOW - timedelta(minutes=20) + timedelta(hours=hours)
     assert pipeline._recheck_prices(db, cfg, due, image_backfill=False)["checked"] == 1
@@ -134,6 +136,7 @@ def test_only_exact_warehouse_stamp_skips_used_scans_and_suspects_still_recheck(
     suspect = seed(db, cfg, asin="B000000002", keepa_price_seen_at=util.iso(NOW),
                    gone_suspect_at=util.iso(NOW - timedelta(hours=2)),
                    price_rechecked_at=util.iso(NOW - timedelta(hours=2)))
+    db.meta_set(site.WALL_META, json.dumps([used["dedupe_key"]]))
     bucket(db, 500)
     calls = api(monkeypatch, {d["asin"]: product(2500, asin=d["asin"], current=row()["current"])
                               for d in (used, suspect)})
@@ -227,7 +230,7 @@ def test_new_classes_before_used_and_used_share_includes_suspects(db, cfg, monke
                  **({"gone_suspect_at": util.iso(NOW - timedelta(hours=2))} if i == 0 else {}))
             for i in range(13)]
     db.meta_set(site.PICKS_META, json.dumps([new[1]["dedupe_key"], used[1]["dedupe_key"]]))
-    db.meta_set(site.WALL_META, json.dumps([new[2]["dedupe_key"], used[2]["dedupe_key"]]))
+    db.meta_set(site.WALL_META, json.dumps([new[2]["dedupe_key"]] + [d["dedupe_key"] for d in used]))
     bucket(db, 210)
     calls = []
 
@@ -239,8 +242,7 @@ def test_new_classes_before_used_and_used_share_includes_suspects(db, cfg, monke
 
     monkeypatch.setattr(verify, "recheck_amazon_prices", check)
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
-    expected = [new[0]["dedupe_key"]] + ([used[0]["dedupe_key"]] if used_count else [])
-    expected += [d["dedupe_key"] for d in new[1:]] + [d["dedupe_key"] for d in used[1:used_count]]
+    expected = [d["dedupe_key"] for d in new] + [d["dedupe_key"] for d in used[:used_count]]
     assert calls == expected
     assert stats["used_checked"] == used_count
     assert stats["used_skipped_budget"] == 13 - used_count
@@ -250,13 +252,15 @@ def test_new_classes_before_used_and_used_share_includes_suspects(db, cfg, monke
 
 
 def test_unknown_bucket_defers_used_scans(db, cfg, monkeypatch):
-    seed(db, cfg, conditions=["used"])
+    deal = seed(db, cfg, conditions=["used"])
+    db.meta_set(site.WALL_META, json.dumps([deal["dedupe_key"]]))
     monkeypatch.setattr(verify, "recheck_amazon_prices", lambda *a, **kw: pytest.fail("unknown used allowance"))
     assert pipeline._recheck_prices(db, cfg, NOW)["used_skipped_budget"] == 1
 
 
 def test_empty_bucket_reports_used_scans_skipped(db, cfg, monkeypatch):
-    seed(db, cfg, conditions=["used"])
+    deal = seed(db, cfg, conditions=["used"])
+    db.meta_set(site.WALL_META, json.dumps([deal["dedupe_key"]]))
     bucket(db, 22)  # less than one 13-token scan plus the 10-token reserve
     monkeypatch.setattr(verify, "recheck_amazon_prices", lambda *a, **kw: pytest.fail("empty bucket"))
     result = pipeline._recheck_prices(db, cfg, NOW)

@@ -8,6 +8,7 @@ ledger never loses a run's spend."""
 from __future__ import annotations
 
 import dataclasses
+import json
 from datetime import datetime, timedelta, timezone
 
 from tests.http_helpers import mock_keepa_get, api_transport
@@ -47,6 +48,10 @@ def _seed(db, key, *, used=True, stamp="", tried="", status="alive",
                    normalized_item=key, canonical_url="", payload=d,
                    final_price=30.0, pct_at_checkout=70.0, abs_savings=70.0,
                    online_only="true", expires_at="", now=NOW)
+    if used:
+        # These offer-scan fixtures represent visible wall deals (task 085).
+        wall = json.loads(db.meta_get("published_wall") or "[]")
+        db.meta_set("published_wall", json.dumps(wall + [key]))
     if status != "alive":
         db.update_deal(key, payload=d, status=status)
 
@@ -391,11 +396,11 @@ class TestRecheckCadenceFitsThePlan:
         monkeypatch.setattr(verify, "recheck_amazon_prices", fake)
         cfg = _cfg()
         assert (cfg.keepa_recheck_fresh_h, cfg.keepa_recheck_new_h,
-                cfg.keepa_recheck_used_h) == (4.0, 12.0, 24.0)
+                cfg.keepa_recheck_used_h) == (4.0, 8.0, 6.0)
         pipeline._recheck_prices(db, cfg, NOW)
         # The suspect leads, then longest-unchecked: the overdue old deal
-        # (13 h > 12 h), the fresh one (5 h > 4 h); the old one checked 5 h
-        # ago and the used one 7 h ago wait.
+        # (13 h > 8 h), the fresh one (5 h > 4 h), then visible used
+        # offers over 6 h. The old new deal checked 5 h ago waits.
         assert checked == ["url|older0001", "url|olddue001", "url|fresh0001",
-                           "url|useddue01"]
+                           "url|useddue01", "url|used00001"]
         db.close()

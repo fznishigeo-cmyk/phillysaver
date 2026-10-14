@@ -213,6 +213,7 @@ def test_reprice_uses_a_list_price_the_item_sold_near(db, cfg):
 
 
 def test_scheduler_priority_used_cadence_and_wall_cadence(db, cfg, monkeypatch):
+    cfg.keepa_recheck_idle_min_age_h = 99  # isolate the normal due cadences
     records, deals = {}, {}
     for i, name in enumerate(("rest", "wall", "top", "suspect", "used_rest", "used_top", "used_wall")):
         asin = f"B0{i:08d}"
@@ -230,9 +231,9 @@ def test_scheduler_priority_used_cadence_and_wall_cadence(db, cfg, monkeypatch):
     calls = api(monkeypatch, records)
     summary = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     seen = [a for call in calls for a in call["asin"].split(",")]
-    assert seen == [deals[n]["asin"] for n in ("suspect", "top", "wall", "rest", "used_top", "used_wall", "used_rest")]
+    assert seen == [deals[n]["asin"] for n in ("suspect", "top", "wall", "rest", "used_top", "used_wall")]
     assert summary["planned"] == summary["done"]
-    for name, hours in (("top", 1), ("wall", 2), ("rest", 4), ("used_top", 24), ("used_wall", 24)):
+    for name, hours in (("top", .75), ("wall", 1.5), ("rest", 4), ("used_top", 6), ("used_wall", 6)):
         row = db.get_deal(deals[name]["dedupe_key"])
         row["price_rechecked_at"] = util.iso(NOW - timedelta(hours=hours) + timedelta(seconds=1))
         db.update_deal(row["dedupe_key"], payload=row)
@@ -267,17 +268,17 @@ def test_drift_and_confirmed_age_metrics(db, cfg, monkeypatch):
     api(monkeypatch, {d["asin"]: product(c, asin=d["asin"]) for d, c in zip(deals, [2520, 2600, 2700, 2400])})
     result = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     assert result["drift"] == {"within_1pct": 1, "higher_1_5pct": 1, "higher_over_5pct": 1, "lower": 1, "promo_hidden": 0, "repriced": 3}
-    assert result["confirmed_age"]["top_candidates"] == {
-        "amazon": 4, "unconfirmed": 0, "within_1h": 1, "within_3h": 1, "within_12h": 1, "oldest_h": 0}
+    assert result["confirmed_age"]["top_candidates"]["new"] == {
+        "amazon": 4, "unconfirmed": 0, "within_1h": 1, "within_2h": 1, "within_3h": 1, "within_12h": 1, "oldest_h": 0}
     assert result["confirmed_age"]["wall"]["amazon"] == 2
     rows = [dict(deals[0], price_rechecked_at=util.iso(NOW - timedelta(hours=h))) for h in (.5, 2, 8, 30)]
     rows += [deals[0], dict(deals[0], store="Walmart", canonical_url="")]
-    assert verify.confirmed_age(rows, NOW) == {"amazon": 5, "unconfirmed": 1, "within_1h": .2,
+    assert verify.confirmed_age(rows, NOW) == {"amazon": 5, "unconfirmed": 1, "within_1h": .2, "within_2h": .4,
                                              "within_3h": .4, "within_12h": .6, "oldest_h": 30}
     assert verify.confirmed_age([], NOW)["within_1h"] is None
 
 
-@pytest.mark.parametrize("used,max_h", [(False, 48), (True, 72)])
+@pytest.mark.parametrize("used,max_h", [(False, 12), (True, 24)])
 def test_hide_unconfirmed_and_return_without_a_death(db, cfg, monkeypatch, tmp_path, used, max_h):
     deal = seed(db, cfg, seen=NOW - timedelta(days=5), conditions=["used"] if used else [],
                 price_rechecked_at=util.iso(NOW - timedelta(hours=max_h, seconds=1)))
@@ -287,6 +288,10 @@ def test_hide_unconfirmed_and_return_without_a_death(db, cfg, monkeypatch, tmp_p
         assert json.loads(db.meta_get(site.PICKS_META)) == [deal["dedupe_key"]]
     record = product(2500)
     if used:
+        # A hidden used offer returns through a free Warehouse confirmation.
+        from dealradar.fetch.keepa import _FeedConfirmations
+        from tests.test_free_confirmations import row as feed_row
+        _FeedConfirmations(db, NOW).note([feed_row(at=NOW)], used=True)
         record["stats"]["current"] = [10000, 10000, 2500]
     api(monkeypatch, {ASIN: record})
     bucket(db, 500)
@@ -359,8 +364,9 @@ def test_card_and_deal_page_timestamps_and_node_logic(db, cfg, tmp_path):
 
 def test_config_knobs_defaults_overrides_and_operator_comments(cfg, tmp_path):
     defaults = {"reprice_min_pct": 1, "recheck_top_n": 200, "recheck_wall_n": 300,
-                "recheck_wall_h": 2, "pick_max_unconfirmed_h": 3,
-                "show_max_unconfirmed_h": 48, "show_max_unconfirmed_used_h": 72,
+                "recheck_wall_h": 1.5, "pick_max_unconfirmed_h": 3,
+                "recheck_interval_minutes": 10, "recheck_idle_min_age_h": .5,
+                "show_max_unconfirmed_h": 12, "show_max_unconfirmed_used_h": 24,
                 "recheck_top_live": False}
     assert {k: getattr(cfg, "keepa_" + k) for k in defaults} == defaults
     path = tmp_path / "config.yaml"
@@ -379,7 +385,7 @@ def test_used_top_waits_for_its_whole_offers_budget(db, cfg, monkeypatch):
                for d in (rest, top)}
     bucket(db, 22)
     calls = api(monkeypatch, records, tokens=23, cost=13)
-    assert pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)["tokens_short"] == 2
+    assert pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)["tokens_short"] == 1
     assert calls == []
     bucket(db, 23)
     result = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)

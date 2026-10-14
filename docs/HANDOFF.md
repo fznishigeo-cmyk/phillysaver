@@ -190,6 +190,61 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Wall confirmation coverage (Codex task 085, 2026-10-14; uncommitted):**
+  saved wall keys round-trip correctly; top classification precedes wall,
+  and the old aggregate mixed 2-hour new checks with 24-hour used checks.
+  New cadences: top 45 min, wall 90 min, rest new 4/8 h, visible used 6 h;
+  both conditions hide alive after 12 h. All new classes now precede used
+  suspects/scans; off-wall used offers use free Warehouse confirmations only.
+  Added condition-specific 1/2/3/12-hour coverage, overlap/cadence/retry
+  counts, bucket start/end and predicted hourly overflow. The bucket now
+  caps the *total* at an hour of refill (1,200 at 20/min); lost product
+  responses retain a conservative debit. Predicted overflow buys older
+  visible confirmations, top first, within the existing used share/reserve.
+  No price/evidence rules, LLM calls, retailer requests or `history=0` changed.
+  Regression demonstrated against HEAD: an 8-hour used wall price was
+  planned/done 0/0; the new fixture requires 1/1. **15 new tests + 1 config
+  check passed**, as did both offline idempotency cases. Two 144-run days
+  (20/min refill, real scheduler, 13-token used scans, changing wall membership)
+  kept top/new-wall coverage at **100% within 1/2 h** on every run. After
+  recovery the oldest wall price was **2.5 h / 0.83 h** without/with free
+  matches; hidden new ended at zero. Total tokens including feed pages:
+  **27,365 / 28,185**, measured lost refill **879 / 65**, final buckets
+  **1,006 / 1,000**. The free case deliberately supplies only ~195 new/58
+  used matches per hour, much less than the supplied per-run live counts.
+  Full `.venv/bin/python -m pytest -q`: **3,169 passed, 9 failed,
+  1 deselected**. Two failures were test-only HTTP parameter coercion
+  assertions already loaded by that run; corrected to accept `history=0`
+  as the transport's string and both passed in the final 16-check run.
+  Rerunning all nine failures yielded **2 passed, 7 failed**.
+  The remaining seven are the existing Stripe localhost-socket failures
+  (`Operation not permitted`) in `tests/test_workflows.py`: yearly-price
+  change0–change5 and the no-price/no-key case. A full green run outside
+  this sandbox and actual deployed coverage measurements remain.
+  Branch creation is blocked by read-only Git metadata; no commit or push.
+
+  Expected token plan (20/min = **1,200/hour**), deliberately before free
+  confirmations. The live aggregate does **not** disclose condition counts:
+  the reproducible 185-Amazon wall fixture assumes 100 new + 85 used; its
+  new rows overlap top. Validate this mix with `wall_schedule` after deploy.
+
+  | Class | Tokens/hour | Derivation / scope |
+  |---|---:|---|
+  | Deal lane | 600 | Ceiling for ordinary pages: (6 Amazon + 12 Warehouse + 2 focus) × 5 × 6 runs; short pages/caps/reserve usually reduce it |
+  | Top | 252 | 189 live candidates / 0.75 h × 1; cached/free matches reduce it |
+  | Wall new | 67 | 100 / 1.5 h, rounded up; conservative double-count of the fixture's top overlap |
+  | Rest new | 16 | 62 / 4 h, rounded up; older rows use 8 h (8 tokens/hour) |
+  | Visible used scans | 185 | 85 / 6 h × 13, rounded up; 535 off-wall used scans cost zero |
+  | Photos | 0 | Expected steady state: reuse photos from those paid records; photo-only backfill uses the remaining bucket last |
+  | **Total** | **1,120** | **80/hour headroom**, plus overlap/free-feed savings |
+
+  This is a conditional workload estimate, not six independent allowances.
+  Sweep/finder/category calls, a photo backlog, new arrivals and initial
+  hidden-new recovery share that headroom and the same bucket/reserves.
+  At the configured 200-top cap the estimate is 1,135/hour. A materially
+  larger used wall or sustained API failures needs fresh live measurements;
+  stale prices hide rather than claiming a confirmation. Removing the old
+  535/24 h × 13 rest-used queue saves about 290 tokens/hour before feeds.
 - **Free traffic levers (Codex task 083, 2026-10-14; working tree only):**
   ranked ten missing opportunities and built the first three: public-live
   RSS with stable deal GUIDs, detail-page native/copy/manual sharing with
