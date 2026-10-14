@@ -34,7 +34,11 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "search_apply": "search_apply", "search_zero": "search_zero", "search_recovery": "search_recovery",
                   "support_ask_shown": "support_ask_shown", "support_ask_click": "support_ask_click",
                   "support_ask_dismiss": "support_ask_dismiss",
-                  "requirements_open": "requirements_open"}
+                  "requirements_open": "requirements_open",
+                  "deal_share": "deal_share", "share_arrival": "share_arrival",
+                  "feed_open": "feed_open", "feed_arrival": "feed_arrival",
+                  "related_hub_click": "related_hub_click"}
+TRAFFIC_EVENTS = ("deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click")
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 WATCH_EVENTS = ("watch_create", "watch_match", "watch_deal_click")
@@ -138,7 +142,8 @@ def ga4(client: Any, token: str, property_id: str, days: int) -> dict:
     out: dict[str, Any] = {}
     for key in ("yesterday", "window"):
         out[key] = {"sessions": 0, "totalUsers": 0, "newUsers": 0,
-                    **{e: None if e in ("search_apply", "search_zero", "search_recovery") else 0 for e in EVENTS}}
+                    **{e: None if e in ("search_apply", "search_zero", "search_recovery", *TRAFFIC_EVENTS)
+                       else 0 for e in EVENTS}}
     for dims, (sessions, users, new) in _rows(totals):
         if dims.get("dateRange") in out:
             out[dims["dateRange"]].update(sessions=sessions, totalUsers=users, newUsers=new)

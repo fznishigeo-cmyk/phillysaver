@@ -33,7 +33,7 @@ from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
-from . import seo_audit
+from . import seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -560,7 +560,8 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
-               observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True) -> str:
+               observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True,
+               discovery: str = "", sharing: str = "", share_head: str = "") -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -640,7 +641,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if not dead and url:
         content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                     f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
-    content += f'<p>Browse {hub}.</p>'
+    content += sharing + discovery + f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
     if related:
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
@@ -664,7 +665,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
                          '<div class="deal-detail" data-deal-detail>' + content + '</div>', dead=dead,
                          indexable=indexable,
-                         extra_head=ld + (PRICE_HISTORY_STYLE if chart else ""),
+                         extra_head=ld + (PRICE_HISTORY_STYLE if chart else "") + share_head,
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
 
@@ -770,8 +771,11 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     for d in deal_rows:
         path = paths[d["key"][:8]]
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
+        sharing, share_head = traffic.share_html(d, path, site_url) if cfg.traffic_share_enabled else ("", "")
+        discovery = traffic.related_hubs(d, stores, prices) if cfg.traffic_related_hubs_enabled else ""
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
-                          observations, now, indexable=floors["deal"] <= 1)
+                          observations, now, indexable=floors["deal"] <= 1,
+                          discovery=discovery, sharing=sharing, share_head=share_head)
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")

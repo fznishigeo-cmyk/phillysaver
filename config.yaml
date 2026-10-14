@@ -216,6 +216,12 @@ seo:
   indexnow_retry_initial_minutes: 15
   indexnow_retry_max_minutes: 360  # bounded exponential retry, including Retry-After
 
+traffic:
+  feed_enabled: true
+  feed_max_items: 50          # Latest public live offers with emitted deal pages.
+  share_enabled: true        # Detail pages only; no change to wall cards.
+  related_hubs_enabled: true # Matching store and smallest qualifying price hub.
+
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
   abs_savings_weight: 0.1      # score += min(abs_savings, 100) * weight

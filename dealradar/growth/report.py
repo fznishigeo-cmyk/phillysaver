@@ -394,6 +394,10 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines.append("Support ask counts are actions, not payments or amounts.")
     lines.append("Search counts are applied queries, empty results and recovery choices; absent event samples are unavailable.")
     sessions = (product or {}).get("requirements_sessions") or {"unavailable": "no observed session data"}
+    lines.append("Free discovery: deal_share counts successful copies or native share handoffs, not delivery; "
+                 "feed_open counts footer link actions, not subscriptions. share_arrival/feed_arrival count "
+                 "tagged deal-page loads (including repeats), not unique people. related_hub_click counts "
+                 "contextual store/budget navigation. Missing events are unavailable; no traffic lift is inferred.")
     lines.append("Step-offer outbound session action rate (share of all sessions; not purchases):")
     if "unavailable" in sessions:
         lines.append("  unavailable — " + sessions["unavailable"])

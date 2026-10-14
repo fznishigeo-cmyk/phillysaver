@@ -190,6 +190,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Free traffic levers (Codex task 083, 2026-10-14; working tree only):**
+  ranked ten missing opportunities and built the first three: public-live
+  RSS with stable deal GUIDs, detail-page native/copy/manual sharing with
+  fixed UTMs and text previews, and contextual matching store/smallest-budget
+  navigation to emitted hubs with another live offer. `traffic:` enables
+  them; omitted switches preserve existing bytes. All five action/arrival
+  counts join the private Product report through the existing GA4 query;
+  absent samples stay unavailable. No new external publish requests, paid
+  services, LLM/Keepa calls, images, automated posts or email. Card markup
+  and deal payloads remain unchanged; scoped controls wrap with 44px targets.
+  Focused checks: **153 passed**, including **10 new pytest cases** and a
+  **7-case Node harness**. Only the shipped PWA-off tree pin changed; all
+  nine requested pins/measurement definitions are in the task brief.
+  Full `.venv/bin/python -m pytest -q`: **2,976 passed, 1 deselected**;
+  only seven existing Stripe yearly-deploy checks in `tests/test_workflows.py`
+  failed at socket creation (`Operation not permitted`: change0–change5 and
+  the no-price/no-key case). The brief forbids headless browsers, so actual
+  360/390px visual/tap QA remains unmeasured. Git metadata is read-only;
+  no branch creation, commit or push. Remaining: those seven checks outside
+  the sandbox, review, manual phone QA and observed traffic after deployment.
 - **Search precision (Codex task 079, 2026-10-14; working tree only):**
   digit-bearing identifiers/sizes match whole tokens; ordinary words of 5+
   letters allow one edit. Current public inventory drives excluding-filter

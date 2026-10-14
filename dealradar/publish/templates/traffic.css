@@ -1,0 +1,15 @@
+.traffic-share{margin:16px 0;max-width:100%}
+.traffic-share summary{min-height:44px;padding:10px 0;cursor:pointer;font-weight:600}
+.traffic-actions,.traffic-hubs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 16px}
+.traffic-actions button,.traffic-hubs a,.traffic-feed{display:inline-flex;align-items:center;
+  min-height:44px;max-width:100%;padding:10px 14px;border-radius:8px;font:inherit;
+  white-space:normal;overflow-wrap:anywhere;touch-action:manipulation}
+.traffic-actions button,.traffic-hubs a{border:1px solid var(--line);background:var(--chip);color:var(--fg)}
+.traffic-actions button{cursor:pointer}
+.traffic-share input{display:block;width:100%;max-width:100%;min-width:0;min-height:44px;
+  font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;
+  color:var(--fg);background:var(--card)}
+.traffic-share [hidden]{display:none!important}
+.traffic-share [data-share-status]{margin:8px 0;color:var(--muted)}
+.traffic-share :focus-visible,.traffic-hubs a:focus-visible,.traffic-feed:focus-visible{
+  outline:2px solid var(--accent);outline-offset:3px}

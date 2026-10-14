@@ -326,6 +326,15 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if any((getattr(cfg, "traffic_feed_enabled", False),
+            getattr(cfg, "traffic_share_enabled", False),
+            getattr(cfg, "traffic_related_hubs_enabled", False))):
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    deal_share: { ga4Only: true, methods: ["native", "copy"] },\n'
+                                    '    share_arrival: { ga4Only: true, methods: ["deal"] },\n'
+                                    '    feed_open: { ga4Only: true, methods: ["footer"] },\n'
+                                    '    feed_arrival: { ga4Only: true, methods: ["deal"] },\n'
+                                    '    related_hub_click: { ga4Only: true, methods: ["store", "price"] },')
     if getattr(cfg, "pwa_enabled", False):
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    install_offer_shown: { ga4Only: true },\n'

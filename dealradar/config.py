@@ -180,6 +180,10 @@ class AppConfig:
     seo_price_page_min_deals: int = 10
     seo_price_pages: list[int] = field(default_factory=lambda: [10, 25, 50])
     seo_lastmod_retention_days: int = 35  # absent URLs; current URLs are retained
+    traffic_feed_enabled: bool = False
+    traffic_feed_max_items: int = 50
+    traffic_share_enabled: bool = False
+    traffic_related_hubs_enabled: bool = False
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
     seo_indexnow_resubmit_days: float = 7.0  # unchanged received URLs (0 = never)
@@ -488,6 +492,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "seo", "price_pages", default=cfg.seo_price_pages) if int(n) > 0})
     cfg.seo_lastmod_retention_days = max(1, min(365, int(g(
         "seo", "lastmod_retention_days", default=cfg.seo_lastmod_retention_days))))
+    cfg.traffic_feed_enabled = bool(g("traffic", "feed_enabled", default=False))
+    cfg.traffic_feed_max_items = max(1, min(200, int(g("traffic", "feed_max_items", default=50))))
+    cfg.traffic_share_enabled = bool(g("traffic", "share_enabled", default=False))
+    cfg.traffic_related_hubs_enabled = bool(g("traffic", "related_hubs_enabled", default=False))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))

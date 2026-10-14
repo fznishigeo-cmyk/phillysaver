@@ -518,7 +518,7 @@ def test_ga4_request_and_parsing():
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
         "install_offer_shown", "install_accepted", "standalone_session",
         "filter_apply", "filter_empty", "back_restore", "search_apply", "search_zero", "search_recovery", "support_ask_shown", "support_ask_click", "support_ask_dismiss",
-        "requirements_open"]
+        "requirements_open", "deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 
@@ -530,7 +530,8 @@ def test_ga4_request_and_parsing():
                                 "filter_apply": 38, "filter_empty": 7, "back_restore": 21,
                                 "search_apply": 19, "search_zero": 5, "search_recovery": 3,
                                 "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
-                                "requirements_open": 19}
+                                "requirements_open": 19,
+                                **{event: None for event in google.TRAFFIC_EVENTS}}
     assert out["window"]["totalUsers"] == 4410777
     assert out["window"]["sign_up"] == 402 and out["window"]["start_trial"] == 77
     assert out["window"]["support_click"] == 45
@@ -901,6 +902,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                       "search_apply": 19, "search_zero": 5, "search_recovery": 3,
                       "support_ask_shown": 30, "support_ask_click": 4, "support_ask_dismiss": 17,
                       "requirements_open": 19,
+                      **{event: None for event in google.TRAFFIC_EVENTS},
                       "watch_create": 3, "watch_match": None, "watch_deal_click": None},
         "window": {"home_load_attempts": 2500, "first_load_failures": 100,
                    "static_fallback_shown": 94, "first_load_recoveries": 45,
@@ -910,6 +912,7 @@ def test_product_counts_share_the_fixed_ga4_query_and_stay_private(cfg, rsa_key,
                    "search_apply": 140, "search_zero": 40, "search_recovery": 20,
                    "support_ask_shown": 180, "support_ask_click": 20, "support_ask_dismiss": 88,
                    "requirements_open": 109,
+                   **{event: None for event in google.TRAFFIC_EVENTS},
                    "watch_create": 9, "watch_match": 5, "watch_deal_click": 2},
         "deal_sessions": {period: {"mobile": {"sessions": 100, "rate": .25},
                                    "desktop": {"sessions": 50, "rate": .4},
@@ -979,7 +982,7 @@ def test_absent_ga4_event_rows_are_successful_zero_counts(cfg, monkeypatch):
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=empty))) as client:
         data, status = report.collect(cfg, NOW, client)
     assert status["ga4"] == status["product"] == "ok"
-    assert all(data["product"][period][name] == (None if name.startswith("search_") else 0)
+    assert all(data["product"][period][name] == (None if name.startswith("search_") or name in google.TRAFFIC_EVENTS else 0)
                for period in ("yesterday", "window") for name in google.PRODUCT_EVENTS)
     assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.DEAL_PAGE_COUNTS)
     assert all(data["product"][period][name] is None for period in ("yesterday", "window") for name in google.WATCH_EVENTS)
