@@ -89,7 +89,9 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **AI budget (2026-10-13):** $6/day normal ($6-10 acceptable). Up to
   $15-20/day only for truly necessary work until ~2026-10-17 (e.g. the first
   partner-newsletter backlog), via `spend_cap_boost_*`, then back. More
-  later once affiliate income arrives.
+  later once affiliate income arrives. **2026-10-14:** $10/day boost through
+  Oct 21 UTC, then $6 automatically; operator wants the code cheap enough
+  that $6 covers a full day ("write CODE so we can stay within $6").
 - **Email on the operator's behalf (2026-10-13):** never send. Show the
   text in chat; after the operator approves, create a Gmail draft (on the
   original thread when replying); the operator presses Send.

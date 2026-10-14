@@ -14,12 +14,29 @@ from tests.test_e2e_offline import env, _run, _FakeMessages
 NOW = datetime(2026, 10, 14, tzinfo=timezone.utc)
 
 
+def historic_boost(cfg):
+    """These pacing tests predate the 2026-10-14 $10 boost: pin the old one."""
+    cfg.spend_cap_boost_usd_per_day, cfg.spend_cap_boost_until = 15.0, "2026-10-13"
+    return cfg
+
+
+@pytest.fixture(autouse=True)
+def _historic_boost_in_copied_config(request):
+    if "env" in request.fixturenames:
+        path = Path(request.getfixturevalue("env")["cfg"])
+        text = path.read_text()
+        old = 'spend_cap_boost_usd_per_day: 10.00\n  spend_cap_boost_until: "2026-10-22"'
+        assert old in text
+        path.write_text(text.replace(
+            old, 'spend_cap_boost_usd_per_day: 15.00\n  spend_cap_boost_until: "2026-10-13"'))
+
+
 @pytest.mark.parametrize("hour,minute,fraction", [
     (0, 0, 2 / 24), (6, 0, 8 / 24), (12, 0, 14 / 24), (23, 59, 1),
 ])
 @pytest.mark.parametrize("day,cap", [(12, 15), (14, 6)])
 def test_pacing_math_and_hard_caps(hour, minute, fraction, day, cap):
-    cfg = load_config()
+    cfg = historic_boost(load_config())
     now = NOW.replace(day=day, hour=hour, minute=minute)
     for spent in (0, .25, cap * fraction, cap, cap + 1):
         allowance, allowed = spend_allowance(cfg, now, spent)
@@ -31,7 +48,7 @@ def test_pacing_math_and_hard_caps(hour, minute, fraction, day, cap):
 
 
 def test_pacing_uses_utc_and_switch_off_restores_old_allowance():
-    cfg = load_config()
+    cfg = historic_boost(load_config())
     now = NOW.astimezone(timezone(timedelta(hours=-5)))
     assert spend_allowance(cfg, now, .4) == pytest.approx((.1, .5))
     cfg.spend_pacing = False

@@ -323,11 +323,16 @@ def test_daily_cap_boost_expires_on_its_own():
 
 
 def test_shipped_config_boost_is_bounded():
-    """The operator's $15 boost ended early on 2026-10-13: $6 a day from then."""
+    """Operator 2026-10-14: $10 a day for a week, then $6 again on its own."""
+    from dealradar.config import daily_spend_cap
+
     cfg = load_config()
     assert cfg.spend_cap_usd_per_day == 6.0
-    assert cfg.spend_cap_boost_usd_per_day == 15.0
-    assert cfg.spend_cap_boost_until == "2026-10-13"
+    assert cfg.spend_cap_boost_usd_per_day == 10.0
+    assert cfg.spend_cap_boost_until == "2026-10-22"
+    utc = timezone.utc
+    assert daily_spend_cap(cfg, datetime(2026, 10, 21, 23, 59, tzinfo=utc)) == 10.0
+    assert daily_spend_cap(cfg, datetime(2026, 10, 22, 0, 0, tzinfo=utc)) == 6.0
 
 
 def test_pipeline_parses_with_the_boosted_cap(tmp_path, monkeypatch):
