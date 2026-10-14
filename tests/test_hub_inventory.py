@@ -276,6 +276,8 @@ def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
     cfg.unconfirmed_label_enabled = False  # this pin predates the task 094 display option
     cfg.non_amazon_freshness_enabled = False  # and task 102's independent display guard
     cfg.raw["first_party_clicks"]["enabled"] = False  # and the click signal (on 2026-10-14)
+    cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
+                                   if k != "non_amazon_max_age_h"}  # predates the pick age
     cfg.traffic_product_families_enabled = cfg.traffic_hub_pagination_enabled = False
     monkeypatch.setattr(site, "util_now", lambda: FIXED)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())

@@ -316,6 +316,8 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     if mode == "shipped":
         cfg.non_amazon_freshness_enabled = False  # this pin predates task 102's independent age gate
         cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
+        cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
+                                       if k != "non_amazon_max_age_h"}  # predates the pick age
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"
