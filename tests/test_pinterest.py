@@ -30,6 +30,9 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("PINTEREST_APP_SECRET", APP_SECRET)
     monkeypatch.setattr(pinterest.time, "sleep", lambda seconds: None)
     config = load_config()
+    # Fixture deals live only in deals.json; the stock-evidence rule
+    # (sightings in the DB) is covered in tests/test_social_stock.py.
+    config.social_require_stock_evidence = False
     config.site_dir = str(tmp_path / "site")
     return config
 

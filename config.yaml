@@ -475,7 +475,18 @@ social:
   require_earning_link: true
   # Never post a used / open-box / refurbished item anywhere social (often
   # one unit: gone for everyone after the first click). Operator, 2026-10-13.
-  exclude_conditions: [used, open_box, refurbished]
+  # Operator, 2026-10-14 (second reminder: the KOBE range hood, one-left
+  # jerseys): social posts only for items with plenty of stock. One-offs stay
+  # on the website. Limited-quantity, clearance, in-store and price-error
+  # deals, and sized clothing/shoes (one size left), never go social.
+  exclude_conditions: [used, open_box, refurbished, limited_qty, clearance_aisle,
+                       pricing_error, in_store_only]
+  exclude_categories: [clothing]
+  # A social post needs stock evidence: Amazon itself selling it (Keepa's
+  # Amazon-price lane) or 2+ independent deal sites posting it. At or above
+  # extreme_pct off (where clearance one-offs live) only the 2+ sites count.
+  require_stock_evidence: true
+  extreme_pct: 80
   pinterest:
     enabled: true
     environment: sandbox          # sandbox (Trial access) | production

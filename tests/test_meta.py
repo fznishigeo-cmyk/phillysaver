@@ -25,6 +25,9 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("META_SYSTEM_TOKEN", SYSTEM)
     monkeypatch.setattr(meta.time, "sleep", lambda seconds: None)
     config = load_config()
+    # Fixture deals live only in deals.json; the stock-evidence rule
+    # (sightings in the DB) is covered in tests/test_social_stock.py.
+    config.social_require_stock_evidence = False
     config.site_dir = str(tmp_path / "site")
     # These tests exercise the poster itself, starting from draft mode
     # (production went live 2026-10-13; `live(cfg)` switches a test over).

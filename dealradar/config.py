@@ -289,6 +289,9 @@ class AppConfig:
     social_require_earning_link: bool = True
     social_exclude_conditions: list[str] = field(
         default_factory=lambda: ["used", "open_box", "refurbished"])
+    social_exclude_categories: list[str] = field(default_factory=list)
+    social_require_stock_evidence: bool = False
+    social_extreme_pct: float = 80.0
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -478,6 +481,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.social_require_earning_link = bool(g("social", "require_earning_link", default=True))
     cfg.social_exclude_conditions = [str(c) for c in (g("social", "exclude_conditions",
         default=cfg.social_exclude_conditions) or [])]
+    cfg.social_exclude_categories = [str(c) for c in (g("social", "exclude_categories",
+        default=cfg.social_exclude_categories) or [])]
+    cfg.social_require_stock_evidence = bool(g("social", "require_stock_evidence",
+                                               default=cfg.social_require_stock_evidence))
+    cfg.social_extreme_pct = float(g("social", "extreme_pct", default=cfg.social_extreme_pct))
     cfg.custom_domain = str(g("publish", "custom_domain", default="") or "").strip().lower()
     cfg.ftc_disclosure = g("publish", "ftc_disclosure", default="")
     tag = str(g("affiliate", "amazon_tag", default="") or "").strip()

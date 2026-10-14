@@ -55,6 +55,9 @@ def db(tmp_path):
 @pytest.fixture()
 def cfg(tmp_path):
     config = load_config()
+    # Fixture deals live only in deals.json; the stock-evidence rule
+    # (sightings in the DB) is covered in tests/test_social_stock.py.
+    config.social_require_stock_evidence = False
     config.site_dir = str(tmp_path / "site")
     # Fixture deals carry fixed first-seen dates; the page-age gate has its own test.
     config.telegram_channel["min_age_minutes"] = 0

@@ -77,6 +77,44 @@ def social_title(item: str, brand: str) -> str:
             or original[:70] or "Deal")
 
 
+#: Wording of scarce stock: one person buys it and it is gone for everyone.
+_SCARCE = re.compile(
+    r"\b(?:only\s+\d+\s+left|\d+\s+left\s+in\s+stock|(?:last|one)\s+left|last\s+one|"
+    r"limited\s+(?:stock|quantit(?:y|ies)|supply|sizes?)|while\s+supplies\s+last|"
+    r"select\s+(?:sizes?|colou?rs?|styles?)|clearance|closeout|liquidation|final\s+sale)\b",
+    re.IGNORECASE)
+#: Sized apparel and shoes: a deep price is usually one size or style left.
+_SIZED = re.compile(
+    r"\b(?:jerseys?|t-?shirts?|tees?|shirts?|polos?|hoodies?|sweatshirts?|sweaters?|"
+    r"jackets?|coats?|vests?|dress(?:es)?|skirts?|pants|jeans|leggings|shorts|socks|bras?|"
+    r"underwear|swimsuits?|shoes|sneakers|boots|sandals|heels|wedges?|pumps|flats|loafers|"
+    r"clogs|slippers)\b", re.IGNORECASE)
+#: Our own Amazon-price lanes: Amazon itself sells the item at that price.
+_AMAZON_SOLD = {"keepa", "keepa_amazon_drops"}
+
+
+def plenty_of_stock(db, deal: dict, cfg) -> bool:
+    """Social posts reach many people at once; a one-off (one unit, one size,
+    clearance) is gone after the first click (operator, 2026-10-13/14)."""
+    if (deal.get("category") or "") in set(cfg.social_exclude_categories):
+        return False
+    words = " ".join([str(deal.get("item") or ""), *map(str, deal.get("how") or []),
+                      *map(str, deal.get("stack_steps") or [])])
+    if _SCARCE.search(words) or _SIZED.search(str(deal.get("item") or "")):
+        return False
+    if not cfg.social_require_stock_evidence:
+        return True
+    row = db.get_deal(deal["dedupe_key"]) if db is not None else None
+    if row is None:
+        return False
+    sources = {str(s.get("source_name") or "") for s in row.get("sightings") or []}
+    sources = {s for s in sources | {str(row.get("source_name") or "")} if s}
+    independent = len(sources - _AMAZON_SOLD)
+    if float(deal.get("pct_at_checkout") or 0) >= cfg.social_extreme_pct:
+        return independent >= 2
+    return bool(sources & _AMAZON_SOLD) or independent >= 2
+
+
 def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
     out = Path(cfg.site_dir)
     deals = json.loads((out / "deals.json").read_text())["deals"]
@@ -89,7 +127,8 @@ def _candidates(db, cfg, posted: dict) -> list[tuple[dict, str]]:
                 or not deal.get("dedupe_key") or deal["dedupe_key"] in posted
                 or (cfg.social_require_earning_link and not deal.get("earns"))
                 or set(normalize_conditions(deal.get("conditions")))
-                & set(normalize_conditions(cfg.social_exclude_conditions))):
+                & set(normalize_conditions(cfg.social_exclude_conditions))
+                or not plenty_of_stock(db, deal, cfg)):
             continue
         image = urlsplit(deal.get("image_url") or "")
         if sources_for_url(deal.get("image_url") or "") or any(
