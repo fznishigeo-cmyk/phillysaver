@@ -31,6 +31,7 @@ def cfg():
     result.feature_flags["keepa"] = True
     result.critic_shadow_model = ""
     result.keepa_sweep_enabled = False
+    result.keepa_recheck_adaptive["enabled"] = False  # these fixtures exercise fixed 085 cadence
     return result
 
 
@@ -171,11 +172,13 @@ def test_ineligible_records_retain_the_existing_kill_rule(db, cfg, monkeypatch, 
 
 def test_no_offer_needs_two_agreeing_readings(db, cfg, monkeypatch):
     deal = seed(db, cfg)
-    api(monkeypatch, {ASIN: product(-1)})
+    record = product(-1)
+    api(monkeypatch, {ASIN: record})
     assert pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)["dead"] == 0
     row = db.get_deal(deal["dedupe_key"])
     assert row["status"] == "alive" and row["gone_suspect_at"]
     assert verify.price_confirmed_at(row) is None
+    record["lastUpdate"] += 60  # a second observation, not the same cached answer
     assert pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1), image_backfill=False)["dead"] == 1
     assert db.get_deal(deal["dedupe_key"])["death"] == "confirmed"
 

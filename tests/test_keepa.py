@@ -659,7 +659,10 @@ class TestKeepaPaging:
                 return self.tokens >= need
 
             def note(self, payload, now=None):
-                self.tokens -= 5  # what each page costs
+                pass  # this fixture deliberately supplies no token reading
+
+            def reserve(self, cost, now=None):
+                self.tokens -= cost
 
             def save(self, db):
                 self.saved = True
@@ -674,7 +677,7 @@ class TestKeepaPaging:
 
         def handler(request):
             resp = fake(request)
-            started.append((fake.calls[-1], budget.tokens))
+            started.append((fake.calls[-1], budget.tokens + 5))  # pre-debit balance
             return resp
 
         db = DB(tmp_path / "state.db")

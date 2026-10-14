@@ -505,6 +505,7 @@ class _Pull:
     categories_tried: set[str] | None = None
     focus_tried: set[int] = field(default_factory=set)
     confirmations: _FeedConfirmations | None = None
+    overflow_only: bool = False
 
 
 @dataclass
@@ -547,6 +548,8 @@ class KeepaDealsAdapter(SourceAdapter):
         self.feed_confirmed: dict[str, set[str]] = {"new": set(), "used": set()}
         from ..keepa_budget import TokenUsage
         self.token_usage = TokenUsage()
+        self.recheck: Callable | None = None  # pipeline: due work before overflow discovery
+        self.rate_limited = False
 
     def fetch_posts(
         self,
@@ -560,6 +563,7 @@ class KeepaDealsAdapter(SourceAdapter):
         self.feed_confirmed = {"new": set(), "used": set()}
         from ..keepa_budget import TokenUsage
         self.token_usage = TokenUsage()
+        self.rate_limited = False
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
@@ -647,11 +651,11 @@ class KeepaDealsAdapter(SourceAdapter):
                 # Pass 2: warehouse, a third of the pages FRESH and the rest
                 # (plus any FRESH left unused) DEEP. Only the Amazon and
                 # FRESH first pages may run under the reserve.
-                fresh_used, _ = self._run_pass(
+                fresh_used, fresh_next = self._run_pass(
                     pull, fresh_sel, 0, max(1, wh_pages // 3),
                     source.name + "/warehouse-fresh", wh_seen,
                     map_warehouse, fresh, wh_lane)
-                self._run_pass(
+                _, deep_next = self._run_pass(
                     pull, deep_sel, _cursor(db, DEEP_PAGE_META),
                     max(1, wh_pages - fresh_used),
                     source.name + "/warehouse-deep", wh_seen,
@@ -659,7 +663,7 @@ class KeepaDealsAdapter(SourceAdapter):
                     first_is_extra=True, cursor_key=DEEP_PAGE_META)
                 # Pass 1, further pages (all of them reserve-gated).
                 if amazon_next is not None:
-                    self._run_pass(
+                    _, amazon_next = self._run_pass(
                         pull, amazon_sel, amazon_next,
                         cfg.keepa_amazon_pages_per_pull - 1, source.name,
                         amazon_seen, map_amazon, amazon, amazon_lane,
@@ -672,6 +676,22 @@ class KeepaDealsAdapter(SourceAdapter):
                 pass  # logged where it happened; keep what was mapped
             finally:
                 budget.save(db)
+            if complete and self.recheck is not None:
+                # Resume the exact windows/ASIN sets and NEW-post allowances;
+                # no rereading page zero or bypassing the normal intake caps.
+                passes = [
+                    (amazon_sel, amazon_next, amazon_seen, map_amazon, amazon, amazon_lane, None),
+                    (deep_sel, deep_next, wh_seen, map_warehouse, deep, wh_lane, DEEP_PAGE_META),
+                    (fresh_sel, fresh_next, wh_seen, map_warehouse, fresh, wh_lane, None),
+                ]
+
+                def discover(shared_budget):
+                    pull.budget = shared_budget
+                    return self._run_overflow(pull, cfg, passes)
+
+                self.recheck(discover, pull.deadline)
+            elif self.rate_limited and self.recheck is not None:
+                self.recheck(None, pull.deadline)  # no product calls after a feed's first 429
 
         # The rotating windows lead: if a run's parse stops early, the posts
         # left over should be ones re-read next pull (FRESH and Amazon pages
@@ -698,6 +718,52 @@ class KeepaDealsAdapter(SourceAdapter):
                 sample.get("current"), sample.get("avg"))
         return posts
 
+    def _run_overflow(self, pull: _Pull, cfg: AppConfig, passes: list) -> dict:
+        """Bounded /deal continuations, after due work and before idle checks.
+
+        One page per lane in rotation. Short lists, full post allowances,
+        deadlines and reserves can leave tokens for the recheck fallback.
+        """
+        start_pages, start_tokens = pull.pages, self.token_usage.accounted
+        start_estimated = self.token_usage.estimated
+        lanes = {id(p[5]): p[5] for p in passes}
+        start_new = sum(lane.new for lane in lanes.values())
+        limited = False
+        # Due checks may have repriced or killed a row since the first page.
+        # Free confirmations must match that current row, never its old copy.
+        pull.confirmations = _FeedConfirmations(pull.db, pull.now)
+        pull.confirmations.confirmed = self.feed_confirmed
+        pull.overflow_only = True
+        try:
+            while passes and pull.pages - start_pages < cfg.keepa_overflow_extra_pages_max:
+                overflow = pull.budget.overflow(cfg.keepa_recheck_interval_minutes, pull.now)
+                if overflow is None or overflow < DEAL_PAGE_COST:
+                    break
+                if not pull.budget.allows(max(MIN_FOR_DEAL_QUERY, pull.reserve) + DEAL_PAGE_COST,
+                                          pull.now):
+                    break
+                selection, page, seen, mapper, out, lane, cursor = passes.pop(0)
+                if page is None or lane.full:
+                    continue
+                if not self._may_fetch(pull, "overflow", extra=True):
+                    break
+                fetched, nxt = self._run_pass(
+                    pull, selection, page, 1, "overflow", seen, mapper, out, lane,
+                    first_is_extra=True, cursor_key=cursor)
+                if fetched and nxt is not None:
+                    passes.append((selection, nxt, seen, mapper, out, lane, cursor))
+        except _TokensShort:
+            limited = True  # a first 429 stops discovery AND the remaining rechecks
+        except (DeadlineExceeded, RuntimeError, httpx.HTTPError):
+            log.warning("keepa overflow discovery unavailable; keeping earlier posts")
+        finally:
+            pull.overflow_only = False
+        return {"pages": pull.pages - start_pages,
+                "tokens": self.token_usage.accounted - start_tokens,
+                "estimated_tokens": self.token_usage.estimated - start_estimated,
+                "new_candidates": sum(lane.new for lane in lanes.values()) - start_new,
+                "rate_limited": limited}
+
     def _lookup_categories(self, pull: _Pull, ids: list[str], *,
                            all_roots: bool = False) -> None:
         """Keepa /category costs 1 token for up to 10 IDs, or all roots (0).
@@ -706,7 +772,7 @@ class KeepaDealsAdapter(SourceAdapter):
         """
         names = pull.category_names
         tried = pull.categories_tried
-        if names is None or tried is None:
+        if names is None or tried is None or pull.overflow_only:
             return
         roots_loaded = pull.db is not None and pull.db.meta_get("keepa_root_categories_loaded")
         missing = sorted({str(i) for i in ids if str(i) not in names and str(i) not in tried})
@@ -726,7 +792,9 @@ class KeepaDealsAdapter(SourceAdapter):
                 body = self._get(pull, CATEGORY_URL, {
                     "key": pull.key, "domain": DOMAIN_US,
                     "category": ",".join(batch), "parents": 0}, "categories")
-            except (_TokensShort, RuntimeError, httpx.HTTPError):
+            except _TokensShort:
+                raise
+            except (RuntimeError, httpx.HTTPError):
                 log.warning("keepa category lookup unavailable; using titles this pull")
                 return
             categories = body.get("categories") if isinstance(body, dict) else None
@@ -864,7 +932,7 @@ class KeepaDealsAdapter(SourceAdapter):
         return True
 
     def _get(self, pull: _Pull, url: str, params: dict[str, Any],
-             label: str) -> Any:
+             label: str, *, estimate: float = 0) -> Any:
         """One Keepa GET, a polite second after the pull's previous one,
         its token fields fed to the budget (a 429 body carries them too).
         Raises :class:`_TokensShort` on a 429 (an empty bucket refills by
@@ -874,7 +942,10 @@ class KeepaDealsAdapter(SourceAdapter):
         pull.requests += 1
         # Keyed API (robots.txt is for crawlers); a 429 is an empty token
         # bucket, deferred to the next pull, so it is not retried here.
-        payload = None
+        # A lost answer may still have spent tokens. A bucket reading
+        # replaces this debit; a spend receipt replaces the cost estimate.
+        pull.budget.reserve(estimate, pull.now)
+        payload, resp = None, None
         try:
             resp = pull.client.api_get(url, params=params, deadline=pull.deadline,
                                        max_attempts=1, respect_robots=False)
@@ -883,9 +954,11 @@ class KeepaDealsAdapter(SourceAdapter):
             # Only deal discovery: /deal, sweep finder and sweep products.
             # Category lookups and downstream rechecks have separate purposes.
             if url != CATEGORY_URL:
-                self.token_usage.note(payload)
+                self.token_usage.note(payload, estimate=estimate,
+                                      rate_limited=resp is not None and resp.status_code == 429)
         pull.budget.note(payload, pull.now)
         if resp.status_code == 429:
+            self.rate_limited = True
             log.warning("keepa %s: 429 Too Many Requests (%s); token bucket "
                         "empty, retrying next tick", label,
                         describe_429(payload))
@@ -910,7 +983,7 @@ class KeepaDealsAdapter(SourceAdapter):
         pull.pages += 1
         payload = self._get(pull, DEALS_URL, {
             "key": pull.key, "selection": json.dumps(selection),
-        }, label)
+        }, label, estimate=DEAL_PAGE_COST)
         deals_obj = payload.get("deals") if isinstance(payload, dict) else None
         rows = (deals_obj or {}).get("dr") if isinstance(deals_obj, dict) else None
         rows = list(rows or [])
@@ -989,7 +1062,7 @@ class KeepaDealsAdapter(SourceAdapter):
         try:
             found = self._get(pull, QUERY_URL, {
                 "key": pull.key, "domain": DOMAIN_US,
-                "selection": json.dumps(selection)}, label)
+                "selection": json.dumps(selection)}, label, estimate=_finder_cost(per_page))
         except _TokensShort:
             return  # the same page next pull
         except (RuntimeError, httpx.HTTPError) as e:
@@ -1021,7 +1094,7 @@ class KeepaDealsAdapter(SourceAdapter):
                 body = self._get(pull, PRODUCT_URL, {
                     "key": pull.key, "domain": DOMAIN_US,
                     "asin": ",".join(asins), "stats": 1, "history": 0},
-                    label + " products")
+                    label + " products", estimate=len(asins))
             except _TokensShort:
                 return
             except (RuntimeError, httpx.HTTPError) as e:

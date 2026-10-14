@@ -453,6 +453,18 @@ def _keepa_since_price(minutes: Any, deal: dict[str, Any]) -> bool | None:
     return at >= max(since)
 
 
+def keepa_observed_at(product: dict[str, Any] | None, now: datetime, *, used=False) -> datetime:
+    """Use the observation behind the verdict, never a future confirmation."""
+    product = product or {}
+    stats = product.get("stats")
+    stats = stats if isinstance(stats, dict) else {}
+    at = None
+    if used and isinstance(product.get("offers"), list) and isinstance(product.get("liveOffersOrder"), list):
+        at = keepa_time(stats.get("lastOffersUpdate"))
+    at = at or keepa_time(product.get("lastUpdate"))
+    return min(at, now) if at is not None else now
+
+
 def _price_hidden_by_promo(deal: dict[str, Any]) -> bool:
     """True when the deal's final price only materialises at checkout, so
     a live LISTED price cannot be expected to match it."""
@@ -511,16 +523,18 @@ def keepa_products(key: str, asins: list[str], stats: int,
     fetcher = fetcher if fetcher is not None else _standalone_keepa_fetcher()
     # Keyed API (robots.txt is for crawlers); a 429 is an empty token bucket,
     # answered next pass, so it is not retried here.
+    reserved = len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live))
     if budget is not None:
-        budget.reserve(len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live)))
-    payload = None
+        budget.reserve(reserved)
+    payload, resp = None, None
     try:
         resp = fetcher.api_get("https://api.keepa.com/product", params=params,
                                max_attempts=1, respect_robots=False)
         payload = response_payload(resp)
     finally:
         if budget is not None:
-            budget.usage.note(payload)
+            budget.usage.note(payload, estimate=reserved,
+                              rate_limited=resp is not None and resp.status_code == 429)
     if budget is not None:
         budget.note(payload)
     if resp.status_code == 429:
@@ -724,6 +738,7 @@ class PriceRechecks(dict):
     def __init__(self):
         super().__init__()
         self.products: dict[str, dict[str, Any]] = {}
+        self.costs: dict[str, tuple[float, float]] = {}
         self.rate_limited = False
 
 
@@ -768,6 +783,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                 per_call, int((avail - MIN_FOR_DEAL_QUERY) / cost))
             chunk = wanted[start:start + size]
             start += len(chunk)
+            before = budget.usage.accounted, budget.usage.estimated
             try:
                 options = {"live": True} if live else {}
                 products = keepa_products(key, [a for a, _ in chunk], 1,
@@ -776,6 +792,11 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                 log.warning("price recheck batch of %d failed: %s",
                             len(chunk), error_summary(e))
                 continue
+            finally:
+                for _, deal in chunk:
+                    out.costs[deal["dedupe_key"]] = (
+                        (budget.usage.accounted - before[0]) / len(chunk),
+                        (budget.usage.estimated - before[1]) / len(chunk))
             if products is None:
                 out.rate_limited = True
                 return out  # even a malformed 429 ends every batch in this pass

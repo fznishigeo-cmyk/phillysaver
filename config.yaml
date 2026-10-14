@@ -289,8 +289,31 @@ keepa:
   recheck_wall_h: 1.5              # task 085: retry slack before the 2 h wall target
   # Task 085: spend predicted overflow before the next fast run on the
   # oldest visible confirmations, top first. Never re-pay a just-read price.
-  recheck_interval_minutes: 10
+  recheck_interval_minutes: 10     # task 087: also the minimum gap between paid attempts
   recheck_idle_min_age_h: 0.5
+  # Task 087b: after due checks, spend predicted overflow on discovery first,
+  # then value-ranked early checks. Extra pages share the existing post caps.
+  overflow_extra_pages_max: 8     # combined Amazon + Warehouse /deal pages per run
+  recheck_wall_max_age_h: 4       # hard new-condition wall deadline, even when stable
+  # Task 087 (docs/codex-tasks/087-value-per-token-rechecks.md): learn from
+  # the last few distinct readings; preserve the 085 classes and reserves.
+  recheck_adaptive:
+    enabled: true                 # false restores the fixed 085 scheduler
+    history_samples: 12           # compact facts only, per deal; daily totals retained separately
+    prior_probability: 0.15       # chance of a useful change per ordinary cadence
+    prior_readings: 4             # avoid overreacting to one reading
+    exploration_share: 0.10       # oldest visible rows in each affordable batch (rounded up)
+    visibility_boost: 1           # 1..2 weight from saved pick/wall position; no click API
+    stable_multiplier: 2          # stable rows wait up to twice the ordinary cadence
+    volatile_multiplier: 0.67     # volatile rows can run sooner
+    min_new_h: 0.5
+    min_used_h: 3                 # expensive offers scans stay bounded
+    # Due one run BEFORE these ages. Existing pick/hide gates still apply.
+    max_top_h: 1
+    max_wall_h: 2
+    max_rest_h: 12
+    max_used_h: 4                 # task 087b: discovery must not age the visible used wall either
+    used_deadline_margin_h: 0.5   # leave three runs to drain an expensive used queue
   # Operator request, 2026-10-13: feature only recently confirmed Amazon
   # prices; hide stale prices until confirmed, without killing their rows.
   pick_max_unconfirmed_h: 3

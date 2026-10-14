@@ -36,48 +36,6 @@ def with_ratios(values):
             "llm_usd_per_published_deal": ratio(values.get("llm_usd"), values.get("published_deals"))}
 
 
-def price_changed(deal, product, cfg, now):
-    """Reading of the same condition/price, before any repricing mutates it."""
-    from .verify import (_keepa_since_price, _live_new_price, _offer_total,
-                         _price_hidden_by_promo, _USED_OFFER_CONDITIONS,
-                         is_used_deal, keepa_time)
-
-    if not product or _price_hidden_by_promo(deal):
-        return False
-    old = number(deal.get("final_price"))
-    if old is None or old <= 0:
-        return False
-    if is_used_deal(deal):
-        stats = product.get("stats")
-        stamp = stats.get("lastOffersUpdate") if isinstance(stats, dict) else None
-        if product.get("offersSuccessful") is False:
-            return False
-        offers, order = product.get("offers"), product.get("liveOffersOrder")
-        if not isinstance(offers, list) or not isinstance(order, list):
-            return False
-        prices = [_offer_total(offers[i]) for i in order
-                  if type(i) is int and 0 <= i < len(offers) and isinstance(offers[i], dict)
-                  and offers[i].get("condition") in _USED_OFFER_CONDITIONS]
-        # An unreadable offer might still match the shown price.
-        if None in prices:
-            return False
-        live = min(prices, default=None)
-    else:
-        stamp, live = product.get("lastUpdate"), _live_new_price(product)
-    live = number(live)
-    at = keepa_time(stamp)
-    return (live is not None and at is not None and at <= now
-            and _keepa_since_price(stamp, deal) is True
-            and abs(live - old) * 100 / old + 1e-9 >= cfg.keepa_reprice_min_pct
-            and live != old)
-
-
-def recheck_yield(tokens, useful):
-    return {"tokens": tokens, "useful": useful,
-            "tokens_per_useful_recheck": ratio(tokens, useful),
-            "useful_rechecks_per_token": ratio(useful, tokens)}
-
-
 def freshness(coverage):
     result = {}
     for condition in ("new", "used"):
@@ -111,15 +69,16 @@ def run_metrics(summary, feed_usage, keepa_sources):
     counts = (summary.get("intake") or {}).get("unique_public_by_source")
     measured = "unavailable" not in public and number(public.get("unique_new_public_deals")) is not None
     recheck = summary.get("price_recheck") or {}
-    # Task 087's yield takes precedence; legacy bucket/request estimates are
-    # deliberately not substituted for actual receipts.
-    useful = recheck.get("yield") or {}
+    # Task 087's per-deal history owns useful readings. Its cost includes
+    # explicitly estimated debits, which are not actual spend receipts.
+    useful = (recheck.get("yield") or {}).get("overall") or {}
     latest = freshness((recheck.get("confirmed_age") or {}).get("wall"))
     values = {
         "feed_tokens": feed_usage.total,
         "feed_new_deals": sum(counts.get(s, 0) for s in keepa_sources)
         if measured and isinstance(counts, dict) else None,
-        "recheck_tokens": number(useful.get("tokens")),
+        "recheck_tokens": number(useful.get("tokens"))
+        if useful.get("estimated_tokens") == 0 else None,
         "useful_rechecks": number(useful.get("useful")),
         "llm_usd": number(public.get("spend_usd")),
         "published_deals": number(public.get("unique_new_public_deals")) if measured else None,

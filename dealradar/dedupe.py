@@ -330,6 +330,15 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         price_at = util.parse_iso(existing.get("price_published_at")
                                   or existing.get("last_seen_at") or "")
         current = fresh and (price_at is None or post_at >= price_at)
+        # 087b can correct a price before this pull's posts are parsed. An
+        # equal fetch/publication clock must not undo that paid correction;
+        # only a feed's genuinely newer observation can win the tie.
+        checked = util.parse_iso(existing.get("price_rechecked_at") or "")
+        if current and post_at == price_at and checked is not None \
+                and existing.get("price_since") == util.iso(checked):
+            incoming = util.parse_iso((post.structured or {}).get("keepa_price_seen_at") or "")
+            if incoming is None or incoming <= checked:
+                current = False
         price_improved = current and new_final is not None and (
             old_final is None or new_final < old_final)
         price_changed = current and (
@@ -517,7 +526,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
 
 
 def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
-                     cfg, now: datetime) -> bool:
+                     cfg, now: datetime, *, observed_at: datetime | None = None) -> bool:
     """Verify/compute a live correction and update this exact row, without intake.
 
     This is a price reading, not a new sourced deal: keep the product's
@@ -575,13 +584,14 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     payload["flags"] = _union(savings.flags, [f for f in current.get("flags") or [] if f not in obsolete])
     for name in ("stack_steps", "codes", "rebates", "deferred_value", "shipping_cost_or_threshold"):
         payload[name] = getattr(extracted, name)
-    payload.update(price_since=util.iso(now), price_published_at=util.iso(now),
-                   price_rechecked_at=util.iso(now), recheck_tried_at="",
+    observed_at = min(observed_at, now) if observed_at is not None else now
+    payload.update(price_since=util.iso(observed_at), price_published_at=util.iso(now),
+                   price_rechecked_at=util.iso(observed_at), recheck_tried_at="",
                    gone_suspect_at="", death="", died_at="", verify_tier="unverified")
     db.update_deal(deal["dedupe_key"], payload=payload, final_price=savings.final_price,
                    pct_at_checkout=savings.pct_at_checkout, abs_savings=savings.abs_savings,
                    replace_prices=True, verify_tier="unverified")
     db.record_price(deal["dedupe_key"], current["store"], savings.final_price,
-                    now, post.content_hash)
+                    observed_at, post.content_hash)
     deal.update(db.get_deal(deal["dedupe_key"]))
     return True

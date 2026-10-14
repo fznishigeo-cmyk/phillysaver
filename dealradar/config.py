@@ -329,6 +329,9 @@ class AppConfig:
     keepa_recheck_wall_h: float = 2.0
     keepa_recheck_interval_minutes: float = 10.0
     keepa_recheck_idle_min_age_h: float = 0.5
+    keepa_overflow_extra_pages_max: int = 8
+    keepa_recheck_wall_max_age_h: float = 4.0
+    keepa_recheck_adaptive: dict[str, Any] = field(default_factory=dict)
     keepa_pick_max_unconfirmed_h: float = 3.0
     keepa_show_max_unconfirmed_h: float = 48.0
     keepa_show_max_unconfirmed_used_h: float = 72.0
@@ -688,14 +691,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                  "show_max_unconfirmed_h", "show_max_unconfirmed_used_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.0, float(g("keepa", name, default=getattr(cfg, attr)))))
-    for name in ("recheck_interval_minutes", "recheck_idle_min_age_h"):
+    for name in ("recheck_interval_minutes", "recheck_idle_min_age_h", "recheck_wall_max_age_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
-    for name in ("recheck_top_n", "recheck_wall_n"):
+    for name in ("recheck_top_n", "recheck_wall_n", "overflow_extra_pages_max"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0, int(g("keepa", name, default=getattr(cfg, attr)))))
     cfg.keepa_recheck_top_live = bool(g(
         "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
+    cfg.keepa_recheck_adaptive = g("keepa", "recheck_adaptive", default={}) or {}
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))
     cfg.keepa_sweep_asins_per_pull = max(1, int(g(

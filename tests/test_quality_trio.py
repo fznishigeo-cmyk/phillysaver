@@ -904,11 +904,12 @@ class TestPriceRecheck:
         assert {k: stats[k] for k in expected} == expected
         # The response's reading is persisted for the adapter / next run.
         assert json.loads(db.meta_get(META_KEY))["tokens_left"] == 20
-        # 5 tokens: nothing spends (both deals are now in-window photo calls).
+        # 5 tokens: nothing spends. The just-checked deal also skips an
+        # identical-time retry; only the other photo is held by the budget.
         reading(5)
         calls.clear()
         stats = pipeline._recheck_prices(db, cfg, NOW)
-        assert calls == [] and stats["tokens_short"] == 2
+        assert calls == [] and stats["tokens_short"] == 1
         # Half an hour of refill at 5/min: the bucket is back, both run.
         stats = pipeline._recheck_prices(db, cfg, NOW + timedelta(minutes=30))
         assert sorted(calls) == ["url|due", "url|photo"]
@@ -1330,6 +1331,7 @@ class TestCarefulDeath:
                      image="")
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        cfg.keepa_recheck_adaptive["enabled"] = False  # exercise the fixed 085 cadence
         # The 3 h / 6 h cadence this test was written for (config.yaml
         # keepa.recheck_* now says 4/8/6 h; the mechanism is the same).
         cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0
@@ -1359,6 +1361,7 @@ class TestCarefulDeath:
                      last=(NOW - timedelta(hours=1)).isoformat())
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        cfg.keepa_recheck_adaptive["enabled"] = False  # exercise the fixed 085 cadence
         # The 3 h / 6 h cadence this test was written for (config.yaml
         # keepa.recheck_* now says 4/8/6 h; the mechanism is the same).
         cfg.keepa_recheck_fresh_h = cfg.keepa_recheck_new_h = 3.0

@@ -92,6 +92,16 @@ def _intake(db_path, cfg, now: datetime) -> dict:
         db.close()
 
 
+def _price_recheck(db_path, now: datetime) -> dict:
+    from ..keepa_rechecks import report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, now)
+    finally:
+        db.close()
+
+
 def _newsletter_senders(db_path) -> dict:
     db = DB(db_path, read_only=True)
     try:
@@ -145,6 +155,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                      lambda: _indexnow(db_path, cfg, now)),
         "intake": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                    lambda: _intake(db_path, cfg, now)),
+        "price_recheck": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                          lambda: _price_recheck(db_path, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -382,6 +394,25 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     else:
         reason = yield_data["unavailable"] if yield_data else "state snapshot unavailable"
         lines.append(f"AI yield: n/a ({reason})")
+
+    rechecks = data.get("price_recheck")
+    lines.append("Keepa recheck yield (UTC, yesterday / last 7 days):")
+    if not rechecks or "unavailable" in rechecks:
+        lines.append("  unavailable (no recheck observations yet)")
+    else:
+        lines.append(f"  Observation began {rechecks['observed_since']}; earlier history unavailable")
+        for period in ("yesterday", "week"):
+            values = rechecks[period]
+            if "unavailable" in values:
+                lines.append(f"  {period}: unavailable ({values['unavailable']})")
+                continue
+            for name, counts in [("overall", values["overall"]), *sorted(values["classes"].items())]:
+                ratio = counts["tokens_per_useful_reading"]
+                ratio = f"{ratio:.2f}" if ratio is not None else "n/a"
+                lines.append(f"  {period} {name}: {counts['tokens']:.1f} tokens "
+                             f"({counts['estimated_tokens']:.1f} estimated), {counts['readings']} readings, "
+                             f"{counts['useful']} useful ({counts['changed']} changes, {counts['deaths']} deaths), "
+                             f"{ratio} tokens/useful reading")
 
     intake = data.get("intake")
     lines.append(f"Intake ({cfg.intake_mode}):")

@@ -190,6 +190,27 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Keepa/metrics/product merge (Codex task 087c, 2026-10-14; working tree only):**
+  all five conflict files resolved, preserving the 087/087b and 088/089
+  sections below. One `TokenUsage` tracks actual receipts and separate
+  conservative estimated debits; product-batch allocations and overflow
+  summaries read it, with no parallel receipt counters. Missing receipts
+  leave actual efficiency ratios unavailable; 429s cost zero. The 087
+  per-deal history owns `price_recheck.yield` for efficiency and private
+  reports; photo-only calls are excluded, absent report periods stay
+  unavailable, and stale/failed/unreadable used-offer prices cannot inflate
+  useful counts. Due checks → bounded discovery → idle checks, honest
+  observation times, reserves, first-429 stop and product attachment/backfill
+  remain. Social stock rules are unchanged. Final focused validation:
+  **167 passed**. Full `.venv/bin/python -m pytest -q`: **3,361 passed,
+  7 failed, 1 deselected**; only the known Stripe socket checks failed with
+  `Operation not permitted` (yearly-price change0–5 and no-price/no-key).
+  Five merge-regression cases added after the full run started pass in the
+  final focused run. Details: **087c HANDOFF** in
+  `docs/codex-tasks/087c-merge-with-088-089.md`. The seven socket checks outside
+  this sandbox, review/deployment and live yield observations remain.
+  No commit or push. Git's index is outside this writable worktree, so its
+  unmerged entries still need staging in the owning session after review.
 - **Efficiency metrics (Codex task 088, 2026-10-14; uncommitted):** private
   UTC daily and per-run token/public-deal, useful-recheck, LLM/public-deal,
   avoided-critic and new/used shown-wall freshness metrics. Actual Keepa
@@ -226,6 +247,68 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   dependencies, commit or push. Read-only Git metadata blocks branch creation.
   Remaining: existing social-fixture repairs (stock rules stay), the seven
   socket checks outside this sandbox, and review. Comparison remains off.
+- **Use Keepa overflow (Codex task 087b, 2026-10-14; working tree only):**
+  due adaptive checks now precede up to eight extra Amazon/Warehouse /deal
+  pages; remaining overflow buys value-ranked early checks. Existing post
+  caps, page cursors, polite client, source deadline, token reserves, used
+  share and first-429 stop remain. Extra posts enter the ordinary capped
+  parser in the same run; the paid pass runs inside the Keepa pull and its
+  summary is reused at the tail. New parsed rows wait for the next paid pass.
+  Lost page responses retain a conservative debit; free feed confirmations
+  cannot undo a just-corrected price or trigger a redundant idle check.
+  Later photo backfill also retains a newer feed confirmation clock.
+  Equal-time intake posts also retain that paid correction unless their
+  actual observation is newer.
+  A new four-hour new-wall cadence ceiling overrides stable lengthening;
+  visible used deadlines also tighten to four hours. No new LLM call path,
+  service, retailer fetch, arithmetic/evidence change or social behavior.
+  The deterministic 144-run **085 → 087b** comparison gives **24,046 →
+  20,755 recheck tokens**, **3,600 → 7,515 discovery tokens**, **1,440 →
+  3,006 modeled new candidates**, **1,593 → 1,572 useful price readings**,
+  **15.095 → 13.203 tokens/useful reading**, **594 → 85 unused refill**.
+  Minimum top/new-wall 1/2-hour coverage stays **100%**; oldest visible
+  wall price improves **4.17 → 3.67 h** without hiding any fixture rows.
+  Discovery priority trades 21 useful rechecks for 1,566 more candidates;
+  candidates are not claims of critic-approved publications. Full table,
+  fixture assumptions and implementation notes: **087b HANDOFF** in
+  `docs/codex-tasks/087-value-per-token-rechecks.md`. The comparison and both
+  offline rerun-idempotency cases pass. Full `.venv/bin/python -m pytest -q`:
+  **3,222 passed, 8 failed, 1 deselected**. The legacy six-hour fixture loaded
+  adaptive defaults; it now explicitly selects fixed scheduling, and all
+  **19 death-confirmation checks pass**. Final accuracy/feed/overflow checks:
+  **100 passed**, including the photo-clock regression added after the full
+  run started. Only the seven existing Stripe localhost-socket failures
+  remain in `tests/test_workflows.py` (`test_deploy_checks_the_yearly_price_with_stripe`,
+  change0–change5, and the no-price/no-key case): `Operation not permitted`.
+  Run those outside the sandbox before merging. Review/deployment and live
+  yield remain outstanding. No commit or push; branch creation is unavailable
+  because Git metadata is read-only in this sandbox.
+- **Value per Keepa token (Codex task 087, 2026-10-14; working tree only):**
+  bounded 12-sample histories and daily class totals feed `price_recheck.yield`
+  and the private growth report; repeated cached/known drift cannot inflate
+  useful readings, and estimated charges are explicit. Adaptive cadence uses
+  observed volatility and saved pick/wall position, with 10% oldest-visible
+  exploration and age deadlines; 085 class order/budget gates remain. Paid
+  clocks now use Keepa's own observation time, including reprices and the
+  two-reading death interval. No new services, dependencies, LLM calls,
+  retailer requests or price/evidence changes. The 144-run fixture improves
+  **15.095 → 7.273 tokens/useful reading (51.8%)**, **24,046 → 10,393 recheck
+  tokens**, **1,593 → 1,429 useful readings**; both runs keep top ≤1 h and
+  wall-new ≤2 h at **100%**, all shown ages within limits (oldest wall
+  **4.17 → 10.33 h**). Unused refill grows **594 → 14,102** in the fixture;
+  saved capacity is available to existing discovery/photo lanes. Method and
+  full numbers: `docs/codex-tasks/087-value-per-token-rechecks.md`.
+  **29 task-specific checks pass**, including the day comparison; both
+  offline rerun-idempotency cases pass. Full `.venv/bin/python -m pytest -q`:
+  **3,196 passed, 9 failed, 1 deselected**. Preserved the existing zero-cadence
+  switch and corrected a counter assertion for a skipped same-time retry;
+  rerunning all nine failures gives **2 passed, 7 failed**. Only the existing
+  Stripe localhost-socket failures remain in `tests/test_workflows.py`
+  (`test_deploy_checks_the_yearly_price_with_stripe`, change0–change5, and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`):
+  `Operation not permitted`. Run those outside the sandbox before merging.
+  The final focused accuracy/adaptive run also passed **35 checks**. No commit
+  or push. Live yield/coverage after review and deployment remain unmeasured.
 - **Wall confirmation coverage (Codex task 085, 2026-10-14; uncommitted):**
   saved wall keys round-trip correctly; top classification precedes wall,
   and the old aggregate mixed 2-hour new checks with 24-hour used checks.

@@ -51,7 +51,7 @@ def _num(v: Any) -> float | None:
 
 @dataclass
 class TokenUsage:
-    """Actual receipts only; a lost receipt makes the total unavailable.
+    """Actual receipts and separate conservative debits for lost receipts.
 
     https://keepa.com/api-docs/request-basics.html documents tokensConsumed.
     Bucket deltas include refill and are not a measurement of spend.
@@ -60,12 +60,15 @@ class TokenUsage:
     requests: int = 0
     missing: int = 0
     consumed: float = 0
+    estimated: float = 0
 
-    def note(self, payload: Any) -> None:
+    def note(self, payload: Any, *, estimate: float = 0, rate_limited: bool = False) -> None:
         self.requests += 1
-        tokens = _num(payload.get("tokensConsumed")) if isinstance(payload, dict) else None
+        tokens = (0 if rate_limited else
+                  _num(payload.get("tokensConsumed")) if isinstance(payload, dict) else None)
         if tokens is None or not math.isfinite(tokens) or tokens < 0:
             self.missing += 1
+            self.estimated += estimate
         else:
             self.consumed += tokens
 
@@ -73,10 +76,16 @@ class TokenUsage:
         self.requests += other.requests
         self.missing += other.missing
         self.consumed += other.consumed
+        self.estimated += other.estimated
 
     @property
     def total(self) -> float | None:
         return None if self.missing else self.consumed
+
+    @property
+    def accounted(self) -> float:
+        """Receipts plus estimated debits; never presented as actual spend."""
+        return self.consumed + self.estimated
 
 
 @dataclass

@@ -220,6 +220,22 @@ CREATE TABLE IF NOT EXISTS price_history (
 );
 CREATE INDEX IF NOT EXISTS idx_ph_key ON price_history(canonical_key);
 
+CREATE TABLE IF NOT EXISTS keepa_recheck_history (
+    deal_key TEXT PRIMARY KEY,
+    samples TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS keepa_recheck_yield (
+    day TEXT NOT NULL,
+    class TEXT NOT NULL,
+    tokens REAL NOT NULL,
+    estimated_tokens REAL NOT NULL,
+    readings INTEGER NOT NULL,
+    changed INTEGER NOT NULL,
+    deaths INTEGER NOT NULL,
+    useful INTEGER NOT NULL,
+    PRIMARY KEY(day, class)
+);
+
 CREATE TABLE IF NOT EXISTS alerts_sent (
     id INTEGER PRIMARY KEY,
     deal_key TEXT NOT NULL,
@@ -1168,6 +1184,10 @@ class DB:
         self.conn.execute("DELETE FROM llm_calls WHERE call_key IN (" + old_calls + ")", params)
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
+        self.conn.execute("DELETE FROM keepa_recheck_history WHERE deal_key NOT IN"
+                          " (SELECT dedupe_key FROM deals)")
+        self.conn.execute("DELETE FROM keepa_recheck_yield WHERE day < ?",
+                          (iso(now - timedelta(days=run_stats_days))[:10],))
         yield_cutoff = iso(now - timedelta(days=run_stats_days))
         self.conn.execute("DELETE FROM efficiency_runs WHERE started_at < ?", (yield_cutoff,))
         if self.meta_get("efficiency_since"):

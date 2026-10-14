@@ -11,6 +11,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.growth import report
 from dealradar.keepa_budget import KeepaBudget, TokenUsage
+from dealradar.keepa_rechecks import History, report_data
 from tests.http_helpers import mock_keepa_get
 from tests.test_price_accuracy_engine import NOW, ASIN, seed, product
 from tests.test_e2e_offline import env, _run
@@ -27,7 +28,8 @@ def summary(**overrides):
     return {"ai_yield": {"unique_new_public_deals": 10, "spend_usd": 2},
             "intake": {"unique_public_by_source": {"keepa": 4, "partner": 6}},
             "audit": {"critic_calls_avoided": 3, "would_avoid_calls": 99},
-            "price_recheck": {"yield": {"tokens": 20, "useful": 2},
+            "price_recheck": {"yield": {"overall": {"tokens": 20, "estimated_tokens": 0, "useful": 2},
+                                       "classes": {}},
                               "confirmed_age": {"wall": coverage()},
                               "tokens": {"requested": 1000}, "dead": 999}, **overrides}
 
@@ -52,11 +54,15 @@ def test_run_math_uses_task_087_yield_and_unique_public_sources():
 
 
 @pytest.mark.parametrize("value", [None, -1, True, "5", float("nan"), float("inf")])
-def test_missing_and_invalid_receipts_are_never_estimated(value):
+def test_missing_and_invalid_receipts_stay_unavailable_despite_conservative_debits(value):
     usage = TokenUsage()
     usage.note({"tokensConsumed": 5, "tokensLeft": 1000})
-    usage.note({"tokensConsumed": value, "tokensLeft": 950})
+    usage.note({"tokensConsumed": value, "tokensLeft": 950}, estimate=13)
     assert usage.total is None and usage.missing == 1
+    assert usage.consumed == 5 and usage.estimated == 13 and usage.accounted == 18
+    combined = TokenUsage()
+    combined.add(usage)
+    assert combined == usage
     assert efficiency.ratio(value, 2) is None
 
 
@@ -170,15 +176,26 @@ def test_unknown_clocks_and_empty_shown_conditions():
     assert worst["used"]["oldest_h"] == 3
 
 
+def useful_reading(deal, record, cfg):
+    """Exercise the same history feeding scheduling, efficiency and reports."""
+    db = DB(":memory:")
+    try:
+        history = History(db, cfg, NOW)
+        history.record(dict(deal, dedupe_key="fixture"), record, True, NOW, "wall_new", 1, 0)
+        return bool(history.yield_stats["overall"]["useful"])
+    finally:
+        db.close()
+
+
 @pytest.mark.parametrize("cents,expected", [(2500, False), (2524, False), (2525, True), (2475, True)])
 def test_useful_threshold_both_directions_and_stale_or_hidden_prices(cents, expected):
     cfg = AppConfig(keepa_reprice_min_pct=1)
     deal = {"final_price": 25, "first_seen_at": util.iso(NOW - timedelta(hours=2))}
-    assert efficiency.price_changed(deal, product(cents), cfg, NOW) is expected
-    assert not efficiency.price_changed(dict(deal, codes=["SAVE"]), product(cents), cfg, NOW)
+    assert useful_reading(deal, product(cents), cfg) is expected
+    assert not useful_reading(dict(deal, codes=["SAVE"]), product(cents), cfg)
     stale = product(cents)
     stale["lastUpdate"] -= 24 * 60
-    assert not efficiency.price_changed(deal, stale, cfg, NOW)
+    assert not useful_reading(deal, stale, cfg)
 
 
 def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
@@ -205,8 +222,12 @@ def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
 
     mock_keepa_get(monkeypatch, get)
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
-    assert stats["yield"] == {"tokens": 4, "useful": 2,
-                              "tokens_per_useful_recheck": 2, "useful_rechecks_per_token": .5}
+    counts = stats["yield"]["overall"]
+    assert counts["tokens"] == 4 and counts["estimated_tokens"] == 0
+    assert counts["useful"] == 2 and counts["tokens_per_useful_reading"] == 2
+    measured = efficiency.run_metrics({"price_recheck": stats}, TokenUsage(), set())
+    assert measured["tokens_per_useful_recheck"] == 2
+    assert measured["useful_rechecks_per_token"] == .5
     assert db.get_deal(changed["dedupe_key"])["final_price"] == 25.25
     assert db.get_deal(dead["dedupe_key"])["status"] == "dead"
     assert all(r["history"] == "0" for r in requests)
@@ -214,7 +235,8 @@ def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
 
 
 @pytest.mark.parametrize("status,receipt,tokens,useful", [
-    (200, None, None, None), (429, 0, 0, 0), (500, 1, 1, 0),
+    (200, None, None, 1), (429, 0, 0, 0), (429, None, 0, 0),
+    (429, 99, 0, 0), (500, 1, 1, 0),
 ])
 def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, status, receipt, tokens, useful):
     db = DB(":memory:")
@@ -226,8 +248,10 @@ def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, 
     mock_keepa_get(monkeypatch, lambda *a, **kw: httpx.Response(status, json={
         "tokensConsumed": receipt, "products": [product(2600)]}))
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
-    assert stats["yield"]["tokens"] == tokens
-    assert stats["yield"]["useful"] == useful
+    measured = efficiency.run_metrics({"price_recheck": stats}, TokenUsage(), set())
+    assert measured["recheck_tokens"] == tokens
+    assert measured["useful_rechecks"] == useful
+    assert stats["yield"]["overall"]["estimated_tokens"] == (1 if receipt is None and status != 429 else 0)
     db.close()
 
 
@@ -243,8 +267,8 @@ def test_photo_only_tokens_are_not_recheck_tokens(monkeypatch):
         "tokensConsumed": 1, "products": [product(2600)]}))
     stats = pipeline._recheck_prices(db, cfg, NOW)
     assert stats["image_backfill"] == 1
-    assert stats["yield"]["tokens"] == 0
-    assert stats["yield"]["useful"] == 0
+    assert stats["yield"]["overall"]["tokens"] == 0
+    assert stats["yield"]["overall"]["useful"] == 0
     db.close()
 
 
@@ -293,12 +317,12 @@ def test_used_changes_require_successful_current_offers_of_used_condition():
                   {"condition": 1, "offerCSV": [stamp, 2500, 0]},
                   {"condition": 2, "offerCSV": [stamp, 2400, 200]}]}
     cfg = AppConfig()
-    assert efficiency.price_changed(deal, record, cfg, NOW)  # $26 including shipping
-    assert not efficiency.price_changed(deal, dict(record, offersSuccessful=False), cfg, NOW)
-    assert not efficiency.price_changed(deal, dict(record, liveOffersOrder=[0]), cfg, NOW)
+    assert useful_reading(deal, record, cfg)  # $26 including shipping
+    assert not useful_reading(deal, dict(record, offersSuccessful=False), cfg)
+    assert not useful_reading(deal, dict(record, liveOffersOrder=[0]), cfg)
     record["offers"].append({"condition": 2, "offerCSV": [stamp, -1, 0]})
     record["liveOffersOrder"].append(2)
-    assert not efficiency.price_changed(deal, record, cfg, NOW)
+    assert not useful_reading(deal, record, cfg)
 
 
 def test_rendering_has_verdict_first_labels_units_and_unavailable():
@@ -360,3 +384,78 @@ def test_config_knob(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("growth:\n  expired_click_hours: 8\n")
     assert load_config(path).growth_expired_click_hours == 8
+
+
+@pytest.mark.parametrize("lost_page", [False, True])
+def test_open_pull_receipts_are_shared_without_counting_rechecks_or_photos_as_discovery(monkeypatch, lost_page):
+    import time
+    from dataclasses import replace
+    from dealradar.http_client import PoliteFetcher
+    from tests.test_keepa import SRC
+    from tests.test_keepa_overflow import setup_pull
+    from tests.test_wall_confirmation_coverage import remember
+
+    db = DB(":memory:")
+    cfg = load_config()
+    fake = setup_pull(cfg, db, monkeypatch)
+    due = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(hours=2)))
+    idle = seed(db, cfg, asin="B000000002", price_rechecked_at=util.iso(NOW - timedelta(minutes=35)))
+    photo = seed(db, cfg, asin="B000000003", price_rechecked_at=util.iso(NOW - timedelta(minutes=10)))
+    db.update_deal(photo["dedupe_key"], payload=dict(photo, image_url=""))
+    remember(db, top=[due, idle, photo])
+    fake.products = {d["asin"]: product(2600, asin=d["asin"]) for d in (due, idle, photo)}
+    if lost_page:
+        fake.fail[("amazon", 1)] = httpx.Response(200, text="unreadable")
+    receipts = []
+
+    def handler(request):
+        response = fake(request)
+        cost = len(request.url.params["asin"].split(",")) if request.url.path == "/product" else 5
+        receipts.append((request.url.path, cost))
+        try:
+            payload = response.json()
+        except ValueError:
+            return response
+        return httpx.Response(response.status_code, json={**payload, "tokensConsumed": cost})
+
+    fetcher = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handler), sleep_fn=lambda _: None)
+    fetcher.keepa_feed_usage = TokenUsage()
+    stats = {}
+    try:
+        pipeline._fetch_all([replace(SRC, fast_lane=True)], fetcher, db, cfg, NOW, time.monotonic() + 1000,
+                            True, price_recheck=stats)
+        usage = fetcher.keepa_feed_usage
+        feed_cost = sum(cost for path, cost in receipts if path == "/deal")
+        assert usage.accounted == feed_cost
+        assert usage.total == (None if lost_page else feed_cost)
+        assert usage.estimated == (5 if lost_page else 0)
+        assert usage.requests == sum(path == "/deal" for path, _ in receipts)
+        assert stats["overflow_discovery"]["tokens"] == feed_cost - 15  # three ordinary pages
+        assert stats["overflow_discovery"]["estimated_tokens"] == usage.estimated
+        assert sum(cost for path, cost in receipts if path == "/product") == 3
+        assert stats["image_backfill"] == 1
+        assert stats["yield"]["overall"]["tokens"] == 2
+        assert stats["yield"]["overall"]["useful"] == 2
+        measured = efficiency.run_metrics({"price_recheck": stats}, usage, {"keepa"})
+        assert measured["recheck_tokens"] == 2
+        assert measured["tokens_per_useful_recheck"] == 1
+        assert measured["feed_tokens"] == usage.total
+        saved = report_data(db, NOW + timedelta(days=1))["yesterday"]
+        assert saved == stats["yield"]
+    finally:
+        fetcher.close()
+        db.close()
+
+
+def test_recheck_report_does_not_turn_absent_periods_into_zero():
+    db = DB(":memory:")
+    cfg = AppConfig()
+    try:
+        deal = {"dedupe_key": "fixture", "final_price": 25}
+        History(db, cfg, NOW).record(deal, product(2600), True, NOW, "top_new", 1, 0)
+        data = report_data(db, NOW)
+        assert "unavailable" in data["yesterday"] and "unavailable" in data["week"]
+        _, text = report.build_report(cfg, {"price_recheck": data}, {}, NOW.date())
+        assert "yesterday: unavailable" in text and "week: unavailable" in text
+    finally:
+        db.close()
