@@ -56,9 +56,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   <p class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
   <!--standard--><h1>You're in 🎉</h1><!--/standard--><!--support--><h1>Thanks for being here.</h1><!--/support-->
   <!--standard--><div class="claim" id="claim" data-clarity-mask="true" hidden></div><!--/standard--><!--support--><!--/support-->
-  <p><!--paywall-->Every deal on the wall is yours now — up to 90% off, fake "list prices" removed, Amazon prices
-     re-checked live — with new deals every {{DROP_MINUTES}} minutes. Bookmark the live wall:<!--/paywall--><!--open-->Thanks for joining. Bookmark the live wall — up to 90% off, fake "list prices"
-     removed, Amazon prices re-checked live — with new deals every {{DROP_MINUTES}} minutes:<!--/open--><!--support-->Every deal stays free for everyone. Thanks for supporting our work or joining the free deals email, starting soon. Bookmark the live wall for new deals every {{DROP_MINUTES}} minutes.<!--/support--></p>
+  <p><!--paywall-->Every deal on the wall is available to you. Verified deals are refreshed every
+     {{DROP_MINUTES}} minutes. Bookmark the live wall:<!--/paywall--><!--open-->Thanks for joining. Bookmark the live wall for verified deals refreshed every
+     {{DROP_MINUTES}} minutes:<!--/open--><!--support-->Every deal stays free for everyone. Thanks for supporting our work or joining the free deals email, starting soon. Bookmark the live wall for verified deals refreshed every {{DROP_MINUTES}} minutes.<!--/support--></p>
   <p><a class="btn" href="./">Open the deal wall</a></p>
 <!--standard-->  <p class="muted" id="portal" data-clarity-mask="true" style="display:none">Manage your
      membership any time: <a id="portallink" rel="noopener">billing portal</a>.</p>
@@ -66,7 +66,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 </div>{{SITE_FOOTER}}</div>
 <!--standard--><script>
 "use strict";
-// Stripe Checkout (the Worker's free-trial checkout and the Payment Link)
+// Stripe Checkout (the account service's free-trial checkout and the Payment Link)
 // sends the payer here with ?session_id={CHECKOUT_SESSION_ID}
 // (docs/paywall.md). Signed in: POST /api/claim binds that payment to the
 // account. Signed out: the id waits in sessionStorage until they sign in on
@@ -171,7 +171,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
           var me = res.json.me, day = fmtDay(me.trial_ends_at);
           var manageBtn = " " + CANCEL + " <button type=\"button\" id=\"manage\" class=\"linkbtn\">" +
             "Manage membership</button><span id=\"managenote\"></span>";
-          // A me without trial_available comes from a Worker that predates
+          // A me without trial_available comes from an account service that predates
           // the card-up-front trial (a card-less trial charges nothing), so
           // the trial's billing terms are shown only with the new shape.
           if (me.reason === "trial" && "trial_available" in me) {

@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#4fd8c6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f1b22" media="(prefers-color-scheme: dark)">
 <!--standard--><title>wowpriced — membership</title><!--/standard--><!--support--><title>wowpriced — support our work and join free</title><!--/support-->
-<!--paywall--><meta name="description" content="wowpriced membership: every verified deal on the wall unlocked, new deals every {{DROP_MINUTES}} minutes."><!--/paywall--><!--open--><meta name="description" content="wowpriced membership: a 7-day free trial, then $9.99/month."><!--/open--><!--support--><meta name="description" content="wowpriced is free for everyone. Join free for the deals email or support our work with a one-time payment."><!--/support-->
+<!--paywall--><meta name="description" content="wowpriced membership: every verified deal on the wall unlocked, verified deals refreshed every {{DROP_MINUTES}} minutes."><!--/paywall--><!--open--><meta name="description" content="wowpriced membership: a 7-day free trial, then $9.99/month."><!--/open--><!--support--><meta name="description" content="wowpriced is free for everyone. Join free for the deals email or support our work with a one-time payment."><!--/support-->
 <link rel="canonical" href="{{SITE_URL}}/subscribe.html">
 <style>
 :root{ color-scheme: light dark;
@@ -67,11 +67,10 @@ p{margin:0 0 14px}
   <p class="brand"><a href="./" aria-label="wowpriced"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="markg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4fd8c6"/><stop offset="1" stop-color="#0e7569"/></linearGradient></defs><rect x="1" y="1" width="30" height="30" rx="8" fill="url(#markg)"/><polyline points="6.5,11 11,22.5 16,14 21,22.5 25.5,12.5" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25.5" cy="6.3" r="2.4" fill="#ffc94d"/></svg><span class="word">wow<em>priced</em></span></a></p>
 <!--standard-->  <h1><!--paywall-->Every deal, unlocked<!--/paywall--><!--open-->Membership<!--/open--></h1>
   <div id="notice" class="notice" data-clarity-mask="true" style="display:none"></div>
-  <!--paywall--><p>Membership opens every deal on the wall — up to 90% off, fake "list prices"
-     removed, Amazon prices re-checked live — with new deals every {{DROP_MINUTES}} minutes.
-     Eight deals stay free for everyone, a new eight at every drop.</p><!--/paywall--><!--open--><p>Every deal on the wall — up to 90% off, fake "list prices" removed, Amazon
-     prices re-checked live — is open to everyone right now, with new deals every
-     {{DROP_MINUTES}} minutes.</p><!--/open-->
+  <!--paywall--><p>Membership opens every deal on the wall, with verified deals
+     refreshed every {{DROP_MINUTES}} minutes.
+     Eight deals stay free for everyone, a new eight at every drop.</p><!--/paywall--><!--open--><p>Every deal on the wall is open to everyone right now, with verified deals
+     refreshed every {{DROP_MINUTES}} minutes.</p><!--/open-->
   <div class="plans" data-clarity-mask="true">
     <div class="plan">
       <h2>Free</h2>
@@ -86,7 +85,7 @@ p{margin:0 0 14px}
       <a id="member" class="btn" rel="noopener" style="display:none">Start 7-day free trial</a>
     </div>
   </div>
-<!--/standard--><!--support-->  <h1>A quick, honest ask.</h1>
+<!--/standard--><!--support-->  <h1>Support our work</h1>
   <div id="notice" class="notice" style="display:none" role="status"></div>
   <p>{{SUPPORT_BODY}}</p>
   <div class="pwbtns">{{SUPPORT_ACTION}}</div>
@@ -117,7 +116,7 @@ p{margin:0 0 14px}
   if (/[?&]unsubscribed=1(&|$)/.test(q)) {
     show("You're unsubscribed — no more emails from us.");
   } else if (/[?&](confirmed|ok)=1(&|$)/.test(q)) {
-    show("We no longer send a daily email: every deal is on the live wall, new every {{DROP_MINUTES}} minutes.");
+    show("We no longer send a daily email: every deal is on the live wall, refreshed every {{DROP_MINUTES}} minutes.");
   }
 
   // Membership starts on the home page: a free account, then the

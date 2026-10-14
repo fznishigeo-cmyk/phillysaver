@@ -138,10 +138,11 @@ const flush = () => new Promise(resolve=>setImmediate(resolve));
     for (const d of pub.deals) {
       const html=h.ctx.cardHtml(d), title=html.match(/<h3 class="title">([\s\S]*?)<\/h3>/)[1];
       const required=Boolean(d.checkout && d.checkout.summary);
-      assert.equal(html.includes('<details class="how" data-requirements>'),required);
-      if(required) {
-        assert(decode(html).includes(d.checkout.summary));
-        assert(decode(html).includes(d.checkout.now));
+      // One open box: steps, copyable codes, and only what they do not already say.
+      const boxed=Boolean((d.needs_steps || (d.checkout && d.checkout.card)) && d.status!=='dead');
+      assert.equal(html.includes('<div class="how" data-requirements>'),boxed);
+      if(boxed) {
+        if(d.checkout && d.checkout.card) assert(decode(html).includes(d.checkout.card));
         for(const step of d.how || []) assert(decode(html).includes(step));
         for(const code of d.codes || []) assert(decode(html).includes(code));
       }

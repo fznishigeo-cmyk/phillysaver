@@ -91,8 +91,6 @@ function checkFooter(html, meta) {
     ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
   ]), "footer link line changed");
   const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
-  check(footer.includes("We search the top deal sites and stores for hours every day, so you don't have to."),
-    "missing footer search note");
   const disclosure = escape(meta.disclosure || ""), disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
   const linked = disclosure.startsWith("Disclosure:") ? disclosureLink + disclosure.slice(10)
     : disclosure + (disclosure ? " " : "") + disclosureLink;

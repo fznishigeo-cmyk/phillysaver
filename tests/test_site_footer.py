@@ -20,9 +20,6 @@ LINKS = [
     ("/contact.html", "Contact"), ("/subscribe.html", "Join & support"),
     ("/privacy.html", "Privacy"), ("/disclosure.html", "Disclosure"),
 ]
-SEARCH = "We search the top deal sites and stores for hours every day, so you don't have to."
-
-
 @pytest.mark.parametrize("support", [False, True])
 @pytest.mark.parametrize("amazon", [False, True])
 def test_every_page_has_one_shared_footer(tmp_path, support, amazon):
@@ -48,7 +45,7 @@ def test_every_page_has_one_shared_footer(tmp_path, support, amazon):
         assert [(url, unescape(label)) for url, label in re.findall(r'<a href="([^"]+)">([^<]+)</a>', nav)] == LINKS, name
         assert " ".join(unescape(re.sub(r"<[^>]+>", "", nav)).split()) == "© 2026 wowpriced · " + " · ".join(label for _, label in LINKS)
         fine = re.search(r'<p class="footerfine">(.*?)</p>', footer, re.S)[1]
-        assert unescape(re.sub(r"<[^>]+>", "", fine)) == SEARCH + " " + expected_disclosure, name
+        assert unescape(re.sub(r"<[^>]+>", "", fine)) == expected_disclosure, name
         assert '<span id="metaline"><a href="/disclosure.html">Disclosure</a>:' in fine, name
         for removed in ("wowpriced is free for everyone.", "data-support-note", "Membership —",
                         "Every deal links to the seller", "re-checked live", "Once: any amount"):

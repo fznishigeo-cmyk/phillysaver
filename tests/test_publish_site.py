@@ -759,7 +759,7 @@ class TestDropCadenceCopy:
                 assert stale not in html, (page, stale)
             assert f"every {drop_minutes} minutes" in html, page
         how = (out / "how-it-works.html").read_text(encoding="utf-8")
-        assert f"a {drop_minutes}-minute" in how
+        assert f"refreshed every {drop_minutes} minutes" in how
 
 
 class TestCardRequiredTrial:
@@ -1010,7 +1010,7 @@ class TestMembershipCopyIsTrue:
             text = " ".join(pages[name].split())
             assert "free for everyone, a new eight at every drop" in text, name
             # Membership is site access only (operator, 2026-10-11): no email.
-            assert f"new deals every {cfg.drop_minutes} minutes" in text, name
+            assert f"refreshed every {cfg.drop_minutes} minutes" in text, name
             assert "one email every morning" not in text and "once an hour" not in text, name
             assert "7-day free trial" in text and "card" in text, name
             assert "every deal on the wall" in text, name
@@ -1242,7 +1242,7 @@ class TestTrialCtasAreHonest:
         welcome = pages["welcome.html"]
         assert ('code === "bad_session" || code === "unknown_session" || '
                 'code === "already_claimed") ssDel(CLAIM_KEY)') in welcome
-        assert "Amazon prices\n     re-checked live" in welcome
+        assert "Verified deals are refreshed every" in welcome
 
 
 class TestHonestShuffleAndPage:
@@ -1365,9 +1365,9 @@ class TestEyeCatchers:
         assert ".trace rect{animation:none}" in reduced
         assert '<div class="freetag"><i></i>free this drop</div>' in html
 
-    def test_search_note_in_the_footer(self, html):
+    def test_disclosure_in_the_footer(self, html):
         foot = html[html.index("<footer>"):html.index("</footer>")]
-        assert "We search the top deal sites and stores for hours every day, so you don't have to." in foot
+        assert 'id="metaline"><a href="/disclosure.html">Disclosure</a>' in foot
         assert ".searchnote{margin:18px 0 6px;text-align:center;color:var(--muted)}" in html
         assert "srcwall" not in html and "srcsel" not in html
         assert "paintSources" not in html and "source_sites" not in html
@@ -1694,10 +1694,10 @@ def test_engagement_switches_reach_public_and_member_meta(db, cfg, tmp_path, mod
     assert header == re.search(r"<header>.*?</header>", baseline, re.S).group()
     cfg.engagement = public["meta"]["engagement"]
     explanation = (tmp_path / "how-it-works.html").read_text()
-    assert ("Flames mark real signals:" in explanation) is cfg.engagement["hot_meter"]
+    assert ("Flames highlight offers" in explanation) is cfg.engagement["hot_meter"]
     if cfg.engagement["hot_meter"]:
-        assert "at least two are needed" in explanation
-        assert "Two signals show two flames; all three show three." in explanation
+        assert "a combination of strong discounts" in explanation
+        assert "independent confirmation and recent arrival" in explanation
 
 
 def test_engagement_published_logic_offline(db, cfg, tmp_path):

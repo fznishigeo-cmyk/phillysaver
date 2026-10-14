@@ -33,6 +33,7 @@ def sections(html):
 def test_disclaimer_copy_tokens_sitemap_and_stable_update_date(tmp_path, support):
     cfg = AppConfig(support_enabled=support, contact_email="hello@wowpriced.com",
                     custom_domain="wowpriced.com", drop_minutes=20,
+                    ftc_disclosure=load_config().ftc_disclosure,
                     seo_indexnow_key="0123456789abcdef0123456789abcdef")
     out, _, _, _ = render(tmp_path, cfg)
     page = (out / "disclosure.html").read_text()
@@ -43,10 +44,9 @@ def test_disclaimer_copy_tokens_sitemap_and_stable_update_date(tmp_path, support
     assert "refreshed every 20 minutes" in page and "{{" not in page
     assert 'href="mailto:hello@wowpriced.com">hello@wowpriced.com</a>' in content["Contact and updates"]
     for heading, facts in {
-        "How we make money": ("either ours or the deal source's", "at no extra cost to you",
+        "How we make money": ("Affiliate commissions help support wowpriced",
                                "Partner sources keep their own affiliate credit",
-                               "does not change which deals qualify", "verified price facts",
-                               "discount floors", 'href="/how-it-works.html"'),
+                               'href="/how-it-works.html"'),
         "Prices and availability": ("Prices and stock can change quickly", "times shown",
                                     "do not guarantee", "checkout price is final",
                                     "Codes, coupons, rebates and other steps can expire"),
@@ -60,10 +60,11 @@ def test_disclaimer_copy_tokens_sitemap_and_stable_update_date(tmp_path, support
         "Support payments": ("voluntary", "for-profit business", "not tax-deductible",
                               "buys nothing extra"),
         "Contact and updates": ("Changes will be posted on this page", "Last updated",
-                                 '<time datetime="2026-10-13">October 13, 2026</time>'),
+                                 '<time datetime="2026-10-14">October 14, 2026</time>'),
     }.items():
         text = " ".join(content[heading].split())
         assert all(fact in text for fact in facts), heading
+    assert f'<p class="lede">{cfg.ftc_disclosure}</p>' in page
     assert not re.search(r"<script|<form|<dialog", "".join(content.values()))
     urls = ElementTree.parse(out / "sitemap.xml").findall("{*}url")
     entry = [url for url in urls if url.find("{*}loc").text == "https://wowpriced.com/disclosure.html"]

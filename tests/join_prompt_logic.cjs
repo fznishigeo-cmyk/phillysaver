@@ -114,7 +114,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   assert.equal(h.label.textContent,'Email address'); assert.equal(h.input.placeholder,'Email address');
   assert.equal(h.submit.textContent,'Get the deals'); assert.equal(h.back.hidden,true); assert.equal(h.choice.hidden,true);
   assert.equal(h.fields.hidden,false); assert.equal(h.googleOr.hidden,true);
-  assert.equal(h.legal.innerHTML,'By joining, you agree to get deal emails from wowpriced. See our <a href="/privacy.html">privacy policy</a>.');
+  assert.equal(h.legal.innerHTML,'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.');
   assert.equal(h.storage.get('wp.join.promptUntil'),String(16000+WEEK));
   assert.equal(h.events[0].name,'signup_prompt_shown'); assert.equal(h.scripts.length,0);
   h.legal.focus(); assert.equal(h.key('Tab'),true); assert.equal(h.document.activeElement,h.close);

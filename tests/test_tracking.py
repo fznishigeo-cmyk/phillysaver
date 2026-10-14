@@ -575,10 +575,11 @@ def test_privacy_page_is_published_linked_and_in_the_sitemap(db, cfg, tmp_path):
     assert '<link rel="canonical" href="https://wowpriced.com/privacy.html">' in page
     assert "{{" not in page and 'href="mailto:hello@wowpriced.com"' in page
     assert "<script src=" not in page and 'rel="stylesheet"' not in page
-    for text in ("Your privacy choices", "Global Privacy Control", "Stripe", "card number",
-                 "Last updated", "Google Analytics", "Google Ads", "Meta", "TikTok", "Pinterest",
-                 "Microsoft Clarity", "clicks, scrolls and page views", "Typed text and account details are masked",
-                 "Microsoft", "delete"):
+    for text in ("Your privacy choices", "Global Privacy Control", "payment processor", "card number",
+                 "Last updated", "Analytics", "Advertising partners", "Session recording",
+                 "clicks, scrolls and page views", "Typed text and account details are masked",
+                 "ad personalization disabled", "delete", "Retention", "Children",
+                 "service providers that host the site and send email", "Affiliate links"):
         assert text in page, text
     # The on-page switch writes the very key the head snippet reads.
     assert 'var KEY = "wp.adsOptOut"' in page and 'id="adsbtn"' in page

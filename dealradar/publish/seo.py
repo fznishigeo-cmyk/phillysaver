@@ -725,7 +725,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     publish_sitemap reads the final tracked pages for dates and the audit.
     """
     from .paywall import is_open
-    from .site import affiliate_copy, copy_variant, site_footer
+    from .site import copy_variant, site_footer
 
     spotlight = spotlight or []
     open_access = is_open(cfg)
@@ -758,7 +758,6 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                      DROP_MINUTES=str(int(cfg.drop_minutes)),
                      DEAL_ACTIONS_SCRIPT=(TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8"))
     template = copy_variant(template, open_access, support)
-    template = affiliate_copy(template, getattr(cfg, "affiliate_amazon_tag", ""))
     template = site_footer(template, now, meta["disclosure"], support)
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}

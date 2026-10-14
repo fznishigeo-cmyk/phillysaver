@@ -242,6 +242,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   no-price/no-key case). Final task-specific checks: **40 passed**.
   Token estimates and remaining live validation are in
   `docs/codex-tasks/081-free-confirmations.md`. No commit or push.
+- **Discreet public copy (Codex task 080, 2026-10-14; working tree only):**
+  careers, information pages, privacy, disclosures, shared sign-up/footer copy,
+  support and category introductions now use concise public wording. Removed
+  internal names, team details and check schedules; retained partner credits,
+  price facts, payment terms and sign-up behavior. Every category tab uses a
+  circle with the existing active color. Added template/rendered-page guards
+  across all access modes and PWA states; refreshed the nine legitimate pins
+  in `test_pwa.py`, `test_support.py`, `test_post_join_support_ask.py`.
+  Page-by-page before/after and hash list are in the task brief. New copy checks:
+  **38 passed**. Full `.venv/bin/python -m pytest -q`: **2,873 passed, 1
+  deselected**; only the seven known Stripe yearly-deploy checks in
+  `tests/test_workflows.py` failed at local socket creation (`Operation not
+  permitted`, change0–change5 and no-price/no-key). Chromium launch is also
+  sandbox-blocked. Remaining: those seven checks and 360px visual/overflow QA
+  outside this environment, then review. No commit or push.
 - **Phone taps (Codex task 076, 2026-10-13; uncommitted):** shared invisible
   44px extensions, retained title clamps, neighbor guards and a probe-based
   audit (8 Node math checks). Only four support-off home/four PWA trees and

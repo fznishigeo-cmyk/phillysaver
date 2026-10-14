@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#0f1b22" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect x=%271%27 y=%271%27 width=%2730%27 height=%2730%27 rx=%278%27 fill=%27%23129486%27/%3E%3Cpolyline points=%276.5,11 11,22.5 16,14 21,22.5 25.5,12.5%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%273.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3Ccircle cx=%2725.5%27 cy=%276.3%27 r=%272.4%27 fill=%27%23ffc94d%27/%3E%3C/svg%3E">
 <title>wowpriced — verified deals</title>
-<meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every {{DROP_MINUTES}} minutes.">
+<meta name="description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. We check prices before we show them. Refreshed every {{DROP_MINUTES}} minutes.">
 <link rel="canonical" href="{{SITE_URL}}/">
 {{IMAGE_PRECONNECTS}}
 <!-- Locked cards show a blurred product photo: never in image search. -->
@@ -15,7 +15,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="wowpriced">
 <meta property="og:title" content="wowpriced — verified deals, up to 90% off">
-<meta property="og:description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. Fake list prices removed, Amazon prices re-checked live, new deals every {{DROP_MINUTES}} minutes.">
+<meta property="og:description" content="Verified deals up to 90% off from Amazon, Walmart, Target, Woot and more. We check prices before we show them. Refreshed every {{DROP_MINUTES}} minutes.">
 <meta property="og:url" content="{{SITE_URL}}/">
 <meta name="twitter:card" content="summary">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"wowpriced","alternateName":"Wow Priced","url":"{{SITE_URL}}/"}</script>
@@ -142,8 +142,6 @@ header .dhole{background:var(--chip)}
         border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer;
         white-space:nowrap}
 .cattab::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--accent)}
-.cattab:nth-child(3n+2)::before{border-radius:1px}
-.cattab:nth-child(3n)::before{border-radius:1px;transform:rotate(45deg)}
 .cattab:hover{border-color:var(--accent);text-decoration:none}
 .cattab.active{background:var(--warm);border-color:var(--accent);
                color:var(--warm-fg);font-weight:700}
@@ -839,7 +837,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 </div>
 <!--/standard--><!--support--><div id="paywall" class="paywall support" hidden>
   <button type="button" class="mx" data-support-close aria-label="Dismiss support banner">✕</button>
-  <div class="supporttext"><h2>A quick, honest ask.</h2><p>{{SUPPORT_BODY}}</p></div>
+  <div class="supporttext"><h2>Support our work</h2><p>{{SUPPORT_BODY}}</p></div>
   <div class="pwbtns">{{SUPPORT_ACTION}}<a class="pwbtn alt" href="/join">Join free</a></div>
   {{SUPPORT_NOTE}}
 </div>
@@ -883,7 +881,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 "use strict";
 (function () {
   // deals: the list on screen (teaser, or a member's full payload);
-  // teaser: what deals.json carried; me: the Worker's account record.
+  // teaser: what deals.json carried; me: the account service's account record.
   // seed: the drop mark the fresh-drops order is dealt from; newKeys: live
   // deals that arrived since the last drop (they lead, tagged NEW);
   // dropKeys: what was on the wall at the last drop; unlocked: how many
@@ -937,7 +935,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     location.reload();
   }
 
-  // Every published deal passed the verbatim-price check and the critic;
+  // Every published deal passed the price checks;
   // the badge only says how it was corroborated. No badge = single source.
   var TIER_LABEL = {
     "corroborated": "✓ 2+ sources",
@@ -1036,7 +1034,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     document.getElementById("metaline").innerHTML = disclosure.indexOf("Disclosure:") === 0
       ? disclosureLink + disclosure.slice(10)
       : disclosure + (disclosure ? " " : "") + disclosureLink;
-<!--standard-->    // Account menu (docs/paywall.md): only once a Worker is configured.
+<!--standard-->    // Account menu (docs/paywall.md): only once an account service is configured.
     var me = state.me, on = !!apiUrl(m);
     document.getElementById("account").hidden = !on;
     document.getElementById("loginlink").hidden = !!me;
@@ -2158,8 +2156,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // every other live deal as a locked stub. A free account sees the same
   // teaser; every deal unlocks only with a Stripe subscription (a card on
   // file: Stripe's own free trial, or paid). A visitor holding a session
-  // token (from the Worker at meta.api_url, kept in local storage) is
-  // looked up once per page; members get the full payload from the Worker
+  // token (from the account service at meta.api_url, kept in local storage) is
+  // looked up once per page; members get the full payload from the account service
   // through the same renderer. With meta.api_url empty none of this exists.
   var SESSION_KEY = "wp.session";
   // welcome.html parks a Payment Link receipt here until it is claimed.
@@ -2197,10 +2195,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     auth.token = ""; lsDel(SESSION_KEY); state.me = null; auth.fb = ""; auth.block = "";
   }
   function isMember() { return !!(state.me && state.me.member); }
-  // The Worker could not reach Stripe: neither member nor lapsed is known.
+  // The account service could not reach Stripe: neither member nor lapsed is known.
   function unknownMembership() { return !!(state.me && !state.me.member && state.me.reason === "unknown"); }
   // A Stripe customer to manage: members and lapsed (or past-due) accounts.
-  // A trial from a Worker that predates the card-up-front trial (no
+  // A trial from an account service that predates the card-up-front trial (no
   // trial_available, nothing claimed) has no card and nothing to manage.
   function hasBilling() {
     var me = state.me;
@@ -2216,7 +2214,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var t = Date.parse(s || "");
     return isNaN(t) ? "" : new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
-  // me.trial_days (the Worker's real trial) beats meta.trial_days; 0 means
+  // me.trial_days (the account service's real trial) beats meta.trial_days; 0 means
   // no trial at all, so a missing value is told apart from a zero.
   function trialDays() {
     var d = num((state.me || {}).trial_days);
@@ -2469,7 +2467,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function repaintPanel() { if (!panel.hidden) updatePaywall(true); }
 
-  // ---- checkout and billing portal (docs/paywall.md, "Worker API") ----
+  // ---- checkout and billing portal (docs/paywall.md, "account service API") ----
   // POST /api/checkout → a Stripe Checkout Session (card up front; the
   // free trial while the account still has one) and the browser goes
   // there. 409: nothing is sold here (refuse): already_member means Stripe
@@ -2522,7 +2520,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         toast("Please log in again");
         return;
       }
-      // An older Worker without the route (404): the Payment Link from me.
+      // An older account service without the route (404): the Payment Link from me.
       var fb = res.status === 404 ? https((state.me || {}).subscribe_url) : https(j.fallback_url);
       if (res.status === 429 || o.lapsed) fb = "";
       if (plan === "year") fb = ""; // the Payment Link sells monthly only
@@ -2711,11 +2709,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     else closeAuth();
     auth.checking = true;
     render();
-    // Whatever publish is up when the Worker answers (a drop may have
+    // Whatever publish is up when the account service answers (a drop may have
     // brought a newer one), the lookup always ends the check.
     memberDeals(false).then(showDeals);
   }
-  // POST to the Worker: a 200 {token, me} signs the visitor in; anything
+  // POST to the account service: a 200 {token, me} signs the visitor in; anything
   // else lands as an inline error.
   function authPost(path, body) {
     var btn = document.getElementById("authsubmit");
@@ -3161,7 +3159,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function isNewPublish(pub) { return !!pub && !(pub.key && pub.key === state.dataKey); }
   // What a publish shows this viewer: a member keeps the current list up
-  // until the Worker answers (cards never blur and unblur between
+  // until the account service answers (cards never blur and unblur between
   // publishes); everyone else gets the teaser.
   function dealsFor(pub) {
     if ((pub.meta || {}).open_access || !(isMember() && token())) return Promise.resolve(pub.deals);
@@ -3289,7 +3287,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       done = true;
       clearTimeout(guard);
       clock.dropping = 0;
-      // Still new (a member's list waits on the Worker): it is the drop.
+      // Still new (a member's list waits on the account service): it is the drop.
       if (pub && isNewPublish(pub)) { present(pub, deals, seed); return; }
       // Another path put a publish up while this drop was out: that was
       // the drop; count to the next mark instead of waiting.
@@ -3321,7 +3319,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     loadRequest = fetchPublish().then(function (pub) {
       if (loadedOnce) return merge(pub);  // the 5-minute fallback
       // Signed in: the teaser goes up now (CTA held back) and the full
-      // payload replaces it once the Worker answers; a failure keeps
+      // payload replaces it once the account service answers; a failure keeps
       // the teaser, silently.
       auth.checking = !!(apiUrl(pub.meta) && token());
       applyPublish(pub, pub.deals);

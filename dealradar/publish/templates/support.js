@@ -130,9 +130,7 @@
     document.getElementById("join-google-or").hidden = !popup || document.getElementById("join-google").hidden;
     description.textContent = popup ? "The day's best verified deals in one free email. Unsubscribe anytime."
       : "The day's best deals in one email. Free.";
-    document.getElementById("join-legal").innerHTML = popup
-      ? 'By joining, you agree to get deal emails from wowpriced. See our <a href="/privacy.html">privacy policy</a>.'
-      : 'By continuing, you agree to wowpriced\'s <a href="/privacy.html">privacy policy</a>.';
+    document.getElementById("join-legal").innerHTML = 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.';
     if (popup) {
       title.innerHTML = 'Save up to <span>90% OFF</span>';
       title.className = "";

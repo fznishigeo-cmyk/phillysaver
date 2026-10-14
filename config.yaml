@@ -146,8 +146,10 @@ publish:
   custom_domain: "wowpriced.com"   # the site's one public address (canonical URLs, sitemap, IndexNow)
   exclude_suspect_msrp: true   # critic-flagged inflated list prices stay unpublished (kept in DB)
   ftc_disclosure: >-
-    Disclosure: some outbound links credit the deal source and may be affiliate links
-    that earn the source a commission. Prices change fast and are not guaranteed.
+    Disclosure: wowpriced is an independent service supported by affiliate commissions.
+    We or the credited deal source may earn a small commission when you buy through
+    our links, at no extra cost to you. This does not change which deals we show or
+    their prices. Prices and availability may change.
 
 affiliate:
   # The operator's Amazon Associates Store ID (e.g. "wowpriced-20"). "" = no
@@ -182,10 +184,11 @@ affiliate:
   sovrn_enabled: true
   sovrn_key: ""
   disclosure: >-
-    Disclosure: some links are affiliate links; wowpriced or the deal source may
-    earn a commission when you buy, at no extra cost to you. As an Amazon
-    Associate, wowpriced earns from qualifying purchases. Prices change fast and
-    are not guaranteed.
+    Disclosure: wowpriced is an independent service supported by affiliate commissions.
+    We or the credited deal source may earn a small commission when you buy through
+    our links, at no extra cost to you. This does not change which deals we show or
+    their prices. Prices and availability may change. As an Amazon Associate,
+    wowpriced earns from qualifying purchases.
 
 seo:
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.

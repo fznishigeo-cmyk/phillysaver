@@ -16,9 +16,8 @@ from dealradar.publish import site
 
 NOW = datetime(2026, 10, 12, tzinfo=timezone.utc)
 LINK = "https://buy.stripe.com/test_support"
-BODY = ("wowpriced is free for everyone: no paywall, no ads. Every day we check thousands "
-        "of prices so you only see real deals. If wowpriced saved you money, please chip "
-        "in whatever it's worth to you. Most people never do. If you can, you keep it free for everyone.")
+BODY = ("wowpriced is free for everyone. If you find it useful, you can make an optional "
+        "payment to support our work.")
 NOTE = ("One-time payment, any amount, through Stripe. wowpriced is a for-profit business: "
         "support is not tax-deductible and buys nothing extra; every deal stays free.")
 EMAIL_LINE = "One email with the best deals. Unsubscribe anytime."
@@ -96,11 +95,11 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert 'id="subbar" class="subbar ready" href="/join" hidden>Join free' in home
     assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
     assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
-    assert "Emails are stored by our Cloudflare Worker and used only for the deals email." in (out / "privacy.html").read_text()
+    assert "We use your email only to send deals." in (out / "privacy.html").read_text()
     for name, count in (("index.html", 1), ("subscribe.html", 1)):
         html = (out / name).read_text()
         visible = re.sub(r"<script\b.*?</script>|<style\b.*?</style>", "", html, flags=re.S)
-        assert "A quick, honest ask." in html and BODY in html
+        assert "Support our work" in html and BODY in html
         assert 'href="/join">Join free</a>' in html
         assert ('<form class="joinform" data-clarity-mask="true">' in html) == (name == "index.html")
         assert visible.count(NOTE) == count
@@ -117,10 +116,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "534fca119d62df5e79fffa161cf63f9904ac3f3c987be74e6cf3ddff7e709a8a"),
-    (False, 49, "61184ccd28a5f408031c7c31719074d666043490d3741f34bde71edd9e985475"),
-    (True, 0, "aaa5a502dd637b91b6074d8bcc0b90823e4c1d600e7711fc0d8fe0fc8915d99b"),
-    (True, 49, "6ff88c68966d14bbb58d8aa20028af336034b4735b9b18708cba717479762cce"),
+    (False, 0, "a5766fa485330a86e2008e27e1622f7059492b7b3659594e15fa72af27fe4c37"),
+    (False, 49, "bdf2aa1d64b2bc145639536619fa215249816955af4361dcbfae3ef21ac5072b"),
+    (True, 0, "a43944f5784fbe11db36df66d8b050f12564a92d17de7e6660294f7ca446a1fb"),
+    (True, 49, "803add2d361517d13156fbbd733b784fd9939ea7adfed8ab4ec72a3b6d5eae4c"),
 ])
 def test_support_off_index_bytes_match_task079_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 079 updates shared search/recovery in all four home modes.

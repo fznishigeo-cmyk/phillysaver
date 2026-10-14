@@ -59,7 +59,7 @@ def test_every_published_file_keeps_sources_quiet(db, cfg, tmp_path, support, op
     assert doc["deals"][3].get("locked", False) == (not support and not open_access)
     assert doc["deals"][2]["credits"] == _serialize_deal(other, NOW)["credits"]
     home = (out / "index.html").read_text()
-    assert "We search the top deal sites and stores for hours every day, so you don't have to." in home
+    assert "hours every day" not in home
     assert 'via <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>' in home
     assert 'via <a href="https://hip2save.com/p/2" rel="noopener">Hip2Save</a>' in home
     assert '<span class="credit">via Amazon price drop</span>' in home
@@ -73,5 +73,5 @@ def test_every_published_file_keeps_sources_quiet(db, cfg, tmp_path, support, op
     other_page = _page(out, _path(other)).read_text()
     assert '<p class="detail-sources">Sources: <a href="https://slickdeals.net/f/1" rel="noopener">Slickdeals</a>, ' in other_page
     assert '<a href="https://hip2save.com/p/2" rel="noopener">Hip2Save</a></p>' in other_page
-    assert "Amazon price history" in (out / "about.html").read_text()
-    assert "re-checked against Amazon" in (out / "deals/used-open-box/index.html").read_text()
+    assert "recorded prices" in (out / "about.html").read_text()
+    assert "Review the included accessories" in (out / "deals/used-open-box/index.html").read_text()

@@ -42,7 +42,7 @@ def test_shared_card_and_phone_cap(tmp_path):
         assert '<span aria-hidden="true">@</span> Continue with email' in html
         assert 'height:52px' in html and 'height:56px' in html and 'border-radius:999px' in html
         assert '.joingoogle{' in html and re.search(r'\.joingoogle\{[^}]*border-radius:12px', html)
-        assert 'By continuing, you agree to wowpriced\'s <a href="/privacy.html">privacy policy</a>.' in html
+        assert 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.' in html
         assert '<p id="join-description">The day\'s best deals in one email. Free.</p>' in html
         assert 'width:360px' in html and 'background:transparent' in html
     css = re.search(r'@media \(max-width:640px\)\{\s*\.joinoverlay.*?\n\}', home, re.S)[0]
@@ -77,7 +77,7 @@ def test_shared_footer_signup_markup(tmp_path):
         assert '<form class="joinform" data-join-footer data-clarity-mask="true">' in signup
         assert 'type="email" data-clarity-mask="true" placeholder="Email address" autocomplete="email" required' in signup
         assert '<button type="submit" aria-label="Sign up">' in signup
-        assert 'By subscribing you agree to our <a href="/privacy.html">privacy policy</a>.' in signup
+        assert 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.' in signup
         assert 'role="status" hidden>Thank you for signing up!</p>' in signup
         assert 'height:48px' in html and 'border-radius:12px' in html and 'width:48px;height:48px;border:0;border-radius:50%' in html
         assert html.count('window.wpSupport =') == 1

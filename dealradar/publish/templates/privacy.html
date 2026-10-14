@@ -79,87 +79,100 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <div class="wrap">
 <main>
 <h1>Privacy</h1>
-<p class="lede">What we keep, what our partners see, and how to switch the ad partners off.</p>
+<p class="lede">What we collect, how we use it and the choices available to you.</p>
 
 <h2>The short version</h2>
 <div class="card">
 <!--standard-->  <p>We keep what it takes to run your account: your email address and, once you
-     subscribe, the link to your Stripe customer record. We never see your card number.</p>
-<!--/standard--><!--support-->  <p>Emails are stored by our Cloudflare Worker and used only for the deals email. Joining free needs only an email address. We never see your card number.</p>
-<!--/support-->  <p>When we switch on analytics and ad partners, you can turn the ad partners off
+     subscribe, a reference to your payment record. We never see your card number.</p>
+<!--/standard--><!--support-->  <p>We use your email only to send deals. Joining free needs only an email address. We never see your card number.</p>
+<!--/support-->  <p>You can turn off advertising and session-recording services
      below, and they stay off if your browser sends Global Privacy Control.</p>
 </div>
 
 <!--standard--><h2>Your account</h2>
 <ul>
-  <li><strong>Email and password.</strong> We store your email address and a salted,
-      scrambled form of your password (a hash). Never the password itself.</li>
-  <li><strong>Continue with Google.</strong> We store your email address and the ID
-      Google gives your account. Google does not share your Google password with us.</li>
+  <li><strong>Email and password.</strong> We store your email address and a protected
+      version of your password, never the password itself.</li>
+  <li><strong>Third-party sign-in.</strong> If you choose this option, we receive your
+      email address and an account identifier, never your password from that provider.</li>
   <li>Either way, the account record also holds when it was created, whether you
-      have used the free trial, and your Stripe customer ID once you subscribe.</li>
+      have used the free trial, and your payment customer ID once you subscribe.</li>
 </ul>
-<p>Before we stopped sending email, visitors could join a free email list. We no longer
-   send to it, and any address on it is deleted when you ask.</p>
+<p>Addresses on the earlier email list are kept until you unsubscribe or request
+   deletion. We are not currently sending deal emails to that list.</p>
 
 <h2>Payments</h2>
-<p>Stripe runs checkout and billing. You type your card into Stripe's page, not ours,
-   so we never see or store your card number. Stripe tells us whether your membership
-   is active or in its trial. Stripe's own privacy policy covers what Stripe keeps.</p>
+<p>Our payment processor handles checkout and billing and tells us whether your
+   membership is active or in its trial. We never see or store your card number.
+   The processor's privacy policy covers its payment records.</p>
 
 <!--/standard--><!--support--><h2>Your email address</h2>
-<p>When you join free, our Cloudflare Worker stores your email address, sign-up time and confirmation status for the deals email. You can unsubscribe anytime or ask us to delete your address.</p>
+<p>When you join free, we store your email address, sign-up time and confirmation
+   status to manage the deals email. Deal emails are starting soon; we will send a
+   confirmation email first. You can unsubscribe anytime or ask us to delete your address.</p>
+<p>If you use third-party sign-in, we also keep your email address, the provider's
+   identifier, sign-up time and verification status in a sign-in record. This lets
+   us verify your sign-in. You can ask us to delete this record too.</p>
 <h2>Support payments</h2>
-<p>Optional support is a one-time payment through Stripe. Your card details go directly to Stripe; we never see or store your card number. Stripe keeps its own payment records.</p>
+<p>Our payment processor handles optional support payments, including any recurring
+   payments you choose. We never see or store your card number. The processor keeps
+   payment records under its own privacy policy.</p>
 
 <!--/support--><h2>What your browser stores</h2>
 <p>We set no cookies of our own. The site keeps a few small notes in your browser's
    storage:</p>
 <!--standard--><ul>
   <li>your sign-in token, while you are logged in;</li>
-  <li>your sort choice, and which deals you have already seen (so new ones stand out);</li>
+  <li>your search, filter and sort choices, which deals you have seen, and visit and deal-click counts;</li>
   <li>a checkout receipt waiting to be attached to your account, until it is;</li>
   <li>your ad-partner choice from this page, and a note that a trial start was already counted.</li>
 </ul>
-<p>Clearing this site's data in your browser removes all of it and logs you out. If you
-   choose "Continue with Google", Google's sign-in button loads from Google. The hosts
-   that serve our pages (GitHub Pages and Cloudflare) see your IP address and browser
-   type, as any web host does.</p>
+<p>Clearing this site's data in your browser removes these notes and logs you out.
+   Choosing third-party sign-in connects your browser to that sign-in provider.</p>
 
 <!--/standard--><!--support--><ul>
-  <li>your sort choice and which deals you have already seen;</li>
-  <li>your ad-partner choice and a support-banner dismissal for seven days.</li>
+  <li>your search, filter and sort choices, which deals you have seen, and visit and deal-click counts;</li>
+  <li>your ad-partner choice, sign-up and support-prompt preferences, including a
+      support-banner dismissal for seven days.</li>
 <!--saved-->  <li>your saved deals: a public deal identifier, label, store, optional internal deal-page path, condition and saved or matched prices, plus any target you choose; no photos, codes or outbound links.</li>
 <!--/saved-->
 </ul>
 <!--saved--><p><strong>Saved on this device.</strong> Your shortlist stays in this browser, needs no account and does not sync between devices. Saved prices and target prices stay in this browser and are checked when you visit. Remove individual saves or use “Clear saved deals” in the Saved view. Clearing this site's browser data also removes the list. If storage is blocked, saves last only for that tab.</p>
 <!--/saved-->
-<p>Clearing this site's browser data removes these notes. Cloudflare, which hosts the pages and email sign-up, sees your IP address and browser type, as any web host does.</p>
+<p>Clearing this site's browser data removes these notes.</p>
 
-<!--/support--><h2>Analytics and ad partners</h2>
-<p>When we switch them on, these partners load on our pages and set their own cookies.
-   They help us see which pages people use and show our ads to people likely to want
-   them.</p>
+<!--/support--><h2>Service providers and sharing</h2>
+<p>We use service providers that host the site and send email, process payments,
+   support sign-in, and provide analytics and advertising services. They receive
+   the information needed to provide those services. Hosting providers receive
+   your IP address, browser type and page requests to deliver and protect the site.</p>
+<h2>Analytics, cookies and advertising</h2>
+<p>When enabled, analytics and advertising services may use cookies and similar
+   technologies to measure site use, improve the site and measure or show our ads.</p>
 <ul>
-  <li><strong>Google Analytics</strong> counts visits and which pages are used. It runs
-      for everyone, with its ad features (Google signals and ad personalization) off
-      when you opt out below or your browser sends Global Privacy Control.
-      Opening price requirements and clicking offers with requirements send only
-      a fixed page-type label in separate Analytics events, never codes, prices or email addresses.</li>
-  <li><strong>Microsoft Clarity</strong> records clicks, scrolls and page views to help
-      us improve the site. Typed text and account details are masked. It does not load
-      when you opt out below or your browser sends Global Privacy Control.</li>
-  <li><strong>Google Ads, Meta (Facebook and Instagram), TikTok, Pinterest and Microsoft
-      Advertising (Bing)</strong> learn that a visitor came from one of our ads, and
-      <!--standard-->whether they signed up, started checkout, started a trial or clicked a deal.<!--/standard--><!--support-->whether they joined free, clicked support or clicked a deal.<!--/support-->
-      They do not load at all when you opt out below or your browser sends Global
-      Privacy Control.</li>
+  <li><strong>Analytics</strong> measures visits, page views and actions such as deal
+      clicks. It remains active when you opt out below, with advertising features
+      and ad personalization disabled.</li>
+  <li><strong>Session recording</strong> records clicks, scrolls and page views to
+      help improve the site. Typed text and account details are masked. It does
+      not load when you opt out or send Global Privacy Control.</li>
+  <li><strong>Advertising partners</strong> measure visits from ads and
+      <!--standard-->sign-ups, checkouts, trial starts and deal clicks.<!--/standard--><!--support-->free joins, support clicks and deal clicks.<!--/support-->
+      They do not load when you opt out or send Global Privacy Control.</li>
 </ul>
-<p>The ad partners' code sees the page you are on, as any such tag does. On top of that we tell
-   them only those events, plus the store and category of a deal you click: never your
-   email address, and never which item or price.</p>
-<!--saved--><p>Saved-list actions send only a count and a fixed action label to Google Analytics. We never send your shortlist, deal identifiers or saved labels in these events. The Saved view is masked from Microsoft Clarity.</p>
+<p>These services can see the page address and browser information. Our action
+   reports include the store and category of a clicked deal, never your email
+   address or the item's name or price.</p>
+<!--saved--><p>Saved-list actions send only a count and a fixed action label to our
+   analytics provider. We never send your shortlist, deal identifiers or saved
+   labels in these events. The Saved view is masked from session recording.</p>
 <!--/saved-->
+<h2>Affiliate links</h2>
+<p>When you follow an affiliate link, the retailer or affiliate partner may use
+   cookies or similar technology to attribute a purchase and pay a commission.
+   Their privacy policies apply on their sites. See our
+   <a href="/disclosure.html">affiliate disclosure</a>.</p>
 
 <h2 id="choices">Your privacy choices</h2>
 <div class="card">
@@ -181,11 +194,26 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <p id="delcontact" hidden>Write to us through the <a href="/contact.html">contact page</a>
    <!--standard-->from the address on your account<!--/standard--><!--support-->from the address on the email list<!--/support--> and ask us to delete it.</p>
 <!--standard--><p>We delete your account record and any address on the old email list. If you are a
-   member, say so and we end your membership too. Stripe keeps its own payment records.</p>
+   member, say so and we end your membership too. Our payment processor keeps its own payment records.</p>
 
-<p class="muted">Last updated October 12, 2026. If this page changes, so does this date.</p><!--/standard--><!--support--><p>We delete your email-list record when you ask. Stripe keeps its own payment records.</p>
+<!--/standard--><!--support--><p>We delete your email-list and sign-in records when you ask.
+   Our payment processor keeps its own payment records.</p>
 
-<p class="muted">Last updated October 13, 2026. If this page changes, so does this date.</p><!--/support-->
+<!--/support-->
+<h2>Retention</h2>
+<p>We keep email-list records until you unsubscribe or ask us to delete them.
+   <!--standard-->Account records stay until you request deletion. <!--/standard-->Browser preferences
+   remain until they expire or you clear them. Service providers retain usage and
+   payment records according to their policies and any applicable legal requirements.</p>
+<!--support--><p>Unsubscribing removes your email-list record. If you used third-party sign-in,
+   its separate sign-in record stays until you request deletion.</p><!--/support-->
+<h2>Children</h2>
+<p>wowpriced is not intended for children under 13. If you believe a child has
+   provided personal information, contact us so we can remove it.</p>
+<h2>Changes and questions</h2>
+<p>We post privacy updates on this page. For questions or requests, use the
+   <a href="/contact.html">contact page</a> or the email address above.</p>
+<p class="muted">Last updated October 14, 2026.</p>
 </main>
 {{SITE_FOOTER}}
 </div>

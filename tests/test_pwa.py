@@ -44,10 +44,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "654f2a1bdf5bdc54f552ab244f655bcc27795a43276103a42275e49f35a08712"),
-    ("open", "99acae40939b9f955f6a0d0ecf6d5f1ffa78c4656f82e2e753a45ea0119ec1c0"),
-    ("support", "fc5cd99964df48b07367e1ebe16de8bc317cad80f27b7ec28722a4ebc9d41183"),
-    ("shipped", "52a3fdd36cf767b08f2ed759e4e4593f60246116ac6209b18cf4b2189fc8e2f2"),
+    ("membership", "ccb7fee8ac31706c30987bd15fb93428576558046220e65f4896926b3ba8e564"),
+    ("open", "2db19caa85a76a9891c6894e89e60d96118ff912a22653b71dabe97d20383e8b"),
+    ("support", "8afd6f3d7e8ed13c71a3635649726acc89036db0437e6f1e7b0d06295db4499a"),
+    ("shipped", "9c86bb91fc4392503849bbd2077702c3611d65bfb6d6255b407fa9eccf7e757f"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Task 079 refreshes all four trees for shared search/recovery, the
@@ -155,7 +155,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "fc5cd99964df48b07367e1ebe16de8bc317cad80f27b7ec28722a4ebc9d41183"
+    assert tree_hash(out) == "8afd6f3d7e8ed13c71a3635649726acc89036db0437e6f1e7b0d06295db4499a"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

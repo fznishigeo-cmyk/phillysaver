@@ -70,53 +70,31 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <div class="wrap">
 <main>
 <h1>Contact</h1>
-<p class="lede">A real person reads every message. Sometimes slowly, but every one.</p>
-
-<h2>General</h2>
+<p class="lede">Get in touch with questions, feedback or an offer to review.</p>
+<h2>General enquiries</h2>
 <div class="card">
-  <!-- The token is filled in by the publisher from config; when no email is
-       configured the line hides itself (see the script at the bottom). -->
   <p id="emailline" class="email">Email us:
      <a id="emaillink" href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a></p>
-  <p>Questions, ideas, a deal you think we missed, or a note to say the wall saved
-     you money. All welcome.</p>
+  <p>Include the relevant page or deal link so we can help.</p>
 </div>
-
 <!--standard--><h2>Membership and billing</h2>
-<p>Billing runs through Stripe. Cancel anytime online with "Manage membership" at the
-   bottom of the home page; it also changes your card and shows your
-   invoices.<span class="mailalt"> Or email <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a> about anything
-   billing, a cancellation included, and we will sort it out for you.</span></p>
+<p>Cancel anytime online with “Manage membership” at the bottom of the home page.
+   You can also update your payment method and view invoices there.<span class="mailalt">
+   For billing questions or cancellation requests, email
+   <a href="mailto:{{CONTACT_EMAIL}}">{{CONTACT_EMAIL}}</a>.</span></p>
 <p id="portalline" style="display:none">Manage your membership:
    <a id="portallink" rel="noopener">billing portal</a>.</p>
-<p><!--paywall-->Eight top deals on the wall stay free whether or not you are a member, a new eight at every drop.<!--/paywall--><!--open-->Every deal on the wall is open to everyone right now, member or not.<!--/open--></p>
-
+<p><!--paywall-->Eight deals stay free, with a new eight at every drop.<!--/paywall--><!--open-->Every deal is open to everyone right now.<!--/open--></p>
 <!--/standard--><!--support--><h2>Email list and support payments</h2>
-<p>Join free for the deals email, starting soon. Unsubscribe anytime. Stripe handles optional one-time support payments. For email-list or payment questions, write to us using the address above.</p>
-
+<p>Our deals email is starting soon. You can unsubscribe anytime. For questions
+   about the email list or optional support payments, use the address above.</p>
 <!--/support--><h2>Deal sources and retailers</h2>
-<p>If we credit your site or link to your store, thank you; you are the reason the
-   wall exists. We honor robots.txt on every host, and we crawl a site more fully
-   only with written permission from its owner. We also keep that permission on
-   file and stop the moment it is withdrawn.</p>
-<p>Write to us to:</p>
-<div class="card">
-  <p><strong>Change how you are credited.</strong> Tell us the name and link you want
-     on your cards, and we will update it.</p>
-  <p><strong>Remove an image.</strong> We only show product images we believe we have
-     the rights to show. If one of them is yours and you want it gone, say which
-     listing and it comes down quickly, no questions asked.</p>
-  <p><strong>Grant or withdraw crawl permission.</strong> A short note from the site
-     owner is enough either way. Withdrawals are handled first.</p>
-</div>
-
-<h2>Shoppers: report a dead deal</h2>
-<p>Amazon prices are re-checked live about every three hours, other stores' deals
-   are marked GONE when the source says so or the deal expires, and the wall itself
-   republishes every {{DROP_MINUTES}} minutes, so a deal can still die between checks.
-   If you clicked through and the price was gone, send us the item name and the
-   store and we will mark it GONE. If the price was never real, tell us that too;
-   it helps the fake-list-price critic get sharper.</p>
+<p>We respect each site's rules and will stop including its offers on request.</p>
+<p>Contact us to update a credit, discuss a partnership or request the removal of
+   an offer or image. Include the page link and the details of your request.</p>
+<h2>Report a changed or ended deal</h2>
+<p>If a price has changed or an offer has ended, send us the deal link and store
+   name so we can review it.</p>
 </main>
 {{SITE_FOOTER}}
 </div>

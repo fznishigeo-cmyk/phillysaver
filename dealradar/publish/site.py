@@ -345,9 +345,8 @@ _CONDITION_HOW = {
 _VARIANT_RE = re.compile(r"<!--(paywall|open|support)-->(.*?)<!--/\1-->", re.S)
 _STANDARD_RE = re.compile(r"<!--standard-->(.*?)<!--/standard-->", re.S)
 SUPPORT_BODY = (
-    "wowpriced is free for everyone: no paywall, no ads. Every day we check thousands "
-    "of prices so you only see real deals. If wowpriced saved you money, please chip "
-    "in whatever it's worth to you. Most people never do. If you can, you keep it free for everyone."
+    "wowpriced is free for everyone. If you find it useful, you can make an optional "
+    "payment to support our work."
 )
 SUPPORT_NOTE = (
     "One-time payment, any amount, through Stripe. wowpriced is a for-profit business: "
@@ -418,22 +417,6 @@ def site_footer(html: str, now: datetime, disclosure: str, support: bool,
         script = support_script()
         html = html.replace("</body>", "<script>" + script + "</script>\n</body>", 1)
     return html
-
-
-_SOURCE_ONLY_ABOUT = re.compile(
-    r"Some\s+of those links are the source's affiliate links\. That is how they keep the lights\s+on, and we think they earned it\.")
-AFFILIATE_ABOUT = ("Some of those links are affiliate links, the source's or ours: wowpriced or "
-                   "the source may earn a commission, at no extra cost to you. As an Amazon "
-                   "Associate, wowpriced earns from qualifying purchases. That is how the site "
-                   "stays free.")
-
-
-def affiliate_copy(html: str, amazon_tag: str) -> str:
-    """With a Store ID set, the about copy says wowpriced may earn too
-    (FTC + Amazon Associates); without one it stays the source-only line."""
-    if not amazon_tag:
-        return html
-    return _SOURCE_ONLY_ABOUT.sub(AFFILIATE_ABOUT, html)
 
 
 def affiliate_programs(cfg: AppConfig) -> str:
@@ -945,11 +928,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                       lambda m: m.group(1) if saved_deals else "", html, flags=re.S)
         html = html.replace("<!--watch-->", "").replace("<!--/watch-->", "")
         html = html.replace("{{HOT_EXPLANATION}}", (
-            " Flames mark real signals: at least two are needed, from at least 60% off, "
-            "confirmation by two or more independent sources, and a first sighting less "
-            "than two hours ago. Two signals show two flames; all three show three."
+            " Flames highlight offers with a combination of strong discounts, "
+            "independent confirmation and recent arrival."
         ) if engagement["hot_meter"] else "")
-        html = affiliate_copy(html, getattr(cfg, "affiliate_amazon_tag", ""))
+        html = html.replace("{{DISCLOSURE}}", escape(meta["disclosure"]))
         if name == "disclosure.html":
             html = html.replace("{{AFFILIATE_PROGRAMS}}", affiliate_programs(cfg))
         if support:
