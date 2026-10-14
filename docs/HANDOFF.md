@@ -190,6 +190,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Efficiency metrics (Codex task 088, 2026-10-14; uncommitted):** private
+  UTC daily and per-run token/public-deal, useful-recheck, LLM/public-deal,
+  avoided-critic and new/used shown-wall freshness metrics. Actual Keepa
+  receipts exclude category/photo-only work; first-public events dedupe
+  supply. Compact run-key rows retain retry costs and worst snapshots within
+  existing retention. Missing history/receipts/clocks stay unavailable;
+  partial coverage is labeled. Expired clicks stay unavailable because the
+  existing GA4 data lacks deal/time attribution (`growth.expired_click_hours`).
+  No new report requests, paid calls, dependencies, shopper button or email.
+  Final focused validation: **80 passed**, including **27 new tests**.
+  Full `.venv/bin/python -m pytest -q`: **3,200 passed, 1 deselected**;
+  only the seven existing Stripe yearly-deploy checks in `test_workflows.py`
+  failed at socket creation (`Operation not permitted`: change0–change5 and
+  no-price/no-key). A green run outside this sandbox and live observations
+  after deployment remain. Definitions are in the task's HANDOFF.
+  Read-only Git metadata blocks branch creation; no commit or push.
 - **Wall confirmation coverage (Codex task 085, 2026-10-14; uncommitted):**
   saved wall keys round-trip correctly; top classification precedes wall,
   and the old aggregate mixed 2-hour new checks with 24-hour used checks.

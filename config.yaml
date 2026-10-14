@@ -535,6 +535,7 @@ growth:
   # GOOGLE_ADS_*, CLOUDFLARE_OPS_TOKEN (Zone:Read + Analytics:Read), BING_WEBMASTER_API_KEY.
   # Read-only everywhere. An empty value (or a missing secret) skips its section.
   report_days: 7
+  expired_click_hours: 3  # Death after a click; unavailable without existing deal/time attribution.
   ga4_property_id: "558475393"               # numeric GA4 property ID (Admin -> Property details)
   search_console_site: "sc-domain:wowpriced.com"
   sitemap_url: ""                            # "" = https://<publish.custom_domain>/sitemap.xml

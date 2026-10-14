@@ -236,6 +236,15 @@ CREATE TABLE IF NOT EXISTS run_stats (
     spend_usd REAL NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS efficiency_runs (
+    run_key TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    pending INTEGER NOT NULL DEFAULT 1,
+    metrics TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_efficiency_at ON efficiency_runs(started_at);
+
 CREATE TABLE IF NOT EXISTS ai_yield_events (
     event_key TEXT PRIMARY KEY,
     identity TEXT NOT NULL,
@@ -1069,6 +1078,10 @@ class DB:
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
         yield_cutoff = iso(now - timedelta(days=run_stats_days))
+        self.conn.execute("DELETE FROM efficiency_runs WHERE started_at < ?", (yield_cutoff,))
+        if self.meta_get("efficiency_since"):
+            self.meta_set("efficiency_retained_since", max(
+                self.meta_get("efficiency_retained_since") or "", yield_cutoff))
         for table, stamp in (("legitimacy_audits", "observed_at"),
                              ("legitimacy_batches", "observed_at"),
                              ("ai_yield_events", "observed_at"),

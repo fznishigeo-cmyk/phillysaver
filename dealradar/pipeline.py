@@ -21,7 +21,7 @@ from itertools import chain, zip_longest
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import rank, util
+from . import efficiency, rank, util
 from .config import AppConfig, load_config, load_sources
 from .db import DB
 from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
@@ -229,6 +229,8 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             continue
         got, ok, err = run_source(source, adapter, fetcher, db, cfg, now,
                                   run_deadline=fetch_deadline)
+        if hasattr(fetcher, "keepa_feed_usage") and hasattr(adapter, "token_usage"):
+            fetcher.keepa_feed_usage.add(adapter.token_usage)
         if feed_confirmed is not None:
             for condition, keys in getattr(adapter, "feed_confirmed", {}).items():
                 feed_confirmed[condition].update(keys)
@@ -1201,6 +1203,10 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
              "used_checked": 0, "used_skipped_budget": 0, "used_off_wall": 0,
              "drift": {"within_1pct": 0, "higher_1_5pct": 0, "higher_over_5pct": 0,
                        "lower": 0, "promo_hidden": 0, "repriced": 0}, "planned": {}, "done": {}}
+    from .keepa_budget import TokenUsage
+    recheck_usage = TokenUsage()
+    useful_rechecks = 0
+    stats["yield"] = efficiency.recheck_yield(0, 0)
 
     def remembered(name):
         try:
@@ -1439,8 +1445,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 used_spent += len(batch) * per_deal  # worst case, even on a lost response
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             options = {"live": True} if live else {}
+            receipts_before = (budget.usage.requests, budget.usage.missing, budget.usage.consumed)
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
                                              used_offers=not is_photo, fetcher=fetcher, **options)
+            reading_at = max(now, util.now_utc())  # a live update can postdate the run's start
+            receipts = TokenUsage(*(a - b for a, b in zip(
+                (budget.usage.requests, budget.usage.missing, budget.usage.consumed), receipts_before)))
+            if not is_photo:
+                recheck_usage.add(receipts)
             rate_limited = getattr(verdicts, "rate_limited", False)
             if is_photo:
                 stats["image_backfill"] += len(batch)
@@ -1449,6 +1461,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 if deal["dedupe_key"] in verdicts:
                     stats["done"][label] += 1
                 product = getattr(verdicts, "products", {}).get(deal["dedupe_key"])
+                changed = (not is_photo and verdict is not None
+                           and efficiency.price_changed(deal, product, cfg, reading_at))
+                deaths_before = stats["dead"]
                 if product is not None and not is_used_deal(deal):
                     live_price = _live_new_price(product)
                     shown = deal.get("final_price")
@@ -1467,6 +1482,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 apply(deal, verdict,
                       had_photo=deal["dedupe_key"] not in photo_less,
                       answered=deal["dedupe_key"] in verdicts)
+                if not is_photo and receipts.total is not None and receipts.total > 0:
+                    useful_rechecks += int(changed or stats["dead"] > deaths_before)
             found = sum(1 for d in batch
                         if d["dedupe_key"] in photo_less and d.get("image_url"))
             if photo_less:
@@ -1474,6 +1491,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                          "Keepa photo", found, len(photo_less))
             i += len(batch)
     budget.save(db)
+    stats["yield"] = efficiency.recheck_yield(
+        recheck_usage.total, useful_rechecks if not recheck_usage.missing else None)
     stats["tokens"]["bucket_end"] = budget.available(now)
     stats["tokens"]["capacity"] = budget.capacity()
     overflow = budget.overflow(cfg.keepa_recheck_interval_minutes, now)
@@ -1743,6 +1762,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     db = DB(db_path)
     db.start_run(run_key, kind, now)
     fetcher = PoliteFetcher(db, cfg, transport=transport)
+    from .keepa_budget import TokenUsage
+    fetcher.keepa_feed_usage = TokenUsage()
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
     parser = None
     yield_spend_before = db.spend_usd_for_run(run_key)
@@ -1766,6 +1787,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 counts[reason] = counts.get(reason, 0) + 1
 
     try:
+        efficiency.start(db, now, run_key)
         ai_yield.start(db, cfg, now, run_key)
         if db.meta_get("intake_since") is None:
             db.meta_set("intake_since", util.iso(now))
@@ -2201,6 +2223,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             summary["ai_yield"]["unavailable"] = "public yield measurement failed"
             summary["ai_yield"]["new_deals_per_usd"] = None
         summary["ai_yield"]["prefilter_readiness"] = ai_yield.readiness(db, cfg, util.now_utc())
+        summary["efficiency"] = efficiency.run_metrics(
+            summary, fetcher.keepa_feed_usage,
+            {s.name for s in sources if s.method == "api" and s.adapter == "keepa"})
         if step_summary:
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:
@@ -2247,6 +2272,15 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         return summary
     finally:
         try:
+            # Persist only counters/ages, including unavailable fields on a
+            # failed run. No public payload or external request is involved.
+            try:
+                values = summary.get("efficiency") or efficiency.run_metrics(
+                    summary, fetcher.keepa_feed_usage,
+                    {s.name for s in sources if s.method == "api" and s.adapter == "keepa"})
+                efficiency.record(db, now, run_key, values)
+            except Exception as e:
+                log.warning("efficiency measurement failed: %s", type(e).__name__)
             db.finish_run(run_key, now=util.now_utc(),
                           items_fetched=summary.get("items_fetched", 0),
                           posts_new=summary.get("posts_new", 0),

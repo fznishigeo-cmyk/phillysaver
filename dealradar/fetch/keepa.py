@@ -545,6 +545,8 @@ class KeepaDealsAdapter(SourceAdapter):
         self._http = http_client
         self._sleep = sleep_fn  # politeness gap between /deal pages
         self.feed_confirmed: dict[str, set[str]] = {"new": set(), "used": set()}
+        from ..keepa_budget import TokenUsage
+        self.token_usage = TokenUsage()
 
     def fetch_posts(
         self,
@@ -556,6 +558,8 @@ class KeepaDealsAdapter(SourceAdapter):
         deadline: float | None,
     ) -> list[RawPost]:
         self.feed_confirmed = {"new": set(), "used": set()}
+        from ..keepa_budget import TokenUsage
+        self.token_usage = TokenUsage()
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
@@ -870,9 +874,16 @@ class KeepaDealsAdapter(SourceAdapter):
         pull.requests += 1
         # Keyed API (robots.txt is for crawlers); a 429 is an empty token
         # bucket, deferred to the next pull, so it is not retried here.
-        resp = pull.client.api_get(url, params=params, deadline=pull.deadline,
-                                   max_attempts=1, respect_robots=False)
-        payload = response_payload(resp)
+        payload = None
+        try:
+            resp = pull.client.api_get(url, params=params, deadline=pull.deadline,
+                                       max_attempts=1, respect_robots=False)
+            payload = response_payload(resp)
+        finally:
+            # Only deal discovery: /deal, sweep finder and sweep products.
+            # Category lookups and downstream rechecks have separate purposes.
+            if url != CATEGORY_URL:
+                self.token_usage.note(payload)
         pull.budget.note(payload, pull.now)
         if resp.status_code == 429:
             log.warning("keepa %s: 429 Too Many Requests (%s); token bucket "

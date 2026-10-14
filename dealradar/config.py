@@ -225,6 +225,7 @@ class AppConfig:
 
     # -- growth: the daily private report (config.yaml growth:); "" skips a section --
     growth_report_days: int = 7
+    growth_expired_click_hours: float = 3.0
     growth_ga4_property_id: str = ""
     growth_search_console_site: str = ""
     growth_sitemap_url: str = ""
@@ -582,6 +583,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return str(g("growth", key, default="") or "").strip()
 
     cfg.growth_report_days = max(1, int(g("growth", "report_days", default=cfg.growth_report_days)))
+    cfg.growth_expired_click_hours = max(0.0, float(g(
+        "growth", "expired_click_hours", default=cfg.growth_expired_click_hours)))
     cfg.growth_ga4_property_id = gs("ga4_property_id").removeprefix("properties/")
     cfg.growth_search_console_site = gs("search_console_site")
     cfg.growth_sitemap_url = gs("sitemap_url") or (

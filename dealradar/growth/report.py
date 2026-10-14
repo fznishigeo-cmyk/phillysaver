@@ -52,6 +52,16 @@ def _critic_shadow(db_path, now: datetime) -> dict:
         db.close()
 
 
+def _efficiency(db_path, cfg, now: datetime) -> dict:
+    from ..efficiency import daily
+
+    db = DB(db_path, read_only=True)
+    try:
+        return daily(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _legitimacy_audit(db_path, cfg, now: datetime) -> dict:
     from ..legitimacy import daily_stats
 
@@ -124,6 +134,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "efficiency": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                       lambda: _efficiency(db_path, cfg, now)),
         "audit": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                   lambda: _legitimacy_audit(db_path, cfg, now)),
         # Only an explicit snapshot (the CLI passes --db): never a stray local file.
@@ -292,6 +304,11 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines += site_health.lines(data["site_health"])
     lines += ["", *indexnow.summary_lines(data.get("indexnow") or {
         **dict.fromkeys(indexnow.METRICS), "unavailable": "state snapshot unavailable"})]
+
+    from ..efficiency import lines as efficiency_lines
+    efficiency = data.get("efficiency")
+    day = efficiency.get("day", "yesterday") if efficiency else "yesterday"
+    lines += ["", f"== Efficiency ({day} UTC) ==", *efficiency_lines(efficiency, cfg)]
 
     lines += ["", "== Money =="]
     mix = data.get("site_health", {}).get("link_mix")

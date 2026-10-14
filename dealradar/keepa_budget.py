@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -49,6 +50,36 @@ def _num(v: Any) -> float | None:
 
 
 @dataclass
+class TokenUsage:
+    """Actual receipts only; a lost receipt makes the total unavailable.
+
+    https://keepa.com/api-docs/request-basics.html documents tokensConsumed.
+    Bucket deltas include refill and are not a measurement of spend.
+    """
+
+    requests: int = 0
+    missing: int = 0
+    consumed: float = 0
+
+    def note(self, payload: Any) -> None:
+        self.requests += 1
+        tokens = _num(payload.get("tokensConsumed")) if isinstance(payload, dict) else None
+        if tokens is None or not math.isfinite(tokens) or tokens < 0:
+            self.missing += 1
+        else:
+            self.consumed += tokens
+
+    def add(self, other: TokenUsage) -> None:
+        self.requests += other.requests
+        self.missing += other.missing
+        self.consumed += other.consumed
+
+    @property
+    def total(self) -> float | None:
+        return None if self.missing else self.consumed
+
+
+@dataclass
 class KeepaBudget:
     """Last Keepa token reading plus the refill estimate since."""
 
@@ -56,6 +87,7 @@ class KeepaBudget:
     refill_rate: float | None = None   # tokens per minute
     seen_at: datetime | None = None
     db: Any = field(default=None, repr=False, compare=False)  # roots from already-paid products
+    usage: TokenUsage = field(default_factory=TokenUsage, repr=False, compare=False)
 
     @classmethod
     def load(cls, db) -> KeepaBudget:

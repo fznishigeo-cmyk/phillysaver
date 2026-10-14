@@ -1042,7 +1042,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "confirmed_age": {
                 "top_candidates": confirmation_coverage([d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]], now),
                 "wall": confirmation_coverage([originals[d["dedupe_key"]] for d in wall
-                                       if d.get("dedupe_key") in originals], now)},
+                                       if not d.get("locked") and d.get("dedupe_key") in originals], now)},
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),

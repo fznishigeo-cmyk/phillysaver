@@ -1156,7 +1156,8 @@ def test_exit_code_only_fails_when_every_configured_section_failed(cfg, rsa_key,
     fake = FakeApis(fail={"api.stripe.com": 500, "wowpriced.com": 500})
     with client_for(fake) as client:
         assert report.run(cfg, NOW, http_client=client) == 1
-    assert fake.telegram[0]["text"].rstrip().endswith("stripe error, product skipped")  # still reported
+    # still reported (a longer report can span several Telegram messages)
+    assert "\n".join(m["text"] for m in fake.telegram).rstrip().endswith("stripe error, product skipped")
 
     code, _, _ = full_run(cfg, rsa_key, monkeypatch, fail={"api.stripe.com": 500})
     assert code == 0  # the other sections worked

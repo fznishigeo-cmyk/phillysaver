@@ -513,9 +513,14 @@ def keepa_products(key: str, asins: list[str], stats: int,
     # answered next pass, so it is not retried here.
     if budget is not None:
         budget.reserve(len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live)))
-    resp = fetcher.api_get("https://api.keepa.com/product", params=params,
-                           max_attempts=1, respect_robots=False)
-    payload = response_payload(resp)
+    payload = None
+    try:
+        resp = fetcher.api_get("https://api.keepa.com/product", params=params,
+                               max_attempts=1, respect_robots=False)
+        payload = response_payload(resp)
+    finally:
+        if budget is not None:
+            budget.usage.note(payload)
     if budget is not None:
         budget.note(payload)
     if resp.status_code == 429:
