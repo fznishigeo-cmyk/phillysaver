@@ -235,7 +235,7 @@ def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
         "with_requirements": 2, "covered": 2, "known_shipping_share": 0,
         "requirement_coverage": 1}
     assert set(summary["seo_audit"]["indexable_by_family"]) == {
-        "home", "category", "store", "price", "best_today", "deal"}
+        "home", "category", "store", "price", "best_today", "deal", "product_family"}
     assert all(summary["seo_audit"][k] == 0 for k in (
         "empty_indexable", "schema_mismatches", "broken_internal_links", "sitemap_missing", "sitemap_extra"))
     assert summary["link_mix"]["source_post"] == 1

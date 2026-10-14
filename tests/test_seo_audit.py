@@ -28,7 +28,7 @@ def test_audit_fixture_counts_sparse_schema_broken_link_and_ended(db, cfg, tmp_p
     res = _render(db, cfg, tmp_path, deals + [ended])
     clean = res["seo_audit"]
     assert clean["indexable_by_family"] == {"home": 1, "category": 1, "store": 1,
-                                             "price": 3, "best_today": 1, "deal": 20}
+                                             "price": 3, "best_today": 1, "deal": 20, "product_family": 0}
     assert clean["sitemap_urls"] == clean["emitted_indexable"] == 36  # + disclosure.html (task 074)
     assert "seo_audit" not in json.loads((tmp_path / "deals.json").read_text())
     assert all(clean[k] == 0 for k in ("empty_indexable", "schema_mismatches", "broken_internal_links",
@@ -91,7 +91,7 @@ def test_empty_home_and_best_return_and_family_minimum_config(db, cfg, tmp_path)
     assert full["seo_audit"]["indexable_by_family"]["best_today"] == 1
     configured = load_config(ROOT / "config.yaml")
     assert seo_audit.minimums(configured) == {"home": 1, "category": 10, "store": 15,
-                                             "price": 10, "best_today": 1, "deal": 1}
+                                             "price": 10, "best_today": 1, "deal": 1, "product_family": 3}
     path = tmp_path / "custom.yaml"
     path.write_text("seo:\n  home_min_items: 2\n  best_today_min_items: 3\n  price_page_min_deals: 4\n  lastmod_retention_days: 2\n")
     custom = load_config(path)

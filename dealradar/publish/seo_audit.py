@@ -18,7 +18,7 @@ from xml.etree import ElementTree as ET
 from ..util import iso, parse_iso
 
 log = logging.getLogger("dealradar.publish.seo")
-FAMILIES = ("home", "category", "store", "price", "best_today", "deal")
+FAMILIES = ("home", "category", "store", "price", "best_today", "deal", "product_family")
 _FACT_META = "seo_page_facts"
 _MAX_FACT_URLS = 50_000
 _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
@@ -30,11 +30,14 @@ def page_family(path: str) -> str:
         return "home"
     if re.fullmatch(r"/deal/[^/]+/", path):
         return "deal"
-    if re.fullmatch(r"/stores/[^/]+/", path):
+    pagination = r"(?:page/(?:[2-9]\d*|1\d+)/)?"
+    if re.fullmatch(r"/products/[^/]+/" + pagination, path):
+        return "product_family"
+    if re.fullmatch(r"/stores/[^/]+/" + pagination, path):
         return "store"
-    if re.fullmatch(r"/deals/under-\d+/", path):
+    if re.fullmatch(r"/deals/under-\d+/" + pagination, path):
         return "price"
-    if re.fullmatch(r"/deals/[^/]+/", path):
+    if re.fullmatch(r"/deals/[^/]+/" + pagination, path):
         return "category"
     return "best_today" if path == "/best-deals-today/" else ""
 
@@ -44,7 +47,8 @@ def minimums(cfg) -> dict[str, int]:
             "category": max(1, cfg.seo_hub_min_items),
             "store": max(1, cfg.seo_store_page_min_deals),
             "price": max(1, cfg.seo_price_page_min_deals),
-            "best_today": max(1, cfg.seo_best_today_min_items), "deal": max(1, cfg.seo_deal_page_min_items)}
+            "best_today": max(1, cfg.seo_best_today_min_items), "deal": max(1, cfg.seo_deal_page_min_items),
+            "product_family": max(2, cfg.traffic_product_family_min_offers)}
 
 
 def _text(s: str) -> str:

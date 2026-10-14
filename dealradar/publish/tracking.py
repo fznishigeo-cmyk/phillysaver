@@ -328,6 +328,12 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if cfg.traffic_hub_pagination_enabled or cfg.traffic_product_families_enabled:
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    hub_page_click: { ga4Only: true, methods: ["category", "store", "price", "product_family"] },\n'
+                                    '    product_family_click: { ga4Only: true, methods: ["deal"] },')
+        dispatch = dispatch.replace('["home", "deal", "category", "store", "price", "best_today"]',
+                                    '["home", "deal", "category", "store", "price", "best_today", "product_family"]')
     if any((getattr(cfg, "traffic_feed_enabled", False),
             getattr(cfg, "traffic_share_enabled", False),
             getattr(cfg, "traffic_related_hubs_enabled", False))):

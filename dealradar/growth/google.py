@@ -37,8 +37,10 @@ PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failure
                   "requirements_open": "requirements_open",
                   "deal_share": "deal_share", "share_arrival": "share_arrival",
                   "feed_open": "feed_open", "feed_arrival": "feed_arrival",
-                  "related_hub_click": "related_hub_click"}
-TRAFFIC_EVENTS = ("deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click")
+                  "related_hub_click": "related_hub_click",
+                  "hub_page_click": "hub_page_click", "product_family_click": "product_family_click"}
+TRAFFIC_EVENTS = ("deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click",
+                  "hub_page_click", "product_family_click")
 EVENTS = ("sign_up", "begin_checkout", "start_trial", "deal_click", "support_click", *PRODUCT_EVENTS.values())
 SAVED_EVENTS = ("deal_save", "saved_view", "saved_deal_click")
 WATCH_EVENTS = ("watch_create", "watch_match", "watch_deal_click")

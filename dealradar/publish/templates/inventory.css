@@ -1,0 +1,7 @@
+.inventory-nav{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;max-width:100%}
+.inventory-nav a{display:inline-flex;align-items:center;justify-content:center;
+  min-height:44px;min-width:44px;max-width:100%;padding:10px 14px;
+  border:1px solid var(--line);border-radius:8px;background:var(--chip);color:var(--fg);
+  white-space:normal;overflow-wrap:anywhere;touch-action:manipulation}
+.inventory-nav a[aria-current]{font-weight:700;border-color:var(--accent)}
+.inventory-nav a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

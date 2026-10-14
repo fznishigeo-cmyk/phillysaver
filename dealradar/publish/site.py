@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
-from . import indexnow, pwa, seo, seo_audit, traffic
+from . import indexnow, inventory, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -826,6 +826,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         ).hexdigest()[:12]
     if traffic.enabled(cfg):
         site_version = traffic.site_version(site_version, cfg)
+    if inventory.enabled(cfg):
+        site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
         site_version = pwa.site_version(site_version, cfg)
     meta = {
@@ -1024,6 +1026,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     pwa.publish(out, cfg)
     traffic.publish(out, cfg, deal_pages[1], paths, site_url)
+    inventory.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
     # into every page written above or by another pass, nested ones included.

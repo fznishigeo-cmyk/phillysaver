@@ -413,6 +413,9 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                  "feed_open counts footer link actions, not subscriptions. share_arrival/feed_arrival count "
                  "tagged deal-page loads (including repeats), not unique people. related_hub_click counts "
                  "contextual store/budget navigation. Missing events are unavailable; no traffic lift is inferred.")
+    lines.append("hub_page_click counts pagination link actions; product_family_click counts deal-to-product "
+                 "navigation. These are actions, not unique visitors or purchases. Search page-family rows "
+                 "include paginated hubs and product_family pages when observed.")
     lines.append("Step-offer outbound session action rate (share of all sessions; not purchases):")
     if "unavailable" in sessions:
         lines.append("  unavailable — " + sessions["unavailable"])

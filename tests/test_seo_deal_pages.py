@@ -207,8 +207,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     deals = [make_deal(dedupe_key=f"large{i}", item=f"Deal {i}", codes=[])
              for i in range(1600)]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
-    # Support join, PWA assets, disclosure, and the public RSS/traffic script.
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641
+    # Existing files plus 26 overflow pages for each of category/store/three budgets.
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():

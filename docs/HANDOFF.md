@@ -245,6 +245,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   larger used wall or sustained API failures needs fresh live measurements;
   stale prices hide rather than claiming a confirmation. Removing the old
   535/24 h × 13 rest-used queue saves about 290 tokens/hour before feeds.
+- **Hub inventory + product families (Codex task 086, 2026-10-14; uncommitted):**
+  `traffic.hub_pagination_enabled` and `product_families_enabled` enable
+  crawlable 60-offer hub pages and exact stored-identity `/products/` pages.
+  Families require three distinct public live listings by default; repeated
+  sources/promos do not inflate the floor. Member pages link to their family;
+  all pages reuse wall cards, visible-offer floors and fact-based lastmod.
+  Stale pages/links disappear on republish. GA4-only navigation counts join
+  Product; Search Console includes paginated hubs and `product_family` rows.
+  Both switches off restore every prior byte, including existing task 083
+  features. **22 new pytest cases**, including **4 Node cases**, pass. Full
+  suite: **3,180 passed, 8 failed, 1 deselected**; the old end-to-end family
+  allow-list was fixed and reran **1 passed**. Only seven existing Stripe
+  workflow socket failures remain (`Operation not permitted`, change0–5 and
+  no-price/no-key). Remaining: those checks outside the sandbox and manual
+  360–390px visual QA. No headless browser, external call, dependency, commit
+  or push. Byte pins and details: `docs/codex-tasks/086-hub-pagination-product-families.md`.
 - **Free traffic levers (Codex task 083, 2026-10-14; working tree only):**
   ranked ten missing opportunities and built the first three: public-live
   RSS with stable deal GUIDs, detail-page native/copy/manual sharing with

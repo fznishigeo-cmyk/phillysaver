@@ -192,6 +192,9 @@ class AppConfig:
     traffic_feed_max_items: int = 50
     traffic_share_enabled: bool = False
     traffic_related_hubs_enabled: bool = False
+    traffic_hub_pagination_enabled: bool = False
+    traffic_product_families_enabled: bool = False
+    traffic_product_family_min_offers: int = 3
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
     seo_indexnow_resubmit_days: float = 7.0  # unchanged received URLs (0 = never)
@@ -530,6 +533,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.traffic_feed_max_items = max(1, min(200, int(g("traffic", "feed_max_items", default=50))))
     cfg.traffic_share_enabled = bool(g("traffic", "share_enabled", default=False))
     cfg.traffic_related_hubs_enabled = bool(g("traffic", "related_hubs_enabled", default=False))
+    cfg.traffic_hub_pagination_enabled = bool(g("traffic", "hub_pagination_enabled", default=False))
+    cfg.traffic_product_families_enabled = bool(g("traffic", "product_families_enabled", default=False))
+    cfg.traffic_product_family_min_offers = max(2, int(g("traffic", "product_family_min_offers", default=3)))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))

@@ -518,7 +518,8 @@ def test_ga4_request_and_parsing():
         "home_load_attempt", "first_load_failed", "static_fallback_shown", "first_load_recovered",
         "install_offer_shown", "install_accepted", "standalone_session",
         "filter_apply", "filter_empty", "back_restore", "search_apply", "search_zero", "search_recovery", "support_ask_shown", "support_ask_click", "support_ask_dismiss",
-        "requirements_open", "deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click"]
+        "requirements_open", "deal_share", "share_arrival", "feed_open", "feed_arrival", "related_hub_click",
+        "hub_page_click", "product_family_click"]
     assert sources["dimensions"] == [{"name": "sessionSourceMedium"}] and sources["limit"] == 5
     assert pages["dimensions"] == [{"name": "landingPage"}] and pages["limit"] == 5
 

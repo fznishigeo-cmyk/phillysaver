@@ -33,7 +33,7 @@ from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
-from . import seo_audit, traffic
+from . import inventory, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -467,13 +467,14 @@ def _hub_copy(cfg) -> dict[str, dict[str, str]]:
 def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               rows: list[dict[str, Any]], stats: dict[str, Any], indexable: bool,
               site_url: str, open_access: bool = False,
-              deal_paths: dict[str, str] | None = None, now: datetime | None = None) -> str:
+              deal_paths: dict[str, str] | None = None, now: datetime | None = None,
+              *, page_number: int = 1, page_count: int = 1, paginate: bool = False) -> str:
     """One hub: its copy, our 7-day numbers, the category's free deals (the
     top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
-    more = max(0, len(free) - _HUB_MAX)
-    free = free[:_HUB_MAX]
-    stubs = [d for d in rows if d.get("locked")]
+    more = max(0, len(free) - _HUB_MAX) if not paginate else 0
+    free = free[(page_number - 1) * _HUB_MAX:page_number * _HUB_MAX]
+    stubs = [d for d in rows if d.get("locked")] if page_number == 1 else []
     n = stats["count"]
     line = (f"<strong>Last 7 days:</strong> {n} new deal{'' if n == 1 else 's'} in this category "
             f"passed our checks, median {stats['median_pct']}% off, "
@@ -494,10 +495,17 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
                   '<a href="/">the live wall</a>.</p>')
     if stubs:
         deals += f'<p class="muted">{escape(_locked_line(stubs, f"in {label}"))}.</p>'
-    return _fill(template, TITLE=escape(copy["title"]), DESCRIPTION=escape(copy["description"]),
-                 PAGE_TITLE=escape(copy["title"] + " — wowpriced"),
-                 CANONICAL=escape(f"{site_url}/deals/{slug}/"),
-                 EXTRA_HEAD=_breadcrumbs(site_url, [(copy["title"], hub_href(slug))])
+    path = inventory.page_path(hub_href(slug), page_number)
+    title = copy["title"] + (f" — Page {page_number}" if page_number > 1 else "")
+    breadcrumbs = [(copy["title"], hub_href(slug))]
+    if page_number > 1:
+        breadcrumbs.append((f"Page {page_number}", path))
+    if paginate:
+        deals += inventory.pagination(hub_href(slug), page_number, page_count, "category")
+    return _fill(template, TITLE=escape(title), DESCRIPTION=escape(copy["description"]),
+                 PAGE_TITLE=escape(title + " — wowpriced"),
+                 CANONICAL=escape(site_url + path),
+                 EXTRA_HEAD=_breadcrumbs(site_url, breadcrumbs)
                  + _item_list(free, deal_paths or {}, site_url), TABS="",
                  ROBOTS="" if indexable else '<meta name="robots" content="noindex,follow">\n',
                  SITE_URL=site_url, SLUG=slug, INTRO=escape(copy["intro"]),
@@ -532,6 +540,29 @@ def _landing_page(template: str, title: str, heading: str, description: str,
                  INTRO=escape(intro), STATS="", DEALS=content,
                  TABS='<nav class="hrow" aria-label="categories">' + tabs_html() + '</nav>',
                  HUB_LINKS=_hub_links())
+
+
+def _listing_pages(template, heading, intro, root, site_url, rows, paths, now,
+                   floor, paginate, family):
+    count = max(1, math.ceil(len(rows) / _HUB_MAX)) if paginate else 1
+    for number in range(1, count + 1):
+        path = inventory.page_path(root, number)
+        shown = rows[(number - 1) * _HUB_MAX:number * _HUB_MAX]
+        page_heading = heading + (f" — Page {number}" if number > 1 else "")
+        content = ('<h2 class="sr-only">Deals right now</h2><div class="grid">'
+                   + ''.join(card_html(d, paths, now) for d in shown) + '</div>')
+        if paginate:
+            content += inventory.pagination(root, number, count, family)
+        breadcrumbs = [(heading, root), (f"Page {number}", path)] if number > 1 else None
+        yield path, _landing_page(template, f"{page_heading} | wowpriced", page_heading, intro,
+            path, site_url, content, intro=intro, extra_head=_item_list(shown, paths, site_url),
+            breadcrumbs=breadcrumbs, indexable=len(shown) >= floor)
+
+
+def _write_page(out: Path, path: str, html: str) -> None:
+    folder = out / path.strip("/")
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "index.html").write_text(html, encoding="utf-8")
 
 
 def _basis_label(d: dict[str, Any]) -> str:
@@ -755,15 +786,20 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
 
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
+    actions = (TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8")
+    if inventory.enabled(cfg):
+        actions = inventory.deal_actions(actions)
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
                      DROP_MINUTES=str(int(cfg.drop_minutes)),
-                     DEAL_ACTIONS_SCRIPT=(TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8"))
+                     DEAL_ACTIONS_SCRIPT=actions)
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support)
     live = [d for d in teaser if d.get("status") == "alive" and not d.get("locked")]
     order = {d["dedupe_key"]: i for i, d in enumerate(source_deals)}
     live.sort(key=lambda d: order[d["dedupe_key"]])
     stores, prices = _store_pages(cfg, live), _price_pages(cfg, live)
+    families, family_members = inventory.product_families(cfg, live, source_deals)
+    inventory_paths = []
     store_links = [(path, name) for path, (name, _rows) in stores.items()]
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
     browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
@@ -773,6 +809,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
         sharing, share_head = traffic.share_html(d, path, site_url) if cfg.traffic_share_enabled else ("", "")
         discovery = traffic.related_hubs(d, stores, prices) if cfg.traffic_related_hubs_enabled else ""
+        discovery += inventory.family_link(d, family_members)
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1,
                           discovery=discovery, sharing=sharing, share_head=share_head)
@@ -796,7 +833,6 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     browse_pages = stores | prices
     for path, (name, rows) in browse_pages.items():
         heading = f"{name} deals today" if path in stores else f"{name} today"
-        title = f"{heading} | wowpriced"
         count = ("1,000+" if len(rows) >= 1000 else f"{len(rows) // 100 * 100:,}+"
                  if len(rows) >= 100 else str(len(rows)))
         pcts = [float(d["pct_at_checkout"]) for d in rows if d.get("pct_at_checkout") is not None]
@@ -805,13 +841,17 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             intro += f", median {_pct(statistics.median(pcts))}% off"
         intro += "."
         page_template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links, path))
-        html = _landing_page(page_template, title, heading, intro, path, site_url,
-                             '<h2 class="sr-only">Deals right now</h2><div class="grid">' + ''.join(card_html(d, paths, now) for d in rows[:_HUB_MAX])
-                             + '</div>', intro=intro, extra_head=_item_list(rows[:_HUB_MAX], paths, site_url),
-                             indexable=min(len(rows), _HUB_MAX) >= floors["store" if path in stores else "price"])
-        folder = out / path.strip("/")
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "index.html").write_text(html, encoding="utf-8")
+        family = "store" if path in stores else "price"
+        for page, html in _listing_pages(page_template, heading, intro, path, site_url, rows,
+                paths, now, floors[family], cfg.traffic_hub_pagination_enabled, family):
+            _write_page(out, page, html)
+            if page != path:
+                inventory_paths.append(page)
+    for path, (name, rows) in families.items():
+        for page, html in _listing_pages(template, f"{name} offers", inventory.family_intro(rows),
+                path, site_url, rows, paths, now, floors["product_family"], True, "product_family"):
+            _write_page(out, page, html)
+            inventory_paths.append(page)
     # Re-used output folders must lose pages that fall below a floor or cap.
     for folder in list((out / "stores").glob("*")) + list((out / "deals").glob("under-*")):
         if f"/{folder.relative_to(out).as_posix()}/" not in browse_pages:
@@ -822,13 +862,19 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     listed = 0
     for label, group, slug in HUB_GROUPS:
         rows = [d for d in teaser if d.get("status") == "alive" and in_group(d, group)]
-        indexable = min(sum(not d.get("locked") for d in rows), _HUB_MAX) >= floors["category"]
-        html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
-                         site_url, open_access, paths, now)
-        (out / "deals" / slug).mkdir(parents=True, exist_ok=True)
-        (out / "deals" / slug / "index.html").write_text(html, encoding="utf-8")
-        if indexable:
-            listed += 1
+        free = sum(not d.get("locked") for d in rows)
+        count = max(1, math.ceil(free / _HUB_MAX)) if cfg.traffic_hub_pagination_enabled else 1
+        for number in range(1, count + 1):
+            indexable = min(free - (number - 1) * _HUB_MAX, _HUB_MAX) >= floors["category"]
+            html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
+                             site_url, open_access, paths, now, page_number=number, page_count=count,
+                             paginate=cfg.traffic_hub_pagination_enabled)
+            path = inventory.page_path(hub_href(slug), number)
+            _write_page(out, path, html)
+            if number > 1:
+                inventory_paths.append(path)
+            elif indexable:
+                listed += 1
     logger.info("seo: %d of %d category hubs indexable", listed, len(HUB_GROUPS))
 
     key = getattr(cfg, "seo_indexnow_key", "") or ""
@@ -839,7 +885,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         (out / f"{key}.txt").write_text(key, encoding="utf-8")
     emitted = (["/" + p for p in public] + ["/welcome.html", "/404.html"]
                + [hub_href(slug) for _label, _group, slug in HUB_GROUPS]
-               + list(paths.values()) + [best_path] + list(browse_pages))
+               + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths)
+    inventory.remove_stale(out, emitted)
     return emitted, wall
 
 

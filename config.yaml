@@ -230,6 +230,9 @@ traffic:
   feed_max_items: 50          # Latest public live offers with emitted deal pages.
   share_enabled: true        # Detail pages only; no change to wall cards.
   related_hubs_enabled: true # Matching store and smallest qualifying price hub.
+  hub_pagination_enabled: true # Crawlable 60-offer pages; each page keeps its hub's SEO floor.
+  product_families_enabled: true # Exact stored identities only; no fuzzy or inferred models.
+  product_family_min_offers: 3  # Distinct public live offers (minimum 2).
 
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
