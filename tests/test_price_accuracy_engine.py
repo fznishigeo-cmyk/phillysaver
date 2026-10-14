@@ -226,7 +226,7 @@ def test_scheduler_priority_used_cadence_and_wall_cadence(db, cfg, monkeypatch):
     calls = api(monkeypatch, records)
     summary = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     seen = [a for call in calls for a in call["asin"].split(",")]
-    assert seen == [deals[n]["asin"] for n in ("suspect", "top", "used_top", "wall", "used_wall", "rest", "used_rest")]
+    assert seen == [deals[n]["asin"] for n in ("suspect", "top", "wall", "rest", "used_top", "used_wall", "used_rest")]
     assert summary["planned"] == summary["done"]
     for name, hours in (("top", 1), ("wall", 2), ("rest", 4), ("used_top", 24), ("used_wall", 24)):
         row = db.get_deal(deals[name]["dedupe_key"])
@@ -262,7 +262,7 @@ def test_drift_and_confirmed_age_metrics(db, cfg, monkeypatch):
     db.meta_set(site.WALL_META, json.dumps([d["dedupe_key"] for d in deals[:2]]))
     api(monkeypatch, {d["asin"]: product(c, asin=d["asin"]) for d, c in zip(deals, [2520, 2600, 2700, 2400])})
     result = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
-    assert result["drift"] == {"within_1pct": 1, "higher_1_5pct": 1, "higher_over_5pct": 1, "lower": 1, "repriced": 3}
+    assert result["drift"] == {"within_1pct": 1, "higher_1_5pct": 1, "higher_over_5pct": 1, "lower": 1, "promo_hidden": 0, "repriced": 3}
     assert result["confirmed_age"]["top_candidates"] == {
         "amazon": 4, "unconfirmed": 0, "within_1h": 1, "within_3h": 1, "within_12h": 1, "oldest_h": 0}
     assert result["confirmed_age"]["wall"]["amazon"] == 2
@@ -285,6 +285,7 @@ def test_hide_unconfirmed_and_return_without_a_death(db, cfg, monkeypatch, tmp_p
     if used:
         record["stats"]["current"] = [10000, 10000, 2500]
     api(monkeypatch, {ASIN: record})
+    bucket(db, 500)
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     assert stats["hidden_unconfirmed"]["total"] == 0
     assert len(rank.site_deals(db, cfg, NOW)) == 1
@@ -317,7 +318,9 @@ def test_pick_candidates_precede_confirmation_and_caps_and_wall_matches_home(db,
 
 def test_keepa_lane_is_a_confirmation_but_an_old_or_different_price_is_not(db, cfg):
     post = KeepaDealsAdapter._map_row({"asin": ASIN, "title": "Widget", "current": [2500],
-                                      "avg": [[10000]] * 4}, SourceConfig("keepa", "api", ""), NOW)
+                                      "avg": [[10000]] * 4,
+                                      "lastUpdate": int(NOW.timestamp() / 60) - verify.KEEPA_EPOCH_MINUTES},
+                                     SourceConfig("keepa", "api", ""), NOW)
     ext = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", NOW)
     result = dedupe.upsert_extracted(db, ext, savings.compute_savings(ext), post, cfg, NOW)
     row = db.get_deal(result["dedupe_key"])
@@ -325,7 +328,8 @@ def test_keepa_lane_is_a_confirmation_but_an_old_or_different_price_is_not(db, c
     assert verify.price_confirmation_recent(row, NOW + timedelta(hours=3), 3)
     assert not verify.price_confirmation_recent(row, NOW + timedelta(hours=3, seconds=1), 3)
     assert verify.price_confirmed_at(dict(row, price_since=util.iso(NOW + timedelta(minutes=1)))) is None
-    legacy = dict(row, keepa_price_seen_at="")
+    legacy = dict(row)
+    legacy.pop("keepa_price_seen_at")
     assert verify.price_confirmed_at(legacy) == NOW
     assert verify.price_confirmed_at(dict(legacy, final_price=20)) is None
     assert not verify.price_unconfirmed(dict(row, store="Walmart", canonical_url=""), cfg, NOW + timedelta(days=100))
@@ -363,6 +367,7 @@ def test_config_knobs_defaults_overrides_and_operator_comments(cfg, tmp_path):
 
 
 def test_used_top_waits_for_its_whole_offers_budget(db, cfg, monkeypatch):
+    cfg.keepa_used_scan_budget_share = 1  # isolate the hard deal-lane reserve
     rest = seed(db, cfg, asin="B000000010", conditions=["used"])
     top = seed(db, cfg, asin="B000000020", conditions=["used"])
     db.meta_set(site.PICKS_META, json.dumps([top["dedupe_key"]]))

@@ -296,6 +296,7 @@ class AppConfig:
     keepa_recheck_fresh_window_h: float = 24.0
     keepa_recheck_new_h: float = 3.0
     keepa_recheck_used_h: float = 6.0
+    keepa_used_scan_budget_share: float = 0.35
     # The All tab's scored pick candidates: new-condition Amazon deals
     # re-checked at least this often, hours; 0 = no accelerated cadence.
     keepa_recheck_top_h: float = 0.0
@@ -616,6 +617,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "list_price_min_avg_ratio", default=cfg.keepa_list_price_min_avg_ratio))))
     cfg.keepa_recheck_top_h = max(0.0, float(g(
         "keepa", "recheck_top_h", default=cfg.keepa_recheck_top_h)))
+    cfg.keepa_used_scan_budget_share = min(1.0, max(0.0, float(g(
+        "keepa", "used_scan_budget_share", default=cfg.keepa_used_scan_budget_share))))
     cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
         "keepa", "recheck_tolerance_pct", default=cfg.keepa_recheck_tolerance_pct)))
     for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h",

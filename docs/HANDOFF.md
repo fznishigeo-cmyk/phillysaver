@@ -228,6 +228,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   permitted`: 360/390px and desktop layout/focus checks remain unmeasured.
   Git metadata is read-only; no branch creation, commit or push. Full audit and
   metric definitions are in `docs/codex-tasks/078-checkout-clarity.md`.
+- **Free Keepa confirmations (Codex task 081, 2026-10-14; uncommitted):**
+  every fetched deal/sweep row can refresh an existing exact ASIN/condition/
+  price match at its own data time, before post/hash caps; new cadence uses
+  the latest confirmation, used cadence accepts only an exact Warehouse
+  stamp or paid scan. Promo-hidden drift is separate. New classes precede
+  ordinary used scans; all used scans share 35% of the pass's spendable
+  bucket, preserving the 10-token deal reserve; a first 429 ends the pass.
+  Summary: `feed_confirmed.{new,used}`, `drift.promo_hidden`,
+  `used_skipped_budget`. Full suite: **2,872 passed, 1 deselected**; seven
+  existing Stripe yearly-deploy checks in `tests/test_workflows.py` fail at
+  socket creation (`Operation not permitted`; change0–change5 and the
+  no-price/no-key case). Final task-specific checks: **40 passed**.
+  Token estimates and remaining live validation are in
+  `docs/codex-tasks/081-free-confirmations.md`. No commit or push.
 - **Phone taps (Codex task 076, 2026-10-13; uncommitted):** shared invisible
   44px extensions, retained title clamps, neighbor guards and a probe-based
   audit (8 Node math checks). Only four support-off home/four PWA trees and

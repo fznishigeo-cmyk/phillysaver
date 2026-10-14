@@ -246,6 +246,10 @@ keepa:
   recheck_fresh_window_h: 24
   recheck_new_h: 12                # older new-condition deals (1 token each)
   recheck_used_h: 24               # used/open-box (offers scan, up to 13 tokens each)
+  # Operator request, 2026-10-13: highly accurate prices on the FIXED
+  # 20 tokens/min plan. All new classes precede ordinary used scans;
+  # used scans (including suspects) share this cap after the deal reserve.
+  used_scan_budget_share: 0.35
   # Accuracy (operator, 2026-10-13: the site showed $3.65 while Amazon
   # showed $4.11). Correct plain new prices from the SAME paid reading,
   # with both Amazon averages; otherwise retain the existing kill tolerance.

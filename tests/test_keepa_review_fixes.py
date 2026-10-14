@@ -29,6 +29,9 @@ def _cfg():
 
 def _seed(db, key, *, used=True, stamp="", tried="", status="alive",
           flags=None, died=""):
+    from dealradar.keepa_budget import KeepaBudget, META_KEY
+    if db.meta_get(META_KEY) is None:
+        KeepaBudget(1200, 0, NOW).save(db)  # known allowance for used scans
     d = {"dedupe_key": key, "store": "Amazon", "item": key,
          "regular_price": 100.0, "final_price": 30.0, "pct_at_checkout": 70.0,
          "abs_savings": 70.0, "online_only": "true", "currency": "USD",

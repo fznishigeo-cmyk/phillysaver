@@ -49,7 +49,7 @@ from ..keepa_budget import (MIN_FOR_DEAL_QUERY, KeepaBudget, describe_429,
 from ..keepa_categories import (NAMES_META, ROOTS_META, cached_meta,
                                category_from_name, remember_roots, root_id)
 from ..models import RawPost, SourceConfig
-from ..verify import _keepa_image_name
+from ..verify import _keepa_image_name, is_amazon_deal, is_used_deal, keepa_time
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.fetch.keepa")
@@ -167,6 +167,11 @@ def _price_at(arr: Any, price_type: int) -> float | None:
             return _cents(arr[price_type])
         return None
     return _cents(arr)
+
+
+def _feed_time(row: dict[str, Any], now: datetime) -> str:
+    at = keepa_time(row.get("lastUpdate"))
+    return util.iso(min(at, now)) if at is not None else ""
 
 
 #: Amazon's public product-image CDN; Keepa reports the image filename.
@@ -354,6 +359,7 @@ def _product_row(product: dict[str, Any]) -> dict[str, Any]:
     stats = product.get("stats")
     stats = stats if isinstance(stats, dict) else {}
     return {"asin": product.get("asin"), "title": product.get("title"),
+            "lastUpdate": product.get("lastUpdate"),
             "rootCat": product.get("rootCategory"),
             "current": stats.get("current"), "avg90": stats.get("avg90"),
             "image": _keepa_image_name(product)}
@@ -435,6 +441,48 @@ class _TokensShort(Exception):
     or Keepa answered 429). Internal: the pull ends early with what it has."""
 
 
+class _FeedConfirmations:
+    """Confirm existing prices before mapping, caps or content-hash skips."""
+
+    def __init__(self, db: DB | None, now: datetime):
+        self.db, self.now = db, now
+        self.confirmed: dict[str, set[str]] = {"new": set(), "used": set()}
+        self.by_asin: dict[str, list[dict[str, Any]]] = {}
+        for deal in db.all_deals(status="alive") if db is not None else []:
+            asin = str(deal.get("asin") or "").strip().upper()
+            if asin and is_amazon_deal(deal):
+                self.by_asin.setdefault(asin, []).append(deal)
+
+    def note(self, rows: list[dict[str, Any]], *, used: bool) -> None:
+        from ..dedupe import _DEAL_FIELDS
+
+        for row in rows:
+            at = keepa_time(row.get("lastUpdate"))
+            price = _price_at(row.get("current"),
+                              PRICE_TYPE_WAREHOUSE if used else PRICE_TYPE_AMAZON)
+            if at is None or price is None:
+                continue
+            at = min(at, self.now)
+            asin = str(row.get("asin") or "").strip().upper()
+            for deal in self.by_asin.get(asin, []):
+                if is_used_deal(deal) != used or deal.get("final_price") != price:
+                    continue  # another offer/condition is never a gone verdict
+                since = util.parse_iso(deal.get("price_since") or "")
+                if since is not None and at < since:
+                    continue
+                changed = False
+                fields = ["keepa_price_seen_at"] + (["keepa_warehouse_seen_at"] if used else [])
+                for name in fields:
+                    previous = util.parse_iso(deal.get(name) or "")
+                    if previous is None or at > previous:
+                        deal[name] = util.iso(at)
+                        changed = True
+                if changed:
+                    self.db.update_deal(deal["dedupe_key"], payload={
+                        k: deal[k] for k in _DEAL_FIELDS if k in deal})
+                    self.confirmed["used" if used else "new"].add(deal["dedupe_key"])
+
+
 @dataclass
 class _Pull:
     """One pull's shared paging state."""
@@ -456,6 +504,7 @@ class _Pull:
     category_names: dict[str, str] | None = None
     categories_tried: set[str] | None = None
     focus_tried: set[int] = field(default_factory=set)
+    confirmations: _FeedConfirmations | None = None
 
 
 @dataclass
@@ -495,6 +544,7 @@ class KeepaDealsAdapter(SourceAdapter):
     ) -> None:
         self._http = http_client
         self._sleep = sleep_fn  # politeness gap between /deal pages
+        self.feed_confirmed: dict[str, set[str]] = {"new": set(), "used": set()}
 
     def fetch_posts(
         self,
@@ -505,6 +555,7 @@ class KeepaDealsAdapter(SourceAdapter):
         now: datetime,
         deadline: float | None,
     ) -> list[RawPost]:
+        self.feed_confirmed = {"new": set(), "used": set()}
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
@@ -529,6 +580,8 @@ class KeepaDealsAdapter(SourceAdapter):
         # as the bucket refills. Every further page (DEEP's first included)
         # must leave cfg.keepa_reserve_tokens untouched.
         budget = KeepaBudget.load(db)
+        confirmations = _FeedConfirmations(db, now)
+        self.feed_confirmed = confirmations.confirmed
         amazon: list[RawPost] = []
         fresh: list[RawPost] = []
         deep: list[RawPost] = []
@@ -571,7 +624,7 @@ class KeepaDealsAdapter(SourceAdapter):
                          interval_s=cfg.min_host_interval_s,
                          margin_s=cfg.request_timeout_s, sleep=self._sleep,
                          category_names=cached_meta(db, NAMES_META),
-                         categories_tried=set())
+                         categories_tried=set(), confirmations=confirmations)
             try:
                 _check_deadline(deadline)
                 self._lookup_categories(pull, list(cached_meta(db, ROOTS_META).values()),
@@ -854,6 +907,8 @@ class KeepaDealsAdapter(SourceAdapter):
         if pull.sample is None:
             pull.sample = next((r for r in rows if isinstance(r, dict)), None)
         valid_rows = [r for r in rows if isinstance(r, dict)]
+        if pull.confirmations is not None:
+            pull.confirmations.note(valid_rows, used=selection.get("priceTypes") == [PRICE_TYPE_WAREHOUSE])
         remember_roots(pull.db, valid_rows)
         self._lookup_categories(pull, [root_id(r) for r in valid_rows if root_id(r)])
         tokens_left = (payload.get("tokensLeft")
@@ -967,6 +1022,10 @@ class KeepaDealsAdapter(SourceAdapter):
             products = (body.get("products") if isinstance(body, dict)
                         else None) or []
             valid_products = [p for p in products if isinstance(p, dict)]
+            if pull.confirmations is not None:
+                pull.confirmations.note([_product_row(p) for p in valid_products
+                                         if str(p.get("asin") or "").strip().upper() in wanted],
+                                        used=True)
             remember_roots(pull.db, valid_products)
             self._lookup_categories(pull, [root_id(p) for p in valid_products if root_id(p)])
             for product in products:
@@ -1037,6 +1096,7 @@ class KeepaDealsAdapter(SourceAdapter):
             hash_text=f"{title}\n${current:,.2f}, {pct} under the {label}",
             structured={
                 **_structured_category(row, category_names),
+                "keepa_price_seen_at": _feed_time(row, now),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(current, 2),
@@ -1098,6 +1158,8 @@ class KeepaDealsAdapter(SourceAdapter):
             hash_text=f"{title}\n${used:,.2f} used, {pct} under the {label}",
             structured={
                 **_structured_category(row, category_names),
+                "keepa_price_seen_at": _feed_time(row, now),
+                "keepa_warehouse_seen_at": _feed_time(row, now),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(used, 2),

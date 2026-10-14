@@ -31,7 +31,7 @@ from .config import get_secret, error_summary, load_config
 from .db import DB
 from .http_client import PoliteFetcher
 from .conditions import USED_CONDITIONS, normalize_conditions
-from .keepa_budget import (MIN_FOR_RECHECK, KeepaBudget, describe_429,
+from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_RECHECK, KeepaBudget, describe_429,
                            response_payload)
 from .util import iso, parse_iso
 
@@ -299,13 +299,15 @@ def price_confirmed_at(deal: dict[str, Any]) -> datetime | None:
     since = parse_iso(deal.get("price_since") or "")
     stamps = [parse_iso(deal.get(name) or "")
               for name in ("price_rechecked_at", "keepa_price_seen_at")]
-    # Backward-compatible with rows ingested before keepa_price_seen_at.
-    for sighting in deal.get("sightings") or []:
-        if str(sighting.get("source_name") or "").lower().startswith("keepa") \
-                and sighting.get("final_price") == deal.get("final_price"):
-            stamps.append(parse_iso(sighting.get("seen_at") or ""))
-    if str(deal.get("source_name") or "").lower().startswith("keepa"):
-        stamps.append(parse_iso(deal.get("first_seen_at") or ""))
+    # Legacy rows lack the field. An explicit empty field means the feed
+    # supplied no usable data time: fetch/sighting time cannot replace it.
+    if "keepa_price_seen_at" not in deal:
+        for sighting in deal.get("sightings") or []:
+            if str(sighting.get("source_name") or "").lower().startswith("keepa") \
+                    and sighting.get("final_price") == deal.get("final_price"):
+                stamps.append(parse_iso(sighting.get("seen_at") or ""))
+        if str(deal.get("source_name") or "").lower().startswith("keepa"):
+            stamps.append(parse_iso(deal.get("first_seen_at") or ""))
     valid = [at for at in stamps if at is not None and (since is None or at >= since)]
     return max(valid) if valid else None
 
@@ -345,10 +347,13 @@ def keepa_time(minutes: Any) -> datetime | None:
     """A Keepa timestamp (minutes since 2011-01-01 UTC) as an aware UTC
     datetime; None when missing or negative (Keepa's "no data" is -1)."""
     if not isinstance(minutes, (int, float)) or isinstance(minutes, bool) \
-            or minutes < 0:
+            or not math.isfinite(minutes) or minutes < 0:
         return None
-    return datetime.fromtimestamp((minutes + KEEPA_EPOCH_MINUTES) * 60,
-                                  tz=timezone.utc)
+    try:
+        return datetime.fromtimestamp((minutes + KEEPA_EPOCH_MINUTES) * 60,
+                                      tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _keepa_since_price(minutes: Any, deal: dict[str, Any]) -> bool | None:
@@ -470,6 +475,14 @@ def _current_price(current: Any, i: int) -> float | None:
     return None
 
 
+def _live_new_price(product: dict[str, Any]) -> float | None:
+    """The same new-condition listing price for the judge and drift report."""
+    stats = product.get("stats")
+    current = stats.get("current") if isinstance(stats, dict) else None
+    return min((p for i in (0, 1) if (p := _current_price(current, i)) is not None),
+               default=None)
+
+
 def _offer_total(offer: dict[str, Any]) -> float | None:
     """One marketplace offer's current price plus shipping, in dollars:
     the last [keepaTime, price, shipping] triple of its offerCSV (shipping
@@ -572,12 +585,11 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
     current = stats.get("current") if isinstance(stats, dict) else None
     if not isinstance(current, list) or not current:
         return None
-    prices = [p for p in (_current_price(current, 0), _current_price(current, 1))
-              if p is not None]
+    live = _live_new_price(product)
     updated = product.get("lastUpdate")
     # Only a False verdict needs fresh data; unknown times apply no gate.
     stale = _keepa_since_price(updated, deal) is False
-    if not prices:
+    if live is None:
         if stale:
             log.debug("price recheck %s: no live new offer in Keepa data from "
                       "%s, before the price stood (%s); no opinion", asin,
@@ -587,7 +599,6 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
         log.info("price recheck %s: final=$%.2f, no live new offer -> False",
                  asin, float(final))
         return False
-    live = min(prices)
     target = float(final)
     basis = "final"
     regular = deal.get("regular_price")
@@ -616,6 +627,7 @@ class PriceRechecks(dict):
     def __init__(self):
         super().__init__()
         self.products: dict[str, dict[str, Any]] = {}
+        self.rate_limited = False
 
 
 def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
@@ -639,6 +651,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     key = get_secret("KEEPA_KEY")
     if not key:
         return out
+    budget = budget if budget is not None else KeepaBudget()
     new: list[tuple[str, dict[str, Any]]] = []
     used: list[tuple[str, dict[str, Any]]] = []
     for deal in deals:
@@ -648,8 +661,16 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                 (asin, deal))
     for wanted, offers, per_call in ((new, None, KEEPA_BATCH),
                                      (used, RECHECK_OFFERS, KEEPA_OFFERS_BATCH)):
-        for start in range(0, len(wanted), per_call):
-            chunk = wanted[start:start + per_call]
+        start = 0
+        while start < len(wanted):
+            cost = (USED_RECHECK_TOKENS if offers else 1) + int(live)
+            avail = budget.available()
+            if not budget.allows(max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)):
+                break
+            size = per_call if avail is None else min(
+                per_call, int((avail - MIN_FOR_DEAL_QUERY) / cost))
+            chunk = wanted[start:start + size]
+            start += len(chunk)
             try:
                 options = {"live": True} if live else {}
                 products = keepa_products(key, [a for a, _ in chunk], 1,
@@ -659,7 +680,8 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                             len(chunk), error_summary(e))
                 continue
             if products is None:
-                continue  # 429: the bucket is empty, try a later pass
+                out.rate_limited = True
+                return out  # even a malformed 429 ends every batch in this pass
             for asin, deal in chunk:
                 product = products.get(asin)
                 if product is None:

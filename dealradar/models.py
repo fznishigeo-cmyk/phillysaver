@@ -228,6 +228,7 @@ class Deal:
     # ISO UTC of the last live price re-check (Amazon deals, via Keepa).
     price_rechecked_at: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
+    keepa_warehouse_seen_at: str = ""     # exact used price in the Warehouse lane
     keepa_checked: bool = False           # the one-time Keepa cross-check ran
     # ISO UTC of the moment status flipped to 'dead' (site shows a dead deal
     # only briefly, as "just missed it" proof, then drops it).

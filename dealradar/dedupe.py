@@ -355,6 +355,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
                 if existing.get("status") == "alive":
                     payload["price_rechecked_at"] = ""
                     payload["keepa_price_seen_at"] = ""
+                    payload["keepa_warehouse_seen_at"] = ""
                 # Keepa data older than this update cannot judge the new price.
                 payload["price_since"] = util.iso(now)
             payload["price_published_at"] = util.iso(post_at)
@@ -453,6 +454,7 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["death"] = ""
             payload["gone_suspect_at"] = ""
             payload["price_rechecked_at"] = ""
+            payload["keepa_warehouse_seen_at"] = ""
             payload["price_since"] = util.iso(now)
             payload["flags"] = [f for f in payload.get("flags") or []
                                 if f != "price_moved"]
@@ -477,7 +479,15 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
 
     if savings.computable and post.source_name.lower().startswith("keepa") \
             and (is_new or current) and payload.get("final_price") == savings.final_price:
-        payload["keepa_price_seen_at"] = util.iso(now)
+        facts = post.structured or {}
+        for field in ("keepa_price_seen_at", "keepa_warehouse_seen_at"):
+            stamp = facts.get(field, util.iso(now) if field == "keepa_price_seen_at" else "")
+            if field in facts:
+                payload.setdefault(field, "")  # missing data time is not fetch time
+            at = util.parse_iso(stamp)
+            previous = util.parse_iso(payload.get(field) or "")
+            if at is not None and (previous is None or at > previous):
+                payload[field] = util.iso(min(at, now))
         if (post.structured or {}).get("regular_price_basis"):
             payload["regular_price_basis"] = post.structured["regular_price_basis"]
         db.update_deal(key, payload=payload)

@@ -184,7 +184,8 @@ def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
 
 
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
-               now: datetime, deadline: float, fast_lane: bool) -> tuple[list[RawPost], dict[str, str]]:
+               now: datetime, deadline: float, fast_lane: bool,
+               feed_confirmed: dict[str, set[str]] | None = None) -> tuple[list[RawPost], dict[str, str]]:
     from .fetch.base import run_source
     from .fetch.registry import get_adapter
 
@@ -228,6 +229,9 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             continue
         got, ok, err = run_source(source, adapter, fetcher, db, cfg, now,
                                   run_deadline=fetch_deadline)
+        if feed_confirmed is not None:
+            for condition, keys in getattr(adapter, "feed_confirmed", {}).items():
+                feed_confirmed[condition].update(keys)
         if ok:
             posts.extend(got)
             log.info("source %s: %d items", source.name, len(got))
@@ -1174,28 +1178,29 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     deadline: float | None = None, *, fetcher=None) -> dict[str, Any]:
     """Visibility-first Keepa checks, correcting plain new prices in-place.
 
-    Suspects, pick candidates, home cards, then longest-unchecked offers.
-    Used scans retain their cadence/cost; photos use only the remaining
-    bucket. Every batch preserves the deal lane's token reserve.
+    Suspects, then all new classes, then used scans within their share.
+    Photos use only the remaining bucket. Every batch preserves the deal
+    lane's token reserve.
     """
     from datetime import timedelta
 
     from . import rank
     from .dedupe import _DEAL_FIELDS, reprice_existing
-    from .fetch.keepa import _price_at, reprice_post
+    from .fetch.keepa import reprice_post
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
                                MIN_FOR_RECHECK, KeepaBudget)
     from .verify import (KEEPA_BATCH, KEEPA_OFFERS_BATCH, USED_RECHECK_TOKENS,
                          confirmed_age, is_amazon_deal, is_used_deal,
-                         live_price_reading, price_unconfirmed,
+                         _live_new_price, _price_hidden_by_promo,
+                         live_price_reading, price_confirmed_at, price_unconfirmed,
                          recheck_amazon_prices, woot_offer_url)
     from .publish.site import PICKS_META, WALL_META
 
     _revive_used_price_moved(db, now)
     stats = {"checked": 0, "dead": 0, "image_backfill": 0, "tokens_short": 0,
-             "used_checked": 0,
+             "used_checked": 0, "used_skipped_budget": 0,
              "drift": {"within_1pct": 0, "higher_1_5pct": 0, "higher_over_5pct": 0,
-                       "lower": 0, "repriced": 0}, "planned": {}, "done": {}}
+                       "lower": 0, "promo_hidden": 0, "repriced": 0}, "planned": {}, "done": {}}
 
     def remembered(name):
         try:
@@ -1225,12 +1230,28 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         wait = _RETRY_USED_H if used else _RETRY_NEW_H
         return tried is not None and now - tried < timedelta(hours=wait)
 
+    def last_check(deal):
+        paid = util.parse_iso(deal.get("price_rechecked_at") or "")
+        if deal.get("gone_suspect_at") or deal.get("death"):
+            return paid  # keep the two-reading death rule and its interval
+        if not is_used_deal(deal):
+            return price_confirmed_at(deal)
+        warehouse = util.parse_iso(deal.get("keepa_warehouse_seen_at") or "")
+        since = util.parse_iso(deal.get("price_since") or "")
+        valid = [at for at in (paid, warehouse) if at is not None and at <= now
+                 and (since is None or at >= since)]
+        return max(valid) if valid else None
+
     if not cfg.feature_flags.get("keepa"):
         measurements()
         return stats
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
     budget = KeepaBudget.load(db)
+    available = budget.available(now)
+    used_limit = (max(0, available - MIN_FOR_DEAL_QUERY) * cfg.keepa_used_scan_budget_share
+                  if available is not None else None)
+    used_spent = 0
     due: list[dict[str, Any]] = []
     due_used: list[dict[str, Any]] = []
     photo: list[dict[str, Any]] = []
@@ -1252,8 +1273,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             every = min(every, cfg.keepa_recheck_wall_h)
         if deal.get("gone_suspect_at"):
             every = _CONFIRM_GONE_H  # a suspect is asked again soon
-        last = util.parse_iso(deal.get("price_rechecked_at") or "")
-        in_window = last is not None and now - last < timedelta(hours=every)
+        last = last_check(deal)
+        in_window = last is not None and timedelta() <= now - last < timedelta(hours=every)
         if in_window and (used or not image_backfill or deal.get("image_url")
                           or len(photo) >= _IMAGE_BACKFILL_PER_RUN):
             continue
@@ -1280,7 +1301,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 "wall" if d["dedupe_key"] in wall else "rest")
 
     def order(d):
-        at = util.parse_iso(d.get("price_rechecked_at") or "")
+        at = last_check(d)
         return util.iso(at) if at else ""
 
     due.sort(key=order)
@@ -1333,23 +1354,27 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     # (offers scan) is sized at its worst-case cost per deal and needs room
     # for at least one.
     groups = []
-    for name in ("suspect", "top", "wall", "rest"):
-        for rows, used in ((due, False), (due_used, True)):
-            group = [d for d in rows if priority(d) == name]
-            label = name + ("_used" if used else "_new")
-            stats["planned"][label], stats["done"][label] = len(group), 0
-            # A suspect may also be a top candidate; partition its batch so
-            # update=0 is paid only for configured top candidates.
-            for live in (True, False):
-                batch_group = [d for d in group if bool(cfg.keepa_recheck_top_live
-                               and d["dedupe_key"] in picks) == live]
-                cost = (USED_RECHECK_TOKENS if used else 1) + int(live)
-                need = max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)
-                groups.append((batch_group, need, cost,
-                               KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, False, live))
+    classes = [("suspect", False), ("suspect", True),
+               ("top", False), ("wall", False), ("rest", False),
+               ("top", True), ("wall", True), ("rest", True)]
+    for name, used in classes:
+        rows = due_used if used else due
+        group = [d for d in rows if priority(d) == name]
+        label = name + ("_used" if used else "_new")
+        stats["planned"][label], stats["done"][label] = len(group), 0
+        # A suspect may also be a top candidate; partition its batch so
+        # update=0 is paid only for configured top candidates.
+        for live in (True, False):
+            batch_group = [d for d in group if bool(cfg.keepa_recheck_top_live
+                           and d["dedupe_key"] in picks) == live]
+            cost = (USED_RECHECK_TOKENS if used else 1) + int(live)
+            need = max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)
+            groups.append((batch_group, need, cost,
+                           KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, False, live, used))
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
-    groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, True, False))
-    for group, need, per_deal, per_call, is_photo, live in groups:
+    groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, True, False, False))
+    rate_limited = False
+    for group, need, per_deal, per_call, is_photo, live, used in groups:
         i = 0
         while i < len(group):
             if deadline is not None and time.monotonic() > deadline:
@@ -1357,17 +1382,31 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 log.info("price recheck: out of time with %d deals left; "
                          "they ride the next run", len(group) - i)
                 break
-            if not budget.allows(need, now):
+            if rate_limited or not budget.allows(need, now):
                 stats["tokens_short"] += len(group) - i
+                if used:
+                    stats["used_skipped_budget"] += len(group) - i
                 break
             avail = budget.available(now)
+            # An unknown bucket must first be learned from a new-price call
+            # (normally the feed already supplied it). Never invent a used cap.
+            if used_limit is None and avail is not None:
+                used_limit = max(0, avail - MIN_FOR_DEAL_QUERY) * cfg.keepa_used_scan_budget_share
             size = per_call if avail is None else max(1, min(
                 per_call, int((avail - MIN_FOR_DEAL_QUERY) / per_deal)))
+            if used:
+                size = min(size, int(max(0, (used_limit or 0) - used_spent) / per_deal))
+                if not size:
+                    stats["used_skipped_budget"] += len(group) - i
+                    break
             batch = group[i:i + size]
+            if used:
+                used_spent += len(batch) * per_deal  # worst case, even on a lost response
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             options = {"live": True} if live else {}
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
                                              used_offers=not is_photo, fetcher=fetcher, **options)
+            rate_limited = getattr(verdicts, "rate_limited", False)
             if is_photo:
                 stats["image_backfill"] += len(batch)
             for deal in batch:
@@ -1377,12 +1416,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     stats["done"][label] += 1
                 product = getattr(verdicts, "products", {}).get(deal["dedupe_key"])
                 if product is not None and not is_used_deal(deal):
-                    reading = product.get("stats")
-                    current = reading.get("current") if isinstance(reading, dict) else None
-                    prices = [p for p in (_price_at(current, 0), _price_at(current, 1)) if p is not None]
+                    live_price = _live_new_price(product)
                     shown = deal.get("final_price")
-                    if prices and shown is not None:
-                        drift = (min(prices) - shown) * 100 / shown if shown else (0 if min(prices) == 0 else float("inf"))
+                    if _price_hidden_by_promo(deal):
+                        stats["drift"]["promo_hidden"] += 1
+                    elif live_price is not None and shown is not None and verdict is not None:
+                        drift = (live_price - shown) * 100 / shown if shown else (0 if live_price == 0 else float("inf"))
                         bucket = ("within_1pct" if abs(drift) <= 1 + 1e-9 else
                                   "lower" if drift < 0 else
                                   "higher_1_5pct" if drift <= 5 + 1e-9 else "higher_over_5pct")
@@ -1699,8 +1738,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         tz_by_source = {s.name: s.tz for s in sources}
 
         # ---- fetch ----
+        feed_confirmed = {"new": set(), "used": set()}
         posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
-                                         deadline, fast_lane)
+                                         deadline, fast_lane, feed_confirmed)
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             tz_by_source.update({s.name: s.tz for s in inbox.sources})
@@ -1909,6 +1949,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["price_recheck"] = _recheck_prices(
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
+        summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 

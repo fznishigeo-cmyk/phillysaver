@@ -1069,6 +1069,9 @@ def _offer(condition: int, cents: int, ship: int = -1) -> dict:
 
 def _seed_amazon(db, key: str, asin: str, *, used: bool = False,
                  last: str = "", image: str = _IMG, **over) -> dict:
+    from dealradar.keepa_budget import KeepaBudget, META_KEY
+    if db.meta_get(META_KEY) is None:
+        KeepaBudget(1200, 0, NOW).save(db)  # known allowance for used scans
     d = _deal_dict(dedupe_key=key, item=key, store="Amazon", asin=asin, image_url=image,
                    conditions=["used", "open_box"] if used else [],
                    price_rechecked_at=last, **over)
@@ -1386,6 +1389,7 @@ class TestCarefulDeath:
             _seed_amazon(db, f"url|u{i}", f"B0USED{i:04d}", used=True)
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        cfg.keepa_used_scan_budget_share = 1  # isolate per-batch cost/reserve
         sizes, floor = [], []
 
         def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):
@@ -1462,7 +1466,7 @@ class TestCarefulDeath:
     def test_offers_calls_never_carry_more_than_twenty_asins(self, tmp_path,
                                                              monkeypatch):
         """Keepa rejects more than 20 ASINs with offers: 30 due used deals
-        and no budget reading yet still go out 20 + 10."""
+        and a full bucket still go out 20 + 10 within their 35% share."""
         import httpx
 
         from dealradar import verify
@@ -1694,6 +1698,8 @@ class TestCarefulDeath:
         sighting brings it back, and the next pass re-judges it."""
         import httpx
         db = DB(tmp_path / "state.db")
+        from dealradar.keepa_budget import KeepaBudget
+        KeepaBudget(1200, 0, NOW).save(db)
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
         monkeypatch.setenv("KEEPA_KEY", "kkey")
@@ -1758,6 +1764,8 @@ class TestCarefulDeath:
         opinion, so the revived deal stays alive in that run."""
         import httpx
         db = DB(tmp_path / "state.db")
+        from dealradar.keepa_budget import KeepaBudget
+        KeepaBudget(1200, 0, NOW).save(db)
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
         monkeypatch.setenv("KEEPA_KEY", "kkey")
