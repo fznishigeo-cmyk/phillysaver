@@ -25,7 +25,11 @@ from tests.test_keepa import SRC, _amazon_row, _wh_row, _junk_row
 
 @pytest.fixture
 def cfg():
-    return load_config()
+    result = load_config()
+    # Scenarios model cached (1-token) reads; shipped live top reads
+    # (update=0) are exercised where a test sets this to True.
+    result.keepa_recheck_top_live = False
+    return result
 
 
 def minutes(at):
