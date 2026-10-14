@@ -32,6 +32,7 @@ def cfg():
     result.critic_shadow_model = ""
     result.keepa_sweep_enabled = False
     result.keepa_recheck_adaptive["enabled"] = False  # these fixtures exercise fixed 085 cadence
+    result.keepa_volatility["enabled"] = False
     result.keepa_recheck_top_live = False  # cached reads; live top reads tested explicitly
     return result
 

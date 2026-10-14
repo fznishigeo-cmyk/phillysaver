@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from . import models
@@ -58,6 +59,40 @@ def display_pct(value: float) -> int:
 def clears_reference_floor(final: float, reference: float, min_pct: float) -> bool:
     """Audit a stored checkout price against an independently supported basis."""
     return reference > 0 and final <= reference * max(0.0, 1 - min_pct / 100) + 1e-9
+
+
+def comparable_prices(price: float, other: float, minimum: float, maximum: float) -> bool:
+    """Reject extreme ratios in either direction; zero only compares to zero."""
+    if price == 0 or other == 0:
+        return price == other == 0
+    return (minimum <= other / price <= maximum
+            and minimum <= price / other <= maximum)
+
+
+def lowest_seen(observations: list[dict], condition: str, now: datetime) -> dict | None:
+    """Minimum of evidence-checked product observations on 3+ UTC days in 30 days.
+
+    The caller supplies DB.product_price_history for one exact product.
+    Repeated checks on a day do not make thin history sufficient.
+    """
+    from .util import parse_iso
+
+    now = now.astimezone(timezone.utc)
+    points = []
+    for row in observations:
+        if row.get("condition") != condition:
+            continue
+        try:
+            at = parse_iso(row.get("observed_at"))
+            price = float(row["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if at and now - timedelta(days=30) <= at <= now and math.isfinite(price) and price >= 0:
+            points.append((price, at))
+    if len({at.date() for _, at in points}) < 3:
+        return None
+    price, at = min(points)  # Earliest date wins equal minima, independent of row order.
+    return {"price": price, "date": at.date().isoformat()}
 
 
 # ---------------------------------------------------------------------------

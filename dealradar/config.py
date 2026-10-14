@@ -201,6 +201,10 @@ class AppConfig:
     traffic_product_family_min_offers: int = 3
     product_entities_backfill_per_run: int = 200
     product_entities_also_at_enabled: bool = False
+    product_entities_lowest_seen_enabled: bool = False
+    product_entities_min_price_ratio: float = 0.4
+    product_entities_max_price_ratio: float = 2.5
+    product_entities_shadow_retention_days: int = 7
     seo_indexnow_key: str = ""         # "" = no key file, no IndexNow
     seo_indexnow_min_hours: float = 6.0
     seo_indexnow_resubmit_days: float = 7.0  # unchanged received URLs (0 = never)
@@ -304,6 +308,8 @@ class AppConfig:
     keepa_amazon_pages_per_pull: int = 6
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
+    keepa_tokens_per_minute: float = 20.0
+    keepa_volatility: dict[str, Any] = field(default_factory=dict)
     keepa_focus_categories: list[str] = field(default_factory=lambda: [
         "Beauty & Personal Care", "Health & Household"])
     # NEW (not yet content-hashed) posts per pull: the first-run burst bound
@@ -563,6 +569,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.traffic_product_family_min_offers = max(2, int(g("traffic", "product_family_min_offers", default=3)))
     cfg.product_entities_backfill_per_run = max(0, int(g("product_entities", "backfill_per_run", default=200)))
     cfg.product_entities_also_at_enabled = bool(g("product_entities", "also_at_enabled", default=False))
+    cfg.product_entities_lowest_seen_enabled = bool(g("product_entities", "lowest_seen_enabled", default=False))
+    cfg.product_entities_min_price_ratio = max(0.4, min(1.0, float(g(
+        "product_entities", "min_price_ratio", default=0.4))))
+    cfg.product_entities_max_price_ratio = max(1.0, min(2.5, float(g(
+        "product_entities", "max_price_ratio", default=2.5))))
+    cfg.product_entities_shadow_retention_days = max(3, min(30, int(g(
+        "product_entities", "shadow_retention_days", default=7))))
     cfg.seo_indexnow_key = str(g("seo", "indexnow_key", default="") or "").strip()
     cfg.seo_indexnow_min_hours = max(0.0, float(g("seo", "indexnow_min_hours",
                                                   default=cfg.seo_indexnow_min_hours)))
@@ -712,6 +725,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.keepa_recheck_top_live = bool(g(
         "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
     cfg.keepa_recheck_adaptive = g("keepa", "recheck_adaptive", default={}) or {}
+    cfg.keepa_tokens_per_minute = max(1.0, float(g(
+        "keepa", "tokens_per_minute", default=cfg.keepa_tokens_per_minute)))
+    cfg.keepa_volatility = g("keepa", "volatility", default={}) or {}
     cfg.keepa_recheck_gap = g("keepa", "recheck_gap", default={}) or {}
     cfg.keepa_sweep_enabled = bool(g(
         "keepa", "sweep_enabled", default=cfg.keepa_sweep_enabled))

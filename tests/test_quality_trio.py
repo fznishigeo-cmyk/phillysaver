@@ -880,6 +880,7 @@ class TestPriceRecheck:
                            abs_savings=d["abs_savings"], online_only="true",
                            expires_at="", now=NOW)
         cfg = _cfg()
+        cfg.keepa_volatility["enabled"] = False  # legacy cadence fixture
         cfg.feature_flags["keepa"] = True
         calls = []
 
@@ -1330,6 +1331,7 @@ class TestCarefulDeath:
         _seed_amazon(db, "url|usedpic", "B0USEDPIC1", used=True, last=ago(4),
                      image="")
         cfg = _cfg()
+        cfg.keepa_volatility["enabled"] = False  # legacy cadence fixture
         cfg.feature_flags["keepa"] = True
         cfg.keepa_recheck_adaptive["enabled"] = False  # exercise the fixed 085 cadence
         # The 3 h / 6 h cadence this test was written for (config.yaml
@@ -1360,6 +1362,7 @@ class TestCarefulDeath:
         _seed_amazon(db, "url|usedpic", "B0USEDPIC1", used=True, image="",
                      last=(NOW - timedelta(hours=1)).isoformat())
         cfg = _cfg()
+        cfg.keepa_volatility["enabled"] = False  # legacy cadence fixture
         cfg.feature_flags["keepa"] = True
         cfg.keepa_recheck_adaptive["enabled"] = False  # exercise the fixed 085 cadence
         # The 3 h / 6 h cadence this test was written for (config.yaml

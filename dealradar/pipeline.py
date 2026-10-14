@@ -1189,9 +1189,10 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     image_backfill: bool = True,
                     deadline: float | None = None, *, fetcher=None,
                     overflow_discovery=None, rate_limited=False) -> dict[str, Any]:
-    """Visibility-first Keepa checks, correcting plain new prices in-place.
+    """Budgeted volatility checks, correcting plain new prices in-place.
 
-    Overdue top/wall first, then new suspects/top/wall/rest and used scans.
+    Overdue top first, then value-weighted request deadlines. Legacy
+    visibility scheduling remains available with volatility disabled.
     Discovery precedes bounded hidden recovery and idle checks; photos use
     the remainder. Every batch preserves the deal lane's token reserve.
     """
@@ -1226,8 +1227,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     picks, wall = remembered(PICKS_META), remembered(WALL_META)
     visible = picks.keys() | wall.keys()
+    inventory = db.all_deals(status="alive")
     history = History(db, cfg, now)
     schedule = Schedule(history, picks, wall)
+    stats["run_gap"] = run_gap_forecast(db, cfg, now)
+    gap = stats["run_gap"]["minutes"]
+    plan = None
+    if cfg.keepa_volatility.get("enabled", False):
+        from .volatility import Plan
+        plan = Plan(history, inventory, picks, wall, gap,
+                    cadence_minutes=stats["run_gap"]["ema_minutes"])
+        schedule.plan = plan
+        schedule.enabled = True
     stats["yield"] = history.yield_stats
     base_hours = {}
     attempted = set()
@@ -1241,9 +1252,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["wall_schedule"] = {name: 0 for name in (
         "new", "used", "top_overlap", "cadence_new", "cadence_used", "retry_new", "retry_used")}
 
-    def hidden_counts():
+    def hidden_counts(rows):
         from .publish.price_labels import recovery_reason
-        rows = db.all_deals(status="alive")
         hidden = [d for d in rows if price_unconfirmed(d, cfg, now)
                   and rank.is_publishable(d, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]]
         reasons = {name: {"new": 0, "used": 0, "total": 0} for name in (
@@ -1272,7 +1282,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             for name, keys in (("top_candidates", picks), ("wall", wall))}
         stats["confirmed_age"]["top_candidates"]["request_age"] = history.request_age(
             [d for d in rows if d["dedupe_key"] in picks])
-        stats["hidden_unconfirmed"] = hidden_counts()
+        stats["confirmed_age"]["wall"]["request_age"] = history.request_coverage(
+            [d for d in rows if d["dedupe_key"] in wall])
+        if plan is not None:
+            stats["token_plan"] = plan.report(rows)
+            for name, keys in (("top_candidates", picks), ("wall", wall)):
+                stats["confirmed_age"][name]["tiers"] = plan.coverage(
+                    [d for d in rows if d["dedupe_key"] in keys])
+        stats["hidden_unconfirmed"] = hidden_counts(rows)
 
     def tried_recently(deal: dict[str, Any], used: bool) -> bool:
         # An answered-but-inconclusive recheck waits its retry window: live
@@ -1282,7 +1299,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         wait = _RETRY_USED_H if used else _RETRY_NEW_H
         return tried is not None and now - tried < timedelta(hours=wait)
 
-    def last_check(deal):
+    def observed_check(deal):
         paid = util.parse_iso(deal.get("price_rechecked_at") or "")
         if deal.get("gone_suspect_at") or deal.get("death"):
             return paid  # keep the two-reading death rule and its interval
@@ -1293,6 +1310,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         valid = [at for at in (paid, warehouse) if at is not None and at <= now
                  and (since is None or at >= since)]
         return max(valid) if valid else None
+
+    def last_check(deal):
+        if plan is not None and not (deal.get("gone_suspect_at") or deal.get("death")):
+            return plan.last_check(deal)
+        return observed_check(deal)
 
     def cadence(deal):
         seen = util.parse_iso(deal.get("first_seen_at") or "")
@@ -1311,7 +1333,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     def in_cadence(deal):
         last = last_check(deal)
-        return last is not None and timedelta() <= now - last < timedelta(hours=cadence(deal))
+        return last is not None and 0 <= (now - last).total_seconds() / 3600 < cadence(deal)
 
     def overdue(deal):
         key = deal["dedupe_key"]
@@ -1322,20 +1344,34 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         # A suspect's second reading must still wait its full hour.
         if deal.get("gone_suspect_at") and last is not None and now - last < timedelta(hours=_CONFIRM_GONE_H):
             return False
+        if plan is not None and deal.get("recheck_tried_at"):
+            last = observed_check(deal)  # 092: inconclusive top answers cannot suppress deadlines
         at = last or util.parse_iso(deal.get("first_seen_at") or "")
-        return at is None or now - at >= timedelta(hours=schedule.max_age(deal, name))
+        return at is None or (now - at).total_seconds() / 3600 >= schedule.max_age(deal, name)
 
-    stats["hidden_unconfirmed_before"] = hidden_counts()
+    def idle_eligible(deal):
+        last = last_check(deal)
+        if plan is not None:
+            # Free discoveries can still avoid an early duplicate, but they
+            # never enter the paid-request coverage metric.
+            observed = observed_check(deal)
+            last = max((at for at in (last, observed) if at is not None), default=None)
+            return last is None or (now - last).total_seconds() / 3600 >= max(
+                cfg.keepa_recheck_interval_minutes / 60, plan.target(deal) - gap / 60 *
+                max(1, float(cfg.keepa_volatility.get("idle_lookahead_runs", 2))))
+        return last is None or now - last >= timedelta(hours=cfg.keepa_recheck_idle_min_age_h)
+
+    stats["hidden_unconfirmed_before"] = hidden_counts(inventory)
     stats["hidden_recovery"] = {"tokens": 0, "estimated_tokens": 0, "requested": 0,
                                 "recovered": {"new": 0, "used": 0, "total": 0}}
     if not cfg.feature_flags.get("keepa"):
         measurements()
         return stats
+    if plan is not None:
+        plan.prepare_clicks()
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
     budget = KeepaBudget.load(db)
-    stats["run_gap"] = run_gap_forecast(db, cfg, now)
-    gap = stats["run_gap"]["minutes"]
     available = budget.available(now)
     stats["tokens"] = {"bucket_start": available, "bucket_end": None,
                        "capacity": budget.capacity(), "requested": 0,
@@ -1348,7 +1384,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     photo: list[dict[str, Any]] = []
     idle: list[dict[str, Any]] = []
     recovery: list[dict[str, Any]] = []
-    for deal in db.all_deals(status="alive"):
+    for deal in inventory:
         if not deal.get("asin") or not is_amazon_deal(deal):
             continue
         if deal.get("death") in {"post_says_over", "stated_expiry"} \
@@ -1366,11 +1402,11 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             stats["wall_schedule"]["top_overlap"] += int(key in picks)
         if used and key not in visible:
             stats["used_off_wall"] += 1
-            if not hidden:
-                continue  # free Warehouse confirmations still refresh these rows
+            if not hidden and plan is None:
+                continue  # legacy off-wall used rows use free Warehouse confirmations
         every = cadence(deal)
         last = last_check(deal)
-        in_window = last is not None and timedelta() <= now - last < timedelta(hours=every)
+        in_window = last is not None and 0 <= (now - last).total_seconds() / 3600 < every
         if key in wall and in_window:
             stats["wall_schedule"]["cadence_" + condition] += 1
         if not urgent and tried_recently(deal, used):
@@ -1391,8 +1427,10 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     deal, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
                 recovery.append(deal)
             continue  # hidden prices use only the bounded recovery lanes
+        if plan is not None and key in plan.boosted and not hidden and not deal.get("gone_suspect_at"):
+            in_window = False
         if in_window and key in visible and not deal.get("gone_suspect_at") \
-                and now - last >= timedelta(hours=cfg.keepa_recheck_idle_min_age_h):
+                and idle_eligible(deal):
             idle.append(deal)
         if in_window and (used or not image_backfill or deal.get("image_url")
                           or len(photo) >= _IMAGE_BACKFILL_PER_RUN):
@@ -1407,8 +1445,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 and rank.is_publishable(dict(deal, status="alive"), cfg, require_critic=False)[0]:
             due_used.append(deal)
             base_hours[deal["dedupe_key"]] = cfg.keepa_recheck_used_h
-    # Keep the 085 class order. Within a class, the adaptive batch selection
-    # below balances value, oldest-visible exploration and age deadlines.
+    # Build the legacy transport classes; the tier planner reorders them
+    # across conditions below, retaining deadline and budget boundaries.
     def order(d):
         at = last_check(d)
         return util.iso(at) if at else ""
@@ -1458,6 +1496,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         db.update_deal(deal["dedupe_key"], payload=payload,
                        status="dead" if outcome == "dead" else None)
 
+    def recovery_order(deal):
+        value = rank.pick_score(deal, cfg, now, require_confirmation=False, allow_used=True)
+        # Non-pick inventory (e.g. missing photos) follows scored candidates.
+        return (value is None, -value if value is not None else -rank.score(deal, cfg, now),
+                deal["dedupe_key"])
+
     # Due rechecks first (a nice-to-have photo never delays them); each
     # class waits while the bucket is below its bar, and a batch never
     # takes the deal lane's last MIN_FOR_DEAL_QUERY tokens — a used batch
@@ -1495,6 +1539,26 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         remaining_groups.append(([d for d in group if d["dedupe_key"] not in deadlines], *options))
     urgent_groups.sort(key=lambda g: (deadlines[g[0][0]["dedupe_key"]] != "top", g[6]))
     groups = urgent_groups + remaining_groups
+    if plan is not None:
+        # Sort across price/condition classes, then coalesce adjacent transport
+        # modes. A batch cannot jump a more valuable item of another mode.
+        by_key = {d["dedupe_key"]: (d, options) for rows, *options in groups for d in rows}
+        ranked = plan.order([d for d, _ in by_key.values()], deadlines)
+        positions = {d["dedupe_key"]: i for i, d in enumerate(ranked)}
+        def phase(d, options):
+            return (0 if deadlines.get(d["dedupe_key"]) == "top" else
+                    4 if options[-1] else 3 if options[3].startswith("hidden_") else
+                    1 if d["dedupe_key"] in picks else 2)
+        entries = sorted(by_key.values(), key=lambda row: (
+            phase(*row), recovery_order(row[0]) if phase(*row) == 3 else (positions[row[0]["dedupe_key"]],)))
+        groups = []
+        for deal, options in entries:
+            if groups and list(groups[-1][1:]) == options:
+                groups[-1][0].append(deal)
+            else:
+                groups.append(([deal], *options))
+        # Even with no recovery/idle candidates, discovery keeps its place.
+        groups.append(([], MIN_FOR_RECHECK, 1, KEEPA_BATCH, "idle_wall_new", False, False, True))
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
     groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, "photo", False, False, False))
     # Reserve before each call, including lost answers; rerunning a run key
@@ -1510,12 +1574,6 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     if not isinstance(recovery_spent, dict) or recovery_spent.get("run_key") != recovery_run:
         recovery_spent = {"run_key": recovery_run, "new": 0, "used": 0}
     rate_limited = rate_limited or recovery_spent.get("rate_limited", False)
-
-    def recovery_order(deal):
-        value = rank.pick_score(deal, cfg, now, require_confirmation=False, allow_used=True)
-        # Non-pick inventory (e.g. missing photos) follows scored candidates.
-        return (value is None, -value if value is not None else -rank.score(deal, cfg, now),
-                deal["dedupe_key"])
 
     discovery_done = False
     for group, need, per_deal, per_call, label, live, used, is_idle in groups:
@@ -1536,8 +1594,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                             and price_unconfirmed(d, cfg, now) and not in_cadence(d)
                             and not tried_recently(d, used)), key=recovery_order)
         if is_idle:
-            group = [d for d in group if last_check(d) is None or now - last_check(d) >=
-                     timedelta(hours=cfg.keepa_recheck_idle_min_age_h)]
+            group = [d for d in group if idle_eligible(d)]
         group = [d for d in group if d["dedupe_key"] not in attempted]
         i = 0
         while i < len(group):
@@ -1578,7 +1635,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             remaining = group[i:]
             batch = schedule.batch(remaining, min(size, len(remaining)),
                                    label.removeprefix("idle_").rsplit("_", 1)[0],
-                                   base_hours, last_check, per_deal) if not (is_photo or is_recovery) else remaining[:size]
+                                   base_hours, last_check, per_deal) if not (plan is not None or is_photo or is_recovery) else remaining[:size]
             group[i:] = batch + [d for d in remaining if d not in batch]
             attempted.update(d["dedupe_key"] for d in batch)
             stats["tokens"]["requested"] += len(batch) * per_deal
@@ -1602,7 +1659,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     stats["done"][label] += 1
                 product = getattr(verdicts, "products", {}).get(deal["dedupe_key"])
                 observed = keepa_observed_at(product, now, used=is_used_deal(deal))
-                previous = last_check(deal)
+                previous = observed_check(deal)
                 regressed = previous is not None and observed < previous
                 if (is_recovery or price_unconfirmed(original, cfg, now)) and product is not None:
                     stamp = product.get("lastUpdate")
@@ -1648,7 +1705,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                         stats["hidden_recovery"]["recovered"]["total"] += 1
                 if not is_photo:
                     history.record(original, product, verdict, observed, label, cost, estimated,
-                                   dead=current["status"] == "dead" and original["status"] != "dead")
+                                   dead=current["status"] == "dead" and original["status"] != "dead", live_request=live)
             found = sum(1 for d in batch
                         if d["dedupe_key"] in photo_less and d.get("image_url"))
             if photo_less:
@@ -2313,6 +2370,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from .publish.price_labels import META as label_report_meta
         db.meta_set(label_report_meta, json.dumps(summary["unconfirmed_label"], sort_keys=True))
         summary["price_recheck"]["confirmed_age"] = site_res["confirmed_age"]
+        if "token_plan" in summary["price_recheck"]:
+            summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["checkout"] = site_res.get("checkout", {})
         from .publish.indexnow import metrics as indexnow_metrics

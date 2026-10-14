@@ -64,7 +64,18 @@ class History:
                    for name, hours in [("within_45m", .75), *((f"within_{h}h", h) for h in (1, 2, 3, 12))]},
                 "oldest_h": round(max(ages), 2) if ages else None}
 
-    def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False):
+    def request_coverage(self, deals):
+        """Whole-set and condition-specific paid request ages."""
+        return {**self.request_age(deals),
+                "new": self.request_age([d for d in deals if not verify.is_used_deal(d)]),
+                "used": self.request_age([d for d in deals if verify.is_used_deal(d)])}
+
+    def latest_request(self, key):
+        return max((s for s in self.samples.get(key, [])
+                    if (at := util.parse_iso(s["requested_at"])) is not None and at <= self.now),
+                   key=lambda s: s["requested_at"], default=None)
+
+    def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False, live_request=False):
         key = deal["dedupe_key"]
         samples = self.samples.setdefault(key, [])
         if self.attempted(key):
@@ -91,12 +102,27 @@ class History:
                   "shown_price": shown, "live_price": live, "reading": bool(reading),
                   "changed": changed, "death": death, "tokens": tokens,
                   "last_change_at": util.iso(min(last_change, observed)) if last_change else ""}
+        # Per-request receipts must not be confused with folded cache costs.
+        sample.update(request_tokens=tokens, estimated_tokens=estimated,
+                      live=live_request, used=verify.is_used_deal(deal), regular_price=deal.get("regular_price"))
+        own_change = (previous or {}).get("price_changed_at", "")
+        if reading and live is not None:
+            same = previous and previous.get("live_price") == sample["live_price"]
+            sample["stable_since"] = (previous.get("stable_since", previous["observed_at"])
+                                      if same else stamp)
+            if ((previous and previous.get("live_price") is not None and not same)
+                    or (not previous and shown is not None and live != shown
+                        and not verify._price_hidden_by_promo(deal))):
+                own_change = stamp  # any observed price change, including sub-1% changes
+        sample["price_changed_at"] = own_change
         # Fold repeated cached observations without forgetting their original
         # volatility. Their additional cost still enters the daily totals.
         cached = next((s for s in samples if s["observed_at"] == stamp and s["reading"]), None)
         if cached is not None:
             sample.update(reading=True, changed=cached["changed"], death=cached["death"],
-                          tokens=tokens + cached["tokens"])
+                          tokens=tokens + cached["tokens"],
+                          stable_since=cached.get("stable_since", stamp),
+                          price_changed_at=cached.get("price_changed_at", own_change))
             samples.remove(cached)
         samples.append(sample)
         limit = max(2, int(self.cfg.keepa_recheck_adaptive.get("history_samples", 12)))
@@ -147,6 +173,7 @@ class Schedule:
         self.options = self.cfg.keepa_recheck_adaptive
         self.enabled = bool(self.options.get("enabled", False))
         self.picks, self.wall = picks, wall
+        self.plan = None
 
     def probability(self, deal, base):
         prior = min(.99, max(.01, float(self.options.get("prior_probability", .15))))
@@ -159,6 +186,8 @@ class Schedule:
         return p
 
     def max_age(self, deal, name):
+        if self.plan is not None:
+            return self.plan.target(deal)
         used = verify.is_used_deal(deal)
         hide = self.cfg.keepa_show_max_unconfirmed_used_h if used else self.cfg.keepa_show_max_unconfirmed_h
         limit = float(self.options.get("max_used_h" if used else "max_" + name + "_h",
@@ -170,6 +199,10 @@ class Schedule:
         return min(hide, limit)
 
     def cadence(self, deal, name, base):
+        if self.plan is not None and name != "suspect":
+            # Leave one forecast gap to make the maximum age attainable.
+            return max(self.cfg.keepa_recheck_interval_minutes / 60,
+                       self.plan.target(deal) - self.plan.gap / 60)
         if not self.enabled or name == "suspect":
             return base
         if not verify.is_used_deal(deal) and (

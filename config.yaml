@@ -243,6 +243,10 @@ traffic:
 product_entities:
   backfill_per_run: 200      # Stored rows only; resumes without requests or LLM calls. 0 pauses.
   also_at_enabled: false    # Same-product, same-condition public offers on deal pages.
+  lowest_seen_enabled: false # 30 days of verified product history; at least 3 UTC days.
+  min_price_ratio: 0.4      # Comparison guard; may be tightened, never relaxed.
+  max_price_ratio: 2.5
+  shadow_retention_days: 7  # Private per-run reports, at most 30 sampled pairs each.
 
 ranking:
   tier_boost: { corroborated: 15.0, history-checked: 10.0, unverified: 0.0 }
@@ -259,6 +263,23 @@ dedupe:
   fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
 
 keepa:
+  tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
+  volatility:
+    enabled: true
+    # Maximum paid-request ages in hours; observation clocks remain separate.
+    targets:
+      FAST:   {top: 0.5, wall: 0.5, rest: 6, hidden: 48}
+      NORMAL: {top: 0.75, wall: 2, rest: 8, hidden: 72}
+      SLOW:   {top: 2, wall: 6, rest: 12, hidden: 72}
+    # Reduce SLOW demand first, then NORMAL, then FAST. Protect NORMAL top
+    # at one hour; FAST may stretch further when the plan cannot cover it.
+    stretch_limits: {SLOW: 4, NORMAL: 1.3333333333333333}
+    # Before receipts exist, reserve the configured ordinary + overflow
+    # /deal page ceiling (currently 140 tokens/run), not an assumed yield.
+    discovery_history_runs: 12    # use saved actual feed receipts when available
+    idle_lookahead_runs: 2        # overflow may cover the following run's deadline
+    click_boost_per_run: 20       # only with first_party_clicks.enabled
+    click_lookback_hours: 6        # already ingested hourly counts only
   # The /deal lane on the 20 token/min plan (~200 tokens per 10-minute
   # pull). Each /deal page is 150 rows for ~5 tokens. Only the Amazon and
   # FRESH first pages run on a near-empty bucket (10 tokens); every further
@@ -270,16 +291,13 @@ keepa:
                                    # the rest DEEP (90-day list; its page window
                                    # rotates across pulls via db meta keepa_deep_page)
   reserve_tokens: 300              # never start an extra page below this
-  # Live price re-checks (hours between checks of one deal). Operator,
-  # 2026-10-12: stay on the 20 token/min plan (~28,800 tokens/day). At 3 h /
-  # 6 h every deal, rechecks wanted ~23,000 a day and starved the deal feed.
+  # Legacy visibility cadences (used when volatility.enabled is false).
   recheck_fresh_h: 4               # deals first seen in the last recheck_fresh_window_h
   recheck_fresh_window_h: 24
   recheck_new_h: 8                 # task 085: retry before the 12 h display limit
   recheck_used_h: 6                # ordinary top/wall used offers (up to 13 tokens)
-  # Operator request, 2026-10-13: highly accurate prices on the FIXED
-  # 20 tokens/min plan. All new classes precede ordinary used scans;
-  # used scans (including suspects) share this cap after the deal reserve.
+  # Used scans (including suspects and click boosts) share this cap after
+  # the deal reserve, under either scheduler.
   used_scan_budget_share: 0.35
   # Accuracy (operator, 2026-10-13: the site showed $3.65 while Amazon
   # showed $4.11). Correct plain new prices from the SAME paid reading,
@@ -287,14 +305,12 @@ keepa:
   reprice_min_pct: 1
   recheck_top_h: 0.75              # task 085: leave a run to retry before 1 h
   recheck_tolerance_pct: 5
-  # Operator request, 2026-10-13: suspects, then scored pick candidates,
-  # then the first home cards, then the rest. Task 085: new checks always
-  # precede ordinary used scans; overdue top/wall deadlines lead every class.
-  recheck_top_n: 200               # up to 267 new tokens/hour before free confirmations
+  # Saved visibility sets; an overdue top pick leads all volatility tiers.
+  recheck_top_n: 200
   recheck_wall_n: 300              # top overlap is checked once
-  recheck_wall_h: 1.5              # task 085: retry slack before the 2 h wall target
+  recheck_wall_h: 1.5              # legacy new cadence / aging used-wall idle priority
   # Task 085: spend predicted overflow before the next fast run on the
-  # oldest visible confirmations, top first. Never re-pay a just-read price.
+  # oldest visible confirmations. Due top/wall deadlines always lead.
   recheck_interval_minutes: 10     # forecast floor / ordinary retry gap; deadlines and lost answers override
   # Task 091: actual fast/hourly starts share one forecast. Slack accounts
   # for GitHub cron jitter; long outages cannot predict more than 45 minutes.
@@ -309,6 +325,7 @@ keepa:
   # used scans also share used_scan_budget_share with the visible wall.
   hidden_new_tokens_per_run: 150   # stats-only, 1 token each; 0 disables
   hidden_used_scans_per_run: 10    # at most 13 tokens each; 0 = free feeds only
+  # Legacy idle floor when volatility.enabled is false.
   recheck_idle_min_age_h: 0.5
   # Task 087b: after due checks, spend predicted overflow on discovery first,
   # then value-ranked early checks. Extra pages share the existing post caps.
@@ -317,12 +334,12 @@ keepa:
   # Task 087 (docs/codex-tasks/087-value-per-token-rechecks.md): learn from
   # the last few distinct readings; preserve the 085 classes and reserves.
   recheck_adaptive:
-    enabled: true                 # false restores the fixed 085 scheduler
+    enabled: true                 # with volatility off, false restores fixed 085 cadence
     history_samples: 12           # compact facts only, per deal; daily totals retained separately
     prior_probability: 0.15       # chance of a useful change per ordinary cadence
     prior_readings: 4             # avoid overreacting to one reading
-    exploration_share: 0.10       # oldest visible rows in each affordable batch (rounded up)
-    visibility_boost: 1           # 1..2 weight from saved pick/wall position; no click API
+    exploration_share: 0.10       # oldest-visible sampling; legacy rounds its quota per batch
+    visibility_boost: 1           # 1..2 weight from saved pick/wall position
     stable_multiplier: 2          # stable rows wait up to twice the ordinary cadence
     volatile_multiplier: 0.67     # volatile rows can run sooner
     min_new_h: 0.5

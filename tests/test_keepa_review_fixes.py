@@ -24,6 +24,7 @@ NOW = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
 
 def _cfg():
     cfg = load_config()
+    cfg.keepa_volatility["enabled"] = False  # legacy cadence/review regressions
     cfg.feature_flags["keepa"] = True
     return cfg
 

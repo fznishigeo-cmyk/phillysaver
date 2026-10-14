@@ -1033,7 +1033,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
     seo_paths, seo_wall = seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
-                                     spotlight=spotlight, deal_pages=deal_pages)
+                                     spotlight=spotlight, deal_pages=deal_pages,
+                                     run_key=(last_run or {}).get("run_key"))
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
@@ -1083,14 +1084,29 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     top_candidates = [d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]]
     label_report = price_labels.diagnostic(before_labels, cfg, now, teaser)
     db.meta_set(price_labels.META, json.dumps(label_report, sort_keys=True))
+    wall_rows = [originals[d["dedupe_key"]] for d in wall
+                 if not d.get("locked") and d.get("dedupe_key") in originals]
+    history = History(db, cfg, now)
+    tier_coverage = {}
+    if cfg.keepa_volatility.get("enabled", False):
+        from ..volatility import Plan
+        from ..keepa_budget import run_gap_forecast
+        plan = Plan(history, db.all_deals(status="alive"),
+                    {d["dedupe_key"]: i for i, d in enumerate(top_candidates)},
+                    {d["dedupe_key"]: i for i, d in enumerate(wall_rows)},
+                    run_gap_forecast(db, cfg, now)["minutes"])
+        tier_coverage = {name: {"tiers": plan.coverage(rows)}
+                         for name, rows in (("top_candidates", top_candidates), ("wall", wall_rows))}
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
-                                   "request_age": History(db, cfg, now).request_age(top_candidates)},
-                "wall": confirmation_coverage([originals[d["dedupe_key"]] for d in wall
-                                       if not d.get("locked") and d.get("dedupe_key") in originals], now)},
+                                   "request_age": history.request_age(top_candidates),
+                                   **tier_coverage.get("top_candidates", {})},
+                "wall": {**confirmation_coverage(wall_rows, now),
+                         "request_age": history.request_coverage(wall_rows),
+                         **tier_coverage.get("wall", {})}},
             "link_mix": link_mix(teaser + spotlight_only, amazon_tag,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),

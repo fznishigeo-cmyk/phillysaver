@@ -50,7 +50,7 @@ def test_only_enabled_detail_block_changes_bytes_and_ids_never_publish(db, cfg, 
     assert f'Also at <a href="{_path(rows[2])}">Woot</a> for $8.00 USD' in html
     assert seo.seo_audit.Page(html, _path(rows[0])).schema_mismatch() is False
     cfg.product_entities_also_at_enabled = False
-    monkeypatch.setattr(product_offers, "blocks", lambda *args: pytest.fail("off must do no comparison work"))
+    monkeypatch.setattr(product_offers, "blocks", lambda *args: pytest.fail("off must not render comparison HTML"))
     render_site(db, cfg, NOW, out_dir=restored, deals=rows)
     assert tree(restored) == before
 

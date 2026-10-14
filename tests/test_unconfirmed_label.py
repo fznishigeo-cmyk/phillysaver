@@ -221,8 +221,10 @@ def test_member_alert_explicit_raw_and_serialized_inputs_cannot_push_labels(db, 
 
 def test_scheduler_other_reasons_are_named_without_changing_recovery(db, cfg):
     cfg.used_min_pct = 70  # seed's verified $25/$100 offer clears this fixture's floor
-    row = seed(db, cfg, seen=NOW - timedelta(hours=40), conditions=["used"],
-               price_rechecked_at=util.iso(NOW - timedelta(hours=30)), pct_at_checkout=85)
+    # Past the volatility scheduler's 48 h FAST/hidden target (task 095), so
+    # the row is recovery-due rather than inside its cadence.
+    row = seed(db, cfg, seen=NOW - timedelta(hours=60), conditions=["used"],
+               price_rechecked_at=util.iso(NOW - timedelta(hours=50)), pct_at_checkout=85)
     result = pipeline._recheck_prices(db, cfg, NOW)
     reasons = result["hidden_unconfirmed"]["reasons"]
     assert "other" not in reasons

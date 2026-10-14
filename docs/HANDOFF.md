@@ -190,6 +190,24 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 - **Pinterest Standard access:** screen-recording script, then submission.
 
 ## In flight
+- **Also-at shadow + lowest seen (Codex task 096, 2026-10-14; uncommitted, OFF):**
+  every publish records private, bounded per-run comparison samples/counts in
+  encrypted-state meta and the private growth report. Shared publication
+  guards reject pack/quantity, capacity, variant, condition/grade, model and
+  extreme-price mismatches. The independent lowest-seen switch uses exact
+  product/condition observations on 3+ UTC days within 30 days. Labeled,
+  locked, ended and absent-page offers cannot contribute. Both switches stay
+  off; all four disabled output trees match untouched HEAD with linked
+  products and sufficient history. **45 new checks pass**, including private
+  reporting, retention, idempotency and all four byte pins; existing product
+  checks and both offline rerun modes pass; final product-page run: **62 passed**.
+  Full `.venv/bin/python -m pytest -q`: **3,536 passed, 7 failed, 1 deselected**;
+  only the existing Stripe localhost-socket checks failed (`Operation not
+  permitted`), all reproduced on untouched HEAD. Seven cases added after the
+  full run started pass in the final focused run. Readiness checklist/config lines:
+  `docs/product-entities.md`. Real shadow sampling/review after deployment
+  and the seven socket checks outside this sandbox remain. No scheduler,
+  evidence gate, request, dependency, commit or push.
 - **Price not confirmed label (Codex task 094, 2026-10-14; uncommitted):**
   shipped switch admits otherwise publishable, non-suspect hidden prices under
   48 h with a muted AA label, after confirmed offers. No promotion/pushes or
@@ -207,6 +225,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Details/live-count limitation: HANDOFF in
   `docs/codex-tasks/094-price-not-confirmed-label.md`. No commit/push;
   read-only shared Git metadata prevents branch creation.
+- **Volatility tiers (Codex task 095, 2026-10-14; uncommitted):** supersedes
+  interrupted 093. Retained its wall request-age measurements; replaced its
+  idle scheduling with FAST/NORMAL/SLOW targets, a config-only plan-rate knob,
+  observed receipt costs, SLOW-first capacity stretching, bounded opt-in click
+  boosts, and per-tier request/Keepa-clock coverage. Overdue top deadlines,
+  forecast top protection, discovery overflow, value-ranked bounded hidden
+  recovery, exploration, reserves, used share, first-429 stop, honest clocks,
+  death/evidence and social rules remain. Display code for 094 is untouched.
+  The original visibility scheduler is available with `keepa.volatility.enabled:
+  false`; legacy cadence fixtures explicitly select it. **150 tokens/min is the
+  smallest tested rate meeting FAST top/wall ≤40 minutes and NORMAL top ≤1 hour**:
+  all peak at 35 minutes; 100/min leaves FAST wall at 50 minutes. 250/min adds
+  no freshness in this fixture. Config remains 20/min, which cannot meet the
+  FAST targets at this workload. Full tier/visibility table and assumptions:
+  [095 HANDOFF](codex-tasks/095-volatility-tiers.md#handoff--2026-10-14-working-tree-no-commit).
+  Final **39 tier/093 checks**, **78 focused guards**, **71 legacy checks**, all
+  five rate scenarios (100/min independently repeated), and the new 144-run
+  NORMAL-top guard pass. The existing 144-run wall and irregular-gap regressions
+  also pass. Full suite: **3,486 passed, 15 failed, 1 deselected**; eight failures
+  were fixed/rechecked, and the remaining seven Stripe localhost-socket failures
+  reproduce on untouched HEAD (`Operation not permitted`). Review, those seven
+  tests outside the sandbox, and live receipt/coverage observation remain.
+  No commit or push.
 - **Top coverage regression (Codex task 092, 2026-10-14; uncommitted):**
   overdue top/wall checks now precede every lower class and bypass ordinary
   retry cooldowns; lost requests can retry next run, same-key retries cannot

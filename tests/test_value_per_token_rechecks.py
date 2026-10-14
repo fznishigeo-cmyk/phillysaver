@@ -26,6 +26,7 @@ from tests.test_keepa import SRC, _amazon_row, _wh_row, _junk_row
 @pytest.fixture
 def cfg():
     result = load_config()
+    result.keepa_volatility["enabled"] = False  # preserve the 087/091 regression scenarios
     # Scenarios model cached (1-token) reads; shipped live top reads
     # (update=0) are exercised where a test sets this to True.
     result.keepa_recheck_top_live = False

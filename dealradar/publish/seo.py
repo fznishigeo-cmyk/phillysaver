@@ -598,7 +598,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
                observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True,
                discovery: str = "", sharing: str = "", share_head: str = "",
-               also_at: str = "") -> str:
+               also_at: str = "", lowest_seen: str = "") -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -681,7 +681,9 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     if not dead and url:
         content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                     f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
-    content += (also_at if not dead else "") + sharing + discovery + f'<p>Browse {hub}.</p>'
+    if not dead and not d.get("price_unconfirmed"):
+        content += lowest_seen + also_at
+    content += sharing + discovery + f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
     if related:
         content += '<h2>Related live deals</h2><div class="grid">' + ''.join(
@@ -766,7 +768,8 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
-            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]) -> tuple[list[str], str]:
+            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]],
+            run_key: str | None = None) -> tuple[list[str], str]:
     """Emit the wall, hubs and deal pages; return paths and the static wall.
 
     publish_sitemap reads the final tracked pages for dates and the audit.
@@ -829,11 +832,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
     browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
     template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links))
-    also_at = {}
-    if cfg.product_entities_also_at_enabled:
-        from .product_offers import blocks
+    from . import product_offers
+    from .. import product_shadow
 
-        also_at = blocks(live, source_deals, paths)
+    shadow_run = run_key or "publish:" + iso(now)
+    also_at, lowest, shadow = product_offers.evaluate(
+        db, cfg, now, deal_rows, source_deals, paths, shadow_run)
     for d in deal_rows:
         path = paths[d["key"][:8]]
         observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
@@ -844,7 +848,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1 and not d.get("price_unconfirmed"),
                           discovery=discovery, sharing=sharing, share_head=share_head,
-                          also_at=also_at.get(d["dedupe_key"], ""))
+                          also_at=also_at.get(d["dedupe_key"], ""),
+                          lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))
+                          if cfg.product_entities_lowest_seen_enabled else "")
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
@@ -923,6 +929,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                + [hub_href(slug) for _label, _group, slug in HUB_GROUPS]
                + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths)
     inventory.remove_stale(out, emitted)
+    product_shadow.record(db, cfg, now, shadow_run, shadow)
     return emitted, wall
 
 

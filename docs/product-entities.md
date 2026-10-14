@@ -84,11 +84,85 @@ savings or interpolated checks are computed. Existing deal charts are unchanged.
 ## Optional comparison
 
 `product_entities.also_at_enabled: false` is the default in code and YAML.
-Off performs no comparison work and preserves published bytes. On adds
+Off preserves published bytes; the private shadow calculation still runs. On adds
 “Also at &lt;store&gt; for &lt;price&gt;” to live deal pages only, using already-public
 live offers with the same product/condition and an emitted detail page.
 It links to that page so the existing price steps and credits remain available;
 the public checkout requirement summary accompanies conditional prices.
 One offer per other store is selected by price, then stable key. Locked,
-ended, unpublished, range/per-unit and non-USD offers never supply comparisons.
+ended, unpublished, price-unconfirmed, range/per-unit and non-USD offers never
+supply comparisons. Neither block appears on a price-unconfirmed page.
 Product IDs stay internal; public JSON, social rules and ranking are unchanged.
+
+Task 096 adds a second publication guard: both offers must share an exact
+identifier, with no disagreement in title/stored pack or quantity, capacity,
+size/color/variant, physical condition/grade, or model. Unexplained title
+differences also fail closed. The price ratio must be within 0.4–2.5 in both
+directions (zero only compares with zero); the YAML limits can be tightened.
+A rejected cheapest offer is omitted, with no fallback to a more expensive
+offer from that store. These checks apply identically to shadow and display.
+
+## Lowest we've seen
+
+`product_entities.lowest_seen_enabled: false` separately gates one detail-page
+line: “Lowest we've seen: $7.00 on 2026-10-07 (UTC, last 30 days)”. The minimum
+comes from `DB.product_price_history` for that exact product and condition,
+within the inclusive preceding 30 days, with observations on at least three
+distinct UTC dates. Duplicate checks on one date do not satisfy the floor;
+equal minima use the earliest date. Thin history is hidden. Computation is
+pure code in `savings.py`, with no LLM or requests.
+
+These are our evidence-checked ingestion/repricing observations, never raw
+Keepa history or inferred prices. “Verified” means the ingestion evidence
+gate, not the independent-source verification badge. The existing product
+resolver quarantines changed variants rather than relabeling old history;
+the minimum also explicitly filters each observation's condition. Existing
+90-day deal charts are unchanged.
+
+## Private shadow report
+
+Every publish evaluates its actual emitted deal pages, regardless of either
+display switch. The single encrypted
+state meta key `product_entities_shadow` retains one record per run key for
+`shadow_retention_days` (7 by default). Standalone publishes use the publish
+timestamp as their key. Retries replace that run's facts without adding runs
+or sample sets; the original timestamp stays. Retention runs on each publish.
+
+Each record holds page counts (`published_pages`, `eligible_pages`,
+`also_at_pages`, `lowest_seen_pages`), `also_at_pages_by_match` (ASIN, GTIN,
+SKU, brand/model), directed candidate/blocked pair counts and rejection
+reasons. A page can count under more than one match type. Up to 30 sampled
+pairs contain both titles, stores, conditions, already-public prices, the
+exact match type and rejection reasons. Rejected pairs take priority;
+deterministic run-key sampling rotates the remainder between runs.
+
+Only the private growth report reads this meta: latest-publish counts and
+samples, plus retained UTC daily publish/candidate/blocked counts. Repeated
+pairs count once per publish, so daily totals are not unique-product counts.
+No retained data is reported as unavailable, never zero observed errors.
+Diagnostics never enter public files, JSON, structured data, publish/run
+summaries, Actions summaries or logs. The feature makes no external requests.
+
+## Switch-on readiness
+
+- Collect at least three complete UTC days of real publish samples. Zero
+  candidate pairs means insufficient coverage, not proof of precision.
+- Review sampled pairs across the match types and stores actually present:
+  same model, pack/quantity, capacity, variant and condition. Require zero
+  flagged pairs over those three days and zero reviewer-found wrong matches;
+  investigate any flags and restart the clean observation window after fixes.
+- Spot-check the minimum/date against the stored evidence-checked observations:
+  same product/condition, three distinct UTC days and a 30-day window.
+- Check labeled, locked, ended and capped-out pages never contribute; run the
+  full suite and review disabled byte equality before activation.
+
+Only after that review, flip either or both exact config lines independently:
+
+```yaml
+product_entities:
+  also_at_enabled: true
+  lowest_seen_enabled: true
+```
+
+Both ship **false**. This task supplies the observation mechanism; it does not
+claim that the required real-data review has happened.
