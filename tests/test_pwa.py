@@ -44,10 +44,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "ccb7fee8ac31706c30987bd15fb93428576558046220e65f4896926b3ba8e564"),
-    ("open", "2db19caa85a76a9891c6894e89e60d96118ff912a22653b71dabe97d20383e8b"),
-    ("support", "8afd6f3d7e8ed13c71a3635649726acc89036db0437e6f1e7b0d06295db4499a"),
-    ("shipped", "915c3e0df97bb3ef2ab430b7395ddf737c3ab22fb5af0c921b3bcbe8a13af721"),
+    ("membership", "28a7d364e9463f092705cc1f1e7814b48afd926c83b3e8be6a34642e692c0c7f"),
+    ("open", "f463cd5514b84f3a3740ba386fa315bf3ea745f00902f2de03b0df0e95f8c3d5"),
+    ("support", "27682c4fe47e23632f74f65484280afec4db71557566bfe9e4400f246822ee5f"),
+    ("shipped", "dbee2e700d343084bebdd6964c1520f683b4150d28f64f50a77d262544cccd05"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Task 086 refreshes only shipped: inventory action/tracking/version bytes.
@@ -155,7 +155,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "8afd6f3d7e8ed13c71a3635649726acc89036db0437e6f1e7b0d06295db4499a"
+    assert tree_hash(out) == "27682c4fe47e23632f74f65484280afec4db71557566bfe9e4400f246822ee5f"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

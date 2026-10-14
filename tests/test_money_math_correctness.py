@@ -37,6 +37,8 @@ def audit_cfg(tmp_path, monkeypatch):
     cfg.feature_flags["keepa"] = False
     # Fixture deals carry no sightings; the stock rule is tests/test_social_stock.py.
     cfg.social_require_stock_evidence = False
+    # Replay fixtures seed sandbox Pinterest auth; the shipped app is production.
+    cfg.pinterest = dict(cfg.pinterest, environment="sandbox")
     return cfg
 
 
