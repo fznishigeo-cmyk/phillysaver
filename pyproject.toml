@@ -29,6 +29,6 @@ include = ["dealradar*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "slow: integration tests that hit real network sources (deselect with '-m \"not slow\"')",
+    "slow: real-network integration tests and multi-hour capacity simulations (deselect with '-m \"not slow\"')",
 ]
 addopts = "-m 'not slow'"

@@ -176,6 +176,7 @@ def simulate(db, cfg, monkeypatch, *, gaps=(15, 35, 20, 30, 25), duration=48 * 6
     return result
 
 
+@pytest.mark.slow  # ~50 min: five 48-hour capacity runs; run with -m slow
 @pytest.mark.parametrize("rate", [20, 60, 100, 150, 250])
 def test_sweet_spot(db, monkeypatch, rate):
     cfg = load_config()
