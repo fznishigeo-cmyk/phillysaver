@@ -1441,6 +1441,7 @@ class TestCarefulDeath:
         from dealradar.keepa_budget import META_KEY
         cfg = _cfg()
         cfg.feature_flags["keepa"] = True
+        cfg.keepa_volatility["enabled"] = False  # legacy token arithmetic; the planner has its own tests
         sizes = []
 
         def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None):

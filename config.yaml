@@ -281,9 +281,11 @@ keepa:
   tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
   volatility:
     # Off 2026-10-14 ~19:50Z: live fast lanes ran out of time making many 1-4 ASIN
-    # calls (used wall within 1 h fell 97% -> 57%); the legacy scheduler batches
-    # fully. Re-enable after the batching fix (Codex 101).
-    enabled: false
+    # calls (used wall within 1 h fell 97% -> 57%). Back on 2026-10-15 with the
+    # batching fix (Codex 101: full 20/100-ASIN calls sized to tokens and time;
+    # simulation 100% top + used wall within 1 h, unused 73 tokens/h vs 942).
+    # Roll back by setting false if a live fast lane runs out of time again.
+    enabled: true
     # Maximum paid-request ages in hours; observation clocks remain separate.
     targets:
       FAST:   {top: 0.5, wall: 0.5, rest: 6, hidden: 48}
