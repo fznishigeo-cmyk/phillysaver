@@ -151,7 +151,7 @@ def test_plain_static_card_keeps_original_markup():
     plain = site._serialize_deal(make_deal(codes=[], conditions=[]), NOW)
     card = seo.card_html(plain, now=NOW)
     # A fixed hash below makes this check portable; no external fixture is needed.
-    assert hashlib.sha256(card.encode()).hexdigest() == "3c595103f19b62d60827073f93fb7baee82dcaf40b454353a4a15ec398288a3e"
+    assert hashlib.sha256(card.encode()).hexdigest() == "961cfa4e3a30fc52a0195128491c35a771a5d23b0d92b45de7bbe73e65f8cf4b"
 
 
 def test_metrics_exclude_locked_dead_and_flag_missing_terms():

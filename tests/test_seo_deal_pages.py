@@ -101,7 +101,7 @@ def test_deal_page_facts_schema_disclosure_affiliate_and_related(db, cfg, tmp_pa
     assert "✓ price history: The price was checked against price history." in html
     assert "Oct 9, 2026</time> (UTC)" in html and "minutes ago" not in html
     assert "<img" not in html
-    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure"><a href="/disclosure.html">Disclosure</a>: affiliate links may earn a commission.</p>' in html
+    assert '<a class="getdeal" href="https://www.amazon.com/dp/B012345678?tag=example-20" target="_blank" rel="sponsored noopener" data-deal-outbound data-store="Walmart" data-category="kitchen">Get deal</a><p class="disclosure"><a href="/disclosure.html">Disclosure</a>: affiliate links may earn a commission.</p>' in html
     # No product photo, no Product markup: Google needs an image for merchant
     # listings (Search Console, 2026-10-14). Breadcrumbs may still be present.
     blocks = [json.loads(b) for b in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html)]
@@ -146,7 +146,7 @@ def test_steps_match_public_payload_and_credit_links(db, cfg, tmp_path):
     _render(db, cfg, tmp_path, [d])
     html = _page(tmp_path, _path(d)).read_text()
     payload = json.loads((tmp_path / "deals.json").read_text())["deals"][0]
-    assert f'href="{payload["url"]}" rel="sponsored noopener" data-deal-outbound' in html
+    assert f'href="{payload["url"]}" target="_blank" rel="sponsored noopener" data-deal-outbound' in html
     assert "How to get this price" in html and "<li>Clip the coupon</li>" in html
     assert "<code>SAVE10</code>" in html and "Slickdeals</a>" in html
     assert 'data-copy-code="SAVE10" aria-label="Copy code SAVE10" hidden>Copy code</button>' in html

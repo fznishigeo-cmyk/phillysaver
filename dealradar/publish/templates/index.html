@@ -1665,7 +1665,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 
     var page = typeof d.deal_path === "string" && /^\/deal\/[a-z0-9-]+-[a-f0-9]{8}\/$/.test(d.deal_path) ? d.deal_path : "";
     var title = page && !dead ? '<a href="' + esc(page) + '">' + esc(d.item) + "</a>" : url && !dead
-      ? '<a href="' + esc(url) + '" rel="sponsored noopener">' + esc(d.item) + "</a>"
+      ? '<a href="' + esc(url) + '" target="_blank" rel="sponsored noopener">' + esc(d.item) + "</a>"
       : esc(d.item);
 
     var tier = d.badge || "unverified";
@@ -1712,7 +1712,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         (codes ? (steps ? "<br>" : "") + "Code " + codes : "") + "</div>";
     }
     var actions = (url && !dead
-      ? '<a class="getdeal" href="' + esc(url) + '" rel="sponsored noopener"' +
+      ? '<a class="getdeal" href="' + esc(url) + '" target="_blank" rel="sponsored noopener"' +
         ">Get deal</a>"
       : "") + '<span class="credit">' + credits + "</span>";
 

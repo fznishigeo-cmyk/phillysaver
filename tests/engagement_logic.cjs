@@ -416,7 +416,7 @@ assert.equal(h.ctx.saveDeal(row('a')),false); assert.equal(h.ctx.clearSaved(),fa
 assert.ok(!h.ctx.cardHtml(row('a')).includes('data-save-key'));
 assert.equal(h.ctx.savedDeals.started,false);
 h=shortlist(); html=h.ctx.cardHtml(row('a'));
-assert.match(html,/<a class="getdeal" href="https:\/\/store.test\/item" rel="sponsored noopener"/);
+assert.match(html,/<a class="getdeal" href="https:\/\/store.test\/item" target="_blank" rel="sponsored noopener"/);
 assert.match(html,/via <a href="https:\/\/one.test\/post" rel="noopener">One<\/a>/);
 // Migration keeps v1 saves usable, with no baseline or automatic watch match.
 h=shortlist({stored:{[SAVED_KEY]:record([identity('a',{final_price:100,condition:[],target_price:90,matched_prices:[20]})])}});

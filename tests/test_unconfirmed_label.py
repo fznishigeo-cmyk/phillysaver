@@ -302,10 +302,10 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "5802fcf5477fed742e3e767c5da84095835aa0a248c4c0e5e7c57b589bcbe847"),
-    ("open", "a80fe4d39b74600ec77cb8539552d48897f17c80204de6fdf271b835f49eb050"),
-    ("support", "384e52d66146b8d33e5e178ff21ba80f2d1960f0c9abff5fef42a218873b555a"),
-    ("shipped", "5c826d78bb8cdf0f4e80c1ddfddb38739c74f1a77ce0dc6bf204577535cdba65"),
+    ("membership", "0059d7abbeb946aa7f2a516059afb06b52b9d7f76ee027d920a1d25c72dd015c"),
+    ("open", "b9ac44f1f98d161a26cf7b0a661adf6a999b8e65b2ec33f438720a540cb183ce"),
+    ("support", "6e978776ec3ae69489c2e26a7a5c2f952355b15b06e6a8c9d92aef0628c4e9e7"),
+    ("shipped", "013c4989aeceee8fe782e97f81695754030593e1bcb8f84ae8115264052d7440"),
 ])
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.

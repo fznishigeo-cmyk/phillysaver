@@ -200,7 +200,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         price += f' <span class="save">save ${float(d["abs_savings"]):.2f}</span>'
     page = (deal_paths or {}).get(str(d.get("key") or "")[:8])
     title = (f'<a href="{e(page)}">{e(d.get("item"))}</a>' if page and not dead else
-             f'<a href="{e(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>{e(d.get("item"))}</a>'
+             f'<a href="{e(url)}" target="_blank" rel="sponsored noopener"{_outbound_attrs(d)}>{e(d.get("item"))}</a>'
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip storechip">{e(store)}</span>'
@@ -233,7 +233,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
                f'{e(checkout.get("shipping"))}</p>'
                f'{steps or ("" if codes or checkout.get("summary") else "the steps are in the deal post")}'
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</details>')
-    actions = ((f'<a class="getdeal" href="{e(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
+    actions = ((f'<a class="getdeal" href="{e(url)}" target="_blank" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
     return (f'<article class="card{" gone" if dead else ""}{" spotlight" if spotlight else ""}"'
             + (' role="region" aria-label="Today only deal"' if spotlight else "") + '>'
@@ -684,7 +684,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     content += f'<p class="detail-sources">Sources: {credits}</p>'
     url = _http(d.get("url"))
     if not dead and url:
-        content += (f'<a class="getdeal" href="{escape(url)}" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
+        content += (f'<a class="getdeal" href="{escape(url)}" target="_blank" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                     f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
     if not dead and not d.get("price_unconfirmed"):
         content += lowest_seen + also_at

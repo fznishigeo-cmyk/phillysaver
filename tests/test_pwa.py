@@ -50,10 +50,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "50f1b66baa3aa34d5b17f157793efc0583b087f9aa5450e5546d908c267af4ff"),
-    ("open", "4eae0440eec246457c6e82e2aef38d15c8ab6a0a2a9dddad2f77adbf8b381bd3"),
-    ("support", "7700585d1b80d6fddfb44c8040244e6d91c24ec54436bd506e0f4370db68ee06"),
-    ("shipped", "b592b13501d8ee8eed8d611ace76824a00843221fa42524f2af6cfa7cbb95128"),
+    ("membership", "58a71079a4291e25206b870a61542b08d51d31da75e2912c1ee01af7e7aeaeda"),
+    ("open", "5dabb40e5fc1bb23642211c32ba64837c0aa6bc423b9670e837bd65b65a2423d"),
+    ("support", "3359f046b271fc4371b14b08b6409311e5ac482bde3d632efe33ae612699422a"),
+    ("shipped", "4f1eecc4a1a168d08bdaea036ad1ca8a3eb8af20ec501c7b96275dc63d1d1936"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Shipped only: the label blocks also skip aged offers (task 102) and the
@@ -162,7 +162,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "7700585d1b80d6fddfb44c8040244e6d91c24ec54436bd506e0f4370db68ee06"
+    assert tree_hash(out) == "3359f046b271fc4371b14b08b6409311e5ac482bde3d632efe33ae612699422a"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 
