@@ -408,6 +408,12 @@ keepa:
   sweep_reserve_tokens: 400
 
 woot:
+  # Keep the single All request until the manual woot-probe verifies coverage.
+  # feed_pages > 1 opts into ?page=2, ?page=3, ... on each feed; enable only
+  # if the probe confirms that form returns new offers. Each feed stops on
+  # an empty/short/repeated page. Named feeds must also be verified first.
+  feed_pages: 1
+  named_feeds: []
   # One /feed/All GET per run (the key's quota is 1,000 requests/day). Every
   # offer is scored from its structured prices; offers within 5 points of
   # their publish floor (used_min_pct for anything not plainly new, min_pct

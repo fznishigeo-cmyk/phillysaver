@@ -1,7 +1,7 @@
 """Woot source adapter: the official Woot developer API (developer.woot.com).
 
 Requires the ``WOOT_API_KEY`` secret (reported upstream as ``needs_key`` until
-set). One GET of the ``/feed/All`` endpoint per run — the key's quota is
+set). By default, one GET of ``/feed/All`` per run — the key's quota is
 1,000 requests/day, so hourly + the 15-minute lane together use ~120 (12%).
 Prices are written into the post text verbatim (``Sale price: $49.99`` /
 ``List price: $199.99``) so the evidence-quote check can match them exactly;
@@ -16,6 +16,9 @@ prefilter only: savings for publishing are still computed in savings.py).
 At most ``woot.max_new_items_per_run`` of them are posts the pipeline has
 not seen yet (each costs an LLM parse and a critic call); the rest of the
 selection arrives over the next runs.
+
+Extra named feeds and numbered pages are opt-in after the manual probe
+confirms them. Their combined, deduplicated offers also recheck stored deals.
 """
 
 from __future__ import annotations
@@ -42,6 +45,28 @@ from .base import SourceAdapter
 log = logging.getLogger("dealradar.fetch.woot")
 
 FEED_URL = "https://developer.woot.com/feed/All"
+
+
+def _feed_items(payload: Any) -> list:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        items = payload.get("Items") or payload.get("items") or payload.get("Offers") or []
+        return items if isinstance(items, list) else []
+    return []
+
+
+def _offer_keys(item: Any) -> set[tuple[str, str]]:
+    if not isinstance(item, dict):
+        return set()
+    keys = set()
+    uid = item.get("OfferId") or item.get("Id")
+    if uid:
+        keys.add(("id", str(uid)))
+    url = woot_offer_url({"canonical_url": item.get("Url")})
+    if url:
+        keys.add(("url", url))
+    return keys
 
 #: Selection ingests offers this many points under their publish floor
 #: (near-misses still feed price history), like the Keepa lanes do.
@@ -223,7 +248,66 @@ class WootAdapter(SourceAdapter):
         sleep_fn: Callable[[float], None] = time.sleep,
     ) -> None:
         self._http = http_client
-        self._sleep = sleep_fn  # kept for interface symmetry (single call per run)
+        self._sleep = sleep_fn
+
+    @staticmethod
+    def _fetch_items(client: Any, cfg: AppConfig, key: str,
+                     deadline: float | None) -> list:
+        feeds = ["All"]
+        for name in cfg.woot_named_feeds:
+            # Feed names are path segments, never URLs or query strings.
+            if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name):
+                raise ValueError("invalid Woot feed name")
+            if name.lower() not in {f.lower() for f in feeds}:
+                feeds.append(name)
+        expanded = cfg.woot_feed_pages > 1 or len(feeds) > 1
+        items: list = []
+        seen: set[tuple[str, str]] = set()
+        fetched = False
+        for feed in feeds:
+            page_size = 0
+            feed_seen: set[tuple[str, str]] = set()
+            for page in range(1, max(1, cfg.woot_feed_pages) + 1):
+                try:
+                    _check_deadline(deadline)
+                    # No paging contract is assumed by default. Opt-in uses
+                    # the page candidate tested by woot-probe; never follow
+                    # server-supplied links with our credential.
+                    url = FEED_URL.rsplit("/", 1)[0] + "/" + feed
+                    resp = client.api_get(
+                        url, params={"page": page} if page > 1 else None,
+                        headers={"x-api-key": key}, deadline=deadline,
+                        respect_robots=False, follow_redirects=False)
+                    resp.raise_for_status()
+                    batch = _feed_items(resp.json())
+                except DeadlineExceeded:
+                    if not fetched:
+                        raise
+                    return items  # completed pages still provide evidence
+                except (httpx.HTTPError, ValueError):
+                    if not fetched:
+                        raise
+                    log.info("woot: extra feed request failed; using completed pages")
+                    return items
+                fetched = True
+                if not expanded:
+                    return batch  # preserve existing order/counts, even duplicates
+                if page == 1:
+                    page_size = len(batch)
+                new_on_page = False
+                for item in batch:
+                    keys = _offer_keys(item)
+                    if keys and not keys & feed_seen:
+                        new_on_page = True
+                    feed_seen.update(keys)
+                    if not keys or not keys & seen:
+                        items.append(item)
+                    seen.update(keys)
+                # Per-feed identities matter: All may already contain a named
+                # feed's first page, but that feed's later pages can add offers.
+                if not batch or len(batch) < page_size or not new_on_page:
+                    break
+        return items
 
     def fetch_posts(
         self,
@@ -240,22 +324,10 @@ class WootAdapter(SourceAdapter):
             raise AdapterNotConfigured("woot api key missing")
 
         with api_fetcher(fetcher, db, cfg, http_client=self._http, sleep_fn=self._sleep) as client:
-            _check_deadline(deadline)
             # The key travels ONLY in the x-api-key header: query-string keys
             # end up inside httpx error messages and from there could leak
             # into recorded (published) source errors.
-            resp = client.api_get(FEED_URL, headers={"x-api-key": key}, deadline=deadline,
-                                  respect_robots=False)  # keyed API
-            resp.raise_for_status()
-            payload = resp.json()
-
-        if isinstance(payload, list):
-            items = payload
-        elif isinstance(payload, dict):
-            items = (payload.get("Items") or payload.get("items")
-                     or payload.get("Offers") or [])
-        else:
-            items = []
+            items = self._fetch_items(client, cfg, key, deadline)
 
         if db is not None:
             _recheck_offers(db, items, now)

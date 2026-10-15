@@ -193,6 +193,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Woot coverage (Codex task 104, 2026-10-14; uncommitted, OFF):** manual
+  `woot-probe.yml` reads only the official API (9 requests, hard ceiling 15,
+  1/s, header-only key). Logs status/schema/paging/counts and overlap with All;
+  no offer content. Electronics/Computers/Home/Tools/Sport are explicitly
+  **guesses**: no named feeds are documented in code/config. The live probe
+  remains to run. If `page=2` returns new identities, raise `woot.feed_pages`
+  from **1**; if named feeds add coverage, populate `woot.named_feeds` (now
+  **[]**) with verified names. Other paging forms need adapter adjustment;
+  a 200 with the same offers does not establish paging. Check the existing
+  1,000-request/day quota before expanding. Combined feeds dedupe OfferId/URL,
+  recheck before selection caps, stop on short/empty/repeated pages, and retain
+  completed pages at the deadline. Absent offers never imply death.
+  Per-offer lookup: **not available** (no documented endpoint in code/comments).
+  **26 new offline checks pass**, including probe log scanning and identical
+  default run summaries/all published bytes. Required `.venv/bin/python -m
+  pytest -q -n 3 -p no:cacheprovider`: **3,807 passed, 7 failed** (14m01s).
+  All seven Stripe localhost-socket failures reproduce on untouched HEAD:
+  `test_workflows.py` yearly-price change0–5 and no-price/no-key, `Operation
+  not permitted`. Those checks outside this sandbox, review and live probe
+  remain. No commit/push; shared Git metadata is read-only.
 - **Volatility batching (Codex task 101, 2026-10-14; uncommitted, OFF):**
   ranked selection fits tokens and remaining time before packing 20-offer /
   100-stats ASIN calls across labels; overdue top and discovery boundaries,

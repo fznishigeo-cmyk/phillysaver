@@ -355,6 +355,8 @@ class AppConfig:
     # -- woot --
     woot_max_items_per_run: int = 300
     woot_max_new_items_per_run: int = 20      # unseen posts per run
+    woot_feed_pages: int = 1
+    woot_named_feeds: list[str] = field(default_factory=list)
 
     # -- official store price checks (flags and secrets required) --
     non_amazon_freshness_enabled: bool = False
@@ -748,6 +750,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "woot", "max_items_per_run", default=cfg.woot_max_items_per_run)))
     cfg.woot_max_new_items_per_run = max(0, int(g(
         "woot", "max_new_items_per_run", default=cfg.woot_max_new_items_per_run)))
+    cfg.woot_feed_pages = max(1, int(g("woot", "feed_pages", default=1)))
+    feeds = g("woot", "named_feeds", default=[]) or []
+    if not isinstance(feeds, list) or any(
+            not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name)
+            for name in feeds):
+        raise ValueError("woot.named_feeds must be a list of feed names")
+    cfg.woot_named_feeds = list(dict.fromkeys(feeds))
 
     cfg.non_amazon_freshness_enabled = bool(g("non_amazon_freshness", "enabled", default=False))
     for name in ("source_recheck_h", "source_recheck_budget_s", "stale_label_h", "stale_hide_h"):

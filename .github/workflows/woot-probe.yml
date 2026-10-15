@@ -1,0 +1,121 @@
+name: Woot coverage probe (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dealradar
+        run: pip install -e .
+      - name: Probe feed coverage (metadata only)
+        env:
+          WOOT_API_KEY: ${{ secrets.WOOT_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import logging
+          import os
+          import re
+          import time
+          import httpx
+          from dealradar.config import load_config
+          from dealradar.fetch.woot import FEED_URL, _feed_items, _offer_keys
+
+          # No bodies, exception messages, request URLs or raw header logging.
+          logging.disable(logging.CRITICAL)
+          key = os.environ.get("WOOT_API_KEY", "")
+          if not key:
+              print("HTTP status: unavailable (missing key)")
+              raise SystemExit(0)
+
+          def field_name(value):
+              if (isinstance(value, str) and key not in value
+                      and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,63}", value)):
+                  return value
+              return "[redacted]"
+
+          def paging_fields(payload, prefix="", depth=0):
+              fields = {}
+              if not isinstance(payload, dict) or depth > 3:
+                  return fields
+              for name, value in list(payload.items())[:100]:
+                  safe = field_name(name)
+                  if safe == "[redacted]" or name.lower() in ("items", "offers"):
+                      continue
+                  path = prefix + safe
+                  if re.search(r"page|total|count|next|limit|offset", name, re.I):
+                      # Next links/cursors and arbitrary text can contain
+                      # credentials or offer content. Only counts/flags escape.
+                      sensitive = re.search(r"price|title|url|secret|token|key", name, re.I)
+                      numeric = type(value) is int or (
+                          isinstance(value, str) and re.fullmatch(r"[0-9]{1,12}", value))
+                      if (not sensitive and (numeric or value is None or type(value) is bool)
+                              and key not in str(value)):
+                          fields[path] = value
+                      elif not isinstance(value, dict):
+                          fields[path] = "[redacted]"
+                  if isinstance(value, dict):
+                      fields.update(paging_fields(value, path + ".", depth + 1))
+              return fields
+
+          # Neither code nor config documents named feeds. These five names
+          # are guesses, not enabled adapter configuration or API guarantees.
+          guesses = ("Electronics", "Computers", "Home", "Tools", "Sports", "Clearance")
+          print("Named feed guesses: Electronics, Computers, Home, Tools, Sports, Clearance")
+          print("Single-offer lookup: skipped (not documented in code/comments)")
+          candidates = [
+              ("All", FEED_URL, None),
+              ("All page=2 candidate", FEED_URL, {"page": 2}),
+              ("All pageNumber=2 candidate", FEED_URL, {"pageNumber": 2}),
+              ("All offset=5000 limit=5000 candidate", FEED_URL, {"offset": 5000, "limit": 5000}),
+          ]
+          candidates += [("Guessed feed " + name, FEED_URL.rsplit("/", 1)[0] + "/" + name, None)
+                         for name in guesses]
+          all_keys = set()
+          # No retries or redirects: this hard limit counts every HTTP request.
+          # The next start is at least a second after the previous completion.
+          with httpx.Client(headers={"x-api-key": key,
+                                     "User-Agent": load_config().resolved_user_agent()},
+                            timeout=15, follow_redirects=False) as client:
+              for index, (label, url, params) in enumerate(candidates[:15]):
+                  if index:
+                      time.sleep(1)
+                  try:
+                      response = client.get(url, params=params)
+                  except Exception:
+                      print(json.dumps({"probe": label, "http_status": "unavailable"}))
+                      break
+                  status = response.status_code
+                  payload = None
+                  if 200 <= status < 300:
+                      try:
+                          payload = response.json()
+                      except ValueError:
+                          pass
+                  items = _feed_items(payload)
+                  identities = [_offer_keys(item) for item in items]
+                  # Counts distinguish ignored paging parameters from new
+                  # coverage without logging an OfferId, URL or fingerprint.
+                  overlap = sum(bool(keys & all_keys) for keys in identities)
+                  print(json.dumps({
+                      "probe": label, "http_status": status,
+                      "top_level_keys": [field_name(n) for n in payload] if isinstance(payload, dict) else [],
+                      "item_count": len(items), "overlap_all_count": overlap,
+                      "new_item_count": sum(bool(keys) and not keys & all_keys for keys in identities),
+                      "paging": paging_fields(payload),
+                  }, sort_keys=True))
+                  if index == 0:
+                      all_keys = set().union(*identities)
+                  if status in (401, 403, 429) or status >= 500 or 300 <= status < 400:
+                      break
+          PY
