@@ -1829,6 +1829,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                         stats["buybox_top"][direction] += 1
                 if product is not None and not regressed and buybox.eligible(deal):
                     buybox.remember(deal, product, observed, now=now)
+                    from . import checkout_prices
+                    checkout_prices.remember(deal, product, cfg, now)
                 apply(deal, verdict, observed,
                       had_photo=deal["dedupe_key"] not in photo_less,
                       answered=deal["dedupe_key"] in verdicts)
@@ -2595,6 +2597,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["checkout"] = site_res.get("checkout", {})
+        summary["checkout_price_deals"] = site_res["checkout_price_deals"]
         from .publish.indexnow import metrics as indexnow_metrics
         summary["indexnow"] = indexnow_metrics(db, cfg, now)
         try:

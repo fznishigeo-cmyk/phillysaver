@@ -257,11 +257,20 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     return result
 
 
-def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list[dict[str, Any]]:
+def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
+              now: datetime | None = None, *, summary: dict | None = None) -> list[dict[str, Any]]:
     """Greedy selection with strict caps; ties retain the input's order."""
+    from .verify import _price_hidden_by_promo
+
     picks = options.get("top_picks")
     if not picks:
         return []
+    checkout = options.get("checkout_price_deals") or {}
+    enabled = checkout.get("enabled", False)
+    now = now or datetime.now(timezone.utc)
+    window = max(1, int(checkout.get("top_pick_window", 5)))
+    maximum = max(0, int(checkout.get("top_pick_max_in_window", 1)))
+    promo_positions = []
     stores, brands, categories, twins = Counter(), Counter(), Counter(), Counter()
     picked, last, run = [], "", 0
     for deal, _score in sorted((pair for pair in scored if pair[1] is not None),
@@ -270,6 +279,18 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
             continue
         if len(picked) >= picks["count"]:
             break
+        promo = _price_hidden_by_promo(deal)
+        if enabled and promo:
+            seen = [at for s in deal.get("sightings") or []
+                    if (at := parse_iso(s.get("seen_at") or "")) is not None and at <= now]
+            if not seen or now - max(seen) > timedelta(hours=float(checkout.get("top_pick_max_age_h", 24))):
+                if summary is not None:
+                    summary["skipped_age"] += 1
+                continue
+            if sum(pos > len(picked) - window for pos in promo_positions) >= maximum:
+                if summary is not None:
+                    summary["skipped_window"] += 1
+                continue
         store = str(deal.get("store") or "").strip().lower()
         brand = str(deal.get("brand") or "").strip().lower()
         category = deal.get("category") or "other"
@@ -281,6 +302,8 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
                 or (len(picked) < 8 and category == last
                     and run >= options["max_same_category_run"]):
             continue
+        if promo:
+            promo_positions.append(len(picked))
         picked.append(deal)
         stores[store] += 1
         brands[brand] += 1
@@ -288,6 +311,8 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list
         twins[twin] += 1
         run = run + 1 if category == last else 1
         last = category
+    if summary is not None:
+        summary["in_top_picks"] = len(promo_positions)
     return picked
 
 

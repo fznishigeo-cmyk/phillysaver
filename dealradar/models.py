@@ -231,6 +231,7 @@ class Deal:
     # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
     buybox_check: dict[str, Any] | None = None  # private click-price facts, bound to this price
+    checkout_price_reading: dict[str, Any] | None = None  # private paid price and observation time
     buybox_requested_at: str = ""  # attempted paid read, including a lost response
     woot_listed_at: str = ""              # Woot's feed lists this price within its sale range
     source_recheck_tried_at: str = ""

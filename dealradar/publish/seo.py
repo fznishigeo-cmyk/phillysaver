@@ -32,6 +32,7 @@ import yaml
 from ..savings import display_pct
 from ..util import iso, parse_iso
 from ..rank import pick_order
+from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
 from . import inventory, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
@@ -243,7 +244,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
             + (f'<div class="price-aged">{e(d["price_aged"])}</div>' if d.get("price_aged") else "")
             + f'<h3 class="title">{title}</h3>'
             + (f'<div class="headline">{e(d["headline"])}</div>' if d.get("headline") else "")
-            + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
+            + checkout_prices.html(d) + how + f'<div class="metarow">{meta}</div><div class="actions">{actions}</div>'
             "</div></article>")
 
 
@@ -655,6 +656,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     checkout = d.get("checkout") or {}
     checkout_text = (f'<p>{escape(checkout.get("now", ""))} '
                      f'{escape(checkout.get("shipping", ""))}</p>') if checkout else ""
+    content += checkout_prices.html(d)
     if checkout.get("summary") or d.get("needs_steps") or d.get("codes"):
         content += '<div class="how"><h2>How to get this price</h2>'
         content += checkout_text
@@ -821,6 +823,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     template = _fill((TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8"),
                      DROP_MINUTES=str(int(cfg.drop_minutes)),
                      DEAL_ACTIONS_SCRIPT=actions)
+    template = checkout_prices.template(template, checkout_prices.enabled(cfg))
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support)
     if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:

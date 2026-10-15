@@ -308,6 +308,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
         cfg.front_page["appeal"]["enabled"] = False  # predates the broad-appeal switch
+        cfg.front_page["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
                                        if k != "non_amazon_max_age_h"}  # predates the pick age
     if mode != "shipped":

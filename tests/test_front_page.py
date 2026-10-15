@@ -284,6 +284,7 @@ def test_mix_does_not_change_free_rotation(tmp_path, cfg, db, options):
 
 
 def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, options):
+    options.pop("checkout_price_deals", None)  # predates the checkout-price switch
     cfg.paywall_open_access = True
     cfg.front_page = options
     source = [make_deal(**{k: v for k, v in d.items() if k != "key"}) for d in rows()]

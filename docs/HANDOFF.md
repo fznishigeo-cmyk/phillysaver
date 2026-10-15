@@ -205,6 +205,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Rules live in `rank.niche_reason` (when unsure, not niche); `enabled:
   false` restores prior scores and site bytes. Run summary `appeal` gives
   niche counts (wall, top 30) and three examples: watch it after deploys.
+- **Checkout-price deals (Codex task 113, 2026-10-15; merged, OFF):** Buy
+  Box probe: all 18 top-pick price mismatches were deals whose price appears
+  only at checkout (code, coupon, Subscribe & Save). Switch
+  `publish.front_page.checkout_price_deals.enabled: false` (approval pending;
+  task 113b replaces the fixed `top_pick_max_age_h: 24` with evidence).
+  On: such a deal leaves top picks once its latest sighting is older than the
+  limit, and at most `top_pick_max_in_window` (1) of them sit in any
+  `top_pick_window` (5) positions; skipped deals stay on the wall/search.
+  Trending then keeps the published pick order (no browser reshuffle, so the
+  window holds). Cards/deal pages say "Amazon shows $X until you enter the
+  code" (or before the coupon / Subscribe & Save) only from a fresh paid
+  reading above our price (`keepa.show_max_unconfirmed_h`); JSON adds only the
+  number and kind. Watch `checkout_price_deals` in the run summary after
+  turning it on (skips, picks, labelled, unlabelled_no_reading).
 - **Buy Box top picks (Codex task 112, 2026-10-15; merged):**
   `keepa.buybox_top_n: 120` uses published wall order, with
   `buybox_interval_min: 60` between paid attempts (lost answers included).

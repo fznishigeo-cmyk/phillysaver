@@ -291,7 +291,8 @@ header .dhole{background:var(--chip)}
 .title a{color:inherit}
 .headline{font-size:12.5px;color:var(--muted);line-height:1.4;
           display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.metarow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:auto}
+/*checkout-price*/.checkout-price{font-size:12.5px;color:var(--muted);line-height:1.4}
+/*/checkout-price*/.metarow{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:auto}
 .chip{display:inline-block;background:var(--chip);border-radius:6px;padding:2px 7px;
       font-size:11.5px;color:var(--muted);white-space:nowrap}
 .badge{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;
@@ -1511,7 +1512,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       rest.sort(function (a, b) {
         return (Date.parse(b.first_seen_at || "") || 0) - (Date.parse(a.first_seen_at || "") || 0);
       });
-      return blockDeal(rotatePicks(picks, state.seed)).concat(rest);
+/*checkout-price*/      // Keep the server's sliding-window spacing through browser adoption and drops.
+      return picks.concat(rest);
+/*/checkout-price*/      return blockDeal(rotatePicks(picks, state.seed)).concat(rest);
     }
     var scored = fresh.filter(function (d) { return d.ps != null; });
     scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });
@@ -1643,7 +1646,16 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       "</div>" + traceSvg(d) + "</article>";
   }
 
-  function cardHtml(d) {
+/*checkout-price*/  function checkoutPriceHtml(d) {
+    var label = d.checkout_price;
+    var suffix = {code: "until you enter the code", coupon: "before the coupon",
+      subscribe_save: "before Subscribe & Save"};
+    if (!label || d.status === "dead" || typeof label.price !== "number" ||
+        !isFinite(label.price) || label.price <= d.final_price || !suffix[label.kind]) return "";
+    return '<div class="checkout-price">Amazon shows $' + label.price.toFixed(2) +
+      " " + esc(suffix[label.kind]) + "</div>";
+  }
+/*/checkout-price*/  function cardHtml(d) {
     if (isLocked(d)) return lockedHtml(d);
     var url = d.url || "";
     var dead = d.status === "dead";
@@ -1729,7 +1741,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 /*/unconfirmed*/      '<h3 class="title">' + title + "</h3>" +
 <!--saved--><!--watch-->      savedWatchHtml(d) +
 <!--/watch--><!--/saved-->      (d.headline ? '<div class="headline">' + esc(d.headline) + "</div>" : "") +
-      how +
+/*checkout-price*/      (d.checkout_price ? checkoutPriceHtml(d) : "") +
+/*/checkout-price*/      how +
       '<div class="metarow">' + metarow + "</div>" +
       '<div class="actions">' + actions + "</div>" +
       "</div>" + (dead || d.spotlight ? "" : traceSvg(d)) + "</article>";

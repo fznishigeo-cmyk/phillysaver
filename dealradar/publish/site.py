@@ -27,6 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
+from .. import checkout_prices
 from . import click_signal, indexnow, inventory, price_labels, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
@@ -69,6 +70,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     import hashlib
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     html = price_labels.template(html, False)
+    html = checkout_prices.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
@@ -675,6 +677,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         public["price_unconfirmed"] = True
     if deal.get("price_aged"):
         public["price_aged"] = deal["price_aged"]
+    label = checkout_prices.label(deal, cfg, now)
+    if label:
+        public["checkout_price"] = label
     return public
 
 
@@ -790,9 +795,22 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                             if not is_amazon_deal(originals[d["dedupe_key"]])
                             or price_confirmation_recent(originals[d["dedupe_key"]], now,
                                                          cfg.keepa_pick_max_unconfirmed_h)]
-    picked = top_picks(confirmed_candidates, cfg.front_page)
+    checkout_summary = checkout_prices.summary()
+    # Rank original facts: public rows omit sightings and raw checkout steps.
+    public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
+    picked = [public_candidates[d["dedupe_key"]] for d in top_picks(
+        [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates],
+        cfg.front_page, now, summary=checkout_summary)]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
+    if checkout_prices.enabled(cfg):
+        for d in teaser + spotlight_only:
+            if d.get("locked") or d.get("status") != "alive":
+                continue
+            original = originals.get(d["dedupe_key"], d)
+            checkout_summary["labelled"] += bool(d.get("checkout_price"))
+            if is_amazon_deal(original) and checkout_prices.kind(original):
+                checkout_summary["unlabelled_no_reading"] += checkout_prices.reading(original, cfg, now) is None
     wall = seo.place_gone(pick_order([d for d in teaser if not d.get("price_unconfirmed")],
                                    cfg.front_page))[:cfg.keepa_recheck_wall_n]
     db.meta_set(WALL_META, json.dumps([d["dedupe_key"] for d in wall
@@ -821,6 +839,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if support:
         home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
         home = price_labels.template(home, False)
+        home = checkout_prices.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
@@ -859,6 +878,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + "".join(price_labels.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + AGED_STYLE).encode()).hexdigest()[:12]
+    if checkout_prices.enabled(cfg):
+        site_version = hashlib.sha256(site_version.encode()
+            + "".join(checkout_prices.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -914,7 +936,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
         # Appeal is applied in Python; omit its knobs so disabling it restores
         # the previous payload bytes as well as the previous scores/order.
-        "front_page": {k: v for k, v in cfg.front_page.items() if k != "appeal"},
+        "front_page": {k: v for k, v in cfg.front_page.items() if k != "appeal"
+                       and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
     }
@@ -945,6 +968,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         shutil.copyfile(TEMPLATES_DIR / name, out / name)
         html = (out / name).read_text(encoding="utf-8")
         html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
+        html = checkout_prices.template(html, checkout_prices.enabled(cfg))
         if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and name == "index.html":
             html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
         if cfg.non_amazon_freshness_enabled and name == "index.html":
@@ -1118,6 +1142,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
+            "checkout_price_deals": checkout_summary,
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
                                    "request_age": history.request_age(top_candidates),

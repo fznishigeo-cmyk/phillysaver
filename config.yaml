@@ -143,6 +143,11 @@ publish:
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true
+    checkout_price_deals:       # operator approval pending; no change while off
+      enabled: false
+      top_pick_max_age_h: 24    # latest source sighting, including re-posts
+      top_pick_window: 5
+      top_pick_max_in_window: 1
     spotlight:
       sources: [meh, sidedeal, morningsave]
       max_cards: 1

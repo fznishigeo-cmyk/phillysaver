@@ -299,15 +299,16 @@ def test_daily_usage_midnight_legacy_uncertain_and_private_report(tmp_path):
 
 def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     from pathlib import Path
+    import yaml
 
     path = Path(env["cfg"])  # this byte pin predates the RSS trim
     path.write_text(path.read_text().replace("feed_max_items: 20", "feed_max_items: 50")
                     .replace("feed_details: false", "feed_details: true"))
     # This byte pin predates the durable-pages SEO switch.
     path.write_text(path.read_text().replace("deal_pages_indexable: false", "deal_pages_indexable: true"))
-    import yaml
     config = yaml.safe_load(path.read_text())
     config["publish"]["front_page"]["appeal"]["enabled"] = False  # predates the broad-appeal switch
+    config["publish"]["front_page"]["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
     path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)
