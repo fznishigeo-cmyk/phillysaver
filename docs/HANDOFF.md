@@ -194,9 +194,9 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
 
 ## In flight
 - **Woot coverage (Codex task 104, 2026-10-14; uncommitted, OFF):** manual
-  `woot-probe.yml` reads only the official API (9 requests, hard ceiling 15,
+  `woot-probe.yml` reads only the official API (10 requests, hard ceiling 15,
   1/s, header-only key). Logs status/schema/paging/counts and overlap with All;
-  no offer content. Electronics/Computers/Home/Tools/Sport are explicitly
+  no offer content. Electronics/Computers/Home/Tools/Sports/Clearance are explicitly
   **guesses**: no named feeds are documented in code/config. The live probe
   remains to run. If `page=2` returns new identities, raise `woot.feed_pages`
   from **1**; if named feeds add coverage, populate `woot.named_feeds` (now

@@ -296,7 +296,7 @@ def test_probe_logs_no_secret_offer_content_or_urls(cfg, monkeypatch, capsys, st
     output = capsys.readouterr().out
     for forbidden in (secret, title, price, url, "private-id", "http://", "https://"):
         assert forbidden not in output
-    assert len(calls) == (9 if status in (200, "invalid") else 1)
+    assert len(calls) == (10 if status in (200, "invalid") else 1)
     assert len(calls) <= 15 and all(b[0] - a[0] >= 1 for a, b in zip(calls, calls[1:]))
     assert "guesses" in output and "lookup: skipped" in output
     if status == 200:
