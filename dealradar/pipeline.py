@@ -1654,17 +1654,16 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         for label, rows in lanes:
             modes = {}
             left = min(budget.overflow(gap, now) or 0, max(0, (budget.available(now) or 0) - reserve))
-            used_left = max(0, (used_limit or 0) - used_spent)
             for deal in rows:
                 used = is_used_deal(deal)
                 live = bool(cfg.keepa_recheck_top_live and (deal["dedupe_key"] in picks or label == "buybox_top_new"))
                 if label.startswith("surplus_"):
+                    # Tokens that would overflow anyway: no used-scan share here
+                    # (it rations the regular lanes, which keep their full share).
                     cost = (USED_RECHECK_TOKENS if used else 1) + live
-                    if cost > left or (used and cost > used_left):
+                    if cost > left:
                         continue
                     left -= cost
-                    if used:
-                        used_left -= cost
                 modes.setdefault((used, live), []).append(deal)
             stats["planned"][label], stats["done"][label] = len(rows), 0
             for (used, live), rows in modes.items():
@@ -1736,7 +1735,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     break
             if is_idle or is_surplus:
                 size = min(size, int(overflow / per_deal))
-            if used:
+            if used and not is_surplus:
                 size = min(size, int(max(0, (used_limit or 0) - used_spent) / per_deal))
                 if not size:
                     stats["used_skipped_budget"] += len(group) - i
@@ -1752,7 +1751,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 recovery_spent["used" if used else "new"] += len(batch)
                 db.meta_set("keepa_hidden_recovery", json.dumps(recovery_spent))
                 stats["hidden_recovery"]["requested"] += len(batch) * per_deal
-            if used:
+            if used and not is_surplus:
                 used_spent += len(batch) * per_deal  # worst case, even on a lost response
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             options = {"live": True} if live else {}

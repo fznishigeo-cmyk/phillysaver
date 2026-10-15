@@ -321,3 +321,24 @@ def test_no_bucket_reading_never_invents_surplus_or_buybox_budget(db, cfg, monke
     result = run(db, cfg)
     assert result["tokens"]["surplus_granted"] == 0
     assert len(calls) == 1 and "buybox" not in calls[0] and calls[0]["update"] == "1"
+
+
+@pytest.mark.parametrize("surplus", [True, False])
+def test_surplus_used_reads_ignore_the_regular_used_share(db, cfg, monkeypatch, surplus):
+    # Live 2026-10-15: worst-case used reservations hit the 35% share while
+    # ~900 overflow tokens were still lost. The share rations regular lanes only.
+    cfg.keepa_buybox_top_n = 0
+    cfg.keepa_recheck_surplus = surplus
+    cfg.keepa_used_scan_budget_share = 0.0
+    rows = [seed(db, cfg, asin=f"B{i:09d}", conditions=["used"],
+                 price_rechecked_at=util.iso(NOW - timedelta(hours=2))) for i in range(3)]
+    records = {}
+    for d in rows:
+        p = records[d["asin"]] = record(d, 25)
+        p.update(offers=[{"condition": 2, "offerCSV": [minutes(NOW), 2500, 0]}], liveOffersOrder=[0])
+        p["stats"]["lastOffersUpdate"] = minutes(NOW)
+    calls, _, _ = transport(monkeypatch, db, records)
+    result = run(db, cfg)
+    requested = {a for c in calls for a in c["asin"].split(",")}
+    assert requested == ({d["asin"] for d in rows} if surplus else set())
+    assert result["tokens"]["surplus_spent"]["rest"] == (39 if surplus else 0)
