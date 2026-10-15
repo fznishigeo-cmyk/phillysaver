@@ -16,6 +16,7 @@ from dealradar.http_client import PoliteFetcher
 from dealradar.keepa_budget import response_payload
 from dealradar.publish.site import WALL_META
 from dealradar.savings import exceeds_price_tolerance
+from dealradar.verify import _price_hidden_by_promo
 
 # No prior Buy Box reference in the repo: the brief's buybox=1 assumption
 # is confirmed by https://keepa.com/api-docs/product.html#buybox (2026-10-15).
@@ -57,7 +58,7 @@ def probe(db, fetcher, key):
     report = {"requested": len(rows), "token_ceiling": MAX_TOKENS,
               "max_tokens_requested": len(rows) * TOKENS_PER_ASIN,
               "tokensConsumed": None, "tokensLeft": None,
-              "within_2pct": 0, "within_10pct": 0, "above_10pct": 0,
+              "within_2pct": 0, "within_10pct": 0, "above_10pct": 0, "above_10pct_promo": 0,
               "missing_buybox": 0, "examples": []}
     if not key or not rows:
         return dict(report, status="missing_key" if not key else "no_published_candidates")
@@ -96,8 +97,11 @@ def probe(db, fetcher, key):
                 above = exceeds_price_tolerance(total, deal["final_price"])
                 report["within_10pct"] += not above
                 report["above_10pct"] += above
+                # Codes, coupons and Subscribe & Save only show at checkout.
+                report["above_10pct_promo"] += above and _price_hidden_by_promo(deal)
             if len(report["examples"]) < 10:
-                report["examples"].append({"asin": deal["asin"], "final": deal["final_price"], **values})
+                report["examples"].append({"asin": deal["asin"], "final": deal["final_price"],
+                                           "promo": _price_hidden_by_promo(deal), **values})
         return dict(report, status="ok")
     except Exception:
         return dict(report, status="request_failed")  # never echo URL/exception/body

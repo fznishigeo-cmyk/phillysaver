@@ -55,7 +55,7 @@ def test_summary_counts_all_rechecked_new_amazon_and_five_largest_gaps(db, cfg, 
     result = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False)
     assert result["price_source"] == {
         "checked": 12, "confirmed_amazon": 2, "confirmed_new": 8, "not_confirmed": 2,
-        "amazon_above_10pct": 6, "largest_gaps": [
+        "amazon_above_10pct": 6, "amazon_above_10pct_promo": 1, "largest_gaps": [
             {"asin": f"B{i:09d}", "final": 25.0, "amazon": pairs[i][0] / 100,
              "new": pairs[i][1] / 100} for i in (6, 9, 10, 11, 1)]}
     assert all("buybox" not in c and c["stats"] == 1 for c in calls)
@@ -235,8 +235,9 @@ def test_probe_one_request_ceiling_selection_aggregates_and_safe_log(db, cfg, ca
     assert report["tokensConsumed"] == 90 and report["tokensLeft"] == 777
     assert (report["within_2pct"], report["within_10pct"], report["above_10pct"], report["missing_buybox"]) == (10, 20, 9, 1)
     assert len(report["examples"]) == 10
-    assert all(set(row) == {"asin", "final", "amazon", "new", "buybox", "buybox_is_amazon"}
+    assert all(set(row) == {"asin", "final", "promo", "amazon", "new", "buybox", "buybox_is_amazon"}
                for row in report["examples"])
+    assert 0 <= report["above_10pct_promo"] <= report["above_10pct"]
     assert secret not in caplog.text + json.dumps(report)
 
 
@@ -358,3 +359,15 @@ def test_probe_workflow_is_manual_read_only_and_never_saves_state():
     assert "bash scripts/restore_state.sh" in text
     assert "python scripts/keepa_buybox_probe.py" in text
     assert not any(s in text for s in ("save_state", "commit", "push", "upload-artifact", "schedule:"))
+
+
+def test_code_and_coupon_prices_are_split_out_and_never_unconfirmed(db, cfg):
+    deal = seed(db, cfg, asin="B0CODE0001", codes=["HALF50"])
+    double = round(deal["final_price"] * 2, 2)
+    deal["buybox_check"] = {"asin": deal["asin"], "final": deal["final_price"],
+                            "at": util.iso(NOW - timedelta(minutes=5)), "source": "buybox", "price": double}
+    assert not buybox.would_unconfirm(deal, NOW)  # the code price only shows at checkout
+    summary = buybox.empty_summary()
+    cents = int(double * 100)
+    buybox.measure(summary, deal, {"stats": {"current": [cents, cents]}}, True)
+    assert summary["amazon_above_10pct"] == summary["amazon_above_10pct_promo"] == 1

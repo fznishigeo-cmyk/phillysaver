@@ -201,7 +201,11 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `keepa.buybox_rule: shadow` preserves all published bytes; flip to `on`
   for existing unconfirmed label/hide paths, or `off` to disable the rule
   and forecast. Measurement stays on; regular requests cost no extra tokens.
-  Promo prices compare to final too; used/non-Amazon/death rules stay intact.
+  Code/coupon/Subscribe & Save deals (verify._price_hidden_by_promo) are split
+  out (`amazon_above_10pct_promo`, probe `above_10pct_promo`) and never
+  unconfirmed by this rule: their price only shows at checkout. First live
+  probe 2026-10-15 04:33Z: 18 of 30 top/wall deals above 10%, 12 within 2%,
+  none missing; 90 tokens. Used/non-Amazon/death rules stay intact.
   Run **Keepa Buy Box probe (read-only)** (`keepa-buybox-probe.yml`, manual):
   read-only restored state, public picks then wall, ≤30 distinct ASINs, one
   request, ≤90 of the 100-token ceiling; no retries/redirects/state save.

@@ -5,7 +5,7 @@ import math
 
 from .savings import exceeds_price_tolerance
 from .util import iso, parse_iso
-from .verify import is_amazon_deal, is_used_deal, keepa_time
+from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, keepa_time
 
 
 def number(value):
@@ -44,7 +44,8 @@ def eligible(deal):
 
 def empty_summary():
     return {"checked": 0, "confirmed_amazon": 0, "confirmed_new": 0,
-            "not_confirmed": 0, "amazon_above_10pct": 0, "largest_gaps": []}
+            "not_confirmed": 0, "amazon_above_10pct": 0, "amazon_above_10pct_promo": 0,
+            "largest_gaps": []}
 
 
 def measure(summary, deal, product, verdict):
@@ -65,6 +66,8 @@ def measure(summary, deal, product, verdict):
         summary["not_confirmed"] += 1
     if amazon is not None and exceeds_price_tolerance(amazon, deal["final_price"]):
         summary["amazon_above_10pct"] += 1
+        # A code/coupon/Subscribe & Save price only shows at checkout.
+        summary["amazon_above_10pct_promo"] += _price_hidden_by_promo(deal)
         summary["largest_gaps"].append({"asin": deal["asin"], "final": deal["final_price"],
                                        "amazon": amazon, "new": new})
         summary["largest_gaps"].sort(key=lambda r: (-(r["amazon"] - r["final"]), r["asin"]))
@@ -90,8 +93,8 @@ def remember(deal, product, observed, *, now):
 
 
 def would_unconfirm(deal, now):
-    if not eligible(deal):
-        return False
+    if not eligible(deal) or _price_hidden_by_promo(deal):
+        return False  # a code/coupon price only shows at checkout: not judged here
     check = deal.get("buybox_check")
     if not isinstance(check, dict) or check.get("source") not in {"buybox", "amazon"}:
         return False  # no shopper-price data: preserve today's rule
