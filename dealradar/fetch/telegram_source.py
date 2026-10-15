@@ -86,6 +86,9 @@ class TelegramAdapter(SourceAdapter):
         if self._fast_lane:
             channels = channels[:1]
 
+        # A permission partner's channel is credited to that partner, as its
+        # newsletter is (config telegram.channel_sources).
+        credit = cfg.telegram_channel_sources or {}
         posts: list[RawPost] = []
         with self._make_client(api_id, api_hash, session) as client:
             for i, channel in enumerate(channels):
@@ -106,7 +109,7 @@ class TelegramAdapter(SourceAdapter):
                     title = text.strip().splitlines()[0].strip()
                     posts.append(
                         RawPost(
-                            source_name=source.name,
+                            source_name=credit.get(channel) or source.name,
                             uid=f"{channel}/{msg_id}",
                             url=f"https://t.me/{channel}/{msg_id}",
                             title=title,

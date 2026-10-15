@@ -39,7 +39,7 @@ jobs:
 
       - name: Install dealradar
         id: install
-        run: pip install -e .
+        run: pip install -e ".[telegram]"
 
       - name: Restore state from data branch
         id: restore

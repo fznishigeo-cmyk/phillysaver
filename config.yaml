@@ -455,7 +455,11 @@ woot:
                                    # rest of the selection rides later runs
 
 telegram:
-  channels: []                 # public channels to READ via MTProto, e.g. ["somepublicdealchannel"]
+  channels: ["edealinfo"]      # public channels to READ via MTProto (hourly lane only)
+  # A permission partner's channel is credited to that partner (sources.yaml
+  # name), as its newsletter is; its credit link is the channel post.
+  channel_sources:
+    edealinfo: edealinfo       # operator 2026-10-15; its web feed is behind Cloudflare
   messages_per_minute: 15
   resend_price_drop_pct: 10    # re-alert only if price drops >=10% more
   dry_run: false               # true forces log-only even if credentials exist

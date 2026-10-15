@@ -234,6 +234,7 @@ class AppConfig:
 
     # -- telegram / digest / alerting --
     telegram_channels: list[str] = field(default_factory=list)
+    telegram_channel_sources: dict[str, str] = field(default_factory=dict)
     telegram_messages_per_minute: int = 15
     resend_price_drop_pct: float = 10.0
     telegram_dry_run: bool = False
@@ -653,6 +654,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.fuzzy_threshold = float(g("dedupe", "fuzzy_threshold", default=cfg.fuzzy_threshold))
 
     cfg.telegram_channels = g("telegram", "channels", default=[]) or []
+    cfg.telegram_channel_sources = {str(k): str(v) for k, v in
+                                    (g("telegram", "channel_sources", default={}) or {}).items()}
     cfg.telegram_messages_per_minute = int(g("telegram", "messages_per_minute", default=cfg.telegram_messages_per_minute))
     cfg.resend_price_drop_pct = float(g("telegram", "resend_price_drop_pct", default=cfg.resend_price_drop_pct))
     cfg.telegram_dry_run = bool(g("telegram", "dry_run", default=cfg.telegram_dry_run))

@@ -604,7 +604,7 @@ sources:
     url: mtproto://channels   # channel usernames live in config.yaml -> telegram.channels
     region: US
     allowed_html: false
-    fast_lane: true           # fast lane reads only the first configured channel
+    fast_lane: false          # hourly only: one login session, fewer logins from new runner IPs
     notes: "Requires TELEGRAM_API_ID/TELEGRAM_API_HASH/TELEGRAM_SESSION secrets and config.telegram.channels."
 
   - name: keepa_amazon_drops

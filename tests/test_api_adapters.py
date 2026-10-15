@@ -411,6 +411,19 @@ class TestTelegram:
         assert first.published_at.tzinfo is not None
         assert first.fetched_at == NOW
 
+    def test_partner_channel_is_credited_to_the_partner(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Operator 2026-10-15: eDealinfo's channel credits eDealinfo, as its newsletter would.
+        self._set_secrets(monkeypatch)
+        cfg = self._cfg(["edealinfo", "other"])
+        cfg.telegram_channel_sources = {"edealinfo": "edealinfo"}
+        when = datetime(2026, 10, 9, 14, 0, tzinfo=timezone.utc)
+        fake = _FakeTelegramClient({"edealinfo": [_FakeMessage(5, "Lamp only $9.99", when)],
+                                    "other": [_FakeMessage(6, "Fan $20", when)]})
+        posts = TelegramAdapter(client_factory=lambda *a: fake, sleep_fn=lambda s: None).fetch_posts(
+            self.SRC, None, None, cfg, NOW, None)
+        assert [(p.source_name, p.url) for p in posts] == [
+            ("edealinfo", "https://t.me/edealinfo/5"), ("telegram_channels", "https://t.me/other/6")]
+
     def test_fast_lane_reads_only_first_channel(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

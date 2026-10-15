@@ -186,7 +186,8 @@ def test_hourly_shape() -> None:
     assert setup["with"]["cache"] == "pip"
 
     runs = run_commands(doc)
-    assert any(r.strip() == "pip install -e ." for r in runs)
+    # The hourly lane reads Telegram channels, so it installs the optional client.
+    assert any(r.strip() == 'pip install -e ".[telegram]"' for r in runs)
     assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any(r.strip() == "python -m dealradar run" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
