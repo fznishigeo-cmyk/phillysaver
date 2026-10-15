@@ -173,6 +173,7 @@ class AppConfig:
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
+    amazon_as_of_enabled: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -548,6 +549,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.amazon_as_of_enabled = bool(g("publish", "amazon_as_of", "enabled", default=False))
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

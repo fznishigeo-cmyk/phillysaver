@@ -318,6 +318,7 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
         cfg.front_page["appeal"]["enabled"] = False  # predates the broad-appeal switch
+        cfg.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
                                        if k != "non_amazon_max_age_h"}  # predates the pick age

@@ -29,7 +29,9 @@ for (const [minutes, label] of [[0,'0m'],[59,'59m'],[60,'1h'],[1440,'1d']]) {
 for (const invalid of ['garbage', '<img src=x>', '2026-10-13T23:00:00Z'])
   assert.equal(ctx.priceCheckedText(invalid, now), '');
 const card = ctx.cardHtml({...deal, age_hours:9});
-assert.match(card, /class="chip storechip">[^<]*<\/span><span class="chip price-checked" data-checked-at="[^"]+"><span class="pcl">price checked <\/span>25m ago<\/span>/);
+const visible = card.replace(/<span class="sr-only">.*?<\/span>/g, '')
+  .replace(/ title="Price as of [^"]*"/g, '');
+assert.match(visible, /class="chip storechip">[^<]*<\/span><span class="chip price-checked" data-checked-at="[^"]+"><span class="pcl">price checked <\/span>25m ago<\/span>/);
 assert(!card.includes('9h ago'));
 const old = ctx.cardHtml({...deal, checked_at:undefined, age_hours:9});
 assert(old.includes('9h ago') && !old.includes('price checked'));

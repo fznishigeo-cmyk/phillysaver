@@ -24,6 +24,7 @@ def baseline_config(mode):
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
         cfg.front_page["appeal"]["enabled"] = False  # predates the broad-appeal switch
         cfg.front_page["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
+        cfg.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         # Predates the Buy Box top picks and surplus scheduling.
         cfg.keepa_buybox_top_n = 0
         cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False

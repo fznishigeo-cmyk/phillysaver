@@ -131,6 +131,8 @@ publish:
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
   show_dead_hours: 24          # confirmed-gone cards linger inline for one day
+  amazon_as_of:
+    enabled: true
   drop_minutes: 15             # the page's drop clock: minutes between drops.
                                # Set it to the real gap between publishes (the
                                # */10 cron lands every 11-15 min); a publish later

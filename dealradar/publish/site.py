@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import click_signal, indexnow, inventory, price_labels, pwa, seo, seo_audit, traffic
+from . import amazon_as_of, click_signal, indexnow, inventory, price_labels, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -71,6 +71,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
+    html = amazon_as_of.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
@@ -400,11 +401,13 @@ def linked_disclosure(disclosure: str) -> str:
 
 
 def site_footer(html: str, now: datetime, disclosure: str, support: bool,
-                account: bool = False) -> str:
+                account: bool = False, *, amazon_as_of_enabled: bool = False) -> str:
     """One footer for root and nested pages, with the configured disclosure."""
     if "{{SITE_FOOTER}}" not in html:
         return html
     footer = (TEMPLATES_DIR / "site-footer.html").read_text(encoding="utf-8")
+    if amazon_as_of_enabled:
+        footer = footer.replace("</span></p>", "</span> " + amazon_as_of.FOOTER + "</p>", 1)
     footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=linked_disclosure(disclosure),
                        FOOTER_SIGNUP=(TEMPLATES_DIR / "footer-signup.html").read_text(encoding="utf-8") if support else "",
                        ACCOUNT_FOOTER=(
@@ -669,6 +672,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     checked = price_confirmed_at(deal) if is_amazon_deal(deal) or store_offer(deal)[0] else None
     if checked is not None and checked <= now:
         public["checked_at"] = iso(checked)
+        if getattr(cfg, "amazon_as_of_enabled", False) and is_amazon_deal(deal):
+            public["amazon_as_of"] = amazon_as_of.time_text(checked)
     if deal.get("regular_price_basis"):
         public["regular_price_basis"] = deal["regular_price_basis"]
     if deal.get("spotlight"):
@@ -840,6 +845,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
+        home = amazon_as_of.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
@@ -881,6 +887,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if checkout_prices.enabled(cfg):
         site_version = hashlib.sha256(site_version.encode()
             + "".join(checkout_prices.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+    if cfg.amazon_as_of_enabled:
+        site_version = hashlib.sha256(site_version.encode()
+            + "".join(amazon_as_of.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
+            + (amazon_as_of.FOOTER + amazon_as_of.DISCLAIMER + amazon_as_of.STYLE).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -969,6 +979,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = (out / name).read_text(encoding="utf-8")
         html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         html = checkout_prices.template(html, checkout_prices.enabled(cfg))
+        html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
         if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and name == "index.html":
             html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
         if cfg.non_amazon_freshness_enabled and name == "index.html":
@@ -1031,7 +1042,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + card + '</div></div>'))
             html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
         html = site_footer(html, now, meta["disclosure"], support,
-                           account=name == "index.html" and not support)
+                           account=name == "index.html" and not support,
+                           amazon_as_of_enabled=cfg.amazon_as_of_enabled)
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

@@ -1,6 +1,7 @@
 """Price corrections, visibility and diagnostics using paid Keepa fixtures only."""
 
 import json
+import re
 import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -364,7 +365,8 @@ def test_card_and_deal_page_timestamps_and_node_logic(db, cfg, tmp_path):
     row = doc["deals"][0]
     assert row["checked_at"] == util.iso(checked)
     home = (tmp_path / "index.html").read_text()
-    assert '<span class="pcl">price checked </span>25m ago</span>' in home
+    visible = re.sub(r'<span class="sr-only">.*?</span>', "", home)
+    assert '<span class="pcl">price checked </span>25m ago</span>' in visible
     page = (tmp_path / row["deal_path"].lstrip("/") / "index.html").read_text()
     assert 'Price checked <time datetime="2026-10-13T21:35:00+00:00">Oct 13, 2026 05:35 PM</time> ET' in page
     assert ".metarow{flex-wrap:nowrap;overflow:hidden;" in home  # phone height unchanged

@@ -34,7 +34,7 @@ from ..util import iso, parse_iso
 from ..rank import pick_order
 from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
-from . import inventory, seo_audit, traffic
+from . import amazon_as_of, inventory, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -210,8 +210,11 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     if checked is not None and not dead and checked <= (now or datetime.now(timezone.utc)):
         minutes = int(((now or datetime.now(timezone.utc)) - checked).total_seconds() / 60)
         age = f"{minutes}m" if minutes < 60 else f"{minutes // 60}h" if minutes < 1440 else f"{minutes // 1440}d"
-        meta += (f'<span class="chip price-checked" data-checked-at="{e(iso(checked))}">'
-                 f'<span class="pcl">price checked </span>{age} ago</span>')
+        as_of = f'Price as of {d["amazon_as_of"]}' if d.get("amazon_as_of") else ""
+        title_attr = f' title="{e(as_of)}"' if as_of else ""
+        hidden = f'<span class="sr-only"> ({e(as_of)}) </span>' if as_of else ""
+        meta += (f'<span class="chip price-checked" data-checked-at="{e(iso(checked))}"{title_attr}>'
+                 f'<span class="pcl">price checked </span>{hidden}{age} ago</span>')
     countdown = spotlight_time(spotlight.get("ends_at", ""), now or datetime.now(timezone.utc))
     if countdown:
         meta += (f'<span class="chip spotlight-time" data-ends-at="{e(spotlight["ends_at"])}">'
@@ -626,6 +629,10 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         price = f'{float(d["final_price"]):.2f}'
         content += f'<p class="detail-price">Sale price: <strong>${price}</strong> USD</p>'
         facts.insert(0, f"${price}")
+    if checked is not None and checked <= now and d.get("amazon_as_of"):
+        content += (f'<p class="detail-checked amazon-as-of">Amazon price as of {escape(d["amazon_as_of"])}</p>'
+                    f'<details class="amazon-price-details"><summary>Details</summary>'
+                    f'<p>{amazon_as_of.DISCLAIMER}</p></details>')
     if d.get("price_unconfirmed"):
         content += ('<div class="price-unconfirmed">Price not confirmed</div>'
                     '<p class="price-unconfirmed">We couldn\'t re-check this price recently; it may have changed.</p>')
@@ -810,7 +817,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             "</head>", '<meta name="robots" content="noindex,follow">\n</head>', 1), encoding="utf-8")
     support = bool(getattr(cfg, "support_enabled", False))
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
-                            now, meta["disclosure"], support)
+                            now, meta["disclosure"], support,
+                            amazon_as_of_enabled=cfg.amazon_as_of_enabled)
     (out / "404.html").write_text(_fill(not_found,
                                         HUB_LINKS=_hub_links(),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
@@ -825,7 +833,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                      DEAL_ACTIONS_SCRIPT=actions)
     template = checkout_prices.template(template, checkout_prices.enabled(cfg))
     template = copy_variant(template, open_access, support)
-    template = site_footer(template, now, meta["disclosure"], support)
+    template = site_footer(template, now, meta["disclosure"], support,
+                           amazon_as_of_enabled=cfg.amazon_as_of_enabled)
+    if cfg.amazon_as_of_enabled:
+        template = template.replace("</style>", amazon_as_of.STYLE + "</style>", 1)
     if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
         from .price_labels import STYLE
         template = template.replace("</style>", STYLE + "</style>", 1)

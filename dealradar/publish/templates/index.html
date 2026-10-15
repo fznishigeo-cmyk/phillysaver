@@ -1685,8 +1685,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // Right after the store, so the one-line phone row never clips it.
     var checked = d.checked_at ? priceCheckedText(d.checked_at, Date.now()) : "";
     if (checked && !d.spotlight) metarow += '<span class="chip price-checked" data-checked-at="' +
-      esc(d.checked_at) + '"><span class="pcl">price checked </span>' +
-      esc(checked.replace(/^price checked /, "")) + "</span>";
+      esc(d.checked_at)/*amazon-as-of*/ + (d.amazon_as_of ? '" title="' + esc("Price as of " + d.amazon_as_of) : "")/*/amazon-as-of*/ + '"><span class="pcl">price checked </span>' +
+/*amazon-as-of*/      (d.amazon_as_of ? '<span class="sr-only"> (Price as of ' + esc(d.amazon_as_of) + ') </span>' : "") +
+/*/amazon-as-of*/      esc(checked.replace(/^price checked /, "")) + "</span>";
     var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
     if (countdown) metarow += '<span class="chip spotlight-time" data-ends-at="' +
       esc(d.spotlight.ends_at) + '">' + countdown + '</span>';

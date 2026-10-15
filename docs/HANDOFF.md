@@ -193,6 +193,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Amazon as-of disclosure (Codex task 115, 2026-10-15; uncommitted, ON):**
+  `publish.amazon_as_of.enabled: true`; omitted/false preserves published
+  bytes. Amazon cards add a title/hidden Eastern time from the existing
+  confirmation clock; relative labels and their refreshers stay intact.
+  Deal pages show the time and native Details with Amazon's exact disclaimer;
+  every shared footer adds the approved sentence outside the refreshed
+  disclosure span. **23 focused checks pass**, covering EDT/EST, missing
+  clocks, other stores, four complete pre-change byte trees and offline reruns.
+  Required full suite: **4,191 passed, 22 failed** (29m09s). One older
+  timestamp assertion loaded before its update now passes in that final
+  focused run. The other 21 reproduce on untouched HEAD: 14 old byte pins
+  (checkout clarity/prices, critic, hub inventory, post-join ask, support)
+  and seven Stripe workflow socket-permission failures. Those baseline
+  repairs/checks outside the sandbox and review remain. No new requests/LLM
+  calls, commit or push; Git metadata blocks branch creation.
 - **Broad-appeal top picks (Codex task 114, 2026-10-15; merged):** operator:
   niche items (an OtterBox case for one phone) "should not be in the top
   25-30"; tilt slightly toward women shoppers. `publish.front_page.appeal`
