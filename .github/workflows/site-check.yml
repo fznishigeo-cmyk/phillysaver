@@ -4,7 +4,7 @@ name: site check (read-only)
 # the way a visitor's browser does, and writes which deals have no photo or
 # a broken one (by store, source and host) to the run summary, then checks
 # visitor controls and public pages on desktop and phone. Failed walk-through
-# steps turn the run red; photo shortfalls remain a report. Read-only;
+# steps and photos below the config.yaml site_check floors turn the run red. Read-only;
 # analytics and ad tags are blocked. It never touches state.db or the data
 # branch, and it prints only what the public site already shows.
 on:

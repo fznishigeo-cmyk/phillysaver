@@ -3,13 +3,15 @@
 // deals.json, loads every live deal's photo in Chromium the way a visitor's
 // browser does (no referrer), opens the home page, and prints which deals
 // have no photo or a broken one, grouped by store, source and host. It also
-// walks the visitor controls on desktop and phone; failed steps exit 1. Read-only;
+// walks the visitor controls on desktop and phone; failed steps or photos below
+// the config.yaml site_check floors exit 1. Read-only;
 // analytics and ad tags are blocked so the check is not counted as a visit.
 // Everything printed is already public on the site.
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote } = require("./site_check_logic.cjs");
+const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
+        photoRules, checkPhotos } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
@@ -379,6 +381,11 @@ async function walk(page, doc, device) {
   say(`live deals ${alive.length}, cards rendered ${shown.cards} of ${alive.length} live, clock "${shown.clock}", tagline "${shown.tagline}"`);
   say(`photos showing: ${good} (${pct(good)}%) | no photo: ${none.length} (${pct(none.length)}%) | broken: ${broken.length} (${pct(broken.length)}%)`);
   say(`first screens: ${shown.top} of the top 24 cards show a photo`);
+  // Photo floors (config.yaml site_check): a shortfall turns the run red so
+  // the hourly failure watch sees it before a visitor does.
+  const photos = checkPhotos({ live: alive.length, showing: good, broken: broken.length, firstScreen: shown.top },
+    photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
+  say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);
   if (none.length) {
     say(`\n### No photo (${none.length})`);
@@ -428,6 +435,6 @@ async function walk(page, doc, device) {
       say(`${walk.device} ${step.n}. ${step.name}: ${step.ok ? step.note || "ok" : "FAIL " + step.reason}`);
     }
   }
-  if ([desktop, mobile].some((walk) => walk.results.some((step) => !step.ok))) process.exitCode = 1;
+  if (!photos.ok || [desktop, mobile].some((walk) => walk.results.some((step) => !step.ok))) process.exitCode = 1;
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out.join("\n") + "\n");
 })().catch((e) => { console.error(e); process.exit(1); });

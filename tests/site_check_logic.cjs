@@ -63,3 +63,27 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(overrideNote({deals: [{status: "dead", url: "https://sovrn.co/abc"}]}, ["https://sovrn.co/abc"]), "sovrn.co/abc not on a live deal");
   assert.equal(overrideNote({deals: []}, []), "");
 }
+
+// Photo floors from config.yaml turn the hourly check red (operator, 2026-10-15).
+{
+  const {photoRules, checkPhotos} = require("../scripts/site_check_logic.cjs");
+  const fs = require("node:fs"), path = require("node:path");
+  const shipped = photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"));
+  assert.deepEqual(shipped, {minPhotoPct: 90, maxBroken: 10, firstScreen: 24});
+  const rules = photoRules("other:\n  max_broken: 99\nsite_check:\n  # note\n  min_photo_pct: 92.5  # c\n" +
+    "  max_broken: 3\n  first_screen_photos: 20\nseo:\n  min_photo_pct: 1\n");
+  assert.deepEqual(rules, {minPhotoPct: 92.5, maxBroken: 3, firstScreen: 20});
+  assert.throws(() => photoRules("site_check:\n  min_photo_pct: 90\n"), /site_check\.max_broken missing/);
+  const ok = {live: 1000, showing: 925, broken: 3, firstScreen: 20};
+  assert.deepEqual(checkPhotos(ok, rules), {ok: true, reason: ""});
+  assert.deepEqual(checkPhotos({...ok, live: 0, showing: 0}, rules), {ok: true, reason: ""});
+  for (const [change, reason] of [[{showing: 924}, "photos showing 92.4% < 92.5%"],
+                                  [{broken: 4}, "4 broken photos > 3"],
+                                  [{firstScreen: 19}, "19 of the top 24 cards show a photo < 20"]]) {
+    assert.deepEqual(checkPhotos({...ok, ...change}, rules), {ok: false, reason});
+  }
+  assert.equal(checkPhotos({live: 10, showing: 0, broken: 9, firstScreen: 0}, rules).reason.split("; ").length, 3);
+  const script = fs.readFileSync(path.join(__dirname, "../scripts/site_check.js"), "utf8");
+  assert.ok(script.includes("if (!photos.ok || [desktop, mobile].some("));
+  assert.ok(script.includes('say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);'));
+}

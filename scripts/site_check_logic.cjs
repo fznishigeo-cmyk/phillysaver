@@ -66,4 +66,28 @@ function overrideNote(doc, links) {
   return links.map((l) => `${l.replace(/^https:\/\//, "")} ${live.has(l) ? "live" : "not on a live deal"}`).join(", ");
 }
 
-module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote};
+// Photo floors from config.yaml site_check (operator, 2026-10-15: "we need
+// 99.99% of images showing up!"): a shortfall turns the hourly check red.
+function photoRules(config) {
+  const block = config.match(/^site_check:\s*(?:#.*)?\n((?:[ \t]+[^\n]*\n|\n)*)/m);
+  const value = (key) => {
+    const match = block && block[1].match(new RegExp(`^[ \\t]+${key}:[ \\t]*(\\d+(?:\\.\\d+)?)`, "m"));
+    if (!match) throw new Error(`site_check.${key} missing from config.yaml`);
+    return Number(match[1]);
+  };
+  return {minPhotoPct: value("min_photo_pct"), maxBroken: value("max_broken"),
+          firstScreen: value("first_screen_photos")};
+}
+
+function checkPhotos({live, showing, broken, firstScreen}, rules) {
+  const problems = [], pct = live ? (100 * showing) / live : 100;
+  if (pct < rules.minPhotoPct) problems.push(`photos showing ${pct.toFixed(1)}% < ${rules.minPhotoPct}%`);
+  if (broken > rules.maxBroken) problems.push(`${broken} broken photos > ${rules.maxBroken}`);
+  if (firstScreen < rules.firstScreen) {
+    problems.push(`${firstScreen} of the top 24 cards show a photo < ${rules.firstScreen}`);
+  }
+  return {ok: !problems.length, reason: problems.join("; ")};
+}
+
+module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
+                  photoRules, checkPhotos};

@@ -826,3 +826,13 @@ first_party_clicks:
   max_publish_gap_minutes: 30  # longer gaps have unknown publication exposure
   prior_hours: 2
   shadow_weight: 10  # positions per log(1 + clicks/(shown hours + prior))
+
+# Hourly site check (scripts/site_check.js): photo floors that turn the run red,
+# so the failure watch catches missing photos before a visitor does (operator
+# 2026-10-15: "we need 99.99% of images showing up!"). Live 2026-10-15 21:11Z:
+# 93% showing, 0 broken, 24 of the top 24 cards with a photo. Raise
+# min_photo_pct as coverage improves.
+site_check:
+  min_photo_pct: 90         # live deals whose photo shows
+  max_broken: 10            # deals whose photo fails to load
+  first_screen_photos: 24   # of the top 24 cards on the home page
