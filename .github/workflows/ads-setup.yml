@@ -1,0 +1,44 @@
+# One-time: create the ads.setup Search campaign PAUSED. No state, no email.
+# The operator enables it in Google Ads; the hourly guard keeps watching it.
+name: ads setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      validate_only:
+        description: "Only ask Google to check the campaign (create nothing)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        run: pip install -e .
+
+      - name: Create the campaign (paused)
+        env:
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          VALIDATE_ONLY: ${{ inputs.validate_only }}
+        run: |
+          if [ "$VALIDATE_ONLY" = "false" ]; then
+            python -m dealradar ads-setup
+          else
+            python -m dealradar ads-setup --validate-only
+          fi

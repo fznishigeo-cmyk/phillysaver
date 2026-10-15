@@ -667,6 +667,30 @@ ads:
     min_deal_clicks: 10
     cost_per_deal_click_usd: 1.50
     cost_per_click_min_spend_usd: 20
+  # One-time Search campaign builder (python -m dealradar ads-setup, manual
+  # ads-setup.yml). It creates the campaign PAUSED and never touches an
+  # existing one; the operator enables it in Google Ads. The budget must be
+  # at most half the authorized cap (Google may spend 2x a daily budget).
+  setup:
+    campaign_name: "wowpriced search - generic deals"
+    daily_budget_usd: 5
+    max_cpc_usd: 0.40
+    final_url: "https://wowpriced.com/"
+    # Numeric campaign id so the guard can credit ad visitors (names cannot).
+    final_url_suffix: "utm_source=google&utm_medium=cpc&utm_id={campaignid}&utm_campaign={campaignid}"
+    keywords: ["deals today", "best deals today", "daily deals", "online deals", "price drop deals",
+               "clearance deals", "open box deals", "used like new deals", "kitchen deals",
+               "tech deals today"]     # phrase match
+    # Broad negatives: store names (most programs ban bidding on them) and junk intent.
+    negative_keywords: [amazon, walmart, target, best buy, ebay, woot, costco, kohls, macys,
+                        wayfair, coupon code, promo code, jobs, login, near me]
+    headlines: ["Today's Best Deals", "Verified Price Drops", "Prices Re-Checked All Day",
+                "Real Discounts, No Fluff", "Used & Open-Box Bargains", "Home, Tech & Fashion Deals",
+                "Expired Deals Removed Fast", "New Deals All Day"]
+    descriptions:
+      - "Every price is checked before it goes live. Expired deals come down fast."
+      - "Thousands of live deals on home, tech, fashion and more. Free, no sign-up."
+      - "We track price history so you only see real discounts. Updated all day."
 
 growth:
   # The daily PRIVATE growth report (python -m dealradar growth-report,

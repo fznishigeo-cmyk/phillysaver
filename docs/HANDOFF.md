@@ -193,6 +193,11 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Google Ads campaign builder (2026-10-15):** operator approved building the
+  first campaign PAUSED. `ads-setup.yml` (manual; validate-only by default)
+  creates `ads.setup` from config.yaml; see docs/ads-guard.md. The operator
+  enables it in Google Ads, then says "ads live"; schedule day-3/day-7
+  scorecards then (50% commission rule).
 - **Tiered critic ON (Codex task 107, 2026-10-15; merged after the Keepa volatility run checked out):** shipped
   `parse.critic_tiering.enabled: true`, per operator 2026-10-14 "we can't
   afford Sonnet"; supersedes task 106's OFF note below. Legacy fixture/setup

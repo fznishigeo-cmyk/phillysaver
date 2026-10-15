@@ -73,6 +73,22 @@ another account user can change settings. A total budget ceiling therefore needs
 the Google settings above. Keep all campaigns paused when those protections
 cannot be verified. This code does not claim otherwise.
 
+## One-time campaign builder
+
+The operator approved (2026-10-15, "Yes, build it paused") a separate builder:
+`python -m dealradar ads-setup`, run only by hand from `ads-setup.yml`
+(`validate_only` defaults to true). It reads `ads.setup` in config.yaml and, in
+one atomic Google Ads mutate, creates a budget, a **PAUSED** Search campaign
+(Google Search only, US presence, English, Maximize clicks with the max CPC,
+the `{campaignid}` URL suffix above), broad negative keywords, one ad group
+with phrase keywords and one responsive search ad. Google validates the whole
+request first; a rejection creates nothing. It refuses a budget above half the
+effective cap, never touches a campaign that already has the configured name,
+and never enables anything: the operator clicks Enable in Google Ads, and the
+guard watches the campaign from then on. Its log names only billing setup and
+auto-apply recommendation status (enum names), so the operator knows whether
+a payment method or an auto-apply switch needs attention.
+
 ## Every guard run
 
 `python -m dealradar ads-guard` uses the existing OAuth secrets

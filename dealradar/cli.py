@@ -130,6 +130,13 @@ def cmd_ads_guard(args: argparse.Namespace) -> int:
                state_unavailable=args.state_unavailable)
 
 
+def cmd_ads_setup(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .growth.ads_setup import run
+
+    return run(load_config(args.config), validate_only=args.validate_only)
+
+
 def cmd_source_audit(args: argparse.Namespace) -> int:
     from .config import load_config
     from .source_audit import run
@@ -243,6 +250,12 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--state-unavailable", action="store_true",
                     help="state restore failed; pause defensively without writing state")
     sp.set_defaults(fn=cmd_ads_guard)
+
+    sp = sub.add_parser("ads-setup", help="create the configured Search campaign, PAUSED (one time)")
+    common(sp)
+    sp.add_argument("--validate-only", action="store_true",
+                    help="ask Google to check the campaign without creating it")
+    sp.set_defaults(fn=cmd_ads_setup)
 
     for command, help_text in (
         ("pinterest-auth-url", "print the Pinterest authorization URL"),
