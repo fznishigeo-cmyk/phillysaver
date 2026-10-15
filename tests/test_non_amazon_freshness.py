@@ -206,6 +206,23 @@ def test_failure_or_unproven_304_never_refreshes(db, cfg, status):
     assert fresh.age_h(db.get_deal(deal["dedupe_key"]), NOW) == 30
 
 
+@pytest.mark.parametrize("status,counted", [(301, False), (404, False), (410, False), (500, True)])
+def test_moved_or_removed_posts_never_trip_the_source(db, cfg, status, counted):
+    # Three stale posts of one healthy source in one run: a moved or deleted
+    # post is not a site failure, so the source's feed keeps being fetched.
+    cfg.non_amazon_source_rechecks_per_run = 3
+    for key in ("a", "b", "c"):
+        seed(db, cfg, key=key)
+    fetcher, calls = client(db, cfg, lambda r: httpx.Response(404) if r.url.path == "/robots.txt"
+                            else httpx.Response(status, headers={"location": "https://partner.test/new"}))
+    posts, counts = reread(db, cfg, fetcher)
+    assert posts == [] and counts["errors"] == (3 if not counted else cfg.circuit_breaker_failures)
+    health = {h["source_name"]: h for h in db.all_source_health()}
+    assert db.is_tripped("partner", NOW) is counted
+    assert (health.get("partner", {}).get("consecutive_failures", 0) or 0) == (3 if counted else 0)
+    assert all("/new" not in str(r.url) for _, r in calls)  # redirects are not followed
+
+
 def test_robots_and_breaker_block_reads(db, cfg):
     seed(db, cfg)
     fetcher, calls = client(db, cfg, lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /"))

@@ -15,7 +15,7 @@ from datetime import datetime
 
 from ..config import AppConfig, redact_secrets, error_summary
 from ..db import DB
-from ..errors import AdapterDisabled, AdapterNotConfigured, DeadlineExceeded
+from ..errors import AdapterDisabled, AdapterNotConfigured, DeadlineExceeded, PostUnavailable
 from ..http_client import PoliteFetcher
 from ..models import RawPost, SourceConfig
 
@@ -122,6 +122,11 @@ def run_source(
     except DeadlineExceeded:
         logger.warning("source %s: deadline exceeded", source.name)
         return _record_failure("deadline")
+    except PostUnavailable as exc:
+        # One reread post moved or was removed; the site itself is fine, so
+        # neither the circuit breaker nor the health row changes.
+        logger.info("source %s: post unavailable (%s)", source.name, exc)
+        return ([], False, str(exc))
     except Exception as exc:
         error = error_summary(exc)
         logger.warning("source %s: adapter failed (%s)", source.name, error)

@@ -182,6 +182,7 @@ class _PostReader:
         self.url, self.deals = url, deals
 
     def fetch_posts(self, source, fetcher, db, cfg, now, deadline):
+        from .errors import PostUnavailable
         from .fetch.rss import _permission_host
         override = _permission_host(source, cfg)
         response = fetcher.get(self.url, conditional=True, deadline=deadline,
@@ -190,6 +191,8 @@ class _PostReader:
             return []  # unchanged post: nothing ended, nothing re-evidenced
         if response.blocked_by_robots:
             raise RuntimeError("blocked_by_robots")
+        if response.status in (301, 302, 303, 307, 308, 404, 410):
+            raise PostUnavailable(f"http_{response.status}")
         if response.status != 200 or not response.body:
             raise RuntimeError(f"http_{response.status}")
         html = response.body.decode("utf-8", errors="replace")

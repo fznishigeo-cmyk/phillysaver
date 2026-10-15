@@ -15,6 +15,10 @@ class RobotsBlocked(DealradarError):
     """robots.txt disallows fetching this URL; the fetch was not attempted."""
 
 
+class PostUnavailable(DealradarError):
+    """One source post moved or was removed (3xx/404/410): not a site failure."""
+
+
 class AdapterNotConfigured(DealradarError):
     """Source adapter is missing required secrets (reported as needs_key)."""
 
