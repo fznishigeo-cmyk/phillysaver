@@ -26,7 +26,10 @@ from tests.test_woot import NOW, SRC, _offer
 @pytest.fixture
 def cfg(monkeypatch):
     monkeypatch.setenv("WOOT_API_KEY", "synthetic-woot-secret")
-    return load_config()
+    cfg = load_config()
+    cfg.woot_named_feeds = []  # these cases predate the shipped hourly category rotation
+    cfg.woot_named_feeds_rotation_h = 0
+    return cfg
 
 
 @pytest.fixture
@@ -172,8 +175,11 @@ def test_config_rejects_non_feed_segments(tmp_path, feeds):
 
 
 def test_config_defaults_and_overrides(tmp_path):
-    for cfg in (AppConfig(), load_config()):
-        assert cfg.woot_feed_pages == 1 and cfg.woot_named_feeds == []
+    cfg = AppConfig()
+    assert cfg.woot_feed_pages == 1 and cfg.woot_named_feeds == [] and cfg.woot_named_feeds_rotation_h == 0
+    shipped = load_config()
+    assert shipped.woot_feed_pages == 1 and shipped.woot_named_feeds_rotation_h == 1
+    assert shipped.woot_named_feeds == ["Home", "Clearance", "Tools", "Sports", "Electronics", "Computers"]
     path = tmp_path / "config.yaml"
     path.write_text("woot:\n  feed_pages: 3\n  named_feeds: [Home, Tools, Home]\n")
     cfg = load_config(path)
@@ -182,7 +188,7 @@ def test_config_defaults_and_overrides(tmp_path):
 
 def test_defaults_match_legacy_run_summary_and_all_published_bytes(cfg, tmp_path, monkeypatch, caplog):
     # The old reader, captured before task 104: one All request, no deduping.
-    def legacy(client, cfg, key, deadline):
+    def legacy(client, cfg, key, deadline, now=None):
         response = client.api_get(woot.FEED_URL, headers={"x-api-key": key},
                                   deadline=deadline, respect_robots=False)
         response.raise_for_status()
@@ -218,6 +224,9 @@ def test_defaults_match_legacy_run_summary_and_all_published_bytes(cfg, tmp_path
         if index == 0:
             config["woot"].pop("feed_pages")
             config["woot"].pop("named_feeds")
+            config["woot"].pop("named_feeds_rotation_h")
+        else:
+            config["woot"]["named_feeds"] = []  # the hourly category rotation has its own test
         config_path = tmp_path / f"{index}.yaml"
         config_path.write_text(yaml.safe_dump(config))
         caplog.clear()
@@ -304,3 +313,38 @@ def test_probe_logs_no_secret_offer_content_or_urls(cfg, monkeypatch, capsys, st
         assert rows[0]["paging"]["TotalCount"] == "5001"
         assert rows[0]["paging"]["Pagination.HasNext"] is True
         assert rows[1]["overlap_all_count"] == 1 and rows[1]["new_item_count"] == 0
+
+
+def test_hourly_rotation_reads_all_plus_one_category_feed(monkeypatch):
+    # Probe 2026-10-15: All stops at 5,000; category feeds add thousands more.
+    # One category per hour keeps the key far under 1,000 requests/day.
+    from datetime import datetime, timezone
+    from dealradar.fetch.woot import WootAdapter
+
+    cfg = load_config()
+    seen = []
+
+    class Client:
+        def api_get(self, url, **kw):
+            seen.append(url.rsplit("/", 1)[1])
+
+            class R:
+                status_code = 200
+
+                def raise_for_status(self):
+                    pass
+
+                def json(self):
+                    return {"Items": [{"OfferId": url, "Url": "https://www.woot.com/offers/" + url[-5:]}]}
+            return R()
+
+    for hour in range(7):
+        now = datetime(2026, 10, 15, hour, 30, tzinfo=timezone.utc)
+        seen.clear()
+        items = WootAdapter._fetch_items(Client(), cfg, "k", None, now)
+        expected = cfg.woot_named_feeds[(int(now.timestamp()) // 3600) % 6]
+        assert seen == ["All", expected] and len(items) == 2
+    cfg.woot_named_feeds_rotation_h = 0
+    seen.clear()
+    WootAdapter._fetch_items(Client(), cfg, "k", None, now)
+    assert seen == ["All", *cfg.woot_named_feeds]

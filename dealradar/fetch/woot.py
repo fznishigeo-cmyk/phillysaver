@@ -252,9 +252,16 @@ class WootAdapter(SourceAdapter):
 
     @staticmethod
     def _fetch_items(client: Any, cfg: AppConfig, key: str,
-                     deadline: float | None) -> list:
+                     deadline: float | None, now: datetime | None = None) -> list:
+        named = list(cfg.woot_named_feeds)
+        if named and cfg.woot_named_feeds_rotation_h > 0 and now is not None:
+            # One category feed per period, in turn: the key allows 1,000
+            # requests/day and every run already reads All (probe 2026-10-15:
+            # All stops at 5,000 offers; category feeds hold thousands more).
+            slot = int(now.timestamp() // (cfg.woot_named_feeds_rotation_h * 3600))
+            named = [named[slot % len(named)]]
         feeds = ["All"]
-        for name in cfg.woot_named_feeds:
+        for name in named:
             # Feed names are path segments, never URLs or query strings.
             if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,63}", name):
                 raise ValueError("invalid Woot feed name")
@@ -327,7 +334,7 @@ class WootAdapter(SourceAdapter):
             # The key travels ONLY in the x-api-key header: query-string keys
             # end up inside httpx error messages and from there could leak
             # into recorded (published) source errors.
-            items = self._fetch_items(client, cfg, key, deadline)
+            items = self._fetch_items(client, cfg, key, deadline, now)
 
         if db is not None:
             _recheck_offers(db, items, now)

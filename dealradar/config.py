@@ -357,6 +357,7 @@ class AppConfig:
     woot_max_new_items_per_run: int = 20      # unseen posts per run
     woot_feed_pages: int = 1
     woot_named_feeds: list[str] = field(default_factory=list)
+    woot_named_feeds_rotation_h: float = 0.0   # 0 = every named feed each run
 
     # -- official store price checks (flags and secrets required) --
     non_amazon_freshness_enabled: bool = False
@@ -757,6 +758,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             for name in feeds):
         raise ValueError("woot.named_feeds must be a list of feed names")
     cfg.woot_named_feeds = list(dict.fromkeys(feeds))
+    cfg.woot_named_feeds_rotation_h = max(0.0, float(g("woot", "named_feeds_rotation_h", default=0)))
 
     cfg.non_amazon_freshness_enabled = bool(g("non_amazon_freshness", "enabled", default=False))
     for name in ("source_recheck_h", "source_recheck_budget_s", "stale_label_h", "stale_hide_h"):

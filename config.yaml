@@ -413,7 +413,12 @@ woot:
   # if the probe confirms that form returns new offers. Each feed stops on
   # an empty/short/repeated page. Named feeds must also be verified first.
   feed_pages: 1
-  named_feeds: []
+  # Probe 2026-10-15: All returns 5,000 offers; these category feeds add
+  # Home 2,305 / Clearance 1,987 / Tools 1,131 / Sports 1,108 / Electronics 372 /
+  # Computers 343 offers All never lists. One feed per hour in turn keeps the
+  # key far under its 1,000 requests/day (each category refreshed every 6 h).
+  named_feeds: [Home, Clearance, Tools, Sports, Electronics, Computers]
+  named_feeds_rotation_h: 1
   # One /feed/All GET per run (the key's quota is 1,000 requests/day). Every
   # offer is scored from its structured prices; offers within 5 points of
   # their publish floor (used_min_pct for anything not plainly new, min_pct

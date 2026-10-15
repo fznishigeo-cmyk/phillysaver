@@ -27,7 +27,9 @@ def _key(monkeypatch):
 
 @pytest.fixture()
 def cfg() -> AppConfig:
-    return load_config()  # publish floors 40 (new) / 50 (used)
+    cfg = load_config()  # publish floors 40 (new) / 50 (used)
+    cfg.woot_named_feeds = []  # single-feed cases; rotation has its own tests
+    return cfg
 
 
 def _offer(oid, sale, list_price=None, condition="New", **kw):
