@@ -534,12 +534,13 @@ def _date(dt: datetime, full: bool = False) -> str:
 
 def _landing_page(template: str, title: str, heading: str, description: str,
                   path: str, site_url: str, content: str, *, dead: bool = False,
-                  indexable: bool = True,
+                  indexable: bool = True, noindex_follow: bool = False,
                   extra_head: str = "", intro: str = "",
                   breadcrumbs: list[tuple[str, str]] | None = None) -> str:
     return _fill(template, TITLE=escape(heading), PAGE_TITLE=escape(title),
                  DESCRIPTION=escape(description), CANONICAL=escape(site_url + path),
-                 ROBOTS=('<meta name="robots" content="noindex">\n' if dead else
+                 ROBOTS=('<meta name="robots" content="noindex,follow">\n' if noindex_follow else
+                         '<meta name="robots" content="noindex">\n' if dead else
                          '<meta name="robots" content="noindex,follow">\n' if not indexable else ""),
                  EXTRA_HEAD=extra_head + _breadcrumbs(site_url, breadcrumbs or [(heading, path)]),
                  INTRO=escape(intro), STATS="", DEALS=content,
@@ -598,6 +599,7 @@ def _related(d: dict[str, Any], live: list[dict[str, Any]], group: Any) -> list[
 def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                disclosure: str, live: list[dict[str, Any]], paths: dict[str, str],
                observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True,
+               noindex_follow: bool = False,
                discovery: str = "", sharing: str = "", share_head: str = "",
                also_at: str = "", lowest_seen: str = "") -> str:
     from .site import linked_disclosure
@@ -715,7 +717,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
                          '<div class="deal-detail" data-deal-detail>' + content + '</div>', dead=dead,
-                         indexable=indexable,
+                         indexable=indexable, noindex_follow=noindex_follow,
                          extra_head=ld + (PRICE_HISTORY_STYLE if chart else "") + share_head,
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
@@ -853,6 +855,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         discovery += inventory.family_link(d, family_members)
         html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1 and not d.get("price_unconfirmed"),
+                          noindex_follow=not cfg.seo_deal_pages_indexable,
                           discovery=discovery, sharing=sharing, share_head=share_head,
                           also_at=also_at.get(d["dedupe_key"], ""),
                           lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))

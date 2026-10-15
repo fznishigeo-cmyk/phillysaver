@@ -193,6 +193,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Durable SEO pages (Codex task 111, 2026-10-15; uncommitted):**
+  `seo.deal_pages_indexable: false` keeps shopper pages, URLs, links and
+  structured data; every deal page gets `noindex,follow` and leaves the
+  sitemap. Omitted/true restores previous bytes. IndexNow receipts acknowledge
+  each noindex transition once; failures retry, later churn/reminders/removal
+  do not resend acknowledged deals while off. Other page rules stay intact;
+  the HTML-based audit agrees. Old byte pins explicitly retain true.
+  **216 focused checks pass**. Required `.venv/bin/python -m pytest -q -n 3
+  -p no:cacheprovider`: **3,973 passed, 7 failed** (24m27s). All seven Stripe
+  workflow localhost-socket failures reproduce on untouched HEAD (`Operation
+  not permitted`); those checks outside the sandbox and review remain.
+  In Search Console, watch indexed category/store/price hubs; **Excluded by
+  noindex will rise by design**. No commit/push.
 - **Fast-lane time budget (Codex task 109, 2026-10-15; merged with review fixes, tiering OFF):**
   `parse.fast_lane_parse_budget_s: 150` bounds parsing from its start, also
   respecting the existing tail reserve. Batches leave room for two request

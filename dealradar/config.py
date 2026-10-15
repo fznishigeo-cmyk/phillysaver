@@ -196,6 +196,7 @@ class AppConfig:
     seo_best_today_min_items: int = 1
     seo_deal_page_min_items: int = 1
     seo_deal_pages_max: int = 3000
+    seo_deal_pages_indexable: bool = True
     seo_store_page_min_deals: int = 15
     seo_store_pages_max: int = 12
     seo_price_page_min_deals: int = 10
@@ -599,6 +600,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.seo_best_today_min_items = max(1, int(g("seo", "best_today_min_items", default=cfg.seo_best_today_min_items)))
     cfg.seo_deal_page_min_items = max(1, int(g("seo", "deal_page_min_items", default=cfg.seo_deal_page_min_items)))
     cfg.seo_deal_pages_max = max(0, int(g("seo", "deal_pages_max", default=cfg.seo_deal_pages_max)))
+    cfg.seo_deal_pages_indexable = bool(g("seo", "deal_pages_indexable", default=cfg.seo_deal_pages_indexable))
     cfg.seo_store_page_min_deals = max(1, int(g(
         "seo", "store_page_min_deals", default=cfg.seo_store_page_min_deals)))
     cfg.seo_store_pages_max = max(0, int(g("seo", "store_pages_max", default=cfg.seo_store_pages_max)))

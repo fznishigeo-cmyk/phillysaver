@@ -224,6 +224,7 @@ affiliate:
 
 seo:
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.
+  deal_pages_indexable: false # Keep shopper pages; focus search on durable listings.
   store_page_min_deals: 15    # Public live deals required for a store page.
   store_pages_max: 12         # Maximum store pages, most live deals first.
   price_page_min_deals: 10    # Public live deals required for a price page.

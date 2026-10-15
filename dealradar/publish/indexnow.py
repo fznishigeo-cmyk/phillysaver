@@ -32,6 +32,7 @@ MANIFEST_FILE = "indexnow_publish.json"
 INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow"
 KEY_RE = re.compile(r"[A-Za-z0-9-]{8,128}")
 METRICS = ("pending", "received", "key_pending", "failed", "oldest_pending_hours")
+_DEAL_NOINDEX_HASH = hashlib.sha256(b"deal_pages_indexable:false").hexdigest()
 
 
 def due_list_path(site_dir: str | Path) -> Path:
@@ -72,6 +73,10 @@ def _ready(row: dict, cfg, now: datetime) -> bool:
             (received is None or now - received >= timedelta(hours=cfg.seo_indexnow_min_hours)))
 
 
+def _one_time_deal(cfg, url: str) -> bool:
+    return not cfg.seo_deal_pages_indexable and urlsplit(url).path.startswith("/deal/")
+
+
 def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
                  site_dir: str | Path | None = None, excluded: set[str] | None = None) -> list[str]:
     """Discover versions without acknowledging them. Keep failed work pending
@@ -108,7 +113,20 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
             continue
         path = path if out is not None else None
         versions[url] = _hash(path.read_bytes()) if path is not None and path.is_file() else "removed"
+    # Off: a deal's noindex transition is one logical version, irrespective
+    # of later price/title/related-offer churn or removal. Final file hashes
+    # in the deployment manifest still bind the receipt to deployed bytes.
+    previous = db.indexnow_pages()
+    one_time = {}
+    for url in list(versions):
+        if _one_time_deal(cfg, url):
+            version = versions.pop(url)
+            received = previous.get(url, {}).get("received_hash")
+            one_time[url] = (received if received in (_DEAL_NOINDEX_HASH, "removed") else
+                             "removed" if version == "removed" else _DEAL_NOINDEX_HASH)
     db.indexnow_discover(versions, now, cfg.seo_indexnow_resubmit_days)
+    if one_time:
+        db.indexnow_discover(one_time, now, 0)
     return [url for url, row in sorted(db.indexnow_pages().items()) if url not in excluded and _ready(row, cfg, now)]
 
 
@@ -118,7 +136,8 @@ def seal_publish(db, cfg, now: datetime, out: Path, run_key: str | None = None, 
     usable manifest. Hash final bytes separately from the stable content hashes."""
     if not enabled(cfg):
         return
-    rows = {url: row for url, row in db.indexnow_pages().items() if url not in (excluded or set())}
+    rows = {url: row for url, row in db.indexnow_pages().items() if url not in (excluded or set())
+            and not (_one_time_deal(cfg, url) and row["pending_since"] is None)}
     manifest = {"run_key": delivery_run_key(now, run_key), "host": cfg.custom_domain,
                 "identity": db.meta_get("indexnow_identity"),
                 "versions": {url: row["content_hash"] for url, row in rows.items()},

@@ -303,6 +303,8 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     path = Path(env["cfg"])  # this byte pin predates the RSS trim
     path.write_text(path.read_text().replace("feed_max_items: 20", "feed_max_items: 50")
                     .replace("feed_details: false", "feed_details: true"))
+    # This byte pin predates the durable-pages SEO switch.
+    path.write_text(path.read_text().replace("deal_pages_indexable: false", "deal_pages_indexable: true"))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)
     assert summary["spend_by_kind"]["critic"] == {"calls": 1, "usd": .0054}
