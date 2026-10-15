@@ -198,7 +198,15 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   creates `ads.setup` from config.yaml; see docs/ads-guard.md. The operator
   enables it in Google Ads, then says "ads live"; schedule day-3/day-7
   scorecards then (50% commission rule).
-- **Tiered critic ON (Codex task 107, 2026-10-15; merged after the Keepa volatility run checked out):** shipped
+- **Tiered critic switched back OFF (2026-10-15 ~03:25Z):** with it ON the
+  fast-lane pipeline step took 11+ minutes (was ~5.4) in two runs in a row
+  (38672525750, 38674830502), so the 12-minute job limit cancelled the Pages
+  deploy. Commit b20d1e1 was reverted (config + its test pins); the 106 code
+  stays, switch OFF. Before switching on again: find where the time goes
+  (likely high_visibility() / protect_promoted() recomputing rank over every
+  alive deal, or many sequential Haiku+Sonnet calls) and prove a fast-lane
+  replay stays well under 12 minutes. Original note follows.
+- **Tiered critic ON (Codex task 107, 2026-10-15; merged after the Keepa volatility run checked out, then reverted):** shipped
   `parse.critic_tiering.enabled: true`, per operator 2026-10-14 "we can't
   afford Sonnet"; supersedes task 106's OFF note below. Legacy fixture/setup
   pins preserve every existing assertion and byte hash. Nine tiered sibling

@@ -20,7 +20,6 @@ from tests.test_publish_site import make_deal
 @pytest.fixture
 def cfg(tmp_path):
     cfg = load_config()
-    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.used_min_pct = 80
     cfg.site_dir = str(tmp_path / "site")
     cfg.seo_hub_min_items = cfg.seo_store_page_min_deals = cfg.seo_price_page_min_deals = 1
@@ -315,7 +314,6 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.unconfirmed_label_enabled = False
     if mode == "shipped":
-        cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering
         cfg.non_amazon_freshness_enabled = False  # this pin predates task 102's independent age gate
         cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()

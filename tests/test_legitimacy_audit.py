@@ -257,24 +257,6 @@ def test_shadow_restore_does_not_keep_audit_owned_rejection(db):
     assert "suspect_msrp" not in db.get_deal("widget")["flags"]
 
 
-def test_tiered_shadow_keeps_audit_outcomes_and_prices_both_models(db):
-    cfg = _cfg(critic_shadow_model="")
-    cfg.critic_tiering.update(enabled=True, shadow_batches_per_day=0)
-    amazon(db)
-    add(db, "bad", flags=["unit_mismatch"])
-    add(db, "unknown", regular_price=99.)
-    msgs = _CriticMessages(True)
-    parser = ClaudeParser(cfg, client=_FakeClient(msgs))
-    stats = {}
-    result = pipeline._run_critic(db, cfg, parser, NOW, audit_stats=stats)
-    assert stats["outcomes"] == {"verified": 1, "reject": 1, "needs_critic": 1}
-    assert result["judged"] == 3 and result["calls"] == 2
-    assert result["tiering"]["escalated"] == 3
-    assert [c["model"] for c in msgs.calls] == [cfg.critic_tiering["model"], cfg.critic_model]
-    assert parser.spend_by_kind["critic"] == {"calls": 2, "usd": pytest.approx(.00315)}
-    assert stats["critic_calls_avoided"] == 0
-
-
 def test_cost_estimate_prices_the_selected_critic_not_the_parse_model(db):
     cfg = _cfg()
     parser = ClaudeParser(cfg, client=_FakeClient(_CriticMessages(True)))

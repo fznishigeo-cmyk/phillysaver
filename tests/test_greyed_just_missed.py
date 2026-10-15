@@ -125,7 +125,6 @@ def test_json_and_rank_publish_only_confirmed_deaths(db, tmp_path, reason):
 
 def test_gone_retention_is_24_hours(db):
     cfg = load_config("config.yaml")
-    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     assert cfg.show_dead_hours == AppConfig().show_dead_hours == 24
     seed(db, status="dead", death="confirmed", died_at=iso(NOW))
     assert rank.site_deals(db, cfg, NOW + timedelta(hours=24))

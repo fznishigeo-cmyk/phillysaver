@@ -78,7 +78,7 @@ parse:
   critic_shadow_batches_per_day: 12   # 0 disables comparison; never affects publishing
   # One switch restores the existing critic, shadow and second-opinion behavior.
   critic_tiering:
-    enabled: true                  # operator 2026-10-14: "we can't afford Sonnet"
+    enabled: false
     model: "claude-haiku-5-5"
     min_confidence: 0.8
     high_price_usd: 250

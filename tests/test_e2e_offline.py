@@ -167,7 +167,8 @@ class _FakeClaudeClient:
     messages = _FakeMessages()
 
 
-def _offline_env(tmp_path, monkeypatch):
+@pytest.fixture()
+def env(tmp_path, monkeypatch):
     monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
     for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
                 "DEALS_CLAUDE_API_KEY"):
@@ -198,16 +199,6 @@ def _offline_env(tmp_path, monkeypatch):
     text = text.replace("min_age_minutes: 20", "min_age_minutes: 0")
     cfg_path.write_text(text)
     return {"db": str(db_path), "cfg": str(cfg_path), "site": site_dir}
-
-
-@pytest.fixture()
-def env(tmp_path, monkeypatch):
-    result = _offline_env(tmp_path, monkeypatch)
-    path = Path(result["cfg"])
-    # These legacy pipeline expectations predate tiering; new cases use the shipped config.
-    path.write_text(path.read_text().replace('critic_tiering:\n    enabled: true',
-                                             'critic_tiering:\n    enabled: false'))
-    return result
 
 
 def _run(env):

@@ -26,12 +26,6 @@ from tests.test_extractor import FakeParser, make_cfg, make_post
 from tests.test_quality_trio import SecondOpinionParser
 
 
-def _cfg():
-    cfg = load_config()
-    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
-    return cfg
-
-
 def raw(item="Widget", price=20, regular=100, **over):
     return LLMDeal(item=item, store="Store", category="home", online_only="true",
                    product_url=f"https://retailer.example/{item.replace(' ', '-')}",
@@ -277,7 +271,7 @@ def test_disabled_parser_reports_unevaluated_candidates_in_run_summary(yield_env
 
 def test_cross_source_feed_email_reruns_and_price_changes_count_once(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     ai_yield.start(db, cfg, NOW, "run")
     key = ingest(db, cfg, "Widget", 20, NOW)
     assert ai_yield.record_public(db, cfg, NOW, "run", [key, key]) == dict(unique_new_public_deals=1, useful_price_updates=0)
@@ -295,38 +289,9 @@ def test_cross_source_feed_email_reruns_and_price_changes_count_once(tmp_path):
     db.close()
 
 
-def test_tiered_yield_waits_for_a_valid_critic_then_counts_publication_once(tmp_path, monkeypatch):
-    monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
-    db = DB(tmp_path / "state.db")
-    cfg = load_config()
-    assert cfg.critic_tiering["enabled"] is True
-    cfg.critic_tiering["shadow_batches_per_day"] = 0
-    cfg.keepa_recheck_top_n = cfg.keepa_recheck_wall_n = 0
-    ai_yield.start(db, cfg, NOW.replace(hour=0), "run")
-    key = ingest(db, cfg, "Widget", 20, NOW)
-    empty = dict(unique_new_public_deals=0, useful_price_updates=0)
-    assert ai_yield.record_public(db, cfg, NOW, "run", [key]) == empty
-    messages = FakeMessagesWithParse(parse_responses=[FakeParseResponse(
-        CriticVerdicts.model_validate({"verdicts": [dict(index=0, plausible=True,
-            confidence=.9, reason="Fixture")]}), FakeUsage(100, 20))])
-    parser = make_parser(messages, cfg=cfg)
-    parser.bind_ledger(db, "run")
-    result = pipeline._run_critic(db, cfg, parser, NOW)
-    assert result["tiering"]["haiku_approved"] == 1
-    assert [c["model"] for c in messages.parse_calls] == [cfg.critic_tiering["model"]]
-    assert db.get_deal(key)["critic"]["model"] == cfg.critic_tiering["model"]
-    assert ai_yield.record_public(db, cfg, NOW, "run", [key]) == dict(
-        unique_new_public_deals=1, useful_price_updates=0)
-    assert ai_yield.record_public(db, cfg, NOW, "run", [key]) == empty
-    measured = ai_yield.aggregate(db, cfg, NOW.replace(hour=0), NOW.replace(hour=0) + timedelta(days=1))
-    assert measured["spend_usd"] == pytest.approx(parser.spend_usd)
-    assert measured["new_deals_per_usd"] == pytest.approx(1 / parser.spend_usd)
-    db.close()
-
-
 def test_old_inventory_and_below_floor_rows_never_inflate_new_supply(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     key = ingest(db, cfg, "Widget", 20, NOW - timedelta(days=2))
     hidden = ingest(db, cfg, "Hidden lamp", 90, NOW)
     ai_yield.start(db, cfg, NOW, "first")
@@ -340,7 +305,7 @@ def test_old_inventory_and_below_floor_rows_never_inflate_new_supply(tmp_path):
 @pytest.mark.parametrize("legacy", [False, True])
 def test_retired_inventory_reappearance_is_not_another_new_identity(tmp_path, legacy):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     if legacy:
         key = ingest(db, cfg, "Widget", 20, NOW - timedelta(days=1))
     ai_yield.start(db, cfg, NOW, "first")
@@ -376,7 +341,7 @@ def test_pipeline_yield_spend_and_full_offline_rerun_contract(env):
 
 def test_zero_spend_unknown_models_uncertain_cost_and_shared_run_key(tmp_path, monkeypatch):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     cfg.spend_pacing = False
     midnight = NOW.replace(hour=0)
     ai_yield.start(db, cfg, midnight, "shared")
@@ -411,7 +376,7 @@ def test_zero_spend_unknown_models_uncertain_cost_and_shared_run_key(tmp_path, m
 def test_utc_boundaries_and_read_only_old_snapshots(tmp_path):
     path = tmp_path / "state.db"
     db = DB(path)
-    cfg = _cfg()
+    cfg = load_config()
     midnight = NOW.replace(hour=0)
     ai_yield.start(db, cfg, midnight - timedelta(days=8), "first")
     for offset in (-1, 0):
@@ -433,7 +398,7 @@ def test_utc_boundaries_and_read_only_old_snapshots(tmp_path):
 
 def test_bounded_observations_keep_live_identity_dedupe_and_miss_memory(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     ai_yield.start(db, cfg, NOW, "run")
     key = ingest(db, cfg, "Widget", 20, NOW)
     ai_yield.record_public(db, cfg, NOW, "run", [key])
@@ -471,7 +436,7 @@ def complete_sample(db, cfg, *, candidates=210, sites=3):
     "failed_run", "pending_run", "partial_start", "policy_changed", "replay_missing", "mode_on", "none"])
 def test_readiness_requires_all_rollout_evidence(tmp_path, change):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     start, end = complete_sample(db, cfg, candidates=199 if change == "small" else 210,
                                   sites=2 if change == "two_sites" else 3)
     if change in ("miss", "unevaluated"):
@@ -500,7 +465,7 @@ def test_readiness_requires_all_rollout_evidence(tmp_path, change):
 
 def test_feed_copies_do_not_meet_the_readiness_sample_and_same_site_is_not_independent(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     start, end = complete_sample(db, cfg)
     db.conn.execute("UPDATE ai_prefilter_posts SET text_fingerprint='same-text'")
     result = ai_yield.readiness(db, cfg, end)
@@ -514,7 +479,7 @@ def test_feed_copies_do_not_meet_the_readiness_sample_and_same_site_is_not_indep
 
 def test_failed_then_successful_shared_run_does_not_erase_the_gap(tmp_path):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     start, end = complete_sample(db, cfg)
     ai_yield.finish(db, cfg, start, "hour0", complete=False)
     ai_yield.start(db, cfg, start + timedelta(minutes=10), "hour0")
@@ -526,7 +491,7 @@ def test_failed_then_successful_shared_run_does_not_erase_the_gap(tmp_path):
 
 def test_growth_report_private_metrics_and_unavailable_history(tmp_path, monkeypatch, caplog):
     db = DB(tmp_path / "state.db")
-    cfg = _cfg()
+    cfg = load_config()
     start, end = complete_sample(db, cfg)
     key = ingest(db, cfg, "Widget", 20, end - timedelta(seconds=1))
     ai_yield.record_public(db, cfg, end - timedelta(seconds=1), "last", [key])
