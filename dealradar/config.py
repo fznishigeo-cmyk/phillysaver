@@ -341,6 +341,7 @@ class AppConfig:
     keepa_recheck_top_h: float = 0.0
     # Fallback kill tolerance when the paid record cannot re-price a deal.
     keepa_recheck_tolerance_pct: float = 10.0
+    keepa_buybox_rule: str = "off"  # off | shadow | on (publication gate only)
     keepa_reprice_min_pct: float = 1.0
     keepa_recheck_top_n: int = 200
     keepa_recheck_wall_n: int = 300
@@ -752,6 +753,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "used_scan_budget_share", default=cfg.keepa_used_scan_budget_share))))
     cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
         "keepa", "recheck_tolerance_pct", default=cfg.keepa_recheck_tolerance_pct)))
+    buybox = g("keepa", "buybox_rule", default=cfg.keepa_buybox_rule)
+    cfg.keepa_buybox_rule = ("on" if buybox else "off") if isinstance(buybox, bool) else str(buybox)
+    if cfg.keepa_buybox_rule not in {"off", "shadow", "on"}:
+        raise ValueError("keepa.buybox_rule must be off, shadow, or on")
     for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h",
                  "show_max_unconfirmed_h", "show_max_unconfirmed_used_h"):
         attr = "keepa_" + name

@@ -1,0 +1,27 @@
+name: Keepa Buy Box probe (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install dealradar
+        run: pip install -e .
+      - name: Restore read-only state snapshot
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+        run: bash scripts/restore_state.sh
+      - name: Measure Buy Box gaps (one request, at most 90 of 100 tokens)
+        env:
+          KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
+        run: python scripts/keepa_buybox_probe.py

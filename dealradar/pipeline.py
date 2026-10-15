@@ -1200,6 +1200,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     from . import rank
     from .keepa_rechecks import History, Schedule
+    from . import buybox
     from .dedupe import _DEAL_FIELDS, reprice_existing
     from .fetch.keepa import reprice_post
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
@@ -1217,6 +1218,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
              "used_checked": 0, "used_skipped_budget": 0, "used_off_wall": 0,
              "drift": {"within_1pct": 0, "higher_1_5pct": 0, "higher_over_5pct": 0,
                        "lower": 0, "promo_hidden": 0, "repriced": 0}, "planned": {}, "done": {}}
+    stats["price_source"] = buybox.empty_summary()
 
     def remembered(name):
         try:
@@ -1714,6 +1716,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                                  or now - observed > timedelta(hours=hide))
                 if regressed:
                     verdict = None  # never replace newer paid/feed evidence with older data
+                if product is not None:
+                    buybox.measure(stats["price_source"], original, product, verdict)
                 if product is not None and not is_used_deal(deal) and not regressed:
                     live_price = _live_new_price(product)
                     shown = deal.get("final_price")
@@ -1729,6 +1733,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     if post is not None and reprice_existing(db, deal, post, cfg, now, observed_at=observed):
                         stats["drift"]["repriced"] += 1
                         verdict = True  # a moved but corrected price is live, never gone
+                if product is not None and not regressed and buybox.eligible(deal):
+                    buybox.remember(deal, product, observed, now=now)
                 apply(deal, verdict, observed,
                       had_photo=deal["dedupe_key"] not in photo_less,
                       answered=deal["dedupe_key"] in verdicts)
@@ -2451,6 +2457,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        from . import buybox
+        summary["price_source"] = summary["price_recheck"].get("price_source", buybox.empty_summary())
+        summary["price_source"]["buybox_rule"] = buybox.shadow_summary(
+            db, cfg, now, site_res["public_deals"])
         summary["non_amazon_freshness"] = freshness.record_snapshot(
             db, cfg, now, before_freshness, site_res["public_deals"], source_checks, before_scope)
         summary["unconfirmed_label"] = site_res["unconfirmed_label"]

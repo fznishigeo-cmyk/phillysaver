@@ -399,6 +399,10 @@ def price_unconfirmed(deal: dict[str, Any], cfg, now: datetime) -> bool:
     """Hide stale Amazon offers; never-read posts get only the initial grace."""
     if not is_amazon_deal(deal):
         return False
+    if cfg.keepa_buybox_rule == "on":
+        from .buybox import would_unconfirm
+        if would_unconfirm(deal, now):
+            return True
     at = price_confirmed_at(deal) or parse_iso(deal.get("first_seen_at") or "")
     hours = (cfg.keepa_show_max_unconfirmed_used_h if is_used_deal(deal)
              else cfg.keepa_show_max_unconfirmed_h)

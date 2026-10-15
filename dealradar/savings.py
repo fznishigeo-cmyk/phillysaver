@@ -61,6 +61,11 @@ def clears_reference_floor(final: float, reference: float, min_pct: float) -> bo
     return reference > 0 and final <= reference * max(0.0, 1 - min_pct / 100) + 1e-9
 
 
+def exceeds_price_tolerance(price: float, final: float, tolerance_pct: float = 10) -> bool:
+    """A higher click price, with the existing one-cent rounding allowance."""
+    return price > final * (1 + tolerance_pct / 100) + 0.01 + 1e-9
+
+
 def comparable_prices(price: float, other: float, minimum: float, maximum: float) -> bool:
     """Reject extreme ratios in either direction; zero only compares to zero."""
     if price == 0 or other == 0:

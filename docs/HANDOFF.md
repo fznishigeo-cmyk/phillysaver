@@ -193,6 +193,30 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Buy Box gap (Codex task 108, 2026-10-15; merged, SHADOW):**
+  `price_source` in run summaries counts AMAZON/NEW confirmations (lowest
+  slot, ties to AMAZON), Amazon prices above final × 1.10 + $0.01 and the
+  five largest dollar gaps, before existing repricing. Its `buybox_rule`
+  block counts currently public deals that `would_label`/`would_hide`.
+  `keepa.buybox_rule: shadow` preserves all published bytes; flip to `on`
+  for existing unconfirmed label/hide paths, or `off` to disable the rule
+  and forecast. Measurement stays on; regular requests cost no extra tokens.
+  Promo prices compare to final too; used/non-Amazon/death rules stay intact.
+  Run **Keepa Buy Box probe (read-only)** (`keepa-buybox-probe.yml`, manual):
+  read-only restored state, public picks then wall, ≤30 distinct ASINs, one
+  request, ≤90 of the 100-token ceiling; no retries/redirects/state save.
+  Read `tokensConsumed`/`tokensLeft`, nested within-2%/within-10%, above-10%,
+  missing counts and ≤10 examples. Lower prices count as acceptable, with
+  a one-cent allowance. [buybox=1](https://keepa.com/api-docs/product.html#buybox)
+  exposes cached data, **not a fresh offer scan**; live measurements remain.
+  **39 new / 119 final regression checks pass**, including four byte trees,
+  mocked probe, stale-data guards and reruns. Required `.venv/bin/python -m
+  pytest -q -n 3 -p no:cacheprovider`: **3,939 passed, 9 failed** (20m49s).
+  Two fixtures loaded before correction now pass in that final regression;
+  the remaining seven Stripe localhost-socket failures reproduce on untouched
+  HEAD (`tests/test_workflows.py`, yearly-price change0–5 and no-price/no-key,
+  `Operation not permitted`). Review, live probe and those checks outside the
+  sandbox remain. No commit/push; shared Git metadata is read-only.
 - **RSS feed trimmed (2026-10-15, operator chose "trim"):** `traffic.feed_max_items: 20`,
   `traffic.feed_details: false` — items keep name, price, condition, source credit and the
   link to our deal page; codes, steps and checkout notes stay on our pages. Byte pins set

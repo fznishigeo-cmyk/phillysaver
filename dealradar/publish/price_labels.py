@@ -55,7 +55,9 @@ def push_excluded(deal, cfg, now):
     # Raw alert candidates have no display marker. Even those past the outer
     # limit must stay out of pushes while the display exception is enabled.
     from ..non_amazon_freshness import promotion_excluded
+    from ..buybox import would_unconfirm
     return bool(promotion_excluded(deal, cfg, now) or deal.get("price_unconfirmed") or
+                (cfg.keepa_buybox_rule == "on" and would_unconfirm(deal, now)) or
                 (cfg.unconfirmed_label_enabled and price_unconfirmed(deal, cfg, now)))
 
 
