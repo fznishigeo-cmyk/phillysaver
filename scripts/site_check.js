@@ -387,6 +387,15 @@ async function walk(page, doc, device) {
     photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
   say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);
+  // Which stores earn us nothing (operator, 2026-10-15: "which websites am i
+  // still not earning a commission on?"). A report, never a failure.
+  const unpaid = alive.filter((d) => !d.earns);
+  if (unpaid.length) {
+    say(`\n### Not earning (${unpaid.length} of ${alive.length} live)`);
+    say(`by store: ${top(unpaid, (d) => d.store, 25)}`);
+    say(`by link host: ${top(unpaid, (d) => host(d.url), 15)}`);
+    say(`open the source post for codes/steps: ${unpaid.filter((d) => d.needs_steps).length}`);
+  }
   if (none.length) {
     say(`\n### No photo (${none.length})`);
     say(`by store: ${top(none, (d) => d.store)}`);

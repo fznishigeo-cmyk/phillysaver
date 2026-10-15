@@ -87,3 +87,12 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.ok(script.includes("if (!photos.ok || [desktop, mobile].some("));
   assert.ok(script.includes('say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);'));
 }
+
+// The not-earning list is a report from public fields only.
+{
+  const fs = require("node:fs"), path = require("node:path");
+  const script = fs.readFileSync(path.join(__dirname, "../scripts/site_check.js"), "utf8");
+  const block = script.slice(script.indexOf("const unpaid = "), script.indexOf("// Category audit"));
+  assert.ok(block.includes("alive.filter((d) => !d.earns)") && block.includes("top(unpaid, (d) => d.store, 25)"));
+  assert.ok(!block.includes("exitCode") && !block.includes("check("));
+}
