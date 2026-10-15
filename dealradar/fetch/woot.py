@@ -110,11 +110,12 @@ def _num(v: Any) -> float | None:
     return None
 
 
-def _single_price(value: Any, *, high: bool) -> float | None:
+def _single_price(value: Any, *, high: bool, allow_range: bool = False) -> float | None:
     """One price from Woot's shapes (number, string, [min, max] list or
     ``{"Minimum", "Maximum"}``): the high end for a sale price, the low end
     for a list price (the conservative discount). None when missing, zero,
-    or a range whose ends differ by more than 10%."""
+    or a range whose ends differ by more than 10% (unless checking whether
+    an existing price is listed within the full range)."""
     if isinstance(value, dict):
         vals = [value.get("Minimum"), value.get("Maximum")]
     elif isinstance(value, (list, tuple)):
@@ -125,7 +126,7 @@ def _single_price(value: Any, *, high: bool) -> float | None:
     if not nums or min(nums) <= 0:
         return None
     lo, hi = min(nums), max(nums)
-    if hi > lo * MAX_RANGE_RATIO:
+    if not allow_range and hi > lo * MAX_RANGE_RATIO:
         return None
     return hi if high else lo
 
@@ -196,8 +197,15 @@ def _item_photo(item: dict) -> str:
     return ""
 
 
-def _recheck_offers(db: DB, items: list, now: datetime) -> None:
+def _recheck_offers(db: DB, items: list, now: datetime, *,
+                    cfg: AppConfig | None = None,
+                    source: SourceConfig | None = None) -> dict[str, int]:
     """Reuse the official feed; absence is never evidence an offer ended."""
+    from ..dedupe import reprice_existing
+
+    cfg = cfg if cfg is not None else AppConfig()
+    source = source or SourceConfig(name="woot", method="api", url=FEED_URL, adapter="woot")
+    stats = dict(confirmed=0, repriced=0, range_skipped=0, above_range=0)
     offers: dict[str, list[dict]] = {}
     for item in items:
         if isinstance(item, dict):
@@ -215,22 +223,40 @@ def _recheck_offers(db: DB, items: list, now: datetime) -> None:
             payload.update(death="api_ended", died_at=util.iso(now), gone_suspect_at="")
             db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
             continue
-        low = _single_price(item.get("SalePrice"), high=False)
-        if (item.get("IsSoldOut") is False and low is not None and deal.get("final_price") is not None
-                and not deal.get("gone_suspect_at") and low <= float(deal["final_price"]) + 0.01):
-            # Woot's own feed still sells it at (or below) our price, variant
-            # ranges included: fresh evidence for the non-Amazon age gate.
-            payload["woot_listed_at"] = util.iso(now)
-            db.update_deal(deal["dedupe_key"], payload=payload)
+        low = _single_price(item.get("SalePrice"), high=False, allow_range=True)
+        price = _single_price(item.get("SalePrice"), high=True, allow_range=True)
+        final = deal.get("final_price")
+        promo = _price_hidden_by_promo(deal)
+        if item.get("IsSoldOut") is False and low is not None and price is not None and final is not None:
+            if low != price:
+                stats["range_skipped"] += 1
+                stats["above_range"] += int(final > price + 0.01)
+            if not deal.get("gone_suspect_at") and not promo:
+                if low == price and abs(price - final) > max(0.01, final * 0.005) + 1e-9:
+                    # Collapse equal sale endpoints only; ListPrice goes through
+                    # the existing mapper unchanged, without the intake floors.
+                    post = WootAdapter._map_item(dict(item, SalePrice=price), source, now)
+                    if post is not None and post.structured is not None:
+                        post.structured["regular_price_basis"] = "List price on Woot"
+                    if post is not None and post.structured is not None \
+                            and reprice_existing(db, deal, post, cfg, now):
+                        stats["repriced"] += 1
+                        payload = dict(deal)
+                        final = deal["final_price"]
+                    elif price < final:
+                        continue  # an uncorrected lower price cannot refresh ours
+                if low - 0.01 <= final <= price + 0.01:
+                    payload["woot_listed_at"] = util.iso(now)
+                    db.update_deal(deal["dedupe_key"], payload=payload)
+                    stats["confirmed"] += 1
         checked = util.parse_iso(deal.get("price_rechecked_at") or "")
         every = CONFIRM_GONE_H if deal.get("gone_suspect_at") else 3.0
         if checked and (now - checked).total_seconds() < every * 3600:
             continue
-        price = _single_price(item.get("SalePrice"), high=True)
         if item.get("IsSoldOut") is True:
             verdict = False
         elif item.get("IsSoldOut") is False and price is not None and deal.get("final_price") is not None:
-            if price != _single_price(item.get("SalePrice"), high=False) or _price_hidden_by_promo(deal):
+            if price != low or promo:
                 continue  # a variant range or coupon is not proof the exact price moved
             verdict = price <= float(deal["final_price"]) + 0.01
         else:
@@ -238,6 +264,7 @@ def _recheck_offers(db: DB, items: list, now: datetime) -> None:
         outcome = live_price_reading(payload, verdict, now)
         db.update_deal(deal["dedupe_key"], payload=payload,
                        status="dead" if outcome == "dead" else None)
+    return stats
 
 
 class WootAdapter(SourceAdapter):
@@ -337,7 +364,7 @@ class WootAdapter(SourceAdapter):
             items = self._fetch_items(client, cfg, key, deadline, now)
 
         if db is not None:
-            _recheck_offers(db, items, now)
+            self.recheck_stats = _recheck_offers(db, items, now, cfg=cfg, source=source)
 
         # Score every live offer, then select used before new, deepest
         # first (feed order breaks ties), up to the per-run cap. Posts the

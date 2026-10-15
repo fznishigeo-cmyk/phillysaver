@@ -186,7 +186,8 @@ def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                now: datetime, deadline: float, fast_lane: bool,
                feed_confirmed: dict[str, set[str]] | None = None,
-               price_recheck: dict | None = None) -> tuple[list[RawPost], dict[str, str]]:
+               price_recheck: dict | None = None,
+               store_checks: dict | None = None) -> tuple[list[RawPost], dict[str, str]]:
     from .fetch.base import run_source
     from .fetch.registry import get_adapter
 
@@ -239,6 +240,8 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             adapter.recheck = recheck
         got, ok, err = run_source(source, adapter, fetcher, db, cfg, now,
                                   run_deadline=fetch_deadline)
+        if store_checks is not None and source.adapter == "woot" and hasattr(adapter, "recheck_stats"):
+            store_checks["woot"] = adapter.recheck_stats
         if hasattr(fetcher, "keepa_feed_usage") and hasattr(adapter, "token_usage"):
             fetcher.keepa_feed_usage.add(adapter.token_usage)
         if feed_confirmed is not None:
@@ -2152,7 +2155,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         feed_confirmed = {"new": set(), "used": set()}
         early_recheck = {}
         posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
-                                         deadline, fast_lane, feed_confirmed, early_recheck)
+                                         deadline, fast_lane, feed_confirmed, early_recheck,
+                                         summary["store_checks"])
         rereads, source_checks = freshness.source_rechecks(
             db, cfg, sources, posts, fetcher, now, run_key,
             deadline=min(deadline - _RESERVE_FOR_PARSE_S / 2,

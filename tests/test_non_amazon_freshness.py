@@ -460,7 +460,7 @@ def test_confirmed_gone_card_keeps_its_existing_display(db, cfg, monkeypatch):
 
 @pytest.mark.parametrize("offer,fresh_after", [
     ({"IsSoldOut": False, "SalePrice": {"Minimum": 20, "Maximum": 21.5}}, True),
-    ({"IsSoldOut": False, "SalePrice": {"Minimum": 20, "Maximum": 35}}, False),  # too wide to say
+    ({"IsSoldOut": False, "SalePrice": {"Minimum": 20, "Maximum": 35}}, True),  # listed within the range
     ({"IsSoldOut": False, "SalePrice": 20}, True),
     ({"IsSoldOut": True, "SalePrice": 20}, False),
     ({"IsSoldOut": False, "SalePrice": {"Minimum": 25, "Maximum": 35}}, False),

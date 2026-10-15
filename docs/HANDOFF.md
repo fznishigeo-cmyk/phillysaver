@@ -193,7 +193,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
-- **Durable SEO pages (Codex task 111, 2026-10-15; uncommitted):**
+- **Woot repricing (Codex task 110, 2026-10-15; merged):** single-price
+  live feed offers correct the existing row through `reprice_existing` when
+  drift exceeds max($0.01, 0.5%). Reuses Woot's mapper/ListPrice evidence and
+  savings.py; keeps credits/critic, records price history, and labels the basis
+  `List price on Woot`. **Both lower and higher prices correct, as Keepa does**;
+  an unmappable higher price retains the two-reading suspect/dead path.
+  Ranges never reprice and refresh `woot_listed_at` only within their endpoints
+  (one-cent allowance); above-range prices age out. Promo/suspect correction
+  guards and sold-out/end-date rules remain. `store_checks.woot` reports
+  confirmed (listing refreshes, including corrections), repriced, range_skipped
+  and above_range, using the existing requests only. Watch: live
+  `store_checks.woot.repriced` > 0 once, then mostly `confirmed`.
+- **Durable SEO pages (Codex task 111, 2026-10-15; merged):**
   `seo.deal_pages_indexable: false` keeps shopper pages, URLs, links and
   structured data; every deal page gets `noindex,follow` and leaves the
   sitemap. Omitted/true restores previous bytes. IndexNow receipts acknowledge

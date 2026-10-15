@@ -537,7 +537,7 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     from .parse.extractor import verify_evidence
     from .parse.schema import LLMDeal, to_extracted
     from .savings import compute_savings
-    from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal
+    from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, woot_offer_url
     from .store_prices import plain_price, store_offer
 
     current = db.get_deal(deal["dedupe_key"])
@@ -547,7 +547,13 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     retailer = bool(store and post.source_name == store + "_live"
                     and store_offer({"canonical_url": (post.structured or {}).get("product_url")})
                     == (store, identity))
-    if retailer:
+    woot = bool(post.source_name == "woot" and woot_offer_url(current)
+                and woot_offer_url(current) == woot_offer_url(
+                    {"canonical_url": (post.structured or {}).get("product_url")}))
+    if woot:
+        if _price_hidden_by_promo(current) or current.get("gone_suspect_at"):
+            return False
+    elif retailer:
         if not plain_price(current) or (store == "bestbuy" and is_used_deal(current)):
             return False
     elif not is_amazon_deal(current) or is_used_deal(current) or _price_hidden_by_promo(current):
@@ -560,7 +566,9 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     if not savings.computable or savings.final_price is None:
         return False
     shown = current.get("final_price")
-    if retailer:
+    if woot:
+        unchanged = shown == savings.final_price
+    elif retailer:
         unchanged = (shown == savings.final_price
                      and current.get("regular_price") == savings.regular_price
                      and current.get("regular_price_basis") == post.structured["regular_price_basis"])
@@ -575,9 +583,9 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     for name in ("final_price", "regular_price", "pct_at_checkout", "pct_with_rebates",
                  "abs_savings", "basis"):
         payload[name] = getattr(savings, name)
-    payload["regular_price_basis"] = post.structured["regular_price_basis"]
+    payload["regular_price_basis"] = post.structured.get("regular_price_basis", "")
     payload["audit"] = None
-    payload["audit_reference"] = {
+    payload["audit_reference"] = None if woot else {
         "asin": current.get("asin"), "price": savings.regular_price,
         "basis": payload["regular_price_basis"], "condition": "new"}
     obsolete = {"price_moved", "unbacked_price", "range", "unknown_shipping",
