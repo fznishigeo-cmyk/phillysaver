@@ -193,6 +193,30 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tiered critic ON (Codex task 107, 2026-10-15; merged after the Keepa volatility run checked out):** shipped
+  `parse.critic_tiering.enabled: true`, per operator 2026-10-14 "we can't
+  afford Sonnet"; supersedes task 106's OFF note below. Legacy fixture/setup
+  pins preserve every existing assertion and byte hash. Nine tiered sibling
+  checks plus three shipped-config e2e checks cover Haiku publication, Sonnet
+  kill review/reversal, lower spend, caps, sampling, reuse and rerun idempotency.
+  Offline 362-public-deal comparison: **$0.23814 ON vs $0.25596 OFF**; live
+  savings remain unmeasured. All **75 switch-related failures** pass on rerun.
+  Full `.venv/bin/python -m pytest -q -n 3 -p no:cacheprovider`: **3,902 passed,
+  7 failed** (18m01s). All seven Stripe localhost-socket failures reproduce on
+  untouched HEAD (`Operation not permitted`):
+  `tests/test_workflows.py::test_deploy_checks_the_yearly_price_with_stripe`
+  (change0–change5), and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  Reviewed and merged 2026-10-15 after the first live Keepa volatility run
+  (no out-of-time; top within 1h 0.975). With tiering on, rank requires a
+  settled verdict for every regular-price deal; live backlog was ~6/run.
+- **Woot coverage LIVE (2026-10-15):** probe run 38662421701 showed All caps at
+  5,000 offers and every category feed adds new ones (Home 2305, Clearance
+  1987, Tools 1131, Sports 1108, Electronics 372, Computers 343 new); page 2
+  adds nothing. Shipped `woot.named_feeds` with those six and
+  `named_feeds_rotation_h: 1`: each run reads All plus ONE category, rotating
+  hourly, inside the 1,000-request/day key quota. First live run: 6,100 raw
+  offers. Task 104 notes below are the original brief.
 - **Woot coverage (Codex task 104, 2026-10-14; uncommitted, OFF):** manual
   `woot-probe.yml` reads only the official API (10 requests, hard ceiling 15,
   1/s, header-only key). Logs status/schema/paging/counts and overlap with All;

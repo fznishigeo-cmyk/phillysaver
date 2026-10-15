@@ -153,6 +153,35 @@ def test_shadow_skips_when_full_call_will_not_fit(tmp_path, cap):
     db.close()
 
 
+@pytest.mark.parametrize("limit", [0, 1, 2])
+def test_tiered_shadow_samples_sonnet_after_haiku_with_its_own_daily_cap(tmp_path, limit):
+    import json
+
+    db = DB(tmp_path / "state.db")
+    for i in range(6):
+        insert(db, deal(str(i), asin=f"B00000000{i}", item=f"Widget {i}"))
+    cfg = load_config()
+    parser, msgs = parser_for(critic_batch_size=2,
+        critic_tiering=dict(cfg.critic_tiering, enabled=True, shadow_batches_per_day=limit),
+        keepa_recheck_top_n=0, keepa_recheck_wall_n=0)
+    stats = pipeline._run_critic(db, parser.cfg, parser, NOW)
+    assert stats["judged"] == 6 + 2 * limit and stats["calls"] == 3
+    assert stats["tiering"]["sample_judged"] == 2 * limit
+    assert stats["tiering"]["sample_disagreed"] == 0
+    assert [c["model"] for c in msgs.calls] == [cfg.critic_tiering["model"]] * 3 + [cfg.critic_model] * limit
+    real_items = {e["item"] for c in msgs.calls[:3] for e in json.loads(c["messages"][0]["content"])}
+    for sample in msgs.calls[3:]:
+        assert sample["system"] == msgs.calls[0]["system"]
+        assert {e["item"] for e in json.loads(sample["messages"][0]["content"])} <= real_items
+    assert parser.spend_by_kind["critic_shadow"] == {"calls": limit, "usd": pytest.approx(.003 * limit)}
+    assert parser.spend_usd == pytest.approx(.00045 + .003 * limit)
+    assert db.conn.execute("SELECT COUNT(*) FROM critic_tier_batches").fetchone()[0] == limit
+    assert db.critic_shadow_counts(NOW)["batches"] == 0  # legacy samples are independent
+    assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == 0
+    assert len(msgs.calls) == 3 + limit
+    db.close()
+
+
 @pytest.mark.parametrize("model", ["", "claude-haiku-5-5"])
 def test_shadow_disabled_or_invalid_reply_never_changes_real_verdict(tmp_path, model):
     class InvalidShadow(Messages):

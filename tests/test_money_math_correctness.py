@@ -32,6 +32,7 @@ def audit_cfg(tmp_path, monkeypatch):
                                 "SOVRN_SECRET_KEY", "GITHUB_STEP_SUMMARY"]:
         monkeypatch.delenv(name, raising=False)
     cfg = load_config()
+    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.site_dir = str(tmp_path / "site")
     cfg.critic_shadow_batches_per_day = 0
     cfg.feature_flags["keepa"] = False
