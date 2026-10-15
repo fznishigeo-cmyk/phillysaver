@@ -136,3 +136,47 @@ def test_noindex_failure_stays_pending_through_churn_and_database_restart(env):
         assert restored.indexnow_pages()[deal]["pending_since"] is None
     finally:
         restored.close()
+
+
+def test_site_check_visits_a_deal_page_from_deals_json_when_the_sitemap_has_none():
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("node unavailable")
+    # Step 8 discovers the page, step 13 visits it; a live sitemap no longer lists deal pages.
+    script = r'''
+const assert = require("node:assert/strict"), fs = require("node:fs");
+const source = fs.readFileSync("scripts/site_check.js", "utf8");
+const code = "let dealPage; await step(8," + source.split("await step(8,")[1].split("await step(9,")[0] +
+  source.slice(source.indexOf('  for (const [name, url] of [["deal", dealPage]'),
+    source.indexOf("  // Include errors from every interaction"));
+const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "page", "SITE", "SITE_URL", "device", "checkFooter", "doc", code);
+const sitemap = '<urlset>' + ["/deals/electronics/", "/deals/pets/", "/deals/home-kitchen/", "/best-deals-today/"]
+  .map(p => `<url><loc>https://wowpriced.com${p}</loc></url>`).join("") + '</urlset>';
+(async () => {
+  for (const deals of [[{key: "a"}, {deal_path: "/deal/first-12345678/"}, {deal_path: "/deal/second-87654321/"}], []]) {
+    const requests = [], problems = [];
+    const read = async p => {
+      const path = new URL(p, "https://wowpriced.com/").pathname;
+      requests.push(path);
+      const body = path === "/sitemap.xml" ? sitemap : path === "/robots.txt" ? "User-agent: *" :
+        '<title>Public page</title><a href="https://store.test/product">Get deal</a>';
+      return {status: 200, text: async () => body};
+    };
+    await run(async (n, name, action) => { try { await action(); } catch(e) { problems.push(e.message); } }, read,
+      (ok, reason) => { if (!ok) throw new Error(reason); },
+      {goto: async url => {const r = await read(url); return {status: () => r.status, text: r.text};},
+        screenshot: async () => {}},
+      "https://wowpriced.com/", new URL("https://wowpriced.com/"), "desktop", () => {}, {meta: {}, deals});
+    if (deals.length) {
+      assert.deepEqual(problems, []);
+      assert.equal(requests.filter(p => p === "/deal/first-12345678/").length, 1);
+      assert(!requests.includes("/deal/second-87654321/"));
+    } else {
+      assert.deepEqual(problems, ["no deal page in sitemap or deals.json", "no deal page in sitemap or deals.json"]);
+    }
+  }
+})().catch(e => { console.error(e); process.exitCode = 1; });
+'''
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run(["node", "-e", script], cwd=root, check=True, capture_output=True, text=True)

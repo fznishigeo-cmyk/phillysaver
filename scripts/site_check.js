@@ -267,9 +267,13 @@ async function walk(page, doc, device) {
     if (store) await read(store);
     const price = urls.find((u) => { try { return new URL(u).pathname === "/deals/under-25/"; } catch { return false; } });
     if (price) await read(price);
+    // With seo.deal_pages_indexable off, deal pages are noindex and left out
+    // of the sitemap: visit a live deal's page from deals.json instead.
     dealPage = urls
-      .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } });
-    if (!dealPage) problems.push("no deal page in sitemap");
+      .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } })
+      || ((doc.deals || []).find((d) => typeof d.deal_path === "string"
+        && /^\/deal\/[a-z0-9-]+\/$/.test(d.deal_path)) || {}).deal_path;
+    if (!dealPage) problems.push("no deal page in sitemap or deals.json");
     check(!problems.length, problems.join("; "));
   });
   await step(9, "Publish freshness", async () => {
@@ -310,7 +314,7 @@ async function walk(page, doc, device) {
   // with the same content checks and request/analytics guard as home.
   for (const [name, url] of [["deal", dealPage], ["best-today", "best-deals-today/"]]) {
     await step(name === "deal" ? 13 : 14, `${name} page / screenshot`, async () => {
-      check(url, "no deal page in sitemap");
+      check(url, "no deal page in sitemap or deals.json");
       check(new URL(url, SITE).origin === SITE_URL.origin, "off-site URL");
       const response = await page.goto(new URL(url, SITE).href, { waitUntil: "load", timeout: 60000 });
       await page.screenshot({ path: `shots/${device}-${name}.png`, fullPage: true });
