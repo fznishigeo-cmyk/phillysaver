@@ -428,10 +428,10 @@ def test_enabled_pipeline_summary_and_same_run_idempotency(env, capsys, monkeypa
 
 
 @pytest.mark.parametrize('support,opened,expected', [
-    (False, False, 'e0de2ee6a3ffc1bf74da510daa1b6c2d33fe5df75b35752c8f5c0d67796fa051'),
-    (False, True, '47a6eb3d8a186f1dfa5c5a8587e54575b5d2072d0d65a6db132f7be0620beff3'),
-    (True, False, '3fc83bab4cd5ce50dbd7ad12b9e92b03119c9b190438750e2c96fbc9ba0c1d8c'),
-    (True, True, '3fc83bab4cd5ce50dbd7ad12b9e92b03119c9b190438750e2c96fbc9ba0c1d8c'),
+    (False, False, 'ea3c978a46cc0d7a5f024294ba82c11978c6940af0031d261b187d474c6451d0'),
+    (False, True, 'b893f6981c0ce09c9fe94ddf551fe585f80189932c0a56ef8b955e58ae244adc'),
+    (True, False, 'e4835c67f334584d3e56cd5e0bfb1d6cb6ac902eb9ca5a31b0c2e0fcf334e9d5'),
+    (True, True, 'e4835c67f334584d3e56cd5e0bfb1d6cb6ac902eb9ca5a31b0c2e0fcf334e9d5'),
 ])
 def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, support, opened, expected):
     # Recaptured on untouched HEAD: its four old pins already fail there.

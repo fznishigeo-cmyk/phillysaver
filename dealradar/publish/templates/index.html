@@ -488,6 +488,8 @@ footer .meta{font-size:11.5px}
 .tkitem s{text-decoration:none;font:500 11px/1 var(--tk-mono);letter-spacing:.06em}
 .tkitem span{font:500 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.02em}
 .tkitem b{font:600 12.5px/1 system-ui,-apple-system,"Segoe UI",sans-serif;letter-spacing:.01em}
+a.tkitem,a.tkitem:hover{color:inherit;text-decoration:none}
+a.tkitem:hover span{text-decoration:underline;text-underline-offset:2px}
 .tksr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);margin:0;padding:0}
 .card.flash{outline:3px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){
@@ -1755,13 +1757,18 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // ---- the deal ticker ----
   // What scrolls: a member's best live deals; for everyone else the free
   // deals (name and price) dealt between locked ones (store and % only,
-  // the stub is all the page has) that invite the trial. Rebuilt only when
-  // its items change, so a re-render never restarts the scroll.
+  // the stub is all the page has) that invite the trial. The top picks lead
+  // (the front page's broad-appeal order, operator 2026-10-15), then the
+  // biggest discounts. Rebuilt only when its items change, so a re-render
+  // never restarts the scroll.
   var TICKER_MAX = 16, TICKER_PX_S = 38, tickerSig = "";
   function tickerItems() {
     var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed && !d.price_aged/*/unconfirmed*/; });
     var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
-    var open = live.filter(function (d) { return !isLocked(d); }).sort(byPct);
+    var byPick = function (a, b) {
+      return (a.pick == null) - (b.pick == null) || (a.pick || 0) - (b.pick || 0) || byPct(a, b);
+    };
+    var open = live.filter(function (d) { return !isLocked(d); }).sort(byPick);
     var shut = live.filter(isLocked).sort(byPct);
     var out = [], o = offer();
     for (var i = 0; out.length < TICKER_MAX && (i < open.length || i < shut.length); i++) {
@@ -1782,8 +1789,11 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       var plain = isLocked(d) ? (d.store || "") + " deal, members only"
         : name + (num(d.final_price) != null ? " $" + Number(d.final_price).toFixed(2) : "") +
           (d.store ? " at " + d.store : "");
+      // A free deal opens like its card's title: our deal page, else the deal link.
+      var page = typeof d.deal_path === "string" && /^\/deal\/[a-z0-9-]+-[a-f0-9]{8}\/$/.test(d.deal_path) ? d.deal_path : "";
       return { key: dealKey(d), locked: isLocked(d), tone: tone, stamp: "-" + pct + "%",
-               html: text, plain: "-" + pct + "% " + plain };
+               html: text, plain: "-" + pct + "% " + plain,
+               href: isLocked(d) ? "" : page || String(d.url || ""), out: !page };
     });
   }
   var tickerPending = false;
@@ -1801,17 +1811,22 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   }
   function paintTickerNow() {
     var box = document.getElementById("ticker"), items = tickerItems();
-    var sig = items.map(function (it) { return it.key + "|" + it.html; }).join("\n");
+    var sig = items.map(function (it) { return it.key + "|" + it.href + "|" + it.html; }).join("\n");
     if (sig === tickerSig) return;
     tickerSig = sig;
     box.classList.remove("pending");
     box.hidden = items.length < 3;
     if (box.hidden) return;
     var strip = document.getElementById("tkstrip");
+    // Links stay out of the Tab order: the strip is hidden from assistive
+    // tech (the list below reads it) and every deal is on the wall.
     var one = items.map(function (it) {
-      return '<span class="tkitem" data-k="' + esc(it.key) + '"' + (it.locked ? ' data-locked="1"' : "") +
+      var tag = it.href ? "a" : "span";
+      return "<" + tag + ' class="tkitem" data-k="' + esc(it.key) + '"' + (it.locked ? ' data-locked="1"' : "") +
+        (it.href ? ' href="' + esc(it.href) + '" tabindex="-1"' +
+          (it.out ? ' target="_blank" rel="sponsored noopener"' : "") : "") +
         '><i style="background:' + it.tone + '"></i><s>' + esc(it.stamp) + "</s><span>" + it.html +
-        "</span></span>";
+        "</span></" + tag + ">";
     }).join("");
     strip.innerHTML = one + one;  // doubled so the half-width translate wraps with no seam
     document.getElementById("tklist").innerHTML = items.map(function (it) {
@@ -2973,14 +2988,23 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--engagement-->    if (go.classList.contains("getdeal")) recordFind(d);
 <!--/engagement--><!--saved-->    savedOutbound(d);
 <!--/saved-->  });
-  // The ticker: a locked deal takes the next step; a free one scrolls to
-  // its card and flashes it. Hover or keyboard focus stops the scroll (no
-  // pause button: operator, 2026-10-13); reduced motion never scrolls it.
+  // The ticker: a locked deal takes the next step; a free one is a link that
+  // opens like its card's title (operator, 2026-10-15: "the products should
+  // be clickable"); one with no link scrolls to its card and flashes it.
+  // Hover or keyboard focus stops the scroll (no pause button: operator,
+  // 2026-10-13); reduced motion never scrolls it.
   document.getElementById("tkband").addEventListener("click", function (e) {
     var it = e.target.closest(".tkitem");
     if (!it) return;
     if (it.getAttribute("data-locked") && !isMember()) { nextStep(); return; }
     var k = it.getAttribute("data-k");
+    if (it.hasAttribute("href")) {  // the browser follows the link
+      if (it.getAttribute("target") === "_blank") {
+        var d = state.deals.filter(function (x) { return dealKey(x) === k; })[0] || {};
+        track("deal_click", {store: String(d.store || ""), category: String(d.category || ""), method: "ticker"});
+      }
+      return;
+    }
     function findCard() {
       return Array.prototype.filter.call(cardEls(), function (c) { return c.getAttribute("data-key") === k; })[0];
     }
