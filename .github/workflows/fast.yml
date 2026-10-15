@@ -32,7 +32,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 1 # state scripts explicitly fetch origin/data
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import math
+import time
 from datetime import timezone
 
 from . import legitimacy, rank
@@ -62,7 +63,7 @@ def high_visibility(db, cfg, now, stored, *, settled_only=False):
     return keys
 
 
-def protect_promoted(db, cfg, parser, now, save):
+def protect_promoted(db, cfg, parser, now, save, *, deadline=None):
     """A rejection can promote the next ordinary deal onto the visible wall.
 
     Recompute until every displayed candidate has the stronger verdict. Capped
@@ -90,6 +91,10 @@ def protect_promoted(db, cfg, parser, now, save):
                 break
             batch = promoted[start:start + cfg.critic_batch_size]
             try:
+                if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                    capped = True
+                    log.warning("tiered critic: promoted wall candidates await Sonnet time")
+                    break
                 verdicts = critique_deals(parser, batch)
             except SpendCapReached:
                 capped = True
@@ -133,7 +138,7 @@ def _claim_sample(db, batch, cfg, now):
         return db.conn.execute("INSERT OR IGNORE INTO critic_tier_batches VALUES (?,?)", (key, day)).rowcount == 1
 
 
-def run(db, cfg, parser, now, pending, high, save, *, fallback=""):
+def run(db, cfg, parser, now, pending, high, save, *, fallback="", deadline=None):
     options = cfg.critic_tiering
     size = cfg.critic_batch_size
     stats = {"haiku_approved": 0, "escalated": 0, "sample_judged": 0,
@@ -144,6 +149,9 @@ def run(db, cfg, parser, now, pending, high, save, *, fallback=""):
         for start in range(0, len(rows), size):
             batch = rows[start:start + size]
             try:
+                if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                    log.warning("tiered critic: Sonnet deadline reached; escalations remain unpublished")
+                    return
                 verdicts = critique_deals(parser, batch)
             except SpendCapReached:
                 log.warning("tiered critic: Sonnet budget exhausted; escalations remain unpublished")
@@ -159,6 +167,9 @@ def run(db, cfg, parser, now, pending, high, save, *, fallback=""):
     for start in range(0, len(pending), size):
         batch = pending[start:start + size]
         try:
+            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                log.warning("tiered critic: Haiku deadline reached; remaining deals stay unjudged")
+                break
             verdicts = critique_deals(parser, batch, model=options["model"])
         except SpendCapReached:
             log.warning("tiered critic: Haiku budget exhausted; remaining deals stay unjudged")
@@ -186,6 +197,8 @@ def run(db, cfg, parser, now, pending, high, save, *, fallback=""):
         pairs = approved[start:start + size]
         batch = [d for d, _ in pairs]
         try:
+            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                break
             verdicts = critique_deals(parser, batch, shadow=True, model=cfg.critic_model,
                 reserve_shadow=lambda: _claim_sample(db, batch, cfg, util.now_utc()), retry=False)
         except SpendCapReached:

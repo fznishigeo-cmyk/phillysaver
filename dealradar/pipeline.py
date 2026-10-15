@@ -1777,7 +1777,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
 
 def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
-                audit_stats: dict | None = None) -> dict[str, Any]:
+                audit_stats: dict | None = None, deadline: float | None = None) -> dict[str, Any]:
     """Audit publication candidates, then judge unresolved regular-price claims.
 
     Shadow preserves paid judging; enforce admits a current code basis or a
@@ -1926,8 +1926,9 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             else:
                 remaining.append(deal)
         stats["tiering"] = critic_tiering.run(
-            db, cfg, parser, now, remaining, high, save, fallback=fallback)
-        stats["tiering"]["escalated"] += critic_tiering.protect_promoted(db, cfg, parser, now, save)
+            db, cfg, parser, now, remaining, high, save, fallback=fallback, deadline=deadline)
+        stats["tiering"]["escalated"] += critic_tiering.protect_promoted(
+            db, cfg, parser, now, save, deadline=deadline)
         stats["calls"] = getattr(parser, "critic_calls", 0) - calls_before
         return stats
     size = max(1, cfg.critic_batch_size)
@@ -1954,6 +1955,10 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
                 legitimacy.record_batch(db, original, remaining, cfg, parser, now, audit_stats)
                 continue
         try:
+            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                log.warning("run deadline reached in deal critic; remaining deals "
+                            "stay unjudged and retry next run")
+                break
             verdicts = critique_deals(parser, batch)
         except SpendCapReached:
             log.warning("spend cap reached in deal critic; remaining deals "
@@ -1969,6 +1974,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
     # Every real batch takes priority over the optional experiment.
     for batch, verdicts in shadow_batches:
         try:
+            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
+                break
             shadow = critique_deals(parser, batch, shadow=True, reserve_shadow=lambda:
                 db.start_critic_shadow_batch(now, cfg.critic_shadow_batches_per_day))
         except SpendCapReached:
@@ -2067,6 +2074,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     kind = "fast" if fast_lane else "hourly"
 
     db = DB(db_path)
+    repeated_fast_run = fast_lane and db.conn.execute(
+        "SELECT 1 FROM run_stats WHERE run_key=? AND finished_at IS NOT NULL", (run_key,)).fetchone()
     db.start_run(run_key, kind, now)
     fetcher = PoliteFetcher(db, cfg, transport=transport)
     from .keepa_budget import TokenUsage
@@ -2218,7 +2227,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                                        "allowed": allowed_today, "day_cap": day_cap,
                                        "spent": spent_today}
         parser = None
-        if remaining_today <= 0:
+        if repeated_fast_run:
+            # A bounded parse leaves posts pending. Replaying this key must
+            # not admit another chunk; both reads and verdicts retry next key.
+            log.info("fast-lane run already finished; deferred parsing and judging wait for the next run key")
+        elif remaining_today <= 0:
             log.warning("daily LLM spend cap ($%.2f) exhausted; parse skipped "
                         "this run (posts stay unrecorded and retry next run)",
                         day_cap)
@@ -2238,9 +2251,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             parser.run_cap_usd = run_cap * (1 - cfg.critic_reserve_share)
         # Parse stops _RESERVE_FOR_TAIL_S early: the critic, price re-checks,
         # and publishing must still run inside the budget on heavy runs.
+        parse_stop = deadline - _RESERVE_FOR_TAIL_S
+        if fast_lane:
+            parse_stop = min(parse_stop, time.monotonic() + cfg.fast_lane_parse_budget_s)
         pairs, pstats = _parse_new_posts(
             parse_posts, parser, cfg, now, tz_by_source,
-            deadline - _RESERVE_FOR_TAIL_S, db=db)
+            parse_stop, db=db)
         if cfg.intake_mode == "on":
             pstats["post_counts"] = {**candidate_counts, **pstats.get("post_counts", {})}
             selected = {p.content_hash for p in parse_posts}
@@ -2347,7 +2363,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         if parser is not None:
             parser.run_cap_usd = run_cap
         summary["audit"] = {}
-        summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"])
+        summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"],
+            deadline=deadline - _RESERVE_FOR_TAIL_S / 2 if fast_lane else None)
 
         if fast_lane:
             _links_from_posts(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,

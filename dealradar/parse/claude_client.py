@@ -383,8 +383,8 @@ class ClaudeParser:
         """Run one API call with the spend-cap gate and one transport retry.
 
         Returns the response, or None when the call failed and the post should
-        be skipped. 429/5xx/connection errors get exactly one retry after an
-        injectable 2 s sleep. anthropic.BadRequestError and AttributeError
+        be skipped. Timeouts skip immediately; other 429/5xx/connection errors
+        get one retry after an injectable 2 s sleep. BadRequestError and AttributeError
         propagate so the caller can fall back from messages.parse.
         SpendCapReached always propagates.
         """
@@ -396,8 +396,11 @@ class ClaudeParser:
                 self._settle(reservation, kwargs, getattr(e, "response", None) or e,
                              kind=kind, source_name=source_name, released=True)
                 raise
-            except anthropic.APIConnectionError as e:
+            except anthropic.APITimeoutError as e:
                 err: Exception = e
+                retryable = False
+            except anthropic.APIConnectionError as e:
+                err = e
                 retryable = True
             except anthropic.APIStatusError as e:
                 err = e
@@ -608,8 +611,10 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
     model = model or (cfg.critic_shadow_model if shadow else cfg.critic_model)
     if not model:
         return opinions
+    tokens_per_deal = (cfg.critic_tiering["max_tokens_per_deal"]
+                      if cfg.critic_tiering["enabled"] and model == cfg.critic_tiering["model"] else 80)
     kwargs = dict(
-            model=model, max_tokens=100 + 80 * len(entries),
+            model=model, max_tokens=100 + tokens_per_deal * len(entries),
             system=_cached_system(CRITIC_SYSTEM_PROMPT + (
                 "\nJudge each indexed deal independently using all the rules above. "
                 "Return verdicts with their original index. Each reason must be "

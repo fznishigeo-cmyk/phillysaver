@@ -280,6 +280,8 @@ def test_fast_shape() -> None:
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     job = single_job(doc)
     assert job["timeout-minutes"] == 12
+    checkout = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["fetch-depth"] == 1
 
     runs = run_commands(doc)
     assert any(r.strip() == "python -m dealradar run --fast-lane" for r in runs)
@@ -860,6 +862,35 @@ def test_restore_state_decrypts(repo: Path) -> None:
     res = run_script(repo, RESTORE, key=KEY)
     assert res.returncode == 0, res.stderr + res.stdout
     assert (repo / "state.db").read_bytes() == SQLITE_V1
+
+
+def test_shallow_fast_checkout_restores_and_saves_the_data_branch(repo: Path, tmp_path: Path) -> None:
+    # History on either branch is unnecessary: the scripts explicitly fetch data.
+    (repo / "state.db").write_bytes(SQLITE_V1)
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "state.db").write_bytes(SQLITE_V2)
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "hello.txt").write_text("second code commit\n")
+    _git(repo, "commit", "-am", "second code commit")
+    _git(repo, "push", "origin", "main")
+    shallow = tmp_path / "shallow"
+    _git(tmp_path, "clone", "--depth=1", "--single-branch", "--branch=main",
+         (tmp_path / "origin.git").as_uri(), str(shallow))
+    assert _git(shallow, "rev-parse", "--is-shallow-repository") == "true"
+    assert _git(shallow, "rev-list", "--count", "HEAD") == "1"
+    result = run_script(shallow, RESTORE, key=KEY)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert (shallow / "state.db").read_bytes() == SQLITE_V2
+    assert _git(shallow, "rev-list", "--count", "origin/data") == "1"
+    (shallow / "state.db").write_bytes(SQLITE_V1)
+    result = run_script(shallow, key=KEY)
+    assert result.returncode == 0, result.stderr + result.stdout
+    (shallow / "state.db").unlink()
+    assert run_script(shallow, RESTORE, key=KEY).returncode == 0
+    assert (shallow / "state.db").read_bytes() == SQLITE_V1
+    assert _git(shallow, "rev-list", "--count", "main") == "1"
+    result = run_script(shallow, key=KEY)
+    assert result.returncode == 0 and "no-op" in result.stdout
 
 
 @pytest.mark.parametrize("key", [None, "", "the wrong key"])

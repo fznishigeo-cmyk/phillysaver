@@ -17,7 +17,12 @@ REPO_DIR="$(git rev-parse --show-toplevel)"
 log() { printf '[restore_state] %s\n' "$*"; }
 
 if git -C "$REPO_DIR" ls-remote --exit-code --heads origin refs/heads/data >/dev/null; then
-  git -C "$REPO_DIR" fetch origin refs/heads/data:refs/remotes/origin/data
+  if [[ "$(git -C "$REPO_DIR" rev-parse --is-shallow-repository)" == true ]]; then
+    # A depth-1 tip cannot prove ancestry; refresh only this remote state ref.
+    git -C "$REPO_DIR" fetch --depth=1 origin +refs/heads/data:refs/remotes/origin/data
+  else
+    git -C "$REPO_DIR" fetch origin refs/heads/data:refs/remotes/origin/data
+  fi
 else
   remote_status=$?
   if [[ "$remote_status" -ne 2 ]] || git -C "$REPO_DIR" rev-parse --verify --quiet origin/data >/dev/null; then

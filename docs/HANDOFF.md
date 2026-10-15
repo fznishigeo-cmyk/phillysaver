@@ -193,6 +193,42 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Fast-lane time budget (Codex task 109, 2026-10-15; merged with review fixes, tiering OFF):**
+  `parse.fast_lane_parse_budget_s: 150` bounds parsing from its start, also
+  respecting the existing tail reserve. Batches leave room for two request
+  timeouts plus the 2 s transport backoff. Anthropic timeouts are not retried
+  (second opinions unchanged); a failed read is still recorded as handled (as before), so a post that always times out cannot eat every run's budget. Other
+  connection errors retain their retry and uncertain charges retain their
+  full reserved cost. Fast-lane judging, Sonnet escalation/fallback/sampling
+  and promoted-wall protection share the existing deadline minus 45 s, with
+  the same request headroom; unfinished tiered deals remain pending/unpublished.
+  `parse.critic_tiering.max_tokens_per_deal: 160` enlarges only enabled-tier
+  model output; Sonnet and tiering-off requests retain their previous bytes.
+  A repeated finished fast-lane key does not start fresh parsing/judging;
+  deferred work resumes on the next key. Hourly scheduling stays unchanged.
+  Fast checkout is depth 1; restore explicitly fetches only the current data
+  snapshot for shallow checkouts. Full hourly checkout/restore is unchanged;
+  encrypted restore/save/no-op works against a local shallow Git fixture.
+  **151 focused checks pass**, including cached-read shadow safety and the
+  tiering-off spend/verdict/site byte pin; the shallow-state guard also passes.
+  The timing replay uses 150 new posts plus a 150-deal critic
+  backlog, an eight-minute run budget, one extraction worker and one-deal
+  critic batches: 6 s extracts, every third extract timing out after 20 s,
+  3 s critic calls. It finishes within **450 fake seconds**, stops parse on
+  its 150 s budget and critic on its deadline, keeps pending deals off the
+  site, adds no rows/spend on the same key and resumes on the next key.
+  Required `.venv/bin/python -m pytest -q -n 3 -p no:cacheprovider`:
+  **3,924 passed, 7 failed** (15m47s). All seven fail on untouched HEAD too:
+  Stripe localhost socket creation is blocked (`Operation not permitted`),
+  `tests/test_workflows.py` yearly-price change0–5 and no-price/no-key.
+  Those checks outside this sandbox and review remain before merging.
+  **Before re-enabling tiering:** keep `enabled: false` through review, then
+  check one controlled live tiering-on fast-lane run/replay before leaving
+  the switch on: the pipeline's **"done in" must be under
+  ~480 s**, with state commit, Pages deploy and IndexNow finishing inside
+  the 12-minute job. The shipped 600 s overall budget and hourly behavior
+  were not changed; the offline timing fixture is not a live-runtime claim.
+  No commit/push; scratch logs are not part of the change.
 - **Buy Box gap (Codex task 108, 2026-10-15; merged, SHADOW):**
   `price_source` in run summaries counts AMAZON/NEW confirmations (lowest
   slot, ties to AMAZON), Amazon prices above final × 1.10 + $0.01 and the

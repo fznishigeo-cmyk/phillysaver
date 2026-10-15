@@ -50,6 +50,7 @@ parse:
   # regardless of model, so one-at-a-time capped a run at ~27 posts; a pool
   # of 6 lifts that toward ~150 per run. Spend caps still bound the total.
   concurrency: 6
+  fast_lane_parse_budget_s: 150       # leave fast-lane time for judging and deploy
   # Observe simple, plainly below-floor price pairs before enabling any skips.
   prefilter_below_floor: shadow       # off | shadow | on
   # Evidence for a later manual activation. Gaps longer than 90 minutes
@@ -80,6 +81,7 @@ parse:
   critic_tiering:
     enabled: false
     model: "claude-haiku-5-5"
+    max_tokens_per_deal: 160        # Haiku needs more output room; Sonnet stays unchanged
     min_confidence: 0.8
     high_price_usd: 250
     shadow_batches_per_day: 2       # Sonnet samples ordinary Haiku approvals

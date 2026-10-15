@@ -120,6 +120,7 @@ class AppConfig:
     # Extraction calls in flight at once. Parse throughput is bound by API
     # round-trip time, not tokens; a small pool multiplies posts-per-run.
     parse_concurrency: int = 1
+    fast_lane_parse_budget_s: float = 150.0
     prefilter_below_floor: str = "off"  # off | shadow | on
     prefilter_complete_days: int = 7
     prefilter_min_candidates: int = 200
@@ -137,6 +138,7 @@ class AppConfig:
     critic_shadow_batches_per_day: int = 12
     critic_tiering: dict = field(default_factory=lambda: {
         "enabled": False, "model": "claude-haiku-5-5", "min_confidence": 0.8,
+        "max_tokens_per_deal": 160,
         "high_price_usd": 250.0, "shadow_batches_per_day": 2,
         "window_deals": 32, "min_judged_deals": 16, "max_disagreement": 0.10,
         "second_opinion_calls_per_day": 12, "second_opinion_yield_floor": 0.10,
@@ -442,6 +444,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.retries_on_invalid_json = int(g("parse", "retries_on_invalid_json", default=cfg.retries_on_invalid_json))
     cfg.parse_structured_output = bool(g("parse", "structured_output", default=cfg.parse_structured_output))
     cfg.parse_concurrency = max(1, int(g("parse", "concurrency", default=cfg.parse_concurrency)))
+    cfg.fast_lane_parse_budget_s = float(g(
+        "parse", "fast_lane_parse_budget_s", default=cfg.fast_lane_parse_budget_s))
+    if not 0 < cfg.fast_lane_parse_budget_s < float("inf"):
+        raise ValueError("parse.fast_lane_parse_budget_s must be positive and finite")
     prefilter = g("parse", "prefilter_below_floor", default=cfg.prefilter_below_floor)
     # YAML 1.1 reads unquoted on/off as booleans.
     if isinstance(prefilter, bool):
@@ -480,7 +486,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     tier["high_price_usd"] = float(tier["high_price_usd"])
     if not 0 < tier["high_price_usd"] < float("inf"):
         raise ValueError("critic_tiering.high_price_usd must be positive and finite")
-    for name in ("shadow_batches_per_day", "window_deals", "min_judged_deals",
+    for name in ("max_tokens_per_deal", "shadow_batches_per_day", "window_deals", "min_judged_deals",
                  "second_opinion_calls_per_day", "second_opinion_min_calls", "second_opinion_window_days"):
         tier[name] = int(tier[name])
         if tier[name] < (0 if name.endswith("per_day") else 1):

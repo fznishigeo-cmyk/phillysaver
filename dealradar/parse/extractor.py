@@ -573,7 +573,7 @@ def parse_posts(
     reads: dict[str, Future | tuple[list, bool, bool]] = {}
     with ThreadPoolExecutor(max_workers=workers) as pool:
         while idx < len(posts) and not stats["aborted_spend_cap"]:
-            if deadline is not None and time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
                 log.warning("run deadline reached: stopping parse with %d posts left"
                             " (they stay unrecorded and retry next run)",
                             len(posts) - len(stats["processed_hashes"]))
