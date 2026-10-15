@@ -193,6 +193,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tiered critic ON again (2026-10-15, operator: "you need to spend less
+  per deal" under the $10/day hard cap):** `parse.critic_tiering.enabled:
+  true` (Haiku first; Sonnet for kills, doubt and high prices). The first try
+  (b20d1e1) was reverted because two fast-lane runs took 11+ min; since then
+  task 109 bounds fast-lane parsing (150 s) and judging (deadline minus
+  45 s). Test pins from b20d1e1 are restored (legacy pipeline fixtures keep it
+  off; `tests/test_e2e_tiering.py` runs the shipped config). **Watch the next
+  fast-lane runs:** pipeline "done in" must stay under ~480 s with deploy and
+  IndexNow inside the 12-min job, and the unpublished tiered backlog small
+  (`critic.tiering` in the run summary). If not, set `enabled: false`.
+  Why it matters (2026-10-15 10:24 NY, ai_usage_day): Sonnet second
+  opinions were $2.46 of $4.34 spent (48 calls) plus $0.84 Sonnet calls
+  billed at worst case; Haiku extraction of 354 posts was $0.63. Tiering
+  caps second opinions at 12/day and moves cold sources to Haiku, so the
+  paced budget reaches more posts (hourly runs were aborting parse on the
+  spend cap with ~415 posts held back, eDealinfo's 30 included).
 - **Private accuracy scoreboard (Codex task 117, 2026-10-15; merged):**
   paid Keepa/Woot/Best Buy/eBay readings compare with a frozen public price,
   before corrections; private rows retain 35 days and dedupe run/cache repeats.

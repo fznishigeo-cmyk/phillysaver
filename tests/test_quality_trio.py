@@ -77,6 +77,7 @@ class _FakeClient:
 
 def _cfg(**over) -> AppConfig:
     cfg = load_config()
+    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.critic_enabled = True
     cfg.critic_model = "claude-sonnet-5-5"
     cfg.critic_shadow_batches_per_day = 0  # isolate the real critic
@@ -193,6 +194,24 @@ class TestRunCritic:
         assert pipeline._run_critic(db, cfg, parser, NOW) == {"judged": 0, "suspect": 0,
                        "reused": 0, "calls": 0}
         assert msgs.calls == []
+        db.close()
+
+    def test_tiered_ordinary_verdict_uses_haiku_and_is_not_rejudged(self, tmp_path):
+        db = self._db_with_deal(tmp_path)
+        cfg = _cfg(keepa_recheck_top_n=0, keepa_recheck_wall_n=0)
+        cfg.critic_tiering.update(enabled=True, shadow_batches_per_day=0)
+        msgs = _CriticMessages(True)
+        parser = ClaudeParser(cfg, client=_FakeClient(msgs))
+        first = pipeline._run_critic(db, cfg, parser, NOW)
+        assert first["judged"] == first["calls"] == first["tiering"]["haiku_approved"] == 1
+        row = db.get_deal("si|acme|widget")
+        assert row["critic"]["plausible"] is True
+        assert row["critic"]["model"] == cfg.critic_tiering["model"]
+        assert rank.is_publishable(row, cfg)[0]
+        assert parser.spend_by_kind["critic"] == {"calls": 1, "usd": pytest.approx(.00015)}
+        again = pipeline._run_critic(db, cfg, parser, NOW)
+        assert again["judged"] == again["calls"] == 0
+        assert len(msgs.calls) == 1 and msgs.calls[0]["model"] == cfg.critic_tiering["model"]
         db.close()
 
     def test_no_parser_or_disabled_means_noop(self, tmp_path):

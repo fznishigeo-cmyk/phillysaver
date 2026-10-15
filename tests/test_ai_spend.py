@@ -47,6 +47,7 @@ class Messages:
 
 def parser_for(messages=None, **over):
     cfg = load_config()
+    cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.critic_shadow_batches_per_day = 0  # these tests isolate the real critic
     for key, value in over.items():
         setattr(cfg, key, value)
@@ -158,6 +159,44 @@ def test_batches_caps_and_missing_verdict_retry(tmp_path):
     assert sum(d.get("critic") is None for d in db.all_deals()) == 2
     parser, _ = parser_for()
     assert pipeline._run_critic(db, parser.cfg, parser, NOW)["judged"] == 2
+    db.close()
+
+
+def test_tiered_batches_fit_more_ordinary_verdicts_in_the_same_cap(tmp_path):
+    db = DB(tmp_path / "state.db")
+    for i in range(5):
+        insert(db, deal(str(i), asin=f"B00000000{i}"))
+    cfg = load_config()
+    parser, msgs = parser_for(Messages(cost=(200000, 10000)), critic_batch_size=2,
+        critic_tiering=dict(cfg.critic_tiering, enabled=True, shadow_batches_per_day=0),
+        keepa_recheck_top_n=0, keepa_recheck_wall_n=0)
+    stats = pipeline._run_critic(db, parser.cfg, parser, NOW)
+    assert stats["judged"] == 5 and stats["calls"] == 3
+    assert stats["tiering"]["haiku_approved"] == 5
+    assert [c["model"] for c in msgs.calls] == [cfg.critic_tiering["model"]] * 3
+    assert all(d["critic"]["plausible"] for d in db.all_deals())
+    assert parser.spend_usd == pytest.approx(.075)
+    assert parser.spend_usd < parser.run_cap_usd
+    db.close()
+
+
+@pytest.mark.parametrize("wall", [0, 1])
+def test_tiered_reuse_keeps_ordinary_haiku_but_escalates_a_wall_deal(tmp_path, wall):
+    db = DB(tmp_path / "state.db")
+    cfg = load_config()
+    insert(db, deal("origin", status="dead", critic=dict(plausible=True, confidence=.9,
+        reason="OK", model=cfg.critic_tiering["model"])))
+    insert(db, deal())
+    parser, msgs = parser_for(
+        critic_tiering=dict(cfg.critic_tiering, enabled=True, shadow_batches_per_day=0),
+        keepa_recheck_top_n=0, keepa_recheck_wall_n=wall)
+    stats = pipeline._run_critic(db, parser.cfg, parser, NOW)
+    assert stats["reused"] == 1 - wall
+    assert stats["judged"] == wall and stats["calls"] == 2 * wall
+    assert [c["model"] for c in msgs.calls] == ([cfg.critic_tiering["model"], cfg.critic_model] if wall else [])
+    row = db.get_deal("target")
+    assert row["critic"]["model"] == (cfg.critic_model if wall else cfg.critic_tiering["model"])
+    assert "critic_tier_pending" not in row["flags"]
     db.close()
 
 

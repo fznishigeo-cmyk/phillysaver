@@ -304,6 +304,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     # Task 102 refreshes shipped CSS/JS/version; other modes retain their pins.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     if mode == "shipped":
+        cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering
         cfg.raw["first_party_clicks"]["enabled"] = False  # pin predates the click signal switch-on
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch

@@ -79,7 +79,7 @@ parse:
   critic_shadow_batches_per_day: 12   # 0 disables comparison; never affects publishing
   # One switch restores the existing critic, shadow and second-opinion behavior.
   critic_tiering:
-    enabled: false
+    enabled: true                   # operator 2026-10-15: "spend less per deal"
     model: "claude-haiku-5-5"
     max_tokens_per_deal: 160        # Haiku needs more output room; Sonnet stays unchanged
     min_confidence: 0.8
