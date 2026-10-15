@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-14)
+# Handoff — state of wowpriced.com (updated 2026-10-15)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -213,6 +213,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `test_workflows.py` yearly-price change0–5 and no-price/no-key, `Operation
   not permitted`. Those checks outside this sandbox, review and live probe
   remain. No commit/push; shared Git metadata is read-only.
+- **eBay variations (Codex task 105, 2026-10-15; uncommitted):** a legacy
+  lookup's 400 gets one paced, capped Browse group request. Valid in-stock
+  fixed-price USD variations confirm the stored price or feed existing
+  evidence-backed repricing; unavailable groups use the two-reading death
+  path. Selected `?var=` links still skip; malformed groups have no opinion.
+  Diagnostics allow at most three integer Browse/Access error IDs, and now
+  cover malformed responses and exhausted run caps (previously silent).
+  **61 new offline checks pass**; the requested full suite
+  (`.venv/bin/python -m pytest -q -n 3 -p no:cacheprovider`) finished with
+  **3,842 passed, 7 failed**. All seven are the documented Stripe workflow
+  localhost-socket failures (`Operation not permitted`, yearly-price change0–5
+  and no-price/no-key). Those checks outside the sandbox and review/live
+  verification remain.
+  Only store_prices.py, tests and this note changed; no commit or push.
 - **Volatility batching (Codex task 101, 2026-10-14; uncommitted, OFF):**
   ranked selection fits tokens and remaining time before packing 20-offer /
   100-stats ASIN calls across labels; overdue top and discovery boundaries,

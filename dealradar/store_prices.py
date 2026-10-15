@@ -21,6 +21,7 @@ from .util import iso, parse_iso, now_utc
 log = logging.getLogger("dealradar.store_prices")
 BESTBUY_URL = "https://api.bestbuy.com/v1/products"
 EBAY_URL = "https://api.ebay.com/buy/browse/v1/item/get_item_by_legacy_id"
+EBAY_GROUP_URL = "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group"
 TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
 SECRETS = {"bestbuy": ("BESTBUY_API_KEY",),
            "ebay": ("EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET")}
@@ -77,6 +78,7 @@ class Reading:
     available: bool
     price: float | None = None
     regular: float | None = None
+    group: bool = False
 
 
 def bestbuy_reading(product: dict) -> Reading | None:
@@ -133,6 +135,50 @@ def ebay_reading(item: dict, identity: str, now: datetime) -> Reading | None:
     return Reading(True, price, regular if regular is not None and regular > price else None)
 
 
+def ebay_group_reading(body: dict, identity: str, now: datetime) -> Reading | None:
+    """A complete group proves its lowest buyable USD price, never a reference price."""
+    items = body.get("items")
+    if not isinstance(items, list):
+        return None
+    prices = []
+    for item in items:
+        if not isinstance(item, dict) or str(item.get("legacyItemId") or "") != identity:
+            return None
+        item_id = item.get("itemId")
+        if not isinstance(item_id, str) or not re.fullmatch(r"v1\|" + re.escape(identity) + r"\|\d+", item_id):
+            return None
+        raw_end = item.get("itemEndDate")
+        if raw_end is not None and (not isinstance(raw_end, str) or parse_iso(raw_end) is None):
+            return None
+        end = parse_iso(raw_end)
+        buying, price = item.get("buyingOptions"), item.get("price")
+        if not isinstance(buying, list) or not buying or any(not isinstance(b, str) for b in buying):
+            return None
+        if not isinstance(price, dict) or not isinstance(price.get("currency"), str) \
+                or not price["currency"] or _money(price.get("value")) is None:
+            return None
+        availability = item.get("estimatedAvailabilities")
+        if not isinstance(availability, list) or not availability:
+            return None
+        in_stock = False
+        for available in availability:
+            if not isinstance(available, dict):
+                return None
+            status = available.get("estimatedAvailabilityStatus")
+            quantity = available.get("estimatedAvailableQuantity")
+            if status not in (None, "IN_STOCK", "LIMITED_STOCK", "OUT_OF_STOCK") \
+                    or ("estimatedAvailableQuantity" in available
+                        and (type(quantity) is not int or quantity < 0)) \
+                    or (status is None and quantity is None):
+                return None
+            if status != "OUT_OF_STOCK" and quantity != 0:
+                in_stock = True
+        if "FIXED_PRICE" in buying and price["currency"] == "USD" \
+                and (end is None or end > now) and in_stock:
+            prices.append(_usd(price))
+    return Reading(True, min(prices), group=True) if prices else Reading(False)
+
+
 class StoreAPI:
     """One run's hard request cap, including OAuth and all retry attempts."""
 
@@ -177,16 +223,20 @@ class StoreAPI:
                 json.dumps({"run": self.run_key, "requests": self.run_requests}))
         return True
 
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, *, max_attempts=None, **kwargs):
         response = None
+        attempts = max(1, self.cfg.max_retries if max_attempts is None else max_attempts)
+        phase = "token" if url == TOKEN_URL else "group" if url == EBAY_GROUP_URL else "product"
         # httpx INFO includes the URL; httpcore DEBUG can include auth headers.
         loggers = [logging.getLogger(n) for n in ("httpx", "httpcore")]
         levels = [logger.level for logger in loggers]
         try:
             for logger in loggers:
                 logger.setLevel(logging.WARNING)
-            for attempt in range(max(1, self.cfg.max_retries)):
+            for attempt in range(attempts):
                 if self.remaining <= 0 or self.stopped:
+                    if self.remaining <= 0:
+                        self.warning("quota", "run_cap")
                     break
                 self.fetcher._check_deadline(self.deadline)
                 if not self.reserve_request():
@@ -202,21 +252,28 @@ class StoreAPI:
                 except httpx.HTTPError as exc:
                     response = None
                     log.warning("%s live check: %s", self.store, error_summary(exc))
-                    self.warning("token" if url == TOKEN_URL else "product", "transport")
-                if response is not None and response.status_code >= 400:
+                    self.warning(phase, "transport")
+                if response is not None and response.status_code >= 300:
                     code = ""
                     if url == TOKEN_URL:
                         error = self.body(response).get("error")
                         code = error if error in ("invalid_client", "invalid_scope", "invalid_request",
                                                   "unauthorized_client", "unsupported_grant_type") else "other"
-                    self.warning("token" if url == TOKEN_URL else "product", response.status_code, code)
+                    if self.store == "ebay" and response.status_code >= 400:
+                        errors = self.body(response).get("errors")
+                        ids = [str(e["errorId"]) for e in errors
+                               if isinstance(e, dict) and type(e.get("errorId")) is int
+                               and e.get("domain") in ("API_BROWSE", "ACCESS")] \
+                            if isinstance(errors, list) else []
+                        code = ":".join(([code] if code else []) + ids[:3])
+                    self.warning(phase, response.status_code, code)
                 if response is not None and response.status_code != 429 \
                         and response.status_code < 500:
                     if response.status_code in (401, 403):
                         self.token = ""
                         self.stopped = True
                     return response
-                if self.remaining and attempt + 1 < max(1, self.cfg.max_retries):
+                if self.remaining and attempt + 1 < attempts:
                     self.fetcher._backoff(attempt, response.headers.get("Retry-After")
                                          if response is not None else None, self.deadline)
             self.stopped = True  # do not hammer an unhealthy/rate-limited API
@@ -271,20 +328,34 @@ class StoreAPI:
                 return None
             self.token, self.token_expires = token, started + expires
         if self.remaining <= 0:
+            self.warning("quota", "run_cap")
             return None
+        headers = {"Authorization": "Bearer " + self.token,
+                   "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"}
         response = self.request("GET", EBAY_URL, params={"legacy_item_id": identity},
-                                headers={"Authorization": "Bearer " + self.token,
-                                         "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"})
+                                headers=headers)
         body = self.body(response)
         if response is None:
             return None
+        if response.status_code == 400:
+            response = self.request("GET", EBAY_GROUP_URL, params={"item_group_id": identity},
+                                    headers=headers, max_attempts=1)
+            if response is None or response.status_code != 200:
+                return None
+            reading = ebay_group_reading(self.body(response), identity, now)
+            if reading is None:
+                self.warning("group", 200, "invalid_response")
+            return reading
         # Browse's specific unavailable-item error; arbitrary 404s prove nothing.
         errors = body.get("errors")
         if response.status_code == 404 and isinstance(errors, list) and any(
                 isinstance(e, dict) and e.get("errorId") == 11001
                 and e.get("domain") == "API_BROWSE" for e in errors):
             return Reading(False)
-        return ebay_reading(body, identity, now) if response.status_code == 200 else None
+        reading = ebay_reading(body, identity, now) if response.status_code == 200 else None
+        if reading is None and response.status_code == 200:
+            self.warning("product", 200, "invalid_response")
+        return reading
 
 
 def plain_price(deal: dict) -> bool:
@@ -390,6 +461,7 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                             db.update_deal(deal["dedupe_key"], payload=deal)
                 try:
                     client._check_deadline(deadline)
+                    diagnostic_count = sum(api.diagnostics.values())
                     readings = api.bestbuy(batch) if store == "bestbuy" else {batch[0]: api.ebay(batch[0], now)}
                 except DeadlineExceeded:
                     break
@@ -399,11 +471,18 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                         payload = dict(deal)
                         if reading is None:
                             counts["errors"] += 1
+                            if sum(api.diagnostics.values()) == diagnostic_count:
+                                api.warning("product", "invalid_response")
+                            diagnostic_count += 1
                             payload["recheck_tried_at"] = iso(now)
                             db.update_deal(deal["dedupe_key"], payload=payload)
                             continue
                         verdict = False if not reading.available else None
-                        if reading.available and plain_price(deal):
+                        if reading.group and plain_price(deal) and reading.price <= deal["final_price"] + .01:
+                            # Group prices prove the advertised price is still attainable;
+                            # do not replace it with another size's price or add shipping twice.
+                            verdict = True
+                        elif reading.available and plain_price(deal):
                             post = reprice_post(store, reading, deal, now)
                             if post is not None:
                                 # Shipping arithmetic stays in savings.py, as at ingest.
