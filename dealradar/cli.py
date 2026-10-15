@@ -119,7 +119,7 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     from .config import load_config
     from .growth.report import run
 
-    return run(load_config(args.config), db_path=args.db)
+    return run(load_config(args.config), db_path=args.db, copy_only=args.copy_only)
 
 
 def cmd_ads_guard(args: argparse.Namespace) -> int:
@@ -243,6 +243,8 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("growth-report",
                         help="daily private growth report (operator email / Telegram admin)")
     common(sp)
+    sp.add_argument("--copy-only", action="store_true",
+                    help="save the private copy only (no email, no Telegram)")
     sp.set_defaults(fn=cmd_growth_report)
 
     sp = sub.add_parser("ads-guard", help="pause-only Google Ads spend guard (admin Telegram)")

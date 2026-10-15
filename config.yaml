@@ -737,6 +737,10 @@ growth:
   ga4_property_id: "558475393"               # numeric GA4 property ID (Admin -> Property details)
   search_console_site: "sc-domain:wowpriced.com"
   sitemap_url: ""                            # "" = https://<publish.custom_domain>/sitemap.xml
+  # Private copy of each report (operator 2026-10-15: not the Rutgers mailbox):
+  # reports/<day>.md in this PRIVATE repo, via the REPORTS_REPO_TOKEN secret
+  # (fine-grained, Contents read/write on this repo only). "" disables it.
+  reports_repo: "fznishigeo-cmyk/wowpriced-reports"
   # Pinned Graph API version (v24.0, released 2025-10; Meta keeps a version
   # about two years). Bump it when Meta announces its deprecation.
   meta_graph_version: "v24.0"

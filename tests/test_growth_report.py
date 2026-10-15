@@ -44,7 +44,7 @@ ENV_NAMES = (*GADS_ENV, "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",
              "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
              "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
              "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "TELEGRAM_CHANNEL_ID",
-             "GITHUB_STEP_SUMMARY")
+             "GITHUB_STEP_SUMMARY", "REPORTS_REPO_TOKEN")
 
 # Distinctive values, so a leak into the logs cannot be a coincidence.
 GA4_RESPONSE = {"reports": [
@@ -1613,3 +1613,68 @@ def test_newsletter_waiting_list_names_partner_sites_not_yet_mailing():
                          "  • Clark Deals: https://clarkdeals.com/",
                          "(Some sites only email weekly, so give each one 7 days.)"]
     assert report._newsletter_lines({"newsletter_arrivals": {"unavailable": "x"}}) == []
+
+
+# ------------------------------------------------------------------ private copy
+
+
+def _copy_cfg():
+    return AppConfig(contact_email="hello@wowpriced.com",
+                     raw={"growth": {"reports_repo": "owner/reports"}})
+
+
+def test_private_copy_creates_then_replaces_the_day_file(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("REPORTS_REPO_TOKEN", "github_pat_FAKE")
+    calls, files = [], {}
+
+    def handler(request):
+        calls.append(request)
+        path = request.url.path
+        if request.method == "GET":
+            return httpx.Response(200, json={"sha": "abc"}) if path in files else httpx.Response(404)
+        files[path] = json.loads(request.content)
+        return httpx.Response(200 if "sha" in files[path] else 201, json={})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    day, path = date(2026, 10, 14), "/repos/owner/reports/contents/reports/2026-10-14.md"
+    assert report.save_copy(_copy_cfg(), "Growth report for Oct 14", "line", day, client=client, pause_s=0)
+    assert base64.b64decode(files[path]["content"]).decode() == "# Growth report for Oct 14\n\nline"
+    assert "sha" not in files[path]
+    assert calls[0].headers["Authorization"] == "Bearer github_pat_FAKE"
+    assert report.save_copy(_copy_cfg(), "s", "again", day, client=client, pause_s=0)
+    assert files[path]["sha"] == "abc"  # a re-run replaces that day's copy
+    assert caplog.messages.count("reports repo: saved") == 2
+    assert not any("github_pat_FAKE" in m for m in caplog.messages)
+
+
+def test_private_copy_is_skipped_without_token_or_repo(monkeypatch):
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: pytest.fail("no request")))
+    assert not report.save_copy(_copy_cfg(), "s", "t", date(2026, 10, 14), client=client, pause_s=0)
+    monkeypatch.setenv("REPORTS_REPO_TOKEN", "github_pat_FAKE")
+    assert not report.save_copy(AppConfig(), "s", "t", date(2026, 10, 14), client=client, pause_s=0)
+
+
+def test_private_copy_failure_is_logged_never_raised(monkeypatch, caplog):
+    monkeypatch.setenv("REPORTS_REPO_TOKEN", "github_pat_FAKE")
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403)))
+    assert not report.save_copy(_copy_cfg(), "s", "t", date(2026, 10, 14), client=client, pause_s=0)
+    assert "reports repo: error HTTPStatusError 403" in caplog.messages
+    assert not any("github_pat_FAKE" in m for m in caplog.messages)
+
+
+def test_copy_only_saves_without_email_or_telegram(cfg, monkeypatch):
+    saved = []
+    monkeypatch.setattr(report, "collect", lambda *a, **k: ({}, {"ga4": "ok"}))
+    monkeypatch.setattr(report, "build_report", lambda *a: ("subject", "text"))
+    monkeypatch.setattr(report, "deliver", lambda *a, **k: pytest.fail("no delivery in copy-only"))
+    monkeypatch.setattr(report, "save_copy",
+                        lambda c, subject, text, day, client: saved.append((subject, text, day)) or True)
+    with httpx.Client() as client:
+        assert report.run(cfg, datetime(2026, 10, 15, 12, tzinfo=timezone.utc),
+                          http_client=client, copy_only=True) == 0
+    assert saved == [("subject", "text", date(2026, 10, 14))]
+
+
+def test_shipped_report_copy_goes_to_the_private_repo():
+    assert load_config().raw["growth"]["reports_repo"] == "fznishigeo-cmyk/wowpriced-reports"

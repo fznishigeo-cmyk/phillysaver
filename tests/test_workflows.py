@@ -380,18 +380,21 @@ def test_growth_report_shape() -> None:
     job = single_job(doc)
     body = "\n".join(run_commands(doc))
     assert "python -m dealradar growth-report" in body
+    copy_only = on["workflow_dispatch"]["inputs"]["copy_only"]
+    assert copy_only["type"] == "boolean" and copy_only["default"] is False
     for banned in ("commit_state", "git push", "GITHUB_STEP_SUMMARY", "echo"):
         assert banned not in body, banned
     restore = next(s for s in job["steps"] if s.get("run") == "bash scripts/restore_state.sh")
     assert restore["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
-    step = next(s for s in job["steps"] if s.get("run", "").strip() == "python -m dealradar growth-report")
+    step = next(s for s in job["steps"] if s.get("run", "").strip() == (
+        "python -m dealradar growth-report${{ inputs.copy_only && ' --copy-only' || '' }}"))
     assert set(step["env"]) == {
         "GOOGLE_SA_JSON", "META_SYSTEM_TOKEN", "STRIPE_SECRET_KEY", "REPORT_EMAIL_TO",
         "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN",
         "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",
         "CLOUDFLARE_OPS_TOKEN", "BING_WEBMASTER_API_KEY",
         "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM",
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID",
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_ADMIN_CHAT_ID", "REPORTS_REPO_TOKEN",
     }
     for name, value in step["env"].items():
         assert value == "${{ secrets.%s }}" % name

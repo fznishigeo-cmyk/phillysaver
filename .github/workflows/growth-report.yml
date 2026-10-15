@@ -10,6 +10,11 @@ on:
   schedule:
     - cron: '23 12 * * *'  # ~8:23 New York (EDT; 7:23 in winter)
   workflow_dispatch:
+    inputs:
+      copy_only:
+        description: "Save the private copy only (no email, no Telegram)"
+        type: boolean
+        default: false
 
 concurrency:
   group: growth-report
@@ -61,4 +66,5 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
-        run: python -m dealradar growth-report
+          REPORTS_REPO_TOKEN: ${{ secrets.REPORTS_REPO_TOKEN }}
+        run: python -m dealradar growth-report${{ inputs.copy_only && ' --copy-only' || '' }}

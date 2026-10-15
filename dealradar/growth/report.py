@@ -9,10 +9,12 @@ body or a token.
 
 from __future__ import annotations
 
+import base64
 import functools
 import html as html_lib
 import logging
 import re
+import time as clock
 from datetime import date, datetime, time, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -1006,8 +1008,36 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
     return configured, delivered
 
 
+def save_copy(cfg, subject: str, text: str, day: date, *, client: Any,
+              pause_s: float = 1.0) -> bool:
+    """One private file per report day (growth.reports_repo, REPORTS_REPO_TOKEN)
+    so the operator's assistant can read the report without a mailbox."""
+    repo = str((cfg.raw.get("growth") or {}).get("reports_repo") or "")
+    token = get_secret("REPORTS_REPO_TOKEN")
+    if not (repo and token):
+        return False
+    url = f"https://api.github.com/repos/{repo}/contents/reports/{day.isoformat()}.md"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+               "X-GitHub-Api-Version": "2022-11-28", "User-Agent": cfg.resolved_user_agent()}
+    body = {"message": f"Growth report {day.isoformat()}",
+            "content": base64.b64encode(f"# {subject}\n\n{text}".encode()).decode()}
+    try:
+        current = client.get(url, headers=headers)
+        if current.status_code == 200:
+            body["sha"] = current.json()["sha"]  # a re-run replaces that day's copy
+        elif current.status_code != 404:
+            current.raise_for_status()
+        clock.sleep(pause_s)  # 1 request/second to one host
+        client.put(url, headers=headers, json=body).raise_for_status()
+    except Exception as e:
+        log.warning("reports repo: error %s", _error(e))
+        return False
+    log.info("reports repo: saved")
+    return True
+
+
 def run(cfg, now: datetime | None = None, *, http_client: Any = None,
-        smtp_factory: Any = None, db_path=None) -> int:
+        smtp_factory: Any = None, db_path=None, copy_only: bool = False) -> int:
     """The exit code: 1 only when every configured section failed; a
     delivery failure is logged (channel + error class) but exits 0."""
     now = now or now_utc()
@@ -1020,7 +1050,9 @@ def run(cfg, now: datetime | None = None, *, http_client: Any = None,
             return 0
         yesterday = now.astimezone(ZoneInfo(cfg.timezone)).date() - timedelta(days=1)
         subject, text = build_report(cfg, data, status, yesterday)
-        deliver(cfg, subject, text, client=client, smtp_factory=smtp_factory)
+        if not copy_only:
+            deliver(cfg, subject, text, client=client, smtp_factory=smtp_factory)
+        save_copy(cfg, subject, text, yesterday, client=client)
     finally:
         if http_client is None:
             client.close()
