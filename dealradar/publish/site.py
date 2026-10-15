@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import amazon_as_of, click_signal, indexnow, inventory, price_labels, pwa, seo, seo_audit, traffic
+from . import amazon_as_of, click_signal, indexnow, inventory, price_labels, product_pages, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -72,6 +72,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
     html = amazon_as_of.template(html, False)
+    html = product_pages.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
     # version stamp, byte-for-byte unchanged. Standard edits still invalidate it.
@@ -826,10 +827,19 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # locked stubs and member-only deals never gain a public path.
     deal_pages = seo._deal_pages(db, cfg, now, out, teaser, deals)
     paths = deal_pages[0]
+    product_public = [d for d in teaser + spotlight + deal_pages[1] if not d.get("locked")]
+    products, product_paths, product_summary = product_pages.prepare(
+        db, cfg, now, product_public, spotlight_rows + deals)
+    product_public_keys = {d["key"] for d in product_public}
     for d in serialized + spotlight:
         path = paths.get(d["key"][:8])
         if path:
             d["deal_path"] = path
+        if d["dedupe_key"] in product_paths and d["key"] in product_public_keys:
+            d["product_path"] = product_paths[d["dedupe_key"]]
+    for d in deal_pages[1]:
+        if d["dedupe_key"] in product_paths:
+            d["product_path"] = product_paths[d["dedupe_key"]]
     open_access = is_open(cfg)
     support = bool(getattr(cfg, "support_enabled", False))
     link = support_link(getattr(cfg, "support_payment_link", ""))
@@ -847,6 +857,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
         home = amazon_as_of.template(home, False)
+        home = product_pages.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
@@ -892,6 +903,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256(site_version.encode()
             + "".join(amazon_as_of.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
             + (amazon_as_of.FOOTER + amazon_as_of.DISCLAIMER + amazon_as_of.STYLE).encode()).hexdigest()[:12]
+    if cfg.seo_product_pages_enabled:
+        site_version = hashlib.sha256((site_version + product_pages.LINK_STYLE).encode()
+            + "".join(product_pages.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -981,6 +995,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         html = checkout_prices.template(html, checkout_prices.enabled(cfg))
         html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
+        html = product_pages.template(html, cfg.seo_product_pages_enabled)
+        if cfg.seo_product_pages_enabled and name == "index.html":
+            html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
         if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and name == "index.html":
             html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
         if cfg.non_amazon_freshness_enabled and name == "index.html":
@@ -1087,6 +1104,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # sitemap and the IndexNow due-list, all from this publish's teaser.
     seo_paths, seo_wall = seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
                                      spotlight=spotlight, deal_pages=deal_pages,
+                                     products=products,
                                      run_key=(last_run or {}).get("run_key"))
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
@@ -1117,7 +1135,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
-                         excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed})
+                         excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed}
+                         | indexnow.product_exclusions(db, site_url, seo_pages))
 
     if clicks.enabled(cfg):
         try:
@@ -1163,6 +1182,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
             "checkout_price_deals": checkout_summary,
+            "product_pages": product_summary,
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
                                    "request_age": history.request_age(top_candidates),

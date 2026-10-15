@@ -199,6 +199,13 @@ class AppConfig:
     seo_deal_page_min_items: int = 1
     seo_deal_pages_max: int = 3000
     seo_deal_pages_indexable: bool = True
+    seo_product_pages_enabled: bool = False
+    seo_product_pages_min_checks: int = 6
+    seo_product_pages_min_span_days: float = 7
+    seo_product_pages_max_new_indexable_per_day: int = 50
+    seo_product_pages_max_indexable: int = 2000
+    seo_product_pages_lower_ratio: float = 0.95
+    seo_product_pages_higher_ratio: float = 1.05
     seo_store_page_min_deals: int = 15
     seo_store_pages_max: int = 12
     seo_price_page_min_deals: int = 10
@@ -612,6 +619,17 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.seo_deal_page_min_items = max(1, int(g("seo", "deal_page_min_items", default=cfg.seo_deal_page_min_items)))
     cfg.seo_deal_pages_max = max(0, int(g("seo", "deal_pages_max", default=cfg.seo_deal_pages_max)))
     cfg.seo_deal_pages_indexable = bool(g("seo", "deal_pages_indexable", default=cfg.seo_deal_pages_indexable))
+    cfg.seo_product_pages_enabled = bool(g("seo", "product_pages", "enabled", default=False))
+    for name in ("min_checks", "max_new_indexable_per_day", "max_indexable"):
+        attr = "seo_product_pages_" + name
+        setattr(cfg, attr, max(1 if name == "min_checks" else 0, int(g(
+            "seo", "product_pages", name, default=getattr(cfg, attr)))))
+    cfg.seo_product_pages_min_span_days = max(0.0, float(g(
+        "seo", "product_pages", "min_span_days", default=7)))
+    cfg.seo_product_pages_lower_ratio = max(0.0, min(1.0, float(g(
+        "seo", "product_pages", "lower_ratio", default=0.95))))
+    cfg.seo_product_pages_higher_ratio = max(1.0, float(g(
+        "seo", "product_pages", "higher_ratio", default=1.05)))
     cfg.seo_store_page_min_deals = max(1, int(g(
         "seo", "store_page_min_deals", default=cfg.seo_store_page_min_deals)))
     cfg.seo_store_pages_max = max(0, int(g("seo", "store_pages_max", default=cfg.seo_store_pages_max)))

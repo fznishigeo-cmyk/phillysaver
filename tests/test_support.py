@@ -125,7 +125,9 @@ def test_support_off_index_bytes_match_task079_baseline(tmp_path, monkeypatch, m
     # Task 079 updates shared search/recovery in all four home modes.
     # Snapshot without task 037's head-only hint or a moving version.
     monkeypatch.setattr(site, "site_template_version", lambda *args: "baseline")
-    out, doc, _, _ = render(tmp_path, AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly))
+    cfg = AppConfig(paywall_open_access=mode, paywall_yearly_price_usd=yearly)
+    cfg.seo_product_pages_enabled = False  # predates product pages
+    out, doc, _, _ = render(tmp_path, cfg)
     html = (out / "index.html").read_bytes()
     hint = b'<link rel="preconnect" href="https://m.media-amazon.com">\n'
     assert html.count(hint) == 1

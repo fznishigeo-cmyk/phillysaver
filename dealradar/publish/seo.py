@@ -3,8 +3,8 @@ Best deals today, the 404 page, Cloudflare's _headers, sitemap and IndexNow.
 
 Live deal facts come from the teaser render_site already built
 (docs/paywall.md): free deals in full, locked deals only as a count and a %
-range, never a name, price, link or photo. Static HTML carries no images at
-all. Ended pages retain previously public facts until the row is deleted.
+range, never a name, price, link or photo. Permanent product pages reuse
+allowed product photos. Ended deal pages retain previously public facts until the row is deleted.
 Hub stats only read; stable deal paths and fact fingerprints keep meta keys; IndexNow
 receipts live in their own tables (publish/indexnow.py).
 """
@@ -34,7 +34,7 @@ from ..util import iso, parse_iso
 from ..rank import pick_order
 from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
-from . import amazon_as_of, inventory, seo_audit, traffic
+from . import amazon_as_of, inventory, product_pages, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -239,6 +239,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
                f'{(("<br>" if steps else "") + "Code " + codes) if codes else ""}</details>')
     actions = ((f'<a class="getdeal" href="{e(url)}" target="_blank" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
                 if url and not dead else "") + f'<span class="credit">{credits}</span>')
+    actions += product_pages.history_link(d.get("product_path"))
     return (f'<article class="card{" gone" if dead else ""}{" spotlight" if spotlight else ""}"'
             + (' role="region" aria-label="Today only deal"' if spotlight else "") + '>'
             f'<div class="media">{media}</div><div class="body">'
@@ -477,7 +478,8 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
               rows: list[dict[str, Any]], stats: dict[str, Any], indexable: bool,
               site_url: str, open_access: bool = False,
               deal_paths: dict[str, str] | None = None, now: datetime | None = None,
-              *, page_number: int = 1, page_count: int = 1, paginate: bool = False) -> str:
+              *, page_number: int = 1, page_count: int = 1, paginate: bool = False,
+              product_links: str = "") -> str:
     """One hub: its copy, our 7-day numbers, the category's free deals (the
     top _HUB_MAX) and its locked count and % range."""
     free = [d for d in rows if not d.get("locked")]
@@ -511,6 +513,7 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
         breadcrumbs.append((f"Page {page_number}", path))
     if paginate:
         deals += inventory.pagination(hub_href(slug), page_number, page_count, "category")
+    deals += product_links
     return _fill(template, TITLE=escape(title), DESCRIPTION=escape(copy["description"]),
                  PAGE_TITLE=escape(title + " — wowpriced"),
                  CANONICAL=escape(site_url + path),
@@ -697,6 +700,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                     f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
     if not dead and not d.get("price_unconfirmed"):
         content += lowest_seen + also_at
+    content += product_pages.history_link(d.get("product_path"))
     content += sharing + discovery + f'<p>Browse {hub}.</p>'
     related = [] if dead else _related(d, live, group)
     if related:
@@ -783,6 +787,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
             deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]],
+            products: dict | None = None,
             run_key: str | None = None) -> tuple[list[str], str]:
     """Emit the wall, hubs and deal pages; return paths and the static wall.
 
@@ -792,6 +797,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     from .site import copy_variant, site_footer
 
     spotlight = spotlight or []
+    products = products or {}
     open_access = is_open(cfg)
     paths, deal_rows, _previous_dates = deal_pages
     from .. import clicks
@@ -800,6 +806,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         def marked(rows):
             return [dict(d, _click_key=d.get("key", "")) if not d.get("locked") else d for d in rows]
         teaser, spotlight, deal_rows = marked(teaser), marked(spotlight), marked(deal_rows)
+        products = {key: dict(p, live=dict(p["live"], _click_key=p["live"]["key"])) if p["live"] else p
+                    for key, p in products.items()}
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
@@ -823,6 +831,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                                         HUB_LINKS=_hub_links(),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
+    if cfg.seo_product_pages_enabled:
+        with (out / "_headers").open("a", encoding="utf-8") as headers:
+            headers.write("\n/p/*\n  Cache-Control: no-cache\n")
 
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     actions = (TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8")
@@ -835,6 +846,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled)
+    if cfg.seo_product_pages_enabled:
+        template = template.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
     if cfg.amazon_as_of_enabled:
         template = template.replace("</style>", amazon_as_of.STYLE + "</style>", 1)
     if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
@@ -877,6 +890,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
+    product_paths = product_pages.publish(out, cfg, now, products, template, site_url, meta["disclosure"], paths)
     best_path = "/best-deals-today/"
     best_title = "Best deals today | wowpriced"
     n = sum(d.get("status") == "alive" and not d.get("price_unconfirmed") for d in teaser)
@@ -933,7 +947,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             indexable = sum(not d.get("price_unconfirmed") for d in visible) >= floors["category"]
             html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
                              site_url, open_access, paths, now, page_number=number, page_count=count,
-                             paginate=cfg.traffic_hub_pagination_enabled)
+                             paginate=cfg.traffic_hub_pagination_enabled,
+                             product_links=product_pages.hub_links(products, group) if number == 1 else "")
             path = inventory.page_path(hub_href(slug), number)
             _write_page(out, path, html)
             if number > 1:
@@ -950,7 +965,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         (out / f"{key}.txt").write_text(key, encoding="utf-8")
     emitted = (["/" + p for p in public] + ["/welcome.html", "/404.html"]
                + [hub_href(slug) for _label, _group, slug in HUB_GROUPS]
-               + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths)
+               + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths + product_paths)
     inventory.remove_stale(out, emitted)
     product_shadow.record(db, cfg, now, shadow_run, shadow)
     return emitted, wall
@@ -990,7 +1005,9 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
         contents.update({site_url + path: _read(path) for path in emitted
                          if path.startswith("/deal/") and site_url + path not in contents
                          and (out / path.strip("/") / "index.html").exists()})
+        from .indexnow import product_exclusions
         excluded = {site_url + path for path, page in pages.items() if page.unconfirmed}
+        excluded |= product_exclusions(db, site_url, pages)
         due = indexnow_due(db, cfg, now, contents, site_dir=out, excluded=excluded)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))

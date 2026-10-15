@@ -311,6 +311,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
         cfg.front_page["appeal"]["enabled"] = False  # predates the broad-appeal switch
         cfg.front_page["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
         cfg.amazon_as_of_enabled = False  # predates the Amazon as-of switch
+        cfg.seo_product_pages_enabled = False  # predates product pages
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
                                        if k != "non_amazon_max_age_h"}  # predates the pick age
     if mode != "shipped":

@@ -94,6 +94,7 @@ def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode,
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = config(mode)
+    cfg.seo_product_pages_enabled = False  # predates product pages
     cfg.amazon_as_of_enabled = False
     out = tmp_path / "site"
     render(out, cfg)

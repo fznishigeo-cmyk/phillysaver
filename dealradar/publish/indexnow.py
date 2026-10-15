@@ -33,6 +33,7 @@ INDEXNOW_ENDPOINT = "https://api.indexnow.org/indexnow"
 KEY_RE = re.compile(r"[A-Za-z0-9-]{8,128}")
 METRICS = ("pending", "received", "key_pending", "failed", "oldest_pending_hours")
 _DEAL_NOINDEX_HASH = hashlib.sha256(b"deal_pages_indexable:false").hexdigest()
+_PRODUCT_INDEXABLE_HASH = hashlib.sha256(b"product_page:indexable").hexdigest()
 
 
 def due_list_path(site_dir: str | Path) -> Path:
@@ -77,6 +78,15 @@ def _one_time_deal(cfg, url: str) -> bool:
     return not cfg.seo_deal_pages_indexable and urlsplit(url).path.startswith("/deal/")
 
 
+def product_exclusions(db, site_url, pages):
+    """Only currently indexable permanent pages can enter a deploy's queue."""
+    indexable = {site_url + path for path, page in pages.items()
+                 if path.startswith("/p/") and page.indexable}
+    products = {url for url in db.indexnow_pages() if urlsplit(url).path.startswith("/p/")}
+    products.update(site_url + path for path in pages if path.startswith("/p/"))
+    return products - indexable
+
+
 def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
                  site_dir: str | Path | None = None, excluded: set[str] | None = None) -> list[str]:
     """Discover versions without acknowledging them. Keep failed work pending
@@ -119,7 +129,10 @@ def indexnow_due(db, cfg, now: datetime, pages: dict[str, str], *,
     previous = db.indexnow_pages()
     one_time = {}
     for url in list(versions):
-        if _one_time_deal(cfg, url):
+        if urlsplit(url).path.startswith("/p/"):
+            versions.pop(url)
+            one_time[url] = _PRODUCT_INDEXABLE_HASH
+        elif _one_time_deal(cfg, url):
             version = versions.pop(url)
             received = previous.get(url, {}).get("received_hash")
             one_time[url] = (received if received in (_DEAL_NOINDEX_HASH, "removed") else

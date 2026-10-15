@@ -18,7 +18,7 @@ from xml.etree import ElementTree as ET
 from ..util import iso, parse_iso
 
 log = logging.getLogger("dealradar.publish.seo")
-FAMILIES = ("home", "category", "store", "price", "best_today", "deal", "product_family")
+FAMILIES = ("home", "category", "store", "price", "best_today", "deal", "product_family", "product")
 _FACT_META = "seo_page_facts"
 _MAX_FACT_URLS = 50_000
 _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
@@ -30,6 +30,8 @@ def page_family(path: str) -> str:
         return "home"
     if re.fullmatch(r"/deal/[^/]+/", path):
         return "deal"
+    if re.fullmatch(r"/p/[^/]+/", path):
+        return "product"
     pagination = r"(?:page/(?:[2-9]\d*|1\d+)/)?"
     if re.fullmatch(r"/products/[^/]+/" + pagination, path):
         return "product_family"
@@ -48,7 +50,8 @@ def minimums(cfg) -> dict[str, int]:
             "store": max(1, cfg.seo_store_page_min_deals),
             "price": max(1, cfg.seo_price_page_min_deals),
             "best_today": max(1, cfg.seo_best_today_min_items), "deal": max(1, cfg.seo_deal_page_min_items),
-            "product_family": max(2, cfg.traffic_product_family_min_offers)}
+            "product_family": max(2, cfg.traffic_product_family_min_offers),
+            "product": 0}  # History pages can remain useful without a live offer.
 
 
 def _text(s: str) -> str:
@@ -186,6 +189,8 @@ class Page(HTMLParser):
     def schema_mismatch(self) -> bool:
         products = self.products()
         price = self.first(cls="detail-price")
+        if page_family(self.path) == "product":
+            return self._product_schema_mismatch(products, price)
         if self.invalid_schema or ((self.ended or self.unconfirmed) and products):
             return True
         if not products:
@@ -219,6 +224,37 @@ class Page(HTMLParser):
                     and expected_condition and offer.get("itemCondition") == "https://schema.org/" + expected_condition
                     and isinstance(offer.get("seller"), dict)
                     and _text(str(offer["seller"].get("name") or "")) == store.text().removeprefix("Store: "))
+
+    def _product_schema_mismatch(self, products, price) -> bool:
+        if self.invalid_schema or len(products) != 1 or not self.first(cls="product-detail"):
+            return True
+        product, name = products[0], self.first(tag="h1")
+        if (not name or product.get("name") != word_limit(name.text(), NAME_LIMIT)
+                or {"review", "reviews", "aggregateRating"} & set(product)):
+            return True
+        image = self.first(tag="img", scope=self.first(cls="product-detail"))
+        if product.get("image") != (image.attrs.get("src") if image else None):
+            return True
+        offer = product.get("offers")
+        available = self.first(cls="detail-availability")
+        if price is None:
+            return offer is not None or available is not None or self.first(cls="getdeal") is not None
+        amount = re.search(r"\$([\d,.]+)\s+([A-Z]{3})\b", price.text())
+        if (not isinstance(offer, dict) or not amount or not available
+                or available.text() != "Availability: Live offer"):
+            return True
+        try:
+            actual = Decimal(str(offer.get("price")))
+            same_price = actual.is_finite() and actual == Decimal(amount[1].replace(",", ""))
+        except InvalidOperation:
+            same_price = False
+        canonical = next((n.attrs.get("href") for n in self.root.nodes()
+                          if n.tag == "link" and n.attrs.get("rel") == "canonical"), None)
+        return not (same_price and offer.get("@type") == "Offer"
+                    and offer.get("priceCurrency") == amount[2]
+                    and offer.get("availability") == "https://schema.org/InStock"
+                    and offer.get("url") == canonical
+                    and set(offer) == {"@type", "price", "priceCurrency", "availability", "url"})
 
     def fingerprint(self) -> str:
         def tokens(node, *, cards=False):

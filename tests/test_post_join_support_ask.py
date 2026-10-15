@@ -39,8 +39,10 @@ def test_post_join_support_ask_behavior(tmp_path, monthly):
 @pytest.mark.parametrize("link,monthly", [("", ""), ("", MONTHLY), ("https://invalid.example/stripe", "")])
 def test_missing_support_link_preserves_every_published_byte(tmp_path, monkeypatch, link, monthly):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    out, *_ = render(tmp_path, AppConfig(support_enabled=True, support_payment_link=link,
-                                       support_monthly_link=monthly, tracking=SAMPLE), sample_deals())
+    cfg = AppConfig(support_enabled=True, support_payment_link=link,
+                    support_monthly_link=monthly, tracking=SAMPLE)
+    cfg.seo_product_pages_enabled = False  # predates product pages
+    out, *_ = render(tmp_path, cfg, sample_deals())
     # Task 079 refresh: shared home search/recovery, tracking and version.
     # The missing-link variants still contain no post-join support ask.
     assert tree_hash(out) == "123da56c689e03cc0e009b0a49063457792e274c7c87ee244e24fd13ae9c6f43"

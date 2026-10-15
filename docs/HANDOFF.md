@@ -193,6 +193,23 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Permanent product price pages (Codex task 116, 2026-10-15; merged, OFF):**
+  `seo.product_pages.enabled: false` in code and config. On: stable `/p/`
+  pages reuse exact stored ASIN/GTIN/store IDs, public deal facts and our own
+  checks only; paths and facts survive deal deletion. Six checks spanning
+  seven days plus a published deal within 90 days gate indexing, capped at
+  50 new/UTC day and 2,000 total; a 30-day hold prevents sparse-day churn.
+  Includes the chart, code verdict, allowed photo, credited deal list,
+  live-only Get deal/Offer, card/detail links and up to 12 history links per
+  category hub. Sitemap, one-time receipt-backed IndexNow, schema audit and
+  `product_pages` run counts are wired. Resumed after disk exhaustion; fixed
+  history links on quarantined variants and floating-point verdict boundaries.
+  **48 task checks pass**, including four independently verified untouched-HEAD
+  byte trees and both offline pipeline rerun modes. Final required full suite:
+  **4,236 passed, 26 failed** (21m19s); all 26 reproduce on untouched HEAD
+  (18 old byte pins, one Join-copy assertion, seven Stripe socket-permission
+  checks). **Zero new failures.** Temporary test logs/directories removed.
+  No new request/LLM path, commit or push. Review and activation remain; switch OFF.
 - **Tiered critic ON again (2026-10-15, operator: "you need to spend less
   per deal" under the $10/day hard cap):** `parse.critic_tiering.enabled:
   true` (Haiku first; Sonnet for kills, doubt and high prices). The first try

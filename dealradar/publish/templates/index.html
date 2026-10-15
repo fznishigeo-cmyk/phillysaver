@@ -1729,7 +1729,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         ">Get deal</a>"
       : "") + '<span class="credit">' + credits + "</span>";
 
-    return '<article class="card' + (d.spotlight ? " spotlight" : "") + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
+/*product-pages*/    if (typeof d.product_path === "string" && /^\/p\/[a-z0-9-]+-[a-f0-9]{16}\/$/.test(d.product_path)) {
+      actions += '<a class="product-history-link" href="' + esc(d.product_path) + '">Price history</a>';
+    }
+/*/product-pages*/    return '<article class="card' + (d.spotlight ? " spotlight" : "") + (dead ? " gone" : "") + (isNew(d) ? " isnew" : "") +
       (lit(d) ? " lit" : "") + '" data-key="' + esc(dealKey(d)) + '"' +
       (d.spotlight ? ' role="region" aria-label="Today only deal"' : '') +
       '>' +
@@ -3145,7 +3148,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
             return record(d) && typeof d.key === "string" && !!d.key && typeof d.store === "string" &&
               (d.locked === true || typeof d.item === "string") &&
               ["key", "dedupe_key", "store", "item", "brand", "url", "image_url", "category", "badge",
-               "headline", "status", "died_at", "first_seen_at", "deal_path"].every(function (k) {
+               "headline", "status", "died_at", "first_seen_at", "deal_path"/*product-pages*/, "product_path"/*/product-pages*/].every(function (k) {
                 return d[k] == null || typeof d[k] === "string";
               }) && ["final_price", "regular_price", "pct_at_checkout", "abs_savings", "age_hours", "pick", "ps"].every(function (k) {
                 return d[k] == null || (typeof d[k] === "number" && isFinite(d[k]));

@@ -93,6 +93,8 @@ def test_serialized_fields_have_consumers():
     # Worker stores/serves the full payload verbatim, without field readers.
     # Optional deal_path is attached after page selection: live titles and
     # engagement.js saveDeal consume it (test_seo_deal_pages.py checks scope).
+    # Optional product_path is also attached after selection; both card
+    # renderers link to the permanent history (test_product_price_pages.py).
     fields = {
         "dedupe_key",  # index.html dealKey fallback
         "key",  # index.html dealKey; paywall rotation and STUB_KEYS

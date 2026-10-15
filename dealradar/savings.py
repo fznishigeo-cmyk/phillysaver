@@ -22,6 +22,21 @@ from . import models
 
 logger = logging.getLogger("dealradar.savings")
 
+
+def price_verdict(current: float | None, median: float | None,
+                  lower_ratio: float = 0.95, higher_ratio: float = 1.05) -> str:
+    """Compare a live price to our median; boundary prices are about usual."""
+    if current is None or median is None or not all(
+            math.isfinite(n) and n >= 0 for n in (current, median)):
+        return ""
+    lower, higher = median * lower_ratio, median * higher_ratio
+    # Ignore floating-point noise at an exact monetary boundary.
+    if current < lower and not math.isclose(current, lower, rel_tol=1e-12):
+        return "Lower than usual"
+    if current > higher and not math.isclose(current, higher, rel_tol=1e-12):
+        return "Higher than usual"
+    return "About usual"
+
 # Rule 7: structural deal-type percentages (basis == the deal_type name).
 DEAL_TYPE_PCT: dict[str, float] = {
     "bogo": 50.0,      # buy one get one free

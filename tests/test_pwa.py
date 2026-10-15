@@ -37,6 +37,7 @@ def baseline_config(mode):
             cfg.support_enabled = True
             cfg.engagement = {"saved_deals": True, "surprise_me": True}
             cfg.tracking = {"ga4_measurement_id": "G-ABC123XYZ9"}
+    cfg.seo_product_pages_enabled = False  # predates product pages
     cfg.pwa_enabled = False
     return cfg
 

@@ -2601,6 +2601,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         if "token_plan" in summary["price_recheck"]:
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
+        summary["product_pages"] = site_res.get("product_pages", {})
         summary["checkout"] = site_res.get("checkout", {})
         summary["checkout_price_deals"] = site_res["checkout_price_deals"]
         from .publish.indexnow import metrics as indexnow_metrics

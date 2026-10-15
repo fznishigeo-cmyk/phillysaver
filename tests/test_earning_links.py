@@ -157,6 +157,7 @@ def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_a
     cfg = AppConfig(paywall_enabled=True, paywall_open_access=open_access,
                     paywall_teaser_count=1, affiliate_amazon_tag=TAG,
                     affiliate_competitor_tracker_hosts=TRACKERS)
+    cfg.seo_product_pages_enabled = False  # predates product pages
     deals = [make_deal(dedupe_key="earning", canonical_url="https://amazon.com/dp/B012345678"),
              make_deal(dedupe_key="non-earning", canonical_url="https://cc.dealsofamerica.com/click")]
     render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
