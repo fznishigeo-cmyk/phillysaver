@@ -73,7 +73,7 @@ def test_shared_footer_signup_markup(tmp_path):
         signup = re.search(r'<section id="footer-signup".*?</section>', footer, re.S)[0]
         footers.append(signup)
         assert footer.index('id="footer-signup"') < footer.index('<nav')
-        assert '<h2 id="footer-signup-title">Sign up for the latest deals</h2>' in signup
+        assert '<h2 id="footer-signup-title">Be first to get our deals email</h2>' in signup
         assert '<form class="joinform" data-join-footer data-clarity-mask="true">' in signup
         assert 'type="email" data-clarity-mask="true" placeholder="Email address" autocomplete="email" required' in signup
         assert '<button type="submit" aria-label="Sign up">' in signup

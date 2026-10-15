@@ -77,7 +77,7 @@ def test_published_pages_do_not_expose_internal_details(tmp_path, mode, pwa):
         assert "join.html" in pages
         for name in ("index.html", "join.html"):
             html = pages[name].read_text()
-            assert "Sign up for the latest deals" in html
+            assert "Be first to get our deals email" in html
             assert "Continue with email" in html
             assert "We use your email only to send deals. Unsubscribe anytime." in html
 

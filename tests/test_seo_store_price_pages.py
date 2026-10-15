@@ -101,7 +101,7 @@ def test_store_content_count_median_wall_order_and_support(db, cfg, tmp_path, n,
     assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in deals[:60]]
     assert 'href="https://www.amazon.com/dp/B012345678?tag=example-20"' in html
     assert "As an Amazon Associate, wowpriced earns from qualifying purchases." in html
-    assert "Sign up for the latest deals" in html and "free trial" not in html and "members only" not in html
+    assert "Be first to get our deals email" in html and "free trial" not in html and "members only" not in html
     browse = html.split('<h2>More categories</h2>')[1].split('</main>')[0]
     assert '<strong>Stores</strong>: <a href="/stores/walmart/">Walmart</a>' in browse
     assert 'href="/stores/amazon/"' not in browse
@@ -129,7 +129,7 @@ def test_price_inclusive_filter_floor_and_card_limit(db, cfg, tmp_path):
         assert f'<h1>Deals under ${n} today</h1>' in html
         assert f'<link rel="canonical" href="https://wowpriced.com/deals/under-{n}/">' in html
         assert re.findall(r'<h3 class="title"><a href="([^"]+)"', html) == [_path(d) for d in selected[:60]]
-        assert "Sign up for the latest deals" in html and "members only" not in html and "free trial" not in html
+        assert "Be first to get our deals email" in html and "members only" not in html and "free trial" not in html
     _render(db, cfg, tmp_path, low)
     assert not list((tmp_path / "deals").glob("under-*"))
     assert not any(p.startswith("/deals/under-") for p in _sitemap_paths(tmp_path))

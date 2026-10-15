@@ -193,7 +193,7 @@ def test_best_today_order_date_links_count_and_repeat_bytes(db, cfg, tmp_path):
     hub = (tmp_path / "deals/electronics/index.html").read_text()
     assert all(f'<h3 class="title"><a href="{_path(d)}">' in hub for d in deals[:60])
     for page in [html, _page(tmp_path, _path(deals[0])).read_text()]:
-        assert "Sign up for the latest deals" in page and "free trial" not in page and "members only" not in page
+        assert "Be first to get our deals email" in page and "free trial" not in page and "members only" not in page
     # Page bytes depend on data, not on the build date, including best-today.
     before = {str(p.relative_to(tmp_path)): p.read_bytes() for p in (tmp_path / 'deal').rglob('*.html')}
     sitemap = (tmp_path / 'sitemap.xml').read_bytes()

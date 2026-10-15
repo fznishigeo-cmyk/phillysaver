@@ -110,7 +110,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   h.advance(1); assert.equal(h.prompt.hidden,false); assert.equal(h.document.activeElement,h.input);
   assert.equal(h.prompt.className,'joinoverlay joinpopup'); assert.equal(h.dialog['aria-modal'],'true');
   assert.equal(h.successTitle.innerHTML,'Save up to <span>90% OFF</span>');
-  assert.equal(h.description.textContent,"The day's best verified deals in one free email. Unsubscribe anytime.");
+  assert.equal(h.description.textContent,"Free. Be first to get our deals email when it launches. Unsubscribe anytime.");
   assert.equal(h.label.textContent,'Email address'); assert.equal(h.input.placeholder,'Email address');
   assert.equal(h.submit.textContent,'Get the deals'); assert.equal(h.back.hidden,true); assert.equal(h.choice.hidden,true);
   assert.equal(h.fields.hidden,false); assert.equal(h.googleOr.hidden,true);
@@ -123,7 +123,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   h.key('Escape'); h.click(h.subscribe); // Header retains the two-step card.
   assert.equal(h.prompt.className,'joinoverlay'); assert.equal(h.choice.hidden,false); assert.equal(h.back.hidden,false);
   assert.equal(h.submit.textContent,'Continue'); assert.equal(h.input.placeholder,'Email');
-  assert.equal(h.description.textContent,"The day's best deals in one email. Free.");
+  assert.equal(h.description.textContent,"Free. Be first to get our deals email when it launches.");
   assert.equal(h.googleOr.hidden,true);
   h.click(h.choice); assert.equal(h.one.hidden,true); assert.equal(h.fields.hidden,false); assert.equal(h.choice['aria-expanded'],'true');
   assert.equal(h.successTitle.textContent,"What's your email?"); assert.equal(h.successTitle.className,'joinemailtitle');
