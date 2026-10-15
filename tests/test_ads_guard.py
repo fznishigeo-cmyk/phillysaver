@@ -156,14 +156,12 @@ def test_invalid_authorization_fails_closed(field, value):
     assert guard.settings(cfg, NOW)["cap_micros"] == 0
 
 
-def test_shipped_authorization_matches_the_operator_sentence():
-    # Operator, 2026-10-14, typed exactly; never above the hard maximum.
+def test_shipped_authorization_is_off_as_the_operator_asked():
+    # Operator, 2026-10-15: "go ahead and just turn off Google Ads." Cap 0 pauses.
     cfg = load_config()
     ads = cfg.raw["ads"]
-    assert ads["authorized_daily_usd"] == 10 <= ads["hard_max_daily_usd"] == 10
-    assert ads["authorized_on"] == "2026-10-14"
-    assert ads["authorized_quote"] == "AUTHORIZE ADS: $10 per day — Authorized by Arslan"
-    assert guard.settings(cfg, NOW)["cap_micros"] == 10_000_000
+    assert ads["authorized_daily_usd"] == 0 and ads["hard_max_daily_usd"] == 10
+    assert guard.settings(cfg, NOW)["cap_micros"] == 0
 
 
 @pytest.mark.parametrize("cap,budget,spend,paused,reason", [

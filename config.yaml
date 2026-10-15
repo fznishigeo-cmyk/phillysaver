@@ -672,9 +672,11 @@ ads:
   # Only the operator's exact typed sentence may change authorized_daily_usd.
   # Nothing in code ever raises it. Copy the sentence verbatim into authorized_quote
   # and its ISO date into authorized_on. Example: AUTHORIZE ADS: $10 per day
-  authorized_daily_usd: 10      # 0 = no ad spend allowed
-  authorized_on: "2026-10-14"
-  authorized_quote: "AUTHORIZE ADS: $10 per day — Authorized by Arslan"
+  # Operator 2026-10-15: "go ahead and just turn off Google Ads. We need to start
+  # saving some money." Cap 0 makes the guard pause every enabled campaign.
+  authorized_daily_usd: 0       # 0 = no ad spend allowed
+  authorized_on: ""
+  authorized_quote: ""
   hard_max_daily_usd: 10       # absolute ceiling; excess authorization is clamped + alerted
   performance:
     lookback_days: 30         # completed days, matched Google Ads / GA4 dates

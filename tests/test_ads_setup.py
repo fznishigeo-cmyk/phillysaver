@@ -145,8 +145,10 @@ def test_plan_rejects_what_google_would(field, value):
 
 
 def test_shipped_plan_and_workflow_and_cli(monkeypatch):
-    p = ads_setup.plan(load_config(), NOW)
-    assert p["budget_micros"] * 2 <= 10_000_000
+    # Ads off since 2026-10-15 (operator): no budget can be planned without authorization.
+    with pytest.raises(ValueError):
+        ads_setup.plan(load_config(), NOW)
+    assert ads_setup.plan(config(), NOW)["budget_micros"] * 2 <= 10_000_000
     doc = yaml.safe_load((ROOT / ".github/workflows/ads-setup.yml").read_text())
     assert set(doc[True]) == {"workflow_dispatch"}  # manual only, never scheduled
     assert doc[True]["workflow_dispatch"]["inputs"]["validate_only"]["default"] is True
