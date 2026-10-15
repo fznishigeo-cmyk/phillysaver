@@ -298,6 +298,11 @@ def test_daily_usage_midnight_legacy_uncertain_and_private_report(tmp_path):
 
 
 def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
+    from pathlib import Path
+
+    path = Path(env["cfg"])  # this byte pin predates the RSS trim
+    path.write_text(path.read_text().replace("feed_max_items: 20", "feed_max_items: 50")
+                    .replace("feed_details: false", "feed_details: true"))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)
     assert summary["spend_by_kind"]["critic"] == {"calls": 1, "usd": .0054}
@@ -308,7 +313,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
              for p in sorted(env["site"].rglob("*")) if p.is_file()}
     # Captured from untouched HEAD with this same offline fixture before task 106.
     digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    assert digest == "42f09922d9285a8aa0ed326f1ffd7386a92e702ca87373f7759de4ece5f45851"
+    assert digest == "e513a9f42b226ee7652f31bcd840276ca884ea0efd9bdf39c7646b9e553356a6"
     assert _run(env)["spend_usd"] == 0
 
 

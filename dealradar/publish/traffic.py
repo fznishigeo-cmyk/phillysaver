@@ -86,7 +86,9 @@ def _xml_text(value: str) -> str:
     return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]", "", value)
 
 
-def feed_bytes(rows: list[dict], paths: dict[str, str], site_url: str, limit: int) -> bytes:
+def feed_bytes(rows: list[dict], paths: dict[str, str], site_url: str, limit: int,
+               details: bool = True) -> bytes:
+    """``details=False`` keeps codes, steps and checkout notes on our deal pages only."""
     rss = ET.Element("rss", {"version": "2.0", "xmlns:atom": "http://www.w3.org/2005/Atom"})
     channel = ET.SubElement(rss, "channel")
 
@@ -119,10 +121,13 @@ def feed_bytes(rows: list[dict], paths: dict[str, str], site_url: str, limit: in
         if not {"used", "open_box", "refurbished"} & set(d.get("conditions") or []):
             conditions.insert(0, "new")
         facts.append("Condition: " + ", ".join(conditions) + ".")
-        checkout = d.get("checkout") or {}
-        facts.extend(checkout[k] for k in ("now", "shipping", "summary") if checkout.get(k))
-        facts.extend(str(s) for s in d.get("how") or [])
-        facts.extend("Code: " + str(c) for c in d.get("codes") or [])
+        if details:
+            checkout = d.get("checkout") or {}
+            facts.extend(checkout[k] for k in ("now", "shipping", "summary") if checkout.get(k))
+            facts.extend(str(s) for s in d.get("how") or [])
+            facts.extend("Code: " + str(c) for c in d.get("codes") or [])
+        else:
+            facts.append("Codes, steps and checkout details are on the deal page.")
         description = "".join(f"<p>{escape(f)}</p>" for f in facts)
         for credit in d.get("credits") or []:
             name, url = str(credit.get("name") or ""), str(credit.get("url") or "")
@@ -138,7 +143,8 @@ def publish(out: Path, cfg, rows: list[dict], paths: dict[str, str], site_url: s
     active = enabled(cfg)
     feed = cfg.traffic_feed_enabled and urlsplit(site_url).scheme == "https" and bool(urlsplit(site_url).netloc)
     if feed:
-        (out / "feed.xml").write_bytes(feed_bytes(rows, paths, site_url, cfg.traffic_feed_max_items))
+        (out / "feed.xml").write_bytes(feed_bytes(rows, paths, site_url, cfg.traffic_feed_max_items,
+                                                  cfg.traffic_feed_details))
     else:
         (out / "feed.xml").unlink(missing_ok=True)
     if active:

@@ -201,6 +201,7 @@ class AppConfig:
     seo_lastmod_retention_days: int = 35  # absent URLs; current URLs are retained
     traffic_feed_enabled: bool = False
     traffic_feed_max_items: int = 50
+    traffic_feed_details: bool = True
     traffic_share_enabled: bool = False
     traffic_related_hubs_enabled: bool = False
     traffic_hub_pagination_enabled: bool = False
@@ -601,6 +602,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "seo", "lastmod_retention_days", default=cfg.seo_lastmod_retention_days))))
     cfg.traffic_feed_enabled = bool(g("traffic", "feed_enabled", default=False))
     cfg.traffic_feed_max_items = max(1, min(200, int(g("traffic", "feed_max_items", default=50))))
+    cfg.traffic_feed_details = bool(g("traffic", "feed_details", default=True))
     cfg.traffic_share_enabled = bool(g("traffic", "share_enabled", default=False))
     cfg.traffic_related_hubs_enabled = bool(g("traffic", "related_hubs_enabled", default=False))
     cfg.traffic_hub_pagination_enabled = bool(g("traffic", "hub_pagination_enabled", default=False))

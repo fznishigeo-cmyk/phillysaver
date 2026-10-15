@@ -248,7 +248,9 @@ seo:
 
 traffic:
   feed_enabled: true
-  feed_max_items: 50          # Latest public live offers with emitted deal pages.
+  # Operator 2026-10-15: trimmed so copiers get little; readers click through to us.
+  feed_max_items: 20          # Latest public live offers with emitted deal pages.
+  feed_details: false         # Name, price, condition, credit, link; codes/steps stay on deal pages.
   share_enabled: true        # Detail pages only; no change to wall cards.
   related_hubs_enabled: true # Matching store and smallest qualifying price hub.
   hub_pagination_enabled: true # Crawlable 60-offer pages; each page keeps its hub's SEO floor.

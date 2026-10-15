@@ -20,6 +20,7 @@ def baseline_config(mode):
     if mode == "shipped":
         cfg = load_config()
         cfg.non_amazon_freshness_enabled = False  # pin predates task 102's age gate
+        cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
     else:
         cfg = AppConfig(custom_domain="wowpriced.com", seo_store_page_min_deals=1)
         if mode == "open":
@@ -48,7 +49,7 @@ def tree_hash(out):
     ("membership", "28a7d364e9463f092705cc1f1e7814b48afd926c83b3e8be6a34642e692c0c7f"),
     ("open", "f463cd5514b84f3a3740ba386fa315bf3ea745f00902f2de03b0df0e95f8c3d5"),
     ("support", "27682c4fe47e23632f74f65484280afec4db71557566bfe9e4400f246822ee5f"),
-    ("shipped", "ccc5a92603edf339c4fbe9e58c490bd82fccdefb859434a967cd02e23f49ad0c"),
+    ("shipped", "312d97763a8c473d9e395e8f822a334d2379fc55bb6bfacfc399cad3c5ec594d"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Shipped only: the label blocks also skip aged offers (task 102) and the

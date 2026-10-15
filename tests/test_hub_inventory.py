@@ -274,6 +274,7 @@ def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
 
     cfg = baseline_config("shipped")
     cfg.unconfirmed_label_enabled = False  # this pin predates the task 094 display option
+    cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
     cfg.non_amazon_freshness_enabled = False  # and task 102's independent display guard
     cfg.raw["first_party_clicks"]["enabled"] = False  # and the click signal (on 2026-10-14)
     cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
@@ -281,7 +282,7 @@ def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
     cfg.traffic_product_families_enabled = cfg.traffic_hub_pagination_enabled = False
     monkeypatch.setattr(site, "util_now", lambda: FIXED)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "e383323e510a2d05fa533c1bd4eeabefccaf6def30a196c4fab053120e24b54a"
+    assert tree_hash(out) == "b08f7835894b50bdda9d81a9876a25157865df7a17f2fcb7d03e7057f5dc5b7d"
 
 
 def test_inventory_node_links_and_phone_styles(tmp_path):

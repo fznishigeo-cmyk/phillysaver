@@ -296,7 +296,7 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
     ("membership", "c44e0fc5de6a76c52378cfa60124a886a9f534d9ba6c08531d9cae0b7dbe5dd2"),
     ("open", "cbf5ec092e4833d5bb1b6e6f61f2f8ae613697383e59e4ba80f64c7cdb123daa"),
     ("support", "5ddcfd43da3883235e72fe9f0aae03c5248b862d8f74dfa51d1ccae008c42abe"),
-    ("shipped", "58e22397bcd9987e3cef1f0d58584820867dbaff6283b717f08d697861f9e7fa"),
+    ("shipped", "a402cf8cd0fa333c3e142388effff948b1424326921560efdae9ada89d31a231"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
@@ -305,6 +305,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     if mode == "shipped":
         cfg.raw["first_party_clicks"]["enabled"] = False  # pin predates the click signal switch-on
+        cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
                                        if k != "non_amazon_max_age_h"}  # predates the pick age
     if mode != "shipped":

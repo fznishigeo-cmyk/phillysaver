@@ -305,7 +305,7 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
     ("membership", "9e1242be7ddc1a90247c59045b1ecc24f79b8d62b2098bb630fd728aa041e2a9"),
     ("open", "2f287cd9848346bf33d938d75d94a9494e279dc21236f79080a87b635a5e5d7b"),
     ("support", "1199278786483e8defc5c9a49e509913748a36520002f126dd1624df9075ca9f"),
-    ("shipped", "04f6fa00b2c1dea293cdefd3ed252cac041dc08230a62a17420ec7bd4ab41e39"),
+    ("shipped", "3a0081492ea0aa70749a8e326dfd35f72adab2133ac36d16a367e1dc3223e1d6"),
 ])
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.
@@ -315,6 +315,7 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     cfg.unconfirmed_label_enabled = False
     if mode == "shipped":
         cfg.non_amazon_freshness_enabled = False  # this pin predates task 102's independent age gate
+        cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()
                                        if k != "non_amazon_max_age_h"}  # predates the pick age

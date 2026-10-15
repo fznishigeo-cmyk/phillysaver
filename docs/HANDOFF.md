@@ -193,6 +193,12 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **RSS feed trimmed (2026-10-15, operator chose "trim"):** `traffic.feed_max_items: 20`,
+  `traffic.feed_details: false` — items keep name, price, condition, source credit and the
+  link to our deal page; codes, steps and checkout notes stay on our pages. Byte pins set
+  the old values ("predates the RSS trim"); their hashes changed only through
+  traffic.site_version (the module's own bytes), verified by rerunning them on the old
+  traffic.py.
 - **Google Ads campaign builder (2026-10-15):** operator approved building the
   first campaign PAUSED. `ads-setup.yml` (manual; validate-only by default)
   creates `ads.setup` from config.yaml; see docs/ads-guard.md. The operator

@@ -29,7 +29,9 @@ def enable(cfg):
 
 def test_config_default_switches_and_feed_bound(tmp_path):
     assert not traffic.enabled(AppConfig())
-    assert traffic.enabled(load_config()) and load_config().traffic_feed_max_items == 50
+    shipped = load_config()
+    assert traffic.enabled(shipped) and shipped.traffic_feed_max_items == 20  # operator 2026-10-15
+    assert shipped.traffic_feed_details is False and AppConfig().traffic_feed_details is True
     path = tmp_path / "knobs.yaml"
     for number, expected in ((0, 1), (5000, 200)):
         path.write_text(f"traffic:\n  feed_enabled: true\n  share_enabled: false\n  feed_max_items: {number}\n")
@@ -97,6 +99,22 @@ def test_feed_facts_escaping_sort_cap_guids_and_ended_rows():
     assert changed.findtext("guid") == item.findtext("guid")
     assert changed.findtext("pubDate") == item.findtext("pubDate")
     assert "$9.00" in changed.findtext("description")
+
+
+def test_trimmed_feed_keeps_codes_steps_and_checkout_on_our_pages():
+    row = {"key": "11111111abcd", "status": "alive", "item": "Tool", "store": "Store", "final_price": 10,
+           "conditions": ["used"], "first_seen_at": NOW.isoformat(), "codes": ["SECRET10"],
+           "how": ["Clip the coupon"], "checkout": {"summary": "Membership required"},
+           "credits": [{"name": "Source", "url": "https://source.test/post"}]}
+    paths = {"11111111": "/deal/tool-11111111/"}
+    full = traffic.feed_bytes([row], paths, "https://wowpriced.com", 20)
+    assert full == traffic.feed_bytes([row], paths, "https://wowpriced.com", 20, True)
+    item = ET.fromstring(traffic.feed_bytes([row], paths, "https://wowpriced.com", 20, False)).find("./channel/item")
+    description = item.findtext("description")
+    assert "Sale price: $10.00 USD" in description and "Condition: used" in description
+    assert 'href="https://source.test/post"' in description and "on the deal page" in description
+    assert not any(x in description for x in ("SECRET10", "Clip the coupon", "Membership required"))
+    assert item.findtext("link").startswith("https://wowpriced.com/deal/tool-11111111/?")
 
 
 def test_detail_share_context_and_footer_do_not_change_wall_cards(db, cfg, tmp_path):
