@@ -227,6 +227,46 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   and no-price/no-key). Those checks outside the sandbox and review/live
   verification remain.
   Only store_prices.py, tests and this note changed; no commit or push.
+- **AI under $6 (Codex task 106, 2026-10-15; uncommitted, OFF):**
+  `parse.critic_tiering.enabled: false`. On: Haiku first; Sonnet confirms kills,
+  invalid/low-confidence replies, ranked top/wall candidates (including later
+  promotions), and prices >$250. Escalations fill existing 8-deal batches;
+  capped judgments stay unpublished. Two Sonnet sample batches/day; >10%
+  disagreement in the last 32 valid judgments (minimum 16) withdraws earlier
+  Haiku approvals and persists Sonnet-for-all (`critic_tiering_fallback` meta;
+  review before explicitly clearing). Second opinions use the same cached prompt:
+  Sonnet above 10% backed-post/paid-call yield over seven days, minimum three
+  calls, at most 12 calls/day including retries; otherwise Haiku. Existing
+  caps/evidence/floors stay. Ledger kind/source/model/input/output/cache receipts
+  feed UTC run/private technical reports; missing historical detail stays unknown.
+
+  **Offline measurements, not live:** pre-change e2e: 8 calls, 12,000 tokens,
+  $0.00729; OFF matches its 40 published files, verdicts and spend exactly.
+  Day replay: 58 fast + 24 hourly runs, 240 parsed posts, 2,624 critic decisions,
+  82 second opinions and 82 category calls. Extraction assumes 5,000 input/4,000
+  output tokens (the brief's $0.025/10 posts); critic/category reuse the e2e's
+  1,200/300 receipts. No cache hits assumed.
+
+  | Kind | Calls before → tiered | Tokens before → tiered | USD before → tiered |
+  |---|---:|---:|---:|
+  | Parse | 240 → 240 | 2,160,000 → 2,160,000 | .60000 → .60000 |
+  | Critic | 328 → 410 | 492,000 → 615,000 | 1.77120 → .53136 |
+  | Second opinion | 82 → 82 | 738,000 → 738,000 | 4.10000 → .77500 |
+  | Shadow | 12 → 2 | 18,000 → 3,000 | .00324 → .01080 |
+  | Category | 82 → 82 | 123,000 → 123,000 | .02214 → .02214 |
+
+  At 25% escalation: **$6.49658 → $1.93930/day** = 240×.0025
+  + (328×.00027 + 82×.0054) + (12×.05 + 70×.0025) + 2×.0054 + 82×.00027.
+  Escalating **every** critic decision: **$3.25690/day** (no ordinary approvals
+  to sample), below $4.50 under the normal $6 cap/pacing. Reproduce with
+  `tests/test_critic_tiering.py`. **21 new and 182 focused checks pass**.
+  Full `.venv/bin/python -m pytest -q -n 3 -p no:cacheprovider`: **3,802 passed,
+  7 failed**. All seven reproduce on untouched HEAD: Stripe localhost socket
+  creation is blocked (`Operation not permitted`, `tests/test_workflows.py`,
+  yearly-price change0–5 and no-price/no-key). Rerun those outside this sandbox
+  before merging. Live volume/agreement and review remain; Git metadata is
+  read-only, preventing branch creation. No commit/push.
+
 - **Volatility batching (Codex task 101, 2026-10-14; uncommitted, OFF):**
   ranked selection fits tokens and remaining time before packing 20-offer /
   100-stats ASIN calls across labels; overdue top and discovery boundaries,

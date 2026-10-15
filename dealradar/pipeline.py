@@ -1787,6 +1787,19 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
     audit_stats.update(legitimacy.empty_stats(cfg))
     enabled = parser is not None and cfg.critic_enabled and cfg.critic_model
     stored = db.all_deals()
+    tiered = cfg.critic_tiering["enabled"] and cfg.critic_enabled and bool(cfg.critic_model)
+    high, fallback = set(), ""
+    if tiered:
+        from . import critic_tiering
+
+        high = critic_tiering.high_visibility(db, cfg, now, stored)
+        fallback = critic_tiering.fallback_reason(db, cfg)
+
+    def needs_stronger(deal, verdict):
+        return (tiered and isinstance(verdict, dict)
+                and verdict.get("model") == cfg.critic_tiering["model"]
+                and (fallback or deal["dedupe_key"] in high or not verdict.get("plausible")
+                     or not critic_tiering.confident(verdict, cfg.critic_tiering["min_confidence"])))
 
     def asin(deal):
         store = str(deal.get("store") or "").lower()
@@ -1819,6 +1832,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             if other["dedupe_key"] == deal["dedupe_key"]:
                 continue
             verdict = other.get("critic")
+            if needs_stronger(deal, verdict):
+                continue
             basis = other.get("regular_price")
             if (not isinstance(verdict, dict) or type(verdict.get("plausible")) is not bool
                     or not basis or basis <= 0):
@@ -1845,6 +1860,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
         stats["reused" if reused else "judged"] += 1
         payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
         payload["critic"] = verdict
+        if tiered:
+            payload["flags"] = [f for f in payload.get("flags") or [] if f != "critic_tier_pending"]
         if not verdict.get("plausible", True):
             stats["suspect"] += 1
             flags = list(payload.get("flags") or [])
@@ -1855,6 +1872,8 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
                         deal["dedupe_key"], verdict.get("reason", ""))
         db.update_deal(deal["dedupe_key"], payload=payload)
         deal["critic"] = verdict  # available for reuse by later batches
+        if tiered:
+            deal["flags"] = payload.get("flags") or []
         legitimacy.compare(db, deal, verdict, cfg, now, audit_stats)
 
     pending = []
@@ -1870,13 +1889,16 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
         legitimacy.evaluate(db, deal, cfg, now, audit_stats)
         prior = deal.get("critic")
         valid_prior = legitimacy.settled_critic(prior)
-        if valid_prior and (not prior.get("audit_fingerprint")
+        if valid_prior and not needs_stronger(deal, prior) and (not prior.get("audit_fingerprint")
                             or prior["audit_fingerprint"] == legitimacy.fingerprint(deal, cfg)):
             legitimacy.compare(db, deal, prior, cfg, now, audit_stats)
             continue
-        if not enabled:
-            continue
         if cfg.audit_mode == "enforce" and deal["audit"].get("critic_avoided"):
+            continue
+        if tiered and deal.get("regular_price") and deal.get("final_price") is not None:
+            deal["flags"] = list(dict.fromkeys([*(deal.get("flags") or []), "critic_tier_pending"]))
+            db.update_deal(deal["dedupe_key"], payload={k: deal.get(k) for k in _DEAL_FIELDS if k in deal})
+        if not enabled:
             continue
         verdict = reusable(deal)
         if verdict is not None:
@@ -1885,6 +1907,22 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             pending.append(deal)
 
     if not enabled:
+        return stats
+    if tiered:
+        calls_before = getattr(parser, "critic_calls", 0)
+        # All unresolved deals are packed together after reuse, without holes
+        # left by cached verdicts or code-supported audit candidates.
+        remaining = []
+        for deal in pending:
+            verdict = reusable(deal)
+            if verdict is not None:
+                save(deal, verdict, reused=True)
+            else:
+                remaining.append(deal)
+        stats["tiering"] = critic_tiering.run(
+            db, cfg, parser, now, remaining, high, save, fallback=fallback)
+        stats["tiering"]["escalated"] += critic_tiering.protect_promoted(db, cfg, parser, now, save)
+        stats["calls"] = getattr(parser, "critic_calls", 0) - calls_before
         return stats
     size = max(1, cfg.critic_batch_size)
     calls_before = getattr(parser, "critic_calls", 0)
@@ -2505,6 +2543,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             getattr(parser, "extract_by_source", {}).items()
         }
         summary["llm_cache_tokens"] = dict(getattr(parser, "cache_tokens", {}))
+        from . import ai_usage
+        summary["ai_usage_day"] = ai_usage.daily(db, util.now_utc())
+        for usage_line in ai_usage.lines(summary["ai_usage_day"]):
+            log.info("%s", usage_line)
         untracked_spend = max(0.0, spend_total - float(getattr(parser, "ledger_spend_usd", 0.0)))
         yield_spend = max(spend_total, db.spend_usd_for_run(run_key) - yield_spend_before + untracked_spend)
         summary["ai_yield"] = ai_yield.metrics(
@@ -2521,6 +2563,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 with open(step_summary, "a", encoding="utf-8") as fh:
                     fh.write(_spend_markdown(summary["spend_by_kind"],
                                              summary["extract_by_source"]))
+                    fh.write("\n".join(ai_usage.lines(summary["ai_usage_day"])) + "\n")
                     if pacing_line:
                         fh.write(pacing_line + "\n")
             except OSError as e:

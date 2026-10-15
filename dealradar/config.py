@@ -135,6 +135,13 @@ class AppConfig:
     recategorize_other_per_run: int = 120  # live "other" titles re-read per run; 0 = off
     critic_shadow_model: str = "claude-haiku-5-5"
     critic_shadow_batches_per_day: int = 12
+    critic_tiering: dict = field(default_factory=lambda: {
+        "enabled": False, "model": "claude-haiku-5-5", "min_confidence": 0.8,
+        "high_price_usd": 250.0, "shadow_batches_per_day": 2,
+        "window_deals": 32, "min_judged_deals": 16, "max_disagreement": 0.10,
+        "second_opinion_calls_per_day": 12, "second_opinion_yield_floor": 0.10,
+        "second_opinion_min_calls": 3, "second_opinion_window_days": 7,
+    })
     exclude_suspect_msrp: bool = True
     audit_mode: str = "shadow"
     audit_near_price_pct: float = 10.0
@@ -458,6 +465,26 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.critic_shadow_model = g("parse", "critic_shadow_model", default=cfg.critic_shadow_model) or ""
     cfg.critic_shadow_batches_per_day = max(0, int(g(
         "parse", "critic_shadow_batches_per_day", default=cfg.critic_shadow_batches_per_day)))
+    cfg.critic_tiering.update(g("parse", "critic_tiering", default={}) or {})
+    tier = cfg.critic_tiering
+    if not isinstance(tier["enabled"], bool) or not isinstance(tier["model"], str) or not tier["model"]:
+        raise ValueError("critic_tiering needs a boolean enabled and a model")
+    if tier["enabled"] and tier["model"] in {cfg.critic_model, cfg.second_opinion_model}:
+        raise ValueError("critic_tiering.model must differ from the Sonnet models")
+    for name in ("min_confidence", "max_disagreement", "second_opinion_yield_floor"):
+        tier[name] = float(tier[name])
+        if not 0 <= tier[name] <= 1:
+            raise ValueError(f"critic_tiering.{name} must be between 0 and 1")
+    tier["high_price_usd"] = float(tier["high_price_usd"])
+    if not 0 < tier["high_price_usd"] < float("inf"):
+        raise ValueError("critic_tiering.high_price_usd must be positive and finite")
+    for name in ("shadow_batches_per_day", "window_deals", "min_judged_deals",
+                 "second_opinion_calls_per_day", "second_opinion_min_calls", "second_opinion_window_days"):
+        tier[name] = int(tier[name])
+        if tier[name] < (0 if name.endswith("per_day") else 1):
+            raise ValueError(f"invalid critic_tiering.{name}")
+    if tier["min_judged_deals"] > tier["window_deals"]:
+        raise ValueError("critic_tiering.min_judged_deals exceeds window_deals")
     cfg.exclude_suspect_msrp = bool(g("publish", "exclude_suspect_msrp", default=cfg.exclude_suspect_msrp))
     cfg.audit_mode = str(g("audit", "mode", default=cfg.audit_mode))
     if cfg.audit_mode not in {"shadow", "enforce"}:

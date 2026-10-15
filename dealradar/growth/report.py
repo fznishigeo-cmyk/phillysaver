@@ -13,7 +13,7 @@ import functools
 import html as html_lib
 import logging
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -52,6 +52,24 @@ def _critic_shadow(db_path, now: datetime) -> dict:
     try:
         return {"today": db.critic_shadow_counts(now),
                 "week": db.critic_shadow_counts(now, days=7)}
+    finally:
+        db.close()
+
+
+def _ai_usage(db_path, now: datetime) -> dict:
+    from .. import ai_usage
+
+    db = DB(db_path, read_only=True)
+    try:
+        sample = None
+        if db.conn.execute("SELECT 1 FROM sqlite_master WHERE name='critic_tier_samples'").fetchone():
+            sample = dict(db.conn.execute("SELECT COUNT(*) AS judged, COALESCE(SUM(agrees),0) AS agreed"
+                                          " FROM critic_tier_samples").fetchone())
+        return {"today": ai_usage.daily(db, now),
+                "yesterday": ai_usage.daily(db, now.astimezone(timezone.utc).replace(
+                    hour=0, minute=0, second=0, microsecond=0) - timedelta(microseconds=1)),
+                "tiering_fallback": db.meta_get("critic_tiering_fallback") or "",
+                "tiering_sample": sample}
     finally:
         db.close()
 
@@ -276,6 +294,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                            lambda: _product_shadow(db_path, cfg, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
+        "ai_usage": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                     lambda: _ai_usage(db_path, now)),
         "partner_newsletters": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                                 lambda: _newsletter_senders(db_path)),
         "newsletter_arrivals": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -651,6 +671,18 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines.append(daily_line(data.get("audit")))
 
     shadow = data.get("critic_shadow")
+    from ..ai_usage import lines as usage_lines
+    usage = data.get("ai_usage")
+    if usage:
+        lines += usage_lines(usage["yesterday"]) + usage_lines(usage["today"])
+        sample = usage.get("tiering_sample")
+        if sample and sample["judged"]:
+            lines.append(f"Tiered critic Sonnet sample: {sample['agreed']}/{sample['judged']} agree "
+                         "in the retained rolling window")
+        if usage["tiering_fallback"]:
+            lines.append("Tiered critic fallback: " + usage["tiering_fallback"])
+    else:
+        lines += usage_lines(None)
     if shadow is not None:
         today, week = shadow["today"], shadow["week"]
         lines.append("critic shadow (Haiku vs Sonnet): "

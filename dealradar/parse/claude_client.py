@@ -17,10 +17,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 import threading
 import time
 import uuid
 from datetime import timedelta, timezone
+from contextlib import closing
 from typing import Any, Callable
 
 import anthropic
@@ -261,7 +263,7 @@ class ClaudeParser:
     def _record_cost(self, cost: float, kind: str, source_name: str = "") -> None:
         with self._spend_lock:  # extraction may run on several threads
             self.spend_usd += cost
-            bucket = self.spend_by_kind[kind]
+            bucket = self.spend_by_kind.setdefault(kind, {"calls": 0, "usd": 0.0})
             bucket["calls"] += 1
             bucket["usd"] += cost
             if kind == "extract":
@@ -295,11 +297,29 @@ class ClaudeParser:
         return (input_bound * float(pricing["input"]) * multiplier
                 + kwargs["max_tokens"] * float(pricing["output"])) / 1e6
 
-    def _reserve(self, kwargs: dict) -> tuple[str, float]:
-        model = kwargs["model"]
-        bound = self._cost_bound(kwargs)
+    def _reserve(self, kwargs: dict, *, kind="other", source_name="") -> tuple[str, float]:
         key = uuid.uuid4().hex
         with self._spend_lock:
+            tier = self.cfg.critic_tiering
+            limited = kind == "second_opinion" and tier["enabled"]
+            if limited:
+                from ..ai_usage import model_calls_today, second_opinion_sources
+
+                # Worker threads use their own read connection. Missing history
+                # explores with Haiku; it never earns a speculative Sonnet call.
+                row = {}
+                slots = 0
+                if self._ledger is not None:
+                    with closing(sqlite3.connect(self._ledger.path)) as conn:
+                        row = second_opinion_sources(conn, util.now_utc(),
+                            tier["second_opinion_window_days"]).get(source_name, {})
+                        slots = tier["second_opinion_calls_per_day"] - model_calls_today(
+                            conn, kind, self.cfg.second_opinion_model, util.now_utc())
+                eligible = (slots > 0 and row.get("calls", 0) >= tier["second_opinion_min_calls"]
+                            and row.get("yield", 0) > tier["second_opinion_yield_floor"])
+                kwargs["model"] = self.cfg.second_opinion_model if eligible else tier["model"]
+            model = kwargs["model"]
+            bound = self._cost_bound(kwargs)
             if self.spend_usd + self._reserved_usd + bound > self.run_cap_usd:
                 raise SpendCapReached("insufficient allowance for worst-case LLM call")
             if self._ledger is not None:
@@ -307,8 +327,19 @@ class ClaudeParser:
                 tomorrow = at + timedelta(days=1)
                 allowances = {at.date().isoformat(): spend_allowance(self.cfg, at, 0)[1],
                               tomorrow.date().isoformat(): daily_spend_cap(self.cfg, tomorrow)}
-                self._ledger.reserve_llm_call(key, self._run_key, model, bound, at,
-                                              allowances, self.cfg.spend_cap_usd_per_run)
+                admitted = self._ledger.reserve_llm_call(
+                    key, self._run_key, model, bound, at, allowances, self.cfg.spend_cap_usd_per_run,
+                    kind=kind, source_name=source_name,
+                    daily_call_cap=(tier["second_opinion_calls_per_day"]
+                                    if limited and model == self.cfg.second_opinion_model else None))
+                if not admitted:
+                    kwargs["model"] = tier["model"]
+                    bound = self._cost_bound(kwargs)
+                    if self.spend_usd + self._reserved_usd + bound > self.run_cap_usd:
+                        raise SpendCapReached("insufficient allowance for second opinion")
+                    self._ledger.reserve_llm_call(
+                        key, self._run_key, kwargs["model"], bound, at, allowances,
+                        self.cfg.spend_cap_usd_per_run, kind=kind, source_name=source_name)
                 # The ledger rides the end-of-run state save (kept even when
                 # the pipeline step fails). An encrypted git checkpoint per
                 # call serialized every call behind a push and could time
@@ -343,7 +374,7 @@ class ClaudeParser:
                 cost = self._account(resp, kwargs["model"], kind=kind, source_name=source_name)
             if self._ledger is not None:
                 self.ledger_spend_usd += cost
-                self._ledger.settle_llm_call(key, cost, util.now_utc(), uncertain=usage is None)
+                self._ledger.settle_llm_call(key, cost, util.now_utc(), uncertain=usage is None, usage=usage)
 
     # -------------------------------------------------------------- requests
 
@@ -358,7 +389,7 @@ class ClaudeParser:
         SpendCapReached always propagates.
         """
         for attempt in range(2 if retry else 1):
-            reservation = self._reserve(kwargs)
+            reservation = self._reserve(kwargs, kind=kind, source_name=source_name)
             try:
                 resp = fn()
             except anthropic.BadRequestError as e:
@@ -561,7 +592,8 @@ def estimate_critic_cost(parser, deals: list[dict]) -> float | None:
 
 
 def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = False,
-                   reserve_shadow: Callable[[], bool] | None = None) -> list[dict | None]:
+                   reserve_shadow: Callable[[], bool] | None = None,
+                   model: str | None = None, retry: bool = True) -> list[dict | None]:
     """Judge a bounded batch independently; bad/missing indices stay unjudged."""
     opinions = [None] * len(deals)
     cfg = parser.cfg
@@ -573,7 +605,7 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
     if not entries:
         return opinions
 
-    model = cfg.critic_shadow_model if shadow else cfg.critic_model
+    model = model or (cfg.critic_shadow_model if shadow else cfg.critic_model)
     if not model:
         return opinions
     kwargs = dict(
@@ -605,7 +637,7 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
     try:
         parse = parser.client.messages.parse
         resp = parser._request(request, kwargs=kwargs,
-                               kind="critic_shadow" if shadow else "critic")
+                               kind="critic_shadow" if shadow else "critic", retry=retry)
         if resp is None:
             return opinions
         if getattr(resp, "stop_reason", None) in ("refusal", "max_tokens"):

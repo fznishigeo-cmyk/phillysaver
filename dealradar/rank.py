@@ -321,6 +321,16 @@ def is_publishable(deal: dict[str, Any], cfg,
 
     sources = [deal.get("source_name", "")] + [
         s.get("source_name", "") for s in deal.get("sightings") or []]
+    if (require_critic and cfg.critic_tiering["enabled"] and cfg.critic_enabled and cfg.critic_model
+            and deal.get("regular_price") and deal.get("final_price") is not None):
+        from .legitimacy import fingerprint, settled_critic, valid_code_basis
+
+        verdict = deal.get("critic")
+        if not (cfg.audit_mode == "enforce" and valid_code_basis(deal, cfg)):
+            if ("critic_tier_pending" in (deal.get("flags") or []) or not settled_critic(verdict)
+                    or (verdict.get("audit_fingerprint")
+                        and verdict["audit_fingerprint"] != fingerprint(deal, cfg))):
+                return False, "critic: tiered deal awaits a valid verdict"
     if require_critic and cfg.audit_mode == "enforce":
         from .legitimacy import fingerprint, settled_critic, valid_code_basis
 

@@ -76,6 +76,20 @@ parse:
   recategorize_other_per_run: 240
   critic_shadow_model: "claude-haiku-5-5"
   critic_shadow_batches_per_day: 12   # 0 disables comparison; never affects publishing
+  # One switch restores the existing critic, shadow and second-opinion behavior.
+  critic_tiering:
+    enabled: false
+    model: "claude-haiku-5-5"
+    min_confidence: 0.8
+    high_price_usd: 250
+    shadow_batches_per_day: 2       # Sonnet samples ordinary Haiku approvals
+    window_deals: 32
+    min_judged_deals: 16
+    max_disagreement: 0.10          # above this: sticky Sonnet-for-all fallback
+    second_opinion_calls_per_day: 12 # Sonnet calls, including retries
+    second_opinion_yield_floor: 0.10 # evidence-backed posts / paid calls; strictly above
+    second_opinion_min_calls: 3
+    second_opinion_window_days: 7   # cold/low-yield sources use Haiku, same prompt
   # The models endpoint carries no prices, so "cheapest" is resolved as: the newest
   # haiku-family model from GET /v1/models (then sonnet, then any). Cost accounting for
   # the spend cap uses this table (USD per million tokens); unknown models use `default`.

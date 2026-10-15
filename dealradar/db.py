@@ -169,6 +169,23 @@ CREATE TABLE IF NOT EXISTS critic_shadow_daily (
     shadow_killed_critic_kept INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS second_opinion_yield (
+    event_key TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    extracted INTEGER NOT NULL,
+    evidence INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS critic_tier_batches (
+    batch_key TEXT PRIMARY KEY,
+    day TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS critic_tier_samples (
+    event_key TEXT PRIMARY KEY,
+    observed_at TEXT NOT NULL,
+    agrees INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS posts_seen (
     id INTEGER PRIMARY KEY,
     source_name TEXT NOT NULL,
@@ -394,6 +411,13 @@ class DB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(llm_calls)")}
+        for name, kind in (("kind", "TEXT NOT NULL DEFAULT 'unknown'"),
+                           ("source_name", "TEXT NOT NULL DEFAULT ''"),
+                           ("input_tokens", "INTEGER"), ("output_tokens", "INTEGER"),
+                           ("cache_read_tokens", "INTEGER"), ("cache_write_tokens", "INTEGER")):
+            if name not in columns:
+                self.conn.execute(f"ALTER TABLE llm_calls ADD COLUMN {name} {kind}")
         columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(deals)")}
         # Lifetime dedupe anchors live on the existing inventory rows; the
         # dated observations below expire with run_stats, never these anchors.
@@ -997,13 +1021,22 @@ class DB:
 
     def reserve_llm_call(self, call_key: str, run_key: str, model: str,
                          cost: float, now: datetime, allowances: dict[str, float],
-                         run_cap: float) -> None:
+                         run_cap: float, *, kind: str = "unknown", source_name: str = "",
+                         daily_call_cap: int | None = None) -> bool:
         from .errors import SpendCapReached
 
         # Separate connections allow parser workers and other parser
         # instances to reserve atomically without sharing a SQLite cursor.
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
+            if daily_call_cap is not None:
+                from .ai_usage import model_calls_today
+
+                # Count actual attempts, including re-asks, concurrent reservations,
+                # and an uncertain midnight call on either possible billing day.
+                calls = model_calls_today(conn, kind, model, now)
+                if calls >= daily_call_cap:
+                    return False
             used = conn.execute(
                 "SELECT (SELECT COALESCE(SUM(COALESCE(cost_usd,reserved_usd)),0)"
                 " FROM llm_calls WHERE run_key=? AND status!='released')"
@@ -1013,16 +1046,23 @@ class DB:
                     self._day_spend(conn, day) + cost > cap for day, cap in allowances.items()):
                 raise SpendCapReached("insufficient run or daily allowance for LLM reservation")
             conn.execute(
-                "INSERT INTO llm_calls(call_key, run_key, model, started_at, reserved_usd)"
-                " VALUES (?,?,?,?,?)", (call_key, run_key, model, iso(now), cost))
+                "INSERT INTO llm_calls(call_key, run_key, model, started_at, reserved_usd, kind, source_name)"
+                " VALUES (?,?,?,?,?,?,?)", (call_key, run_key, model, iso(now), cost, kind, source_name))
             conn.executemany("INSERT INTO llm_reservations(call_key, day, usd) VALUES (?,?,?)",
                              [(call_key, day, cost) for day in allowances])
+            return True
 
     def settle_llm_call(self, call_key: str, cost: float, now: datetime, *,
-                        uncertain: bool = False) -> None:
+                        uncertain: bool = False, usage=None) -> None:
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("UPDATE llm_calls SET cost_usd=?, billed_at=?, status=? WHERE call_key=?",
                          (cost, iso(now), "uncertain" if uncertain else "settled", call_key))
+            if usage is not None:
+                conn.execute("UPDATE llm_calls SET input_tokens=?, output_tokens=?,"
+                             " cache_read_tokens=?, cache_write_tokens=? WHERE call_key=?",
+                             (usage.input_tokens, usage.output_tokens,
+                              getattr(usage, "cache_read_input_tokens", 0) or 0,
+                              getattr(usage, "cache_creation_input_tokens", 0) or 0, call_key))
             if not uncertain:
                 conn.execute("DELETE FROM llm_reservations WHERE call_key=?", (call_key,))
 
@@ -1218,6 +1258,8 @@ class DB:
         params = (cutoff, cutoff, cutoff[:10])
         self.conn.execute("DELETE FROM llm_reservations WHERE call_key IN (" + old_calls + ")", params)
         self.conn.execute("DELETE FROM llm_calls WHERE call_key IN (" + old_calls + ")", params)
+        self.conn.execute("DELETE FROM second_opinion_yield WHERE observed_at < ?", (cutoff,))
+        self.conn.execute("DELETE FROM critic_tier_batches WHERE day < ?", (cutoff[:10],))
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
         self.conn.execute("DELETE FROM keepa_recheck_history WHERE deal_key NOT IN"

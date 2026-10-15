@@ -550,6 +550,12 @@ def parse_posts(
                 stats["second_opinion"]["deals_passed_evidence"] += 1
             if structured:
                 stats["structured_parse"]["deals"] += 1
+        if second_opinion and db is not None:
+            from ..ai_usage import record_second_opinion
+
+            from ..util import now_utc
+
+            record_second_opinion(db, post, fingerprint, now_utc(), len(deals), len(deals) - counts["evidence"])
         if (db is not None and complete and not structured and not reused and not skipped
                 and not counts["evidence"]):
             # Rejected output stays transient; only a complete evidence-backed
