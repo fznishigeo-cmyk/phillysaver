@@ -241,7 +241,7 @@ seo:
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.
   deal_pages_indexable: false # Keep shopper pages; focus search on durable listings.
   product_pages:
-    enabled: false           # Ramp only after reviewing our recorded-check pages.
+    enabled: true            # operator 2026-10-15: "high quality index pages ... that's what we need to do now"
     min_checks: 6
     min_span_days: 7
     max_new_indexable_per_day: 50

@@ -61,7 +61,7 @@ def prepare(db, cfg, rows, now=NOW, public=None):
 
 def test_config_ships_off_and_all_knobs_load(tmp_path):
     assert not AppConfig().seo_product_pages_enabled
-    assert not load_config().seo_product_pages_enabled
+    assert load_config().seo_product_pages_enabled  # operator switched it on 2026-10-15
     path = tmp_path / "config.yaml"
     path.write_text("{}")
     assert not load_config(path).seo_product_pages_enabled
