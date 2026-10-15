@@ -66,6 +66,11 @@ def exceeds_price_tolerance(price: float, final: float, tolerance_pct: float = 1
     return price > final * (1 + tolerance_pct / 100) + 0.01 + 1e-9
 
 
+def page_price_moved(price: float, first: float, threshold_pct: float) -> bool:
+    """Checkout-code math loses its basis when the page price moves either way."""
+    return abs(price - first) * 100 > first * threshold_pct + 1e-9
+
+
 def comparable_prices(price: float, other: float, minimum: float, maximum: float) -> bool:
     """Reject extreme ratios in either direction; zero only compares to zero."""
     if price == 0 or other == 0:

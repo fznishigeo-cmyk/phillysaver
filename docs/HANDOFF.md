@@ -193,7 +193,7 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
-- **Amazon as-of disclosure (Codex task 115, 2026-10-15; uncommitted, ON):**
+- **Amazon as-of disclosure (Codex task 115, 2026-10-15; merged, ON):**
   `publish.amazon_as_of.enabled: true`; omitted/false preserves published
   bytes. Amazon cards add a title/hidden Eastern time from the existing
   confirmation clock; relative labels and their refreshers stay intact.
@@ -220,13 +220,43 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Rules live in `rank.niche_reason` (when unsure, not niche); `enabled:
   false` restores prior scores and site bytes. Run summary `appeal` gives
   niche counts (wall, top 30) and three examples: watch it after deploys.
+- **Checkout-price evidence (Codex task 113b, 2026-10-15; merged, OFF):**
+  replaces `top_pick_max_age_h` with source/paid evidence. An active stated
+  end (capped seven days from its statement), current-price repost within
+  24 h, or paid page price unchanged from the first label reading within
+  `keepa.pick_max_unconfirmed_h` supports picks. Expiry, existing source/gone
+  verdicts and page-price movement in either direction beyond
+  `keepa.reprice_min_pct` veto them. `max_silent_h: 72` caps observation
+  silence; the brief's active-live-signal requirement also applies before
+  that backstop (no extra grace after a signal expires). Existing wall/hide,
+  labels and rolling-window rules stay. The first valid label reading and
+  its observation time persist privately and are never overwritten; older
+  responses cannot regress the latest reading. A private source-ended time
+  survives generic Keepa confirmations; only a later backed live source
+  post supersedes it. No new requests/LLM calls.
+  Summary adds `skipped_expired`, `skipped_page_price_moved`, `skipped_silent`
+  and `kept_by` counts for actually selected picks (live signals can overlap).
+  Four stale task-113 byte pins also fail on untouched HEAD; recaptured its
+  hashes and verify identical disabled output with private baselines present.
+  All **71 checkout-price checks pass**, including signal precedence,
+  paid/source verdict persistence, immutable baseline, four disabled byte
+  trees and reruns. Full `.venv/bin/python -m pytest -q -n 3 -vv -p
+  no:cacheprovider`: **4,209 passed, 17 failed** (27m30s). All failures are
+  pre-existing: ten snapshot cases reproduced on untouched HEAD
+  (`test_critic_tiering`, `test_checkout_clarity`, `test_hub_inventory`,
+  three `test_post_join_support_ask`, four `test_support`), plus seven
+  documented Stripe workflow localhost-socket failures (`Operation not
+  permitted`, yearly-price change0–5 and no-price/no-key). Repair those
+  unrelated pins and run the socket checks outside the sandbox before
+  merging; review and operator-approved activation remain.
+  `enabled: false` stays shipped. No commit or push.
 - **Checkout-price deals (Codex task 113, 2026-10-15; merged, OFF):** Buy
   Box probe: all 18 top-pick price mismatches were deals whose price appears
   only at checkout (code, coupon, Subscribe & Save). Switch
   `publish.front_page.checkout_price_deals.enabled: false` (approval pending;
-  task 113b replaces the fixed `top_pick_max_age_h: 24` with evidence).
-  On: such a deal leaves top picks once its latest sighting is older than the
-  limit, and at most `top_pick_max_in_window` (1) of them sit in any
+  task 113b above replaces the fixed age cut with evidence).
+  On: evidence governs top-pick eligibility, and at most
+  `top_pick_max_in_window` (1) of them sit in any
   `top_pick_window` (5) positions; skipped deals stay on the wall/search.
   Trending then keeps the published pick order (no browser reshuffle, so the
   window holds). Cards/deal pages say "Amazon shows $X until you enter the

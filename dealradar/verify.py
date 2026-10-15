@@ -212,12 +212,17 @@ def mark_unconfirmed_dead(db, deal: dict[str, Any], reason: str, now: datetime, 
     if deal.get("status") == "dead":
         return False
     payload = dict(deal)
+    from . import checkout_prices
+    if reason == "post_says_over" and checkout_prices.enabled(cfg) and _price_hidden_by_promo(deal):
+        payload["checkout_source_ended_at"] = iso(now)
     from .store_prices import enabled, store_offer
     store = store_offer(deal)[0]
     store_check = (cfg is not None and enabled(store, cfg)
                    and not (store == "bestbuy" and is_used_deal(deal)))
     if (is_amazon_deal(deal) and deal.get("asin")) or woot_offer_url(deal) or store_check:
         if deal.get("gone_suspect_at"):
+            if payload.get("checkout_source_ended_at") != deal.get("checkout_source_ended_at"):
+                db.update_deal(deal["dedupe_key"], payload=payload)
             return False
         payload.update(gone_suspect_at=iso(now), death=reason,
                        price_rechecked_at="", recheck_tried_at="")

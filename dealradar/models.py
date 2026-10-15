@@ -232,6 +232,8 @@ class Deal:
     price_rechecked_at: str = ""
     buybox_check: dict[str, Any] | None = None  # private click-price facts, bound to this price
     checkout_price_reading: dict[str, Any] | None = None  # private paid price and observation time
+    checkout_price_first_reading: dict[str, Any] | None = None  # immutable private page-price baseline
+    checkout_source_ended_at: str = ""  # source verdict survives a page-only API confirmation
     buybox_requested_at: str = ""  # attempted paid read, including a lost response
     woot_listed_at: str = ""              # Woot's feed lists this price within its sale range
     source_recheck_tried_at: str = ""

@@ -798,6 +798,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     originals = {d["dedupe_key"]: d for d in deals}
     confirmed_candidates = [(d, value) for d, value in candidates
                             if not is_amazon_deal(originals[d["dedupe_key"]])
+                            or (checkout_prices.enabled(cfg) and checkout_prices.kind(originals[d["dedupe_key"]]))
                             or price_confirmation_recent(originals[d["dedupe_key"]], now,
                                                          cfg.keepa_pick_max_unconfirmed_h)]
     checkout_summary = checkout_prices.summary()
@@ -805,7 +806,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
     picked = [public_candidates[d["dedupe_key"]] for d in top_picks(
         [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates],
-        cfg.front_page, now, summary=checkout_summary)]
+        cfg.front_page, now, summary=checkout_summary, cfg=cfg)]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
     if checkout_prices.enabled(cfg):

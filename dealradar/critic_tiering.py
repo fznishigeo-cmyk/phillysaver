@@ -47,7 +47,7 @@ def high_visibility(db, cfg, now, stored, *, settled_only=False):
         if promotion_excluded(d, cfg, now):
             d["price_aged"] = label(d, now)
     wall.sort(key=lambda d: (bool(d.get("price_aged")), -rank.score(d, cfg, now)))
-    picked = rank.top_picks([(d, rank.pick_score(d, cfg, now)) for d in wall], cfg.front_page, now)
+    picked = rank.top_picks([(d, rank.pick_score(d, cfg, now)) for d in wall], cfg.front_page, now, cfg=cfg)
     for n, d in enumerate(picked, 1):
         d["pick"] = n
     keys.update(d["dedupe_key"] for d in rank.pick_order(wall, cfg.front_page)[:cfg.keepa_recheck_wall_n])

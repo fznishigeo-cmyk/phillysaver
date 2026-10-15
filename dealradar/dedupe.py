@@ -443,6 +443,11 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # (live crash 2026-10-14: an older post merged into one).
         backed = new_final is not None and (price_improved or (
             old_final is not None and new_final <= float(old_final) * 1.10 + 0.01))
+        ended = util.parse_iso(existing.get("checkout_source_ended_at") or "")
+        if current and backed and ended is not None and post_at > ended and post.source_name != "keepa":
+            from .verify import post_marks_dead
+            if not post_marks_dead(post, extracted):
+                payload["checkout_source_ended_at"] = ""
         # A recorded death is undone only by a post written after
         # the death (live review finding: an older article, merged in the
         # same batch, revived a deal a source had just declared sold out).

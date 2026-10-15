@@ -188,12 +188,14 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                require_confirmation: bool = True, allow_used: bool = False) -> float | None:
     """Landing quality; internal recovery may score used items without featuring them."""
     from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
-    from .verify import is_amazon_deal, price_confirmation_recent
+    from .verify import _price_hidden_by_promo, is_amazon_deal, price_confirmation_recent
+    from . import checkout_prices
 
     from .non_amazon_freshness import promotion_excluded
     if deal.get("price_unconfirmed") or promotion_excluded(deal, cfg, now):
         return None
-    if require_confirmation and is_amazon_deal(deal) and not price_confirmation_recent(
+    checkout = checkout_prices.enabled(cfg) and _price_hidden_by_promo(deal)
+    if require_confirmation and is_amazon_deal(deal) and not checkout and not price_confirmation_recent(
             deal, now, cfg.keepa_pick_max_unconfirmed_h):
         return None
     # Keepa can't re-check other stores: a price nobody restated or re-checked
@@ -258,15 +260,19 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
 
 
 def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
-              now: datetime | None = None, *, summary: dict | None = None) -> list[dict[str, Any]]:
+              now: datetime | None = None, *, summary: dict | None = None, cfg=None) -> list[dict[str, Any]]:
     """Greedy selection with strict caps; ties retain the input's order."""
     from .verify import _price_hidden_by_promo
+    from . import checkout_prices
 
     picks = options.get("top_picks")
     if not picks:
         return []
     checkout = options.get("checkout_price_deals") or {}
     enabled = checkout.get("enabled", False)
+    if enabled and cfg is None:
+        from .config import AppConfig
+        cfg = AppConfig(front_page=options)
     now = now or datetime.now(timezone.utc)
     window = max(1, int(checkout.get("top_pick_window", 5)))
     maximum = max(0, int(checkout.get("top_pick_max_in_window", 1)))
@@ -280,12 +286,12 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
         if len(picked) >= picks["count"]:
             break
         promo = _price_hidden_by_promo(deal)
+        kept_by = []
         if enabled and promo:
-            seen = [at for s in deal.get("sightings") or []
-                    if (at := parse_iso(s.get("seen_at") or "")) is not None and at <= now]
-            if not seen or now - max(seen) > timedelta(hours=float(checkout.get("top_pick_max_age_h", 24))):
+            skipped, kept_by = checkout_prices.pick_evidence(deal, cfg, now)
+            if skipped:
                 if summary is not None:
-                    summary["skipped_age"] += 1
+                    summary[skipped] += 1
                 continue
             if sum(pos > len(picked) - window for pos in promo_positions) >= maximum:
                 if summary is not None:
@@ -304,6 +310,9 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
             continue
         if promo:
             promo_positions.append(len(picked))
+            if summary is not None:
+                for reason in kept_by:
+                    summary["kept_by"][reason] += 1
         picked.append(deal)
         stores[store] += 1
         brands[brand] += 1

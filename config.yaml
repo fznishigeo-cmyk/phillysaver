@@ -147,7 +147,9 @@ publish:
     prefer_photos: true
     checkout_price_deals:       # operator approval pending; no change while off
       enabled: false
-      top_pick_max_age_h: 24    # latest source sighting, including re-posts
+      max_stated_days: 7        # cap end-date evidence from its source statement
+      repost_window_h: 24       # a sighting/re-post of the current checkout price
+      max_silent_h: 72          # silence backstop; never overrides a gone signal
       top_pick_window: 5
       top_pick_max_in_window: 1
     spotlight:
