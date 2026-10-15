@@ -173,7 +173,7 @@ def test_hourly_shape() -> None:
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     assert doc["permissions"] == {"contents": "write"}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 15
+    assert job["timeout-minutes"] == 20
 
     steps = job["steps"]
     uses = [s.get("uses", "") for s in steps]

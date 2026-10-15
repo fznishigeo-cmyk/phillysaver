@@ -24,7 +24,10 @@ jobs:
     env:
       DEALRADAR_DURABLE_STATE: "1"
       DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
-    timeout-minutes: 15  # hard stop; the run itself targets < 3 min of runner time
+    # Hard stop. The pipeline has its own 10 min budget (config.yaml run_budget_s); the
+    # rest is checkout, deploy and posting. 15 was too tight: run 164 (2026-10-15) did
+    # all its work in 15:02, including a 2.4 min checkout, and was marked cancelled.
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
