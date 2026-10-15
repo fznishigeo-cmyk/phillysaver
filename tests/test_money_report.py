@@ -183,7 +183,7 @@ def test_money_totals_and_headlines(cfg):
 def test_growth_workflow_cloudflare_env():
     workflow = yaml.safe_load((ROOT / ".github/workflows/growth-report.yml").read_text())
     env = next(step["env"] for step in workflow["jobs"]["report"]["steps"]
-               if step.get("run") == "python -m dealradar growth-report")
+               if step.get("run", "").startswith("python -m dealradar growth-report"))
     for name in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"):
         assert env[name] == "${{ secrets." + name + " }}"
 
