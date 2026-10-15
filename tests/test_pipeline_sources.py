@@ -5,6 +5,7 @@ sources.yaml fetched every hour yet never had one post parsed)."""
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -736,6 +737,31 @@ class TestFairScheduling:
         srcs = [make_source(f"s{i}", fast_lane=(i % 2 == 0)) for i in range(5)]
         order = pipeline._order_for_run(srcs, "k", fast_lane=True)
         assert sorted(s.name for s in order) == sorted(s.name for s in srcs)
+
+    def test_partner_emails_lead_fetch_and_parse_in_both_lanes(self):
+        """Operator 2026-10-15: deal emails must not go stale. The inbox is
+        fetched first in both lanes and its posts parse before any backlog,
+        fairly among partners; nothing is dropped and feed order holds."""
+        inbox = SourceConfig(name="partner_newsletters", method="email", adapter="newsletter",
+                             url="https://wowpriced.com/", fast_lane=True)
+        srcs = [make_source("slick", fast_lane=True), make_source("blog_a"), inbox,
+                make_source("blog_b"), make_source("keepa", fast_lane=True)]
+        for fast in (False, True):
+            order = pipeline._order_for_run(srcs, "2026-10-15T23", fast_lane=fast)
+            assert order[0] is inbox and len(order) == len(srcs)
+        hourly = pipeline._order_for_run(srcs, "2026-10-15T23", fast_lane=False)[1:]
+        assert max(i for i, s in enumerate(hourly) if not s.fast_lane) < min(
+            i for i, s in enumerate(hourly) if s.fast_lane)
+        posts = [make_post("a", i) for i in range(3)] + [make_post("b", 0)]
+        emails = [dataclasses.replace(make_post(name, i), via_email=True)
+                  for name, i in (("msm", 0), ("msm", 1), ("clark", 0))]
+        out = pipeline._interleave_by_source(posts + emails)
+        assert [p.uid for p in out] == ["msm-0", "clark-0", "msm-1", "a-0", "b-0", "a-1", "a-2"]
+
+    def test_shipped_inbox_runs_in_the_fast_lane(self):
+        from dealradar.config import load_sources
+        inbox = next(s for s in load_sources()[0] if s.method == "email")
+        assert inbox.fast_lane and inbox.enabled
 
     def test_fetch_stops_inside_the_parse_reserve(self):
         """_fetch_all must leave _RESERVE_FOR_PARSE_S on the clock: with the

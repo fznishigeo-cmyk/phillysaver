@@ -1044,7 +1044,7 @@ sources:
     url: https://wowpriced.com/
     region: US
     allowed_html: false
-    fast_lane: false
+    fast_lane: true   # operator 2026-10-15: deal emails must not go stale; every 10-minute run reads the inbox
     enabled: true
     notes: Reads the private inbox once; matches senders to the permission partners above by domain or their optional newsletter_from list. Feed readers keep running; never fetches partner pages.
 

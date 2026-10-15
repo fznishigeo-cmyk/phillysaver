@@ -161,12 +161,18 @@ def _order_for_run(sources: list[SourceConfig], run_key: str,
     (rotated, so a budget cut lands on a different one each hour) and the
     fast-lane feeds trail. Fast runs only fetch fast-lane sources anyway,
     so a plain rotation serves them.
+
+    The partner-email inbox always goes first, in both lanes: one quick read
+    of our own inbox, and the freshest deals we get (operator, 2026-10-15:
+    "we need deals that don't go stale").
     """
+    inbox = [s for s in sources if s.method == "email"]
+    sources = [s for s in sources if s.method != "email"]
     if fast_lane:
-        return _rotate_for_run(sources, run_key)
+        return inbox + _rotate_for_run(sources, run_key)
     slow = [s for s in sources if not s.fast_lane]
     fast = [s for s in sources if s.fast_lane]
-    return _rotate_for_run(slow, run_key) + fast
+    return inbox + _rotate_for_run(slow, run_key) + fast
 
 
 def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
@@ -175,12 +181,19 @@ def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
     The parse loop stops at the spend cap, the max-posts cap, or the run
     deadline; with posts grouped by source, whoever is listed first takes the
     whole budget. Interleaved, every source lands a fair share per run.
+    Partner emails lead (round-robin among themselves): a newsletter is a
+    partner's freshest deals and must not wait behind a backlog (live
+    2026-10-15: 304 posts left at the hourly deadline; operator: "we need
+    deals that don't go stale").
     """
-    queues: dict[str, list[RawPost]] = {}
-    for p in posts:
-        queues.setdefault(p.source_name, []).append(p)
-    return [p for p in chain.from_iterable(zip_longest(*queues.values()))
-            if p is not None]
+    def fair(group: list[RawPost]) -> list[RawPost]:
+        queues: dict[str, list[RawPost]] = {}
+        for p in group:
+            queues.setdefault(p.source_name, []).append(p)
+        return [p for p in chain.from_iterable(zip_longest(*queues.values()))
+                if p is not None]
+
+    return fair([p for p in posts if p.via_email]) + fair([p for p in posts if not p.via_email])
 
 
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
