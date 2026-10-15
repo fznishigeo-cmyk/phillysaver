@@ -111,7 +111,7 @@ def stretch(demand, granted, limits):
 
 
 class Plan:
-    def __init__(self, history, deals, picks, wall, gap, *, cadence_minutes=None):
+    def __init__(self, history, deals, picks, wall, gap, *, cadence_minutes=None, surplus=0):
         from .publish.social import plenty_of_stock
         self.history, self.cfg, self.now = history, history.cfg, history.now
         self.options = self.cfg.keepa_volatility
@@ -130,7 +130,7 @@ class Plan:
             for s in samples:
                 # Old folded samples lack per-request receipts; don't divide
                 # their cumulative tokens by one and invent an average.
-                if (s.get("request_tokens", -1) >= 0 and s.get("estimated_tokens") == 0
+                if (not s.get("buybox") and s.get("request_tokens", -1) >= 0 and s.get("estimated_tokens") == 0
                         and (at := util.parse_iso(s.get("requested_at") or "")) is not None and at <= self.now):
                     mode = bool(s.get("used")), bool(s.get("live"))
                     samples_by_mode[mode].append(s["request_tokens"])
@@ -143,7 +143,7 @@ class Plan:
                 self.cost_sources[name] = "deal_receipts" if samples_by_mode[mode] else "ceiling"
                 if not samples_by_mode[mode]:
                     for s in self.calls.samples:
-                        if (s.get("used"), s.get("live")) == mode and s.get("tokens") is not None:
+                        if not s.get("buybox") and (s.get("used"), s.get("live")) == mode and s.get("tokens") is not None:
                             samples_by_mode[mode].extend([s["tokens"] / s["count"]] * s["count"])
                     if samples_by_mode[mode]:
                         self.cost_sources[name] = "shared_call_receipts"
@@ -159,15 +159,20 @@ class Plan:
             self.visibility[key] = ("top" if key in picks else "wall" if key in wall else
                                     "hidden" if verify.price_unconfirmed(deal, self.cfg, self.now) else "rest")
             used = verify.is_used_deal(deal)
-            live = bool(self.cfg.keepa_recheck_top_live and key in picks)
+            box = (wall.get(key, self.cfg.keepa_buybox_top_n) < self.cfg.keepa_buybox_top_n
+                   and not used and not verify._price_hidden_by_promo(deal))
+            live = bool(self.cfg.keepa_recheck_top_live and (key in picks or box))
             receipts = samples_by_deal_mode[key, used, live] or samples_by_mode[used, live]
             # Offers=20: 1 + 6 per started block of ten offers, at most 13.
             self.costs[key] = (sum(receipts) / len(receipts) if receipts else
                                (verify.USED_RECHECK_TOKENS if used else 1) + live)
+            if box:
+                self.costs[key] += 2
         self.targets = {t: {v: max(1 / 60, float(self.options.get("targets", {}).get(t, {}).get(v, h)))
                             for v, h in values.items()} for t, values in DEFAULT_TARGETS.items()}
         self.discovery, self.discovery_source = self.discovery_rate()
-        self.granted = max(0, self.cfg.keepa_tokens_per_minute - self.discovery)
+        self.surplus = surplus
+        self.granted = max(0, self.cfg.keepa_tokens_per_minute - self.discovery) + surplus / gap
         self.demand = {t: sum(self.costs[k] / (60 * self.targets[t][self.visibility[k]])
                              for k in self.rows if self.facts[k]["tier"] == t) for t in TIERS}
         self.factors = stretch(self.demand, self.granted,
@@ -343,6 +348,8 @@ class Plan:
                   "discovery_per_minute": self.discovery, "discovery_source": self.discovery_source,
                   "cost_samples": self.cost_samples, "cost_sources": self.cost_sources,
                   "click_boosted": len(self.boosted), "tiers": {}}
+        if self.cfg.keepa_recheck_surplus:
+            result["surplus_granted"] = self.surplus
         for name in TIERS:
             classes = {}
             for visibility in VISIBILITY:

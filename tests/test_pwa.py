@@ -22,6 +22,9 @@ def baseline_config(mode):
         cfg.non_amazon_freshness_enabled = False  # pin predates task 102's age gate
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
+        # Predates the Buy Box top picks and surplus scheduling.
+        cfg.keepa_buybox_top_n = 0
+        cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False
     else:
         cfg = AppConfig(custom_domain="wowpriced.com", seo_store_page_min_deals=1)
         if mode == "open":

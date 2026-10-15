@@ -69,6 +69,9 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     _seed_amazon(db, "url|never", "B0NEVER000", first_seen_at=seen)
     db.meta_set(PICKS_META, json.dumps(["url|pick", "url|usedpick"]))
     cfg = load_config()
+    # Predates the Buy Box top picks and surplus scheduling.
+    cfg.keepa_buybox_top_n = 0
+    cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False
     cfg.keepa_volatility["enabled"] = False  # legacy visibility cadence
     cfg.feature_flags["keepa"] = True
     assert cfg.keepa_recheck_top_h == .75

@@ -35,11 +35,13 @@ class CallHistory:
                         and (at := util.parse_iso(s.get("at") or "")) is not None
                         and now - timedelta(days=2) <= at <= now] if isinstance(saved, list) else []
 
-    def record(self, *, used, live, count, seconds, tokens):
+    def record(self, *, used, live, count, seconds, tokens, buybox=False):
         if self.db is None or count <= 0:
             return
         self.samples.append(dict(at=util.iso(self.now), used=used, live=live,
                                  count=count, seconds=max(1, seconds), tokens=tokens))
+        if buybox:
+            self.samples[-1]["buybox"] = True
         # At most 24 calls per transport mode, including errors; no product bodies.
         counts = {}
         kept = []
@@ -109,7 +111,8 @@ class History:
                     if (at := util.parse_iso(s["requested_at"])) is not None and at <= self.now),
                    key=lambda s: s["requested_at"], default=None)
 
-    def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False, live_request=False):
+    def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False, live_request=False,
+               buybox_request=False, shopper_price=None):
         key = deal["dedupe_key"]
         samples = self.samples.setdefault(key, [])
         if self.attempted(key):
@@ -118,6 +121,8 @@ class History:
         if not tokens and product is None and verdict is None:
             return
         live = live_price(deal, product) if product is not None else None
+        if shopper_price is not None:
+            live = shopper_price
         shown = deal.get("final_price")
         stamp = util.iso(observed)
         fresh = not any(s.get("observed_at", "") >= stamp and s["reading"] for s in samples)
@@ -139,6 +144,8 @@ class History:
         # Per-request receipts must not be confused with folded cache costs.
         sample.update(request_tokens=tokens, estimated_tokens=estimated,
                       live=live_request, used=verify.is_used_deal(deal), regular_price=deal.get("regular_price"))
+        if buybox_request:
+            sample["buybox"] = True
         own_change = (previous or {}).get("price_changed_at", "")
         if reading and live is not None:
             same = previous and previous.get("live_price") == sample["live_price"]

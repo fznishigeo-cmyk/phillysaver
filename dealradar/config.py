@@ -345,6 +345,11 @@ class AppConfig:
     # Fallback kill tolerance when the paid record cannot re-price a deal.
     keepa_recheck_tolerance_pct: float = 10.0
     keepa_buybox_rule: str = "off"  # off | shadow | on (publication gate only)
+    keepa_buybox_top_n: int = 0
+    keepa_buybox_interval_min: float = 60.0
+    keepa_recheck_surplus: bool = False
+    keepa_recheck_surplus_reserve: float = 650.0
+    keepa_recheck_top_live_adaptive: bool = False
     keepa_reprice_min_pct: float = 1.0
     keepa_recheck_top_n: int = 200
     keepa_recheck_wall_n: int = 300
@@ -765,19 +770,21 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.keepa_buybox_rule = ("on" if buybox else "off") if isinstance(buybox, bool) else str(buybox)
     if cfg.keepa_buybox_rule not in {"off", "shadow", "on"}:
         raise ValueError("keepa.buybox_rule must be off, shadow, or on")
-    for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h",
+    for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h", "recheck_surplus_reserve",
                  "show_max_unconfirmed_h", "show_max_unconfirmed_used_h"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.0, float(g("keepa", name, default=getattr(cfg, attr)))))
-    for name in ("recheck_interval_minutes", "recheck_idle_min_age_h", "recheck_wall_max_age_h"):
+    for name in ("recheck_interval_minutes", "recheck_idle_min_age_h", "recheck_wall_max_age_h", "buybox_interval_min"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0.5, float(g("keepa", name, default=getattr(cfg, attr)))))
-    for name in ("recheck_top_n", "recheck_wall_n", "overflow_extra_pages_max",
+    for name in ("recheck_top_n", "recheck_wall_n", "overflow_extra_pages_max", "buybox_top_n",
                  "hidden_new_tokens_per_run", "hidden_used_scans_per_run"):
         attr = "keepa_" + name
         setattr(cfg, attr, max(0, int(g("keepa", name, default=getattr(cfg, attr)))))
     cfg.keepa_recheck_top_live = bool(g(
         "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
+    for name in ("recheck_surplus", "recheck_top_live_adaptive"):
+        setattr(cfg, "keepa_" + name, bool(g("keepa", name, default=False)))
     cfg.keepa_recheck_adaptive = g("keepa", "recheck_adaptive", default={}) or {}
     cfg.keepa_tokens_per_minute = max(1.0, float(g(
         "keepa", "tokens_per_minute", default=cfg.keepa_tokens_per_minute)))

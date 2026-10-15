@@ -1,6 +1,7 @@
 """Private click-price measurements from already-paid Keepa product records."""
 
 from dataclasses import replace
+from datetime import timedelta
 import math
 
 from .savings import exceeds_price_tolerance
@@ -40,6 +41,21 @@ def prices(product):
 
 def eligible(deal):
     return is_amazon_deal(deal) and not is_used_deal(deal) and number(deal.get("final_price")) is not None
+
+
+def fresh_reading(deal, product, cfg, now):
+    """Buy Box has its own clock; a fresh listing cannot refresh that clock."""
+    from .verify import _keepa_since_price, price_confirmed_at
+    if not eligible(deal) or _price_hidden_by_promo(deal):
+        return None
+    stats = product.get("stats") or {}
+    stamp = stats.get("lastBuyBoxUpdate") if isinstance(stats, dict) else None
+    at, price = keepa_time(stamp), prices(product)["buybox"]
+    previous = price_confirmed_at(deal)
+    if (price is None or at is None or not now - timedelta(minutes=cfg.keepa_buybox_interval_min) <= at <= now
+            or _keepa_since_price(stamp, deal) is not True or (previous is not None and at < previous)):
+        return None
+    return price, at
 
 
 def empty_summary():

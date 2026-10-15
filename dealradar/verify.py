@@ -507,6 +507,7 @@ def keepa_products(key: str, asins: list[str], stats: int,
                    budget: KeepaBudget | None,
                    offers: int | None = None, *,
                    live: bool = False,
+                   buybox: bool = False, conditional_live: bool = False,
                    fetcher: PoliteFetcher | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs (KEEPA_OFFERS_BATCH
     with ``offers``): ``{asin: product}`` (an ASIN Keepa does not know is
@@ -526,11 +527,13 @@ def keepa_products(key: str, asins: list[str], stats: int,
     if offers is not None:
         params["offers"] = offers
     if live:
-        params["update"] = 0
+        params["update"] = 1 if conditional_live else 0
+    if buybox:
+        params["buybox"] = 1
     fetcher = fetcher if fetcher is not None else _standalone_keepa_fetcher()
     # Keyed API (robots.txt is for crawlers); a 429 is an empty token bucket,
     # answered next pass, so it is not retried here.
-    reserved = len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live))
+    reserved = len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live) + 2 * buybox)
     if budget is not None:
         budget.reserve(reserved)
     payload, resp = None, None
@@ -551,7 +554,7 @@ def keepa_products(key: str, asins: list[str], stats: int,
                 tokens = None
             CallHistory(budget.db, util.now_utc()).record(
                 used=offers is not None, live=live, count=len(asins),
-                seconds=time.monotonic() - started, tokens=tokens)
+                seconds=time.monotonic() - started, tokens=tokens, buybox=buybox)
     if budget is not None:
         budget.note(payload)
     if resp.status_code == 429:
@@ -763,6 +766,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                           budget: KeepaBudget | None = None,
                           used_offers: bool = True, *,
                           live: bool = False,
+                          buybox: bool = False, conditional_live: bool = False,
                           fetcher: PoliteFetcher | None = None
                           ) -> dict[str, bool | None]:
     """Live price verdicts for many Amazon deals in as few Keepa calls as
@@ -792,7 +796,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                                      (used, RECHECK_OFFERS, KEEPA_OFFERS_BATCH)):
         start = 0
         while start < len(wanted):
-            cost = (USED_RECHECK_TOKENS if offers else 1) + int(live)
+            cost = (USED_RECHECK_TOKENS if offers else 1) + int(live) + 2 * buybox
             avail = budget.available()
             if not budget.allows(max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)):
                 break
@@ -803,6 +807,10 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
             before = budget.usage.accounted, budget.usage.estimated
             try:
                 options = {"live": True} if live else {}
+                if buybox:
+                    options["buybox"] = True
+                if conditional_live:
+                    options["conditional_live"] = True
                 products = keepa_products(key, [a for a, _ in chunk], 1,
                                           budget, offers=offers, fetcher=fetcher, **options)
             except Exception as e:  # transport, schema drift

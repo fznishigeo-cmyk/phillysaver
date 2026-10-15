@@ -26,6 +26,9 @@ from tests.test_keepa import SRC, _amazon_row, _wh_row, _junk_row
 @pytest.fixture
 def cfg():
     result = load_config()
+    # Predates the Buy Box top picks and surplus scheduling.
+    result.keepa_buybox_top_n = 0
+    result.keepa_recheck_surplus = result.keepa_recheck_top_live_adaptive = False
     result.keepa_volatility["enabled"] = False  # preserve the 087/091 regression scenarios
     # Scenarios model cached (1-token) reads; shipped live top reads
     # (update=0) are exercised where a test sets this to True.

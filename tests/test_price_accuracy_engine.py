@@ -28,6 +28,9 @@ ASIN = "B000000001"
 @pytest.fixture
 def cfg():
     result = load_config()
+    # Predates the Buy Box top picks and surplus scheduling.
+    result.keepa_buybox_top_n = 0
+    result.keepa_recheck_surplus = result.keepa_recheck_top_live_adaptive = False
     result.feature_flags["keepa"] = True
     result.critic_shadow_model = ""
     result.keepa_sweep_enabled = False

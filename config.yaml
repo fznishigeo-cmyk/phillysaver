@@ -283,7 +283,12 @@ dedupe:
   fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
 
 keepa:
-  buybox_rule: shadow             # off | shadow | on; no extra regular recheck tokens
+  buybox_rule: shadow             # off | shadow | on; publication rule only
+  buybox_top_n: 120               # first N published wall positions; plain new Amazon only
+  buybox_interval_min: 60         # paid requests and maximum Buy Box observation age
+  recheck_surplus: true           # use predicted overflow before the next scheduled run
+  recheck_surplus_reserve: 650     # 140 discovery + 120 top reads * 4 worst-case tokens, rounded up
+  recheck_top_live_adaptive: true  # update=0 with surplus, otherwise update=1
   tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
   volatility:
     # Off 2026-10-14 ~19:50Z: live fast lanes ran out of time making many 1-4 ASIN

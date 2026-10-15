@@ -193,6 +193,27 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Buy Box top picks (Codex task 112, 2026-10-15; merged):**
+  `keepa.buybox_top_n: 120` uses published wall order, with
+  `buybox_interval_min: 60` between paid attempts (lost answers included).
+  Plain new Amazon prices use qualified Buy Box totals, including shipping,
+  only with a valid independent observation within 60 minutes and since the
+  current price/confirmation. Corrections reuse evidence verification,
+  `reprice_existing`, savings and price history; promo/used/missing/stale
+  readings keep the existing path, and the outside-top rule stays shadow.
+  `recheck_surplus: true` grants `min(predicted overflow, bucket - reserve)`:
+  top Buy Box, used wall scans, then oldest live confirmations. The
+  `recheck_surplus_reserve: 650` covers 140 discovery + 120 × 4 top tokens
+  (620, rounded up); existing used-share, time and first-429 guards remain.
+  `recheck_top_live_adaptive: true` sends update=0 with surplus, update=1
+  otherwise; reserve 2 stats / 4 Buy Box tokens per live ASIN, degrading
+  short Buy Box batches to stats-only. Existing missing-receipt estimates
+  remain conservative. Summaries add `buybox_top`, `live_reads`,
+  `tokens.overflow_estimate`, `surplus_granted` and category `surplus_spent`.
+  Watch top and used-wall `within_1h`, stale/missing Buy Box counts inferred
+  from requested/with_buybox, and unused tokens/overflow after deployment.
+  Settings-off byte pins keep their hashes ("predates the Buy Box top
+  picks" pins). Fast lane must stay well inside its 12-minute job.
 - **Woot repricing (Codex task 110, 2026-10-15; merged):** single-price
   live feed offers correct the existing row through `reprice_existing` when
   drift exceeds max($0.01, 0.5%). Reuses Woot's mapper/ListPrice evidence and

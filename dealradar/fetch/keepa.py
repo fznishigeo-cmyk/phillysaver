@@ -366,19 +366,27 @@ def _product_row(product: dict[str, Any]) -> dict[str, Any]:
 
 
 def reprice_post(product: dict[str, Any], deal: dict[str, Any], cfg,
-                 now: datetime) -> RawPost | None:
+                 now: datetime, *, buybox: bool = False) -> RawPost | None:
     """A correction from an already-paid record, even below the deal floors."""
     from ..verify import _keepa_since_price, _price_hidden_by_promo, is_used_deal
 
     if is_used_deal(deal) or _price_hidden_by_promo(deal) \
-            or _keepa_since_price(product.get("lastUpdate"), deal) is False:
+            or (not buybox and _keepa_since_price(product.get("lastUpdate"), deal) is False):
         return None
     stats = product.get("stats")
     if not isinstance(stats, dict):
         return None
-    # Amazon's own price is what the shopper sees on the product page; a
-    # cheaper marketplace offer (shipping not included) would overstate it.
+    # The legacy correction uses Amazon's own slot. Top picks can instead
+    # use a qualified Buy Box total from its independently dated reading.
     live = _price_at(stats.get("current"), PRICE_TYPE_AMAZON)
+    stamp = product.get("lastUpdate")
+    if buybox:
+        from ..buybox import fresh_reading
+        reading = fresh_reading(deal, product, cfg, now)
+        if reading is None:
+            return None
+        live, _observed = reading
+        stamp = stats["lastBuyBoxUpdate"]
     avg30 = _price_at(stats.get("avg30"), PRICE_TYPE_AMAZON)
     avg90 = _price_at(stats.get("avg90"), PRICE_TYPE_AMAZON)
     shown = deal.get("final_price")
@@ -400,11 +408,13 @@ def reprice_post(product: dict[str, Any], deal: dict[str, Any], cfg,
              f"Regular price ({label} on Amazon): ${regular:,.2f}.",
              "Sold online at Amazon.com (price tracked by Keepa).",
              f"Product link: https://www.amazon.com/dp/{asin}"]
+    if buybox:
+        lines[1] = f"Buy Box total including shipping: ${live:,.2f} at Amazon."
     return RawPost(
         source_name="keepa", uid=f"reprice:{deal['dedupe_key']}",
         url=f"https://keepa.com/#!product/1-{asin}", title=title,
         text="\n".join(lines), published_at=now, fetched_at=now,
-        hash_text="\n".join(lines) + f"\nReading: {product.get('lastUpdate')}",
+        hash_text="\n".join(lines) + f"\nReading: {stamp}",
         structured={"item": title, "store": "Amazon", "online_only": "true",
                     "product_url": f"https://www.amazon.com/dp/{asin}",
                     "final_price": live, "regular_price": regular,
@@ -740,7 +750,9 @@ class KeepaDealsAdapter(SourceAdapter):
                 overflow = pull.budget.overflow(gap, pull.now)
                 if overflow is None or overflow < DEAL_PAGE_COST:
                     break
-                if not pull.budget.allows(max(MIN_FOR_DEAL_QUERY, pull.reserve) + DEAL_PAGE_COST,
+                reserve = max(MIN_FOR_DEAL_QUERY, pull.reserve,
+                              cfg.keepa_recheck_surplus_reserve if cfg.keepa_recheck_surplus else 0)
+                if not pull.budget.allows(reserve + DEAL_PAGE_COST,
                                           pull.now):
                     break
                 selection, page, seen, mapper, out, lane, cursor = passes.pop(0)
