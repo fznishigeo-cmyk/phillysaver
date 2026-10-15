@@ -43,7 +43,7 @@ def test_shared_card_and_phone_cap(tmp_path):
         assert 'height:52px' in html and 'height:56px' in html and 'border-radius:999px' in html
         assert '.joingoogle{' in html and re.search(r'\.joingoogle\{[^}]*border-radius:12px', html)
         assert 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.' in html
-        assert '<p id="join-description">The day\'s best deals in one email. Free.</p>' in html
+        assert '<p id="join-description">Free. Be first to get our deals email when it launches.</p>' in html
         assert 'width:360px' in html and 'background:transparent' in html
     css = re.search(r'@media \(max-width:640px\)\{\s*\.joinoverlay.*?\n\}', home, re.S)[0]
     assert 'align-items:flex-end' in css
