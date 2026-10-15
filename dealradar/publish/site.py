@@ -1150,6 +1150,13 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                     run_gap_forecast(db, cfg, now)["minutes"])
         tier_coverage = {name: {"tiers": plan.coverage(rows)}
                          for name, rows in (("top_candidates", top_candidates), ("wall", wall_rows))}
+    from .. import accuracy
+    spotlight_keys = {d["dedupe_key"] for d in spotlight}
+    audit_wall = [d for d in teaser if not d.get("locked") and d["dedupe_key"] not in spotlight_keys]
+    audit_wall = (seo.place_gone(pick_order(audit_wall, cfg.front_page)) if cfg.front_page.get("top_picks")
+                  else pick_order(seo.place_gone(audit_wall), cfg.front_page))
+    accuracy.publish(db, spotlight + audit_wall, now,
+                     (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             "public_deals": teaser + spotlight_only,
             "unconfirmed_label": label_report,

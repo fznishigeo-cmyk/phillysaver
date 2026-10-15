@@ -193,6 +193,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Private accuracy scoreboard (Codex task 117, 2026-10-15; merged):**
+  paid Keepa/Woot/Best Buy/eBay readings compare with a frozen public price,
+  before corrections; private rows retain 35 days and dedupe run/cache repeats.
+  The growth report opens with sourced growth totals; daily top30/top120/rest
+  and overall accuracy include n, 95% Wilson ranges, misses and a seven-day line.
+  Checkout-price kinds stay separate; empty samples say "not measured".
+  `accuracy.extra_samples_per_day: 0` stays off; opt-in random Amazon checks
+  preserve reserves, six-hour spacing, daily caps, publish time and first-429 stops;
+  receipts and lost-response debits persist for the next run.
+  **56 accuracy checks pass**. Full `.venv/bin/python -m pytest -q -n 3
+  -p no:cacheprovider` (compact tracebacks): **4,244 passed, 26 failed** (22m16s).
+  All 26 failures reproduce on untouched HEAD; **no new failures**. Independent
+  renders match all **175 public files across four access modes** byte for byte.
+  No LLM calls added. Test logs/scratch outputs removed; no commit or push.
+  Review/deployment remain; live accuracy is not measured before publication.
 - **Amazon as-of disclosure (Codex task 115, 2026-10-15; merged, ON):**
   `publish.amazon_as_of.enabled: true`; omitted/false preserves published
   bytes. Amazon cards add a title/hidden Eastern time from the existing

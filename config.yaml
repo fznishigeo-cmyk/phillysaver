@@ -297,6 +297,9 @@ verify:
 dedupe:
   fuzzy_threshold: 0.90        # token-sort ratio on normalized item names, same store
 
+accuracy:
+  extra_samples_per_day: 0       # optional random paid audits; existing reads are always reused
+
 keepa:
   buybox_rule: shadow             # off | shadow | on; publication rule only
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only

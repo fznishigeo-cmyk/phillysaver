@@ -71,6 +71,18 @@ def page_price_moved(price: float, first: float, threshold_pct: float) -> bool:
     return abs(price - first) * 100 > first * threshold_pct + 1e-9
 
 
+def accuracy_price_outcome(price: float, final: float, *, source="keepa", min_pct=1.0) -> str:
+    """Use the repricer's existing drift boundary in either direction."""
+    difference = abs(price - final)
+    if source == "keepa":
+        changed = difference > 1e-9 and (not final or difference * 100 / final + 1e-9 >= min_pct)
+    elif source == "woot":
+        changed = difference > max(0.01, final * 0.005) + 1e-9
+    else:  # Best Buy/eBay correct any changed, evidence-backed final price.
+        changed = price != final
+    return ("higher" if price > final else "lower") if changed else "match"
+
+
 def comparable_prices(price: float, other: float, minimum: float, maximum: float) -> bool:
     """Reject extreme ratios in either direction; zero only compares to zero."""
     if price == 0 or other == 0:

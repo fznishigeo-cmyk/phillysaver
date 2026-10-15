@@ -143,6 +143,15 @@ def _price_recheck(db_path, now: datetime) -> dict:
         db.close()
 
 
+def _accuracy(db_path, cfg, now):
+    from ..accuracy import report_data
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, cfg, now)
+    finally:
+        db.close()
+
+
 def _unconfirmed_label(db_path) -> dict:
     from ..publish.price_labels import report_data
 
@@ -266,6 +275,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "accuracy": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                     lambda: _accuracy(db_path, cfg, now)),
         "pinterest": ([("social.pinterest.analytics.enabled",
                         (cfg.pinterest.get("analytics") or {}).get("enabled", False)),
                        ("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -575,6 +586,40 @@ def _collapse_unmeasured(lines: list[str]) -> list[str]:
         index = len(result) - 1 if result and result[-1].startswith("Sections:") else len(result)
         result.insert(index, "not measured yet: " + "; ".join(missing))
     return result
+
+
+def _scoreboard(cfg, data, yesterday):
+    from ..accuracy import format_score
+
+    def count(value):
+        return f"{value:,.0f}" if value is not None else "not measured"
+
+    sc, ga = data.get("search_console") or {}, data.get("ga4") or {}
+    y, w = ga.get("yesterday", {}), ga.get("window", {})
+    stores = data.get("ga4_stores") or {}
+    period = f"yesterday / last {cfg.growth_report_days} days"
+    search_period = f"{sc['start']}–{sc['end']}" if sc else "lagged window"
+    accuracy = data.get("accuracy") or {}
+    latest = accuracy.get("daily", [{}])[-1].get("overall")
+    returning = (data.get("saved") or {}).get("returning") or {}
+    subscribers = data.get("subscribers") or {}
+    signups = (y.get("sign_up"), w.get("sign_up")) if ga else (
+        subscribers.get("yesterday"), subscribers.get("window"))
+    signup_source = "GA4 actions" if ga or not subscribers or "unavailable" in subscribers else "subscriber list"
+    returned = "not measured"
+    if returning.get("classified_sessions"):
+        returned = (f"{count(returning['sessions'])} / {count(returning['classified_sessions'])} "
+                    f"({returning['sessions'] / returning['classified_sessions']:.1%}); "
+                    f"{count(returning.get('unclassified_sessions'))} unclassified excluded")
+    return [f"Scoreboard — {yesterday.isoformat()}",
+            f"Search impressions: {count(sc.get('impressions'))}; clicks: {count(sc.get('clicks'))} "
+            f"(Search Console, {search_period})",
+            "Get-deal clicks: " + " / ".join(count(v) for v in (
+                y.get("deal_click") if ga else stores.get("yesterday", {}).get("total"),
+                w.get("deal_click") if ga else stores.get("window", {}).get("total"))) + f" (GA4, {period})",
+            f"Sign-ups: {count(signups[0])} / {count(signups[1])} ({signup_source}, {period})",
+            f"Price accuracy: {format_score(latest)} (paid live API audits, yesterday)",
+            f"Returning sessions (7 days): {returned} (GA4 observed visitor classification)", ""]
 
 
 def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, str]:
@@ -938,9 +983,12 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   f"On trial now: {_n(st['trialing'])}",
                   f"Trials converted ({days} days): {_n(st['converted'])}",
                   f"Cancellations ({days} days): {_n(st['canceled'])}"]
+    from ..accuracy import report_lines
+    lines += ["", *report_lines(data.get("accuracy"))]
     lines += ["", "Sections: " + ", ".join(f"{k} {v}" for k, v in status.items())]
     brand = cfg.custom_domain or "dealradar"
-    lines = [*_plain_summary(cfg, data, yesterday), *_newsletter_lines(data), "", TECHNICAL_HEADING, "",
+    lines = [*_scoreboard(cfg, data, yesterday), *_plain_summary(cfg, data, yesterday),
+             *_newsletter_lines(data), "", TECHNICAL_HEADING, "",
              *_collapse_unmeasured(lines)]
     return f"{brand} growth report {yesterday.isoformat()}", "\n".join(lines) + "\n"
 

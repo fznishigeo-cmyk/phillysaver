@@ -2178,6 +2178,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     kind = "fast" if fast_lane else "hourly"
 
     db = DB(db_path)
+    db.accuracy_run_key = run_key
     repeated_fast_run = fast_lane and db.conn.execute(
         "SELECT 1 FROM run_stats WHERE run_key=? AND finished_at IS NOT NULL", (run_key,)).fetchone()
     db.start_run(run_key, kind, now)
@@ -2572,6 +2573,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                        else pstats.get("spend_usd", 0.0))
 
         # ---- publish ----
+        from . import accuracy
+        accuracy.extra_samples(db, cfg, now, fetcher=fetcher,
+                               deadline=deadline - _RESERVE_FOR_TAIL_S / 2, run_key=run_key,
+                               rate_limited=summary["price_recheck"].get("rate_limited", False))
         # last_run lands in the public deals.json: no spend or model (the
         # operator's; run_stats keeps the spend).
         site_res = render_site(db, cfg, now, last_run={

@@ -83,6 +83,7 @@ class AppConfig:
     """Typed view over config.yaml. `raw` keeps the full parsed document."""
 
     raw: dict[str, Any] = field(default_factory=dict)
+    accuracy_extra_samples_per_day: int = 0
 
     # -- identity / politeness --
     contact_email: str = "set-me@example.com"
@@ -424,6 +425,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    cfg.accuracy_extra_samples_per_day = max(0, int(
+        (raw.get("accuracy") or {}).get("extra_samples_per_day", 0)))
     cfg.contact_email = g("contact_email", default=cfg.contact_email)
     cfg.user_agent = g("user_agent", default=cfg.user_agent)
     cfg.timezone = g("timezone", default=cfg.timezone)

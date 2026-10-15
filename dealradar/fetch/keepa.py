@@ -1120,6 +1120,10 @@ class KeepaDealsAdapter(SourceAdapter):
             products = (body.get("products") if isinstance(body, dict)
                         else None) or []
             valid_products = [p for p in products if isinstance(p, dict)]
+            from .. import accuracy
+            accuracy.keepa(pull.db, cfg, {
+                str(p.get("asin") or "").strip().upper(): p for p in valid_products
+                if str(p.get("asin") or "").strip().upper() in wanted}, util.now_utc())
             if pull.confirmations is not None:
                 pull.confirmations.note([_product_row(p) for p in valid_products
                                          if str(p.get("asin") or "").strip().upper() in wanted],

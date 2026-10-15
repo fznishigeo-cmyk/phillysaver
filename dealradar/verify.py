@@ -585,6 +585,10 @@ def keepa_products(key: str, asins: list[str], stats: int,
     if budget is not None:
         from .keepa_categories import remember_roots
         remember_roots(budget.db, [dict(p, asin=a) for a, p in out.items()])
+        if budget.db is not None:
+            from . import accuracy
+            if accuracy.published(budget.db):
+                accuracy.keepa(budget.db, fetcher.cfg, out, util.now_utc())
     return out
 
 

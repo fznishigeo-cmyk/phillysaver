@@ -39,6 +39,30 @@ def _publisher_sites() -> dict[str, str]:
             for s in primary + backup}
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS accuracy_samples (
+    deal_key TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    store TEXT NOT NULL,
+    source TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    PRIMARY KEY(run_key, deal_key, source),
+    UNIQUE(deal_key, observed_at, source)
+);
+CREATE INDEX IF NOT EXISTS idx_accuracy_checked ON accuracy_samples(checked_at);
+CREATE TABLE IF NOT EXISTS accuracy_extra_runs (
+    run_key TEXT PRIMARY KEY,
+    checked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS accuracy_extra_reads (
+    day TEXT NOT NULL,
+    deal_key TEXT NOT NULL,
+    checked_at TEXT NOT NULL,
+    run_key TEXT NOT NULL,
+    PRIMARY KEY(run_key, deal_key)
+);
 CREATE TABLE IF NOT EXISTS pinterest_pin_daily (
     environment TEXT NOT NULL,
     pin_id TEXT NOT NULL,
@@ -1225,6 +1249,9 @@ class DB:
               deals_days: int = 14, post_parses_days: int = 2,
               llm_calls_days: int = 35, run_stats_days: int = 60,
               http_cache_days: int = 30, outgoing_days: int = 60) -> None:
+        for table in ("accuracy_samples", "accuracy_extra_runs", "accuracy_extra_reads"):
+            self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
+                              (iso(now - timedelta(days=35)),))
         self.conn.execute(
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),

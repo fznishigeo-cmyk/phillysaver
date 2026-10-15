@@ -202,6 +202,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
                     source: SourceConfig | None = None) -> dict[str, int]:
     """Reuse the official feed; absence is never evidence an offer ended."""
     from ..dedupe import reprice_existing
+    from .. import accuracy
 
     cfg = cfg if cfg is not None else AppConfig()
     source = source or SourceConfig(name="woot", method="api", url=FEED_URL, adapter="woot")
@@ -220,6 +221,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
         payload = dict(deal)
         ends = util.parse_iso(str(item.get("EndDate") or ""))
         if ends is not None and ends <= now:
+            accuracy.record(db, cfg, deal["dedupe_key"], now, source="woot", unavailable=True)
             payload.update(death="api_ended", died_at=util.iso(now), gone_suspect_at="")
             db.update_deal(deal["dedupe_key"], payload=payload, status="dead")
             continue
@@ -227,6 +229,10 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
         price = _single_price(item.get("SalePrice"), high=True, allow_range=True)
         final = deal.get("final_price")
         promo = _price_hidden_by_promo(deal)
+        if item.get("IsSoldOut") is True:
+            accuracy.record(db, cfg, deal["dedupe_key"], now, source="woot", unavailable=True)
+        elif item.get("IsSoldOut") is False and low is not None and low == price:
+            accuracy.record(db, cfg, deal["dedupe_key"], now, source="woot", price=price)
         if item.get("IsSoldOut") is False and low is not None and price is not None and final is not None:
             if low != price:
                 stats["range_skipped"] += 1

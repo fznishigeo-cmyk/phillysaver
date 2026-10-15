@@ -870,6 +870,13 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     assert all(msg["chat_id"] == ADMIN_CHAT for msg in fake.telegram)  # admin only
     text = "".join(msg["text"] for msg in fake.telegram)
     lines = text.splitlines()
+    assert lines[0] == "Scoreboard — 2026-10-10"
+    assert lines[1].startswith("Search impressions:") and "Search Console" in lines[1]
+    assert lines[2].startswith("Get-deal clicks:") and "GA4" in lines[2]
+    assert lines[3].startswith("Sign-ups:")
+    assert lines[4].startswith("Price accuracy: not measured (n=0)")
+    assert lines[5].startswith("Returning sessions (7 days):")
+    lines = lines[7:]
     assert lines[0] == "wowpriced daily report — Sat Oct 10"
     assert lines[1] == "Real people only. Robots and search engines are NOT counted here."
     assert lines[3] == "People who visited:      731,942 yesterday · 4,410,777 this week"

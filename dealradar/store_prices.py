@@ -401,6 +401,7 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
     from .publish.site import PICKS_META, WALL_META
     from .savings import compute_savings
     from .verify import CONFIRM_GONE_H, is_used_deal, live_price_reading
+    from . import accuracy
 
     stats = {store: dict.fromkeys(COUNTERS, 0) for store in SECRETS}
 
@@ -478,10 +479,15 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                             db.update_deal(deal["dedupe_key"], payload=payload)
                             continue
                         verdict = False if not reading.available else None
+                        if not reading.available or not plain_price(deal):
+                            accuracy.record(db, cfg, deal["dedupe_key"], now, source=store,
+                                            price=reading.price, unavailable=not reading.available, run_key=run_key)
                         if reading.group and plain_price(deal) and reading.price <= deal["final_price"] + .01:
                             # Group prices prove the advertised price is still attainable;
                             # do not replace it with another size's price or add shipping twice.
                             verdict = True
+                            accuracy.record(db, cfg, deal["dedupe_key"], now, source=store,
+                                            price=reading.price, run_key=run_key)
                         elif reading.available and plain_price(deal):
                             post = reprice_post(store, reading, deal, now)
                             if post is not None:
@@ -490,6 +496,8 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                                 live = (compute_savings(ext, allow_price_only=True).final_price
                                         if verify_evidence(ext, post.text)[0] else None)
                                 if live is not None:
+                                    accuracy.record(db, cfg, deal["dedupe_key"], now, source=store,
+                                                    price=live, run_key=run_key)
                                     verdict = live <= deal["final_price"] * (1 + getattr(cfg, store + "_tolerance_pct") / 100) + .01
                                 if reprice_existing(db, deal, post, cfg, now):
                                     counts["repriced"] += 1
