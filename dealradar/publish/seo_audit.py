@@ -181,6 +181,8 @@ class Page(HTMLParser):
                     yield value
                 if "@graph" in value:
                     yield from walk(value["@graph"])
+                if "mainEntity" in value:
+                    yield from walk(value["mainEntity"])
             elif isinstance(value, list):
                 for entry in value:
                     yield from walk(entry)
@@ -226,7 +228,12 @@ class Page(HTMLParser):
                     and _text(str(offer["seller"].get("name") or "")) == store.text().removeprefix("Store: "))
 
     def _product_schema_mismatch(self, products, price) -> bool:
-        if self.invalid_schema or len(products) != 1 or not self.first(cls="product-detail"):
+        if (self.invalid_schema or not self.first(cls="product-detail")
+                or self._product_metadata_mismatch()):
+            return True
+        if price is None:
+            return bool(products or self.first(cls="detail-availability") or self.first(cls="getdeal"))
+        if len(products) != 1:
             return True
         product, name = products[0], self.first(tag="h1")
         if (not name or product.get("name") != word_limit(name.text(), NAME_LIMIT)
@@ -237,8 +244,6 @@ class Page(HTMLParser):
             return True
         offer = product.get("offers")
         available = self.first(cls="detail-availability")
-        if price is None:
-            return offer is not None or available is not None or self.first(cls="getdeal") is not None
         amount = re.search(r"\$([\d,.]+)\s+([A-Z]{3})\b", price.text())
         if (not isinstance(offer, dict) or not amount or not available
                 or available.text() != "Availability: Live offer"):
@@ -255,6 +260,54 @@ class Page(HTMLParser):
                     and offer.get("availability") == "https://schema.org/InStock"
                     and offer.get("url") == canonical
                     and set(offer) == {"@type", "price", "priceCurrency", "availability", "url"})
+
+    def _product_metadata_mismatch(self) -> bool:
+        nodes = list(self.root.nodes())
+        meta = {n.attrs.get("property") or n.attrs.get("name"): n.attrs.get("content")
+                for n in nodes if n.tag == "meta"}
+        title = self.first(tag="title")
+        canonical = next((n.attrs.get("href") for n in nodes if n.tag == "link"
+                          and n.attrs.get("rel") == "canonical"), None)
+        detail = self.first(cls="product-detail")
+        image = self.first(tag="img", scope=detail)
+        expected_image = image.attrs.get("src") if image else None
+        if (not title or not canonical or not meta.get("description")
+                or meta.get("og:title") != title.text() or meta.get("twitter:title") != title.text()
+                or meta.get("og:description") != meta["description"]
+                or meta.get("twitter:description") != meta["description"]
+                or meta.get("og:url") != canonical or meta.get("og:type") != "product"
+                or meta.get("og:image") != expected_image or meta.get("twitter:image") != expected_image
+                or meta.get("twitter:card") != ("summary_large_image" if image else "summary")):
+            return True
+        if image and (not image.attrs.get("alt") or image.attrs.get("width") != "320"
+                      or image.attrs.get("height") != "320"):
+            return True
+        web = [s for s in self.schemas if isinstance(s, dict) and s.get("@type") == "WebPage"]
+        checked = self.first(cls="last-check")
+        if len(web) != 1 or web[0].get("url") != canonical:
+            return True
+        modified = web[0].get("dateModified")
+        if checked:
+            if (not isinstance(modified, str) or not parse_iso(modified)
+                    or modified != checked.attrs.get("datetime")):
+                return True
+        elif modified is not None:
+            return True
+        crumbs = [s for s in self.schemas if isinstance(s, dict) and s.get("@type") == "BreadcrumbList"]
+        nav = self.first(cls="breadcrumbs")
+        if len(crumbs) != 1 or not nav:
+            return True
+        entries = crumbs[0].get("itemListElement")
+        links = [n for n in nav.nodes() if n.tag == "a"]
+        name = self.first(tag="h1")
+        if not isinstance(entries, list) or len(entries) != 3 or len(links) != 2 or not name:
+            return True
+        base = canonical.removesuffix(self.path)
+        expected = [(n.text(), urljoin(base + "/", n.attrs.get("href"))) for n in links]
+        expected.append((name.text(), canonical))
+        return any(not isinstance(entry, dict) or entry != {
+            "@type": "ListItem", "position": i, "name": label, "item": url}
+            for i, (entry, (label, url)) in enumerate(zip(entries, expected), 1))
 
     def fingerprint(self) -> str:
         def tokens(node, *, cards=False):
@@ -335,6 +388,23 @@ def _target(path: str) -> str:
     return path.removesuffix(".html")
 
 
+def sitemap_urls(out: Path, site_url: str) -> list[str]:
+    """Read our one sitemap entry point and its local children, without I/O to hosts."""
+    root = ET.parse(out / "sitemap.xml").getroot()
+    if root.tag.rsplit("}", 1)[-1] == "sitemapindex":
+        listed = []
+        children = {site_url + "/" + name: name for name in ("sitemap-pages.xml", "sitemap-products.xml")}
+        for node in root.findall("{*}sitemap/{*}loc"):
+            if node.text not in children:
+                raise ValueError("Unknown sitemap child")
+            child = ET.parse(out / children[node.text]).getroot()
+            if child.tag.rsplit("}", 1)[-1] != "urlset":
+                raise ValueError("Invalid sitemap child")
+            listed.extend(n.text or "" for n in child.findall("{*}url/{*}loc"))
+        return listed
+    return [n.text or "" for n in root.findall("{*}url/{*}loc")]
+
+
 def audit(out: Path, cfg, site_url: str, paths: list[str] | None = None, *, pages: dict[str, Page] | None = None) -> dict:
     """Count offending pages and unique source/target link pairs; log paths only."""
     pages = read_pages(out, paths) if pages is None else pages
@@ -365,9 +435,8 @@ def audit(out: Path, cfg, site_url: str, paths: list[str] | None = None, *, page
                 broken.add((path, path))
     expected = {site_url + p for p, page in pages.items() if page.indexable}
     try:
-        xml = ET.parse(out / "sitemap.xml")
-        listed = [n.text or "" for n in xml.findall(".//{*}loc")]
-    except (OSError, ET.ParseError):
+        listed = sitemap_urls(out, site_url)
+    except (OSError, ET.ParseError, ValueError):
         listed = None
     missing = expected - set(listed) if listed is not None else set()
     extra = set(listed) - expected if listed is not None else set()

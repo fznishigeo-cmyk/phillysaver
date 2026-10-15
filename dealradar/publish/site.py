@@ -402,11 +402,15 @@ def linked_disclosure(disclosure: str) -> str:
 
 
 def site_footer(html: str, now: datetime, disclosure: str, support: bool,
-                account: bool = False, *, amazon_as_of_enabled: bool = False) -> str:
+                account: bool = False, *, amazon_as_of_enabled: bool = False,
+                product_pages_enabled: bool = False) -> str:
     """One footer for root and nested pages, with the configured disclosure."""
     if "{{SITE_FOOTER}}" not in html:
         return html
     footer = (TEMPLATES_DIR / "site-footer.html").read_text(encoding="utf-8")
+    if product_pages_enabled:
+        footer = footer.replace('<a href="/hacks.html">Deal hacks</a>',
+                                '<a href="/hacks.html">Deal hacks</a> · <a href="/p/">Price history</a>', 1)
     if amazon_as_of_enabled:
         footer = footer.replace("</span></p>", "</span> " + amazon_as_of.FOOTER + "</p>", 1)
     footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=linked_disclosure(disclosure),
@@ -1061,7 +1065,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             html = html.replace("{{JOIN_STYLE}}", (TEMPLATES_DIR / "join-card.css").read_text(encoding="utf-8"))
         html = site_footer(html, now, meta["disclosure"], support,
                            account=name == "index.html" and not support,
-                           amazon_as_of_enabled=cfg.amazon_as_of_enabled)
+                           amazon_as_of_enabled=cfg.amazon_as_of_enabled,
+                           product_pages_enabled=cfg.seo_product_pages_enabled)
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.

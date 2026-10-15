@@ -31,7 +31,14 @@ jobs:
             const site = 'https://wowpriced.com/';
             const response = await fetch(new URL('sitemap.xml', site), { signal: AbortSignal.timeout(15000) });
             if (!response.ok) throw new Error('sitemap unavailable');
-            const body = await response.text();
+            let body = await response.text();
+            if (/<sitemapindex\b/.test(body)) {
+              // Select the existing hub/deal pages from the ordinary-page child.
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const child = await fetch(new URL('sitemap-pages.xml', site), { signal: AbortSignal.timeout(15000) });
+              if (!child.ok) throw new Error('sitemap child unavailable');
+              body = await child.text();
+            }
             const urls = [...body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map(m => new URL(m[1].trim()));
             const first = pattern => urls.find(u => u.origin === new URL(site).origin && pattern.test(u.pathname));
             const hub = first(/^\/deals\/(?!under-)[^/]+\/$/), deal = first(/^\/deal\/[^/]+\/$/);

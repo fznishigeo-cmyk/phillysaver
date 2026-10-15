@@ -826,7 +826,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     support = bool(getattr(cfg, "support_enabled", False))
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                             now, meta["disclosure"], support,
-                            amazon_as_of_enabled=cfg.amazon_as_of_enabled)
+                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
+                            product_pages_enabled=cfg.seo_product_pages_enabled)
     (out / "404.html").write_text(_fill(not_found,
                                         HUB_LINKS=_hub_links(),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
@@ -845,7 +846,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     template = checkout_prices.template(template, checkout_prices.enabled(cfg))
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support,
-                           amazon_as_of_enabled=cfg.amazon_as_of_enabled)
+                           amazon_as_of_enabled=cfg.amazon_as_of_enabled,
+                           product_pages_enabled=cfg.seo_product_pages_enabled)
     if cfg.seo_product_pages_enabled:
         template = template.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
     if cfg.amazon_as_of_enabled:
@@ -948,7 +950,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             html = _hub_page(template, copy[slug], label, slug, rows, stats[slug], indexable,
                              site_url, open_access, paths, now, page_number=number, page_count=count,
                              paginate=cfg.traffic_hub_pagination_enabled,
-                             product_links=product_pages.hub_links(products, group) if number == 1 else "")
+                             product_links=product_pages.hub_links(products, group)
+                             if number == 1 and cfg.seo_product_pages_enabled else "")
             path = inventory.page_path(hub_href(slug), number)
             _write_page(out, path, html)
             if number > 1:
@@ -975,6 +978,9 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
                     emitted: list[str], wall: str) -> dict[str, seo_audit.Page]:
     """Read final pages once for fingerprints, sitemap coverage and the audit."""
     pages = seo_audit.read_pages(out, emitted)
+    for name in ("sitemap-pages.xml", "sitemap-products.xml"):
+        if not cfg.seo_product_pages_enabled or not site_url:
+            (out / name).unlink(missing_ok=True)
     if not site_url:
         (out / "sitemap.xml").unlink(missing_ok=True)
         return pages
@@ -982,15 +988,27 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
     # Match the emitted robots directives, including empty home/best pages.
     indexable = {p: page for p, page in pages.items() if page.indexable}
     assert len(indexable) <= 50_000
-    urls = ""
-    for path in indexable:
-        lastmod = lastmods[path]
-        urls += (f"  <url><loc>{escape(site_url + path)}</loc>"
-                 + (f"<lastmod>{escape(lastmod)}</lastmod>" if lastmod else "") + "</url>\n")
-    (out / "sitemap.xml").write_text(
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        f"{urls}</urlset>\n", encoding="utf-8")
+    def write_urlset(name, paths):
+        urls = ""
+        for path in paths:
+            lastmod = lastmods[path]
+            urls += (f"  <url><loc>{escape(site_url + path)}</loc>"
+                     + (f"<lastmod>{escape(lastmod)}</lastmod>" if lastmod else "") + "</url>\n")
+        (out / name).write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{urls}</urlset>\n", encoding="utf-8")
+    if cfg.seo_product_pages_enabled:
+        write_urlset("sitemap-products.xml", [p for p in indexable if seo_audit.page_family(p) == "product"])
+        write_urlset("sitemap-pages.xml", [p for p in indexable if seo_audit.page_family(p) != "product"])
+        (out / "sitemap.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            + ''.join(f'  <sitemap><loc>{escape(site_url)}/{name}</loc></sitemap>\n'
+                      for name in ("sitemap-pages.xml", "sitemap-products.xml"))
+            + '</sitemapindex>\n', encoding="utf-8")
+    else:
+        write_urlset("sitemap.xml", indexable)
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if _KEY_RE.fullmatch(key):
         def _read(path: str) -> str:

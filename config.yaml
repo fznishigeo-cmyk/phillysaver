@@ -248,6 +248,7 @@ seo:
     max_indexable: 2000
     lower_ratio: 0.95         # Current / our 90-day median; equality is about usual.
     higher_ratio: 1.05
+    deal_history_limit: 20    # Bound the visible deal list; facts use all stored deals.
   store_page_min_deals: 15    # Public live deals required for a store page.
   store_pages_max: 12         # Maximum store pages, most live deals first.
   price_page_min_deals: 10    # Public live deals required for a price page.

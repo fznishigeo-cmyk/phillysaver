@@ -87,11 +87,13 @@ function checkFooter(html, meta) {
   check(footer.includes(`© ${year} wowpriced`), "missing footer copyright");
   const nav = (footer.match(/<nav id="footerlinks"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || "";
   const links = [...nav.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(m => [m[1], m[2]]);
-  check(JSON.stringify(links) === JSON.stringify([
+  const expectedLinks = [
     ["/about.html", "About"], ["/how-it-works.html", "How it works"], ["/hacks.html", "Deal hacks"],
     ["/careers.html", "Work with us"], ["/contact.html", "Contact"],
     ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
-  ]), "footer link line changed");
+  ];
+  if (links[3] && links[3][0] === "/p/") expectedLinks.splice(3, 0, ["/p/", "Price history"]);
+  check(JSON.stringify(links) === JSON.stringify(expectedLinks), "footer link line changed");
   const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
   const disclosure = escape(meta.disclosure || ""), disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
   const linked = disclosure.startsWith("Disclosure:") ? disclosureLink + disclosure.slice(10)
@@ -248,7 +250,7 @@ async function walk(page, doc, device) {
           checkFooter(body, doc.meta || {});
         }
         // XML and plain text have no HTML title.
-        if (kind === "xml") check(/<urlset\b/.test(body), "invalid sitemap");
+        if (kind === "xml") check(/<(?:urlset|sitemapindex)\b/.test(body), "invalid sitemap");
         if (kind === "text") check(/User-agent:/i.test(body), "invalid robots.txt");
         return body;
       } catch (e) { problems.push(`${path}: ${String(e.message).split("\n")[0]}`); return ""; }
@@ -257,7 +259,18 @@ async function walk(page, doc, device) {
     for (const path of ["about", "how-it-works", "contact", "privacy", "disclosure", "subscribe"]) {
       await read(path);
     }
-    const sitemap = await read("sitemap.xml", "xml");
+    let sitemap = await read("sitemap.xml", "xml");
+    if (/<sitemapindex\b/.test(sitemap)) {
+      const children = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map(m => m[1].trim());
+      const bodies = [];
+      for (const child of children) {
+        const url = new URL(child, SITE);
+        check(url.origin === SITE_URL.origin
+          && /^\/sitemap-(?:pages|products)\.xml$/.test(url.pathname), "invalid sitemap child");
+        bodies.push(await read(child, "xml"));
+      }
+      sitemap = bodies.join("\n");
+    }
     await read("robots.txt", "text");
     const urls = [...sitemap.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map((m) => m[1].trim());
     const hubs = urls

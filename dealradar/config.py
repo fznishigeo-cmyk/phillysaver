@@ -206,6 +206,7 @@ class AppConfig:
     seo_product_pages_max_indexable: int = 2000
     seo_product_pages_lower_ratio: float = 0.95
     seo_product_pages_higher_ratio: float = 1.05
+    seo_product_pages_deal_history_limit: int = 20
     seo_store_page_min_deals: int = 15
     seo_store_pages_max: int = 12
     seo_price_page_min_deals: int = 10
@@ -630,6 +631,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "seo", "product_pages", "lower_ratio", default=0.95))))
     cfg.seo_product_pages_higher_ratio = max(1.0, float(g(
         "seo", "product_pages", "higher_ratio", default=1.05)))
+    cfg.seo_product_pages_deal_history_limit = max(1, min(20, int(g(
+        "seo", "product_pages", "deal_history_limit", default=20))))
     cfg.seo_store_page_min_deals = max(1, int(g(
         "seo", "store_page_min_deals", default=cfg.seo_store_page_min_deals)))
     cfg.seo_store_pages_max = max(0, int(g("seo", "store_pages_max", default=cfg.seo_store_pages_max)))

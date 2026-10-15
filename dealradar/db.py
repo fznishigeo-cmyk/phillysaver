@@ -769,19 +769,21 @@ class DB:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def product_price_history(self, product_id: int, days: int,
+    def product_price_history(self, product_id: int, days: int | None,
                               *, now: datetime | None = None) -> list[dict[str, Any]]:
         """Recorded observations across linked offers, retaining store and condition.
 
         Sightings fill gaps only: the same post already in price_history is
-        one observation, not two. No prices or savings are inferred.
+        one observation, not two. None selects all retained checks.
+        No prices or savings are inferred.
         """
         import math
 
-        if days < 0:
+        if days is not None and days < 0:
             return []
         until = now or now_utc()
-        window = (product_id, iso(until - timedelta(days=days)), iso(until))
+        since = until - timedelta(days=days) if days is not None else datetime.min.replace(tzinfo=timezone.utc)
+        window = (product_id, iso(since), iso(until))
         rows = self.conn.execute(
             "SELECT h.price, h.observed_at, p.dedupe_key, h.store, p.condition"
             " FROM product_offers p JOIN price_history h ON h.canonical_key=p.dedupe_key"

@@ -193,6 +193,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Product price answers (Codex task 118, 2026-10-15; merged, ON):**
+  Same switch/gates; data-only heads, breadcrumbs, lifetime check facts,
+  90-day median/deal statistics, buy answers and indexable-only related links.
+  Adds grouped `/p/`, footer/hub discovery and a split sitemap under the
+  existing `sitemap.xml` entry point; audit/site-check/Lighthouse follow it.
+  Static reader: ~14 KB standard / 31 KB shipped; visible photo credits,
+  AA contrast, 44px targets and bounded deal markup. No new pipeline requests
+  or LLM calls. **99 focused checks pass** (28 new); four byte pins also pass
+  on untouched HEAD. Required full suite: **4,386 passed, 7 failed** (28m13s).
+  All seven reproduce on untouched HEAD: Stripe workflow local sockets are
+  blocked (`Operation not permitted`); **no new failures**. Test logs/scratch
+  removed. Reviewed 2026-10-15 (related() indexed, Get deal analytics kept on /p/); ships with the switch ON as in config.yaml.
 - **Permanent product price pages (Codex task 116, 2026-10-15; merged, OFF):**
   `seo.product_pages.enabled: false` in code and config. On: stable `/p/`
   pages reuse exact stored ASIN/GTIN/store IDs, public deal facts and our own

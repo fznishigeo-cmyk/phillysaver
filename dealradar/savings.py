@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import statistics
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -36,6 +37,49 @@ def price_verdict(current: float | None, median: float | None,
     if current > higher and not math.isclose(current, higher, rel_tol=1e-12):
         return "Higher than usual"
     return "About usual"
+
+
+def product_price_facts(observations: list[dict], offers: list[dict], now: datetime) -> dict:
+    """Our own checks and distinct published deals; never infer a sale or a basis.
+
+    Extremes/count/dates use all retained checks. The typical price and sale
+    counts use 90 days; a median needs the chart's three checks over 48 hours.
+    Older offer snapshots may lack a discount, so report its sample count too.
+    """
+    from .util import parse_iso
+
+    now = now.astimezone(timezone.utc)
+    since = now - timedelta(days=90)
+    points = []
+    for row in observations:
+        at, price = parse_iso(row.get("observed_at")), row.get("price")
+        if (at and at <= now and isinstance(price, (int, float))
+                and math.isfinite(price) and price >= 0):
+            points.append((at, price))
+    points.sort()
+    recent = [p for p in points if p[0] >= since]
+    median = (float(statistics.median(p[1] for p in recent)) if len(recent) >= 3
+              and recent[-1][0] - recent[0][0] >= timedelta(days=2) else None)
+    sales = [o for o in offers if (at := parse_iso(o.get("date"))) and since <= at <= now]
+    discounts = [o["discount"] for o in sales if isinstance(o.get("discount"), (int, float))
+                 and math.isfinite(o["discount"]) and 0 <= o["discount"] <= 100]
+    facts = {"checks": len(points), "median": median, "deals_90d": len(sales),
+             "latest_deal": max((parse_iso(o["date"]) for o in sales), default=None),
+             "average_discount": statistics.mean(discounts) if discounts else None,
+             "discount_samples": len(discounts)}
+    if points:
+        low = min(points, key=lambda p: (p[1], p[0]))
+        high = min(points, key=lambda p: (-p[1], p[0]))
+        facts.update(low=low[1], low_at=low[0], high=high[1], high_at=high[0],
+                     first=points[0][0], last=points[-1][0])
+    return facts
+
+
+def price_difference_pct(current: float | None, median: float | None) -> float | None:
+    """Signed percentage below our median; a zero basis has no percentage."""
+    if not price_verdict(current, median) or median <= 0:
+        return None
+    return (median - current) * 100 / median
 
 # Rule 7: structural deal-type percentages (basis == the deal_type name).
 DEAL_TYPE_PCT: dict[str, float] = {

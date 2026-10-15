@@ -59,6 +59,11 @@ def prepare(db, cfg, rows, now=NOW, public=None):
                                  [site._serialize_deal(d, now, cfg=cfg) for d in rows], rows)
 
 
+def gates(report):
+    # Task 116 gate assertions; task 118 report fields have separate coverage.
+    return {k: report[k] for k in ("eligible", "indexable", "new_today", "noindex")}
+
+
 def test_config_ships_off_and_all_knobs_load(tmp_path):
     assert not AppConfig().seo_product_pages_enabled
     assert load_config().seo_product_pages_enabled  # operator switched it on 2026-10-15
@@ -94,7 +99,7 @@ def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, exp
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"
     cfg.paywall_teaser_count = 1
-    cfg.seo_product_pages_enabled = False  # predates product pages
+    cfg.seo_product_pages_enabled = False  # predates task 118
     rows, out = seed(db), tmp_path / "site"
     site.render_site(db, cfg, NOW, out_dir=out, deals=rows)
     digest = hashlib.sha256()
@@ -108,7 +113,7 @@ def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, exp
                                                 (6, 7 - 1 / 86400, 0), (7, 8, 1)])
 def test_gate_boundaries(db, cfg, checks, span, eligible):
     pages, _, report = prepare(db, cfg, seed(db, 1, checks=checks, span=span))
-    assert report == {"eligible": eligible, "indexable": eligible, "new_today": eligible,
+    assert gates(report) == {"eligible": eligible, "indexable": eligible, "new_today": eligible,
                       "noindex": 1 - eligible}
     assert next(iter(pages.values()))["indexable"] is bool(eligible)
 
@@ -118,7 +123,7 @@ def test_daily_cap_total_cap_utc_boundary_and_idempotent_retry(db, cfg):
     cfg.seo_product_pages_max_indexable = 3
     rows = seed(db, 5)
     pages, paths, report = prepare(db, cfg, rows)
-    assert report == {"eligible": 5, "indexable": 2, "new_today": 2, "noindex": 3}
+    assert gates(report) == {"eligible": 5, "indexable": 2, "new_today": 2, "noindex": 3}
     before = db.meta_get(product_pages.META)
     assert prepare(db, cfg, rows) == (pages, paths, report)
     assert db.meta_get(product_pages.META) == before
@@ -129,7 +134,7 @@ def test_daily_cap_total_cap_utc_boundary_and_idempotent_retry(db, cfg):
     assert prepare(db, cfg, rows, later)[2]["new_today"] == 2
     tomorrow = later + timedelta(seconds=1)
     after = prepare(db, cfg, rows, tomorrow)[2]
-    assert after == {"eligible": 5, "indexable": 3, "new_today": 1, "noindex": 2}
+    assert gates(after) == {"eligible": 5, "indexable": 3, "new_today": 1, "noindex": 2}
     assert prepare(db, cfg, rows, tomorrow + timedelta(days=1))[2]["new_today"] == 0
 
 
@@ -137,7 +142,7 @@ def test_daily_cap_total_cap_utc_boundary_and_idempotent_retry(db, cfg):
 def test_zero_caps_keep_all_pages_noindex(db, cfg, daily, total):
     cfg.seo_product_pages_max_new_indexable_per_day = daily
     cfg.seo_product_pages_max_indexable = total
-    assert prepare(db, cfg, seed(db, 1))[2] == {
+    assert gates(prepare(db, cfg, seed(db, 1))[2]) == {
         "eligible": 1, "indexable": 0, "new_today": 0, "noindex": 1}
 
 
@@ -149,7 +154,7 @@ def test_sticky_thirty_days_since_last_qualifying_not_first_admission(db, cfg):
     db.conn.execute("DELETE FROM price_history")
     db.conn.commit()
     assert prepare(db, cfg, [], NOW + timedelta(days=35))[2]["indexable"] == 1
-    assert prepare(db, cfg, [], NOW + timedelta(days=35, seconds=1))[2] == {
+    assert gates(prepare(db, cfg, [], NOW + timedelta(days=35, seconds=1))[2]) == {
         "eligible": 0, "indexable": 0, "new_today": 0, "noindex": 1}
 
 
@@ -160,8 +165,8 @@ def test_requires_a_published_deal_in_last_ninety_days(db, cfg):
     for i in range(6):
         db.record_price(rows[0]["dedupe_key"], "Amazon", 20, later - timedelta(days=i * 2), f"later-{i}")
     pages, _, report = prepare(db, cfg, [], later)
-    assert len(next(iter(pages.values()))["checks"]) == 6
-    assert report == {"eligible": 0, "indexable": 0, "new_today": 0, "noindex": 1}
+    assert len(next(iter(pages.values()))["checks"]) == 12  # includes lifetime checks
+    assert gates(report) == {"eligible": 0, "indexable": 0, "new_today": 0, "noindex": 1}
 
 
 @pytest.mark.parametrize("price,median,expected", [(94, 100, "Lower than usual"),
@@ -182,7 +187,7 @@ def test_render_canonical_sitemap_schema_links_credits_photo_and_rerun(db, cfg, 
     db.conn.commit()
     out = tmp_path / "site"
     result = site.render_site(db, cfg, NOW, out_dir=out, deals=rows)
-    assert result["product_pages"] == {"eligible": 1, "indexable": 1, "new_today": 1, "noindex": 1}
+    assert gates(result["product_pages"]) == {"eligible": 1, "indexable": 1, "new_today": 1, "noindex": 1}
     public = result["public_deals"]
     for d in public:
         html = _page(out, d["product_path"]).read_text()
@@ -200,7 +205,7 @@ def test_render_canonical_sitemap_schema_links_credits_photo_and_rerun(db, cfg, 
         assert f'href="{d["product_path"]}">Price history</a>' in (out / "index.html").read_text()
     rich = next(d for d in public if d["dedupe_key"] == "product-0")
     thin = next(d for d in public if d["dedupe_key"] == "product-1")
-    sitemap = (out / "sitemap.xml").read_text()
+    sitemap = (out / "sitemap-products.xml").read_text()
     assert rich["product_path"] in sitemap and thin["product_path"] not in sitemap
     assert 'content="index,follow"' in _page(out, rich["product_path"]).read_text()
     assert 'content="noindex,follow"' in _page(out, thin["product_path"]).read_text()
@@ -228,7 +233,7 @@ def test_page_and_history_survive_deletion_and_rename_without_a_live_button(db, 
     assert '<h1>Kitchen Widget 0</h1>' in html
     assert 'class="getdeal"' not in html and '"offers"' not in html
     assert 'Browse <a href="/deals/home-kitchen/">' in html
-    assert path in (out / "sitemap.xml").read_text()
+    assert path in (out / "sitemap-products.xml").read_text()
     assert result["seo_audit"]["schema_mismatches"] == result["seo_audit"]["empty_indexable"] == 0
     assert seo_audit.Page(html, path).schema_mismatch() is False
 
@@ -268,7 +273,7 @@ def test_quarantined_variant_does_not_link_to_previous_product_history(db, cfg, 
     result = site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=[changed])
     deal = result["public_deals"][0]
     assert "product_path" not in deal
-    assert 'Price history</a>' not in _page(tmp_path, deal["deal_path"]).read_text()
+    assert f'href="{path}">Price history</a>' not in _page(tmp_path, deal["deal_path"]).read_text()
     # Keep the former product's permanent page without attributing a live offer.
     html = _page(tmp_path, path).read_text()
     assert 'class="getdeal"' not in html and '"offers"' not in html
@@ -326,7 +331,7 @@ def test_hub_product_links_cap_at_twelve_and_only_indexable(db, cfg):
     pages, _, _ = prepare(db, cfg, seed(db, 15))
     links = product_pages.hub_links(pages, ["kitchen"])
     assert links.count('<li>') == 12
-    assert product_pages.hub_links(pages, ["electronics"]) == ""
+    assert product_pages.hub_links(pages, ["electronics"]) == '<p><a href="/p/">Browse all price history</a></p>'
 
 
 def test_deal_page_cap_does_not_hide_product_histories_and_locked_stubs_stay_private(db, cfg, tmp_path):
