@@ -193,6 +193,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Broad-appeal top picks (Codex task 114, 2026-10-15; merged):** operator:
+  niche items (an OtterBox case for one phone) "should not be in the top
+  25-30"; tilt slightly toward women shoppers. `publish.front_page.appeal`
+  multiplies only `pick_score`: named-model device accessories, camera-system
+  lenses/mounts, numbered-model replacement parts (everyday words like belts
+  and rollers only with "replacement"/"compatible"; sizes/wattages are not
+  models) and year/make/model vehicle parts get `niche_factor: 0.25`; they
+  stay on the wall, hubs and search. Category factors: home/kitchen/beauty/
+  fashion 1.15, toys_games/kids_baby/health/grocery 1.05, auto .85, others 1.
+  Rules live in `rank.niche_reason` (when unsure, not niche); `enabled:
+  false` restores prior scores and site bytes. Run summary `appeal` gives
+  niche counts (wall, top 30) and three examples: watch it after deploys.
 - **Buy Box top picks (Codex task 112, 2026-10-15; merged):**
   `keepa.buybox_top_n: 120` uses published wall order, with
   `buybox_interval_min: 60` between paid attempts (lost answers included).

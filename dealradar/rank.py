@@ -132,6 +132,58 @@ def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     return pct + boost + abs_bonus - cond_penalty - age_penalty
 
 
+def niche_reason(deal: dict[str, Any]) -> str:
+    """Clear model-specific compatibility only; ambiguous titles keep full appeal."""
+    title = str(deal.get("item") or "").casefold()
+    if re.search(r"\b(?:universal|headphones?|earbuds?|headsets?)\b", title) \
+            or re.search(r"\b(?:smartphone|phone|tablet|smartwatch)\s+(?:with|includes?)\b", title) \
+            or ("iphone" in title and "android" in title):
+        return ""
+    accessory = r"\b(?:cases?|covers?|screen[ -]*protectors?|bands?|straps?|" \
+                r"charg(?:er|ing)[ -]*(?:docks?|stands?|stations?))\b"
+    device = r"\b(?:iphone[ -]*\d+[a-z]?|(?:samsung\s+)?galaxy\s+(?:[sa]\d+[a-z]{0,2}|z\s*(?:fold|flip)\s*\d+)|" \
+             r"z\s*(?:fold|flip)\s*\d+|(?:google\s+)?pixel[ -]*\d+[a-z]?|" \
+             r"ipad\s+(?:(?:air|pro|mini)\s*)?\d+|apple\s+watch\s+(?:series\s*\d+|ultra\s*\d+|se\s*\d+))\b"
+    if re.search(accessory, title) and re.search(device, title):
+        return "named-device accessory"
+
+    camera_accessory = r"\b(?:lens(?:es)?|(?:lens|camera)\s+mounts?|mounts?\s+for|adapters?)\b"
+    camera_system = r"\b(?:e|rf|ef|ef-s|z|x|l)[ -]*mount\b|" \
+                    r"\b(?:sony\s+e|canon\s+(?:rf|ef)|nikon\s+z|fujifilm\s+x)\b"
+    if re.search(camera_accessory, title) and re.search(camera_system, title):
+        return "camera-system accessory"
+
+    vehicle = r"\b(?:for|fits?|compatible\s+with)\s+(?:19|20)\d{2}" \
+              r"(?:\s*[-–/]\s*(?:\d{2}|(?:19|20)\d{2}))?\s+" \
+              r"(?:ford|chevrolet|chevy|gmc|toyota|honda|nissan|dodge|ram|jeep|" \
+              r"subaru|hyundai|kia|bmw|audi|volkswagen|tesla)\s+[a-z0-9][\w-]*\b"
+    if re.search(vehicle, title):
+        return "vehicle-specific part"
+
+    part = r"\b(?:filters?|cartridges?|toner|ink|bulbs?|blades?|batter(?:y|ies)|brush[ -]*heads?)\b"
+    # Also everyday words (hair rollers, a women's belt): only with "replacement"/"compatible".
+    loose_part = r"\b(?:parts?|belts?|rollers?)\b"
+    # A compatibility phrase needs a brand/name and model, not a pack, size or wattage.
+    model = r"\b(?:compatible\s+with|replacement\s+for|for)\s+" \
+            r"[a-z][\w'-]*(?:[ -]+[a-z][\w'-]*){0,3}[ -]+(?:[a-z]+[ -]*)?" \
+            r"(?!\d+(?:\.\d+)?[ -]*(?:cups?|inches|inch|mm|cm|packs?|count|pcs|pieces|pairs?|sets?|" \
+            r"w|watts?|v|volts?|lumens?|oz|ounces?|lbs?|ft|feet)\b)\d[\w.-]*\b"
+    if (re.search(part, title) or (re.search(loose_part, title)
+                                   and re.search(r"\b(?:replacements?|compatible)\b", title))) \
+            and re.search(model, title):
+        return "model-specific replacement part"
+    return ""
+
+
+def appeal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Private counts in landing order, excluding locked and gone cards."""
+    live = [d for d in rows if not d.get("locked") and d.get("status") == "alive"]
+    niche = [d for d in live if niche_reason(d)]
+    return {"niche_in_wall": len(niche),
+            "niche_in_top30": sum(bool(niche_reason(d)) for d in live[:30]),
+            "niche_examples": [d["item"] for d in niche[:3]]}
+
+
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                require_confirmation: bool = True, allow_used: bool = False) -> float | None:
     """Landing quality; internal recovery may score used items without featuring them."""
@@ -195,8 +247,14 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                                 ebay_campid=cfg.affiliate_ebay_campaign_id)["earns"]
     if not earns:
         quality *= options.get("no_earn_factor", 0.5)
-    return quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
-                             / options["fresh_half_life_h"])
+    result = quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
+                              / options["fresh_half_life_h"])
+    appeal = cfg.front_page.get("appeal") or {}
+    if appeal.get("enabled", False):
+        result *= (appeal.get("category_factors") or {}).get(category, 1.0)
+        if niche_reason(deal):
+            result *= appeal.get("niche_factor", 1.0)
+    return result
 
 
 def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict) -> list[dict[str, Any]]:

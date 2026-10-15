@@ -305,6 +305,10 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
                     .replace("feed_details: false", "feed_details: true"))
     # This byte pin predates the durable-pages SEO switch.
     path.write_text(path.read_text().replace("deal_pages_indexable: false", "deal_pages_indexable: true"))
+    import yaml
+    config = yaml.safe_load(path.read_text())
+    config["publish"]["front_page"]["appeal"]["enabled"] = False  # predates the broad-appeal switch
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)
     assert summary["spend_by_kind"]["critic"] == {"calls": 1, "usd": .0054}

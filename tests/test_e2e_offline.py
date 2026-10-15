@@ -413,6 +413,7 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert first["telegram"]["sent"] == 1
     db = DB(env["db"])
     cfg = load_config(env["cfg"])
+    assert cfg.front_page["appeal"]["enabled"]
     requests = []
 
     def receipt(request):
@@ -431,6 +432,8 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
     db.close()
     second = _run(env)
+    assert second["appeal"] == first["appeal"] == {
+        "niche_in_wall": 0, "niche_in_top30": 0, "niche_examples": []}
     assert second["run_key"] == first["run_key"]
     assert second["posts_new"] == 0          # content hashes already known
     assert second["telegram"]["sent"] == 0   # alerts_sent dedup

@@ -290,7 +290,7 @@ def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, option
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=source)
     doc = json.loads((out / "deals.json").read_text())
-    assert doc["meta"]["front_page"] == options
+    assert doc["meta"]["front_page"] == {k: v for k, v in options.items() if k != "appeal"}
     # JSON stays in rank order so category views and the free rotation don't change.
     assert [d["dedupe_key"] for d in doc["deals"]] == [d["dedupe_key"] for d in source]
     mixed = pick_order(doc["deals"], options)
@@ -325,6 +325,7 @@ def pick_deal(**changes):
 
 
 def test_pick_score_math_and_factors(cfg, options):
+    options["appeal"]["enabled"] = False  # predates the broad-appeal switch
     cfg.front_page = options
     deal = pick_deal()
     import math

@@ -22,7 +22,7 @@ from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, ur
 
 from ..savings import display_pct, known_shipping, parse_stack_step
 from ..config import AppConfig, load_sources, redact_secrets, support_link
-from ..rank import daily_spotlight, pick_order, pick_score, top_picks
+from ..rank import appeal_summary, daily_spotlight, pick_order, pick_score, top_picks
 from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import host_of, source_image_allowed
@@ -912,7 +912,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                  "prompt_delay_s": max(15, cfg.join_prompt_delay_s), "apple": cfg.join_apple},
         "engagement": engagement,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
-        "front_page": cfg.front_page,
+        # Appeal is applied in Python; omit its knobs so disabling it restores
+        # the previous payload bytes as well as the previous scores/order.
+        "front_page": {k: v for k, v in cfg.front_page.items() if k != "appeal"},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
     }
@@ -1115,6 +1117,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "public_deals": teaser + spotlight_only,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
+            "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
                                    "request_age": history.request_age(top_candidates),

@@ -2577,6 +2577,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
         summary["published"] = site_res.get("published", 0)
+        summary["appeal"] = site_res.get("appeal", {})
         from . import buybox
         summary["price_source"] = summary["price_recheck"].get("price_source", buybox.empty_summary())
         summary["buybox_top"] = summary["price_recheck"].get("buybox_top", {})
