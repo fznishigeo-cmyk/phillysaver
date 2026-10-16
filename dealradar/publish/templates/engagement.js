@@ -68,11 +68,9 @@
     return engagementOn("new_since_visit") && engagement.storage && d.status !== "dead" && !!engagement.newKeys[dealKey(d)];
   }
   function renderEngagement() {
-    var tagline = document.getElementById("tagline");
-    tagline.textContent = tagline.textContent.replace(/ · \d+ new since your last visit$/, "");
-    if (engagementOn("new_since_visit") && engagement.storage && engagement.newCount > 0) {
-      tagline.textContent += " · " + engagement.newCount + " new since your last visit";
-    }
+    var since = document.getElementById("tagsince");
+    if (since) since.textContent = engagementOn("new_since_visit") && engagement.storage && engagement.newCount > 0
+      ? " · " + engagement.newCount + " new since your last visit" : "";
     var surprise = document.getElementById("surprise");
     surprise.hidden = !engagementOn("surprise_me");
     surprise.disabled = !surpriseRows().length;

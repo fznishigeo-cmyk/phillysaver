@@ -148,8 +148,8 @@ def test_all_social_channels_share_earning_gate(tmp_path, db, require):
 
 
 @pytest.mark.parametrize("open_access,expected", [
-    (False, "9181587e34af8a96966758c968e4bcf2311e853b0152e550f40f0fe74784aa15"),
-    (True, "7a0dc4d5209943b5cd787e986b97b9a7e88f27f7d096089d52bf6adfe770e0d3"),
+    (False, "fbb70d8a7b3133d4ab9b9d7fc5f6053abf90976c08f8553afb4647b578c83afa"),
+    (True, "62a00853557d16cd39c2a0c2186e6b0c4e87ba3859fcc028355b0599257ff007"),
 ])
 def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_access, expected):
     monkeypatch.setattr(site, "util_now", lambda: NOW)

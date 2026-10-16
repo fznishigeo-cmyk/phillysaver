@@ -85,10 +85,10 @@ def test_config_default_off_shipped_on_and_overrides(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "c88c9e390c7b38ff1011c487560d7c6225f004644ee1a28dfd9f28c9be41b668"),
-    ("open", "379b82924367d791ebf27205db5f79b0da5a182089833e9b5df27729aaebf3e9"),
-    ("support", "231bafdfbe905143f731bf82837ff16d0bd2a25a3a4297b37d1ea3bc2ae6c158"),
-    ("shipped", "9dd21862f85fe5a5df4b047e4780fe60a6dd38ce28e2bcb69166437d231999cb"),
+    ("membership", "16035e28b3dd3cde53860a41e122746c39723145d30f01a1bf5ffeefb32c2dcb"),
+    ("open", "7ec22a7b35e77b72acdbe798f6bee3f18d08821250a674868cfc5f56203342d8"),
+    ("support", "4372718058b4195da55a7847c82db85bb0662508ebb264fadfc00ff591ac0df2"),
+    ("shipped", "82bab1ed6a2c4e5178aee05c94d89518cd8de4b23256d3a8c202e8be3e33e838"),
 ])
 def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.

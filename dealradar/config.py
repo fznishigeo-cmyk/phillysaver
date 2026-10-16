@@ -172,6 +172,7 @@ class AppConfig:
     site_show_from_pct: float = 70.0  # site-only lower tier (= min_pct: off)
     show_dead_hours: float = 24.0      # dead deals linger on the site this long
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
+    drop_clock: dict = field(default_factory=lambda: {"warm_s": 300, "hot_s": 120, "final_s": 30})
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
     photoless_last: bool = False
@@ -426,6 +427,18 @@ class AppConfig:
         return self.user_agent.replace("{contact_email}", self.contact_email)
 
 
+def validated_drop_clock(value, drop_minutes: int) -> dict:
+    defaults = {"warm_s": 300, "hot_s": 120, "final_s": 30}
+    if not isinstance(value, dict):
+        return defaults
+    clock = {name: value.get(name, default) for name, default in defaults.items()}
+    if (all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            for v in clock.values())
+            and 0 < clock["final_s"] < clock["hot_s"] < clock["warm_s"] < drop_minutes * 60):
+        return clock
+    return defaults
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path) if path else ROOT / "config.yaml"
     raw = yaml.safe_load(path.read_text()) or {}
@@ -565,6 +578,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                   default=cfg.show_dead_hours))
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
+    cfg.drop_clock = validated_drop_clock(g("publish", "drop_clock"), cfg.drop_minutes)
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
     for name in ("asin_backfill_per_run", "short_links_per_run", "keepa_search_per_run", "keepa_search_per_day"):

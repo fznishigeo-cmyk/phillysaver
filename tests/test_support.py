@@ -16,7 +16,8 @@ from dealradar.publish import site
 
 NOW = datetime(2026, 10, 12, tzinfo=timezone.utc)
 LINK = "https://buy.stripe.com/test_support"
-BODY = ("wowpriced is free for everyone. If you find it useful, you can make an optional "
+BODY = ("wowpriced is free for everyone. Checking prices around the clock costs us hundreds of dollars a "
+        "month in price data and servers. If you find it useful, you can make an optional "
         "payment to support our work.")
 NOTE = ("One-time payment, any amount, through Stripe. wowpriced is a for-profit business: "
         "support is not tax-deductible and buys nothing extra; every deal stays free.")
@@ -116,10 +117,10 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
 
 
 @pytest.mark.parametrize("mode,yearly,expected", [
-    (False, 0, "8587fa532e9ce102bf930862a795f2b500028e4c07e23cfcdd3e2c1909a6f948"),
-    (False, 49, "f0c6041fad22e97f7ebef7cb634ca6ab76ac997f493f07bfa0037765e96948c9"),
-    (True, 0, "1486c48e4fd0db4e3128ca8461be01481b8bcf9100ec3b1da51ee8c3e827fd57"),
-    (True, 49, "08af57d5c9b4e547808d7215e62c4b4eaa8e1fb417c22b937e309f52ef820e6c"),
+    (False, 0, "2b913a68e9dcd9da3e029c07b1ada3cabf2be9ae153b92912abc046d708ecf7f"),
+    (False, 49, "2af0fd2794253c8c3304c44ba7a4180a74af37cf512c9739832a97ea114d848f"),
+    (True, 0, "d3ba31e363863ad709c84c2f4afa87cce4dc9d67c939a834216c9505de9b801c"),
+    (True, 49, "c3f24bd30c5b1ec2e2c5b9f98bfae79c7034c74656ce8a2e800914be8a4d2d1d"),
 ])
 def test_support_off_index_bytes_match_task079_baseline(tmp_path, monkeypatch, mode, yearly, expected):
     # Task 079 updates shared search/recovery in all four home modes.
@@ -292,7 +293,7 @@ def test_support_button_styles_and_theme_contrast(tmp_path):
     assert "font-weight:600;border-radius:10px;box-shadow:none" in home
     assert ".pwbtn.alt,#surprise" in home
     assert "outline:2px solid var(--accent);outline-offset:3px" in home
-    assert ".tag,.secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}" in home
+    assert ".secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}" in home
     for name in ("index.html", "join.html", "deals/electronics/index.html"):
         html = (out / name).read_text()
         # Any hover transform must explicitly leave cards/buttons in place.

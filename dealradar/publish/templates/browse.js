@@ -2,7 +2,7 @@
   // stay in this tab; history contains an opaque lookup id, never input.
   var PRICE_PRESETS = {{PRICE_PRESETS}};
   var BROWSE_KEY = "wp.browse", browseRows = [], browseSerial = 0;
-  var browseFilters = {preset: "", max: "", newOnly: false, plainOnly: false};
+  var browseFilters = {preset: "", max: ""};
   var browseMemory = {version: 1, last: "", entries: {}}, browseId = "", browseSignature = "";
   var browsePending = null, browseReturning = false, browseScrollTimer;
   var BROWSE_SORTS = {top: "top:-1", fresh: "fresh:-1", pct: "pct:-1", abs: "abs:-1", price: "price:1", age: "age:1"};
@@ -12,35 +12,21 @@
     return typeof v === "string" && v.length <= 24 && /^(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(v.trim()) &&
       Number.isFinite(Number(v)) && Number(v) >= 0 ? v.trim() : "";
   }
-  function eligibilityActive() { return !!(browseFilters.preset || browseFilters.max || browseFilters.newOnly || browseFilters.plainOnly); }
+  function eligibilityActive() { return !!(browseFilters.preset || browseFilters.max); }
   function matchesEligibility(d, skip) {
     skip = skip || [];
     var ceiling = browseFilters.max || browseFilters.preset;
     if (ceiling && skip.indexOf("price") === -1 && !(typeof d.final_price === "number" && Number.isFinite(d.final_price) && d.final_price <= Number(ceiling))) return false;
-    if (browseFilters.plainOnly && skip.indexOf("steps") === -1 && d.needs_steps !== false) return false;
-    if (browseFilters.newOnly && skip.indexOf("new") === -1) {
-      if (!Array.isArray(d.conditions)) return false;
-      if (d.conditions.some(function (c) {
-        if (typeof c !== "string") return true;
-        var label = c.trim().toLowerCase().replace(/[\W_]+/g, "_").replace(/^_|_$/g, "")
-          .replace(/^(?:item_)?condition_/, "");
-        return /(?:^|_)(?:refurb(?:ished)?|reconditioned|renewed|unknown|unspecified)(?:_|$)/.test(label) ||
-          /^(?:used|open_?box|pre_?owned|amazon_warehouse|amazon_resale|like_new|second_?hand|previously_owned|pre_?loved)/.test(label) ||
-          label === "warehouse" || label === "resale";
-      })) return false;
-    }
     return true;
   }
   function paintEligibility() {
     document.getElementById("pricepreset").value = browseFilters.preset;
     document.getElementById("maxprice").value = browseFilters.max;
-    document.getElementById("newonly").checked = browseFilters.newOnly;
-    document.getElementById("plainonly").checked = browseFilters.plainOnly;
-    var count = Number(!!(browseFilters.preset || browseFilters.max)) + Number(browseFilters.newOnly) + Number(browseFilters.plainOnly);
+    var count = Number(!!(browseFilters.preset || browseFilters.max));
     document.getElementById("filtertoggle").textContent = "Filters" + (count ? " (" + count + ")" : "");
   }
   function clearEligibility() {
-    browseFilters = {preset: "", max: "", newOnly: false, plainOnly: false};
+    browseFilters = {preset: "", max: ""};
     paintEligibility();
   }
   function categoryValue(i) { return i === 1 ? "all" : (CATGROUPS[i] || [])[2] || ""; }
@@ -58,8 +44,6 @@
     if (state.catTab) p.set("category", categoryValue(state.catTab));
     if (state.sortKey !== "top" || store === "amazon") p.set("sort", state.sortKey);
     if (browseFilters.preset) p.set("price", browseFilters.preset);
-    if (browseFilters.newOnly) p.set("new", "1");
-    if (browseFilters.plainOnly) p.set("steps", "none");
     return "/" + (p.toString() ? "?" + p.toString() : "");
   }
   function actionSignature() {
@@ -123,11 +107,11 @@
     var sort = Object.prototype.hasOwnProperty.call(BROWSE_SORTS, s.sort) ? s.sort : state.sortKey;
     sortsel.value = BROWSE_SORTS[sort] || BROWSE_SORTS.top;
     applySort(sortsel.value);
-    browseFilters = {preset: presetValue(f.preset), max: maxValue(f.max), newOnly: f.newOnly === true, plainOnly: f.plainOnly === true};
+    browseFilters = {preset: presetValue(f.preset), max: maxValue(f.max)};
     state.shown = Number.isSafeInteger(s.shown) && s.shown >= PAGE_CARDS ? Math.min(s.shown, Math.max(PAGE_CARDS, state.deals.length)) : PAGE_CARDS;
     if (Number.isSafeInteger(s.seed)) state.seed = s.seed;
     if (useURL) {
-      var p = new URLSearchParams(location.search), names = ["store", "category", "sort", "price", "new", "steps"];
+      var p = new URLSearchParams(location.search), names = ["store", "category", "sort", "price"];
       if (names.some(function (name) { return p.has(name); })) {
         // A shared URL describes a complete public selection. A different
         // URL must not inherit a private query or custom ceiling.
@@ -136,9 +120,7 @@
         sort = p.getAll("sort").length === 1 ? p.get("sort") : "top";
         sortsel.value = Object.prototype.hasOwnProperty.call(BROWSE_SORTS, sort) ? BROWSE_SORTS[sort] : BROWSE_SORTS.top;
         applySort(sortsel.value);
-        browseFilters = {preset: presetValue(p.getAll("price").length === 1 ? p.get("price") : ""), max: "",
-          newOnly: p.getAll("new").length === 1 && p.get("new") === "1",
-          plainOnly: p.getAll("steps").length === 1 && p.get("steps") === "none"};
+        browseFilters = {preset: presetValue(p.getAll("price").length === 1 ? p.get("price") : ""), max: ""};
         if (s.url === browseURL() || s.url === "/" + (location.search || "")) browseFilters.max = maxValue(f.max);
         else {
           document.getElementById("q").value = "";
@@ -268,8 +250,7 @@
     e.preventDefault();
     if (!loadedOnce || document.getElementById("filterfields").disabled || !filterForm.reportValidity()) return;
     var method = filterSheet.open ? "sheet" : "desktop";
-    browseFilters = {preset: presetValue(document.getElementById("pricepreset").value), max: maxValue(document.getElementById("maxprice").value),
-      newOnly: document.getElementById("newonly").checked, plainOnly: document.getElementById("plainonly").checked};
+    browseFilters = {preset: presetValue(document.getElementById("pricepreset").value), max: maxValue(document.getElementById("maxprice").value)};
     paintEligibility();
     finishBrowseAction(method, true);
     closeFilters();

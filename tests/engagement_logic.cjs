@@ -35,7 +35,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
     set innerHTML(html) {this.html=html; this.textContent=html.replace(/<[^>]*>/g,'');},
     addEventListener(type, cb) {this.listeners[type] = cb;},
     setAttribute(k,v) {this.attributes[k]=v;}, removeAttribute(k) {delete this.attributes[k];}, focus() {this.focused=true;}});
-  for (const id of ['tagline','surprise','content','savedview','savedtools','savedall','savedclear','savedstatus',
+  for (const id of ['tagline','tagsince','surprise','content','savedview','savedtools','savedall','savedclear','savedstatus',
                     'storesel','sortsel','minpct','q','clearsearch','searchcount','filtertoggle','filterfields']) elements[id] = makeElement();
   const lineIds = ['engagementline','visitstreak','engagementsep','weeklyfinds'];
   function readLine(html) {
@@ -142,7 +142,7 @@ let h = harness({stored:{'wp.lastVisit':String(NOW-2*3600000), 'wp.seen':'["a"]'
   row('unknown',{first_seen_at:'bad'}), row('a')
 ]});
 assert.equal(h.ctx.engagement.newCount,1);
-assert.ok(h.elements.tagline.textContent.endsWith(' · 1 new since your last visit'));
+assert.equal(h.elements.tagsince.textContent, ' · 1 new since your last visit');
 assert.ok(h.ctx.cardHtml(row('a')).includes('NEW<span class="sr-only"> since your last visit'));
 assert.ok(!h.ctx.cardHtml(row('dead',{status:'dead'})).includes('visit-new'));
 assert.equal(h.storage.get('wp.lastVisit'),String(NOW-2*3600000));
@@ -151,7 +151,7 @@ h.ctx.initEngagement(); h.paint(); assert.equal(h.ctx.engagement.newCount,1);
 h.windowHandlers.pagehide(); assert.equal(h.storage.get('wp.lastVisit'),String(NOW+3600000));
 for (const stored of [{}, {'wp.lastVisit':'bad'}, {'wp.lastVisit':String(NOW+1000)}]) {
   h=harness({stored}); assert.equal(h.ctx.engagement.newCount,0);
-  assert.ok(!h.elements.tagline.textContent.includes('new since'));
+  assert.ok(!h.elements.tagsince.textContent.includes('new since'));
 }
 // Initial render builds the quiet line with the grid, with no live announcement.
 const visitDay = h.ctx.localDay(new Date(NOW));
@@ -257,7 +257,7 @@ for (const name of Object.keys(enabled)) {
     'wp.weeklyFinds':JSON.stringify({week:'2026-10-12',finds:[{key:'a',cents:1000}]}),
     'wp.visitStreak':JSON.stringify({day:day-1,count:2})}});
   if(name==='new_since_visit') {
-    assert.equal(h.ctx.newSinceVisit(row('a')),false); assert.ok(!h.elements.tagline.textContent.includes('new since'));
+    assert.equal(h.ctx.newSinceVisit(row('a')),false); assert.ok(!h.elements.tagsince.textContent.includes('new since'));
     const before=h.storage.get('wp.lastVisit'); h.windowHandlers.pagehide(); assert.equal(h.storage.get('wp.lastVisit'),before);
   }
   if(name==='weekly_finds') {h.ctx.recordFind(row('b')); assert.equal(h.finds(),''); assert.equal(h.line(),'🔥 3-day streak');}
@@ -272,7 +272,7 @@ for (const throwing of ['read','write']) {
   h=harness({throwing,stored:{'wp.lastVisit':String(NOW-7200000)}});
   assert.equal(h.ctx.engagement.storage,false);
   assert.equal(h.finds(),''); assert.equal(h.streak(),'');
-  assert.ok(!h.elements.tagline.textContent.includes('new since')); h.click(row('a')); h.windowHandlers.pagehide();
+  assert.ok(!h.elements.tagsince.textContent.includes('new since')); h.click(row('a')); h.windowHandlers.pagehide();
   h.surprise(); assert.equal(h.events.at(-1).name,'surprise_click'); // non-storage features still work
   assert.equal(h.elements.a.scroll.behavior,'smooth');
 }

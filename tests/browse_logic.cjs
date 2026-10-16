@@ -104,7 +104,7 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
   ctx.render();ctx.restoreInitialBrowse();
   const apply=(changes={})=>{
     for(const [id,value] of Object.entries(changes)) {
-      if(['newonly','plainonly'].includes(id)) el(id).checked=value; else el(id).value=value;
+      el(id).value=value;
     }
     fire('filterform:submit',{preventDefault(){}});
   };
@@ -120,19 +120,16 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
 const keys = rows=>Array.from(rows,d=>d.key);
 const flush=async()=>{await new Promise(r=>setImmediate(r));};
 (async()=>{
-  // Every intersection uses known facts, with nulls/stubs denied only by
-  // explicit eligibility filters. Conditions use the ingest vocabulary.
-  for (const ceiling of ['', '25']) for(const newOnly of [false,true]) for(const plainOnly of [false,true]) {
-    const h=harness();h.apply({pricepreset:ceiling,newonly:newOnly,plainonly:plainOnly});
-    const expected=mixed.filter(d=>(!ceiling || (typeof d.final_price==='number' && d.final_price<=25)) &&
-      (!newOnly || ['new','steps','expensive','null','plain-unknown','gone','other','locked'].includes(d.key)) &&
-      (!plainOnly || !['steps','plain-unknown','locked'].includes(d.key)));
+  // Price limits use known prices, independent of condition or checkout steps.
+  for (const ceiling of ['', '25']) {
+    const h=harness();h.apply({pricepreset:ceiling});
+    const expected=mixed.filter(d=>!ceiling || (typeof d.final_price==='number' && d.final_price<=25));
     assert.deepEqual(keys(h.ctx.filtered()),keys(expected));
     assert.equal(h.ctx.state.meta.floors.min_pct,70);assert.equal(h.ctx.state.meta.floors.site_show_from_pct,50);
   }
   const h=harness();
   h.el('storesel').value='walmart';h.fire('storesel:change');
-  h.apply({pricepreset:'25',newonly:true,plainonly:true});assert.deepEqual(keys(h.ctx.filtered()),['other']);
+  h.apply({pricepreset:'25'});assert.deepEqual(keys(h.ctx.filtered()),['steps','other']);
   h.el('q').value='other';h.ctx.updateSearch();assert.deepEqual(keys(h.ctx.filtered()),['other']);
   h.el('minpct').value='90';h.fire('minpct:input');h.fire('minpct:change');assert.deepEqual(keys(h.ctx.filtered()),[]);
   const empties=h.events.filter(e=>e.name==='filter_empty').length;
@@ -146,7 +143,7 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   assert(h.events.some(e=>e.name==='filter_apply'));
   assert(h.events.some(e=>e.name==='filter_empty'));
   const spacing=harness({rows:Array.from({length:32},(_,i)=>row('sp'+i,{status:i%3===0?'dead':'alive'}))});
-  spacing.apply({pricepreset:'25',newonly:true,plainonly:true});
+  spacing.apply({pricepreset:'25'});
   const goneSlots=spacing.keys().map((key,i)=>spacing.ctx.state.deals.find(d=>d.key===key).status==='dead'?i:-1).filter(i=>i>=0);
   assert(goneSlots[0]>=8);assert(goneSlots.every((n,i)=>!i || n-goneSlots[i-1]>=8));
   const floor=harness({rows:[row('high'),row('lower',{pct_at_checkout:55})]});
@@ -165,18 +162,20 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   for(const price of [null,undefined,NaN,Infinity,-Infinity,'5']) {
     assert.equal(h.ctx.matchesEligibility(row('odd',{final_price:price})),false);
   }
-  for(const condition of ['pre-owned','Refurbished','reconditioned','openbox','Amazon Warehouse','Second hand','unknown']) {
-    h.ctx.browseFilters.newOnly=true;assert.equal(h.ctx.matchesEligibility(row('odd',{conditions:[condition]})),false);
-  }
-  h.ctx.clearEligibility();h.ctx.browseFilters.newOnly=true;
-  assert(h.ctx.matchesEligibility(row('locked',{locked:true,conditions:[]})));
-  assert.equal(h.ctx.matchesEligibility(row('locked',{locked:true,conditions:undefined})),false);
-  assert.equal(h.ctx.matchesEligibility(row('locked',{locked:true,conditions:['used']})),false);
   // URL validation uses the actual counted store list, categories, sorts
   // and configured presets. Neither custom input nor queries can enter it.
   const valid=harness({search:'?store=amazon&category=home-kitchen&sort=price&price=25&new=1&steps=none'});
   assert.equal(valid.ctx.state.sortKey,'price');assert.equal(valid.ctx.state.catTab,3);
-  assert.deepEqual(keys(valid.ctx.filtered()),['new','gone']);
+  assert.deepEqual(keys(valid.ctx.filtered()),['new','used','box','renewed','unknown','plain-unknown','gone']);
+  assert(!/[?&](new|steps)=/.test(valid.ctx.browseURL()));
+  const legacy=harness({search:'?new=1&steps=none'});
+  assert.deepEqual(keys(legacy.ctx.filtered()),keys(mixed));
+  assert.equal(legacy.ctx.browseURL(),'/');
+  const oldSnapshot={filters:{preset:'25',max:'',newOnly:true,plainOnly:true}};
+  legacy.ctx.applyBrowseSnapshot(oldSnapshot,false);
+  assert.deepEqual(Object.keys(legacy.ctx.browseFilters).sort(),['max','preset']);
+  assert(legacy.ctx.filtered().some(d=>d.key==='used'));
+  assert(legacy.ctx.filtered().some(d=>d.key==='steps'));
   const amazon=harness({search:'?store=amazon&sort=top#content'});
   assert.equal(amazon.el('storesel').value,'amazon');assert.equal(amazon.ctx.state.sortKey,'top');
   const bad=harness({search:'?store=ghost&category=ghost&sort=constructor&price=12&new=yes&steps=false&q=PRIVATE&max=123'});
@@ -186,7 +185,7 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   // Private text replaces the current history state, with no entry per
   // keystroke, and never appears in history.state or event parameters.
   valid.el('q').value='Gadget';valid.ctx.updateSearch();
-  valid.apply({pricepreset:'',maxprice:'23.45',newonly:false,plainonly:false});
+  valid.apply({pricepreset:'',maxprice:'23.45'});
   const pushes=valid.pushCount;
   for(const query of ['PRIVATE-a','PRIVATE-ab','PRIVATE-abc']) {
     valid.el('q').value=query;valid.fire('q:input');
@@ -242,7 +241,7 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   nav.ctx.render();nav.ctx.showMore();assert.equal(nav.ctx.state.shown,360);
   // No storage, corrupt storage and a store removed by the current
   // publish all retain working filters and safe restoration behavior.
-  const denied=harness({blocked:true});denied.apply({maxprice:'15',newonly:true});
+  const denied=harness({blocked:true});denied.apply({maxprice:'15'});
   denied.ctx.window.scrollY=800;denied.fire('window:pagehide');denied.refresh(mixed.slice(1));
   denied.fire('window:pageshow',{persisted:true});await flush();assert.equal(denied.ctx.browseFilters.max,'15');
   for(const raw of ['invalid','[]','{"version":1,"entries":null}', '{"version":999,"entries":{}}']) {
@@ -256,10 +255,10 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   const spot=harness();spot.ctx.state.spotlight=[row('today',{spotlight:{until:new Date(NOW+3600000).toISOString()}})];
   spot.ctx.render();assert(spot.keys().includes('today'));
   spot.apply({maxprice:'5'});assert(!spot.keys().includes('today'));
-  spot.apply({maxprice:'',newonly:true});assert(spot.keys().includes('today'));
-  spot.ctx.state.spotlight[0].conditions=null;spot.ctx.render();assert(!spot.keys().includes('today'));
-  spot.ctx.state.spotlight[0].conditions=[];spot.ctx.state.spotlight[0].needs_steps=null;
-  spot.apply({plainonly:true});assert(!spot.keys().includes('today'));
+  spot.apply({maxprice:''});assert(spot.keys().includes('today'));
+  spot.ctx.state.spotlight[0].conditions=null;
+  spot.ctx.state.spotlight[0].needs_steps=null;
+  spot.ctx.render();assert(spot.keys().includes('today'));
   // Sheet opens with applied values, moves focus, returns focus on
   // close, and discards drafts. Native dialog supplies modal focus/Escape.
   const sheet=harness();sheet.fire('filtertoggle:click');assert(sheet.el('filtersheet').open);

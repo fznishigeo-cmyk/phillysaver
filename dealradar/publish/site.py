@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 
 from ..savings import display_pct, known_shipping, parse_stack_step
-from ..config import AppConfig, load_sources, redact_secrets, support_link
+from ..config import AppConfig, load_sources, redact_secrets, support_link, validated_drop_clock
 from ..rank import appeal_summary, daily_spotlight, pick_order, pick_score, top_picks
 from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
@@ -354,7 +354,8 @@ _CONDITION_HOW = {
 _VARIANT_RE = re.compile(r"<!--(paywall|open|support)-->(.*?)<!--/\1-->", re.S)
 _STANDARD_RE = re.compile(r"<!--standard-->(.*?)<!--/standard-->", re.S)
 SUPPORT_BODY = (
-    "wowpriced is free for everyone. If you find it useful, you can make an optional "
+    "wowpriced is free for everyone. Checking prices around the clock costs us hundreds of dollars a "
+    "month in price data and servers. If you find it useful, you can make an optional "
     "payment to support our work."
 )
 SUPPORT_NOTE = (
@@ -937,6 +938,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # real gap between publishes of either lane, so the countdown is not
         # shorter than the cron that feeds it.
         "cadence_minutes": int(getattr(cfg, "drop_minutes", 15)),
+        "drop_clock": validated_drop_clock(cfg.drop_clock, cfg.drop_minutes),
         # With a Store ID, the disclosure says links may earn wowpriced a
         # commission and carries Amazon's required sentence.
         "disclosure": (getattr(cfg, "affiliate_disclosure", "") if amazon_tag else "")

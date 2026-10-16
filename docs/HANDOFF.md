@@ -193,6 +193,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Home polish (Codex task 120, 2026-10-16; uncommitted, ON):** validated
+  `publish.drop_clock` thresholds drive calm/warm/hot/final colors, labels,
+  bounded pulses and a short burst; reduced motion disables animation and
+  the timer always keeps `m:ss`. Brighter tagline/live dot, teal ticker,
+  centered desktop tabs; the two retired filters and their URL/session state
+  are gone (old links ignored). Exact support cost copy; support-ask unchanged.
+  Four-mode comparison (184 files) found only intended home/meta/support
+  changes; byte pins refreshed. Required full suite: **4,412 passed, 12 failed**
+  (20m32s). Five affected hash/style checks are fixed and rerun: **5 passed**.
+  The remaining seven Stripe socket-permission failures reproduce on untouched
+  HEAD; those checks outside the sandbox and review remain. Test logs/scratch
+  removed. No new requests, LLM calls, commit or push.
 - **Product price answers (Codex task 118, 2026-10-15; merged, ON):**
   Same switch/gates; data-only heads, breadcrumbs, lifetime check facts,
   90-day median/deal statistics, buy answers and indexable-only related links.

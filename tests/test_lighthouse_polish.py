@@ -294,7 +294,8 @@ def test_phone_type_never_drops_below_12px(published):
                      '.gonetag', '.freetag', '.visit-new', '.hotmeter', '.tklabel', '.tkitem s',
                      '#subscribe[data-zero]::after', 'body footer .meta',
                      'body footer .footerfine', 'body footer #acctfoot'):
-        assert 'font-size:12px' in phone_rule(css, selector)
+        sizes = re.findall(r'font-size:([\d.]+)px', phone_rule(css, selector))
+        assert sizes and float(sizes[-1]) >= 12
     # Specificity must beat the shared footer's later, desktop 11px rules.
     assert 'footer .footerfine{' in css and 'font-size:11px' in css
 
@@ -342,7 +343,8 @@ def test_phone_native_controls_and_safe_area_clearance(published):
     assert 'inputmode="numeric"' in minimum and 'autocomplete="off"' in minimum
     assert 'font-size:16px' in phone_rule(css, '#controls #minpct')
     tabs = phone_rule(css, '#cattabs')
-    assert 'flex-wrap:nowrap;overflow-x:auto' in tabs
+    assert 'flex-wrap:nowrap' in tabs and 'overflow-x:auto' in tabs
+    assert 'justify-content:flex-start' in tabs
     assert 'scroll-snap-type:x proximity' in tabs and 'mask-image:' in tabs
 
 

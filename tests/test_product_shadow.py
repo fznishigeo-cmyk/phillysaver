@@ -293,15 +293,15 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "6de7532bb41d108cbea4d7c6d5e45204fff7e68e389d8acfa1673865148823e3"),
-    ("open", "a79c0c2315f28ee034d67e5ee1c73daaf9c97134ab5d1e3dc42848714cb46ce0"),
-    ("support", "6b06ed991d59b9b69e54835a582b97c49f55c098d7473c22ea267593d200beff"),
-    ("shipped", "f32357eb5b05c03bd21375494528d6f06cc5d0df65fd7235d88c074c4739c0fc"),
+    ("membership", "51f2b41df7f3e18914bd7fc2c7a1c0cf9ac52fdc27114bf926733ef8f5a3fd1f"),
+    ("open", "c1771bdc521b82fcd8c49c0c0021827b2591d9c0f0930e9a5f119edd31ffff04"),
+    ("support", "94cb2f37afde5cc0e2c460568b1abac9df98bc418415c4fc924b8cac56baf6d1"),
+    ("shipped", "ef01c9a03e8ae78627efa34392f42b3a0f2dd87d52321773df1c17c2357289a8"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
     # sufficient history, so the always-on shadow actually has work to do.
-    # Task 102 refreshes shipped CSS/JS/version; other modes retain their pins.
+    # Task 120 refreshes shared home styles, clock metadata and support copy.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     if mode == "shipped":
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering

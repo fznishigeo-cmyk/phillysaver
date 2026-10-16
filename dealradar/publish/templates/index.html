@@ -74,8 +74,14 @@ header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;po
 .brand a:hover .mark{transform:rotate(0) scale(1.06)}
 .word{font-weight:900;letter-spacing:-.9px}
 .word em{font-style:normal;font-weight:650;letter-spacing:-.5px;color:var(--accent)}
-.tag{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
-     border-left:1px solid var(--line);padding-left:14px}
+.tag{color:var(--fg);font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+     border-left:1px solid var(--line);padding-left:14px;min-height:20px}
+.tag-off{display:inline-block;background:#ffc94d;color:#3a2500;font-weight:800;
+         border-radius:999px;padding:1px 8px;margin-left:2px}
+.live-dot{display:inline-block;width:7px;height:7px;margin:0 6px 1px 0;border-radius:50%;
+          background:#e5484d;box-shadow:0 0 0 2px rgba(229,72,77,.25);
+          animation:live-breathe 2s ease-in-out infinite}
+@keyframes live-breathe{0%,100%{opacity:1}50%{opacity:.55}}
 header .drop{--fg:#f3f7f8;--muted:#c7ded8;--line:#396058;--chip:#073b35;--good:#60ddca;
              background:var(--chip)}
 header .dhole{background:var(--chip)}
@@ -113,7 +119,7 @@ header .dhole{background:var(--chip)}
 .dslot.l i{clip-path:inset(0 0 0 50%)}
 .dhole{position:absolute;inset:var(--w);border-radius:50%;background:var(--chip);z-index:2}
 .dhead{position:absolute;left:50%;top:0;width:var(--w);height:var(--w);margin-left:calc(var(--w) / -2);
-       border-radius:50%;background:var(--warm);z-index:3;
+       border-radius:50%;background:var(--dial,var(--warm));z-index:3;
        box-shadow:0 0 0 1.5px var(--dial,var(--flag)),0 0 8px 1px color-mix(in srgb,var(--dial,var(--flag)) 70%,transparent);
        transform-origin:center calc(var(--d) / 2)}
 .dtag,.dtick{position:absolute;left:50%;top:50%;z-index:4;width:18px;height:18px;margin:-9px 0 0 -9px}
@@ -127,16 +133,31 @@ header .dhole{background:var(--chip)}
 .drop.dropping .dslot i{background:var(--good);transition:background .3s ease}
 .drop.dropping .dhead{opacity:0}
 .drop.dropping .dbase{box-shadow:0 0 18px -4px rgba(16,122,61,.55)}
-.droplbl{font-size:13px;font-weight:700;color:var(--muted)}
-.dropt{font-size:22px;line-height:1.15;font-weight:800;font-variant-numeric:tabular-nums;
-       color:var(--fg);min-width:3.1em}
-.drop.dropping .droplbl{display:none}
-.drop.dropping .dropt{color:var(--good);min-width:0}
+.droplbl{font-size:13px;font-weight:700;color:var(--muted);width:90px}
+.dropt{font-size:22px;line-height:28px;font-weight:800;font-variant-numeric:tabular-nums;
+       color:var(--fg);display:inline-block;width:72px;flex:none}
+header .drop{transition:background-color .6s ease}
+header .drop[data-phase="hot"]{--chip:#3d1d10}
+header .drop[data-phase="final"]{--chip:#5c1610}
+.drop[data-phase="warm"] .dial{--dial:#ffc94d}
+.drop[data-phase="warm"] .dropt{color:#ffc94d}
+.drop[data-phase="hot"] .dial,.drop[data-phase="final"] .dial{--dial:#ff9870}
+.drop[data-phase="hot"] .dropt,.drop[data-phase="final"] .dropt{color:#ff9870;font-size:24px;font-weight:900}
+.drop[data-phase="warm"] .dbase{box-shadow:0 0 14px 1px #ffc94d55}
+.drop[data-phase="hot"] .dbase{box-shadow:0 0 18px 2px #ff754d77}
+.drop[data-phase="final"] .dbase{box-shadow:0 0 24px 3px #ff754d99}
+.drop.clock-pulse .dial,.drop.clock-pulse .dropt{animation:drop-pulse 1.5s ease-in-out infinite}
+.drop[data-phase="final"].clock-pulse .dial,.drop[data-phase="final"].clock-pulse .dropt{animation-duration:1s}
+@keyframes drop-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+.dial::after{content:"";position:absolute;inset:-7px;border:2px dotted #ffc94d;border-radius:50%;opacity:0;pointer-events:none}
+.drop.burst .dial::after{animation:drop-burst 1.2s ease-out both}
+@keyframes drop-burst{0%{opacity:0;transform:scale(1)}20%{opacity:1}100%{opacity:0;transform:scale(1.3)}}
+.drop.dropping .dropt{color:var(--good)}
 .since{max-width:1200px;margin:0 auto;padding:0 16px 2px;font-size:12.5px;
        color:var(--good);font-weight:700}
 .meta{color:var(--muted);font-size:12.5px;margin:0}
 #cattabs{max-width:1200px;margin:0 auto;padding:12px 16px 10px;display:flex;
-         flex-wrap:wrap;gap:7px}
+         flex-wrap:wrap;justify-content:center;gap:7px}
 .cattab{flex:0 0 auto;display:inline-flex;align-items:center;gap:7px;
         background:var(--card);color:var(--fg);border:1px solid var(--line);
         border-radius:999px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer;
@@ -174,7 +195,6 @@ header .dhole{background:var(--chip)}
 #filterform input,#filterform select{font-size:16px;min-height:44px}
 #filterform input[type=number]{width:100px}
 #filterform label input[type=number]{border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--card)}
-#filterform input[type=checkbox]{min-width:20px;min-height:20px;width:20px;height:20px;margin:0;accent-color:var(--accent)}
 #filterform button,#filtertoggle,#filterclose{min-width:44px;min-height:44px;padding:8px 12px;
   border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
 #filterapply{background:var(--accent)!important;color:var(--accent-fg)!important}
@@ -448,20 +468,16 @@ footer .meta{font-size:11.5px}
                    50%{box-shadow:0 0 0 4px rgba(14,117,105,.16)}}
 
 .searchnote{margin:18px 0 6px;text-align:center;color:var(--muted)}
-/* ---- the deal ticker: a stencilled notice band on worn plaster above the
+/* ---- the deal ticker: a stencilled notice band on brand teal above the
    header; a torn mustard label, an ink band with a spray-dot texture and
    the live deals scrolling on a seamless loop (hover or focus stops it) ---- */
-.tk{--tk-plaster:#ddd7cc;--tk-band:#22303f;--tk-on:#f3f0e8;--tk-poster:#dcc27a;
+.tk{--tk-teal:#0e7569;--tk-teal-end:#12897b;--tk-band:#22303f;--tk-on:#f3f0e8;--tk-poster:#ffc94d;
     --tk-aqua:#75b2b0;--tk-coral:#e46f58;--tk-display:"Archivo Black","Arial Black",Impact,sans-serif;
     --tk-mono:"Recursive Mono",ui-monospace,Menlo,Consolas,monospace;
-    background:var(--tk-plaster);
-    background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.22) 0 38%,#0000 60%),
-                     repeating-linear-gradient(84deg,rgba(23,38,59,.06) 0 1px,#0000 1px 5px);
+    background:linear-gradient(110deg,var(--tk-teal),var(--tk-teal-end));
     padding:5px 16px}
 @media (prefers-color-scheme: dark){
-  .tk{--tk-plaster:#2a3742;--tk-band:#eef1ec;--tk-on:#223140;
-      background-image:radial-gradient(120% 80% at 18% 20%,rgba(255,255,255,.07) 0 38%,#0000 60%),
-                       repeating-linear-gradient(84deg,rgba(0,0,0,.12) 0 1px,#0000 1px 5px)}
+  .tk{--tk-teal:#084b44;--tk-teal-end:#0b6258}
 }
 .tk.pending .tkband{visibility:hidden}
 .tkband{position:relative;display:flex;align-items:stretch;max-width:1168px;margin:0 auto;
@@ -495,6 +511,9 @@ a.tkitem:hover span{text-decoration:underline;text-underline-offset:2px}
 @media (prefers-reduced-motion: reduce){
   .trialcta{animation:none}
   .tkstrip{animation:none}
+  .drop .dial,.drop .dropt,.drop .dial::after,.live-dot{animation:none!important;transform:none!important}
+  .drop .dtag,.drop .dtick,.drop .dtick path,.drop .dslot i{transition:none!important}
+  .drop .dtag,.drop .dtick{transform:none!important}
 }
 @media (max-width:640px){
   .spotlight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -507,12 +526,12 @@ a.tkitem:hover span{text-decoration:underline;text-underline-offset:2px}
   .dial{--d:34px;--w:4px}
   .droplbl{font-size:12.5px}
   .dropt{font-size:20px}
-  .tag{order:2;flex-basis:100%;font-size:12px;border-left:0;padding-left:0}
+  .tag{order:2;flex-basis:100%;font-size:13px;border-left:0;padding-left:0;min-height:40px}
   #subscribe{margin-left:0!important;width:100%;text-align:center;order:3;margin-top:4px}
   .since{padding:0 12px 2px;font-size:12px}
   /* Phones swipe: one row of categories (desktop keeps the wrap, where a
      sideways strip needed click-and-drag), faded at the edge as the cue. */
-  #cattabs{padding:4px 12px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;
+  #cattabs{padding:4px 12px;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;
            scroll-snap-type:x proximity;scroll-padding-inline:12px;padding-right:28px;
            -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent);
            mask-image:linear-gradient(90deg,#000 calc(100% - 36px),transparent)}
@@ -563,7 +582,7 @@ a.tkitem:hover span{text-decoration:underline;text-underline-offset:2px}
   #controls{margin:8px 0 4px}
   .tklabel{padding:0 16px 0 10px;font-size:12px}
   .freetag{font-size:12px}
-  .tag{font-size:12px}
+  .tag{font-size:13px}
   .tkitem{padding:0 16px}
   .tbtext{font-size:16px}
   .title{font-size:13.5px}
@@ -595,7 +614,7 @@ a.tkitem:hover span{text-decoration:underline;text-underline-offset:2px}
 :root{--accent-hover:#0f7b6e}
 @media (prefers-color-scheme:dark){:root{--accent-hover:#42c2b2}}
 header{--accent-hover:var(--warm)}
-.tag,.secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.secth{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .getdeal,.pwbtn,.subbar.ready{font-weight:600;border-radius:10px;box-shadow:none;
   transition:background-color 150ms,color 150ms,border-color 150ms}
 .getdeal:hover,.getdeal:focus-visible,.pwbtn:hover,.pwbtn:focus-visible,.subbar.ready:hover,.subbar.ready:focus-visible{
@@ -670,7 +689,8 @@ header{--accent-hover:var(--warm)}
   .brand a{gap:7px}
   .drop{grid-column:2;grid-row:1;padding:5px 8px;gap:0}
   .drop .dial,.drop .droplbl{display:none}
-  .dropt{font-size:16px}
+  .dropt{font-size:16px;width:50px;line-height:23px}
+  .drop[data-phase="hot"] .dropt,.drop[data-phase="final"] .dropt{font-size:18px}
   #subscribe{grid-column:3;grid-row:1;order:0;width:auto;margin:0!important;white-space:nowrap}
   #subscribe.getdeal{padding:10px 14px;min-height:44px;font-size:13px}
   .search{grid-column:1 / -1;grid-row:2;max-width:none;min-width:0;width:100%}
@@ -723,7 +743,7 @@ header{--accent-hover:var(--warm)}
     mask-image:linear-gradient(90deg,#000 calc(100% - 24px),transparent)}
   .metarow>*{flex:0 0 auto}
   .metarow .storechip{max-width:100%;overflow:hidden;text-overflow:ellipsis}
-  .tag,.secth,.chip,.badge,.credit,.newtag,.condtag,.gonetag,.freetag,.visit-new,.hotmeter,
+  .secth,.chip,.badge,.credit,.newtag,.condtag,.gonetag,.freetag,.visit-new,.hotmeter,
   .tklabel,.tkitem s,#subscribe[data-zero]::after,
   body footer .meta,body footer .footerfine,body footer #acctfoot{font-size:12px}
   .supporttext{padding-right:44px}
@@ -800,11 +820,9 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/engagement-->  <label>min&nbsp;% <input id="minpct" type="number" data-clarity-mask="true" min="0" max="100" step="1" value="0" inputmode="numeric" autocomplete="off"></label>
   <div id="desktopfilters">
     <form id="filterform" data-clarity-mask="true">
-      <fieldset id="filterfields" disabled><legend class="sr-only">Price and eligibility filters</legend>
+      <fieldset id="filterfields" disabled><legend class="sr-only">Price filters</legend>
         <label>Price <select id="pricepreset" data-clarity-mask="true"><option value="">Any price</option>{{PRICE_OPTIONS}}</select></label>
         <label>Max $ <input id="maxprice" type="number" data-clarity-mask="true" min="0" step="0.01" inputmode="decimal" autocomplete="off" enterkeyhint="done"></label>
-        <label><input id="newonly" type="checkbox" data-clarity-mask="true">New condition only</label>
-        <label><input id="plainonly" type="checkbox" data-clarity-mask="true">No extra steps</label>
         <button id="filterapply" type="submit">Apply</button><button id="filterclear" type="button">Clear</button>
       </fieldset>
     </form>
@@ -1015,17 +1033,30 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     // Consumer header: brand, one tagline derived from the configured alert
     // floor (meta.floors.min_pct — never a hardcoded percentage), live count.
     var floor = num((m.floors || {}).min_pct);
-    var tagline = "verified deals";
+    var tagline = document.getElementById("tagline");
+    tagline.textContent = "verified deals";
     var priceOnly = (state.spotlight || []).filter(function (d) {
       return d.pct_at_checkout == null && Date.parse(d.spotlight.until) > Date.now();
     });
     if (floor != null && !priceOnly.length) {
-      tagline += ", " + Math.round(floor) + (floor < 90 ? "–90% off" : "%+ off");
+      tagline.appendChild(document.createTextNode(", "));
+      var off = document.createElement("strong");
+      off.className = "tag-off";
+      off.textContent = Math.round(floor) + (floor < 90 ? "–90% off" : "%+ off");
+      tagline.appendChild(off);
     }
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length + priceOnly.length;
     document.getElementById("q").placeholder = "Search " + roughCount(live) + " deals";
-    document.getElementById("tagline").textContent =
-      tagline + " · " + (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals");
+    tagline.appendChild(document.createTextNode(" · "));
+    var liveDot = document.createElement("span");
+    liveDot.className = "live-dot";
+    liveDot.setAttribute("aria-hidden", "true");
+    tagline.appendChild(liveDot);
+    tagline.appendChild(document.createTextNode(live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals"));
+    // The visit note has its own slot so it never flattens the pill and dot.
+    var since = document.createElement("span");
+    since.id = "tagsince";
+    tagline.appendChild(since);
 <!--engagement-->    renderEngagement();
 <!--/engagement-->    // The browser tab keeps the short <title> "wowpriced — verified deals";
     // the floor made it cut off mid-number (operator, 2026-10-12).
@@ -1075,7 +1106,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // lands before its mark waits for it. "Dropping…" never sits for more
   // than 3 s.
   var clock = { target: 0, step: DROP_MIN * 60 * 1000, phase: 0,
-                dropping: 0, waiting: 0, lastPoll: 0, tag: "", lastSeed: null };
+                dropping: 0, burstAt: 0, waiting: 0, lastPoll: 0, tag: "", lastSeed: null };
   function publishTime(m) {
     // published_at is the moment the file was built; generated_at is the
     // run's start (a long run publishes minutes later).
@@ -1120,8 +1151,16 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var box = document.getElementById("drop");
     box.classList.toggle("dropping", !!clock.dropping);
     if (!clock.target) return;
-    var left = clock.target - now;
-    document.getElementById("countdown").textContent = clock.dropping ? "Dropping…" : mmss(left);
+    var left = clock.dropping ? 0 : clock.target - now;
+    var limits = (state.meta || {}).drop_clock || {warm_s: 300, hot_s: 120, final_s: 30};
+    var phase = left <= limits.final_s * 1000 ? "final" : left <= limits.hot_s * 1000 ? "hot" :
+      left <= limits.warm_s * 1000 ? "warm" : "calm";
+    box.setAttribute("data-phase", phase);
+    box.classList.toggle("clock-pulse", !clock.dropping && !reduceMotion() && (phase === "hot" || phase === "final"));
+    box.classList.toggle("burst", !!clock.burstAt && now - clock.burstAt < 1200 && !reduceMotion());
+    box.querySelector(".droplbl").textContent = clock.dropping ? "Dropping…" : phase === "final" ? "Dropping in" :
+      phase === "hot" ? "New deals in" : "Next drop in";
+    document.getElementById("countdown").textContent = mmss(left);
     var f = clock.dropping ? 1 : Math.max(0, Math.min(1, 1 - left / clock.step));
     paintDial(f, clock.dropping ? null : left);
   }
@@ -1130,9 +1169,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // degrees, a second one into the left half after; the dot rides the head.
   function paintDial(f, left) {
     var deg = f * 360;
-    // The warm ring tracks progress; the real drop's green tick is styled in CSS.
-    document.getElementById("dropdial").style.setProperty(
-      "--dial", "var(--warm)");
+    // Phase colors and the real drop's green tick are styled in CSS.
     document.getElementById("dA").style.transform = "rotate(" + Math.min(deg, 180).toFixed(2) + "deg)";
     document.getElementById("dSL").style.opacity = deg > 180 ? "1" : "0";
     document.getElementById("dB").style.transform = "rotate(" + Math.max(0, deg - 180).toFixed(2) + "deg)";
@@ -1348,8 +1385,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var inventory = searchInventory();
     if (filtered(inventory).length) return [];
     var filters = [["store", "Clear store filter"], ["category", "Clear department filter"],
-      ["minimum", "Clear minimum discount"], ["price", "Clear price limit"],
-      ["new", "Include other conditions"], ["steps", "Include deals with steps"]];
+      ["minimum", "Clear minimum discount"], ["price", "Clear price limit"]];
     var names = filters.map(function (f) { return f[0]; });
     var candidates = filtered(inventory, names), options = [];
     filters.forEach(function (f) {
@@ -1413,8 +1449,6 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       if (value === "category") state.catTab = 0;
       if (value === "minimum") document.getElementById("minpct").value = "0";
       if (value === "price") { browseFilters.preset = ""; browseFilters.max = ""; }
-      if (value === "new") browseFilters.newOnly = false;
-      if (value === "steps") browseFilters.plainOnly = false;
     } else {
       document.getElementById("q").value = "";
       state.catTab = kind === "category" ? Number(value) : 0;
@@ -3337,6 +3371,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var seed = markIndex(last, clock.phase, clock.step);
     var key0 = state.dataKey, done = false, got = fetchPublish();
     clock.dropping = now;
+    clock.burstAt = now;
     clock.target = nextMarkAfter(now, clock.phase, clock.step);
     paintClock(now);
     var guard = setTimeout(function () { finish(null, null); }, DROP_MAX_MS - 250);

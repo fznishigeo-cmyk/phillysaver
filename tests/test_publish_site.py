@@ -863,8 +863,7 @@ class TestDropClock:
         assert "function paintDial(f, left)" in html
         assert "paintDial(f, clock.dropping ? null : left);" in html
         # Task 057: the warm accent fills the ring; a real drop still turns green.
-        dial = _between(html, "function paintDial(", "function tick(")
-        assert '"--dial", "var(--warm)"' in dial
+        assert 'box.setAttribute("data-phase", phase)' in html
         assert 'class="dtick"' in html and ".drop.dropping .dtick{opacity:1" in html
         css = html[html.index(".dropt{"):html.index("}", html.index(".dropt{"))]
         assert "font-size:22px" in css and "font-weight:800" in css
@@ -941,7 +940,8 @@ class TestDropClock:
         poll = _between(html, "function poll(", "function updatedAgo(")
         assert 'method: "HEAD"' in poll and "fetchPublish().then(merge)" in poll
         clockp = _between(html, "function paintClock(", "function paintDial(")
-        assert 'clock.dropping ? "Dropping…" : mmss(left)' in clockp
+        assert 'textContent = mmss(left)' in clockp
+        assert 'var left = clock.dropping ? 0 : clock.target - now;' in clockp
         assert '"soon"' not in html and "wait ?" not in clockp
         # drop() moves the target to the next mark before it knows whether
         # a publish came, so a late one is counted toward, never parked on.
@@ -1374,10 +1374,11 @@ class TestEyeCatchers:
         assert "srcwall" not in html and "srcsel" not in html
         assert "paintSources" not in html and "source_sites" not in html
 
-    def test_only_the_ticker_loops_and_reduced_motion_stops_it(self, html):
+    def test_ticker_and_clock_motion_respect_reduced_motion(self, html):
         css = _between(html, "<style>", "</style>")
         looping = re.findall(r"([^{}]+)\{([^{}]*\binfinite\b[^{}]*)\}", css)
-        assert len(looping) == 1 and looping[0][0].strip() == ".tkstrip"
+        assert {selector.strip() for selector, _ in looping} == {
+            ".tkstrip", ".live-dot", ".drop.clock-pulse .dial,.drop.clock-pulse .dropt"}
         reduced = _between(css, "@media (prefers-reduced-motion: reduce){\n  .trialcta", "\n}")
         assert ".tkstrip{animation:none}" in reduced
 

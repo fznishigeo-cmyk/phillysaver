@@ -319,7 +319,7 @@ async function checkFirstLoad() {
   ctx.state.deals=Array.from({length:1637},()=>ninja);
   // The published metadata renderer sets the rounded live count placeholder.
   const countCode = snippet('    var priceOnly =', '    if (floor !=') +
-    snippet('    var live = state.deals.filter', '    document.getElementById("tagline").textContent');
+    snippet('    var live = state.deals.filter', '    tagline.appendChild(document.createTextNode(" · "));');
   vm.runInContext(countCode,ctx);
   assert.equal(element('q').placeholder,'Search 1,000+ deals');
   ctx.state.deals=[];
@@ -410,13 +410,11 @@ function checkPrecisionAndRecovery() {
   ctx.updateSearch();assert.equal(searchEvents.filter(e=>e[0]==='search_apply').length,applies+1);
   ctx.updateSearch();assert.equal(searchEvents.filter(e=>e[0]==='search_apply').length,applies+1);
   // Every excluding filter is offered, including intersecting blockers.
-  for(const filter of ['store','minimum','price','new','steps']) {
+  for(const filter of ['store','minimum','price']) {
     reset();query('ninja');
     if(filter==='store') element('storesel').value='amazon';
     if(filter==='minimum') element('minpct').value='90';
     if(filter==='price') ctx.browseFilters.max='10';
-    if(filter==='new') {ctx.browseFilters.newOnly=true;ctx.state.deals=[row('used',{conditions:['used']})];}
-    if(filter==='steps') {ctx.browseFilters.plainOnly=true;ctx.state.deals=[row('step',{needs_steps:true})];}
     assert.ok(clears().includes(filter),filter);
     ctx.recoverSearch('clear',filter);assert.ok(ctx.filtered(ctx.searchInventory()).length,filter);
   }
@@ -427,7 +425,7 @@ function checkPrecisionAndRecovery() {
   reset();ctx.state.catTab=4;assert.deepEqual(clears(),['category']);
   ctx.recoverSearch('clear','category');assert.ok(ctx.filtered(ctx.searchInventory()).length);
   // Inactive department (search crosses tabs) and irrelevant conditions never appear as blockers.
-  reset();ctx.state.catTab=4;ctx.browseFilters.newOnly=true;query('missing');
+  reset();ctx.state.catTab=4;query('missing');
   assert.deepEqual(clears(),['query']);
   const suggestions=options().filter(o=>o.kind!=='clear');
   assert.ok(suggestions.length<=6);
@@ -439,10 +437,10 @@ function checkPrecisionAndRecovery() {
     assert.equal(ctx.filtered(ctx.searchInventory()).length,option.count,option.label);
     assert.equal(element('q').value,'');
   }
-  reset();query('missing');ctx.browseFilters.max='20';ctx.browseFilters.newOnly=true;ctx.browseFilters.plainOnly=true;
+  reset();query('missing');ctx.browseFilters.max='20';
   ctx.state.deals.push(row('expensive',{store:'Expensive',final_price:30}),row('used',{store:'Used',conditions:['used']}),
     row('steps',{store:'Steps',needs_steps:true}),row('unknown',{store:'Unknown',final_price:null}));
-  assert.ok(!JSON.stringify(options()).match(/Expensive|Used|Steps|Unknown/));
+  assert.ok(!JSON.stringify(options()).match(/Expensive|Unknown/));
   // Current spotlight counts once; expired, ended and locked inventory contributes nothing.
   reset();query('missing');ctx.state.spotlight=[base[0],row('spot',{store:'Spot',pct_at_checkout:null,
     spotlight:{until:new Date(now+1000).toISOString()}}),row('expired',{store:'Expired',spotlight:{until:new Date(now-1).toISOString()}})];
