@@ -37,6 +37,7 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
     cfg = yaml.safe_load(cfg_path.read_text())
     cfg["fetch"]["parallel_sources"] = parallel
     cfg["parse"]["critic_tiering"]["enabled"] = False
+    cfg["site"]["offscreen_cards"] = False  # recorded before task 237
     cfg_path.write_text(yaml.safe_dump(cfg))
     sources = offline.SOURCES + [
         SourceConfig("broken", "rss", "https://broken.example/feed"),

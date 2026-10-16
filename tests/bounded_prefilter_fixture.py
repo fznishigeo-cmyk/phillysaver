@@ -22,6 +22,7 @@ def capture(out, monkeypatch, setting="omitted"):
     monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = load_config()
+    cfg.offscreen_cards = False  # recorded before task 237's phone-only CSS
     if setting != "omitted":
         cfg.bounded_prefilter["enabled"] = setting
     cfg.parse_structured_output = True
@@ -72,6 +73,7 @@ def capture(out, monkeypatch, setting="omitted"):
                       decisions=db.all_deals(), public={})
         for mode in ("membership", "open", "support", "shipped"):
             publication = load_config()  # Retain 119/121 and every other shipped switch.
+            publication.offscreen_cards = False  # recorded before task 237
             if mode != "shipped":
                 publication.support_enabled = mode == "support"
                 publication.paywall_open_access = mode == "open"
