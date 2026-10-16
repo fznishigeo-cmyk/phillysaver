@@ -1546,9 +1546,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       var picks = rows.filter(function (d) { return d.pick != null; });
       picks.sort(function (a, b) { return a.pick - b.pick; });
       var rest = fresh.filter(function (d) { return d.pick == null; });
-      rest.sort(function (a, b) {
-        return (Date.parse(b.first_seen_at || "") || 0) - (Date.parse(a.first_seen_at || "") || 0);
-      });
+      // Parse each arrival time once: the comparator runs ~n log n times (phones).
+      var seenAt = new Map();
+      rest.forEach(function (d) { seenAt.set(d, Date.parse(d.first_seen_at || "") || 0); });
+      rest.sort(function (a, b) { return seenAt.get(b) - seenAt.get(a); });
 /*checkout-price*/      // Keep the server's sliding-window spacing through browser adoption and drops.
       return picks.concat(rest);
 /*/checkout-price*/      return blockDeal(rotatePicks(picks, state.seed)).concat(rest);

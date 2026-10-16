@@ -295,8 +295,16 @@
     return rect.width > 0 && rect.height > 0 && rect.bottom > (edge || 0) &&
       rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
   }
+  // Many callers refresh in one task (render, paywall, sub bar); each pass reads
+  // layout, so run one pass per frame with the latest meta (phone speed, 2026-10-16).
+  var refreshQueued = false;
   function refresh(m) {
     if (m) meta = m;
+    if (refreshQueued) return;
+    refreshQueued = true;
+    requestAnimationFrame(function () { refreshQueued = false; refreshNow(); });
+  }
+  function refreshNow() {
     if (footer) footer.hidden = joined && document.getElementById("footer-signup-success").hidden;
     positionPrompt();
     var link = String((meta.support || {}).link || "");

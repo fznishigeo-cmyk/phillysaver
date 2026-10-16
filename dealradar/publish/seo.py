@@ -170,11 +170,13 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
 
 
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
-              now: datetime | None = None) -> str:
+              now: datetime | None = None, *, photo: bool = False) -> str:
     """One free or dead deal as the wall draws it (index.html cardHtml), with
     the store tile in place of the photo: item, store, price, was-price, %
     off, badge, product link and the "via Source" credit links. Never called
-    with a locked stub."""
+    with a locked stub. photo: draw the photo exactly as the page script
+    does for its first four cards, so the home page's largest image starts
+    loading with the HTML instead of after the script."""
     e = lambda v: escape(str(v if v is not None else ""))
     dead = d.get("status") == "dead"
     spotlight = d.get("spotlight") or {}
@@ -187,6 +189,12 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     if spotlight and d.get("image_url"):
         media = (f'<img src="{e(d["image_url"])}" alt="{e(d.get("item"))}" '
                  'referrerpolicy="no-referrer" fetchpriority="high" loading="eager">')
+    elif photo and d.get("image_url"):
+        media = ('<img fetchpriority="high" loading="eager" referrerpolicy="no-referrer" '
+                 f'src="{e(d["image_url"])}" alt="{e(d.get("item"))}" onerror="this.style.display=\'none\';'
+                 'this.nextElementSibling.style.display=\'flex\'">'
+                 f'<div class="ph" style="background:hsl({_store_hue(store)},42%,62%);display:none" '
+                 f'aria-hidden="true"><span>{e((store or "deal")[:18])}</span></div>')
     if spotlight:
         media += f'<span class="today-ribbon">Today only · {e(spotlight["source"])}</span>'
     if d.get("pct_at_checkout") is not None:
@@ -317,7 +325,10 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
     if spotlight:
         html += '<div class="grid spotlight-grid">' + "".join(card_html(d, deal_paths, now) for d in spotlight) + '</div>'
     if free:
-        html += '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>"
+        # The first four photos match the page script's eager, high-priority ones.
+        photos = {id(d) for d in [d for d in free if d.get("image_url")][:4]}
+        html += '<div class="grid">' + "".join(card_html(d, deal_paths, now, photo=id(d) in photos)
+                                               for d in free) + "</div>"
     if more:
         n = ("1,000+" if more >= 1000 else f"{more // 100 * 100:,}+"  # never the exact count
              if more >= 100 else str(more))

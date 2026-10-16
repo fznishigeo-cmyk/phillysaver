@@ -377,7 +377,10 @@ def test_static_and_live_media_share_reserved_geometry(published):
     assert '.media{height:118px}' in css
     assert '.media img{max-width:88%;max-height:88%;object-fit:contain}' in css
     static = re.search(r'<div id="content" data-clarity-unmask="true">(.*?)</div>\s*<div id="paywall"', home, re.S)[1]
-    assert 'class="media"' in static and '<img' not in static
+    # The first four photos load with the HTML, as the live wall's eager ones (2026-10-16).
+    images = re.findall(r'<img\s+([^>]+)>', static)
+    assert 'class="media"' in static and len(images) == 4
+    assert all('fetchpriority="high"' in a and 'loading="eager"' in a for a in images)
     assert '<h2 class="secth sr-only">Verified deals right now</h2>' in static
     # External head scripts, if configured later, must not block the header.
     for attrs in re.findall(r'<script([^>]*)>', home[:home.index('<header>')]):

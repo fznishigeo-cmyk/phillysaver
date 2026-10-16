@@ -335,6 +335,23 @@ def test_best_summary_needs_two_categories():
                     '<a href="/deals/automotive/">Automotive</a> (1).</p>')
 
 
+def test_home_static_wall_draws_the_first_four_photos_like_the_script(tmp_path, cfg, db, options):
+    # Phone speed (2026-10-16): the largest image starts with the HTML, not after the script.
+    cfg.paywall_open_access = True
+    cfg.front_page = options
+    source = [make_deal(dedupe_key=f"k{i}", item=f"Item {i}", category="home", pct_at_checkout=80,
+                        image_url=f"https://img.example/{i}.jpg" if i != 1 else "") for i in range(8)]
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=source)
+    wall = (out / "index.html").read_text().split('<div id="content" data-clarity-unmask="true">')[1].split('<div id="paywall"')[0]
+    photos = re.findall(r'<img fetchpriority="high" loading="eager" referrerpolicy="no-referrer" src="([^"]+)"', wall)
+    assert len(photos) == 4 and wall.count("<img") == 4
+    assert all(src.startswith("https://img.example/") for src in photos)
+    assert wall.count('class="ph"') == 8  # every card keeps its tile; photo cards hide it until an error
+    best = (out / "best-deals-today/index.html").read_text()
+    assert "<img" not in best.split('<div class="grid">')[1].split("</div></div>")[0]
+
+
 def test_no_niche_card_on_the_first_screen():
     from dealradar.rank import front_page_mix
     opts = {"broad_categories": ["home", "beauty"], "niche_categories": ["auto"],
