@@ -433,6 +433,13 @@ CREATE TABLE IF NOT EXISTS indexnow_batches (
 """
 
 
+
+# A timed-out or unreadable paid call can still be billed shortly after the
+# client gives up. Its worst-case reservation stays on its own UTC day, and on
+# the next day only when it ended this close to midnight (2026-10-16: 190
+# uncertain calls from one day blocked all parsing the next morning).
+UNCERTAIN_BILLING_MARGIN = timedelta(minutes=15)
+
 class DB:
     def __init__(self, path: str | Path = "state.db", *, read_only: bool = False) -> None:
         self.path = str(path)
@@ -467,6 +474,14 @@ class DB:
         for name in ("cache_examined", "cache_deleted", "cache_completed"):
             if name not in columns:
                 self.conn.execute(f"ALTER TABLE run_stats ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+        # Uncertain calls, and calls a run never settled (cut off at its parse
+        # deadline), kept tomorrow's reservation however early they ended or
+        # started; release those (idempotent; near-midnight calls keep theirs).
+        self.conn.execute(
+            "DELETE FROM llm_reservations WHERE day > (SELECT date(COALESCE(c.billed_at, c.started_at), ?)"
+            " FROM llm_calls c WHERE c.call_key=llm_reservations.call_key"
+            " AND c.status IN ('uncertain','reserved'))",
+            (f"+{int(UNCERTAIN_BILLING_MARGIN.total_seconds() // 60)} minutes",))
         if self.meta_get("llm_ledger_migrated") is None:
             self.conn.execute(
                 "INSERT INTO llm_legacy_spend(run_key, billed_at, usd)"
@@ -1180,6 +1195,10 @@ class DB:
         with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.execute("UPDATE llm_calls SET cost_usd=?, billed_at=?, status=? WHERE call_key=?",
                          (cost, iso(now), "uncertain" if uncertain else "settled", call_key))
+            if uncertain:
+                # Billing can only land on a later day if the call ended near midnight.
+                last_day = (now + UNCERTAIN_BILLING_MARGIN).astimezone(timezone.utc).date().isoformat()
+                conn.execute("DELETE FROM llm_reservations WHERE call_key=? AND day>?", (call_key, last_day))
             if usage is not None:
                 conn.execute("UPDATE llm_calls SET input_tokens=?, output_tokens=?,"
                              " cache_read_tokens=?, cache_write_tokens=? WHERE call_key=?",
