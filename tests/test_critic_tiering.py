@@ -313,6 +313,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     config["publish"]["amazon_as_of"]["enabled"] = False  # predates the Amazon as-of switch
     config["publish"]["photoless_last"] = False  # predates photos-first
     config["seo"]["product_pages"]["enabled"] = False  # predates product pages
+    config["seo"]["event_pages"]["enabled"] = False  # predates event pages
     path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)

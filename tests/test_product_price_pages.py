@@ -103,6 +103,7 @@ def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, exp
         cfg.paywall_open_access = mode == "open"
     cfg.paywall_teaser_count = 1
     cfg.seo_product_pages_enabled = False  # predates task 118
+    cfg.seo_event_pages_enabled = False  # predates event pages
     rows, out = seed(db), tmp_path / "site"
     site.render_site(db, cfg, NOW, out_dir=out, deals=rows)
     digest = hashlib.sha256()

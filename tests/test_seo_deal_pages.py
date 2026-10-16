@@ -228,7 +228,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     clicks = 1 if cfg.raw.get("first_party_clicks", {}).get("enabled") else 0
     # Product pages on (2026-10-15): the /p/ index and the two sitemap children.
     products = 3 if cfg.seo_product_pages_enabled else 0
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products
+    events = len(cfg.seo_event_pages_events) if cfg.seo_event_pages_enabled else 0
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():

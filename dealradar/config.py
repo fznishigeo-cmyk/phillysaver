@@ -7,6 +7,7 @@ import math
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -202,6 +203,11 @@ class AppConfig:
     affiliate_ebay_campaign_id: str = ""  # eBay Partner Network, 10 digits ("" = off)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # visible live offers for an indexable hub
+    seo_event_pages_enabled: bool = False
+    seo_event_pages_events: list[dict[str, Any]] = field(default_factory=list)
+    seo_event_pages_min_items: int = 10
+    seo_event_pages_max_items: int = 60
+    seo_event_pages_intro: dict[str, str] = field(default_factory=dict)
     seo_home_min_items: int = 1
     seo_best_today_min_items: int = 1
     seo_deal_page_min_items: int = 1
@@ -645,6 +651,46 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             logging.getLogger("dealradar.config").warning(
                 "affiliate.link_overrides entry ignored: not <host>/<id> -> a Sovrn link")
     cfg.seo_hub_min_items = max(1, int(g("seo", "hub_min_items", default=cfg.seo_hub_min_items)))
+    cfg.seo_event_pages_enabled = g("seo", "event_pages", "enabled", default=False)
+    if not isinstance(cfg.seo_event_pages_enabled, bool):
+        raise ValueError("seo.event_pages.enabled must be a boolean")
+    for name in ("min_items", "max_items"):
+        value = g("seo", "event_pages", name, default=getattr(cfg, "seo_event_pages_" + name))
+        if type(value) is not int or value < 1:
+            raise ValueError("seo.event_pages." + name + " must be a positive integer")
+        setattr(cfg, "seo_event_pages_" + name, value)
+    if cfg.seo_event_pages_min_items > cfg.seo_event_pages_max_items:
+        raise ValueError("seo.event_pages.min_items must not exceed max_items")
+    events = g("seo", "event_pages", "events", default=[])
+    if not isinstance(events, list):
+        raise ValueError("seo.event_pages.events must be a list")
+    slugs = set()
+    for event in events:
+        if not isinstance(event, dict):
+            raise ValueError("seo.event_pages.events entries must be mappings")
+        slug = event.get("slug")
+        if not isinstance(slug, str) or slug not in {"black-friday", "cyber-monday"} or slug in slugs:
+            raise ValueError("seo.event_pages.events requires unique supported event slugs")
+        name, keywords, window = event.get("name"), event.get("keywords"), event.get("window_days")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("seo.event_pages.events requires a name")
+        try:
+            stamp = date.fromisoformat(str(event.get("date")))
+        except ValueError:
+            raise ValueError("seo.event_pages.events requires an ISO date") from None
+        if not (isinstance(window, list) and len(window) == 2
+                and all(type(n) is int for n in window) and window[0] <= 0 <= window[1]):
+            raise ValueError("seo.event_pages.events.window_days must bracket the event date")
+        if not (isinstance(keywords, list) and keywords
+                and all(isinstance(k, str) and k.strip() for k in keywords)):
+            raise ValueError("seo.event_pages.events.keywords must contain nonempty strings")
+        cfg.seo_event_pages_events.append(dict(slug=slug, name=name.strip(), date=stamp.isoformat(),
+            window_days=window, keywords=[k.strip().casefold() for k in keywords]))
+        slugs.add(slug)
+    intro = g("seo", "event_pages", "intro", default={})
+    if not isinstance(intro, dict) or any(k not in slugs or not isinstance(v, str) for k, v in intro.items()):
+        raise ValueError("seo.event_pages.intro must map event slugs to text")
+    cfg.seo_event_pages_intro = intro
     cfg.seo_home_min_items = max(1, int(g("seo", "home_min_items", default=cfg.seo_home_min_items)))
     cfg.seo_best_today_min_items = max(1, int(g("seo", "best_today_min_items", default=cfg.seo_best_today_min_items)))
     cfg.seo_deal_page_min_items = max(1, int(g("seo", "deal_page_min_items", default=cfg.seo_deal_page_min_items)))

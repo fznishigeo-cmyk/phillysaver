@@ -246,6 +246,22 @@ affiliate:
     wowpriced earns from qualifying purchases.
 
 seo:
+  event_pages:
+    enabled: true
+    events:
+      - slug: black-friday
+        name: Black Friday
+        date: 2026-11-27
+        window_days: [-28, 3]
+        keywords: [black friday]
+      - slug: cyber-monday
+        name: Cyber Monday
+        date: 2026-11-30
+        window_days: [-28, 3]
+        keywords: [cyber monday]
+    min_items: 10
+    max_items: 60
+    intro: {black-friday: "", cyber-monday: ""}
   deal_pages_max: 3000        # Maximum live deal landing pages, best rank first.
   deal_pages_indexable: false # Keep shopper pages; focus search on durable listings.
   product_pages:

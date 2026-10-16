@@ -70,6 +70,7 @@ def test_off_all_bytes_match_untouched_head(tmp_path, monkeypatch, mode, expecte
     cfg.amazon_history = 'show'  # predates task 121b
     cfg.front_page.get('checkout_price_deals', {})['enabled'] = False  # predates task 121b
     cfg.photoless_last = False
+    cfg.seo_event_pages_enabled = False  # predates event pages
     render(tmp_path/'site', cfg)
     assert digest(tree(tmp_path/'site')) == expected
 

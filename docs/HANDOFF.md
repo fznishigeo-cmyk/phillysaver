@@ -193,6 +193,23 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Permanent event pages (Codex task 210, 2026-10-16; uncommitted, ON):**
+  `/black-friday/` and `/cyber-monday/` reuse the hub layout/cards and current
+  public facts. Stored event mentions qualify year-round; published picks join
+  during the configured window and provide the brief's early/post-event fallback.
+  Niche, locked, ended and price-unconfirmed offers are excluded; photos rank
+  first, capped at 60. Ten visible offers gate indexing, sitemap and IndexNow.
+  Home chips, hub related links and shared footers link both permanent pages;
+  Amazon history hiding is inherited. Code defaults off; all **144 public files**
+  across four disabled-output modes independently match untouched HEAD and their
+  byte pins. Review fixed pending event URLs leaking into the final IndexNow
+  manifest after a floor drop or disabling, with two regression checks. Updated
+  file-count/navigation-size expectations; seven Stripe checks exercise the
+  unchanged workflow step with a socket-free fake transport. **40 event checks**,
+  both offline rerun modes and **45 byte/compatibility checks** pass. Required
+  full suite (`-q -n 2 -p no:cacheprovider --basetemp=/tmp/task210-full`):
+  **4,574 passed** (20m04s). Test logs and own scratch removed. No new production
+  requests, images, scripts or LLM calls; no commit or push. Review/deployment remain.
 - **Safety and real numbers (Codex task 121, 2026-10-16; uncommitted):** shared
   Pinterest rich-pin opt-out; phone audit blocks the hourly check's analytics/ad
   pattern, including Clarity. `?internal=1` remembers this browser, tags GA4 as

@@ -97,6 +97,7 @@ def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode,
     cfg.amazon_history = "show"  # predates task 121b
     cfg.front_page.get("checkout_price_deals", {})["enabled"] = False  # predates task 121b
     cfg.seo_product_pages_enabled = False  # predates product pages
+    cfg.seo_event_pages_enabled = False  # predates event pages
     cfg.amazon_as_of_enabled = False
     cfg.photoless_last = False  # predates photos-first
     out = tmp_path / "site"

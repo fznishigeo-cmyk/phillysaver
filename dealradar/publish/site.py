@@ -410,11 +410,14 @@ def linked_disclosure(disclosure: str) -> str:
 
 def site_footer(html: str, now: datetime, disclosure: str, support: bool,
                 account: bool = False, *, amazon_as_of_enabled: bool = False,
-                product_pages_enabled: bool = False) -> str:
+                product_pages_enabled: bool = False, event_links: list | None = None) -> str:
     """One footer for root and nested pages, with the configured disclosure."""
     if "{{SITE_FOOTER}}" not in html:
         return html
     footer = (TEMPLATES_DIR / "site-footer.html").read_text(encoding="utf-8")
+    if event_links:
+        footer = footer.replace('</nav>', ' · ' + ' · '.join(
+            f'<a href="{escape(path)}">{escape(name)}</a>' for path, name in event_links) + '\n  </nav>', 1)
     if product_pages_enabled:
         footer = footer.replace('<a href="/hacks.html">Deal hacks</a>',
                                 '<a href="/hacks.html">Deal hacks</a> · <a href="/p/">Price history</a>', 1)
@@ -928,6 +931,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + "".join(product_pages.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if cfg.amazon_history == "hide":
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
+    if cfg.seo_event_pages_enabled:
+        site_version = hashlib.sha256((site_version + "event-pages" + json.dumps(
+            cfg.seo_event_pages_events, sort_keys=True)).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -1087,7 +1093,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = site_footer(html, now, meta["disclosure"], support,
                            account=name == "index.html" and not support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                           product_pages_enabled=cfg.seo_product_pages_enabled)
+                           product_pages_enabled=cfg.seo_product_pages_enabled,
+                           event_links=seo.event_pages.links(cfg))
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
@@ -1162,7 +1169,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
                          excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed}
-                         | indexnow.product_exclusions(db, site_url, seo_pages))
+                         | indexnow.product_exclusions(db, site_url, seo_pages)
+                         | seo.event_pages.indexnow_exclusions(db, site_url, seo_pages))
 
     if clicks.enabled(cfg):
         try:

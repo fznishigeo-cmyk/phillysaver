@@ -35,7 +35,7 @@ from ..rank import pick_order
 from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
 from . import amazon_history
-from . import amazon_as_of, inventory, product_pages, seo_audit, traffic
+from . import amazon_as_of, event_pages, inventory, product_pages, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -335,10 +335,11 @@ def tabs_html() -> str:
         f'data-i="{i}">{escape(label)}</a>' for i, (label, _g, slug) in enumerate(CATGROUPS))
 
 
-def _hub_links() -> str:
+def _hub_links(event_links: list | None = None) -> str:
     return '<ul class="hubs">' + "".join(
         f'<li><a href="{hub_href(slug)}">{escape(label if slug else "All deals")}</a></li>'
-        for label, _g, slug in CATGROUPS[1:]) + "</ul>"
+        for label, _g, slug in CATGROUPS[1:]) + "".join(
+        f'<li><a href="{escape(path)}">{escape(name)}</a></li>' for path, name in event_links or []) + "</ul>"
 
 
 def store_slug(name: str) -> str:
@@ -820,6 +821,16 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                   d.get("status") != "dead" and store_slug(str(d.get("store") or "")) == "amazon"
                   for d in teaser) >= 10 else "hidden",
               TICKER_HIDDEN="" if sum(d.get("status") != "dead" for d in teaser) >= 3 else "hidden"), encoding="utf-8")
+    events, home_events = event_pages.links(cfg), event_pages.open_links(cfg, now)
+    if home_events:
+        index_file = out / "index.html"
+        home = index_file.read_text(encoding="utf-8")
+        chips = ('<nav class="hrow event-links" aria-label="Seasonal deals">' + ''.join(
+            f'<a class="cattab" href="{escape(path)}">{escape(name)}</a>' for path, name in home_events) + '</nav>')
+        home = re.sub(r'(<nav id="cattabs"[^>]*>.*?</nav>)', lambda m: m[0] + chips, home, count=1, flags=re.S)
+        home = home.replace('</style>', '.event-links{justify-content:center;padding-top:0}\n'
+            '.event-links a{min-height:44px}\n</style>', 1)
+        index_file.write_text(home, encoding="utf-8")
     floors = seo_audit.minimums(cfg)
     index_file = out / "index.html"
     if seo_audit.Page(index_file.read_text(encoding="utf-8"), "/").live_offers() < floors["home"]:
@@ -829,14 +840,18 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                             now, meta["disclosure"], support,
                             amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                            product_pages_enabled=cfg.seo_product_pages_enabled)
+                            product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events)
     (out / "404.html").write_text(_fill(not_found,
-                                        HUB_LINKS=_hub_links(),
+                                        HUB_LINKS=_hub_links(events),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
     if cfg.seo_product_pages_enabled:
         with (out / "_headers").open("a", encoding="utf-8") as headers:
             headers.write("\n/p/*\n  Cache-Control: no-cache\n")
+    if events:
+        with (out / "_headers").open("a", encoding="utf-8") as headers:
+            for path, _name in events:
+                headers.write(f"\n{path}*\n  Cache-Control: no-cache\n")
 
     stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
     actions = (TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8")
@@ -849,7 +864,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                           product_pages_enabled=cfg.seo_product_pages_enabled)
+                           product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events)
+    template = _fill(template, HUB_LINKS=_hub_links(events))
     if cfg.seo_product_pages_enabled:
         template = template.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
     if cfg.amazon_as_of_enabled:
@@ -871,6 +887,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     price_links = [(path, name) for path, (name, _rows) in prices.items()]
     browse_template = _fill(template, PRICE_LINKS=_link_row("By price", price_links))
     template = _fill(browse_template, STORE_LINKS=_link_row("Stores", store_links))
+    event_paths = event_pages.publish(out, cfg, now, live,
+        {d["dedupe_key"]: d for d in source_deals}, paths, template, site_url)
+    for slug in ("black-friday", "cyber-monday"):
+        folder = out / slug
+        if folder.is_dir() and f"/{slug}/" not in event_paths:
+            shutil.rmtree(folder)
     from . import product_offers
     from .. import product_shadow
 
@@ -973,7 +995,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         (out / f"{key}.txt").write_text(key, encoding="utf-8")
     emitted = (["/" + p for p in public] + ["/welcome.html", "/404.html"]
                + [hub_href(slug) for _label, _group, slug in HUB_GROUPS]
-               + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths + product_paths)
+               + list(paths.values()) + [best_path] + list(browse_pages) + inventory_paths + product_paths + event_paths)
     inventory.remove_stale(out, emitted)
     product_shadow.record(db, cfg, now, shadow_run, shadow)
     return emitted, wall
@@ -1031,6 +1053,7 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
         from .indexnow import product_exclusions
         excluded = {site_url + path for path, page in pages.items() if page.unconfirmed}
         excluded |= product_exclusions(db, site_url, pages)
+        excluded |= event_pages.indexnow_exclusions(db, site_url, pages)
         due = indexnow_due(db, cfg, now, contents, site_dir=out, excluded=excluded)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))

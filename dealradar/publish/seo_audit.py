@@ -26,6 +26,8 @@ _VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "me
 
 def page_family(path: str) -> str:
     path = urlsplit(path).path
+    if path in {"/black-friday/", "/cyber-monday/"}:
+        return "event"
     if path in ("/", "/index.html"):
         return "home"
     if re.fullmatch(r"/deal/[^/]+/", path):
@@ -45,13 +47,16 @@ def page_family(path: str) -> str:
 
 
 def minimums(cfg) -> dict[str, int]:
-    return {"home": max(1, cfg.seo_home_min_items),
+    floors = {"home": max(1, cfg.seo_home_min_items),
             "category": max(1, cfg.seo_hub_min_items),
             "store": max(1, cfg.seo_store_page_min_deals),
             "price": max(1, cfg.seo_price_page_min_deals),
             "best_today": max(1, cfg.seo_best_today_min_items), "deal": max(1, cfg.seo_deal_page_min_items),
             "product_family": max(2, cfg.traffic_product_family_min_offers),
             "product": 0}  # History pages can remain useful without a live offer.
+    if cfg.seo_event_pages_enabled:
+        floors["event"] = cfg.seo_event_pages_min_items
+    return floors
 
 
 def _text(s: str) -> str:
@@ -436,6 +441,8 @@ def audit(out: Path, cfg, site_url: str, paths: list[str] | None = None, *, page
     pages = read_pages(out, paths) if pages is None else pages
     floors = minimums(cfg)
     counts = dict.fromkeys(FAMILIES, 0)
+    if cfg.seo_event_pages_enabled:
+        counts["event"] = 0
     empty, schema, broken = set(), set(), set()
     base = site_url or "https://local.invalid"
     host = (urlsplit(base).hostname or "").removeprefix("www.")
