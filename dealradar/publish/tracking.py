@@ -219,22 +219,22 @@ _CLARITY = """\
   }
 """
 
+# wpTrack(name, params): one site event to every tag that loaded, each call
+# in its own try/catch; a no-op when none loaded. Only each event's allowed
+# fields pass. credit_click sends only the source display name, to GA4.
+#
+# site event      GA4             Meta                  TikTok                Pinterest  Google Ads                Microsoft UET
+# sign_up         sign_up         CompleteRegistration  CompleteRegistration  signup     -                         sign_up
+# begin_checkout  begin_checkout  InitiateCheckout      InitiateCheckout      -          -                         begin_checkout
+# start_trial     start_trial     StartTrial            Subscribe             checkout   conversion (trial label)  subscribe
+# deal_click      deal_click      DealClick (custom)    ClickButton           -          -                         outbound_click
+#
+# start_trial is worth $0 today (value 0, USD); Meta's StartTrial also carries
+# predicted_ltv 9.99, one month of membership. Home load events are GA4-only
+# and carry no visitor-supplied params. Keep this table out of every page's bytes.
 _DISPATCH = """\
-  // wpTrack(name, params): one site event to every tag that loaded, each
-  // call in its own try/catch; a no-op when none loaded. Only the store,
-  // category, method and checkout plan params pass (anything else is dropped here, so no
-  // item name or price ever reaches a partner).
-  //
-  //   site event      GA4             Meta                  TikTok                Pinterest  Google Ads                Microsoft UET
-  //   sign_up         sign_up         CompleteRegistration  CompleteRegistration  signup     -                         sign_up
-  //   begin_checkout  begin_checkout  InitiateCheckout      InitiateCheckout      -          -                         begin_checkout
-  //   start_trial     start_trial     StartTrial            Subscribe             checkout   conversion (trial label)  subscribe
-  //   deal_click      deal_click      DealClick (custom)    ClickButton           -          -                         outbound_click
-  //
-  // start_trial is worth $0 today (value 0, USD); Meta's StartTrial also
-  // carries predicted_ltv 9.99, one month of membership.
-  // Home load events go only to GA4 and carry no visitor-supplied params.
   var EVENTS = {
+    credit_click: { ga4Only: true },
     home_load_attempt: { ga4Only: true },
     first_load_failed: { ga4Only: true },
     static_fallback_shown: { ga4Only: true },
@@ -258,6 +258,11 @@ _DISPATCH = """\
     var ev = EVENTS[name];
     if (!ev) return;
     var p = {};
+    if (name === "credit_click") {
+      var partner = params && params.partner;
+      if (typeof partner !== "string" || !partner.trim() || /https?:|www\\.|[\\r\\n]/i.test(partner)) return;
+      p.partner = partner.trim().slice(0, 100);
+    }
     if (ev.methods) {
       if (!params || ev.methods.indexOf(params.method) === -1) return;
       p.method = params.method;
@@ -292,6 +297,11 @@ _DISPATCH = """\
         : { event_category: p.category || "", event_label: p.store || p.method || "" });
     });
   };
+  if (on.ga4 && document.addEventListener) document.addEventListener("click", function (event) {
+    var target = event.target;
+    var link = target && target.closest && target.closest(".credit a, .detail-sources a");
+    if (link) window.wpTrack("credit_click", {partner: link.textContent});
+  });
 })();
 """
 

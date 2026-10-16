@@ -14,7 +14,7 @@ import os
 import subprocess
 import tempfile
 import time
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote, urlsplit
 
@@ -156,6 +156,117 @@ def ga4(client: Any, token: str, property_id: str, days: int) -> dict:
     out["sources"] = [(d.get("sessionSourceMedium", ""), m[0]) for d, m in _rows(sources)]
     out["pages"] = [(d.get("landingPage", ""), m[0]) for d, m in _rows(pages)]
     return out
+
+
+def completed_week(today: date) -> tuple[date, date]:
+    end = today - timedelta(days=today.weekday() + 1)
+    return end - timedelta(days=6), end
+
+
+def _score_report(client, token, property_id, requests):
+    time.sleep(1)  # shared API host; the preceding report may just have finished
+    response = client.post(GA4_URL.format(quote(property_id, safe="")),
+                           headers={"Authorization": f"Bearer {token}"}, json={"requests": requests})
+    response.raise_for_status()
+    reports = response.json()["reports"]
+    if len(reports) != len(requests):
+        raise ValueError("missing scoreboard report")
+    for request, result in zip(requests, reports):
+        expected = [m["name"] for m in request["metrics"]]
+        if [h["name"] for h in result["metricHeaders"]] != expected:
+            raise ValueError("invalid scoreboard metrics")
+        meta = result.get("metadata") or {}
+        if (meta.get("subjectToThresholding") or meta.get("samplingMetadatas")
+                or meta.get("dataLossFromOtherRow")
+                or result.get("rowCount", 0) > len(result.get("rows") or [])):
+            raise ValueError("incomplete scoreboard report")
+        for row in result.get("rows") or []:
+            values = [float(m["value"]) for m in row["metricValues"]]
+            if len(values) != len(expected) or any(not math.isfinite(v) or v < 0 or v != int(v) for v in values):
+                raise ValueError("invalid scoreboard count")
+    return reports
+
+
+def social_channel(source: str) -> str:
+    source = source.lower().strip()
+    for name, hosts in (("Pinterest", ("pinterest", "pinterest.com")),
+                        ("Facebook", ("facebook", "facebook.com", "fb.com")),
+                        ("Instagram", ("instagram", "instagram.com")),
+                        ("Telegram", ("telegram", "telegram.org", "t.me", "telegram.me"))):
+        if any(source == host or source.endswith("." + host) for host in hosts):
+            return name
+    return ""
+
+
+def ga4_weekly(client, token, property_id, today):
+    """Distinct people are queried once per week; channel counts are sessions.
+
+    sessionManualSource is GA4's utm_source dimension:
+    https://developers.google.com/analytics/devguides/reporting/data/v1/api-schema
+    """
+    start, end = completed_week(today)
+    ranges = [{"startDate": (start - timedelta(days=offset)).isoformat(),
+               "endDate": (end - timedelta(days=offset)).isoformat(), "name": name}
+              for offset, name in ((0, "this_week"), (7, "last_week"))]
+    dimensions = ("sessionDefaultChannelGroup", "sessionSource", "sessionManualSource", "sessionMedium")
+    totals, sources = _score_report(client, token, property_id, [
+        {"dateRanges": ranges, "metrics": [{"name": m} for m in ("totalUsers", "sessions")]},
+        {"dateRanges": ranges[:1], "dimensions": [{"name": d} for d in dimensions],
+         "metrics": [{"name": "sessions"}], "limit": 10000}])
+    if ([h["name"] for h in totals["dimensionHeaders"]] != ["dateRange"]
+            or [h["name"] for h in sources["dimensionHeaders"]] != list(dimensions)):
+        raise ValueError("invalid scoreboard response")
+    out = {"start": start, "end": end, "this_week": {"people": 0, "sessions": 0},
+           "last_week": {"people": 0, "sessions": 0}, "channels": {}}
+    seen = set()
+    for dims, (people, sessions) in _rows(totals):
+        period = dims["dateRange"]
+        if period not in ("this_week", "last_week") or period in seen:
+            raise ValueError("invalid scoreboard period")
+        seen.add(period)
+        out[period] = {"people": people, "sessions": sessions}
+    for dims, (sessions,) in _rows(sources):
+        channel, medium = dims[dimensions[0]], dims["sessionMedium"].lower()
+        network = social_channel(dims["sessionManualSource"]) or social_channel(dims["sessionSource"])
+        if channel == "Organic Search":
+            label = "Organic Search"
+        elif (channel == "Organic Social" or (network and medium in ("social", "referral"))) and not (
+                channel.startswith("Paid") or medium in ("cpc", "ppc", "paid", "paid_social")):
+            label = "Organic Social" + (" · " + network if network else " · other")
+        elif channel in ("Direct", "Referral"):
+            label = channel
+        else:
+            label = "Other channels"
+        out["channels"][label] = out["channels"].get(label, 0) + sessions
+    return out
+
+
+def ga4_credits(client, token, property_id, today):
+    start, end = completed_week(today)
+    result, = _score_report(client, token, property_id, [{
+        "dateRanges": [{"startDate": start.isoformat(), "endDate": end.isoformat()}],
+        "dimensions": [{"name": "customEvent:partner"}], "metrics": [{"name": "eventCount"}],
+        "dimensionFilter": {"filter": {"fieldName": "eventName",
+            "stringFilter": {"matchType": "EXACT", "value": "credit_click"}}}, "limit": 10000}])
+    if [h["name"] for h in result["dimensionHeaders"]] != ["customEvent:partner"]:
+        raise ValueError("invalid partner response")
+    return {d["customEvent:partner"]: m[0] for d, m in _rows(result)
+            if d["customEvent:partner"] not in ("", "(not set)")}
+
+
+def search_week(client, token, site, today):
+    start, end = completed_week(today)
+    time.sleep(1)
+    response = client.post(_site_url(site) + "/searchAnalytics/query",
+        headers={"Authorization": f"Bearer {token}"}, json={"startDate": start.isoformat(),
+        "endDate": end.isoformat(), "dimensions": [], "rowLimit": 1, "dataState": "all"})
+    response.raise_for_status()
+    rows = response.json().get("rows") or []
+    counts = {key: rows[0][key] if rows else 0 for key in ("clicks", "impressions")}
+    if (any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in counts.values())
+            or counts["clicks"] > counts["impressions"]):
+        raise ValueError("invalid search counts")
+    return {"start": start, "end": end, **counts}
 
 
 def ga4_stores(client: Any, token: str, property_id: str, days: int) -> dict:

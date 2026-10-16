@@ -205,7 +205,14 @@ def report_data(db, cfg, now):
         weights.setdefault(category, 1.0)
     impressions = sum(row["impressions"] for row in rows)
     outbound = sum(row["outbound_clicks"] for row in rows)
+    from .google import completed_week
+    week_start, week_end = completed_week(now.date())
+    week_rows = [row for row in rows if week_start.isoformat() <= row["day"] <= week_end.isoformat()]
+    week_expected = sum(max(0, (week_end - max(week_start, util.parse_iso(pin["at"]).date())).days + 1)
+                        for pin in pins.values())
     return {"start": start.isoformat(), "end": end.isoformat(),
+            "weekly": {"outbound_clicks": sum(row["outbound_clicks"] for row in week_rows) if week_rows else None,
+                       "pin_days": len(week_rows), "expected_pin_days": week_expected},
             "collection": {k: state.get(k) for k in ("day", "status", "eligible", "requested", "received")},
             "eligible_pins": len(pins), "observed_pins": len({row["pin_id"] for row in rows}),
             "pin_days": len(rows), "expected_pin_days": expected,

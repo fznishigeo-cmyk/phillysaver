@@ -249,6 +249,25 @@ def _indexnow(db_path, cfg, now: datetime) -> dict:
         db.close()
 
 
+def _telegram_subscribers(client, token, channel):
+    # Telegram puts its credential in the URL. Suppress httpx's request line.
+    # https://core.telegram.org/bots/api#getchatmembercount
+    http_log = logging.getLogger("httpx")
+    level = http_log.level
+    http_log.setLevel(logging.WARNING)
+    try:
+        response = client.post(f"https://api.telegram.org/bot{token}/getChatMemberCount",
+                               json={"chat_id": channel})
+        response.raise_for_status()
+        body = response.json()
+        if not body.get("ok") or type(body.get("result")) is not int or body["result"] < 0:
+            raise ValueError("invalid subscriber count")
+        return {"subscribers": body["result"]}
+    finally:
+        http_log.setLevel(level)
+        clock.sleep(1)  # leave room before private delivery through the same bot host
+
+
 def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dict]:
     """(section -> data, section -> 'ok' | 'skipped' | 'error')."""
     tz = ZoneInfo(cfg.timezone)
@@ -355,6 +374,19 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
             client, stripe_key, yesterday_start=epoch(yesterday), window_start=epoch(start),
             today_start=epoch(today), monthly_price=cfg.growth_monthly_price_usd)),
     }
+    if today.weekday() == 0:
+        ga_needs = [need_google, ("growth.ga4_property_id", cfg.growth_ga4_property_id)]
+        sections.update({
+            "visitors_week": (ga_needs, lambda: google.ga4_weekly(
+                client, token(), cfg.growth_ga4_property_id, today)),
+            "credits_week": (ga_needs, lambda: google.ga4_credits(
+                client, token(), cfg.growth_ga4_property_id, today)),
+            "search_week": ([need_google, site], lambda: google.search_week(
+                client, token(), cfg.growth_search_console_site, today)),
+        })
+        bot, channel = get_secret("TELEGRAM_BOT_TOKEN"), get_secret("TELEGRAM_CHANNEL_ID")
+        if bot and channel:  # absent channel credentials are intentionally quiet
+            sections["telegram_subscribers"] = ([], lambda: _telegram_subscribers(client, bot, channel))
     data: dict[str, Any] = {}
     status: dict[str, str] = {}
     for name, (needs, fetch) in sections.items():
@@ -375,6 +407,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
             log.info("%s: %s", name, status[name])
         except Exception as e:  # one section never stops the others
             status[name] = "error"
+            if name == "telegram_subscribers":
+                data[name] = {}
             if name in ("cloudflare_traffic", "bing"):
                 code = str(e) if isinstance(e, bing.BingError) else ""
                 log.warning("%s: error%s", name, " " + code if code else "")
@@ -588,6 +622,56 @@ def _collapse_unmeasured(lines: list[str]) -> list[str]:
     return result
 
 
+def _visitor_scoreboard(data, yesterday):
+    def count(value):
+        return _n(value) if value is not None else "not confirmed"
+
+    ga = data.get("ga4") or {}
+    daily = ga.get("yesterday", {})
+    lines = [f"Real visitors yesterday: {count(daily.get('totalUsers'))} (people), "
+             f"{count(daily.get('sessions'))} sessions"]
+    today = yesterday + timedelta(days=1)
+    if today.weekday() != 0:
+        return lines + [""]
+    start, end = google.completed_week(today)
+    weekly = data.get("visitors_week") or {}
+    current, previous = weekly.get("this_week", {}), weekly.get("last_week", {})
+    people, before = current.get("people"), previous.get("people")
+    change = "not confirmed"
+    if people is not None and before is not None:
+        change = (f"{(people - before) / before:+.1%}" if before else
+                  "0.0%" if people == 0 else "percentage unavailable (last week was 0)")
+    lines += ["", f"Scoreboard — {start}–{end} (Monday–Sunday)",
+              f"Real visitors this week: {count(people)} (people) vs {count(before)} last week; {change}",
+              f"Sessions this week: {count(current.get('sessions'))}"]
+    if start - timedelta(days=7) < date(2026, 10, 16):
+        lines.append("Earlier weeks may include our visits: internal-traffic filtering began October 16, 2026.")
+    channels = weekly.get("channels")
+    lines.append("Top channels (sessions): " + ("; ".join(
+        f"{name}: {count(n)}" for name, n in sorted(channels.items(), key=lambda row: (-row[1], row[0])))
+        or "0 recorded" if channels is not None else "not confirmed"))
+    search = data.get("search_week") or {}
+    lines.append(f"Google Search this week: {count(search.get('clicks'))} clicks, "
+                 f"{count(search.get('impressions'))} appearances in search; recent days may be missing")
+    if "telegram_subscribers" in data:
+        lines.append("Telegram subscribers now: " + count(data["telegram_subscribers"].get("subscribers")))
+    pinterest = (data.get("pinterest") or {}).get("weekly")
+    if pinterest:
+        clicks = count(pinterest.get("outbound_clicks"))
+        lines.append(f"Pinterest clicks to our site this week: {clicks} "
+                     f"({pinterest['pin_days']}/{pinterest['expected_pin_days']} daily pin counts available, UTC; recent pins only)")
+        if pinterest["pin_days"] < pinterest["expected_pin_days"]:
+            lines.append("Pinterest's full weekly total is not confirmed; some daily counts are missing.")
+    else:
+        lines.append("Pinterest clicks to our site this week: not confirmed")
+    credits = data.get("credits_week")
+    lines.append("Source-credit clicks by partner: " + ("; ".join(
+        f"{name}: {count(n)}" for name, n in sorted(credits.items(), key=lambda row: (-row[1], row[0])))
+        or "0 recorded" if credits is not None else
+        "not confirmed (GA4 needs an event-scoped partner custom dimension for credit_click)"))
+    return lines + [""]
+
+
 def _scoreboard(cfg, data, yesterday):
     from ..accuracy import format_score
 
@@ -611,7 +695,7 @@ def _scoreboard(cfg, data, yesterday):
         returned = (f"{count(returning['sessions'])} / {count(returning['classified_sessions'])} "
                     f"({returning['sessions'] / returning['classified_sessions']:.1%}); "
                     f"{count(returning.get('unclassified_sessions'))} unclassified excluded")
-    return [f"Scoreboard — {yesterday.isoformat()}",
+    return [f"Daily checks — {yesterday.isoformat()}",
             f"Search impressions: {count(sc.get('impressions'))}; clicks: {count(sc.get('clicks'))} "
             f"(Search Console, {search_period})",
             "Get-deal clicks: " + " / ".join(count(v) for v in (
@@ -987,7 +1071,7 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
     lines += ["", *report_lines(data.get("accuracy"))]
     lines += ["", "Sections: " + ", ".join(f"{k} {v}" for k, v in status.items())]
     brand = cfg.custom_domain or "dealradar"
-    lines = [*_scoreboard(cfg, data, yesterday), *_plain_summary(cfg, data, yesterday),
+    lines = [*_visitor_scoreboard(data, yesterday), *_scoreboard(cfg, data, yesterday), *_plain_summary(cfg, data, yesterday),
              *_newsletter_lines(data), "", TECHNICAL_HEADING, "",
              *_collapse_unmeasured(lines)]
     return f"{brand} growth report {yesterday.isoformat()}", "\n".join(lines) + "\n"

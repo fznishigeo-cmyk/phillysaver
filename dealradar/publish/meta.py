@@ -90,14 +90,17 @@ def _meta(db, key: str) -> dict:
 
 
 def caption(deal: dict, path: str, cfg, network: str) -> str:
+    from .traffic import tagged_url
+
     item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _word_trim(_without_prices(str(deal.get("store") or "")), 100)
     pct = display_pct(deal["pct_at_checkout"])
     disclosure = _word_trim(_without_prices(str(cfg.meta.get("disclosure") or "#ad")), 100) or "#ad"
-    facts = f"🔥 {pct}% OFF: {item}\nAt {store}, verified by wowpriced"
+    url = tagged_url("https://wowpriced.com", path, network, "social")
+    facts = f"🔥 {pct}% OFF: {item}\nAt {store}, verified by wowpriced: {url}"
     if network == "facebook":
-        return f"{facts}: https://wowpriced.com{path}\n{disclosure}"
-    facts += ".\nTap the link in our bio for today's deals."
+        return f"{facts}\n{disclosure}"
+    facts += "\nTap the link in our bio for today's deals."
     hashtags = _without_prices(str(cfg.meta["instagram"].get("hashtags") or ""))
     hashtags = _word_trim(hashtags, 2200 - len(facts) - len(disclosure) - 2)
     return f"{facts}\n{hashtags}\n{disclosure}"

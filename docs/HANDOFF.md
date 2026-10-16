@@ -1962,3 +1962,17 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
    agreement for commercial use. Operator decision.
 9. IndexNow's early sent accounting is addressed by task 072 above;
    review and deployment remain pending.
+- **Real-visitor scoreboard + social links (Codex task 211, 2026-10-16; uncommitted):**
+  Tagged Pinterest/Facebook/Instagram/Telegram links; dedup keys, alert tokens
+  and canonicals unchanged. Validated profiles add footer/Join links and home
+  `sameAs`; empty profiles preserve bytes. Private daily people/sessions plus
+  Monday completed-week trends/channels, Search Console, Telegram subscribers
+  and cached recent Pinterest clicks. Missing/partial numbers say not confirmed;
+  early weeks flag October 16's filter boundary. GA4-only `credit_click` sends
+  source names; weekly partner counts require an Event-scoped `partner` custom
+  dimension. Four-mode comparison: **184 files**, only tracking/version changes;
+  byte pins refreshed. Tracking documentation stays out of HTML to retain the
+  40 KB guard; Stripe checks use an offline transport with the unchanged deploy
+  step. Required full `-n 2` suite: **4,594 passed (19m57s)**. Test logs and own
+  `/tmp/task211-*` scratch removed.
+  Review/deployment remain; no live API/LLM calls, commit or push.

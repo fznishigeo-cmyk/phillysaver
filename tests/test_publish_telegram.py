@@ -173,7 +173,8 @@ def test_channel_message_is_price_free_with_disclosure_last():
                      store="Walmart $10", conditions=["shipping $5", "use CODE"])
     msg = format_message(deal, "/deal/lego-x200-abc12345/", "#sponsored $5")
     assert msg == ("🔥 80% OFF: LEGO X200 8-piece Set\n"
-                   "At Walmart, verified by wowpriced: https://wowpriced.com/deal/lego-x200-abc12345/\n"
+                   "At Walmart, verified by wowpriced: https://wowpriced.com/deal/lego-x200-abc12345/"
+                   "?utm_source=telegram&utm_medium=social&utm_campaign=deal\n"
                    "#sponsored")
     assert all(value not in msg for value in ("$", "£", "€", "USD", "25", "30", "40",
                                               "50", "60", "10.00", "via", "slickdeals.net",
@@ -204,6 +205,8 @@ def test_first_pick_sends_with_preview_and_once_token(db, cfg, monkeypatch):
     last = db.last_alert("walmart|lego set", "telegram")
     assert last["dedup_token"] == "walmart|lego set|telegram"
     assert last["price_at_send"] == 10.0 and last["tier_at_send"] == "unverified"
+    assert "utm_source=telegram&utm_medium=social&utm_campaign=deal" in payload["text"]
+    assert "utm_" not in db.meta_get("seo_deal_paths")
 
 
 @pytest.mark.parametrize("changes", [

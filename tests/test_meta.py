@@ -45,6 +45,18 @@ def db(tmp_path):
     database.close()
 
 
+def test_pre_tag_posted_deals_never_post_again(db, cfg):
+    published(db, cfg, [candidate("old-deal", 1)])
+    live(cfg)
+    prior = {network: {"old-deal": {"id": "legacy-post", "at": util.iso(NOW - timedelta(days=7))}}
+             for network in ("facebook", "instagram")}
+    db.meta_set("meta_posted", json.dumps(prior))
+    calls = []
+    run(db, cfg, calls)
+    assert not calls and history(db, "meta_posted") == prior
+    assert "utm_" not in db.meta_get("seo_deal_paths")
+
+
 def history(db, key):
     return json.loads(db.meta_get(key) or "{}")
 
@@ -111,10 +123,11 @@ def test_caption_facts_prices_word_trim_and_disclosure(cfg, network):
     name = text.splitlines()[0].removeprefix("🔥 80% OFF: ")
     assert len(name) <= 70 and name.split()[-1] in ("Fantastic", "product")
     if network == "instagram":
-        assert len(text) <= 2200 and "https://" not in text
+        assert len(text) <= 2200 and "utm_source=instagram&utm_medium=social&utm_campaign=deal" in text
         assert "Tap the link in our bio for today's deals." in text
     else:
-        assert text.endswith("At Amazon, verified by wowpriced: https://wowpriced.com/deal/first/\n#ad")
+        assert text.endswith("At Amazon, verified by wowpriced: https://wowpriced.com/deal/first/"
+                             "?utm_source=facebook&utm_medium=social&utm_campaign=deal\n#ad")
 
 
 def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):

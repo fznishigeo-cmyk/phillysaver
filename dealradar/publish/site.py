@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, price_labels, product_pages, pwa, seo, seo_audit, traffic
+from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -911,6 +911,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         ).hexdigest()[:12]
     if traffic.enabled(cfg):
         site_version = traffic.site_version(site_version, cfg)
+    site_version = profiles.site_version(site_version, cfg)
     if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + price_labels.STYLE).encode()
             + "".join(price_labels.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
@@ -1159,6 +1160,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     pwa.publish(out, cfg)
     traffic.publish(out, cfg, [d for d in deal_pages[1] if not d.get("price_unconfirmed")], paths, site_url)
+    profiles.publish(out, cfg, site_url)
     inventory.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go

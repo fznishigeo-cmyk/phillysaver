@@ -46,12 +46,15 @@ def format_message(deal: dict[str, Any], path: str | None = None,
                    disclosure: str = "#ad", *, cfg=None) -> str:
     """Price-free channel copy with a deal path; preserve the email format otherwise."""
     if path is not None:
+        from .traffic import tagged_url
+
         item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
         store = _without_prices(str(deal.get("store") or ""))
         pct = display_pct(deal["pct_at_checkout"])
         disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
+        url = tagged_url("https://wowpriced.com", path, "telegram", "social")
         return (f"🔥 {pct}% OFF: {item}\n"
-                f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n"
+                f"At {store}, verified by wowpriced: {url}\n"
                 f"{disclosure}")
 
     hide_history = amazon_history.hidden(cfg, deal)

@@ -360,7 +360,7 @@ def test_scoreboard_uses_existing_sourced_totals(db, cfg):
             "saved": {"returning": {"sessions": 20, "classified_sessions": 100, "unclassified_sessions": 7}},
             "accuracy": accuracy.report_data(db, cfg, NOW)}
     text = "\n".join(report._scoreboard(cfg, data, NOW.date() - timedelta(days=1)))
-    assert text.startswith("Scoreboard") and "Search impressions: 900; clicks: 20 (Search Console" in text
+    assert text.startswith("Daily checks") and "Search impressions: 900; clicks: 20 (Search Console" in text
     assert "Get-deal clicks: 17 / 80 (GA4" in text and "Sign-ups: 3 / 12 (GA4 actions" in text
     assert "Price accuracy: not measured (n=0)" in text
     assert "Returning sessions (7 days): 20 / 100 (20.0%)" in text

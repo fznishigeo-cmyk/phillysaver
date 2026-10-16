@@ -33,10 +33,11 @@ def site_version(version: str, cfg) -> str:
     return hashlib.sha256(data).hexdigest()[:12]
 
 
-def tagged_url(site_url: str, path: str, source: str) -> str:
+def tagged_url(site_url: str, path: str, source: str, medium: str | None = None) -> str:
     # Always start from the remembered canonical path, never the visitor's URL.
     return site_url + path + "?" + urlencode({"utm_source": source,
-        "utm_medium": "referral" if source == "share" else "rss", "utm_campaign": "deal"})
+        "utm_medium": medium if medium is not None else ("referral" if source == "share" else "rss"),
+        "utm_campaign": "deal"})
 
 
 def share_html(d: dict, path: str, site_url: str) -> tuple[str, str]:

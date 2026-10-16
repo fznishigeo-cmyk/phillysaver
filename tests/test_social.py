@@ -28,13 +28,15 @@ def test_real_draft_titles_and_network_copy(item, brand, title, pct, store):
     cfg = load_config()
     cfg.meta["instagram"]["hashtags"] = "#deals #wowpriced"
     path = "/deal/product-abcd1234/"
-    linked = (f"🔥 {pct}% OFF: {title}\n"
-              f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n#ad")
-    assert meta.caption(deal, path, cfg, "facebook") == linked
-    assert telegram_pub.format_message(deal, path) == linked
+    def linked(network):
+        return (f"🔥 {pct}% OFF: {title}\n"
+                f"At {store}, verified by wowpriced: https://wowpriced.com{path}"
+                f"?utm_source={network}&utm_medium=social&utm_campaign=deal\n#ad")
+    assert meta.caption(deal, path, cfg, "facebook") == linked("facebook")
+    assert telegram_pub.format_message(deal, path) == linked("telegram")
     assert meta.caption(deal, path, cfg, "instagram") == (
-        f"🔥 {pct}% OFF: {title}\nAt {store}, verified by wowpriced.\n"
-        "Tap the link in our bio for today's deals.\n#deals #wowpriced\n#ad")
+        linked("instagram").removesuffix("\n#ad") +
+        "\nTap the link in our bio for today's deals.\n#deals #wowpriced\n#ad")
     pin = pinterest.pin_payload(deal, path, "board", "#ad")
     assert pin["title"] == f"{title} | Deal"
     assert pin["description"] == f"{title}. Deal on wowpriced. #ad"

@@ -129,7 +129,7 @@ def test_copy_facts_brand_category_and_limits(disclosure):
     for key, maximum in (("title", 100), ("description", 500), ("alt_text", 500)):
         assert 0 < len(pin[key]) <= maximum
         assert not any(word in pin[key] for word in ("$", "USD", "19.99", "50", "%", "verified", "Amazon"))
-    assert pin["link"] == "https://wowpriced.com/deal/item/"
+    assert pin["link"] == "https://wowpriced.com/deal/item/?utm_source=pinterest&utm_medium=social&utm_campaign=deal"
     assert pin["media_source"]["url"] == deal["image_url"]
 
 
@@ -264,6 +264,28 @@ def test_analytics_daily_claim_absolute_upserts_and_utc_boundary(db, cfg):
     assert data["totals"] == {"impressions": 600, "saves": 12, "pin_clicks": 48, "outbound_clicks": 30}
     assert data["outbound_per_100"] == 5
     assert data["observed_pins"] == 2
+
+
+def test_weekly_clicks_reuse_only_completed_week_cached_counts(db, cfg):
+    from dealradar.growth.google import completed_week
+
+    monday = NOW + timedelta(days=(7 - NOW.weekday()) % 7)
+    seed_pins(db, now=monday)
+    start, end = completed_week(monday.date())
+    collect(db, cfg, lambda request: httpx.Response(200, json=response_days(
+        start - timedelta(days=1), end, clicks=4)), now=monday)
+    before = db.conn.total_changes
+    data = analytics.report_data(db, cfg, monday)
+    # Pins were posted three days ago: collection drops earlier dates.
+    assert data["weekly"] == {"outbound_clicks": 24, "pin_days": 6, "expected_pin_days": 6}
+    assert db.conn.total_changes == before
+    db.conn.execute("DELETE FROM pinterest_pin_daily WHERE day=?", (end.isoformat(),))
+    data = analytics.report_data(db, cfg, monday)
+    assert data["weekly"] == {"outbound_clicks": 16, "pin_days": 4, "expected_pin_days": 6}
+    lines = "\n".join(report._visitor_scoreboard({"pinterest": data}, end))
+    assert "Pinterest's full weekly total is not confirmed" in lines
+    db.conn.execute("DELETE FROM pinterest_pin_daily")
+    assert analytics.report_data(db, cfg, monday)["weekly"]["outbound_clicks"] is None
 
 
 def test_analytics_bounds_rotation_and_no_wrong_environment_or_legacy_requests(db, cfg):

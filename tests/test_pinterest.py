@@ -243,7 +243,8 @@ def test_candidates_pick_order_image_live_public_and_page_filters(db, cfg):
     pins = [json.loads(r.content) for r in calls if r.url.path == "/v5/pins"]
     assert [p["alt_text"] for p in pins] == ["Product first", "Product second"]
     for pin, row in zip(pins, [rows[2], rows[0]]):
-        assert pin["link"] == "https://wowpriced.com" + paths[row["key"][:8]]
+        assert pin["link"] == ("https://wowpriced.com" + paths[row["key"][:8]]
+                               + "?utm_source=pinterest&utm_medium=social&utm_campaign=deal")
         assert pin["title"] == f"{row['item']} | Deal"
         assert pin["description"] == f"{row['item']}. Deal on wowpriced. #ad"
         assert pin["media_source"] == {"source_type": "image_url", "url": row["image_url"]}
@@ -279,6 +280,18 @@ def test_rerun_after_database_reopen_posts_nothing_twice(db, cfg):
     finally:
         reopened.close()
     assert sum(r.url.path == "/v5/pins" for r in calls) == 2
+    assert "utm_" not in db.meta_get("seo_deal_paths")
+    assert {row["dedup_token"] for row in db.outgoing_for("pinterest")} == {"first", "second"}
+
+
+def test_pre_tag_posted_deals_never_post_again(db, cfg):
+    seed_auth(db)
+    published(db, cfg, [candidate("old-deal", 1)])
+    prior = {"old-deal": {"pin_id": "legacy-pin", "at": util.iso(NOW - timedelta(days=7))}}
+    db.meta_set("pinterest_posted", json.dumps(prior))
+    calls = []
+    pinterest.post(db, cfg, transport=httpx.MockTransport(api_handler(db, calls)), now=NOW)
+    assert not calls and json.loads(db.meta_get("pinterest_posted")) == prior
 
 
 @pytest.mark.parametrize("status", [401, 429, 500])

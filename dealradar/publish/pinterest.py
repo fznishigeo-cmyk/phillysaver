@@ -285,6 +285,8 @@ def _board(db, cfg, api: _API, headers: dict, name: str | None = None) -> str:
 
 
 def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
+    from .traffic import tagged_url
+
     brand = _without_prices(str(deal.get("brand") or ""))
     original = _without_prices(str(deal.get("item") or ""))
     if brand and not re.search(r"\b" + re.escape(brand) + r"\b", original, re.I):
@@ -302,7 +304,7 @@ def pin_payload(deal: dict, path: str, board_id: str, disclosure: str) -> dict:
         "board_id": board_id,
         "title": _word_trim(item, 100 - len(suffix)) + suffix,
         "description": description,
-        "link": "https://wowpriced.com" + path,
+        "link": tagged_url("https://wowpriced.com", path, "pinterest", "social"),
         "alt_text": _word_trim(_without_prices(str(deal.get("item") or "")), 500) or "Product photo",
         "media_source": {"source_type": "image_url", "url": deal["image_url"]},
     }

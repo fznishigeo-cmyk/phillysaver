@@ -19,6 +19,29 @@ from .models import SourceConfig
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def social_profiles(value: dict) -> dict[str, str]:
+    """Public profile URLs only; rejected values never enter HTML or logs."""
+    hosts = {"pinterest": {"pinterest.com", "www.pinterest.com"},
+             "facebook": {"facebook.com", "www.facebook.com"},
+             "instagram": {"instagram.com", "www.instagram.com"},
+             "telegram": {"t.me", "telegram.me"}}
+    out = {}
+    for network, allowed in hosts.items():
+        raw = value.get(network, "")
+        if not raw:
+            continue
+        try:
+            url = urlsplit(raw) if isinstance(raw, str) else None
+            if (url and url.scheme == "https" and url.netloc in allowed
+                    and url.path.strip("/") and not re.search(r'[\s<>"\'\\]', raw)):
+                out[network] = raw
+                continue
+        except ValueError:
+            pass
+        logging.getLogger(__name__).warning("social.profiles.%s invalid; skipped", network)
+    return out
+
+
 def support_link(value: str) -> str:
     """Accept only Stripe's hosted Payment Links; never echo a rejected URL."""
     value = str(value or "").strip()
@@ -333,6 +356,7 @@ class AppConfig:
     tracking: dict[str, str] = field(default_factory=dict)
     pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
     meta: dict[str, Any] = field(default_factory=dict)  # social.meta
+    social_profiles: dict[str, str] = field(default_factory=dict)
     social_require_earning_link: bool = True
     social_exclude_conditions: list[str] = field(
         default_factory=lambda: ["used", "open_box", "refurbished"])
@@ -604,6 +628,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.front_page = g("publish", "front_page", default={}) or {}
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
+    cfg.social_profiles = social_profiles(g("social", "profiles", default={}) or {})
     cfg.social_require_earning_link = bool(g("social", "require_earning_link", default=True))
     cfg.social_exclude_conditions = [str(c) for c in (g("social", "exclude_conditions",
         default=cfg.social_exclude_conditions) or [])]
