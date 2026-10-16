@@ -118,3 +118,13 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   for (const ok of ["Shark FlexStyle Air Styler", "Car Seat Cover for Babies", "Hot Wheels 20-Car Pack"])
     assert.equal(frontPageFlags([card("home", ok)], rules).ok, true, ok);
 }
+
+// Footer: the enabled event pages' links follow the fixed footer links, in config order.
+{
+  const fs = require("node:fs"), path = require("node:path");
+  const {eventLinks} = require("../scripts/site_check_logic.cjs");
+  const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
+  assert.deepEqual(eventLinks(config), [["/black-friday/", "Black Friday"], ["/cyber-monday/", "Cyber Monday"]]);
+  assert.deepEqual(eventLinks(config.replace(/(\n[ \t]+event_pages:\n[ \t]+enabled:) true/, "$1 false")), []);
+  assert.deepEqual(eventLinks("seo:\n  hub_min_items: 10\n"), []);
+}

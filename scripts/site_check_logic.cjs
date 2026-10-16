@@ -100,6 +100,24 @@ function frontRules(config) {
   return {niche: match[1].split(",").map((s) => s.trim()).filter(Boolean)};
 }
 
+// seo.event_pages (Black Friday, Cyber Monday): when enabled, every footer
+// ends with one link per event, in config order.
+function eventLinks(config) {
+  const lines = config.split("\n"), start = lines.findIndex((l) => /^[ \t]+event_pages:[ \t]*$/.test(l));
+  if (start < 0) return [];
+  const indent = lines[start].search(/\S/), links = [];
+  let enabled = false, slug = "";
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() && line.search(/\S/) <= indent) break;
+    const m = line.match(/^[ \t]+(?:- )?(enabled|slug|name):[ \t]*(.*?)[ \t]*(?:#.*)?$/);
+    if (!m) continue;
+    if (m[1] === "enabled" && line.search(/\S/) === indent + 2) enabled = m[2] === "true";
+    else if (m[1] === "slug") slug = m[2];
+    else if (m[1] === "name" && slug) { links.push([`/${slug}/`, m[2]]); slug = ""; }
+  }
+  return enabled ? links : [];
+}
+
 function frontPageFlags(cards, rules) {
   const flags = [];
   cards.forEach((d, i) => {
@@ -113,4 +131,4 @@ function frontPageFlags(cards, rules) {
 }
 
 module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
-                  photoRules, checkPhotos, frontRules, frontPageFlags};
+                  photoRules, checkPhotos, frontRules, frontPageFlags, eventLinks};

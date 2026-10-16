@@ -11,7 +11,7 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
-        photoRules, checkPhotos, frontRules, frontPageFlags } = require("./site_check_logic.cjs");
+        photoRules, checkPhotos, frontRules, frontPageFlags, eventLinks } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
@@ -93,6 +93,7 @@ function checkFooter(html, meta) {
     ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
   ];
   if (links[3] && links[3][0] === "/p/") expectedLinks.splice(3, 0, ["/p/", "Price history"]);
+  expectedLinks.push(...eventLinks(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
   check(JSON.stringify(links) === JSON.stringify(expectedLinks), "footer link line changed");
   const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
   const disclosure = escape(meta.disclosure || ""), disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
