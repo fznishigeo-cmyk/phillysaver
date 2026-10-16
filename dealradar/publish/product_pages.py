@@ -186,7 +186,7 @@ def prepare(db, cfg, now, public, source):
     retained = sorted((key for key, page in pages.items() if page["indexable"]),
                       key=lambda key: (pages[key]["indexed_since"], key))
     admitted = set(retained[:cfg.seo_product_pages_max_indexable])
-    for key in sorted(qualifying - admitted):
+    for key in sorted(qualifying - admitted, key=lambda key: _admission_order(pages[key], live.get(key, []))):
         if (len(admitted) >= cfg.seo_product_pages_max_indexable
                 or len(state["admitted"]) >= cfg.seo_product_pages_max_new_indexable_per_day):
             break
@@ -219,6 +219,16 @@ def prepare(db, cfg, now, public, source):
     paths = {offer: page["path"] for key, page in pages.items() for offer in page["offers"]
              if str(raw.get(offer, {}).get("product_id")) == key}
     return models, paths, report
+
+
+def _admission_order(page, live_rows):
+    """Best pages first (traffic plan B3): more distinct deals seen, a live deal
+    with an earning link, then non-Amazon; the path breaks ties, so the order is
+    stable across reruns."""
+    from ..verify import is_amazon_deal
+
+    return (-len(page["offers"]), not any(d.get("earns") for d in live_rows),
+            is_amazon_deal(page), page["path"])
 
 
 def history_link(path):

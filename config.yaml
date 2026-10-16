@@ -287,7 +287,7 @@ seo:
     enabled: true            # operator 2026-10-15: "high quality index pages ... that's what we need to do now"
     min_checks: 6
     min_span_days: 7
-    max_new_indexable_per_day: 0 # Pilot: admissions resume when score-ordered admission lands.
+    max_new_indexable_per_day: 50 # Pilot of the 200 best (operator 2026-10-16), admitted best-first.
     max_indexable: 200
     lower_ratio: 0.95         # Current / our 90-day median; equality is about usual.
     higher_ratio: 1.05

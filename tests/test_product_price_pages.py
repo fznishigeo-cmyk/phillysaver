@@ -142,6 +142,31 @@ def test_daily_cap_total_cap_utc_boundary_and_idempotent_retry(db, cfg):
     assert prepare(db, cfg, rows, tomorrow + timedelta(days=1))[2]["new_today"] == 0
 
 
+def test_admission_is_best_first_not_product_id_order(db, cfg):
+    # Traffic plan B3: a product seen at two stores beats one seen once, whatever its id.
+    cfg.seo_product_pages_max_new_indexable_per_day = 1
+    rows = seed(db, 3)
+    extra = insert(db, "product-2-target", asin="B000000002", store="Target", item="Kitchen Widget 2",
+                   category="kitchen", canonical_url="https://www.target.com/p/widget-2",
+                   price_rechecked_at=iso(NOW))
+    for i in range(6):
+        db.record_price(extra["dedupe_key"], "Target", 11 + i, NOW - timedelta(days=7 * i / 5), f"t-{i}")
+    pages, _, report = prepare(db, cfg, rows + [extra])
+    assert gates(report)["eligible"] == 3
+    assert [p["item"] for p in pages.values() if p["indexable"]] == ["Kitchen Widget 2"]
+    # The next day continues best-first; ties fall back to the stable path order.
+    tomorrow = prepare(db, cfg, rows + [extra], NOW + timedelta(days=1))[0]
+    assert sorted(p["item"] for p in tomorrow.values() if p["indexable"]) == ["Kitchen Widget 0",
+                                                                              "Kitchen Widget 2"]
+
+
+def test_admission_prefers_an_earning_live_link_then_non_amazon():
+    page = lambda path, store="Target": {"offers": {"a": {}}, "path": path, "store": store}
+    order = sorted([page("/p/a/", "Amazon"), page("/p/b/"), page("/p/c/"), page("/p/d/", "Amazon")],
+                   key=lambda p: product_pages._admission_order(p, [{"earns": p["path"] == "/p/c/"}]))
+    assert [p["path"] for p in order] == ["/p/c/", "/p/b/", "/p/a/", "/p/d/"]
+
+
 @pytest.mark.parametrize("daily,total", [(0, 2000), (50, 0)])
 def test_zero_caps_keep_all_pages_noindex(db, cfg, daily, total):
     cfg.seo_product_pages_max_new_indexable_per_day = daily
