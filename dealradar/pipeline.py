@@ -2714,6 +2714,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["product_pages"] = site_res.get("product_pages", {})
+        if "checker" in site_res:
+            summary["checker"] = site_res["checker"]
         summary["posted_redirects"] = site_res.get("posted_redirects", {})
         summary["checkout"] = site_res.get("checkout", {})
         summary["checkout_price_deals"] = site_res["checkout_price_deals"]

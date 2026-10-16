@@ -10,6 +10,9 @@ from urllib.parse import parse_qs, urlsplit
 
 from .conditions import normalize_conditions, USED_CONDITIONS
 
+WOOT_PATH = r"/offers/([^/]+)/?"
+WALMART_PATH = r"/ip/(?:[^/]+/)?(\d+)/?"
+
 
 def _exact(value) -> str:
     if isinstance(value, (dict, list)):
@@ -68,11 +71,11 @@ def identity(deal: dict) -> tuple[list[tuple[str, str]], str]:
                 skus.append(("sku:" + namespace, sku))
             # These URLs identify a listing, never a title-derived model.
             if host == "woot.com" or host.endswith(".woot.com"):
-                match = re.fullmatch(r"/offers/([^/]+)/?", url.path)
+                match = re.fullmatch(WOOT_PATH, url.path)
                 if match:
                     skus.append(("sku:woot_url", match[1]))
             if host == "walmart.com" or host.endswith(".walmart.com"):
-                match = re.fullmatch(r"/ip/(?:[^/]+/)?(\d+)/?", url.path)
+                match = re.fullmatch(WALMART_PATH, url.path)
                 if match:
                     skus.append(("sku:walmart", match[1]))
             query = parse_qs(url.query)

@@ -27,6 +27,8 @@ SECRETS = {"bestbuy": ("BESTBUY_API_KEY",),
            "ebay": ("EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET")}
 NAMES = {"bestbuy": "Best Buy", "ebay": "eBay"}
 COUNTERS = ("checked", "confirmed", "repriced", "suspect", "gone", "errors")
+BESTBUY_PATHS = (r"/site/.*[/-](\d{1,16})\.p", r"/product/.+/sku/(\d{1,16})/?")
+EBAY_PATH = r"/itm/(?:[^/]+/)?(\d{1,16})/?"
 
 
 def store_offer(deal: dict) -> tuple[str, str]:
@@ -38,14 +40,13 @@ def store_offer(deal: dict) -> tuple[str, str]:
             return "", ""
         query = parse_qs(url.query)
         if host == "bestbuy.com" or host.endswith(".bestbuy.com"):
-            match = (re.fullmatch(r"/site/.*[/-](\d{1,16})\.p", url.path)
-                     or re.fullmatch(r"/product/.+/sku/(\d{1,16})/?", url.path))
+            match = next((m for pattern in BESTBUY_PATHS if (m := re.fullmatch(pattern, url.path))), None)
             ids = query.get("skuId", []) + ([match[1]] if match else [])
             if ids and len(set(ids)) == 1 and re.fullmatch(r"\d{1,16}", ids[0]):
                 return "bestbuy", ids[0]
         if host == "ebay.com" or host.endswith(".ebay.com"):
             # A legacy listing alone cannot verify a selected variation.
-            match = re.fullmatch(r"/itm/(?:[^/]+/)?(\d{1,16})/?", url.path)
+            match = re.fullmatch(EBAY_PATH, url.path)
             if match and not query.get("var"):
                 return "ebay", match[1]
     except (ValueError, TypeError):

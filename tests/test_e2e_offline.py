@@ -435,6 +435,10 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     db = DB(env["db"])
     cfg = load_config(env["cfg"])
     redirects = env["site"] / "_redirects"
+    checker_before = {p.name: p.read_bytes() for p in (env["site"] / "check" / "data").glob("*.json")}
+    if cfg.checker["enabled"]:
+        assert len(checker_before) == cfg.checker["shards"] + 1
+        assert first["checker"]["aliases"] > 0
     redirects_before = redirects.read_bytes() if redirects.exists() else b""
     assert redirects_before == (f"{_path(expired)} /deals/home-kitchen/ 301\n".encode() if pruned_post else b"")
     redirect_state = db.meta_get(META)
@@ -473,6 +477,9 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert (redirects.read_bytes() if redirects.exists() else b"") == redirects_before
     assert db.meta_get(META) == redirect_state
     assert second["posted_redirects"] == first["posted_redirects"]
+    assert {p.name: p.read_bytes() for p in (env["site"] / "check" / "data").glob("*.json")} == checker_before
+    if cfg.checker["enabled"]:
+        assert second["checker"] == first["checker"]
     with httpx.Client(transport=httpx.MockTransport(receipt)) as client:
         assert indexnow.submit_indexnow(db, cfg, client, deployed=True,
                                        run_key=second["run_key"], now=NOW) == 0

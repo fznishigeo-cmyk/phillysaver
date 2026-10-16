@@ -276,6 +276,19 @@ affiliate:
     their prices. Prices and availability may change. As an Amazon Associate,
     wowpriced earns from qualifying purchases.
 
+checker:
+  enabled: false
+  stores:
+    amazon: link_only
+    walmart: live_only
+    ebay: live_only
+    bestbuy: history
+    target: history
+    woot: history
+    other: history
+  ended_days: 90
+  shards: 256
+
 seo:
   event_pages:
     enabled: true

@@ -34,7 +34,7 @@ from ..util import iso, parse_iso
 from ..rank import pick_order
 from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
-from . import amazon_history
+from . import amazon_history, checker
 from . import amazon_as_of, event_pages, inventory, manifest_refresh, product_pages, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
@@ -988,6 +988,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                                         HUB_LINKS=_hub_links(events),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
     (out / "_headers").write_text(_HEADERS, encoding="utf-8")
+    if cfg.checker["enabled"]:
+        with (out / "_headers").open("a", encoding="utf-8") as headers:
+            headers.write(checker.HEADERS)
     if manifest_refresh.enabled(cfg):
         with (out / "_headers").open("a", encoding="utf-8") as headers:
             headers.write(manifest_refresh.HEADERS)

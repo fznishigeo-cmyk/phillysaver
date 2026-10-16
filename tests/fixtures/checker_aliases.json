@@ -1,0 +1,218 @@
+[
+  {
+    "url": "https://www.amazon.com/Widget/dp/B012345678?tag=shop-20&th=1",
+    "aliases": [
+      "amazon:B012345678"
+    ]
+  },
+  {
+    "url": "https://amazon.com/gp/product/b012345678/ref=abc?utm_source=mail",
+    "aliases": [
+      "amazon:B012345678"
+    ]
+  },
+  {
+    "url": "https://m.amazon.com/gp/aw/d/B012345678?psc=1",
+    "aliases": [
+      "amazon:B012345678"
+    ]
+  },
+  {
+    "url": "https://smile.amazon.com/product/B012345678#details",
+    "aliases": [
+      "amazon:B012345678"
+    ]
+  },
+  {
+    "url": "https://www.bestbuy.com/site/ninja-air-fryer/6522738.p?skuId=6522738&utm_campaign=fall",
+    "aliases": [
+      "bestbuy:6522738"
+    ]
+  },
+  {
+    "url": "https://m.bestbuy.com/site/widget.p?skuId=6522738",
+    "aliases": [
+      "bestbuy:6522738"
+    ]
+  },
+  {
+    "url": "https://www.bestbuy.com/product/widget/sku/6522738/?ref=212",
+    "aliases": [
+      "bestbuy:6522738"
+    ]
+  },
+  {
+    "url": "https://bestbuy.com/site/widget/6522738.p?skuId=999",
+    "aliases": [
+      "url:https://bestbuy.com/site/widget/6522738.p?skuId=999"
+    ]
+  },
+  {
+    "url": "https://www.ebay.com/itm/305123456789?mkcid=1&campid=5339221823",
+    "aliases": [
+      "ebay:305123456789"
+    ]
+  },
+  {
+    "url": "https://m.ebay.com/itm/Acme-Widget/305123456789/?hash=item",
+    "aliases": [
+      "ebay:305123456789"
+    ]
+  },
+  {
+    "url": "https://ebay.com/itm/305123456789?var=123",
+    "aliases": [
+      "url:https://ebay.com/itm/305123456789?var=123"
+    ]
+  },
+  {
+    "url": "https://www.walmart.com/ip/123456789?athbdg=L1100",
+    "aliases": [
+      "walmart:123456789"
+    ]
+  },
+  {
+    "url": "https://m.walmart.com/ip/Ninja-8-Qt-Air-Fryer/123456789?utm_source=deal",
+    "aliases": [
+      "walmart:123456789"
+    ]
+  },
+  {
+    "url": "https://www.woot.com/offers/ninja-air-fryer-8?ref=w_cnt",
+    "aliases": [
+      "woot:ninja-air-fryer-8"
+    ]
+  },
+  {
+    "url": "https://home.woot.com/offers/ninja-air-fryer-8/?utm_source=feed",
+    "aliases": [
+      "woot:ninja-air-fryer-8"
+    ]
+  },
+  {
+    "url": "https://electronics.woot.com/offers/noise-canceling-headphones?ref=cnt_wp",
+    "aliases": [
+      "woot:noise-canceling-headphones"
+    ]
+  },
+  {
+    "url": "https://www.target.com/p/ninja-air-fryer/-/A-82493853?ref=tgt_adv_xasd&afid=mail",
+    "aliases": [
+      "target:82493853"
+    ]
+  },
+  {
+    "url": "https://m.target.com/p/-/A-82493853#reviews",
+    "aliases": [
+      "target:82493853"
+    ]
+  },
+  {
+    "url": "https://target.com/p/A-82493853/",
+    "aliases": [
+      "target:82493853"
+    ]
+  },
+  {
+    "url": "https://www.homedepot.com/p/Widget/123456789?utm_source=mail&color=blue#reviews",
+    "aliases": [
+      "url:https://www.homedepot.com/p/Widget/123456789?color=blue"
+    ]
+  },
+  {
+    "url": "https://shop.example/products/widget?ref=x&size=M&color=red&utm_medium=feed",
+    "aliases": [
+      "url:https://shop.example/products/widget?size=M&color=red"
+    ]
+  },
+  {
+    "url": "https://SHOP.EXAMPLE/product/widget?GCLID=tracking&option=2",
+    "aliases": [
+      "url:https://shop.example/product/widget?option=2"
+    ]
+  },
+  {
+    "url": "https://amzn.to/3Product",
+    "aliases": []
+  },
+  {
+    "url": "https://a.co/d/4Product",
+    "aliases": []
+  },
+  {
+    "url": "https://link.amazon/product",
+    "aliases": []
+  },
+  {
+    "url": "https://bit.ly/a-product",
+    "aliases": []
+  },
+  {
+    "url": "https://goto.target.com/abc123",
+    "aliases": []
+  },
+  {
+    "url": "https://ebay.us/abc123",
+    "aliases": []
+  },
+  {
+    "url": "https://walmrt.us/abc123",
+    "aliases": []
+  },
+  {
+    "url": "https://on.ltk.com/t/abc123",
+    "aliases": []
+  },
+  {
+    "url": "https://amazon.com.evil.example/dp/B012345678",
+    "aliases": [
+      "url:https://amazon.com.evil.example/dp/B012345678"
+    ]
+  },
+  {
+    "url": "https://www.amazon.com/dp/B0123456789",
+    "aliases": [
+      "url:https://www.amazon.com/dp/B0123456789"
+    ]
+  },
+  {
+    "url": "https://www.bestbuy.com/site/widget/6522738.p?skuId=6522738&skuId=999",
+    "aliases": [
+      "url:https://www.bestbuy.com/site/widget/6522738.p?skuId=6522738&skuId=999"
+    ]
+  },
+  {
+    "url": "javascript:alert(1)",
+    "aliases": []
+  },
+  {
+    "url": "https://user:pass@amazon.com/dp/B012345678",
+    "aliases": []
+  },
+  {
+    "url": "https://www.walmart.com/ip/not-a-product",
+    "aliases": [
+      "url:https://www.walmart.com/ip/not-a-product"
+    ]
+  },
+  {
+    "url": "https://www.ebay.com/sch/i.html",
+    "aliases": [
+      "url:https://www.ebay.com/sch/i.html"
+    ]
+  },
+  {
+    "url": "https://www.woot.com/plus/home",
+    "aliases": [
+      "url:https://www.woot.com/plus/home"
+    ]
+  },
+  {
+    "url": "https://[malformed",
+    "aliases": []
+  },
+  {
+    "url": "",
+    "aliases": []
+  }
+]

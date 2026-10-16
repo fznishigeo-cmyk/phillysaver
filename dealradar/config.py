@@ -18,6 +18,32 @@ from .models import SourceConfig
 
 ROOT = Path(__file__).resolve().parent.parent
 
+CHECKER_STORES = {"amazon": "link_only", "walmart": "live_only", "ebay": "live_only",
+                  "bestbuy": "history", "target": "history", "woot": "history", "other": "history"}
+
+
+def validated_checker(value) -> dict:
+    if not isinstance(value, dict) or set(value) - {"enabled", "stores", "ended_days", "shards"}:
+        raise ValueError("checker must contain supported settings only")
+    settings = {"enabled": False, "stores": dict(CHECKER_STORES), "ended_days": 90, "shards": 256} | value
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("checker.enabled must be boolean")
+    stores = settings["stores"]
+    if (not isinstance(stores, dict) or set(stores) - set(CHECKER_STORES)
+            or any(not isinstance(v, str) or v not in {"link_only", "live_only", "history"}
+                   for v in stores.values())):
+        raise ValueError("checker.stores must map known stores to link_only, live_only or history")
+    settings["stores"] = dict(CHECKER_STORES) | stores
+    if (settings["stores"]["amazon"] != "link_only"
+            or any(settings["stores"][s] == "history" for s in ("walmart", "ebay"))):
+        raise ValueError("checker.stores cannot enable restricted store prices or history")
+    for name, low, high in (("ended_days", 1, 365), ("shards", 16, 1024)):
+        n = settings[name]
+        if type(n) is not int or not low <= n <= high or (name == "shards" and n & (n - 1)):
+            raise ValueError(f"checker.{name} must be an integer in {low}..{high}"
+                             + (" and a power of two" if name == "shards" else ""))
+    return settings
+
 
 def social_profiles(value: dict) -> dict[str, str]:
     """Public profile URLs only; rejected values never enter HTML or logs."""
@@ -108,6 +134,7 @@ class AppConfig:
 
     raw: dict[str, Any] = field(default_factory=dict)
     accuracy_extra_samples_per_day: int = 0
+    checker: dict = field(default_factory=lambda: validated_checker({}))
 
     # -- identity / politeness --
     contact_email: str = "set-me@example.com"
@@ -592,6 +619,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    cfg.checker = validated_checker(raw.get("checker", {}))
     quality = raw.get("quality", {})
     if not isinstance(quality, dict):
         raise ValueError("quality must be a mapping")

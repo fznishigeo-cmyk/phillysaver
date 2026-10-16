@@ -214,6 +214,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Deal Check index (Codex task 240, 2026-10-16; merged, OFF):**
+  Validated `checker:` builds deterministic, bounded SHA256 lookup shards after
+  product pages, with shared URL rules/40-row fixture, dated public facts and
+  existing code verdicts. Amazon stays link-only; Walmart/eBay stay live-only;
+  conditional, flagged, unconfirmed and private prices cannot feed history.
+  Disabled output matches untouched `d28b551eebd4`: **138 public files across
+  four access modes**, plus member payloads. **295 final index/identity/API
+  checks pass**, plus the earlier **291 publisher/product/pipeline checks**;
+  both enabled audit-mode reruns keep shard bytes, DB rows and sends stable.
+  All runs used `-n 1`; owned `/tmp/task240-*` basetemps are deleted. Oldest
+  ended aliases drop before the 64 KB cap; live-only overflow fails before writing shards.
+  Unknown/deleted offer requirements cannot certify an ended plain price.
+  Review and task 241's page remain. No whole suite, workflow-test edits,
+  live/paid calls, commit or push.
 - **Keyword volumes (Codex task 238, 2026-10-16; uncommitted):** manual-only
   CLI/workflow, 40 validated US/English phrases, exact Google URL allowlist,
   paced three-request ceiling and one 30-second retry. Sorted metrics save

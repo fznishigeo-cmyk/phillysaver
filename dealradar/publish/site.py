@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
+from . import amazon_as_of, amazon_history, checker, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
 from . import link_facts
@@ -1016,8 +1016,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                      spotlight=spotlight, deal_pages=deal_pages,
                                      products=products,
                                      run_key=(last_run or {}).get("run_key"))
+    checker_summary = {}
+    if cfg.checker["enabled"]:
+        checker_summary = checker.publish(out, cfg, now, checker.build(
+            db, cfg, now, product_public, products, spotlight_rows + deals))
+    else:
+        data_dir = out / "check" / "data"
+        if data_dir.exists():
+            shutil.rmtree(data_dir)
+        check_dir = out / "check"
+        if check_dir.is_dir() and not any(check_dir.iterdir()):
+            check_dir.rmdir()
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
+        + ("Disallow: /check/data/\n" if cfg.checker["enabled"] else "")
         + (f"Sitemap: {site_url}/sitemap.xml\n" if site_url else ""), encoding="utf-8")
 
     # Harmless and kept for a branch-based host: GitHub Pages deploys made by
@@ -1096,6 +1108,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
             "checkout_price_deals": checkout_summary,
             "product_pages": product_summary,
+            **({"checker": checker_summary} if cfg.checker["enabled"] else {}),
             "posted_redirects": deal_pages[3],
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
