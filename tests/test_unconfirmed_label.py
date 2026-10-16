@@ -235,6 +235,7 @@ def test_scheduler_other_reasons_are_named_without_changing_recovery(db, cfg):
 
 def test_browser_label_sort_ticker_watch_and_surprise(db, cfg, monkeypatch):
     cfg.amazon_history = "show"  # predates task 121b; exercise the unconfirmed-price watch guard
+    cfg.amazon_watches = ""
     render(db, cfg, [offer(), offer("confirmed", 1)], monkeypatch)
     proc = subprocess.run(["node", "tests/unconfirmed_label_logic.cjs", cfg.site_dir], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -307,7 +308,7 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
     ("membership", "7b6304edaf99d51328e5e70863adc98db187f1b8b1e667c8e5fd2935e78b79d9"),
     ("open", "6692ec240801e3ca025cca3b8ef9635a925e06048dd80bfa24bd012ad78183f5"),
     ("support", "cf1dd3addff7e4e4e4f1eba87dc5adbec1415dad7656e1f4907656b93965e4cd"),
-    ("shipped", "b5e019e6fa5cb16fcc99c5e609ee03776416203b5b646e5bde6c935cfe0cc78e"),
+    ("shipped", "2ab7c7ca910778703c2131d3fd4858552df1658e1ce96f4070dca61573048d42"),
 ])
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.

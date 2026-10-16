@@ -296,7 +296,7 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
     ("membership", "2304ca534ccf82ecbb7dfdc28ce3f1a9ddea422956fbf37bb274e968ef364647"),
     ("open", "13d17cffa9ca3d2633381e187ca0ff75e9cf29f0ebe4268bc7d91f00e655fe39"),
     ("support", "8d3b038941416487c063682012e5646084bb48aec431649e8551f5a042083a28"),
-    ("shipped", "056595f68768478ea51e07d21ee53a6223814da06e90da4932eeb8f53a6b2d84"),
+    ("shipped", "4cab235eeb4b0f9ed6426ff2b5d68656661f697bdebf3dd24e6ffa6520a2552d"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and

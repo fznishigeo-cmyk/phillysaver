@@ -88,6 +88,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **Amazon price history (2026-10-16, Associates phone support, reference
+  amz378_998):** approved 90-day price history charts, lowest recent price
+  next to Amazon links, Keepa as the data source, our own history kept longer
+  than 24h only if private and secured, and "checked X minutes ago" prices.
+  Ships `amazon_history: show`. **Price alerts/watches were not asked:**
+  `amazon_watches: "off"` until the operator asks Amazon under the same
+  reference (planned before email alerts launch, 1-3 months out). Also ask
+  then: may the browser extension show our history on Amazon pages.
+  Associates account approval waits for 3 qualifying sales.
+- **Walmart (open, 2026-10-16):** Walmart's affiliate agreement bans price
+  tracking/alerts; camelcamelcamel runs Walmart history on camelmart.com.
+  Walmart stays live-only in Deal Check until Walmart's affiliate support
+  answers the operator.
 - **Daily quality loop (2026-10-13):** "be the senior engineer; refine, don't
   reinvent; check every day without being told." Routine "Daily quality
   loop" (6:17am New York) reads the daily `mobile-audit` run (phones first:

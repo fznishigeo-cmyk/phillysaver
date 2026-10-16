@@ -62,7 +62,7 @@ def test_config(tmp_path):
     ('membership','629ac4664aa7f1dc5200d7f4915621ba4534cec704e8eab1bede03e020025d27'),
     ('open','ace847b5c9443d878a2fe7186162804934e879cd3176cba094378f5d010515d0'),
     ('support','a348c507188dfd049f65c04ec8567dd4edfba3aff0b4c2b76f9a4d2dfe01998e'),
-    ('shipped','9d05703e76e62d70daa86887f56721abcff4944767a552c9439134a2a719022e'),
+    ('shipped','bb88b869bdff5a65667c3417cf12e0177e55f98075ee36d1e4e324c8ffc2f810'),
 ])
 def test_off_all_bytes_match_untouched_head(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, 'util_now', lambda: NOW)

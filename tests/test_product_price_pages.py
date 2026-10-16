@@ -91,7 +91,7 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
     ("membership", "ed8ff6dec460d8d0ddd19033f7ae5c4c348314a82bdb557b1de0e12e7fed288c"),
     ("open", "06544519c475ebf90fcd578c7527ce1812261a1e922a245396aba167d2f1f0d1"),
     ("support", "eab1d00030352dde9e463e8af567091e0affeb7241bae27a992f3469365111f3"),
-    ("shipped", "0ea4b3a9118123e18853d9eb29d2f75a56b5807ac230aee1efdd53e7b44189dd"),
+    ("shipped", "357c17ccd07f8f4e203256c66f91b95e550004601da64cbe050350a13d116042"),
 ])
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")

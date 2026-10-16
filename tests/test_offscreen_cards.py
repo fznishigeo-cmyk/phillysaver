@@ -44,7 +44,7 @@ def test_non_boolean_rejected(tmp_path, value):
     ("membership", "489d1d02f241e1ebe54e84f2a4ae5c36daadbade57a7784b78263ea03f0477c1"),
     ("open", "b26de959ff433cb2687af92e517ca60100df9bc0113e4acbf0df09aea68e936a"),
     ("support", "91c77988b99c3ff7ba842caeb623e67d0a981f996fbec09cb0bc6b4ab972c230"),
-    ("shipped", "74d28e67e2acc300ab7c6309902647452fb19d43b03dfac99769b2f2f93d2b8d"),
+    ("shipped", "145e417e40d46eda3289bcf930eb694149ace00c9c739d30eb838eba2a08686e"),
 ])
 def test_off_bytes_and_on_only_css(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, "util_now", lambda: NOW)

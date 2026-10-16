@@ -211,6 +211,7 @@ class AppConfig:
     images_keepa_match_min: float = 0.85
     amazon_as_of_enabled: bool = False
     amazon_history: str = "show"
+    amazon_watches: str = ""  # "" follows amazon_history; on | off
     offscreen_cards: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
@@ -744,6 +745,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.amazon_history = str(g("amazon_history", default="show"))
     if cfg.amazon_history not in {"show", "hide"}:
         raise ValueError("amazon_history must be show or hide")
+    watches = g("amazon_watches", default="")
+    # YAML reads bare on/off as booleans.
+    cfg.amazon_watches = ("on" if watches else "off") if type(watches) is bool else str(watches)
+    if cfg.amazon_watches not in {"", "on", "off"}:
+        raise ValueError("amazon_watches must be on or off")
     cfg.offscreen_cards = g("site", "offscreen_cards", default=False)
     if type(cfg.offscreen_cards) is not bool:
         raise ValueError("site.offscreen_cards must be a boolean")

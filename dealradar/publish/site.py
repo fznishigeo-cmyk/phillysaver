@@ -535,7 +535,7 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "age_hours": age_hours,
         "credits": credits,
     }
-    if getattr(cfg, "amazon_history", "show") == "hide":
+    if amazon_history.watches_hidden(cfg):
         public["amazon"] = is_amazon_deal(deal)
     from ..store_prices import store_offer
     checked = price_confirmed_at(deal) if is_amazon_deal(deal) or store_offer(deal)[0] else None
@@ -779,7 +779,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
     if cfg.engagement:
         engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
-        engagement_script = amazon_history.template(engagement_script, cfg)
+        engagement_script = amazon_history.watches_template(engagement_script, cfg)
         engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
                                    lambda m: m.group(1) if saved_deals else "",
@@ -813,6 +813,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + "".join(product_pages.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.amazon_history == "hide":
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
+    elif amazon_history.watches_hidden(cfg):
+        site_version = hashlib.sha256((site_version + "amazon-watches-off").encode()).hexdigest()[:12]
     if cfg.seo_event_pages_enabled:
         site_version = hashlib.sha256((site_version + "event-pages" + json.dumps(
             cfg.seo_event_pages_events, sort_keys=True)).encode()).hexdigest()[:12]

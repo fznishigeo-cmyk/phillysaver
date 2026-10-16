@@ -9,7 +9,7 @@ from datetime import timedelta
 import pytest
 
 from dealradar.config import AppConfig, load_config
-from dealradar.publish import product_pages, seo_audit, site
+from dealradar.publish import amazon_history, product_pages, seo_audit, site
 from dealradar.savings import product_price_facts
 from dealradar.util import iso
 from tests.test_product_entities import insert
@@ -23,7 +23,7 @@ from tests.test_tracking import SAMPLE, _run_node
 @pytest.mark.parametrize("value", ["show", "hide"])
 def test_amazon_history_config_default_and_validation(tmp_path, value):
     assert AppConfig().amazon_history == "show"
-    assert load_config().amazon_history == "hide"
+    assert load_config().amazon_history == "show"  # amz378_998; watches stay off
     path = tmp_path / "config.yaml"
     path.write_text("{}")
     assert load_config(path).amazon_history == "show"
@@ -32,6 +32,34 @@ def test_amazon_history_config_default_and_validation(tmp_path, value):
     path.write_text("amazon_history: typo\n")
     with pytest.raises(ValueError, match="amazon_history"):
         load_config(path)
+
+
+@pytest.mark.parametrize("text, value", [("", ""), ("amazon_watches: off", "off"),
+                                         ('amazon_watches: "on"', "on"), ("amazon_watches: on", "on")])
+def test_amazon_watches_config_reads_bare_yaml_booleans(tmp_path, text, value):
+    assert load_config().amazon_watches == "off"
+    path = tmp_path / "config.yaml"
+    path.write_text(text + "\n")
+    assert load_config(path).amazon_watches == value
+    path.write_text("amazon_watches: maybe\n")
+    with pytest.raises(ValueError, match="amazon_watches"):
+        load_config(path)
+
+
+def test_watches_off_keeps_amazon_charts_but_not_amazon_watches(db, cfg, tmp_path):
+    rows = seed(db, 1) + [non_amazon(db)]
+    cfg.amazon_watches = "off"
+    result = site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=rows)
+    amazon = next(d for d in result["public_deals"] if d["store"] == "Amazon")
+    other = next(d for d in result["public_deals"] if d["store"] == "Best Buy")
+    assert 'class="price-history"' in _page(tmp_path, amazon["deal_path"]).read_text()
+    assert _page(tmp_path, amazon["product_path"]).exists()
+    assert amazon["amazon"] is True and other["amazon"] is False
+    script = (site.TEMPLATES_DIR / "engagement.js").read_text()
+    kept = amazon_history.watches_template(script, cfg)
+    assert "if (d.amazon) return" in kept and "clean.amazon = entry.amazon === true" in kept
+    cfg.amazon_watches = "on"
+    assert "if (d.amazon) return" not in amazon_history.watches_template(script, cfg)
 
 
 def test_internal_flag_set_clear_and_blocked_storage(tmp_path):
@@ -407,7 +435,8 @@ def test_90_day_median_requires_checks_near_window_start(offset, full):
 
 def test_operator_decisions_ship_without_changing_code_defaults():
     cfg, defaults = load_config(), AppConfig()
-    assert cfg.amazon_history == "hide" and defaults.amazon_history == "show"
+    assert cfg.amazon_history == "show" and defaults.amazon_history == "show"
+    assert cfg.amazon_watches == "off" and defaults.amazon_watches == ""
     assert cfg.front_page["checkout_price_deals"]["enabled"] is True
     assert not defaults.front_page.get("checkout_price_deals", {}).get("enabled", False)
     assert cfg.pinterest["daily_max"] == 10

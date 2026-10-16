@@ -285,7 +285,7 @@ def test_previously_pending_events_leave_submission_manifest_below_floor_or_disa
     ("membership", "fb6b8a629a7dcbd43cd560a0cfb1c28e0ac65d7dc998200b867397535489afc7"),
     ("open", "bbec8f42c4f94c2f02ea87298cd82b302aa13160da24d07238faa4dcec70a165"),
     ("support", "66c7c8f883517d379c92d96ee09f3687eaa7571660dc49c1cad417a413ca2812"),
-    ("shipped", "151987e63fd5f841ebd46ff7946c0e746177e7884b60b4c7a84e6edf31ebb8d0"),
+    ("shipped", "293168d700ba0a7ef81c33fe89265639f0e50ea5ee02833f8716931af1732e28"),
 ])
 def test_off_matches_every_untouched_head_byte(db, tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, "util_now", lambda: BASE_NOW)

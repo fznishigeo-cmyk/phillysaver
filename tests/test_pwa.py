@@ -60,7 +60,7 @@ def tree_hash(out):
     ("membership", "c0afc1e3c6a09ebe5ace1f913a0e37d7eb63f1d2081e0424b2816f356b5bad75"),
     ("open", "5202b8d08632008082ded40eabe3c029ed50a014f6acfc9cbb9080e5af718a74"),
     ("support", "e0e143cc97595f85eb90e1e1dae914200840512109af9956034ebf1c210d9c37"),
-    ("shipped", "edfba84997b48744697944d4aad10eee68a29e8271e19b4957b6ddf4815b3018"),
+    ("shipped", "90463b0b59890defc6e2f6d020db2bf6eda4f32ff89f20c7f200f7ed7079c33b"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Shipped only: the label blocks also skip aged offers (task 102) and the

@@ -88,7 +88,7 @@ def test_config_default_off_shipped_on_and_overrides(tmp_path):
     ("membership", "629ac4664aa7f1dc5200d7f4915621ba4534cec704e8eab1bede03e020025d27"),
     ("open", "ace847b5c9443d878a2fe7186162804934e879cd3176cba094378f5d010515d0"),
     ("support", "a348c507188dfd049f65c04ec8567dd4edfba3aff0b4c2b76f9a4d2dfe01998e"),
-    ("shipped", "327e781940ca3031692f70867cf66b8b013aa9b6cca9d95637051c87921417df"),
+    ("shipped", "0c19df6ebd4329d4b529861321bd865a9b657609ca80a2ac163e698f556e0223"),
 ])
 def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.

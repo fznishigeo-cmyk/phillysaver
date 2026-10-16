@@ -31,8 +31,8 @@ BASELINES = json.loads('''{
   "support-show-True": "f0e4e1c3abe2bc8fad9b74ddf56def5d759ead41f3ea75ee87cd137067283347",
   "support-hide-False": "5b20a0e4d75949011f5ed3f640111a133b2af3a35cf53fc54c76030479a1e4dd",
   "support-hide-True": "69e9713cfbc130567de0cfd87015cfe5b6ddb88c1db5cd6556fbf785748da5a0",
-  "shipped-show-False": "c908b949fe2cc65ce026aa288a9b5564071e879344bd722da9ceaeb9bc919e9c",
-  "shipped-show-True": "a2d7c6fd2a141dca5ffd0fa7a63086dcd35b097d026facb5799381b38b517181",
+  "shipped-show-False": "42e9817c349cfd235d3b3c6fb3339e8be1d6f2bc09293dc7fa1ce07f44f315a4",
+  "shipped-show-True": "fea947cee861979bf8b2e43d6060c57156e9afdd4028c6514ba6433e87ad4950",
   "shipped-hide-False": "a4b3cbe47e116456f19f45b8f16a5e782bd91c48ca07594e02e7c40811a9e216",
   "shipped-hide-True": "b684a13415034991b0a978b77e01ca9c0d119a7207340056921756f1151887f5"
 }
