@@ -43,7 +43,7 @@ def test_shared_card_and_phone_cap(tmp_path):
         assert 'height:52px' in html and 'height:56px' in html and 'border-radius:999px' in html
         assert '.joingoogle{' in html and re.search(r'\.joingoogle\{[^}]*border-radius:12px', html)
         assert 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.' in html
-        assert '<p id="join-description">Free. Be first to get our deals email when it launches.</p>' in html
+        assert '<p id="join-description">The day\'s best deals in one email. Free.</p>' in html
         assert 'width:360px' in html and 'background:transparent' in html
     css = re.search(r'@media \(max-width:640px\)\{\s*\.joinoverlay.*?\n\}', home, re.S)[0]
     assert 'align-items:flex-end' in css
@@ -73,7 +73,7 @@ def test_shared_footer_signup_markup(tmp_path):
         signup = re.search(r'<section id="footer-signup".*?</section>', footer, re.S)[0]
         footers.append(signup)
         assert footer.index('id="footer-signup"') < footer.index('<nav')
-        assert '<h2 id="footer-signup-title">Be first to get our deals email</h2>' in signup
+        assert '<h2 id="footer-signup-title">Sign up for the latest deals</h2>' in signup
         assert '<form class="joinform" data-join-footer data-clarity-mask="true">' in signup
         assert 'type="email" data-clarity-mask="true" placeholder="Email address" autocomplete="email" required' in signup
         assert '<button type="submit" aria-label="Sign up">' in signup

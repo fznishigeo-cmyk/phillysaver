@@ -61,8 +61,8 @@ def test_config(tmp_path):
 @pytest.mark.parametrize('mode,expected', [
     ('membership','16035e28b3dd3cde53860a41e122746c39723145d30f01a1bf5ffeefb32c2dcb'),
     ('open','7ec22a7b35e77b72acdbe798f6bee3f18d08821250a674868cfc5f56203342d8'),
-    ('support','4372718058b4195da55a7847c82db85bb0662508ebb264fadfc00ff591ac0df2'),
-    ('shipped','596c5a34b10d27ce732f0b9980b63ca89e8959f28d609a055d898b576dc0108a'),
+    ('support','7898c1d3d7f651c0f2e4b989a0b82b219f9770e43e48fe48537ad654652a2277'),
+    ('shipped','bd0267caa7b7163630d7bcffad1010ebc96e32b9e49db0c511cda403740ae696'),
 ])
 def test_off_all_bytes_match_untouched_head(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, 'util_now', lambda: NOW)

@@ -94,7 +94,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert 'id="loginlink"' not in home and 'id="dialogplans"' not in home
     assert 'id="subscribe" class="getdeal" href="/join">Join free' in home
     assert 'id="subbar" class="subbar ready" href="/join" hidden>Join free' in home
-    assert "Join free: be first to get our deals email when it launches" in home.replace("\\'", "'")
+    assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
     assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
     assert "We use your email only to send deals." in (out / "privacy.html").read_text()
     for name, count in (("index.html", 1), ("subscribe.html", 1)):
@@ -239,7 +239,7 @@ def test_join_page_and_every_join_link(tmp_path, link):
     join = (out / "join.html").read_text()
     assert "<title>Join wowpriced</title>" in join
     assert '<link rel="canonical" href="https://wowpriced.com/join.html">' in join
-    assert "Free. Be first to get our deals email when it launches." in join
+    assert "The day's best deals in one email. Free." in join
     assert '<h1 id="join-title">Join wowpriced</h1>' in join
     assert '<label for="join-email">Email</label><input id="join-email" name="email" type="email" data-clarity-mask="true"' in join
     assert 'autocomplete="email" required>' in join and len(re.findall(r'<input\b[^>]*type="email"', join)) == 2

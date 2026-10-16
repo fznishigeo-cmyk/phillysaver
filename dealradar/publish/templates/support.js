@@ -128,8 +128,8 @@
     document.getElementById("join-email-choice").hidden = popup;
     document.getElementById("join-back").hidden = popup;
     document.getElementById("join-google-or").hidden = !popup || document.getElementById("join-google").hidden;
-    description.textContent = popup ? "Free. Be first to get our deals email when it launches. Unsubscribe anytime."
-      : "Free. Be first to get our deals email when it launches.";
+    description.textContent = popup ? "The day's best verified deals in one free email. Unsubscribe anytime."
+      : "The day's best deals in one email. Free.";
     document.getElementById("join-legal").innerHTML = 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.';
     if (popup) {
       title.innerHTML = 'Save up to <span>90% OFF</span>';
