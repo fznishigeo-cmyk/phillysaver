@@ -62,7 +62,7 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
     pushState(state, _, url) {this.state=state;entries.splice(++historyIndex);entries.push({state,url});updateLocation(url);}};
   class FixedDate extends Date {constructor(...args){super(...(args.length ? args : [NOW]));} static now(){return NOW;}}
   const ctx={Date:FixedDate,URL,URLSearchParams,Set,Map,PAGE_CARDS:60,AUTO_CARDS:300,JITTER_H:3,NO_PHOTO_H:12,
-    CATGROUPS:JSON.parse(home.match(/var CATGROUPS = (.*);/)[1]), loadedOnce:true,moreObserver:null,panel:el('paywall'),
+    CATGROUPS:JSON.parse(home.match(/var CATGROUPS = (.*);/)[1]), loadedOnce:true,manifestEpoch:0,moreObserver:null,panel:el('paywall'),
     state:{deals:rows,spotlight:[],meta:{floors:{min_pct:70,site_show_from_pct:50},front_page:doc.meta.front_page || {}},
       shown:60,seed:42,catTab:0,sortKey:'top',sortDir:-1,newKeys:{}},
     document:{hidden:false,body:{contains:()=>true},activeElement:null,

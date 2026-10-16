@@ -31,6 +31,7 @@ const ctx = {Date: {now:()=>now}, DROP_MIN:15,
   reduceMotion:()=>reduced, loadedOnce:true,
   document:{getElementById:element,createElement:node,createTextNode:v=>({textContent:v})},
   roughCount:n=>n >= 1000 ? '1,000+' : n < 100 ? String(n) : Math.floor(n/100)*100+'+',
+  renderEngagement(){},
   plural:(n,w)=>n+' '+w+(n===1?'':'s'), paintSpotlightTime(){},
   drop(t) {drops++;ctx.clock.dropping=t;ctx.clock.burstAt=t;ctx.clock.target=t+ctx.clock.step;},
 };

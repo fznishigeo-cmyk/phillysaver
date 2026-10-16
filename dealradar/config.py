@@ -197,6 +197,7 @@ class AppConfig:
     show_dead_hours: float = 24.0      # dead deals linger on the site this long
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     drop_clock: dict = field(default_factory=lambda: {"warm_s": 300, "hot_s": 120, "final_s": 30})
+    manifest_refresh: dict = field(default_factory=lambda: validated_manifest_refresh(None))
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
     photoless_last: bool = False
@@ -462,6 +463,23 @@ class AppConfig:
         return self.user_agent.replace("{contact_email}", self.contact_email)
 
 
+def validated_manifest_refresh(value) -> dict:
+    defaults = {"enabled": False, "force_full_after_s": 300, "max_bytes": 1024,
+                "max_deals_bytes": 33554432, "max_future_s": 300}
+    if value is None:
+        return defaults
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("publish.manifest_refresh must contain supported settings only")
+    settings = defaults | value
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("publish.manifest_refresh.enabled must be boolean")
+    for name, low, high in (("force_full_after_s", 30, 900), ("max_bytes", 512, 16384),
+                            ("max_deals_bytes", 1024, 67108864), ("max_future_s", 0, 900)):
+        if type(settings[name]) is not int or not low <= settings[name] <= high:
+            raise ValueError(f"publish.manifest_refresh.{name} must be an integer in {low}..{high}")
+    return settings
+
+
 def validated_drop_clock(value, drop_minutes: int) -> dict:
     defaults = {"warm_s": 300, "hot_s": 120, "final_s": 30}
     if not isinstance(value, dict):
@@ -623,6 +641,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
     cfg.drop_clock = validated_drop_clock(g("publish", "drop_clock"), cfg.drop_minutes)
+    cfg.manifest_refresh = validated_manifest_refresh(g("publish", "manifest_refresh"))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
     for name in ("asin_backfill_per_run", "short_links_per_run", "keepa_search_per_run", "keepa_search_per_day"):

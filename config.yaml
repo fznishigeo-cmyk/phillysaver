@@ -142,6 +142,12 @@ publish:
                                # */10 cron lands every 11-15 min); a publish later
                                # than this shows "Next drop soon" until it lands.
   drop_clock: {warm_s: 300, hot_s: 120, final_s: 30}
+  manifest_refresh:
+    enabled: false
+    force_full_after_s: 300     # full no-store backstop, including stale manifests
+    max_bytes: 1024            # decoded manifest stream ceiling, before JSON parsing
+    max_deals_bytes: 33554432   # reject implausible manifest sizes
+    max_future_s: 300          # bounded clock skew for publication timestamps
   front_page:                 # All top picks; fresh drops retains the top-24 mix.
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]

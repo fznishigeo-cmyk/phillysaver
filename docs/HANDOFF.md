@@ -249,6 +249,48 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   is running with `-q -n 1 --basetemp=/tmp/task222-resume-full`.
   Review and measured live job-tail behavior precede activation. No production
   state/network/paid calls, commit, push or deployment; workflow tests untouched.
+- **Price-free publish manifest (Codex task 223, 2026-10-16; uncommitted, OFF):**
+  `publish.manifest_refresh.enabled: false` in code/config. On: one current
+  `publish-manifest.json` contains only schema, exact public JSON SHA256/length,
+  publish time and site version; emitted after final JSON consumers and before
+  audit/sealing, with no-cache/noindex. Prices and member/API responses retain
+  no-store. First load fetches the full public file; later existing triggers
+  share one transport promise and may reuse only its validated page-memory
+  snapshot. The 300 s wall-time backstop forces full fetches even behind stale
+  manifests. Stream limits apply before JSON parsing without Content-Length;
+  invalid/missing manifests/validators get one full fallback. Actual body hashes
+  own race outcomes; older times and equal-time differing content are rejected.
+  Without crypto, equal-time acceptance requires identical validated facts and every
+  refresh still fetches in full. Auth/pagehide invalidate transport ownership;
+  restored first-load/return requests, delayed member results and Saved merges
+  cannot reclaim a newer snapshot. No durable price cache, history, Worker,
+  tracking or schedule change. Task 202 remains a proposal in this checkout.
+  All **16 disabled byte trees (584 public files)** and **16 exact member-upload
+  bodies** independently match untouched HEAD, including Amazon show/hide/as-of;
+  no existing byte pins changed. Enabled home markup/styles/image priorities
+  also match disabled output after removing scripts. Own home cost: **+7,202 raw /
+  +2,000 gzip bytes**. Actual phone geometry remains unmeasured.
+  Offline 2,300-offer shipped fixture, five-run Node medians, gzip level 9:
+  quiet refresh **2,325,165 → 176 raw / 36,926 → 158 gzip bytes**, one request
+  either way; changed refresh **2,325,164 → 2,325,340 raw / 36,930 → 37,089 gzip**,
+  **one → two round trips**. Process CPU quiet **39.685 → 0.839 ms**, changed
+  **77.890 → 105.145 ms**; parse elapsed **9.302 → 0.014 / 10.426 → 13.002 ms**,
+  plus **2.674 ms** changed-body hashing. Sampled heap increase quiet
+  **6,484,240 → 32,448 bytes**, changed **18,506,200 → 18,505,040**; median
+  post-GC retained deltas **312 → 1,784 / 624 → 704 bytes** (allocation noise,
+  not a peak or production memory prediction). Fixture origin work is outside
+  timing; network latency/headers are excluded and offers are repetitive.
+  Changed publishes gain no claimed speedup. Reproduce via
+  `tests/test_manifest_refresh.py` (Node completion watchdog guards async cases).
+  **2,589 tests passed** across 71 affected files (`-q -n 1 -p no:cacheprovider`,
+  own `/tmp/task223-*` basetemps; 22m47s), then **95 focused checks passed** after
+  the final Saved guard, including enabled pipeline reruns in both audit modes
+  and Saved/fallback/Back/clock harnesses (1m20s). The Saved regression fails
+  against the prior generated page. The full suite was left to the operator.
+  Review and separately authorized Pages
+  validator/coalescing, actual transfer/freshness and phone verification remain.
+  No live requests, activation, commit, push or deployment; workflows test file
+  untouched.
 - **Permanent event pages (Codex task 210, 2026-10-16; uncommitted, ON):**
   `/black-friday/` and `/cyber-monday/` reuse the hub layout/cards and current
   public facts. Stored event mentions qualify year-round; published picks join
