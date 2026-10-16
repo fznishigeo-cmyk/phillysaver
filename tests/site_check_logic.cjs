@@ -84,7 +84,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   }
   assert.equal(checkPhotos({live: 10, showing: 0, broken: 9, firstScreen: 0}, rules).reason.split("; ").length, 3);
   const script = fs.readFileSync(path.join(__dirname, "../scripts/site_check.js"), "utf8");
-  assert.ok(script.includes("if (!photos.ok || [desktop, mobile].some("));
+  assert.ok(script.includes("if (!photos.ok || !front.ok || [desktop, mobile].some("));
   assert.ok(script.includes('say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);'));
 }
 
@@ -95,4 +95,26 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   const block = script.slice(script.indexOf("const unpaid = "), script.indexOf("// Category audit"));
   assert.ok(block.includes("alive.filter((d) => !d.earns)") && block.includes("top(unpaid, (d) => d.store, 25)"));
   assert.ok(!block.includes("exitCode") && !block.includes("check("));
+}
+
+// Front page: niche categories and car parts are flagged; only the first 24 cards turn it red.
+{
+  const fs = require("node:fs"), path = require("node:path");
+  const {frontRules, frontPageFlags} = require("../scripts/site_check_logic.cjs");
+  const rules = frontRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"));
+  assert.ok(rules.niche.includes("auto"));
+  const card = (category, item) => ({category, item, store: "Amazon"});
+  const clean = Array.from({length: 48}, (_, i) => card("home", `Desk Lamp ${i}`));
+  assert.deepEqual(frontPageFlags(clean, rules), {ok: true, flags: []});
+  const late = clean.slice(); late[30] = card("auto", "Wiper fluid");
+  let result = frontPageFlags(late, rules);
+  assert.equal(result.ok, true); assert.equal(result.flags[0].pos, 31);
+  const early = clean.slice();
+  early[5] = card("home", "PHILTOP Front Left CV Axle for Hyundai Sonata 2011-2014");
+  result = frontPageFlags(early, rules);
+  assert.equal(result.ok, false); assert.equal(result.flags[0].why, "car part");
+  early[5] = card("auto", "KAX Front Brake Kit, Ceramic Brake Pads and Rotors");
+  assert.equal(frontPageFlags(early, rules).flags[0].why, "niche category auto, car part");
+  for (const ok of ["Shark FlexStyle Air Styler", "Car Seat Cover for Babies", "Hot Wheels 20-Car Pack"])
+    assert.equal(frontPageFlags([card("home", ok)], rules).ok, true, ok);
 }
