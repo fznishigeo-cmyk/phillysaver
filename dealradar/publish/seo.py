@@ -125,6 +125,12 @@ def hub_href(slug: str) -> str:
     return f"/deals/{slug}/" if slug else "/"
 
 
+def _deal_hub(deal: dict[str, Any]) -> tuple[str, Any, str]:
+    # Used & Open-Box is a condition hub, not a category.
+    return next((g for g in HUB_GROUPS if g[1] != "USED" and in_group(deal, g[1])),
+                CATGROUPS[-1])
+
+
 def _pct(v: Any) -> int:
     """A percent as the page shows it (JavaScript's Math.round)."""
     return display_pct(v)
@@ -634,9 +640,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     pct = _pct(d["pct_at_checkout"]) if d.get("pct_at_checkout") is not None else None
     suffix = f" — {pct}% off at {store} | wowpriced" if pct is not None else f" at {store} | wowpriced"
     title = item[:max(0, 70 - len(suffix))].rstrip() + suffix
-    # Use the category's hub; Used & Open-Box is a condition hub, not a category.
-    label, group, slug = next((g for g in HUB_GROUPS if g[1] != "USED" and in_group(d, g[1])),
-                              CATGROUPS[-1])
+    label, group, slug = _deal_hub(d)
     hub = f'<a href="{hub_href(slug)}">{escape(label)} deals</a>'
     content = '<p class="ended"><strong>This deal has ended</strong></p>' if dead else ""
     content += f'<p class="detail-store">Store: {escape(store)}</p>'
@@ -754,8 +758,119 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
 
+_POSTED_REDIRECTS_META = "seo_posted_deal_redirects"
+_DEAL_PATH_RE = re.compile(r"/deal/[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{8}/")
+
+
+def _redirect_record(db, key):
+    try:
+        value = json.loads(db.meta_get(key) or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _social_posted_keys(db):
+    posted = {row[0] for row in db.conn.execute(
+        "SELECT DISTINCT deal_key FROM alerts_sent WHERE channel IN "
+        "('pinterest','facebook','instagram','telegram','meta:facebook:live','meta:instagram:live')")}
+    # Pinterest and Meta use their own success ledgers, rather than alerts_sent.
+    posted.update(_redirect_record(db, "pinterest_posted"))
+    meta = _redirect_record(db, "meta_posted")
+    for network in ("facebook", "instagram"):
+        if isinstance(meta.get(network), dict):
+            posted.update(meta[network])
+    return posted
+
+
+def remember_posted_pages(db, cfg, public):
+    """Capture a first send after publication, before that run can be replayed."""
+    if not cfg.seo_posted_deal_redirects_enabled:
+        return
+    posted = _social_posted_keys(db)
+    saved = db.meta_get(_POSTED_REDIRECTS_META)
+    remembered = _redirect_record(db, _POSTED_REDIRECTS_META)
+    for d in public:
+        path = d.get("deal_path")
+        key = d.get("dedupe_key")
+        if key in posted and isinstance(path, str) and _DEAL_PATH_RE.fullmatch(path) \
+                and path.endswith("-" + hashlib.sha256(str(key).encode()).hexdigest()[:8] + "/"):
+            remembered[path] = {"target": hub_href(_deal_hub(d)[2]), "added_at": None}
+    if remembered:
+        value = json.dumps(remembered, sort_keys=True)
+        if value != saved:
+            db.meta_set(_POSTED_REDIRECTS_META, value)
+
+
+def _posted_deal_redirects(db, cfg, now, out, paths, previous, raw) -> dict[str, int]:
+    """Keep only paths, category targets and activation dates in private state.
+
+    Published posted paths wait with no date: their category must survive pruning,
+    but they are not redirect rules and do not consume the static-rule allowance.
+    """
+    summary = {"rules": 0, "added_today": 0, "dropped_by_cap": 0}
+    output = out / "_redirects"
+    if not cfg.seo_posted_deal_redirects_enabled:
+        output.unlink(missing_ok=True)
+        return summary
+
+    saved = db.meta_get(_POSTED_REDIRECTS_META)
+    targets = {hub_href(g[2]) for g in HUB_GROUPS if g[1] != "USED"} | {"/"}
+    remembered = {p: {"target": v["target"], "added_at": v.get("added_at"),
+                      **({"dropped": True} if v.get("dropped") is True else {})}
+                  for p, v in _redirect_record(db, _POSTED_REDIRECTS_META).items()
+                  if _DEAL_PATH_RE.fullmatch(p) and isinstance(v, dict)
+                  and isinstance(v.get("target"), str) and v["target"] in targets
+                  and (v.get("added_at") is None or (isinstance(v["added_at"], str)
+                       and parse_iso(v["added_at"]) is not None))}
+    posted = {hashlib.sha256(str(k).encode()).hexdigest()[:8] for k in _social_posted_keys(db)}
+    published = set(paths.values())
+    for key in posted:
+        path = paths.get(key) or previous.get(key)
+        if not isinstance(path, str) or not _DEAL_PATH_RE.fullmatch(path) or not path.endswith(f"-{key}/"):
+            continue
+        if path in published or path not in remembered:
+            remembered[path] = {"target": hub_href(_deal_hub(raw.get(key, {}))[2]), "added_at": None}
+    stamp = iso(now.astimezone(timezone.utc))
+    for path, rule in remembered.items():
+        if path in published:
+            rule["added_at"] = None
+            rule.pop("dropped", None)
+        elif rule["added_at"] is None:
+            rule["added_at"] = stamp
+    # A capped path whose row still exists must not be admitted afresh on the
+    # next publish. Keep only its routing marker until the row is pruned or
+    # the page returns; it is not an active redirect rule.
+    stored_paths = {previous[k] for k in raw if isinstance(previous.get(k), str)}
+    for path in list(remembered):
+        if remembered[path].get("dropped") and path not in stored_paths:
+            del remembered[path]
+    rules = sorted((p for p in remembered if p not in published and not remembered[p].get("dropped")),
+                   key=lambda p: (parse_iso(remembered[p]["added_at"]), p))
+    dropped = rules[:max(0, len(rules) - cfg.seo_posted_deal_redirects_max_rules)]
+    for path in dropped:
+        if path in stored_paths:
+            remembered[path]["dropped"] = True
+        else:
+            del remembered[path]
+    rules = sorted(p for p in remembered if p not in published and not remembered[p].get("dropped"))
+    summary = {"rules": len(rules),
+               "added_today": sum(parse_iso(remembered[p]["added_at"]).date() == now.astimezone(timezone.utc).date()
+                                  for p in rules),
+               "dropped_by_cap": len(dropped)}
+    if rules:
+        output.write_text(''.join(f"{p} {remembered[p]['target']} 301\n" for p in rules), encoding="utf-8")
+    else:
+        output.unlink(missing_ok=True)
+    if remembered or saved is not None:
+        value = json.dumps(remembered, sort_keys=True)
+        if value != saved:
+            db.meta_set(_POSTED_REDIRECTS_META, value)
+    return summary
+
+
 def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
-                source_deals: list[dict[str, Any]]) -> tuple[dict[str, str], list[dict[str, Any]], dict[str, str]]:
+                source_deals: list[dict[str, Any]]) -> tuple[dict[str, str], list[dict[str, Any]], dict[str, str], dict[str, int]]:
     """Remember paths even through locked rotations; retain ended rows until deletion."""
     from .site import _serialize_deal
 
@@ -789,6 +904,7 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         k = d["key"][:8]
         paths[k] = remembered.setdefault(k, deal_path(str(d.get("item") or ""), k))
         lastmods[paths[k]] = raw[k].get("price_since") or d.get("first_seen_at") or ""
+    redirects = _posted_deal_redirects(db, cfg, now, out, paths, previous, raw)
     db.meta_set("seo_deal_paths", json.dumps(remembered, sort_keys=True))
     wanted = {p.split('/')[2] for p in paths.values()}
     for folder in (out / "deal").glob("*"):
@@ -797,7 +913,7 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                 shutil.rmtree(folder)
             else:
                 folder.unlink()
-    return paths, rows, lastmods
+    return paths, rows, lastmods, redirects
 
 
 
@@ -805,7 +921,7 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             site_url: str, public: list[str], meta: dict[str, Any],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
-            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str]],
+            deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str], dict[str, int]],
             products: dict | None = None,
             run_key: str | None = None) -> tuple[list[str], str]:
     """Emit the wall, hubs and deal pages; return paths and the static wall.
@@ -818,7 +934,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     spotlight = spotlight or []
     products = products or {}
     open_access = is_open(cfg)
-    paths, deal_rows, _previous_dates = deal_pages
+    paths, deal_rows, _previous_dates, _redirects = deal_pages
     from .. import clicks
     if clicks.enabled(cfg) and clicks.endpoint(cfg):
         # Render-only copies: no new fields in public/member JSON or features.

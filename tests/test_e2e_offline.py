@@ -414,14 +414,31 @@ def test_audit_tracks_evidence_rejects_without_storing_rejected_content(env, mon
 def test_rerun_is_idempotent(env, capsys, audit_mode):
     from dealradar.config import load_config
     from dealradar.publish import indexnow
+    from tests.test_posted_deal_redirects import _insert, _path, _post, _prune, _render, META
 
+    pruned_post = env.get("pruned_post", False)
     path = Path(env["cfg"])
     path.write_text(path.read_text().replace("mode: shadow                 # enforce", f"mode: {audit_mode}                 # enforce"))
+    # An old posted page disappears before this run. Its private category
+    # survives a real retention prune, and both runs must emit identical rules.
+    if pruned_post:
+        db = DB(env["db"])
+        cfg = load_config(env["cfg"])
+        expired = _insert(db, dedupe_key="old-posted", item="Old kitchen deal", category="kitchen")
+        _post(db, expired)
+        _render(db, cfg, env["site"], now=NOW, deals=[expired])
+        _prune(db, [expired], now=NOW)
+        db.close()
     first = _run(env)
     assert first["audit"]["mode"] == audit_mode
     assert first["telegram"]["sent"] == 1
     db = DB(env["db"])
     cfg = load_config(env["cfg"])
+    redirects = env["site"] / "_redirects"
+    redirects_before = redirects.read_bytes() if redirects.exists() else b""
+    assert redirects_before == (f"{_path(expired)} /deals/home-kitchen/ 301\n".encode() if pruned_post else b"")
+    redirect_state = db.meta_get(META)
+    assert first["posted_redirects"] == {"rules": int(pruned_post), "added_today": int(pruned_post), "dropped_by_cap": 0}
     assert cfg.front_page["appeal"]["enabled"]
     requests = []
 
@@ -436,7 +453,7 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
               for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts",
                             "indexnow_pages", "indexnow_batches", "legitimacy_audits", "legitimacy_batches",
-                            "products", "product_keys", "product_offers")}
+                            "products", "product_keys", "product_offers", "meta")}
     audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
     receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
     db.close()
@@ -449,6 +466,9 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert second["published"] == 2          # same deals, no duplicates
     assert second["critic"]["judged"] == 0   # verdicts persisted; no re-spend
     db = DB(env["db"])
+    assert (redirects.read_bytes() if redirects.exists() else b"") == redirects_before
+    assert db.meta_get(META) == redirect_state
+    assert second["posted_redirects"] == first["posted_redirects"]
     with httpx.Client(transport=httpx.MockTransport(receipt)) as client:
         assert indexnow.submit_indexnow(db, cfg, client, deployed=True,
                                        run_key=second["run_key"], now=NOW) == 0
@@ -473,6 +493,11 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert n_hist == 5
     # Receipt, rather than publishing the due-list, suppresses this re-run.
     assert json.loads((env["site"].parent / "indexnow_urls.json").read_text()) == []
+
+
+@pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
+def test_posted_pruned_rerun_is_idempotent(env, capsys, audit_mode):
+    test_rerun_is_idempotent(dict(env, pruned_post=True), capsys, audit_mode)
 
 
 @pytest.mark.parametrize("signal,dead_items", [

@@ -1080,6 +1080,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
             "checkout_price_deals": checkout_summary,
             "product_pages": product_summary,
+            "posted_redirects": deal_pages[3],
             "confirmed_age": {
                 "top_candidates": {**confirmation_coverage(top_candidates, now),
                                    "request_age": history.request_age(top_candidates),

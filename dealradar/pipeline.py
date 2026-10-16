@@ -2681,6 +2681,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["product_pages"] = site_res.get("product_pages", {})
+        summary["posted_redirects"] = site_res.get("posted_redirects", {})
         summary["checkout"] = site_res.get("checkout", {})
         summary["checkout_price_deals"] = site_res["checkout_price_deals"]
         from .publish.indexnow import metrics as indexnow_metrics
@@ -2737,6 +2738,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         tg = send_alerts(db, cfg, now, dry_run=dry_run_telegram,
                          deadline=deadline, run_key=run_key)
         summary["telegram"] = tg
+        if tg.get("sent"):
+            from .publish.seo import remember_posted_pages
+            remember_posted_pages(db, cfg, site_res["public_deals"])
         # Paying members (Stripe) get the same new deals by email, bundled.
         summary["member_alerts"] = send_member_alerts(db, cfg, now, run_key=run_key)
         summary["digest_sent"] = maybe_send_digest(db, cfg, now, run_key=run_key)

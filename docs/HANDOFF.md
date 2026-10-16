@@ -193,6 +193,17 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Posted deal redirects (Codex task 231, 2026-10-16; uncommitted, ON):**
+  `seo.posted_deal_redirects` enables 1,500 sorted 301s to matching category
+  hubs (validated 1..1,900); private targets/dates survive pruning, published
+  pages win and oldest rules drop first. Reads actual social success ledgers;
+  first-send metadata is saved before reruns. **641 final targeted checks pass**,
+  including both audit modes, meta row counts and disabled byte compatibility.
+  The 129-file affected run passed 4,694 checks; two fixture failures were fixed
+  and rerun, while seven Stripe socket-permission failures also reproduce on
+  untouched HEAD `ad32e1a5f41d`. All runs used `-n 1`; owned `/tmp/task231-*`
+  basetemps removed. Whole suite left to the operator; workflow tests and
+  Pinterest posting unchanged. Review remains; no commit or push.
 - **Phone publication budgets (Codex task 206, 2026-10-16; uncommitted, OFF):**
   Recovered the interrupted worktree; `tests/test_phone_budget.py` was complete,
   the compressed baseline decoded, and this handoff had no task-206 entry.

@@ -238,6 +238,8 @@ class AppConfig:
     seo_deal_page_min_items: int = 1
     seo_deal_pages_max: int = 3000
     seo_deal_pages_indexable: bool = True
+    seo_posted_deal_redirects_enabled: bool = True
+    seo_posted_deal_redirects_max_rules: int = 1500
     seo_product_pages_enabled: bool = False
     seo_product_pages_min_checks: int = 6
     seo_product_pages_min_span_days: float = 7
@@ -800,6 +802,16 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.seo_deal_page_min_items = max(1, int(g("seo", "deal_page_min_items", default=cfg.seo_deal_page_min_items)))
     cfg.seo_deal_pages_max = max(0, int(g("seo", "deal_pages_max", default=cfg.seo_deal_pages_max)))
     cfg.seo_deal_pages_indexable = bool(g("seo", "deal_pages_indexable", default=cfg.seo_deal_pages_indexable))
+    redirects = g("seo", "posted_deal_redirects", default={})
+    if not isinstance(redirects, dict):
+        raise ValueError("seo.posted_deal_redirects must be a mapping")
+    cfg.seo_posted_deal_redirects_enabled = redirects.get("enabled", True)
+    if type(cfg.seo_posted_deal_redirects_enabled) is not bool:
+        raise ValueError("seo.posted_deal_redirects.enabled must be boolean")
+    cfg.seo_posted_deal_redirects_max_rules = redirects.get("max_rules", 1500)
+    if (type(cfg.seo_posted_deal_redirects_max_rules) is not int
+            or not 1 <= cfg.seo_posted_deal_redirects_max_rules <= 1900):
+        raise ValueError("seo.posted_deal_redirects.max_rules must be an integer in 1..1900")
     cfg.seo_product_pages_enabled = bool(g("seo", "product_pages", "enabled", default=False))
     for name in ("min_checks", "max_new_indexable_per_day", "max_indexable"):
         attr = "seo_product_pages_" + name
