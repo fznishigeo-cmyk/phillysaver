@@ -93,8 +93,11 @@ function checkFooter(html, meta) {
     ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
   ];
   if (links[3] && links[3][0] === "/p/") expectedLinks.splice(3, 0, ["/p/", "Price history"]);
-  expectedLinks.push(...eventLinks(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
-  check(JSON.stringify(links) === JSON.stringify(expectedLinks), "footer link line changed");
+  // Event pages (seo.event_pages) follow the fixed links; the caller checks them against config.
+  const events = links.slice(expectedLinks.length);
+  check(events.every(([href]) => /^\/[a-z0-9-]+\/$/.test(href)), "footer link line changed");
+  check(JSON.stringify(links.slice(0, expectedLinks.length)) === JSON.stringify(expectedLinks),
+    "footer link line changed");
   const escape = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#x27;"})[c]);
   const disclosure = escape(meta.disclosure || ""), disclosureLink = '<a href="/disclosure.html">Disclosure</a>';
   const linked = disclosure.startsWith("Disclosure:") ? disclosureLink + disclosure.slice(10)
@@ -103,6 +106,7 @@ function checkFooter(html, meta) {
   check(!/wowpriced is free for everyone\.|Once: any amount|Membership —|Every deal links to the seller/.test(footer),
     "old footer copy remains");
   if ((meta.support || {}).enabled) check(footer.includes('id="footer-signup"'), "missing footer signup");
+  return events;
 }
 
 async function walk(page, doc, device) {
@@ -127,7 +131,9 @@ async function walk(page, doc, device) {
     html = await response.text();
     check(!/keepa/i.test(html + JSON.stringify(doc)), "private Amazon source in published data");
     check(!/srcwall|srcsel/.test(html), "source wall or filter still present");
-    checkFooter(html, doc.meta || {});
+    const events = checkFooter(html, doc.meta || {});
+    check(JSON.stringify(events) === JSON.stringify(eventLinks(
+      fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"))), "footer event links changed");
     await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
       null, { timeout: STEP_TIMEOUT_MS });
     await page.waitForTimeout(1000);
