@@ -95,7 +95,7 @@ def test_support_wins_opens_every_deal_and_pauses_rotation(tmp_path, open_access
     assert 'id="subscribe" class="getdeal" href="/join">Join free' in home
     assert 'id="subbar" class="subbar ready" href="/join" hidden>Join free' in home
     assert "Join free: the best deals in your inbox" in home.replace("\\'", "'")
-    assert "You're on the list. When our deals email starts, we'll send you one email to confirm first." in home
+    assert "You're on the list. Thanks for joining wowpriced." in home
     assert "We use your email only to send deals." in (out / "privacy.html").read_text()
     for name, count in (("index.html", 1), ("subscribe.html", 1)):
         html = (out / name).read_text()

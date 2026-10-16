@@ -92,7 +92,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
   assert.deepEqual(JSON.parse(h.request().body), {email:'user@example.com'});
   assert.equal(h.request().headers['Content-Type'], 'application/json');
   assert.equal(h.request().headers.Authorization, undefined);
-  assert.equal(h.msg.textContent, "You're on the list. When our deals email starts, we'll send you one email to confirm first.");
+  assert.equal(h.msg.textContent, "You're on the list. Thanks for joining wowpriced.");
   assert.equal(h.msg.role, 'status');
   assert.equal(h.event().name, 'sign_up'); assert.equal(h.event().params.method, 'email');
   for (const [status, message] of [[400,'valid email'], [429,'Too many tries'], [503,'unavailable']]) {

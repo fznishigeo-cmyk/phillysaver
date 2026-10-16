@@ -146,8 +146,8 @@ p{margin:0 0 14px}
 (function () {
   var q = new URLSearchParams(location.search), notice = document.getElementById("notice");
   var text = q.has("unsubscribed") ? "You're unsubscribed — no more emails from us."
-    : q.has("confirmed") ? "You're confirmed. Our deals email starts soon."
-    : q.has("ok") ? "You're on the list. When our deals email starts, we'll send you one email to confirm first." : "";
+    : q.has("confirmed") ? "You're confirmed. Thanks for joining wowpriced."
+    : q.has("ok") ? "You're on the list. Thanks for joining wowpriced." : "";
   if (text) { notice.textContent = text; notice.style.display = ""; }
 })();
 </script><!--/support-->

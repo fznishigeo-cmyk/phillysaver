@@ -266,7 +266,7 @@
         return r.json();
       }).then(function (j) {
         if (j.ok !== true) throw new Error("subscribe");
-        msg.textContent = "You're on the list. When our deals email starts, we'll send you one email to confirm first.";
+        msg.textContent = "You're on the list. Thanks for joining wowpriced.";
         joinedCard("google");
       }).catch(function () {
         msg.textContent = "Google sign-up is unavailable right now. Please continue with email or try again.";
@@ -418,7 +418,7 @@
             showSupportAsk(document.getElementById("footer-signup-success"));
             // /support-ask
           } else {
-            say("You're on the list. When our deals email starts, we'll send you one email to confirm first.", false);
+            say("You're on the list. Thanks for joining wowpriced.", false);
             joinedCard("email");
           }
         } else {
