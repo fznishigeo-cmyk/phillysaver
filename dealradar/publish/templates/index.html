@@ -1594,7 +1594,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       locked = freshOrder(locked, false);
     }
     rows = nicheLast(open.concat(locked));
-    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*/nicheLast(/*photoless*/photosFirst(/*/photoless*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*photoless*/)/*/photoless*/)/*unconfirmed*/)/*/unconfirmed*/;
+    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*//*photoless*/photosFirst(/*/photoless*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*photoless*/)/*/photoless*//*unconfirmed*/)/*/unconfirmed*/;
   }
 
   function storeHue(s) {
@@ -2065,8 +2065,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
 /*photoless*/    if (mixed) rows = placeGone(photosFirst(rows));
-/*/photoless*/    rows = nicheLast(rows);
-/*unconfirmed*/    rows = confirmedFirst(rows);
+/*/photoless*//*unconfirmed*/    rows = confirmedFirst(rows);
 /*/unconfirmed*/    browseRows = spotlight.concat(rows);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.

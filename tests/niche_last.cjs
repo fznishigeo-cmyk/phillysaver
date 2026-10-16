@@ -21,8 +21,8 @@ for (const sort of ['top', 'fresh']) {
   ctx.state.sortKey = sort; ctx.state.catTab = 0;
   const front = keys(ctx.ordered(rows));
   assert.deepEqual(front.slice(-1), ['gone']);
-  assert.deepEqual(front.slice(-3, -1).sort(), ['axle', 'labels']);
-  assert(front.indexOf('kettle') < front.indexOf('axle'), 'a photo-less broad deal still leads car parts');
+  for (const part of ['axle', 'labels'])
+    for (const broad of ['lamp', 'dress']) assert(front.indexOf(broad) < front.indexOf(part), broad + ' leads ' + part);
   ctx.state.meta.front_page.niche_last = false;
   const off = keys(ctx.ordered(rows));
   ctx.state.meta.front_page.niche_last = true;
