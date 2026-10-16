@@ -1246,6 +1246,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["buybox_top"] = dict.fromkeys(
         ("requested", "with_buybox", "repriced_up", "repriced_down", "unchanged", "tokens"), 0)
     stats["live_reads"] = {"forced": 0, "conditional": 0}
+    if cfg.keepa_unique_asin_rechecks_enabled:
+        stats["unique_asin_rechecks"] = dict.fromkeys(
+            ("selected_consumers", "unique_asins", "duplicate_slots_avoided", "product_requests"), 0)
 
     def remembered(name):
         try:
@@ -1424,6 +1427,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     top_reads, surplus_reads = [], []
     for deal in inventory:
         if not deal.get("asin") or not is_amazon_deal(deal):
+            continue
+        if cfg.keepa_unique_asin_rechecks_enabled and not re.fullmatch(
+                r"[A-Z0-9]{10}", str(deal["asin"]).strip().upper()):
             continue
         if deal.get("death") in {"post_says_over", "stated_expiry"} \
                 and deal.get("gone_suspect_at") == util.iso(now):
@@ -1654,12 +1660,29 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     continue
                 candidates.append((deal, options))
                 labels[deal["dedupe_key"]] = label
-            selected, skipped = plan.batches(candidates, deadlines,
+            request_candidates = candidates
+            request_consumers = {}
+            if cfg.keepa_unique_asin_rechecks_enabled:
+                by_policy = {}
+                for deal, options in candidates:
+                    asin = str(deal.get("asin") or "").strip().upper()
+                    if not re.fullmatch(r"[A-Z0-9]{10}", asin) or deal.get("final_price") is None:
+                        continue
+                    policy = asin, options[4], options[5], deadlines.get(deal["dedupe_key"]) == "top"
+                    by_policy.setdefault(policy, []).append((deal, options))
+                request_candidates = [rows[0] for rows in by_policy.values()]
+                request_consumers = {rows[0][0]["dedupe_key"]: [d for d, _ in rows]
+                                     for rows in by_policy.values()}
+            selected, skipped = plan.batches(request_candidates, deadlines,
                 available=budget.available(now), used_left=max(0, (used_limit or 0) - used_spent),
                 seconds=max(0, deadline - time.monotonic()) if deadline is not None else float("inf"),
                 overflow=budget.overflow(gap, now), recovery_left={
                     False: max(0, cfg.keepa_hidden_new_tokens_per_run - recovery_spent["new"]),
                     True: max(0, cfg.keepa_hidden_used_scans_per_run - recovery_spent["used"])})
+            if request_consumers:
+                selected = [([d for representative in rows for d in request_consumers[representative["dedupe_key"]]],
+                             *options) for rows, *options in selected]
+                skipped = len(candidates) - sum(len(rows) for rows, *_ in selected)
             stats["tokens_short"] += skipped
             selected_keys = {d["dedupe_key"] for group, *_ in selected for d in group}
             stats["used_skipped_budget"] += sum(options[5] and d["dedupe_key"] not in selected_keys
@@ -1675,17 +1698,22 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                  ("surplus_rest", [d for d in surplus_reads if not (is_used_deal(d) and d["dedupe_key"] in wall)])]
         for label, rows in lanes:
             modes = {}
+            requested = set()
             left = min(budget.overflow(gap, now) or 0, max(0, (budget.available(now) or 0) - reserve))
             for deal in rows:
                 used = is_used_deal(deal)
                 live = bool(cfg.keepa_recheck_top_live and (deal["dedupe_key"] in picks or label == "buybox_top_new"))
+                asin = str(deal.get("asin") or "").strip().upper()
+                shared = cfg.keepa_unique_asin_rechecks_enabled and (asin, used, live) in requested
                 if label.startswith("surplus_"):
                     # Tokens that would overflow anyway: no used-scan share here
                     # (it rations the regular lanes, which keep their full share).
                     cost = (USED_RECHECK_TOKENS if used else 1) + live
-                    if cost > left:
+                    if not shared and cost > left:
                         continue
-                    left -= cost
+                    if not shared:
+                        left -= cost
+                requested.add((asin, used, live))
                 modes.setdefault((used, live), []).append(deal)
             stats["planned"][label], stats["done"][label] = len(rows), 0
             for (used, live), rows in modes.items():
@@ -1712,8 +1740,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         if is_idle:
             group = [d for d in group if idle_eligible(d)]
         group = [d for d in group if d["dedupe_key"] not in attempted]
+        consumers = {}
+        if cfg.keepa_unique_asin_rechecks_enabled:
+            by_asin = {}
+            for deal in group:
+                asin = str(deal.get("asin") or "").strip().upper()
+                if re.fullmatch(r"[A-Z0-9]{10}", asin) and deal.get("final_price") is not None:
+                    by_asin.setdefault(asin, []).append(deal)
+            consumers = {rows[0]["dedupe_key"]: rows for rows in by_asin.values()}
+            group = [rows[0] for rows in by_asin.values()]
         i = 0
         while i < len(group):
+            remaining_count = sum(len(consumers.get(d["dedupe_key"], [d])) for d in group[i:])
             avail = budget.available(now)
             # Keep the ordinary top read when the premium would crowd out
             # its batch. An unknown bucket cannot authorize an extra charge.
@@ -1732,14 +1770,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 call_seconds *= max(1, float(timing.get("latency_margin", 1.2)))
                 margin = max(0, float(timing.get("time_margin_seconds", 5)))
             if deadline is not None and time.monotonic() + call_seconds + margin > deadline:
-                stats["tokens_short"] += len(group) - i
+                stats["tokens_short"] += remaining_count
                 log.info("price recheck: out of time with %d deals left; "
-                         "they ride the next run", len(group) - i)
+                         "they ride the next run", remaining_count)
                 break
             if rate_limited or not budget.allows(max(need, reserve + per_deal), now):
-                stats["tokens_short"] += len(group) - i
+                stats["tokens_short"] += remaining_count
                 if used:
-                    stats["used_skipped_budget"] += len(group) - i
+                    stats["used_skipped_budget"] += remaining_count
                 break
             avail = budget.available(now)
             # An unknown bucket must first be learned from a new-price call
@@ -1760,36 +1798,41 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             if used and not is_surplus:
                 size = min(size, int(max(0, (used_limit or 0) - used_spent) / per_deal))
                 if not size:
-                    stats["used_skipped_budget"] += len(group) - i
+                    stats["used_skipped_budget"] += remaining_count
                     break
             remaining = group[i:]
             batch = schedule.batch(remaining, min(size, len(remaining)),
                                    label.removeprefix("idle_").rsplit("_", 1)[0],
                                    base_hours, last_check, per_deal) if not (plan is not None or is_photo or is_recovery or is_surplus or label == "buybox_top_new") else remaining[:size]
             group[i:] = batch + [d for d in remaining if d not in batch]
+            requested_asins = len(batch)
+            if consumers:
+                batch = [deal for representative in batch for deal in consumers[representative["dedupe_key"]]]
             attempted.update(d["dedupe_key"] for d in batch)
-            stats["tokens"]["requested"] += len(batch) * per_deal
+            stats["tokens"]["requested"] += requested_asins * per_deal
             if is_recovery:
-                recovery_spent["used" if used else "new"] += len(batch)
+                recovery_spent["used" if used else "new"] += requested_asins
                 db.meta_set("keepa_hidden_recovery", json.dumps(recovery_spent))
-                stats["hidden_recovery"]["requested"] += len(batch) * per_deal
+                stats["hidden_recovery"]["requested"] += requested_asins * per_deal
             if used and not is_surplus:
-                used_spent += len(batch) * per_deal  # worst case, even on a lost response
+                used_spent += requested_asins * per_deal  # worst case, even on a lost response
             photo_less = {d["dedupe_key"] for d in batch if not d.get("image_url")}
             options = {"live": True} if live else {}
             if live:
-                stats["live_reads"]["conditional" if conditional_live else "forced"] += len(batch)
+                stats["live_reads"]["conditional" if conditional_live else "forced"] += requested_asins
                 if conditional_live:
                     options["conditional_live"] = True
             if box_request:
                 options["buybox"] = True
-                stats["buybox_top"]["requested"] += len(batch)
+                stats["buybox_top"]["requested"] += requested_asins
                 if get_secret("KEEPA_KEY"):
                     for deal in batch:
                         deal["buybox_requested_at"] = util.iso(now)
                         db.update_deal(deal["dedupe_key"], payload={k: deal[k] for k in _DEAL_FIELDS if k in deal})
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
                                              used_offers=not is_photo, fetcher=fetcher, **options)
+            for name, value in getattr(verdicts, "diagnostics", {}).items():
+                stats["unique_asin_rechecks"][name] += value
             if plan is not None:
                 from .keepa_rechecks import CallHistory
                 plan.calls = CallHistory(db, util.now_utc())
@@ -1875,13 +1918,15 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 if not is_photo:
                     history.record(original, product, verdict, observed, deal_label, cost, estimated,
                                    dead=current["status"] == "dead" and original["status"] != "dead", live_request=live,
-                                   buybox_request=box_request, shopper_price=shopper[0] if shopper else None)
+                                   buybox_request=box_request, shopper_price=shopper[0] if shopper else None,
+                                   observation_group=getattr(verdicts, "observation_groups", {}).get(deal["dedupe_key"]),
+                                   request_tokens=getattr(verdicts, "request_costs", {}).get(deal["dedupe_key"]))
             found = sum(1 for d in batch
                         if d["dedupe_key"] in photo_less and d.get("image_url"))
             if photo_less:
                 log.info("price recheck: %d of %d photo-less deal(s) got a "
                          "Keepa photo", found, len(photo_less))
-            i += len(batch)
+            i += requested_asins
     budget.save(db)
     if rate_limited:
         recovery_spent["rate_limited"] = True

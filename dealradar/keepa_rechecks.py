@@ -1,8 +1,8 @@
 """Task 087: bounded recheck facts, useful readings/token, and simple scheduling.
 
 No product bodies or engagement requests: saved pick/wall order supplies the
-visibility weight. Costs are allocated equally within a paid API batch; a
-missing charge receipt is explicitly a conservative estimate.
+visibility weight. Costs are allocated per requested ASIN, then its offer
+consumers; a missing charge receipt is explicitly a conservative estimate.
 """
 
 from __future__ import annotations
@@ -73,6 +73,14 @@ class History:
         self.run_key = run["run_key"] if run else None
         self.samples = {r["deal_key"]: json.loads(r["samples"]) for r in db.conn.execute(
             "SELECT deal_key, samples FROM keepa_recheck_history")}
+        self.observations = {}
+        if cfg.keepa_unique_asin_rechecks_enabled:
+            for rows in self.samples.values():
+                for sample in rows:
+                    if sample.get("observation"):
+                        counts = self.observations.setdefault(sample["observation"], {})
+                        for name, value in sample.get("counted", {}).items():
+                            counts[name] = max(counts.get(name, 0), value)
         self.yield_stats = {"overall": empty_counts(), "classes": {}}
 
     def attempted(self, key):
@@ -112,7 +120,7 @@ class History:
                    key=lambda s: s["requested_at"], default=None)
 
     def record(self, deal, product, verdict, observed, label, tokens, estimated, *, dead=False, live_request=False,
-               buybox_request=False, shopper_price=None):
+               buybox_request=False, shopper_price=None, observation_group=None, request_tokens=None):
         key = deal["dedupe_key"]
         samples = self.samples.setdefault(key, [])
         if self.attempted(key):
@@ -135,17 +143,28 @@ class History:
         if previous and previous["live_price"] == live and previous["shown_price"] == shown:
             changed = False  # a newer timestamp alone is not a newly discovered drift
         death = bool(dead and reading)
+        counted = {"readings": int(reading), "changed": int(changed),
+                   "deaths": int(death), "useful": int(changed or death)}
+        if observation_group is not None:
+            identity = observation_group + "/" + stamp
+            shared = self.observations.get(identity, {})
+            counted = {name: int(value and not shared.get(name))
+                       for name, value in counted.items()}
         last_change = verify.keepa_time((product or {}).get("lastPriceChange"))
         sample = {"requested_at": util.iso(self.now), "run_key": self.run_key,
                   "answered": product is not None, "observed_at": stamp,
                   "shown_price": shown, "live_price": live, "reading": bool(reading),
                   "changed": changed, "death": death, "tokens": tokens,
                   "last_change_at": util.iso(min(last_change, observed)) if last_change else ""}
-        # Per-request receipts must not be confused with folded cache costs.
-        sample.update(request_tokens=tokens, estimated_tokens=estimated,
+        # Shared allocations are not independent per-ASIN cost samples: only
+        # one consumer owns that sample; the others use the existing -1 sentinel.
+        sample.update(request_tokens=tokens if request_tokens is None else request_tokens,
+                      estimated_tokens=estimated,
                       live=live_request, used=verify.is_used_deal(deal), regular_price=deal.get("regular_price"))
         if buybox_request:
             sample["buybox"] = True
+        if observation_group is not None:
+            sample.update(observation=identity, counted=counted)
         own_change = (previous or {}).get("price_changed_at", "")
         if reading and live is not None:
             same = previous and previous.get("live_price") == sample["live_price"]
@@ -164,12 +183,14 @@ class History:
                           tokens=tokens + cached["tokens"],
                           stable_since=cached.get("stable_since", stamp),
                           price_changed_at=cached.get("price_changed_at", own_change))
+            if observation_group is not None:
+                sample["counted"] = {name: max(value, cached.get("counted", {}).get(name, 0))
+                                     for name, value in counted.items()}
             samples.remove(cached)
         samples.append(sample)
         limit = max(2, int(self.cfg.keepa_recheck_adaptive.get("history_samples", 12)))
         del samples[:-limit]
-        values = {"tokens": tokens, "estimated_tokens": estimated, "readings": int(reading),
-                  "changed": int(changed), "deaths": int(death), "useful": int(changed or death)}
+        values = {"tokens": tokens, "estimated_tokens": estimated, **counted}
         # Idle checks belong to their visibility class; photos remain separate.
         label = label.removeprefix("idle_")
         with self.db.conn:
@@ -185,6 +206,9 @@ class History:
             self.db.meta_set("keepa_recheck_yield_since", util.iso(self.now))
         add_counts(self.yield_stats["overall"], values)
         add_counts(self.yield_stats["classes"].setdefault(label, empty_counts()), values)
+        if observation_group is not None:
+            self.observations[identity] = {name: max(value, shared.get(name, 0))
+                                           for name, value in counted.items()}
 
 
 def live_price(deal, product):

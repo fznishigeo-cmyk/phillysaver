@@ -388,6 +388,7 @@ class AppConfig:
     keepa_recheck_new_h: float = 3.0
     keepa_recheck_used_h: float = 6.0
     keepa_used_scan_budget_share: float = 0.35
+    keepa_unique_asin_rechecks_enabled: bool = False
     # The All tab's scored pick candidates: new-condition Amazon deals
     # re-checked at least this often, hours; 0 = no accelerated cadence.
     keepa_recheck_top_h: float = 0.0
@@ -894,6 +895,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "recheck_top_h", default=cfg.keepa_recheck_top_h)))
     cfg.keepa_used_scan_budget_share = min(1.0, max(0.0, float(g(
         "keepa", "used_scan_budget_share", default=cfg.keepa_used_scan_budget_share))))
+    unique_rechecks = g("keepa", "unique_asin_rechecks", default={})
+    if (not isinstance(unique_rechecks, dict)
+            or type(unique_rechecks.get("enabled", False)) is not bool):
+        raise ValueError("keepa.unique_asin_rechecks.enabled must be a boolean")
+    cfg.keepa_unique_asin_rechecks_enabled = unique_rechecks.get("enabled", False)
     cfg.keepa_recheck_tolerance_pct = max(0.0, float(g(
         "keepa", "recheck_tolerance_pct", default=cfg.keepa_recheck_tolerance_pct)))
     buybox = g("keepa", "buybox_rule", default=cfg.keepa_buybox_rule)

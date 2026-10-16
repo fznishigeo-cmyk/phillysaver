@@ -334,6 +334,8 @@ accuracy:
   extra_samples_per_day: 0       # optional random paid audits; existing reads are always reused
 
 keepa:
+  unique_asin_rechecks:
+    enabled: false               # share one product request within each compatible recheck group
   buybox_rule: shadow             # off | shadow | on; publication rule only
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
   buybox_interval_min: 60         # paid requests and maximum Buy Box observation age

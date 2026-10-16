@@ -17,6 +17,7 @@ keyed APIs only: Keepa below, Best Buy and eBay in store_prices.py.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import logging
 import math
 import re
@@ -792,7 +793,8 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     ASINs) that ask for RECHECK_OFFERS live offers (only an offers scan can
     show a Warehouse unit sold); ``used_offers=False`` keeps every batch
     stats-only, where a used deal can only be confirmed. ``budget`` learns
-    every response's token state."""
+    every response's token state. Opt-in unique-ASIN batches share only this
+    invocation's compatible policy, with a separate product copy per offer."""
     out = PriceRechecks()
     if not cfg.feature_flags.get("keepa"):
         return out
@@ -800,13 +802,32 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     if not key:
         return out
     budget = budget if budget is not None else KeepaBudget()
-    new: list[tuple[str, dict[str, Any]]] = []
-    used: list[tuple[str, dict[str, Any]]] = []
+    unique = getattr(cfg, "keepa_unique_asin_rechecks_enabled", False)
+    new: list[tuple[str, list[dict[str, Any]]]] = []
+    used: list[tuple[str, list[dict[str, Any]]]] = []
+    consumers = ({}, {})
     for deal in deals:
         asin = str(deal.get("asin") or "").strip().upper()
-        if asin and deal.get("final_price") is not None:
-            (used if used_offers and is_used_deal(deal) else new).append(
-                (asin, deal))
+        if not asin or deal.get("final_price") is None:
+            continue
+        if unique and re.fullmatch(r"[A-Z0-9]{10}", asin) is None:
+            continue
+        is_used = used_offers and is_used_deal(deal)
+        wanted = used if is_used else new
+        by_asin = consumers[int(is_used)]
+        if unique and asin in by_asin:
+            by_asin[asin].append(deal)
+        else:
+            group = [deal]
+            wanted.append((asin, group))
+            by_asin[asin] = group
+    if unique:
+        selected = sum(len(group) for _, group in new + used)
+        out.diagnostics = {"selected_consumers": selected, "unique_asins": len(new) + len(used),
+                           "duplicate_slots_avoided": selected - len(new) - len(used),
+                           "product_requests": 0}
+        out.observation_groups = {}
+        out.request_costs = {}
     for wanted, offers, per_call in ((new, None, KEEPA_BATCH),
                                      (used, RECHECK_OFFERS, KEEPA_OFFERS_BATCH)):
         start = 0
@@ -820,6 +841,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
             chunk = wanted[start:start + size]
             start += len(chunk)
             before = budget.usage.accounted, budget.usage.estimated
+            requests_before = budget.usage.requests
             try:
                 options = {"live": True} if live else {}
                 if buybox:
@@ -833,21 +855,35 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                             len(chunk), error_summary(e))
                 continue
             finally:
-                for _, deal in chunk:
-                    out.costs[deal["dedupe_key"]] = (
-                        (budget.usage.accounted - before[0]) / len(chunk),
-                        (budget.usage.estimated - before[1]) / len(chunk))
+                if unique:
+                    out.diagnostics["product_requests"] += budget.usage.requests - requests_before
+                for _, group in chunk:
+                    for index, deal in enumerate(group):
+                        out.costs[deal["dedupe_key"]] = (
+                            (budget.usage.accounted - before[0]) / len(chunk) / len(group),
+                            (budget.usage.estimated - before[1]) / len(chunk) / len(group))
+                        if unique:
+                            # One consumer owns the per-ASIN cost sample;
+                            # all consumers retain their allocated ledger cost.
+                            out.request_costs[deal["dedupe_key"]] = (
+                                (budget.usage.accounted - before[0]) / len(chunk) if index == 0 else -1)
             if products is None:
                 out.rate_limited = True
                 return out  # even a malformed 429 ends every batch in this pass
-            for asin, deal in chunk:
+            for asin, group in chunk:
                 product = products.get(asin)
-                if product is None:
-                    _harvest_image(deal, {})  # answered, but no product/photo found
-                    continue
-                out.products[deal["dedupe_key"]] = product
-                out[deal["dedupe_key"]] = judge_live_price(
-                    deal, product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
+                for deal in group:
+                    if product is None:
+                        _harvest_image(deal, {})  # answered, but no product/photo found
+                        continue
+                    own_product = deepcopy(product) if unique else product
+                    out.products[deal["dedupe_key"]] = own_product
+                    out[deal["dedupe_key"]] = judge_live_price(
+                        deal, own_product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
+                    if unique:
+                        # Observation identity excludes request time/update: asking
+                        # for a live read cannot make cached data independent.
+                        out.observation_groups[deal["dedupe_key"]] = f"1/{asin}/1/{offers or 0}/{int(buybox)}"
     return out
 
 

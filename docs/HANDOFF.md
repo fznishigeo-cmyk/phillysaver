@@ -224,6 +224,39 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   **Zero new failures**; 84 byte/baseline checks and 829-file comparisons pass.
   Review and the seven checks outside this sandbox remain. Own test logs/temp
   removed; no LLM calls, outgoing email, commit or push.
+- **Unique-ASIN rechecks (Codex task 221, 2026-10-16; uncommitted, OFF):**
+  Validated `keepa.unique_asin_rechecks.enabled: false`; omitted/false preserves
+  transport order, receipts, observations, verdicts and public/member output.
+  Opt-in grouping happens before planner affordability and transport batch sizing,
+  within existing compatible new/used, live/update, Buy Box and priority barriers.
+  First-ASIN/consumer order stays stable; each offer keeps its own judgment,
+  product copy, image, price correction and death state. Transport reservations
+  and receipts remain once per call; costs split by ASIN then consumers. Shared
+  observation identities dedupe private yield counts while each offer retains
+  its own history/death clock. Only one consumer owns each whole-ASIN cost
+  sample for scheduler learning; allocated consumer fractions cannot teach a
+  cheaper scan or inflate sample support. Existing per-offer accuracy/cache
+  dedupe stays.
+  Private `unique_asin_rechecks` counts selected consumers, unique policy-group
+  ASINs, avoided duplicate slots and actual product calls; no public fields.
+  Pre-edit disabled transport/pipeline capture matches exactly. A fixture-date
+  correction was independently checked against the original checkout sources:
+  **177 nonempty public files across four access modes plus member payloads**
+  match with the switch off/on; no existing byte pins changed. Offline fixture:
+  **207 consumers / 103 ASINs: 3 → 2 requests, 207 → 103 mocked receipt tokens**,
+  equal verdict coverage; all-unique 103-ASIN input remains two calls/103 tokens.
+  These are synthetic receipts, not measured Keepa billing or live savings.
+  All **50 feature checks pass**, covering failure/lost/429 receipts, mixed
+  policies, reserves/used share, cost-sample support, cached clocks, two-reading
+  deaths and both offline pipeline rerun access modes. Required full
+  `.venv/bin/python -m pytest -q -n 2 -p no:cacheprovider
+  --basetemp=/tmp/task221-suite --tb=line`: **4,583 passed, 7 failed** (21m38s).
+  All seven are the known Stripe localhost-socket restrictions (`Operation not
+  permitted`): yearly-price change0–5 and no-price/no-key in the untouched
+  `tests/test_workflows.py`; the operator confirms they pass outside the sandbox.
+  Review and actual request/token measurements remain before activation; switch
+  stays OFF. Test logs and only this task's `/tmp/task221-*` scratch removed.
+  No paid calls, network probe, commit, push or deployment.
 - **Safety and real numbers (Codex task 121, 2026-10-16; uncommitted):** shared
   Pinterest rich-pin opt-out; phone audit blocks the hourly check's analytics/ad
   pattern, including Clarity. `?internal=1` remembers this browser, tags GA4 as
