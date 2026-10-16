@@ -1231,10 +1231,8 @@ class TestProductImageBackfill:
         assert db.get_deal("costco")["image_url"] == "https://gdx.costco.com/4000444860-847"
         db.close()
 
-    def test_run_wires_it_on_the_fast_lane_only(self, tmp_path, monkeypatch):
-        """run() calls the backfill only on the fast lane (through the real
-        PoliteFetcher: robots.txt first) and reports the count as
-        summary['product_images']; the hourly never touches retailer pages."""
+    def test_run_uses_only_permitted_sources_or_official_apis(self, tmp_path, monkeypatch):
+        """Neither lane fetches a retailer page for its photo (task 119)."""
         for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
                     "DEALS_CLAUDE_API_KEY"):
             monkeypatch.delenv(var, raising=False)
@@ -1274,13 +1272,13 @@ class TestProductImageBackfill:
         assert summary["link_mix"]["by_store"] == {}
         assert requests == []
         summary = run(fast_lane=True)
-        assert summary["product_images"] == 1
+        assert summary["product_images"] == 0
         assert summary["link_mix"]["sovrn"] == 1
         assert summary["link_mix"]["by_store"] == {}
-        assert requests == ["/robots.txt", "/p/dsg-ultimate-backpack-5-0"]
+        assert requests == []
+        assert summary["photo_coverage"]["by_cause"]["other_store_no_source"] == 1
         db = DB(db_path)
-        assert db.get_deal("dicks")["image_url"] == \
-            "https://dks.scene7.com/is/image/GolfGalaxy/X"
+        assert not db.get_deal("dicks").get("image_url")
         db.close()
 
 
@@ -1397,7 +1395,7 @@ class TestStoredImageChecks:
         assert fetcher.calls == [image]
         db.close()
 
-    def test_fast_lane_repairs_broken_photo_before_backfill(self, tmp_path, monkeypatch):
+    def test_fast_lane_clears_broken_photo_and_waits_for_permitted_source(self, tmp_path, monkeypatch):
         for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHANNEL_ID", "SMTP_HOST",
                     "DEALS_CLAUDE_API_KEY"):
             monkeypatch.delenv(var, raising=False)
@@ -1438,17 +1436,17 @@ class TestStoredImageChecks:
         assert run(False)["images_cleared"] == 0
         assert requests == []
         summary = run(True)
-        assert summary["images_cleared"] == summary["product_images"] == 1
+        assert summary["images_cleared"] == 1 and summary["product_images"] == 0
         assert ("HEAD", broken) in requests
         assert ("GET", broken) not in requests
-        assert requests.index(("HEAD", broken)) < requests.index(("GET", link))
+        assert ("GET", link) not in requests
         db = DB(db_path)
-        assert db.get_deal("dress")["image_url"] == replacement
+        assert not db.get_deal("dress").get("image_url")
         db.close()
         summary = run(True)
         assert summary["images_cleared"] == summary["product_images"] == 0
         assert requests.count(("HEAD", broken)) == 1
-        assert requests.count(("GET", link)) == 1
+        assert requests.count(("GET", link)) == 0
         db = DB(db_path)
         assert len(db.all_deals()) == 1
         db.close()

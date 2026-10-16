@@ -1522,7 +1522,16 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     scored.sort(function (a, b) { return (a.ps - b.ps) * state.sortDir; });
     return blockDeal(scored).concat(fresh.filter(function (d) { return d.ps == null; }));
   }
-/*unconfirmed*/  function confirmedFirst(rows) {
+/*photoless*/  function photosFirst(rows) {
+    if (document.getElementById("q").value.trim()) return rows;
+    function group(locked) {
+      var same = rows.filter(function (d) { return !!isLocked(d) === locked; });
+      return same.filter(function (d) { return !!d.image_url; })
+        .concat(same.filter(function (d) { return !d.image_url; }));
+    }
+    return group(false).concat(group(true));
+  }
+/*/photoless*//*unconfirmed*/  function confirmedFirst(rows) {
     return rows.filter(function (d) { return !d.price_unconfirmed && !d.price_aged; })
       .concat(rows.filter(function (d) { return d.price_unconfirmed || d.price_aged; }));
   }
@@ -1542,7 +1551,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       locked = freshOrder(locked, false);
     }
     rows = open.concat(locked);
-    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*unconfirmed*/)/*/unconfirmed*/;
+    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*//*photoless*/photosFirst(/*/photoless*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*photoless*/)/*/photoless*//*unconfirmed*/)/*/unconfirmed*/;
   }
 
   function storeHue(s) {
@@ -2011,7 +2020,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     rows = placeGone(rows);
     var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
-/*unconfirmed*/    rows = confirmedFirst(rows);
+/*photoless*/    if (mixed) rows = placeGone(photosFirst(rows));
+/*/photoless*//*unconfirmed*/    rows = confirmedFirst(rows);
 /*/unconfirmed*/    browseRows = spotlight.concat(rows);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.

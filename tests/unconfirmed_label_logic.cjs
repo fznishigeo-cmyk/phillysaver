@@ -10,7 +10,7 @@ function fragment(start, end) {
 }
 const ctx = {offer:()=>({}),TICKER_MAX:16,state:{deals:[label, confirmed], newKeys:{}, spotlight:[], sortKey:'top', sortDir:-1,
   meta:{front_page:{}, floors:{min_pct:0}}}, TIER_LABEL:{},
-  document:{querySelectorAll:()=>[]},
+  document:{querySelectorAll:()=>[],getElementById:()=>({value:""})},
   isLocked:d=>!!d.locked, lockedHtml:()=>'', num:v=>v == null ? null : Number(v),
   dealKey:d=>d.key, mediaHtml:()=>'', isNew:()=>false, lit:()=>false, isFreePick:()=>false,
   traceSvg:()=>'', newSinceVisit:()=>false, savedButtonHtml:()=>'', savedWatchHtml:()=>'', hotHtml:()=>'',
@@ -22,7 +22,7 @@ vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
 vm.runInContext(fragment('  function ageText(h)', '  function usedTag(d)'), ctx);
 vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
 vm.runInContext(fragment('  function spotlightTime(endsAt, now)', '  function frontPageView()'), ctx);
-vm.runInContext(fragment('  function confirmedFirst(rows)', '  function storeHue(s)'), ctx);
+vm.runInContext(fragment(html.includes('  function photosFirst(rows)') ? '  function photosFirst(rows)' : '  function confirmedFirst(rows)', '  function storeHue(s)'), ctx);
 for (const sort of ['top', 'fresh', 'final_price', 'pct_at_checkout', 'store']) {
   ctx.state.sortKey = sort;
   for (const defer of [false,true]) {

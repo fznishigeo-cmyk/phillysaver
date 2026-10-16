@@ -57,12 +57,30 @@ _URL_RE = re.compile(r"https?://[^\s)\]>\"']+")
 def _asin_from_text(text: str) -> str:
     """The one ASIN a post links to, or '' when there is none — or more than
     one (a roundup), where guessing would pin the wrong product."""
-    from .http_client import extract_asin  # lazy: written by another layer
+    return asin_from_links(_URL_RE.findall(text or ""))
 
-    found = {extract_asin(u) for u in _URL_RE.findall(text or "")
-             if "amazon." in u.lower()}
-    found.discard("")
-    return found.pop() if len(found) == 1 else ""
+
+def asin_from_links(links) -> str:
+    """One unambiguous ASIN, reusing the existing tracker decoders."""
+    from .http_client import extract_asin, tracker_target
+    from .product_images import _unwrap
+
+    found = set()
+    for link in links:
+        for _ in range(5):
+            try:
+                asin = extract_asin(link or "")
+                if asin:
+                    found.add(asin)
+                    break
+                target = tracker_target(link or "") or _unwrap(link or "")
+            except (ValueError, TypeError):
+                break
+            if not target or target == link:
+                break
+            link = target
+    return next(iter(found)) if len(found) == 1 else ""
+
 
 
 def find_existing(db, store: str, canonical_url: str, item: str,
@@ -262,17 +280,15 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     'revived', 'payload'}; 'revived' = a new sighting brought a dead deal
     back alive.
     """
-    from .http_client import extract_asin, tracker_target  # lazy: written by another layer
-
-    asin = extract_asin(extracted.product_url) if extracted.product_url else ""
-    if not asin:
-        asin = extract_asin(tracker_target(extracted.product_url))
-    if not asin and "amazon" in (extracted.store or "").lower():
+    asin = asin_from_links([extracted.product_url, extracted.link_as_posted])
+    if not asin and "amazon" in (extracted.store or "").lower() \
+            and len({util.normalize_item(i) for i, _ in post.parsed}) <= 1:
         # Deal blogs link the product in the body while the LLM's product_url
         # is often a tracker/redirect: the one Amazon link in a single-deal
         # post is the product. Without an ASIN the deal gets no Keepa price
         # check and no photo (live: 6 photo-less Amazon cards for this).
-        asin = _asin_from_text(post.text)
+        asin = asin_from_links([extracted.product_url, extracted.link_as_posted]
+                               + _URL_RE.findall(post.text or "") + list(post.photos.links) + post.resolved_links)
         from .publish.site import keeps_source_tracker
         if asin and "amazon." not in (extracted.product_url or "").lower() \
                 and not keeps_source_tracker(extracted.product_url or "", cfg):
@@ -413,6 +429,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             payload["canonical_url"] = extracted.product_url
         if not payload.get("asin") and asin:
             payload["asin"] = asin
+            if payload.get("photo_asin"):
+                payload.update(photo_asin="", asin_source="link", image_url="")
         # Once several products shared the row's link, no post names it.
         payload["link_shared"] = bool(existing.get("link_shared")) \
             or extracted.link_shared

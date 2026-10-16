@@ -33,7 +33,7 @@ _TRACKING = frozenset({
     "irclickid", "u1", "subid",
 })
 #: Affiliate redirectors carry the retailer URL in one of these params.
-_WRAP_PARAMS = frozenset({"url", "u", "murl", "ued", "dest", "destination",
+_WRAP_PARAMS = frozenset({"url", "u", "u2", "murl", "ued", "dest", "destination",
                           "target", "redirect", "r", "link", "to"})
 _AMAZON_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
 #: (host, product-id pattern) per retailer: the id names the product

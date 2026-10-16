@@ -696,7 +696,8 @@ class PoliteFetcher:
     # ---------------------------------------------------------- redirect hops
 
     def _redirect_hop(
-        self, url: str, deadline: float | None, *, respect_robots: bool = True
+        self, url: str, deadline: float | None, *, respect_robots: bool = True,
+        head_only: bool = False
     ) -> tuple[FetchResult, str]:
         """One redirect hop: HEAD first, on 403/405/501 fall back to GET.
 
@@ -711,7 +712,7 @@ class PoliteFetcher:
             "HEAD", url, {}, deadline=deadline, conditional=False,
             follow_redirects=False, read_body=False, respect_robots=respect_robots, **quick,
         )
-        if result.status in _HEAD_FALLBACK_STATUSES:
+        if not head_only and result.status in _HEAD_FALLBACK_STATUSES:
             self._check_deadline(deadline)
             if not self._robots_allowed(url):
                 logger.info("robots.txt disallows GET fallback")
@@ -752,12 +753,14 @@ def resolve_redirects(
     *,
     deadline: float | None = None,
     respect_robots: bool = True,
+    head_only: bool = False,
 ) -> str:
     """Resolve an affiliate/shortener redirect chain to a canonical URL.
 
     Manual hop loop (``follow_redirects=False``): per hop a HEAD is tried
     first; on 403/405/501 it falls back to a GET, which honors robots.txt
-    (a robots-blocked GET ends the loop). Relative Location headers are
+    (a robots-blocked GET ends the loop). ``head_only=True`` disables that
+    fallback entirely. Relative Location headers are
     resolved against the current URL. The loop stops at the first non-3xx
     response, when an ASIN is already extractable from the current URL (no
     need to fetch retailer pages we can already canonicalize), before a
@@ -775,8 +778,9 @@ def resolve_redirects(
         for _hop in range(max_hops):
             if extract_asin(current):
                 break
+            options = {"head_only": True} if head_only else {}
             result, location = fetcher._redirect_hop(current, deadline,
-                                                    respect_robots=respect_robots)
+                                                    respect_robots=respect_robots, **options)
             if result.blocked_by_robots:
                 break
             if not (300 <= result.status < 400) or not location:

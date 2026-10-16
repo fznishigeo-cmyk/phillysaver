@@ -73,6 +73,23 @@ def test_bot_wall_keeps_link_and_is_never_fetched(setup):
     assert db.get_deal("wall")["flags"] == ["link_resolve_tried"]
 
 
+def test_real_short_link_asin_replaces_title_match_photo(setup):
+    db, cfg, fetcher, calls, targets = setup
+    link = "https://amzn.to/kettle"
+    targets[link] = "https://www.amazon.com/dp/B0GLP6BWD9"
+    PhotoFixture._seed(db, "kettle", link, image="https://images.example/guessed.jpg",
+                       flags=["image_backfill_tried", "product_image_tried"])
+    db.update_deal("kettle", payload=dict(db.get_deal("kettle"), asin="",
+        photo_asin="B012345678", asin_source="title_match"))
+    assert pipeline._resolve_short_links(db, fetcher, None, cfg) == 1
+    row = db.get_deal("kettle")
+    assert row["asin"] == "B0GLP6BWD9" and row["asin_source"] == "link"
+    assert not row["photo_asin"] and not row["image_url"]
+    assert row["canonical_url"] == targets[link]
+    assert row["flags"] == ["link_resolve_tried"]
+    assert calls == [link]
+
+
 def test_ineligible_deals_are_never_fetched(setup):
     db, cfg, fetcher, calls, targets = setup
     PhotoFixture._seed(db, "photo", "https://a.co/photo", image="https://images.example/x.jpg")
@@ -256,11 +273,14 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, track
     PhotoFixture._seed(db, "stable", f"https://{host}/abc")
     db.close()
     calls = []
+    retailer_reads = []
 
     def handler(request):
         if request.url.path == "/robots.txt":
             return httpx.Response(200, text="User-agent: *\nAllow: /\n")
         calls.append(str(request.url))
+        if request.url.host == "www.walmart.com":
+            retailer_reads.append(request.method)
         if request.url.host == host:
             return httpx.Response(301, headers={"Location": "https://www.walmart.com/ip/123"})
         if request.url.host == "images.example":
@@ -277,26 +297,27 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, track
     assert calls == []
     with caplog.at_level("INFO", logger="dealradar.pipeline"):
         first = run(True)
-    assert first["short_links"] == 1 and first["product_images"] == 1
+    assert first["short_links"] == 1 and first["product_images"] == 0
     assert first["redirects"] == {"resolved": 1, "tried": 1, "trackers_resolved": trackers_resolved}
     assert first["link_mix"]["trackers_resolved"] == trackers_resolved
     assert first["link_mix"]["earning"] == 1 and first["link_mix"]["not_earning"] == 0
     assert any(r.message == f"link mix: earning 1; not earning 0; trackers resolved {trackers_resolved}"
                for r in caplog.records)
-    assert first["photo_gaps"]["alive_without_photo"] == 0
-    assert "photo gaps: 0 alive deals without a photo; by canonical host: none" in step_summary.read_text()
+    assert first["photo_gaps"]["alive_without_photo"] == 1
+    assert "photo gaps: 1 alive deals without a photo; by canonical host: www.walmart.com: 1" in step_summary.read_text()
     assert "redirects: resolved 1 of 1" in step_summary.read_text()
     before = list(calls)
     rerun = run(True)
     assert rerun["short_links"] == rerun["link_mix"]["trackers_resolved"] == 0
-    # The newly stored photo gets one metadata check on the next pass.
-    assert calls == before + ["https://images.example/product.jpg"]
+    # Retailer photo pages are no longer fetched without a permitted source/API.
+    assert calls == before
     before = list(calls)
     assert run(True)["short_links"] == 0
     assert calls == before  # checked URLs wait 24 h, including on reruns
     db = DB(db_path)
     assert len(db.all_deals()) == 1
-    assert db.get_deal("stable")["image_url"] == "https://images.example/product.jpg"
+    assert not db.get_deal("stable").get("image_url")
+    assert "GET" not in retailer_reads  # redirect HEAD metadata is allowed
     db.close()
 
 

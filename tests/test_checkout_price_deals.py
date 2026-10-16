@@ -441,6 +441,7 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     for mode in ('omitted', 'off'):
         config = load_config()
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
+        config.photoless_last = False  # predates photos-first
         config.seo_product_pages_enabled = False  # predates product pages
         config.front_page['checkout_price_deals']['enabled'] = False  # predates the checkout-price switch
         if mode == 'omitted':

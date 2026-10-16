@@ -310,6 +310,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     config["publish"]["front_page"]["appeal"]["enabled"] = False  # predates the broad-appeal switch
     config["publish"]["front_page"]["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
     config["publish"]["amazon_as_of"]["enabled"] = False  # predates the Amazon as-of switch
+    config["publish"]["photoless_last"] = False  # predates photos-first
     config["seo"]["product_pages"]["enabled"] = False  # predates product pages
     path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)

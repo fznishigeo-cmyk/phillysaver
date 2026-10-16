@@ -174,6 +174,12 @@ class AppConfig:
     drop_minutes: int = 15            # the page's drop clock step (meta.cadence_minutes)
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
+    photoless_last: bool = False
+    images_asin_backfill_per_run: int = 60
+    images_short_links_per_run: int = 10
+    images_keepa_search_per_run: int = 10
+    images_keepa_search_per_day: int = 120
+    images_keepa_match_min: float = 0.85
     amazon_as_of_enabled: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
@@ -560,6 +566,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_minutes = max(1, int(g("publish", "drop_minutes",
                                     default=cfg.drop_minutes)))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
+    cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
+    for name in ("asin_backfill_per_run", "short_links_per_run", "keepa_search_per_run", "keepa_search_per_day"):
+        setattr(cfg, "images_" + name, max(0, int(g("images", name, default=getattr(cfg, "images_" + name)))))
+    cfg.images_keepa_match_min = float(g("images", "keepa_match_min", default=0.85))
+    if not 0.85 <= cfg.images_keepa_match_min <= 1:
+        raise ValueError("images.keepa_match_min must be between 0.85 and 1")
     cfg.amazon_as_of_enabled = bool(g("publish", "amazon_as_of", "enabled", default=False))
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):

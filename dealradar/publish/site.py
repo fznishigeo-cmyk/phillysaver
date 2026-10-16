@@ -61,6 +61,9 @@ def util_now():
     return now_utc()
 
 
+_PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
+
+
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
 
 
@@ -71,6 +74,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
+    html = _PHOTOLESS_BLOCK.sub("", html)
     html = amazon_as_of.template(html, False)
     html = product_pages.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
@@ -860,6 +864,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
+        home = _PHOTOLESS_BLOCK.sub("", home)
         home = amazon_as_of.template(home, False)
         home = product_pages.template(home, False)
         # Optional watch markup must not change the disabled page's version.
@@ -903,6 +908,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if checkout_prices.enabled(cfg):
         site_version = hashlib.sha256(site_version.encode()
             + "".join(checkout_prices.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+    if cfg.photoless_last:
+        site_version = hashlib.sha256(site_version.encode()
+            + "".join(_PHOTOLESS_BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
     if cfg.amazon_as_of_enabled:
         site_version = hashlib.sha256(site_version.encode()
             + "".join(amazon_as_of.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
@@ -998,6 +1006,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = (out / name).read_text(encoding="utf-8")
         html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         html = checkout_prices.template(html, checkout_prices.enabled(cfg))
+        html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
         html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
         html = product_pages.template(html, cfg.seo_product_pages_enabled)
         if cfg.seo_product_pages_enabled and name == "index.html":

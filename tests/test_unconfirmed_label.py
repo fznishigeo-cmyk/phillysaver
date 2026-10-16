@@ -321,6 +321,7 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
         cfg.front_page["appeal"]["enabled"] = False  # predates the broad-appeal switch
         cfg.amazon_as_of_enabled = False  # predates the Amazon as-of switch
+        cfg.photoless_last = False  # predates photos-first
         cfg.seo_product_pages_enabled = False  # predates product pages
         cfg.raw["first_party_clicks"]["enabled"] = False  # predates the click signal switch-on
         cfg.front_page["top_picks"] = {k: v for k, v in cfg.front_page["top_picks"].items()

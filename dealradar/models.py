@@ -94,6 +94,7 @@ class RawPost:
     parsed: list[tuple[str, str]] = field(default_factory=list)
     structured: dict | None = None  # API facts + quotes; transient like text
     via_email: bool = False        # never fetch this newsletter's partner pages
+    resolved_links: list[str] = field(default_factory=list)  # transient Amazon short-link targets
     price_recheck: bool = False    # current permitted post/feed read, bypasses seen hash
 
     @property
@@ -200,6 +201,12 @@ class Deal:
     # the post's photos are keyed by it (photo backfill, in-link evidence).
     link_as_posted: str = ""
     asin: str = ""
+    photo_asin: str = ""                  # title match: NEVER a price/product identity
+    asin_source: str = ""
+    amazon_asin_tried: bool = False
+    photo_search_tried: bool = False
+    photo_lookup_asin: str = ""
+    photo_lookup_found_none: bool = False
     image_url: str = ""                   # retailer's public product image URL
     final_price: float | None = None
     regular_price: float | None = None

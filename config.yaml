@@ -130,6 +130,7 @@ publish:
   site_show_from_pct: 40       # site-only second tier: "strong deals" below the
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
+  photoless_last: true        # photos first within each wall group; search stays unchanged
   show_dead_hours: 24          # confirmed-gone cards linger inline for one day
   amazon_as_of:
     enabled: true
@@ -837,3 +838,10 @@ site_check:
   min_photo_pct: 90         # live deals whose photo shows
   max_broken: 10            # deals whose photo fails to load
   first_screen_photos: 24   # of the top 24 cards on the home page
+
+images:
+  asin_backfill_per_run: 60   # existing Amazon links, once per deal
+  short_links_per_run: 10     # additional amzn.to/a.co chains, HEAD only
+  keepa_search_per_run: 10
+  keepa_search_per_day: 120   # UTC; shares Keepa budget, after price rechecks
+  keepa_match_min: 0.85       # strict photo-only title matches

@@ -824,7 +824,8 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
         # tracker is that credit (config affiliate.repair_competitor_trackers).
         tracker = cfg.affiliate_repair_competitor_trackers and \
             is_competitor_tracker_host(host, tracker_hosts)
-        if (deal.get("image_url") or deal.get("link_shared")) and not tracker:
+        tentative_photo = deal.get("photo_asin") and not deal.get("asin")
+        if ((deal.get("image_url") and not tentative_photo) or deal.get("link_shared")) and not tracker:
             continue
         if not tracker and host.removeprefix("www.") not in _SHORT_LINK_HOSTS:
             domain = _site_of(link)
@@ -864,6 +865,10 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
             payload["canonical_url"] = target
             if not deal.get("asin"):
                 payload["asin"] = extract_asin(target)
+                if payload["asin"]:
+                    payload.update(asin_source="link", photo_asin="")
+                    if tentative_photo:
+                        payload["image_url"] = ""
             flags = [f for f in flags if f not in
                      ("product_image_tried", "image_backfill_tried")]
             resolved += 1
@@ -903,7 +908,8 @@ def _links_from_posts(db: DB, fetcher, deadline: float | None,
                        reverse=True):
         if "newsletter" in (deal.get("flags") or []):
             continue
-        if deal.get("status") != "alive" or deal.get("image_url") or \
+        tentative_photo = deal.get("photo_asin") and not deal.get("asin")
+        if deal.get("status") != "alive" or (deal.get("image_url") and not tentative_photo) or \
                 "post_link_tried" in (deal.get("flags") or []):
             continue
         if deal.get("canonical_url") and (deal.get("asin") or
@@ -969,7 +975,9 @@ def _links_from_posts(db: DB, fetcher, deadline: float | None,
         canonical = None
         if asin:
             canonical = canonicalize_url(f"https://www.amazon.com/dp/{asin}")
-            payload.update(asin=asin, canonical_url=canonical)
+            payload.update(asin=asin, asin_source="link", photo_asin="", canonical_url=canonical)
+            if tentative_photo:
+                payload["image_url"] = ""
             flags = [f for f in flags if f not in
                      ("image_backfill_tried", "product_image_tried")]
             found += 1
@@ -1506,7 +1514,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             # kept (live wart: photo-only answers were thrown away). Keepa
             # answered yet could not decide: wait the retry window. A 429 or
             # transport miss (no answer) retries on the next pass.
-            if answered or (not had_photo and deal.get("image_url")):
+            if answered or (not had_photo and (deal.get("image_url")
+                    or deal.get("photo_lookup_asin") == deal.get("asin"))):
                 payload = {k: deal.get(k) for k in _DEAL_FIELDS if k in deal}
                 if answered:
                     payload["recheck_tried_at"] = util.iso(now)
@@ -2141,6 +2150,7 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
     """
     from .http_client import canonicalize_url, resolve_redirects
     from .publish.site import keeps_source_tracker
+    from .photo_recovery import resolve_posts
 
     # Best effort, bounded: past _RESOLVE_BUDGET_S the rest keep their link
     # canonicalized as posted (live wart: three slow stores ate 5.5 min).
@@ -2160,6 +2170,8 @@ def _resolve_product_urls(pairs, fetcher, cfg: AppConfig, deadline: float) -> No
         except Exception as e:
             log.debug("redirect resolution failed for %s: %s", extracted.product_url, e)
             extracted.product_url = canonicalize_url(extracted.product_url)
+
+    resolve_posts(pairs, fetcher, cfg, min(deadline - 30, stop_at))
 
 
 def run(*, fast_lane: bool = False, db_path: str = "state.db",
@@ -2470,13 +2482,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             _backfill_blog_images(db, fetcher, sources,
                                   deadline - _RESERVE_FOR_TAIL_S, cfg)
             if fast_lane else 0)
-        # ---- photos from the retailer's own product page (non-Amazon) ----
-        # Same fast-lane slack: one polite page fetch per photo-less deal
-        # that links straight to a seller, for its og:image.
-        summary["product_images"] = (
-            _backfill_product_images(db, fetcher,
-                                     deadline - _RESERVE_FOR_TAIL_S, cfg)
-            if fast_lane else 0)
+        # Non-Amazon photos come from granted sources or existing official
+        # API reads. Do not spend the photo pass on retailer/bot-wall pages.
+        summary["product_images"] = 0
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         if parser is not None:
@@ -2485,6 +2493,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"],
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2 if fast_lane else None)
 
+        from . import photo_recovery
+        summary["photo_asins"] = photo_recovery.backfill_asins(
+            db, rank.site_deals(db, cfg, now), fetcher, cfg,
+            deadline - _RESERVE_FOR_TAIL_S) if fast_lane else {"tried": 0, "found": 0}
         if fast_lane:
             _links_from_posts(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
                               deals=rank.site_deals(db, cfg, now),
@@ -2497,6 +2509,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
+        summary["photo_search"] = photo_recovery.search_photos(
+            db, rank.site_deals(db, cfg, now), fetcher, cfg, now,
+            deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
+            rate_limited=summary["price_recheck"].get("rate_limited", False)) if fast_lane else {}
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 
@@ -2589,13 +2605,18 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from . import accuracy
         accuracy.extra_samples(db, cfg, now, fetcher=fetcher,
                                deadline=deadline - _RESERVE_FOR_TAIL_S / 2, run_key=run_key,
-                               rate_limited=summary["price_recheck"].get("rate_limited", False))
+                               rate_limited=(summary["price_recheck"].get("rate_limited", False)
+                                             or summary["photo_search"].get("rate_limited", False)))
         # last_run lands in the public deals.json: no spend or model (the
         # operator's; run_stats keeps the spend).
         site_res = render_site(db, cfg, now, last_run={
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
         })
+        summary["photo_coverage"] = photo_recovery.coverage([
+            db.get_deal(d["dedupe_key"]) or d for d in site_res["public_deals"]
+            if not d.get("locked")], cfg)
+        log.info("photo_coverage: %s", summary["photo_coverage"])
         summary["published"] = site_res.get("published", 0)
         summary["appeal"] = site_res.get("appeal", {})
         from . import buybox
@@ -2648,7 +2669,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             if step_summary:
                 try:
                     with open(step_summary, "a", encoding="utf-8") as fh:
-                        fh.write(photo_lines + "\n")
+                        fh.write(photo_lines + "\nphoto_coverage: " + json.dumps(summary["photo_coverage"], sort_keys=True) + "\n")
                 except OSError as e:
                     log.warning("photo summary not written: %s", e)
         if step_summary and site_res.get("health"):

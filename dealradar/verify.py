@@ -347,6 +347,9 @@ def _harvest_image(deal: dict[str, Any], product: dict[str, Any]) -> None:
     if deal.get("image_url"):
         return
     name = _keepa_image_name(product)
+    if deal.get("asin"):
+        deal["photo_lookup_asin"] = deal["asin"]
+        deal["photo_lookup_found_none"] = not bool(name)
     if name:
         deal["image_url"] = f"https://m.media-amazon.com/images/I/{name}"
 
@@ -513,7 +516,8 @@ def keepa_products(key: str, asins: list[str], stats: int,
                    offers: int | None = None, *,
                    live: bool = False,
                    buybox: bool = False, conditional_live: bool = False,
-                   fetcher: PoliteFetcher | None = None) -> dict[str, dict[str, Any]] | None:
+                   fetcher: PoliteFetcher | None = None,
+                   deadline: float | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs (KEEPA_OFFERS_BATCH
     with ``offers``): ``{asin: product}`` (an ASIN Keepa does not know is
     simply absent), or None on a 429 (the token bucket is empty — it
@@ -541,11 +545,13 @@ def keepa_products(key: str, asins: list[str], stats: int,
     reserved = len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live) + 2 * buybox)
     if budget is not None:
         budget.reserve(reserved)
+        budget.save(budget.db)
     payload, resp = None, None
     started = time.monotonic()
     try:
+        options = {"deadline": deadline} if deadline is not None else {}
         resp = fetcher.api_get("https://api.keepa.com/product", params=params,
-                               max_attempts=1, respect_robots=False)
+                               max_attempts=1, respect_robots=False, **options)
         payload = response_payload(resp)
     finally:
         if budget is not None:
@@ -837,6 +843,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
             for asin, deal in chunk:
                 product = products.get(asin)
                 if product is None:
+                    _harvest_image(deal, {})  # answered, but no product/photo found
                     continue
                 out.products[deal["dedupe_key"]] = product
                 out[deal["dedupe_key"]] = judge_live_price(

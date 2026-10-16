@@ -197,6 +197,47 @@ def _item_photo(item: dict) -> str:
     return ""
 
 
+def _backfill_feed_photos(db, items):
+    """Match other sources' Woot deals against the feed already in memory."""
+    from ..photo_recovery import _save
+    from ..product_images import _forms
+
+    by_url, by_id, by_title = {}, {}, {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        image = _item_photo(item)
+        if not image:
+            continue
+        url = woot_offer_url({"canonical_url": item.get("Url")})
+        uid = str(item.get("OfferId") or item.get("Id") or "")
+        title = " ".join(re.findall(r"[a-z0-9]+", str(item.get("Title") or "").lower()))
+        for index, key in ((by_url, url), (by_url, "/offers/" + uid if uid else ""),
+                           (by_id, uid), (by_title, title)):
+            if key:
+                index.setdefault(key, set()).add(image)
+    found = 0
+    for deal in db.all_deals(status="alive"):
+        if deal.get("image_url") or not str(deal.get("store") or "").lower().startswith("woot"):
+            continue
+        urls = set()
+        for name in ("canonical_url", "link_as_posted"):
+            try:
+                urls.update(woot_offer_url({"canonical_url": u}) for u in _forms(deal.get(name) or ""))
+            except ValueError:
+                continue
+        matches = set().union(*(by_url.get(u, set()) for u in urls),
+                              by_id.get(str(deal.get("woot_offer_id") or ""), set()))
+        # A known offer with no matching photo must not borrow a sibling's title.
+        if not matches and not any(urls):
+            title = " ".join(re.findall(r"[a-z0-9]+", (deal.get("item") or "").lower()))
+            matches = by_title.get(title, set())
+        if len(matches) == 1:
+            _save(db, deal, image_url=next(iter(matches)))
+            found += 1
+    return found
+
+
 def _recheck_offers(db: DB, items: list, now: datetime, *,
                     cfg: AppConfig | None = None,
                     source: SourceConfig | None = None) -> dict[str, int]:
@@ -204,6 +245,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
     from ..dedupe import reprice_existing
     from .. import accuracy
 
+    _backfill_feed_photos(db, items)
     cfg = cfg if cfg is not None else AppConfig()
     source = source or SourceConfig(name="woot", method="api", url=FEED_URL, adapter="woot")
     stats = dict(confirmed=0, repriced=0, range_skipped=0, above_range=0)

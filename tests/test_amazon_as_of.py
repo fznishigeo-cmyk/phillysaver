@@ -96,6 +96,7 @@ def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode,
     cfg = config(mode)
     cfg.seo_product_pages_enabled = False  # predates product pages
     cfg.amazon_as_of_enabled = False
+    cfg.photoless_last = False  # predates photos-first
     out = tmp_path / "site"
     render(out, cfg)
     assert digest(tree(out)) == expected
@@ -123,6 +124,7 @@ def test_card_absolute_time_and_relative_label_share_the_check_clock(stamp, expe
     assert f'data-checked-at="{iso(checked)}"' in markup
     visible = re.sub(r'<span class="sr-only">.*?</span>', "", markup)
     cfg.amazon_as_of_enabled = False
+    cfg.photoless_last = False  # predates photos-first
     before = seo.card_html(site._serialize_deal(raw, now, cfg=cfg), now=now)
     assert visible.replace(f' title="Price as of {expected}"', "") == before
     assert '<span class="pcl">price checked </span>2h ago' in visible
@@ -207,6 +209,7 @@ def test_same_publish_is_stable_and_switch_off_restores_bytes(tmp_path, monkeypa
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = config("support")
     cfg.amazon_as_of_enabled = False
+    cfg.photoless_last = False  # predates photos-first
     out = tmp_path / "site"
     render(out, cfg)
     before = tree(out)
@@ -218,6 +221,7 @@ def test_same_publish_is_stable_and_switch_off_restores_bytes(tmp_path, monkeypa
     render(out, cfg)
     assert tree(out) == enabled
     cfg.amazon_as_of_enabled = False
+    cfg.photoless_last = False  # predates photos-first
     render(out, cfg)
     assert tree(out) == before
 

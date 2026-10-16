@@ -79,6 +79,22 @@ def test_single_product_and_one_attempt(setup):
     assert "Another buy link" not in db.conn.execute("SELECT payload FROM deals").fetchone()[0]
 
 
+def test_real_post_asin_replaces_title_match_photo(setup):
+    db, _, _, pages, calls, _ = setup
+    seed(db, "kettle", image="https://images.example/guessed.jpg",
+         flags=["image_backfill_tried", "product_image_tried"])
+    db.update_deal("kettle", payload=dict(db.get_deal("kettle"), photo_asin=B,
+                                         asin_source="title_match"))
+    pages["https://deals.example/post"] = anchor(A)
+    assert run(setup) == 1
+    row = db.get_deal("kettle")
+    assert row["asin"] == A and row["asin_source"] == "link"
+    assert not row["photo_asin"] and not row["image_url"]
+    assert row["canonical_url"] == f"https://www.amazon.com/dp/{A}"
+    assert row["flags"] == ["post_link_tried"]
+    assert calls == [("GET", "https://deals.example/post")]
+
+
 @pytest.mark.parametrize("text,other,expected", [
     ("Nature Made Vitamin D3", "Potato Chips", A),
     ("Nature Made Vitamin", "Potato Chips", A),  # exactly 60% of five words

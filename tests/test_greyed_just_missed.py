@@ -225,7 +225,7 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var state = {deals:JSON.parse(require("fs").readFileSync(0,"utf8")), shown:60,
                  meta:{floors:{min_pct:70}}, sortKey:SORT_KEY, sortDir:DIRECTION};
     var rendered = [], content = {innerHTML:"", querySelector: () => null, appendChild: () => {}};
-    var document = {getElementById: id => id === "content" ? content : null};
+    var document = {getElementById: id => id === "content" ? content : id === "q" ? {value:""} : null};
     var window = {wpSupport:{refresh: () => {}}}, panel = {}, moreObserver = null, loadedOnce = true;
     var renderSearchCount = () => {}; // Search count has its own published-page harness.
     var paintTicker = () => {}, updatePaywall = () => {}, openNudge = () => false;
@@ -234,7 +234,7 @@ def test_render_sorts_and_paginates_inline_cards(support, sort_key, direction):
     var gridHtml = rows => {rendered.push(...rows); return "<div class=grid></div>";}, dealKey = d => d.key;
     '''.replace("SORT_KEY", json.dumps(sort_key)).replace("DIRECTION", str(direction))
     script += '\n'.join(js_function(n) for n in (
-        "sortVal", "cmp", "confirmedFirst", "ordered", "frontPageView", "frontPageMix", "placeGone", "activeSpotlight"))
+        "sortVal", "cmp", "photosFirst", "confirmedFirst", "ordered", "frontPageView", "frontPageMix", "placeGone", "activeSpotlight"))
     script += '\n' + copy_variant(js_function("render"), True, support)
     script += '\nrender(); console.log(JSON.stringify({rows:rendered, html:content.innerHTML}));'
     result = run_js(script, rows)

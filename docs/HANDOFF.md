@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-15)
+# Handoff — state of wowpriced.com (updated 2026-10-16)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -205,6 +205,44 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   All seven reproduce on untouched HEAD: Stripe workflow local sockets are
   blocked (`Operation not permitted`); **no new failures**. Test logs/scratch
   removed. Reviewed 2026-10-15 (related() indexed, Get deal analytics kept on /p/); ships with the switch ON as in config.yaml.
+- **Photos for every deal (Codex task 119, 2026-10-15; uncommitted, ON):**
+  `publish.photoless_last: true` sinks photo-less cards within wall groups;
+  confirmed prices stay first and search keeps its order. Omitted/false
+  preserves all public bytes. Amazon link recovery reuses tracker decoders,
+  with 60 existing deals/run and 10 additional HEAD-only short chains/run.
+  `images.keepa_search_per_run: 10`, `keepa_search_per_day: 120`,
+  `keepa_match_min: 0.85`: strict brand/title/runner-up/price checks, after
+  rechecks and preserving Keepa reserves. Matches use private `photo_asin`
+  plus `asin_source: title_match`, never price evidence, rechecks or links.
+  Woot photos reuse the official feed; other stores use permitted sources
+  or existing official APIs, with no retailer-page photo fetches. Watch
+  `photo_coverage` (live public totals and six missing-photo causes),
+  `photo_asins` and `photo_search`; live coverage remains unmeasured here.
+  All **50 task checks**, including four complete disabled-output byte trees,
+  pass. Required full suite: **4,399 passed, 19 failed** (27m07s); all 12
+  task failures were corrected (legacy harnesses/pin, retailer expectations,
+  no-fetcher guard). Final affected-module run: **284 passed**; Woot: **77 passed**.
+  Only seven Stripe localhost-socket failures remain (`Operation not permitted`),
+  all reproduced on untouched HEAD; run them outside this sandbox before merging.
+  Review/live coverage remain. Test logs/scratch removed; no commit or push.
+- **Task 119 review fixes (119b, 2026-10-16; uncommitted):** post-wide ASIN
+  fallback now requires at most one distinct parsed product. Partial short-link
+  resolution is discarded on quota/deadline cutoffs or remaining shorteners;
+  deadline-deferred backfills stay retryable, including interrupted cached chains.
+  Email posts/newsletter deals skip the new link fetches. Paid title search waits
+  for `post_link_tried` (newsletter exception); both existing link resolvers can
+  replace a title-match photo with a real ASIN, `asin_source: link`, cleared
+  `photo_asin`/photo and reset image flags. Added regressions reproduced 15 failures
+  before fixes; **189 focused checks pass**. Re-pinned all four task-119 disabled
+  output trees against this worktree's HEAD: **141 public files, zero differences**.
+  All **42 targeted byte-pin checks pass**. Required full `.venv/bin/python -m
+  pytest -q -n 3 -p no:cacheprovider --basetemp=/tmp/task119b-full`:
+  **4,443 passed, 7 failed** (23m31s). All seven are Stripe localhost-socket
+  failures (`Operation not permitted`), independently reproduced on untouched
+  HEAD: yearly-price change0–5 and no-price/no-key in `tests/test_workflows.py`.
+  **Zero new failures.** Run those seven outside this sandbox before merging;
+  review/live coverage remain. Test logs and all own `/tmp/task119b-*` scratch
+  removed; staged task 119 preserved, no commit or push.
 - **Permanent product price pages (Codex task 116, 2026-10-15; merged, OFF):**
   `seo.product_pages.enabled: false` in code and config. On: stable `/p/`
   pages reuse exact stored ASIN/GTIN/store IDs, public deal facts and our own
