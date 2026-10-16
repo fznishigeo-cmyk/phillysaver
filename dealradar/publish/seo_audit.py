@@ -302,8 +302,11 @@ class Page(HTMLParser):
         detail = self.first(cls="product-detail")
         image = self.first(tag="img", scope=detail)
         expected_image = image.attrs.get("src") if image else None
+        # Compare text like _Node.text(): stored names can contain trailing or
+        # repeated whitespace that HTML collapses. Keep URLs/structure exact.
         if (not title or not canonical or not meta.get("description")
-                or meta.get("og:title") != title.text() or meta.get("twitter:title") != title.text()
+                or _text(meta.get("og:title") or "") != title.text()
+                or _text(meta.get("twitter:title") or "") != title.text()
                 or meta.get("og:description") != meta["description"]
                 or meta.get("twitter:description") != meta["description"]
                 or meta.get("og:url") != canonical or meta.get("og:type") != "product"
@@ -336,7 +339,8 @@ class Page(HTMLParser):
         base = canonical.removesuffix(self.path)
         expected = [(n.text(), urljoin(base + "/", n.attrs.get("href"))) for n in links]
         expected.append((name.text(), canonical))
-        return any(not isinstance(entry, dict) or entry != {
+        return any(not isinstance(entry, dict) or not isinstance(entry.get("name"), str)
+            or {**entry, "name": _text(entry["name"])} != {
             "@type": "ListItem", "position": i, "name": label, "item": url}
             for i, (entry, (label, url)) in enumerate(zip(entries, expected), 1))
 

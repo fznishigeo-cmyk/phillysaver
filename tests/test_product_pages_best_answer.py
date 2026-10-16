@@ -84,6 +84,64 @@ def test_all_sections_head_and_schema_match_stored_facts(db, cfg, tmp_path):
     assert all(s.get('@type') != 'Review' for s in page.schemas)
 
 
+@pytest.mark.parametrize('item', [
+    'Cuisinart DLC-018BGTXT1 Replacement ',
+    'Dometic 3313107.1030000001 Air Filter ',
+    'Revolo RE001 Electronic Keypad Deadbolt, Keyless Entry Door Lock, Keyed Entry  (Open Box)',
+    'XX2I BAHAMAS1 Matte Tortoise  w PolBrown',
+    'XX2I FRANCE1  White Gloss / Blue Flash',
+    ' \tKitchen & "Home"\nWidget\u00a0 0 ',
+])
+@pytest.mark.parametrize('checks', [1, 6])
+@pytest.mark.parametrize('live', [False, True])
+def test_product_audit_compares_rendered_whitespace_in_names(db, cfg, tmp_path, item, checks, live):
+    # Oct 16 production: trailing/repeated spaces in five stored names made
+    # raw social titles and breadcrumb labels disagree with parsed HTML text.
+    rows = seed(db, 1, checks=checks)
+    rows[0]['item'] = item
+    result, page = render(db, cfg, tmp_path, rows)
+    if not live:
+        db.conn.execute('DELETE FROM deals')
+        db.conn.commit()
+        result = site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=[])
+        page = seo_audit.Page(_page(tmp_path, page.path).read_text(), page.path)
+    web = next(s for s in page.schemas if s['@type'] == 'WebPage')
+    assert web['name'] == item  # Audit normalization must not rewrite stored/published facts.
+    assert page.first(tag='h1').text() == ' '.join(item.split())
+    assert bool(page.products()) is live
+    assert page.indexable is (checks == 6)
+    assert result['product_pages']['eligible'] == result['product_pages']['indexable'] == (checks == 6)
+    assert not page.invalid_schema
+    assert not page._product_metadata_mismatch()
+    assert not page.schema_mismatch()
+    assert result['seo_audit']['schema_mismatches'] == 0
+
+
+@pytest.mark.parametrize('changes', [
+    {'name': 'Different product'}, {'name': None}, {'name': 123},
+    {'item': 'https://wowpriced.com/p/other/'},
+    {'position': 2}, {'@type': 'Thing'}, {'unexpected': 'value'},
+])
+def test_product_audit_still_rejects_incorrect_breadcrumb_entries(db, cfg, tmp_path, changes):
+    _, page = render(db, cfg, tmp_path, seed(db, 1))
+    html = _page(tmp_path, page.path).read_text()
+    crumbs = next(s for s in page.schemas if s['@type'] == 'BreadcrumbList')
+    original = seo._json_ld(crumbs)
+    crumbs['itemListElement'][-1].update(changes)
+    bad = html.replace(original, seo._json_ld(crumbs))
+    assert bad != html
+    assert seo_audit.Page(bad, page.path).schema_mismatch()
+
+
+def test_product_audit_does_not_normalize_breadcrumb_urls(db, cfg, tmp_path):
+    _, page = render(db, cfg, tmp_path, seed(db, 1))
+    html = _page(tmp_path, page.path).read_text()
+    crumbs = next(s for s in page.schemas if s['@type'] == 'BreadcrumbList')
+    original = seo._json_ld(crumbs)
+    crumbs['itemListElement'][-1]['item'] += ' '
+    assert seo_audit.Page(html.replace(original, seo._json_ld(crumbs)), page.path).schema_mismatch()
+
+
 @pytest.mark.parametrize('price,expected', [(10, 'Yes — $10.00 is 20% below'),
                                            (12.50, 'About usual — $12.50 is about'),
                                            (20, 'Higher than usual — $20.00 is 60% above')])
@@ -184,6 +242,8 @@ def test_index_and_split_sitemap_only_list_indexable_products(db, cfg, tmp_path,
 
 @pytest.mark.parametrize('mutation', [
     lambda h: h.replace('property="og:title"', 'property="lost:title"'),
+    lambda h: h.replace('property="og:title" content="', 'property="og:title" content="Different product '),
+    lambda h: h.replace('name="twitter:title" content="', 'name="twitter:title" content="Different product '),
     lambda h: h.replace('name="twitter:card" content="summary_large_image"', 'name="twitter:card" content="invalid"'),
     lambda h: h.replace('"dateModified": "', '"dateModified": "broken'),
     lambda h: h.replace('class="last-check" datetime="', 'class="last-check" datetime="broken'),

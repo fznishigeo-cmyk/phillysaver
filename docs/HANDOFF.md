@@ -193,6 +193,31 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Product-history audit whitespace (2026-10-16; review branch):** checked
+  hourly [#183](https://github.com/fznishigeo-cmyk/phillysaver/actions/runs/38938633073)
+  (17:18 UTC start, 17:34 audit) before editing: the same five schema warnings,
+  zero indexable product pages, 998 own-check rows that day. #184 was still
+  running; no open PR duplicated this fix. Reproduced all five on their live
+  `/p/` HTML: valid JSON-LD, matching price/availability where a live offer
+  exists. Cuisinart/Dometic names have a trailing space; Revolo and both XX2I
+  names have doubled spaces. The audit normalized HTML title/H1 text but
+  compared raw social titles and breadcrumb names, causing false positives.
+  `seo_audit.py` now applies the same whitespace normalization to those text
+  fields, retaining exact breadcrumb URLs, positions, types and field sets.
+  No generator, stored facts, prices, verification, six-check/seven-day gates,
+  admissions, sitemap or own-check recorder changes. All five captured pages
+  pass the corrected audit and remain noindex without changing their HTML.
+  Regression fixtures cover the five names plus tabs/newlines/entities,
+  live/history-only and thin/eligible pages; bad titles, breadcrumb names,
+  types, positions, fields and URLs still fail. Before the fix: **24 new
+  whitespace cases failed**, eight corruption guards passed. After: **190
+  focused checks pass**, including own-check verification and indexing gates.
+  Full `.venv/bin/python -m pytest -q -n 6 -p no:cacheprovider
+  --basetemp=/tmp/wowpriced-suite --tb=short`: **5,560 passed, 2 skipped**
+  (7m05s). The first run's three HTTPX proxy dependency failures also
+  reproduced on untouched `fb8e06f`; installing `httpx[socks]` locally fixed
+  them, with no repository dependency/config changes. Review/merge and a
+  post-deploy hourly audit remain; this branch has not changed production.
 - **Exact Back + off-screen cards (Codex task 237, 2026-10-16; ON, phones only):**
   Anchor corrections stop after six frames/500ms plus one late redraw check;
   user input cancels, with one restore event. `site.offscreen_cards: true` adds
