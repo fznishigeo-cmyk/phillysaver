@@ -193,6 +193,40 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Strict home browse slot (Codex task 205, 2026-10-16; uncommitted):**
+  `dealradar/publish/template_slots.py` counts literal slots and reports safe,
+  distinct missing/duplicate errors. `publish/site.py` validates the home slot
+  and its selected variant before ranking, output-directory changes or state
+  writes, then uses that same loaded home template for insertion and versions.
+  One browse descriptor resolves presets/Saved once; membership's stripped
+  input and support's marked input retain their exact historical hash rules.
+  Existing page preprocessing was moved unchanged to allow this early check;
+  PWA → traffic → profiles → inventory → tracking → click signal → sitemap/audit
+  → IndexNow sealing stays unchanged. No active owners were present; accepted
+  119–121/210/211 code and shipped Amazon hide are preserved. 201–204 are absent.
+  Added `tests/test_template_slots.py` and the compressed pre-edit byte archive
+  `tests/fixtures/template_slots.json.xz`: actual checkout **ac1355719ecb**,
+  fixed **2026-10-16 12:00 UTC**, configs/facts/versions retained. All **24
+  variants**, **1,302 public files**, **48 adjacent IndexNow files** and serialized
+  member payloads match exactly, with filename/first-byte-area diagnostics.
+  Covers support with/without links, open/closed/shipped modes, PWA off/on,
+  Amazon hide/show fixtures, custom/empty presets and Saved off/on. Existing
+  byte pins are untouched. **40 final task checks pass**, including literal
+  nonrecursive insertion, unchanged trees/full DB dumps/receipts on failure,
+  correction/rerun idempotency, single home/browse reads and the existing Node
+  harness/syntax checks. Seven initial failure/read-consistency cases failed
+  against the original publisher before the fix. **333 focused checks pass**,
+  including both offline pipeline rerun modes. Full `.venv/bin/python -m pytest
+  -q -n 2 -p no:cacheprovider --basetemp=/tmp/task205-full-90DhTm/pytest --tb=short`:
+  **4,674 passed, 7 failed (19m28s)**. All seven independently reproduce on
+  untouched HEAD: Stripe localhost socket creation, `Operation not permitted`,
+  `test_workflows.py::test_deploy_checks_the_yearly_price_with_stripe` change0–5
+  and `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  That file is unchanged. Only publisher/helper, new tests/archive and this
+  handoff changed; test logs and owned task205 scratch removed. Other markers
+  and broader hash cleanup remain deferred. Review and the seven checks outside
+  this sandbox remain; no network/browser/paid calls, commit, push or deploy.
+  Shared Git metadata is read-only, so branch creation was unavailable.
 - **Permanent event pages (Codex task 210, 2026-10-16; uncommitted, ON):**
   `/black-friday/` and `/cyber-monday/` reuse the hub layout/cards and current
   public facts. Stored event mentions qualify year-round; published picks join

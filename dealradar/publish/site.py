@@ -13,6 +13,7 @@ import logging
 import re
 import shutil
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from html import escape
@@ -32,6 +33,7 @@ from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, p
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
+from .template_slots import replace_slot, validate_slot
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -67,11 +69,54 @@ _PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
 
 
-def site_template_version(price_presets: list[int] | None = None) -> str:
+@dataclass(frozen=True)
+class _BrowseScript:
+    """Producer: templates/browse.js; one {{BROWSE_SCRIPT}} in index.html,
+    in every home access variant, never other pages. Resolve price presets,
+    then Saved markers once. Insert after the existing page feature passes,
+    before variant/legacy substitutions. Membership's hash appends the
+    Saved-stripped bytes; support's hash appends marked bytes (even Saved-off).
+    Keep those historical inputs and their concatenation order unchanged.
+    """
+
+    marked: str
+    without_saved: str
+    rendered: str
+
+
+def _browse_script(price_presets: list[int], saved: bool = False) -> _BrowseScript:
+    marked = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
+    marked = marked.replace("{{PRICE_PRESETS}}", json.dumps(price_presets))
+    without_saved = re.sub(r"<!--saved-->.*?<!--/saved-->", "", marked, flags=re.S)
+    rendered = (re.sub(r"<!--saved-->(.*?)<!--/saved-->", lambda m: m.group(1), marked, flags=re.S)
+                if saved else without_saved)
+    return _BrowseScript(marked, without_saved, rendered)
+
+
+def _page_template(html: str, cfg, *, home: bool = False) -> str:
+    """Existing feature passes, before the home browse slot is inserted."""
+    html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
+    html = checkout_prices.template(html, checkout_prices.enabled(cfg))
+    html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
+    html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
+    html = amazon_history.template(html, cfg)
+    html = product_pages.template(html, cfg.seo_product_pages_enabled)
+    if cfg.seo_product_pages_enabled and home:
+        html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
+    if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and home:
+        html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
+    if cfg.non_amazon_freshness_enabled and home:
+        from ..non_amazon_freshness import STYLE as AGED_STYLE
+        html = html.replace("</style>", AGED_STYLE + "</style>", 1)
+    return html
+
+
+def site_template_version(price_presets: list[int] | None = None,
+                          home: str | None = None, browse: _BrowseScript | None = None) -> str:
     """Short hash of the standard home template, preserving its version
     when only the optional support variant changes."""
     import hashlib
-    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8") if home is None else home
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
     html = _PHOTOLESS_BLOCK.sub("", html)
@@ -86,10 +131,9 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     data += (TEMPLATES_DIR / "site-footer.html").read_bytes()
     data += (TEMPLATES_DIR / "site-footer.css").read_bytes()
     data += (TEMPLATES_DIR / "deal-actions.js").read_bytes()
-    browse = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
-    browse = re.sub(r"<!--saved-->.*?<!--/saved-->", "", browse, flags=re.S)
     presets = AppConfig().seo_price_pages if price_presets is None else price_presets
-    data += browse.replace("{{PRICE_PRESETS}}", json.dumps(presets)).encode()
+    browse = _browse_script(presets) if browse is None else browse
+    data += browse.without_saved.encode()
     return hashlib.sha256(data).hexdigest()[:12]
 
 
@@ -740,6 +784,26 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 last_run: dict[str, Any] | None = None) -> dict[str, Any]:
     """Write deals.json and the HTML pages to out_dir; return the counts,
     the members' full payload and the operator's source health."""
+    # Preflight the one required home slot before ranking, state writes or
+    # touching the previous publish/IndexNow manifest. Reuse this exact load.
+    home_template = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    slot = dict(template_name="index.html", slot_name="BROWSE_SCRIPT")
+    validate_slot(home_template, "{{BROWSE_SCRIPT}}", **slot)
+    support = bool(getattr(cfg, "support_enabled", False))
+    open_access = is_open(cfg)
+    saved_deals = support and bool(cfg.engagement.get("saved_deals", False))
+    price_presets = sorted({n for n in cfg.seo_price_pages if type(n) is int and n > 0})
+    browse = _browse_script(price_presets, saved_deals)
+    home_html = _page_template(home_template, cfg, home=True)
+    # A moved slot must still belong to the selected home variant.
+    active_home = copy_variant(home_html, open_access, support)
+    active_home = re.sub(r"<!--saved-->(.*?)<!--/saved-->",
+                         lambda m: m.group(1) if saved_deals else "", active_home, flags=re.S)
+    active_home = re.sub(r"<!--engagement-->(.*?)<!--/engagement-->",
+                         lambda m: m.group(1) if cfg.engagement else "", active_home, flags=re.S)
+    validate_slot(active_home, "{{BROWSE_SCRIPT}}", **slot)
+    home_html = replace_slot(home_html, "{{BROWSE_SCRIPT}}", browse.rendered, **slot)
+
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
 
@@ -857,20 +921,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for d in deal_pages[1]:
         if d["dedupe_key"] in product_paths:
             d["product_path"] = product_paths[d["dedupe_key"]]
-    open_access = is_open(cfg)
-    support = bool(getattr(cfg, "support_enabled", False))
     link = support_link(getattr(cfg, "support_payment_link", ""))
     monthly = support_link(getattr(cfg, "support_monthly_link", "")) if link else ""
     if not open_access:  # open: the rotation pauses, to resume when it closes
         db.meta_set(_TEASER_META, json.dumps(teaser_memory(
             [d for d in teaser if not d.get("price_unconfirmed")], recent, cfg)))
     # The mode changes the published wording: a flip reloads open tabs.
-    browse_script = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
-    price_presets = sorted({n for n in cfg.seo_price_pages if type(n) is int and n > 0})
-    browse_script = browse_script.replace("{{PRICE_PRESETS}}", json.dumps(price_presets))
-    site_version = site_template_version(price_presets) + ("-open" if open_access else "")
+    site_version = site_template_version(price_presets, home_template, browse) + ("-open" if open_access else "")
     if support:
-        home = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+        home = home_template
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
         home = _PHOTOLESS_BLOCK.sub("", home)
@@ -888,11 +947,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "site-footer.html").read_bytes()
                 + (TEMPLATES_DIR / "site-footer.css").read_bytes()
                 + (TEMPLATES_DIR / "deal-actions.js").read_bytes()
-                + str(cfg.join_prompt).encode() + link.encode() + monthly.encode() + browse_script.encode())
+                + str(cfg.join_prompt).encode() + link.encode() + monthly.encode() + browse.marked.encode())
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
-    saved_deals = support and bool(cfg.engagement.get("saved_deals", False))
     if "saved_deals" in cfg.engagement:
         engagement["saved_deals"] = saved_deals
     saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
@@ -906,7 +964,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256(
             site_version.encode() + engagement_script.encode()
             + str(saved_deals).encode() + str(saved_limit).encode()
-            + ("".join(_WATCH_BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
+            + ("".join(_WATCH_BLOCK.findall(home_template)).encode()
                if saved_deals else b"")
         ).hexdigest()[:12]
     if traffic.enabled(cfg):
@@ -914,22 +972,22 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = profiles.site_version(site_version, cfg)
     if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + price_labels.STYLE).encode()
-            + "".join(price_labels.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+            + "".join(price_labels.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + AGED_STYLE).encode()).hexdigest()[:12]
     if checkout_prices.enabled(cfg):
         site_version = hashlib.sha256(site_version.encode()
-            + "".join(checkout_prices.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+            + "".join(checkout_prices.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.photoless_last:
         site_version = hashlib.sha256(site_version.encode()
-            + "".join(_PHOTOLESS_BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+            + "".join(_PHOTOLESS_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.amazon_as_of_enabled:
         site_version = hashlib.sha256(site_version.encode()
-            + "".join(amazon_as_of.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()
+            + "".join(amazon_as_of.BLOCK.findall(home_template)).encode()
             + (amazon_as_of.FOOTER + amazon_as_of.DISCLAIMER + amazon_as_of.STYLE).encode()).hexdigest()[:12]
     if cfg.seo_product_pages_enabled:
         site_version = hashlib.sha256((site_version + product_pages.LINK_STYLE).encode()
-            + "".join(product_pages.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+            + "".join(product_pages.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.amazon_history == "hide":
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
     if cfg.seo_event_pages_enabled:
@@ -1020,22 +1078,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     else:
         (out / "join.html").unlink(missing_ok=True)
     for name in pages:
-        shutil.copyfile(TEMPLATES_DIR / name, out / name)
-        html = (out / name).read_text(encoding="utf-8")
-        html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
-        html = checkout_prices.template(html, checkout_prices.enabled(cfg))
-        html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
-        html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
-        html = amazon_history.template(html, cfg)
-        html = product_pages.template(html, cfg.seo_product_pages_enabled)
-        if cfg.seo_product_pages_enabled and name == "index.html":
-            html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
-        if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and name == "index.html":
-            html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
-        if cfg.non_amazon_freshness_enabled and name == "index.html":
-            html = html.replace("</style>", AGED_STYLE + "</style>", 1)
         if name == "index.html":
-            html = html.replace("{{BROWSE_SCRIPT}}", browse_script)
+            html = home_html
+        else:
+            shutil.copyfile(TEMPLATES_DIR / name, out / name)
+            html = _page_template((out / name).read_text(encoding="utf-8"), cfg)
+        if name == "index.html":
             html = html.replace("{{PRICE_OPTIONS}}", "".join(
                 f'<option value="{n}">Under ${n}</option>' for n in price_presets))
         yearly = meta["yearly_price_usd"]
