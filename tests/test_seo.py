@@ -76,7 +76,9 @@ def test_static_wall_holds_the_free_deals_credits_and_locked_lines(db, cfg, tmp_
     assert '<h2 class="secth sr-only">' in wall and "<noscript>" in wall
     # Locked deals: one line per store, a count and a % range only.
     assert re.search(r"<li>2 more deals at (Walmart|Target), \d\d–\d\d% off, members only</li>", wall)
-    assert "img.example" not in wall and "<img" not in wall
+    # Photos: only free deals', at most the first four (they load with the HTML).
+    photos = re.findall(r'<img [^>]*src="([^"]+)"', wall)
+    assert len(photos) <= 4 and set(photos) <= {d["image_url"] for d in free if d.get("image_url")}
     # Tabs are real links to the hubs, drawn from the one Python list.
     nav = html[html.index('<nav id="cattabs"'):html.index("</nav>", html.index('<nav id="cattabs"'))]
     assert '<a class="cattab active" href="/" data-i="0">Trending</a>' in nav

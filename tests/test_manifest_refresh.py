@@ -19,22 +19,22 @@ from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 
 # Captured before any production edits, on this checkout (all names and bytes).
 BASELINES = json.loads('''{
-  "membership-show-False": "f91af2f68ed1e8a00c74263429a6a81e37d2a99b90f88975dfe887019f44f874",
-  "membership-show-True": "066d3e892c05aee96b4f6968704e1651dcffb2f851e74cd4868af12506a13fea",
-  "membership-hide-False": "9e2632ef69b1d66bdec1247f6d06c882e13ee57aec03ef6a3ad1b4d83e35d21b",
-  "membership-hide-True": "4d050c5b9d26c361a17cd9074fccea64ea6a81ec7c03462475eb9e2a38abd093",
-  "open-show-False": "c596de783ab3bbc88fde3e1353e21c685dfc54b7018f73f9802df87cd46518ac",
-  "open-show-True": "ce2e1db5e69151f7d720e5a91ec7be86d038e77270ab82f0caa03c2640692bd5",
-  "open-hide-False": "5bb1c24c71da9a7d6522bdb28666732af4f3014887ac2dc8b0aae6522c63a660",
-  "open-hide-True": "678899cb0ca04e2aa97d2c0db2ece51a1fc807bb022224eaf6dbad1c25cb92c2",
-  "support-show-False": "a2d160416d5a8ea467076826d88cdf1e6af269dc0ad2539a7487ed6dcec965d2",
-  "support-show-True": "de288cfa356c9b6b0ddcbd3b713684820c994528ad769d7339c0c10a3e731bb4",
-  "support-hide-False": "a03444d10b21d337b77b62141d9df6d6f2e950a73e196ea587bc0e78090bb554",
-  "support-hide-True": "d29059c3991df269c7991bee609001ba654a83eaf68b9006ddbb6052d5eaa848",
-  "shipped-show-False": "c2ff9d0ce110a373111759b64bcd32720c52017cda728719fa34d64fe0962d83",
-  "shipped-show-True": "9bdb6ff343a737f31d51f69f13f045dbc9c1e14068e303fdebc3782f48c9ce69",
-  "shipped-hide-False": "b03b35ab568c2e4c05ec45e029fa4489b60b6ff233760c463a4170ced45ab562",
-  "shipped-hide-True": "6cd9a61a7ad38a02ec7d5f3ee3dc69e3fcf22790ccf5739a51308d2efa76104b"
+  "membership-show-False": "1aa5bac6e3ebc5d0854bfed067f38bb15066c1b23573b0654767c815e5c16680",
+  "membership-show-True": "b9e18a24b81e5634bacb780b37f39336b27053249db2327d5e4d82aa6b4bc488",
+  "membership-hide-False": "4ac7cb48f5f27a0bb58ccbbba3ca6f915d8401267388714a9efa56ff5361d425",
+  "membership-hide-True": "9302a4358082a59d62a468dad5e61eb075b43ff6ac5a7e37ca1c8e919a0db601",
+  "open-show-False": "0dc3144c60069cc7965653a914ad79ed8c172828d44200fcb918bc584b0c8c9b",
+  "open-show-True": "bc2ba6d922e01c94c15df4753ddea34499cfb64ff1c76e3450e1107f9b930072",
+  "open-hide-False": "5546012e75544bc424c14e73d233556147da9de398d609f70113be7d4b49c87f",
+  "open-hide-True": "909e6487f6e74b241aa6a1dae978a447850d4c1b379033a8b3c1a13e7d50e361",
+  "support-show-False": "69330531d23fe7457ac5bfb6d086ad25d60691961a1d84cf1bac2879f0538146",
+  "support-show-True": "017db95b51ea3e8e9a7175f743fc2909f4dc5f5696f5f55493a429fc0c2bf1d1",
+  "support-hide-False": "957e4dd65ab0601cff679cab69b6b592f6cee438fc03ebf28fb85c0145d74122",
+  "support-hide-True": "6252dce21b3db7e7ce3a28b493147d4737acf956a4d9b5df24f821b7cde7fe04",
+  "shipped-show-False": "9e986d5e98dcfa100c82bf16dd17ccd9db47e90283e474823ed59e4580391ca6",
+  "shipped-show-True": "a41dd60592104797c52fbeaf603beefe51f9a6556ddd4626b06baa06345cd9b4",
+  "shipped-hide-False": "7c97a7dab6d86c175458e2d25faafec44898d8f63b165a11a7e61f91987d2f69",
+  "shipped-hide-True": "ff366bbc9632c41c1fef8149c0250c6c7e822fb8e46f8de7b378be247b155b56"
 }
 ''')
 
