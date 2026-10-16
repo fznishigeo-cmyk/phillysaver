@@ -808,6 +808,11 @@ retention:
   llm_calls_days: 35
   run_stats_days: 60         # two months of run health; reports use the latest 7 days
   http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
+  # Offline bounds/limits: docs/incremental-cache-maintenance.md. Ship OFF.
+  incremental_cache:
+    enabled: false
+    max_examined_per_run: 256  # includes fresh rows; chunks of at most 64
+    budget_s: 0.25            # cooperative SQL slices, before the existing tail reserve
   outgoing_days: 60          # failed (rejected) attempts only; sent records and pending guards never expire
 
 non_amazon_freshness:

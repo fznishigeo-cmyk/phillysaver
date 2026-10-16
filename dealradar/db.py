@@ -16,6 +16,7 @@ import json
 import logging
 import sqlite3
 import statistics
+import time
 from contextlib import closing
 from functools import lru_cache
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,15 @@ from .conditions import normalize_conditions
 from .util import iso, now_utc, parse_iso
 
 log = logging.getLogger(__name__)
+
+_CACHE_SWEEP_KEY = "http_cache_sweep"
+_CACHE_CHUNK_ROWS = 64
+# Scheduling headroom from offline fixtures, not a hard SQLite timeout.
+_CACHE_CHUNK_HEADROOM_S = 0.01
+
+
+class _CacheSweepDeferred(Exception):
+    """Roll back an unfinished chunk when its cooperative time allowance ends."""
 
 
 @lru_cache(maxsize=1)
@@ -453,6 +463,10 @@ class DB:
             self.conn.execute("ALTER TABLE ai_prefilter_posts ADD COLUMN text_fingerprint TEXT NOT NULL DEFAULT ''")
         if "products_backfilled" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(run_stats)")}:
             self.conn.execute("ALTER TABLE run_stats ADD COLUMN products_backfilled INTEGER NOT NULL DEFAULT 0")
+        columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(run_stats)")}
+        for name in ("cache_examined", "cache_deleted", "cache_completed"):
+            if name not in columns:
+                self.conn.execute(f"ALTER TABLE run_stats ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
         if self.meta_get("llm_ledger_migrated") is None:
             self.conn.execute(
                 "INSERT INTO llm_legacy_spend(run_key, billed_at, usd)"
@@ -983,6 +997,89 @@ class DB:
         )
         self.conn.commit()
 
+    def prune_http_cache(self, now: datetime, *, run_key: str, days: int = 30,
+                         max_examined_per_run: int = 256, budget_s: float = 0.25,
+                         deadline: float | None = None) -> dict[str, Any]:
+        """Checkpoint bounded keyset chunks; a run can complete at most one sweep.
+
+        The high-water key freezes the sweep's end. Inserts behind the cursor
+        or beyond that end wait for the next sweep. NULL fetched_at survives,
+        exactly as in the legacy DELETE. Only the existing URL index is used.
+        """
+        from .config import validate_incremental_cache_limits
+
+        validate_incremental_cache_limits(max_examined_per_run, budget_s)
+        if not self.conn.execute("SELECT 1 FROM run_stats WHERE run_key=?", (run_key,)).fetchone():
+            raise ValueError("cache maintenance requires an existing run")
+        started = time.monotonic()
+        stop_at = min(started + budget_s, deadline if deadline is not None else float("inf"))
+        cutoff = iso(now - timedelta(days=days))
+
+        def check_time():
+            if time.monotonic() + _CACHE_CHUNK_HEADROOM_S > stop_at:
+                raise _CacheSweepDeferred
+
+        while True:
+            try:
+                check_time()
+                with self.conn:
+                    self.conn.execute("BEGIN IMMEDIATE")
+                    check_time()
+                    run = self.conn.execute(
+                        "SELECT cache_examined,cache_completed FROM run_stats WHERE run_key=?",
+                        (run_key,)).fetchone()
+                    if run["cache_completed"] or run["cache_examined"] >= max_examined_per_run:
+                        break
+                    state = json.loads(self.meta_get(_CACHE_SWEEP_KEY) or "null")
+                    after = state["after"] if state else None
+                    high = state["high_water"] if state else None
+                    if high is None:
+                        check_time()
+                        row = self.conn.execute(
+                            "SELECT url FROM http_cache ORDER BY url DESC LIMIT 1").fetchone()
+                        high = row[0] if row else None
+                    limit = min(_CACHE_CHUNK_ROWS, max_examined_per_run - run["cache_examined"])
+                    rows = []
+                    if high is not None:
+                        check_time()
+                        if after is None:
+                            rows = self.conn.execute(
+                                "SELECT url FROM http_cache WHERE url <= ? ORDER BY url LIMIT ?",
+                                (high, limit)).fetchall()
+                        else:
+                            rows = self.conn.execute(
+                                "SELECT url FROM http_cache WHERE url > ? AND url <= ? ORDER BY url LIMIT ?",
+                                (after, high, limit)).fetchall()
+                    check_time()
+                    # Recheck expiry by primary key at deletion time. Never
+                    # use meta_set here: its commit would split this checkpoint.
+                    deleted = self.conn.executemany(
+                        "DELETE FROM http_cache WHERE url=? AND fetched_at < ?",
+                        [(row[0], cutoff) for row in rows]).rowcount
+                    check_time()
+                    completed = len(rows) < limit or rows[-1][0] == high
+                    state = {"after": None if completed else rows[-1][0],
+                             "high_water": None if completed else high}
+                    self.conn.execute(
+                        "INSERT INTO meta(k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",
+                        (_CACHE_SWEEP_KEY, json.dumps(state)))
+                    check_time()
+                    self.conn.execute(
+                        "UPDATE run_stats SET cache_examined=cache_examined+?,"
+                        " cache_deleted=cache_deleted+?,cache_completed=? WHERE run_key=?",
+                        (len(rows), deleted, int(completed), run_key))
+                    check_time()
+                if completed or run["cache_examined"] + len(rows) >= max_examined_per_run:
+                    break
+            except _CacheSweepDeferred:
+                break  # the transaction context rolls back this chunk only
+        run = self.conn.execute(
+            "SELECT cache_examined,cache_deleted,cache_completed FROM run_stats WHERE run_key=?",
+            (run_key,)).fetchone()
+        return {"examined": run["cache_examined"], "deleted": run["cache_deleted"],
+                "completed": bool(run["cache_completed"]), "deferred": not bool(run["cache_completed"]),
+                "elapsed_s": round(time.monotonic() - started, 6)}
+
     # ---------------- run_stats ----------------
 
     def start_run(self, run_key: str, kind: str, now: datetime) -> None:
@@ -1250,7 +1347,12 @@ class DB:
     def prune(self, now: datetime, *, posts_seen_days: int = 30,
               deals_days: int = 14, post_parses_days: int = 2,
               llm_calls_days: int = 35, run_stats_days: int = 60,
-              http_cache_days: int = 30, outgoing_days: int = 60) -> None:
+              http_cache_days: int = 30, outgoing_days: int = 60,
+              incremental_cache_enabled: bool = False, run_key: str | None = None,
+              cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
+              fast_lane: bool = False, deadline: float | None = None) -> dict[str, Any] | None:
+        if incremental_cache_enabled and run_key is None:
+            raise ValueError("incremental cache maintenance requires a run key")
         for table in ("accuracy_samples", "accuracy_extra_runs", "accuracy_extra_reads"):
             self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
                               (iso(now - timedelta(days=35)),))
@@ -1309,8 +1411,9 @@ class DB:
         previous = self.meta_get("ai_yield_retained_since") or ""
         if self.meta_get("ai_yield_since") and yield_cutoff > previous:
             self.meta_set("ai_yield_retained_since", yield_cutoff)
-        self.conn.execute("DELETE FROM http_cache WHERE fetched_at < ?",
-                          (iso(now - timedelta(days=http_cache_days)),))
+        if not incremental_cache_enabled:
+            self.conn.execute("DELETE FROM http_cache WHERE fetched_at < ?",
+                              (iso(now - timedelta(days=http_cache_days)),))
         # Only failed attempts expire. A `sent` row is the record that a live
         # deal (which can stay up for months) was already posted; dropping it
         # could let a channel post the same deal again.
@@ -1320,15 +1423,25 @@ class DB:
             (iso(now - timedelta(days=outgoing_days)),))
         self.conn.commit()
 
+        maintenance = None
+        if incremental_cache_enabled:
+            maintenance = self.prune_http_cache(
+                now, run_key=run_key, days=http_cache_days,
+                max_examined_per_run=cache_max_examined_per_run, budget_s=cache_budget_s,
+                deadline=deadline)
+            maintenance["compaction_deferred"] = fast_lane
+
         pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
         free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
-        if free * 10 > pages:
+        if free * 10 > pages and not (incremental_cache_enabled and fast_lane):
             try:
                 busy, _, _ = self.conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
                 if busy:
                     raise sqlite3.OperationalError("WAL checkpoint busy")
                 self.conn.execute("VACUUM")
             except sqlite3.OperationalError as e:
+                if maintenance is not None:
+                    maintenance["compaction_deferred"] = True
                 # Compaction is an optimisation: never fail the run for it.
                 log.warning("state compaction deferred (%s): pages=%d, free=%d", e, pages, free)
             else:
@@ -1338,3 +1451,6 @@ class DB:
         counts = [self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                   for table in ("price_history", "alerts_sent")]
         log.info("state rows: price_history=%d alerts_sent=%d", *counts)
+        if maintenance is not None:
+            log.info("cache maintenance: %s", maintenance)
+        return maintenance

@@ -452,6 +452,9 @@ class AppConfig:
     llm_calls_days: int = 35
     run_stats_days: int = 60
     http_cache_days: int = 30
+    incremental_cache_enabled: bool = False
+    incremental_cache_max_examined_per_run: int = 256
+    incremental_cache_budget_s: float = 0.25
     outgoing_days: int = 60
     feature_flags: dict[str, bool] = field(default_factory=dict)
 
@@ -469,6 +472,15 @@ def validated_drop_clock(value, drop_minutes: int) -> dict:
             and 0 < clock["final_s"] < clock["hot_s"] < clock["warm_s"] < drop_minutes * 60):
         return clock
     return defaults
+
+
+def validate_incremental_cache_limits(max_examined_per_run, budget_s) -> None:
+    if (type(max_examined_per_run) is not int
+            or not 1 <= max_examined_per_run <= 4096):
+        raise ValueError("retention.incremental_cache.max_examined_per_run must be an integer in 1..4096")
+    if (isinstance(budget_s, bool) or not isinstance(budget_s, (int, float))
+            or not 0.05 <= budget_s <= 5 or not math.isfinite(budget_s)):
+        raise ValueError("retention.incremental_cache.budget_s must be finite and in 0.05..5")
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -972,6 +984,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.llm_calls_days = int(g("retention", "llm_calls_days", default=cfg.llm_calls_days))
     cfg.run_stats_days = int(g("retention", "run_stats_days", default=cfg.run_stats_days))
     cfg.http_cache_days = int(g("retention", "http_cache_days", default=cfg.http_cache_days))
+    cache = g("retention", "incremental_cache", default={})
+    if not isinstance(cache, dict) or type(cache.get("enabled", False)) is not bool:
+        raise ValueError("retention.incremental_cache must be a mapping with a boolean enabled")
+    cfg.incremental_cache_enabled = cache.get("enabled", False)
+    cfg.incremental_cache_max_examined_per_run = cache.get(
+        "max_examined_per_run", cfg.incremental_cache_max_examined_per_run)
+    cfg.incremental_cache_budget_s = cache.get("budget_s", cfg.incremental_cache_budget_s)
+    validate_incremental_cache_limits(cfg.incremental_cache_max_examined_per_run,
+                                      cfg.incremental_cache_budget_s)
     cfg.outgoing_days = int(g("retention", "outgoing_days", default=cfg.outgoing_days))
     cfg.feature_flags = g("feature_flags", default={}) or {}
     from .source_policy import grant_active

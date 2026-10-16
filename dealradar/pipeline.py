@@ -2803,10 +2803,16 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["intake"].update(source_audit.intake_deferred(
             db, [*sources, *(inbox.sources if inbox is not None else [])], now))
         summary["intake"]["deferred_posts"] = len(new_posts) - len(processed)
-        db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days,
+        cache_maintenance = db.prune(now, posts_seen_days=cfg.posts_seen_days, deals_days=cfg.deals_days,
                  post_parses_days=cfg.post_parses_days, llm_calls_days=cfg.llm_calls_days,
                  run_stats_days=cfg.run_stats_days, http_cache_days=cfg.http_cache_days,
-                 outgoing_days=cfg.outgoing_days)
+                 outgoing_days=cfg.outgoing_days,
+                 incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
+                 cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
+                 cache_budget_s=cfg.incremental_cache_budget_s, fast_lane=fast_lane,
+                 deadline=deadline - _RESERVE_FOR_TAIL_S)
+        if cache_maintenance is not None:
+            summary["cache_maintenance"] = cache_maintenance
         inbox = getattr(fetcher, "newsletter_inbox", None)
         if inbox is not None:
             try:

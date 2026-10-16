@@ -80,10 +80,21 @@ def cmd_prune(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     db = DB(args.db)
     try:
-        db.prune(util.now_utc(), posts_seen_days=cfg.posts_seen_days,
+        now = util.now_utc()
+        run_key = None
+        if cfg.incremental_cache_enabled:
+            run_key = "prune:" + util.iso(now)
+            db.start_run(run_key, "prune", now)
+        db.prune(now, posts_seen_days=cfg.posts_seen_days,
                  deals_days=cfg.deals_days, post_parses_days=cfg.post_parses_days,
                  llm_calls_days=cfg.llm_calls_days, run_stats_days=cfg.run_stats_days,
-                 http_cache_days=cfg.http_cache_days, outgoing_days=cfg.outgoing_days)
+                 http_cache_days=cfg.http_cache_days, outgoing_days=cfg.outgoing_days,
+                 incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
+                 cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
+                 cache_budget_s=cfg.incremental_cache_budget_s)
+        if run_key is not None:
+            db.finish_run(run_key, now=util.now_utc(), items_fetched=0, posts_new=0,
+                          deals_parsed=0, published=0, spend_usd=0)
         print("pruned")
         return 0
     finally:

@@ -227,6 +227,28 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   and broader hash cleanup remain deferred. Review and the seven checks outside
   this sandbox remain; no network/browser/paid calls, commit, push or deploy.
   Shared Git metadata is read-only, so branch creation was unavailable.
+- **Incremental validator maintenance (Codex task 222, 2026-10-16; uncommitted, OFF):**
+  `retention.incremental_cache.enabled: false`; omitted/false retains bulk expiry
+  and compaction. Enabled cleanup checkpoints at most 64 URL keys/transaction,
+  256 examined/run (fresh/NULL rows count), with a 0.25 s cooperative budget and
+  the existing monotonic deadline minus 90 s. Cursor/high-water, deletion-time
+  expiry checks and durable run allowance commit together; replay retains the
+  allowance and completed sweeps cannot wrap on the same key. Enabled fast
+  runs skip VACUUM; hourly/manual compaction and all other prune predicates
+  remain. Private aggregates only; encrypted restore/save scripts unchanged.
+  Other table deletes/hourly VACUUM remain unsliced; no hard SQL/job deadline or
+  remote recovery of unsaved paid calls is claimed. Manual prune honors the
+  switch using existing bounded run bookkeeping. Offline 0/1,024/8,192-row
+  fixtures, query plans/VM work, injected interruptions/deadlines, older-snapshot
+  replay, protected facts/claims and enabled reruns pass: **114 preflight checks**.
+  Untouched-HEAD comparisons match **146 public files across four access modes**
+  and member payloads, retaining task-119/121 switches; no existing hash repins.
+  Defaults, measured chunk CPU/elapsed and unsliced limits:
+  [incremental-cache-maintenance.md](incremental-cache-maintenance.md).
+  Restart recovery: initial focused `-q -n 1` checks passed (95); full suite
+  is running with `-q -n 1 --basetemp=/tmp/task222-resume-full`.
+  Review and measured live job-tail behavior precede activation. No production
+  state/network/paid calls, commit, push or deployment; workflow tests untouched.
 - **Permanent event pages (Codex task 210, 2026-10-16; uncommitted, ON):**
   `/black-friday/` and `/cyber-monday/` reuse the hub layout/cards and current
   public facts. Stored event mentions qualify year-round; published picks join
