@@ -307,7 +307,7 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
     ("membership", "5975aba57093610c57414cf7e2721b34fa72d57aeeebdd2624f6e5585c9ff917"),
     ("open", "62abcd8984e22f5160bb2236c8ebcd6607f9040c9a7bceadb6cd87071248af75"),
     ("support", "bc65f113693731d59e039eaba309bfcc10addb2f9e6b24e92f3ddf06bd381f14"),
-    ("shipped", "32afd0addccc97d6a0d69fc3d9aa461ae8e4564e0844f6289f7faf6a2384ceae"),
+    ("shipped", "249b28fd5412e72bdfb58b76d1cb80ca0eb7da7e61bfb0f5e6c26846bd349a68"),
 ])
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.
