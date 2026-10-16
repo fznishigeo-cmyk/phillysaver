@@ -147,6 +147,9 @@ publish:
     niche_categories: [auto, office, books_media, other]
     max_niche_top: 2
     niche_after: 8              # never a niche card on the first screen (cards 1-8)
+    niche_last: true            # operator 2026-10-16 ("stop putting random car parts on the front
+                                # page"): niche categories follow every other deal on the All tab;
+                                # their own tab and search still show them
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true

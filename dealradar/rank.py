@@ -45,7 +45,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
         return rows
     broad = set(options.get("broad_categories", []))
     niche = set(options.get("niche_categories", []))
-    niche_cap = int(options["max_niche_top"])
+    niche_cap = 0 if options.get("niche_last") else int(options["max_niche_top"])  # car parts sink
     # The first screen is everyday deals only: niche never before this slot.
     niche_after = int(options.get("niche_after", 0))
     run_cap = int(options["max_same_category_run"])
@@ -326,10 +326,18 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
 
 
 def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
-    """Published pick order followed by the existing order of the rest."""
+    """Published pick order followed by the existing order of the rest; with
+    niche_last, niche categories (car parts, office supplies) come after the
+    rest of the wall."""
+    niche = set(options.get("niche_categories", [])) if options.get("niche_last") else set()
+
+    def sunk(d):
+        return (d.get("category") or "other") in niche
     if not options.get("top_picks"):
-        return sorted(front_page_mix(rows, options), key=lambda d: bool(d.get("price_unconfirmed") or d.get("price_aged")))
-    return sorted(rows, key=lambda d: (bool(d.get("price_unconfirmed") or d.get("price_aged")), d.get("pick", math.inf)))
+        return sorted(front_page_mix(rows, options),
+                      key=lambda d: (bool(d.get("price_unconfirmed") or d.get("price_aged")), sunk(d)))
+    return sorted(rows, key=lambda d: (bool(d.get("price_unconfirmed") or d.get("price_aged")), sunk(d),
+                                       d.get("pick", math.inf)))
 
 
 def spotlight_sources(cfg) -> set[str]:

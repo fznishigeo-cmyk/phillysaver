@@ -165,7 +165,7 @@ def test_config_switches_and_short_supply(tmp_path, options):
     source = rows()
     assert front_page_mix(source, {}) is source
     uncapped = dict(options, max_niche_top=24, niche_after=0, max_same_store_top=24, max_same_category_run=24,
-                    prefer_photos=False)
+                    prefer_photos=False, niche_last=False)
     assert front_page_mix(source, uncapped) == source
     photos = front_page_mix(source, dict(uncapped, prefer_photos=True))
     assert all(d["image_url"] for d in photos[:24])
@@ -191,6 +191,9 @@ def test_seeded_browser_caps_render_and_python_parity(tmp_path, cfg, db, options
     for result in results:
         base = [by_key[k] for k in result["base"]]
         expected = front_page_mix(base, options)
+        if options.get("niche_last"):  # the page then sinks niche categories (car parts)
+            niche = [d for d in expected if (d.get("category") or "other") in options["niche_categories"]]
+            expected = [d for d in expected if d not in niche] + niche
         assert result["ordered"] == result["rendered"] == [d["key"] for d in expected]
         assert result["mixed"] == [d["key"] for d in front_page_mix(source, options)]
         caps(expected, options)
@@ -262,7 +265,11 @@ def test_drop_mixes_once_and_deeper_strong_section_survives(tmp_path, cfg, db, o
     picked = set(result["rendered"][:24])
     base = [by_key[k] for k in result["base"]]
     tiered = [d for d in base if d["pct_at_checkout"] >= 70] + [d for d in base if d["pct_at_checkout"] < 70]
-    assert result["rendered"][24:] == [d["key"] for d in tiered if d["key"] not in picked]
+    rest = [d for d in tiered if d["key"] not in picked]
+    if options.get("niche_last"):  # car parts follow every other deal on the front page
+        rest = ([d for d in rest if d["category"] not in options["niche_categories"]]
+                + [d for d in rest if d["category"] in options["niche_categories"]])
+    assert result["rendered"][24:] == [d["key"] for d in rest]
 
 
 def test_mix_does_not_change_free_rotation(tmp_path, cfg, db, options):
