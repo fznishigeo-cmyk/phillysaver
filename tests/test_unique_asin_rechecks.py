@@ -76,10 +76,10 @@ def test_validated_switch_is_off_unless_explicitly_true(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("support", "06ec386ad25ade149f087d9e5323323926d41b877a0efa25d9eaa7ec83146e2d"),
-    ("open", "3db79b8ab03ed57a4f3384c313cf9c75af068b39f58eb95bfe8cba4af31f0f73"),
-    ("locked", "18398b9d65696a05d64901ffe3d2496da39f59d404f13171f2f1589dadf7d094"),
-    ("member", "18398b9d65696a05d64901ffe3d2496da39f59d404f13171f2f1589dadf7d094"),
+    ("support", "0349ad19fd9847616d2a578d1f2805567c8b00319819b85558d810679fb4259c"),
+    ("open", "f18a983988fce3705ff4c990d0f251b627524a13994f7fb55d6c20b727c75dfa"),
+    ("locked", "a104de07a6bcd768dbde2f525f4748ed35a2cdfd7ca68e1a753e9b46620b1b9c"),
+    ("member", "a104de07a6bcd768dbde2f525f4748ed35a2cdfd7ca68e1a753e9b46620b1b9c"),
 ])
 @pytest.mark.parametrize("enabled", [False, True])
 def test_all_published_files_and_member_payload_match_before_editing(

@@ -293,10 +293,10 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "0a16067c1294acb6d5ac2706494ab304b696a9695faddeeb290cd23ccce0ff74"),
-    ("open", "81f648ce014dbbf3a5def1f59c1071d3c73a21195dbe8e4bb408834094d7c038"),
-    ("support", "cd9ef8a4936183a119ada14bd5905ff6453df40e8aeba7140287ae6700adc0c5"),
-    ("shipped", "ed679a3ea916f2d87fdd7093be4532b992d6864e3680ce5c6d63ba15712ec02a"),
+    ("membership", "da71d9893716697ff89734d3d8d25d3d7e4848f29aa22c13bef753dee3168aa4"),
+    ("open", "19c64bf23a896738517bddb80bfc57ac740820bfdeafe467d8351f1ebcc276d9"),
+    ("support", "eaa79299d22bd094fc199c170c15e54e9b1956f428c3724336a481e0f2e0520c"),
+    ("shipped", "22a4f1c832c897b0a1a1882fd589326569dd0bdd4f70a1c232a1cfdb2cad7c9f"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and

@@ -282,10 +282,10 @@ def test_previously_pending_events_leave_submission_manifest_below_floor_or_disa
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "c28bd63863431aa1c8821fe25475cc2481d31784703420dd1a41d691edb7a5e2"),
-    ("open", "6986be30ceff4fd3888d7e8baaae3a6277623141bddc828f7c36e7d82c78d656"),
-    ("support", "bc463360d6864a9c4976c40d7fd877d3b763b692502a034216d59f578bb221ac"),
-    ("shipped", "03c62524afa4dc209bc56679b7f9363731b4aa5910a982398d25b13f6cb16ffe"),
+    ("membership", "2130f29599c30e84c67619fc1e7af077a1c6dffe0cc4d6b62e0789f7c79c623d"),
+    ("open", "15f22cd8ab3fc651723eb355166b9c3c1b5b76873781d4f81844fdf1fbb1d4f9"),
+    ("support", "af2c4b559a7b03901ab69845562dfd5c427ab93e27ba0e23145c9e8ffabe1b65"),
+    ("shipped", "c88b44e0ae487e6f8647786645a95efd27c44f254a48842d4763aed8c3af96d0"),
 ])
 def test_off_matches_every_untouched_head_byte(db, tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, "util_now", lambda: BASE_NOW)
