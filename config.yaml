@@ -140,9 +140,11 @@ site:
 
 # Operator 2026-10-16: Amazon Associates support (phone, reference amz378_998)
 # approved price history charts, lowest recent price, Keepa as the source and
-# keeping our own record privately. Alerts were not asked: Amazon watches stay off.
+# keeping our own record privately. Follow-up call (same reference): the browser
+# extension may show our history on Amazon pages; Amazon price-drop emails are NOT
+# allowed, so Amazon watches stay off (best-deals newsletter instead).
 amazon_history: show          # show | hide (charts, lowest-seen, Amazon /p/ pages)
-amazon_watches: "off"         # on | off; Amazon price watches/alerts (ask Amazon first)
+amazon_watches: "off"         # on | off; Amazon said no to price-drop alerts
 
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).

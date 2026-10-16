@@ -92,15 +92,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   amz378_998):** approved 90-day price history charts, lowest recent price
   next to Amazon links, Keepa as the data source, our own history kept longer
   than 24h only if private and secured, and "checked X minutes ago" prices.
-  Ships `amazon_history: show`. **Price alerts/watches were not asked:**
-  `amazon_watches: "off"` until the operator asks Amazon under the same
-  reference (planned before email alerts launch, 1-3 months out). Also ask
-  then: may the browser extension show our history on Amazon pages.
-  Associates account approval waits for 3 qualifying sales.
-- **Walmart (open, 2026-10-16):** Walmart's affiliate agreement bans price
-  tracking/alerts; camelcamelcamel runs Walmart history on camelmart.com.
-  Walmart stays live-only in Deal Check until Walmart's affiliate support
-  answers the operator.
+  Ships `amazon_history: show`. Follow-up call, same reference
+  (2026-10-16 evening): the browser extension MAY show our history/verdict on
+  Amazon product pages; Amazon price-drop emails are NOT allowed, so
+  `amazon_watches: "off"` is permanent. Instead: a daily or weekly
+  best-deals newsletter (operator; launch in 1-3 months). Newsletter links
+  go to wowpriced pages, not tagged Amazon links (Associates rules on links
+  in email: verify before launch). Associates account approval waits for 3
+  qualifying sales.
+- **Walmart price history and alerts (2026-10-16, operator spoke to Walmart):**
+  Walmart said it is fine to show Walmart price history and the lowest recent
+  price, and to send Walmart price-drop alerts (the written agreement bans
+  tracking/alerts by default; this is the operator's verbal permission —
+  keep any reference number or email with the operator's file). Deal Check
+  moves Walmart from live-only to history.
 - **Daily quality loop (2026-10-13):** "be the senior engineer; refine, don't
   reinvent; check every day without being told." Routine "Daily quality
   loop" (6:17am New York) reads the daily `mobile-audit` run (phones first:
