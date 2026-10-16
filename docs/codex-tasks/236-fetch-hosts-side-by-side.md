@@ -8,7 +8,11 @@ leaving parse 159 s (it stopped with 328 posts left; money was not the limit).
 `PoliteFetcher._rate_wait` (`http_client.py` ~line 474) SLEEPS whenever the next
 request goes to a host it just hit (enrichment reads several article pages from
 one blog at 1 request/second). While it sleeps for one host, every other host
-waits too.
+waits too. Hourly #180: 79 sources took 292.8 s in sequence; five took 176 s of
+it (hip2save 52 s, dansdeals 43 s, crazy_for_couponing 39 s failing with
+RemoteProtocolError after 3 attempts, spoofee 22 s, lady_savings 20 s). Keepa
+got 5.9 s and its price recheck did 0 checks ("out of time"). With distinct
+hosts side by side, fetch would be bounded by the slowest host, not the sum.
 
 Study (2026-10-16, Scrapy `scrapy/core/downloader/__init__.py`, commit 53d3bc7):
 `Slot` (line 46) holds one queue, `concurrency`, `delay` and `lastseen` per
