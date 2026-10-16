@@ -25,6 +25,7 @@ SCOPES = ("https://www.googleapis.com/auth/analytics.readonly",
           "https://www.googleapis.com/auth/webmasters")
 GA4_URL = "https://analyticsdata.googleapis.com/v1beta/properties/{}:batchRunReports"
 SC_SITES = "https://searchconsole.googleapis.com/webmasters/v3/sites/"
+SC_INSPECT = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
 SC_PAGE_SIZE = 25_000
 PRODUCT_EVENTS = {"home_load_attempts": "home_load_attempt", "first_load_failures": "first_load_failed",
                   "static_fallback_shown": "static_fallback_shown", "first_load_recoveries": "first_load_recovered",
@@ -504,3 +505,17 @@ def submit_sitemap(client: Any, token: str, site: str, sitemap_url: str) -> dict
             "last_downloaded": str(body.get("lastDownloaded") or ""),
             "pending": bool(body.get("isPending")),
             "submitted": sum(int(c.get("submitted") or 0) for c in body.get("contents") or [])}
+
+
+INSPECT_FIELDS = ("verdict", "coverageState", "indexingState", "pageFetchState", "robotsTxtState",
+                  "googleCanonical", "userCanonical", "lastCrawlTime", "crawledAs")
+
+
+def inspect_url(client: Any, token: str, site: str, url: str) -> dict:
+    """Search Console URL Inspection: what Google's index knows about one URL
+    (indexed or not, why, and which canonical Google chose). Read-only."""
+    resp = client.post(SC_INSPECT, headers={"Authorization": f"Bearer {token}"},
+                       json={"inspectionUrl": url, "siteUrl": site, "languageCode": "en-US"})
+    resp.raise_for_status()
+    status = ((resp.json().get("inspectionResult") or {}).get("indexStatusResult") or {})
+    return {"url": url, **{k: str(status.get(k) or "") for k in INSPECT_FIELDS}}

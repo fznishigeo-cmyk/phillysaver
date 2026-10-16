@@ -1,0 +1,41 @@
+# Read-only: asks Google (Search Console URL Inspection) whether the home page
+# and key pages are indexed, and which canonical Google chose (operator
+# 2026-10-16: the home page did not show up for "wowpriced"). Public facts about
+# our own public pages only; no tokens or private numbers are printed.
+name: seo inspect (read-only)
+
+on:
+  schedule:
+    - cron: '11 13 * * *'   # ~9:11 New York (EDT)
+  workflow_dispatch:
+
+concurrency:
+  group: seo-inspect
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dealradar
+        run: pip install -e .
+
+      - name: Inspect key pages in Google's index
+        env:
+          GOOGLE_SA_JSON: ${{ secrets.GOOGLE_SA_JSON }}
+        run: |
+          python -m dealradar.growth.inspect | tee inspect.txt
+          { echo "## Google index status"; echo; sed 's/^/    /' inspect.txt; } >> "$GITHUB_STEP_SUMMARY"
