@@ -5,6 +5,7 @@
   var browseFilters = {preset: "", max: ""};
   var browseMemory = {version: 1, last: "", entries: {}}, browseId = "", browseSignature = "";
   var browsePending = null, browseReturning = false, browseScrollTimer;
+  var browseCorrection = null;
   var BROWSE_SORTS = {top: "top:-1", fresh: "fresh:-1", pct: "pct:-1", abs: "abs:-1", price: "price:1", age: "age:1"};
   var filterForm = document.getElementById("filterform"), filterSheet = document.getElementById("filtersheet");
   function presetValue(v) { return PRICE_PRESETS.some(function (n) { return String(n) === v; }) ? v : ""; }
@@ -170,6 +171,7 @@
     rememberBrowse(false);
   }
   function restoreBrowsePosition(snapshot, method) {
+    if (browseCorrection) browseCorrection();
     if (!loadedOnce || !snapshot) return;
     var a = snapshot.anchor, key = a && typeof a.key === "string" && a.key.length <= 256 ? a.key : "";
     var index = browseRows.findIndex(function (d) { return dealKey(d) === key; });
@@ -188,6 +190,74 @@
     window.scrollTo({top: Math.max(0, y), behavior: "auto"});
     if (method) track("back_restore", {method: method});
     rememberBrowse(false);
+    if (!card) return;
+    // Layout can change after the scroll (Saved rebuilds the wall and
+    // support refreshes on the next frame). Re-find the live anchor each
+    // time; never measure a card detached by that redraw.
+    key = card.getAttribute("data-key");
+    var frame = null, frames = 0, stable = 0, extra = false, observer = null, redrawing = false;
+    var expectedY = window.scrollY || 0, started = Date.now(), stopped = false;
+    var inputs = ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"];
+    function stop() {
+      if (stopped) return;
+      stopped = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      clearTimeout(expiry);
+      if (observer) observer.disconnect();
+      inputs.forEach(function (name) { window.removeEventListener(name, stop, true); });
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", stop);
+      if (browseCorrection === stop) browseCorrection = null;
+    }
+    function onScroll() {
+      // scrollTo and layout clamping also emit scroll. A known redraw can
+      // move the viewport; wheel/touch/key/pointer input still cancels it.
+      if ((window.scrollY || 0) !== expectedY) {
+        if (redrawing) expectedY = window.scrollY || 0;
+        else stop();
+      }
+    }
+    function queue(redraw) {
+      if (stopped || frame !== null || Date.now() - started >= 500) return;
+      if (frames >= 6) {
+        if (!redraw || extra) return;
+        extra = true;  // one final check after a pending late redraw
+      }
+      frame = requestAnimationFrame(check);
+    }
+    function check() {
+      frame = null;
+      if (stopped || Date.now() - started >= 500) { stop(); return; }
+      onScroll();
+      if (stopped) return;
+      redrawing = false;
+      frames++;
+      var current = Array.prototype.slice.call(cardEls()).find(function (el) {
+        return el.getAttribute("data-key") === key;
+      });
+      if (!current) { stop(); return; }
+      var delta = current.getBoundingClientRect().top - offset;
+      if (Math.abs(delta) > 2) {
+        window.scrollTo({top: Math.max(0, (window.scrollY || 0) + delta), behavior: "auto"});
+        expectedY = window.scrollY || 0;
+        stable = 0;
+      } else stable++;
+      rememberBrowse(false);
+      if (stable < 2) queue(false);
+    }
+    browseCorrection = stop;
+    inputs.forEach(function (name) { window.addEventListener(name, stop, {capture: true, passive: true}); });
+    window.addEventListener("scroll", onScroll, {passive: true});
+    window.addEventListener("pagehide", stop);
+    var expiry = setTimeout(stop, 500);
+    // Stop polling after two stable frames, but retain this bounded watch
+    // for a pending repaintSaved/refresh. It also works without Saved.
+    if (typeof MutationObserver !== "undefined") {
+      observer = new MutationObserver(function () { stable = 0; redrawing = true; queue(true); });
+      observer.observe(document.getElementById("content"), {childList: true, subtree: true,
+        attributes: true, attributeFilter: ["hidden"]});
+    }
+    queue(false);
   }
   function restoreInitialBrowse() {
     var pending = browsePending;

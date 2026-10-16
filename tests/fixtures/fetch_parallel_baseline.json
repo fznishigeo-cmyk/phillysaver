@@ -1,0 +1,225 @@
+{
+  "db": {
+    "accuracy_extra_reads": [],
+    "accuracy_extra_runs": [],
+    "accuracy_samples": [],
+    "ai_prefilter_posts": [],
+    "ai_yield_events": [],
+    "ai_yield_runs": [
+      [
+        "2026-10-09T14",
+        "2026-10-09T14:00:00+00:00",
+        null,
+        "d1c32d3b51ebeef6",
+        "shadow",
+        0
+      ]
+    ],
+    "alerts_sent": [],
+    "critic_shadow_daily": [],
+    "critic_tier_batches": [],
+    "critic_tier_samples": [],
+    "deal_click_coverage": [],
+    "deal_click_runs": [],
+    "deal_click_shown": [],
+    "deal_clicks": [],
+    "deals": [],
+    "delivery_batches": [],
+    "efficiency_runs": [
+      [
+        "2026-10-09T14",
+        "2026-10-09T14:00:00+00:00",
+        "2026-10-09T14:00:00+00:00",
+        1,
+        null
+      ]
+    ],
+    "http_cache": [
+      [
+        "https://blogone.example/feed/",
+        "\"feed-one-v1\"",
+        "",
+        "2026-10-09T14:00:00+00:00"
+      ]
+    ],
+    "indexnow_batches": [],
+    "indexnow_pages": [],
+    "keepa_recheck_history": [],
+    "keepa_recheck_yield": [],
+    "legitimacy_audits": [],
+    "legitimacy_batches": [],
+    "llm_calls": [],
+    "llm_legacy_spend": [],
+    "llm_reservations": [],
+    "meta": [
+      [
+        "ai_yield_since",
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "efficiency_since",
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "intake_since",
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "llm_ledger_migrated",
+        "1"
+      ],
+      [
+        "source_sig:blocked",
+        "rss||https://blocked.example/feed"
+      ],
+      [
+        "source_sig:blogone",
+        "rss||https://blogone.example/feed/"
+      ],
+      [
+        "source_sig:broken",
+        "rss||https://broken.example/feed"
+      ],
+      [
+        "source_sig:feedtwo",
+        "rss||https://feedtwo.example/rss"
+      ]
+    ],
+    "outgoing": [],
+    "pinterest_pin_daily": [],
+    "post_parses": [],
+    "posts_seen": [],
+    "price_history": [],
+    "product_keys": [],
+    "product_offers": [],
+    "products": [],
+    "run_stats": [
+      [
+        "2026-10-09T14",
+        "hourly",
+        "2026-10-09T14:00:00+00:00",
+        null,
+        0,
+        0,
+        0,
+        0,
+        0.0,
+        1,
+        0,
+        0,
+        0
+      ]
+    ],
+    "second_opinion_yield": [],
+    "sightings": [],
+    "source_audit_breakers": [],
+    "source_audit_posts": [],
+    "source_health": [
+      [
+        "blocked",
+        null,
+        "blocked_by_robots",
+        1,
+        null,
+        0,
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "blogone",
+        "2026-10-09T14:00:00+00:00",
+        "",
+        0,
+        null,
+        3,
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "broken",
+        null,
+        "http_404 http_404",
+        1,
+        null,
+        0,
+        "2026-10-09T14:00:00+00:00"
+      ],
+      [
+        "feedtwo",
+        "2026-10-09T14:00:00+00:00",
+        "",
+        0,
+        null,
+        2,
+        "2026-10-09T14:00:00+00:00"
+      ]
+    ]
+  },
+  "errors": [
+    [
+      "broken",
+      "http_404 http_404"
+    ],
+    [
+      "blocked",
+      "blocked_by_robots"
+    ],
+    [
+      "unknown",
+      "no adapter: unknown api adapter 'unknown' for source 'unknown'"
+    ]
+  ],
+  "posts": [
+    "ae20fb5e7c624cee3fe158bbcec74dc7916d001025bb9f67044a5744760ef19d",
+    "deb407014fbc2aceab9f1b0f8db240bb4a6c77c47ebe57cd3ca096fb9801e479",
+    "1daafff4d35b8471be3f002c0da3ef55c2c26cc444a3049bab184f6098353262",
+    "5210ad2aad282698992eccd8b414c37d00162387a166c7c1db9e301001cfb14f",
+    "e4d6de31dd14f9aab513e27c5d3fdd46e7506f263618fbb1c2672c6d53a8306b"
+  ],
+  "revision": "ca35c7c33ed2c66ba7deda6323c6a508bb9c4a00",
+  "site": {
+    "404.html": "1b0673ace89d162167fa9adb91438a255689bc5f5abdf6b6aae726d641f45990",
+    "89b51421654dec4627eb3ed0290d59b2.txt": "323686fa45254ddf3c86fa98288e45e047609f6fe4bd9973621ef78a1a9509f4",
+    "CNAME": "d67da6060062c5d0df02682e459ea7011a0691495f1f7fd8c08795ffabf377e4",
+    "_headers": "21238944fa6695d856489a0a64bf41a250ae00fcc1837ba72cfb9b31ba64f6c9",
+    "about.html": "855e7df4fafc18b144d55844cb9159d8c120c8fd51f1247d553323080fc5d59c",
+    "best-deals-today/index.html": "94cdc6bf9e83626391016f9b3e0af0984b2d1cab5a96e2c278b03245c64ab633",
+    "black-friday/index.html": "efb83766edfb9810af3d2197a1445039ced232f82d02cf89d709dc77f2ec6eb4",
+    "careers.html": "e367912921415a7d3bfcca26c70995a7ad8a3e3f40b67833cee6d136846e9206",
+    "click-signal.js": "86651cb88dd2ec647c972398dc9c513d1b3f50733d84fb776374ca4bab745f40",
+    "contact.html": "24fad771667958e1f8f6c3de3ae4147d86f3bff68d885e2c055dba611d4b3f03",
+    "cyber-monday/index.html": "26b3e4a7ec5f447aa132590745e53d8a78daedaf4cb62fbc80618ae7e7e8a864",
+    "deal/mega-headphones-x200-602d651e/index.html": "52ff9d577146cdc6f521f3024b265c2ecb9204ebcda7d0c8487466c77ae0b6ed",
+    "deal/ninja-foodi-8-qt-air-fryer-be2dbf4c/index.html": "19de190e80d3758931be1bf9f160a043430e1c7aea9ac4bb58054ea4672e8d0a",
+    "deals.json": "3b8dad16be80d18662ad5d0aa7c26fa0e7a24c08cb75eccbf75483ffd44905ff",
+    "deals/automotive/index.html": "33e7ead51317848cc63fd9900ad43d46d4ee73430cb882670c1b8f74e069ef59",
+    "deals/beauty-personal-care/index.html": "ce93b8147274b15028bb34ba3cd88f0da2aa5df52d99236b18927474ba6754ca",
+    "deals/clothing-shoes-jewelry/index.html": "3d29153c16cc7137829fab621807ee4dda822621f783d8eba46a2f4d8f2801d4",
+    "deals/electronics/index.html": "9b33018cf91b6f3985715019663bb8ecd192902393eb8b44cdb12034522e2f68",
+    "deals/health-household/index.html": "4ebd80a19cc23aad005bd8f1294cb8f7811c6bf035e8f245edd79d4197633386",
+    "deals/home-kitchen/index.html": "9ee543b6e35b99ac5d62558e5bf8afff38d7e5b65e1e2b220226fc5981af02f4",
+    "deals/other/index.html": "9a16565fff50761e90ca480fc2742d94817c926345c89cfd58bfe4350b9edd8a",
+    "deals/pets/index.html": "78615451a4a7d68344ad96462bb8ef86e4d57ef278e55e99e7e8530621d89b23",
+    "deals/sports-outdoors/index.html": "63dd5bb9f0b3582b8861dfd94ac8b5a651f01d6e1b246d099c2272d88babac16",
+    "deals/toys-games/index.html": "3ef0db7cdfbd434b739c480eea3f5cd3f353b35738e4e512ec605f6e89bcffa3",
+    "deals/used-open-box/index.html": "fedc7fef52a25c1134a4c73a3ba4faeb1a58a0900d9aa08195db37ef4f459e89",
+    "disclosure.html": "efcad64dae08acab8433c2a88b8c3c850e8bd302f2a04feb76bf97cc04aecba6",
+    "feed.xml": "1f18b9251001475981c7c62f651d454cfee697ba1b620b717bad2eefc97725e2",
+    "hacks.html": "d5e97ed86615d2a26d1ce4c33c556610b358212f0d122f016530a57514560be1",
+    "how-it-works.html": "8f522e7d215195cf4bd580cb94912eab581d97720fb7f329e4d3dcf775758474",
+    "index.html": "8039359026eb505fbf96ecb9abca7612cb727fc3b958bd267fe3b7432e373e3c",
+    "join.html": "765e0c63b08a1e3ed31f93124f04ce2f7ef1bd1015a079db23d2ebbe5e7eb081",
+    "manifest.webmanifest": "202d328de6fdf1d5f3e94868d525c543a7965c2f1b23258433f1efb31ffd1155",
+    "p/index.html": "8a834b432341c06ee2bf8fc63f502d22bb5662f90676b11412c0830a08bab810",
+    "privacy.html": "0511a1f6eb4c1a772985351e9d483e7ea2ad2352832cd5f55f56872dbb281cd7",
+    "pwa-icons/apple-touch-icon.png": "50f17a31b9d884e58f86a8005776a84dab229f6fff84e257fe5e25b506d515a7",
+    "pwa-icons/icon-192.png": "ad87883c10efe2e8393b46c24814043a1d977a7dd5a0e977b3a2570294da96ae",
+    "pwa-icons/icon-512.png": "8fc75296759748c58a5a9d85dfd05865f62d852376110938ced239f977e44858",
+    "pwa-icons/icon-maskable-512.png": "07bd5c643cb4583da0d8b5907db694f2f7a59800f6536a6a280067ea619e8238",
+    "robots.txt": "7c76795560e7287ecb19eac705aa08d835e75a14293acf11a137d45591b85e13",
+    "sitemap-pages.xml": "1f84eca3c3f5bdb38b962644c7c56fe3ddeaee54652f922c3ac78f02093800d1",
+    "sitemap-products.xml": "1214c52cace28c40b45da48b46ef96fe9ad1bb0584cde1ba6f66c9a70a5ed5df",
+    "sitemap.xml": "28428d72b8887765aa57d84d3921c1ca28c9984af61a02bdeec48e287ff71451",
+    "subscribe.html": "8a4e8848d0679f78533041023d903e35274a2aaf05f514cb4f3d39efa0eca0ba",
+    "traffic.js": "fee320bc0aaf4aebadc821a7d45edf439cdb45576ad7c1b6943a4d2e939da4d8",
+    "welcome.html": "b5e95a2b23b712214a77173d5bc691af312a3bfe63094b13d449a9b9c7eeb8f0"
+  }
+}

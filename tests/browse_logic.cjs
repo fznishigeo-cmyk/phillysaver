@@ -20,11 +20,12 @@ const mixed = [row('new'), row('used',{conditions:['Used - Like New']}), row('bo
   row('locked',{locked:true,final_price:null,needs_steps:undefined}), row('other',{store:'Walmart',category:'kitchen',final_price:25})];
 
 function harness({rows=mixed, search='', stored=null, navigation='', historyState=null, blocked=false, saved=false}={}) {
-  const elements={}, listeners={}, timers=new Map(), events=[], entries=[{url:'/'+search,state:historyState}];
+  const elements={}, listeners={}, timers=new Map(), frames=new Map(), observers=new Set(), events=[], entries=[{url:'/'+search,state:historyState}];
   let serial=0, historyIndex=0, renders=0, refreshes=0, nextRows=null, pendingRefresh=null, scrolls=[];
-  let cards=[];
+  let cards=[], clock=NOW, wallShift=0, cardHeight=220, frameCount=0;
   const session = stored || new Map();
   function listen(key, fn) { (listeners[key] ||= []).push(fn); }
+  function unlisten(key, fn) { listeners[key] = (listeners[key] || []).filter(listener=>listener!==fn); }
   function fire(key, e={}) { for (const fn of [...(listeners[key] || [])]) fn.call(elements[key.split(':')[0]], e); }
   function el(id) {
     return elements[id] ||= {id,value:'',checked:false,disabled:false,hidden:false,options:[],attributes:{},innerHTML:'',
@@ -51,8 +52,10 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
   Object.defineProperty(el('content'),'innerHTML', {get(){return this.html || '';},set(value) {
     this.html=value;
     cards=[...value.matchAll(/data-key="([^"]+)"/g)].map((m,i)=>({key:m[1],
-      getAttribute:()=>m[1], getBoundingClientRect:()=>({top:400+i*220-ctx.window.scrollY,bottom:620+i*220-ctx.window.scrollY}),
+      getAttribute:()=>m[1], getBoundingClientRect:()=>({top:400+wallShift+i*cardHeight-ctx.window.scrollY,
+        bottom:400+wallShift+(i+1)*cardHeight-ctx.window.scrollY}),
       querySelector:()=>el('link-'+m[1])}));
+    for (const observer of observers) observer.callback();
   }});
   const initialURL=new URL('/'+search,'https://wowpriced.com');
   const location={search:initialURL.search,hash:initialURL.hash,pathname:'/'};
@@ -60,7 +63,7 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
   const history={state:historyState,scrollRestoration:'auto',
     replaceState(state, _, url) {this.state=state;entries[historyIndex]={state,url};updateLocation(url);},
     pushState(state, _, url) {this.state=state;entries.splice(++historyIndex);entries.push({state,url});updateLocation(url);}};
-  class FixedDate extends Date {constructor(...args){super(...(args.length ? args : [NOW]));} static now(){return NOW;}}
+  class FixedDate extends Date {constructor(...args){super(...(args.length ? args : [clock]));} static now(){return clock;}}
   const ctx={Date:FixedDate,URL,URLSearchParams,Set,Map,PAGE_CARDS:60,AUTO_CARDS:300,JITTER_H:3,NO_PHOTO_H:12,
     CATGROUPS:JSON.parse(home.match(/var CATGROUPS = (.*);/)[1]), loadedOnce:true,manifestEpoch:0,moreObserver:null,panel:el('paywall'),
     state:{deals:rows,spotlight:[],meta:{floors:{min_pct:70,site_show_from_pct:50},front_page:doc.meta.front_page || {}},
@@ -70,13 +73,20 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
       addEventListener(type,fn){listen('document:'+type,fn);}},
     window:{innerWidth:390,innerHeight:844,scrollY:0,wpSupport:{refresh(){}},wpTrack:(name,params)=>events.push({name,params}),
       scrollTo(options){this.scrollY=options.top;scrolls.push(options);},
-      addEventListener(type,fn){listen('window:'+type,fn);}},
+      addEventListener(type,fn){listen('window:'+type,fn);},
+      removeEventListener(type,fn){unlisten('window:'+type,fn);}},
     history,location,performance:{getEntriesByType:()=>[{type:navigation}]},
     localStorage:{getItem:()=>null,setItem(){}},
     sessionStorage:{getItem(k){if(blocked) throw Error('blocked');return session.get(k) || null;},
       setItem(k,v){if(blocked) throw Error('blocked');session.set(k,v);}},
-    setTimeout(fn,delay){timers.set(++serial,{fn,delay});return serial;},clearTimeout:id=>timers.delete(id),
-    requestAnimationFrame:fn=>fn(),track:(name,params)=>events.push({name,params}),
+    setTimeout(fn,delay){timers.set(++serial,{fn,delay,at:clock+delay});return serial;},clearTimeout:id=>timers.delete(id),
+    requestAnimationFrame(fn){frames.set(++serial,fn);return serial;},cancelAnimationFrame:id=>frames.delete(id),
+    MutationObserver:class {
+      constructor(callback){this.callback=callback;}
+      observe(){observers.add(this);}
+      disconnect(){observers.delete(this);}
+    },
+    track:(name,params)=>events.push({name,params}),
     noop(){},reduceMotion:()=>true,cardEls:()=>cards,
     isLocked:d=>d.locked===true,dealKey:d=>d.key,plural:(n,w)=>n+' '+w+(n===1?'':'s'),
     paintTicker(){},updatePaywall(){},openNudge:()=>false,openAccess:()=>true,canJoin:()=>false,
@@ -102,14 +112,25 @@ function harness({rows=mixed, search='', stored=null, navigation='', historyStat
   const renderWall=ctx.render;
   ctx.render=()=>{renders++;renderWall();};
   ctx.render();ctx.restoreInitialBrowse();
+  function nextFrame() {
+    clock+=16;frameCount++;
+    const work=[...frames.values()];frames.clear();for(const fn of work) fn(clock);
+  }
+  function flushFrames() { for(let i=0;frames.size && i<10;i++) nextFrame();assert.equal(frames.size,0); }
+  flushFrames();
   const apply=(changes={})=>{
     for(const [id,value] of Object.entries(changes)) {
       el(id).value=value;
     }
     fire('filterform:submit',{preventDefault(){}});
   };
-  return {ctx,el,fire,apply,events,session,entries,scrolls,
+  return {ctx,el,fire,apply,events,session,entries,scrolls,nextFrame,flushFrames,
     keys:()=>cards.map(c=>c.key),get renders(){return renders;},get refreshes(){return refreshes;},
+    get frameCount(){return frameCount;},get pendingFrames(){return frames.size;},get observers(){return observers.size;},
+    shift(top=wallShift,height=cardHeight){wallShift=top;cardHeight=height;},
+    top(key){return cards.find(c=>c.key===key).getBoundingClientRect().top;},
+    advance(ms){clock+=ms;for(const [id,t] of [...timers]) if(t.at<=clock){timers.delete(id);t.fn();}},
+    listenerCount(name){return (listeners['window:'+name] || []).length;},
     get pushCount(){return entries.length-1;},
     navigation(delta){historyIndex+=delta;history.state=entries[historyIndex].state;updateLocation(entries[historyIndex].url);fire('window:popstate');},
     refresh(rows,pending=null){nextRows=rows;pendingRefresh=pending;},
@@ -206,6 +227,93 @@ const flush=async()=>{await new Promise(r=>setImmediate(r));};
   // Real same-document Back and Forward restore filters, the remembered
   // search/category and shown count without emitting filter actions.
   const many=Array.from({length:420},(_,i)=>row('r'+i,{final_price:5+i%40,ps:i,pick:i<120?i:null}));
+  // A scroll measured before layout settles is only the first step. Both
+  // the desktop's -448px shift and +7px per-card placeholders must converge.
+  function correctionHarness() {
+    const h=harness({rows:many});h.ctx.state.shown=180;h.ctx.render();
+    const key=h.keys()[120];
+    h.ctx.window.scrollY=400+120*220+37;h.ctx.rememberBrowse(false);
+    const snapshot=h.ctx.browseMemory.entries[h.ctx.browseId];
+    assert.equal(snapshot.anchor.key,key);
+    h.ctx.restoreBrowsePosition(snapshot,'reload');
+    return {h,key,snapshot};
+  }
+  const correction=correctionHarness();
+  correction.h.shift(-448);correction.h.nextFrame();
+  assert(Math.abs(correction.h.top(correction.key)-correction.snapshot.anchor.offset)<=2);
+  correction.h.shift(-448,227);correction.h.nextFrame();correction.h.flushFrames();
+  assert(Math.abs(correction.h.top(correction.key)-correction.snapshot.anchor.offset)<=2);
+  assert(correction.h.frameCount<=6);assert.equal(correction.h.pendingFrames,0);
+  // Our queued scroll event is not user input. A late Saved rebuild replaces
+  // card nodes after the stable frames; support's hidden changes also notify.
+  correction.h.fire('window:scroll');assert.equal(correction.h.observers,1);
+  correction.h.advance(100);correction.h.shift(-900,227);correction.h.ctx.render();
+  correction.h.flushFrames();
+  assert(Math.abs(correction.h.top(correction.key)-correction.snapshot.anchor.offset)<=2);
+  assert(correction.h.frameCount<=7);
+  assert.equal(correction.h.events.filter(e=>e.name==='back_restore').length,1);
+  correction.h.advance(500);assert.equal(correction.h.observers,0);
+  for(const name of ['wheel','touchstart','touchmove','pointerdown','keydown']) assert.equal(correction.h.listenerCount(name),0);
+  // An unsettled wall cannot spin forever, even if every frame moves it.
+  const bounded=correctionHarness();
+  for(let i=1;i<=6;i++){bounded.h.shift(-100*i);bounded.h.nextFrame();}
+  assert.equal(bounded.h.pendingFrames,0);assert.equal(bounded.h.frameCount,6);
+  bounded.h.shift(-900);bounded.h.ctx.render();bounded.h.flushFrames();
+  assert.equal(bounded.h.frameCount,7);
+  assert(Math.abs(bounded.h.top(bounded.key)-bounded.snapshot.anchor.offset)<=2);
+  bounded.h.shift(-1200);bounded.h.ctx.render();assert.equal(bounded.h.pendingFrames,0);
+  assert.equal(bounded.h.events.filter(e=>e.name==='back_restore').length,1);
+  const clamped=correctionHarness();
+  clamped.h.shift(-448);clamped.h.ctx.render();clamped.h.ctx.window.scrollY-=80;
+  clamped.h.fire('window:scroll');clamped.h.flushFrames();
+  assert(Math.abs(clamped.h.top(clamped.key)-clamped.snapshot.anchor.offset)<=2);
+  const interruptedRedraw=correctionHarness();
+  interruptedRedraw.h.ctx.render();interruptedRedraw.h.fire('window:wheel');
+  interruptedRedraw.h.shift(-448);interruptedRedraw.h.flushFrames();
+  assert.equal(interruptedRedraw.h.scrolls.length,1);
+  // Input cancels before the next correction and also disconnects the late
+  // redraw watch. Scrollbar/assistive scroll works without a preceding wheel.
+  for(const input of ['scroll','wheel','touchstart','touchmove','pointerdown','keydown','pagehide']) {
+    const {h,key}=correctionHarness();h.shift(-448);h.nextFrame();
+    if(input==='scroll') h.ctx.window.scrollY+=1;
+    h.fire('window:'+input);
+    const count=h.scrolls.length, userY=h.ctx.window.scrollY;
+    h.shift(-448,227);h.ctx.render();h.flushFrames();h.advance(600);
+    assert.equal(h.ctx.window.scrollY,userY,input);assert.equal(h.scrolls.length,count,input);
+    assert.equal(h.observers,0,input);assert.equal(h.ctx.browseCorrection,null,input);
+    assert.equal(h.events.filter(e=>e.name==='back_restore').length,1,input);
+    assert(Number.isFinite(h.top(key)));
+  }
+  const expired=correctionHarness();expired.h.advance(501);expired.h.shift(-448);expired.h.flushFrames();
+  assert.equal(expired.h.frameCount,0);assert.equal(expired.h.observers,0);
+  const superseded=correctionHarness();
+  superseded.h.ctx.restoreBrowsePosition(superseded.snapshot,'history');
+  assert.equal(superseded.h.observers,1);assert.equal(superseded.h.listenerCount('wheel'),1);
+  superseded.h.shift(-448);superseded.h.flushFrames();
+  assert(Math.abs(superseded.h.top(superseded.key)-superseded.snapshot.anchor.offset)<=2);
+  // Placeholder sizing uses the content box of a fully rendered card.
+  // Turning the CSS off starts no observers; redraw and responsive resize
+  // replace the observed node/height without touching any card markup.
+  const sizing=harness();let resize, observedCard, measured;
+  sizing.ctx.ResizeObserver=class {
+    constructor(callback){resize=callback;}
+    observe(card){observedCard=card;}
+    disconnect(){observedCard=null;}
+  };
+  sizing.el('content').style={setProperty(name,value){assert.equal(name,'--offscreen-card-height');measured=value;}};
+  sizing.el('content').querySelector=selector=>selector==='.grid:not(.spotlight-grid) > .card' ? sizing.ctx.cardEls()[0] : null;
+  sizing.ctx.getComputedStyle=()=>({getPropertyValue:()=>''});
+  vm.runInContext(fragment('  function observeOffscreenCards()', '  document.getElementById("load-retry")'),sizing.ctx);
+  sizing.ctx.observeOffscreenCards();assert.equal(sizing.observers,0);assert.equal(resize,undefined);
+  sizing.ctx.getComputedStyle=()=>({getPropertyValue:()=>'auto'});
+  sizing.ctx.observeOffscreenCards();assert.equal(sizing.observers,1);
+  const originalCard=observedCard;
+  for(const height of [373,405,419.5]) {
+    resize([{contentRect:{height}}]);assert.equal(measured,height+'px');
+  }
+  resize([{contentRect:{height:0}}]);assert.equal(measured,'419.5px');
+  sizing.ctx.render();assert.notEqual(observedCard,originalCard);
+  assert.equal(observedCard,sizing.ctx.cardEls()[0]);
   const nav=harness({rows:many});
   nav.ctx.state.catTab=3;nav.ctx.renderTabs();nav.ctx.finishBrowseAction('category',true);
   nav.el('q').value='Gadget';nav.ctx.updateSearch();nav.ctx.state.shown=180;nav.ctx.render();

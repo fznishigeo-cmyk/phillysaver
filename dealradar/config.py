@@ -115,6 +115,7 @@ class AppConfig:
     timezone: str = "America/New_York"
 
     # -- fetch --
+    parallel_sources: int = 1
     request_timeout_s: float = 20.0
     per_source_budget_s: float = 90.0
     run_budget_s: float = 480.0
@@ -210,6 +211,7 @@ class AppConfig:
     images_keepa_match_min: float = 0.85
     amazon_as_of_enabled: bool = False
     amazon_history: str = "show"
+    offscreen_cards: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -582,6 +584,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.user_agent = g("user_agent", default=cfg.user_agent)
     cfg.timezone = g("timezone", default=cfg.timezone)
 
+    cfg.parallel_sources = g("fetch", "parallel_sources", default=cfg.parallel_sources)
+    if type(cfg.parallel_sources) is not int or not 1 <= cfg.parallel_sources <= 6:
+        raise ValueError("fetch.parallel_sources must be an integer from 1 to 6")
     cfg.request_timeout_s = float(g("fetch", "request_timeout_s", default=cfg.request_timeout_s))
     cfg.per_source_budget_s = float(g("fetch", "per_source_budget_s", default=cfg.per_source_budget_s))
     cfg.run_budget_s = float(g("fetch", "run_budget_s", default=cfg.run_budget_s))
@@ -722,6 +727,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.amazon_history = str(g("amazon_history", default="show"))
     if cfg.amazon_history not in {"show", "hide"}:
         raise ValueError("amazon_history must be show or hide")
+    cfg.offscreen_cards = g("site", "offscreen_cards", default=False)
+    if type(cfg.offscreen_cards) is not bool:
+        raise ValueError("site.offscreen_cards must be a boolean")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

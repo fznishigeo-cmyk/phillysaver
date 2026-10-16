@@ -212,15 +212,11 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
     posts: list[RawPost] = []
     errors: dict[str, str] = {}
     newsletter_inbox = None
-    for source in sources:
-        if not source.enabled:
-            continue
-        if fast_lane and not source.fast_lane:
-            continue
+
+    def fetch_source(source, source_db):
+        nonlocal newsletter_inbox
         if time.monotonic() > fetch_deadline:
-            log.warning("fetch window exhausted; skipping remaining sources from %s "
-                        "(rotation puts them first on a later run)", source.name)
-            break
+            return None
         try:
             if source.method == "email" and newsletter_inbox is not None:
                 adapter = newsletter_inbox
@@ -240,8 +236,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                     adapter._sleep, adapter._clock = fetcher._sleep, fetcher._clock
                     fetcher.newsletter_inbox = adapter
         except ValueError as e:
-            errors[source.name] = f"no adapter: {e}"
-            continue
+            return [], {source.name: f"no adapter: {e}"}
         if source.adapter == "keepa" and price_recheck is not None and not price_recheck:
             # Keep the pull open through due checks -> extra pages -> idle
             # checks. Its new posts then enter the ordinary capped parser.
@@ -251,7 +246,7 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                     deadline=source_deadline, overflow_discovery=discover,
                     rate_limited=adapter.rate_limited))
             adapter.recheck = recheck
-        got, ok, err = run_source(source, adapter, fetcher, db, cfg, now,
+        got, ok, err = run_source(source, adapter, fetcher, source_db, cfg, now,
                                   run_deadline=fetch_deadline)
         if store_checks is not None and source.adapter == "woot" and hasattr(adapter, "recheck_stats"):
             store_checks["woot"] = adapter.recheck_stats
@@ -261,11 +256,35 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             for condition, keys in getattr(adapter, "feed_confirmed", {}).items():
                 feed_confirmed[condition].update(keys)
         if ok:
-            posts.extend(got)
             log.info("source %s: %d items", source.name, len(got))
+            return got, {}
         else:
-            errors[source.name] = err
             log.info("source %s: skipped (%s)", source.name, err)
+            return [], {source.name: err}
+
+    eligible = [s for s in sources if s.enabled and (not fast_lane or s.fast_lane)]
+    if cfg.parallel_sources == 1:
+        results = []
+        for source in eligible:
+            result = fetch_source(source, db)
+            results.append(result)
+            if result is None:
+                break
+    else:
+        from .fetch.parallel import run_sources
+        results = run_sources(eligible, fetch_source, fetcher, db,
+                              cfg.parallel_sources, fetch_deadline)
+    skipped = False
+    for source, result in zip(eligible, results):
+        if result is None:
+            if not skipped:
+                log.warning("fetch window exhausted; skipping remaining sources from %s "
+                            "(rotation puts them first on a later run)", source.name)
+                skipped = True
+            continue
+        got, failed = result
+        posts.extend(got)
+        errors.update(failed)
     return posts, errors
 
 
@@ -2331,9 +2350,14 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             run_key=run_key)
         feed_confirmed = {"new": set(), "used": set()}
         early_recheck = {}
-        posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
-                                         deadline, fast_lane, feed_confirmed, early_recheck,
-                                         summary["store_checks"])
+        fetch_started = time.monotonic()
+        summary["fetch_parallel"] = cfg.parallel_sources
+        try:
+            posts, fetch_errors = _fetch_all(sources, fetcher, db, cfg, now,
+                                             deadline, fast_lane, feed_confirmed, early_recheck,
+                                             summary["store_checks"])
+        finally:
+            summary["fetch_seconds"] = round(time.monotonic() - fetch_started, 3)
         rereads, source_checks = freshness.source_rechecks(
             db, cfg, sources, posts, fetcher, now, run_key,
             deadline=min(deadline - _RESERVE_FOR_PARSE_S / 2,

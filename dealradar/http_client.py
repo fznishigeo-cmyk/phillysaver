@@ -23,6 +23,7 @@ import hashlib
 import logging
 import random
 import re
+import threading
 import time
 import urllib.robotparser
 from collections.abc import Callable, Mapping
@@ -246,6 +247,9 @@ class PoliteFetcher:
         self._robots: dict[str, urllib.robotparser.RobotFileParser | bool] = {}
         self._last_request_at: dict[str, float] = {}
         self._api_bodies: dict[str, bytes] = {}
+        self._host_locks: dict[str, threading.RLock] = {}
+        self._host_locks_lock = threading.Lock()
+        self._source_slot = threading.local()
 
     # ------------------------------------------------------------- public API
 
@@ -277,7 +281,7 @@ class PoliteFetcher:
         self._check_deadline(deadline)
         override = (robots_override_host or "").strip().lower() or None
         if not self._host_overridden(url, override) \
-                and not self._robots_allowed(url):
+                and not self._robots_allowed(url, deadline=deadline):
             logger.info("robots.txt disallows GET")
             return FetchResult(
                 url=url, final_url=url, status=0, body=None,
@@ -425,25 +429,44 @@ class PoliteFetcher:
 
     # ---------------------------------------------------------------- robots
 
-    def _robots_allowed(self, url: str, user_agent: str | None = None) -> bool:
+    def _host_lock(self, host: str):
+        # Only map access holds the global lock; network and sleeps never do.
+        with self._host_locks_lock:
+            return self._host_locks.setdefault(host, threading.RLock())
+
+    def _reserve_host(self, host: str, deadline: float | None) -> None:
+        claim = getattr(self._source_slot, "claim", None)
+        if claim is not None:
+            claim(host, deadline)
+
+    def _robots_allowed(self, url: str, user_agent: str | None = None,
+                        deadline: float | None = None) -> bool:
         parts = urlsplit(url)
         host = parts.netloc.lower()
         if not host:
             return True
-        if host not in self._robots:
-            self._robots[host] = self._load_robots(parts.scheme or "https",
-                                                   parts.netloc)
-        entry = self._robots[host]
+        self._reserve_host(host, deadline)
+        # Preserve the sequential robots timeout/spacing path. A worker may
+        # have waited for another source's slot, so recheck its deadline
+        # before loading robots after that newly introduced wait.
+        slot_deadline = deadline if getattr(self._source_slot, "claim", None) else None
+        with self._host_lock(host):
+            self._check_deadline(slot_deadline)
+            if host not in self._robots:
+                self._robots[host] = self._load_robots(parts.scheme or "https",
+                                                       parts.netloc, slot_deadline)
+            entry = self._robots[host]
         if isinstance(entry, bool):
             return entry
         return entry.can_fetch(user_agent or self.cfg.resolved_user_agent(), url)
 
     def _load_robots(
-        self, scheme: str, netloc: str
+        self, scheme: str, netloc: str, deadline: float | None = None
     ) -> urllib.robotparser.RobotFileParser | bool:
         """Fetch and parse robots.txt for one host (no robots check on itself)."""
         robots_url = f"{scheme}://{netloc}/robots.txt"
-        self._rate_wait(netloc.lower())
+        self._rate_wait(netloc.lower(), deadline)
+        self._check_deadline(deadline)
         try:
             resp = self._client.get(
                 robots_url,
@@ -473,6 +496,11 @@ class PoliteFetcher:
 
     def _rate_wait(self, host: str, deadline: float | None = None) -> None:
         """Enforce at most one request per cfg.min_host_interval_s per host."""
+        self._reserve_host(host, deadline)
+        with self._host_lock(host):
+            self._rate_wait_locked(host, deadline)
+
+    def _rate_wait_locked(self, host: str, deadline: float | None) -> None:
         interval = float(self.cfg.min_host_interval_s)
         store = {"api.bestbuy.com": "bestbuy", "api.ebay.com": "ebay"}.get(host)
         if store:
@@ -555,7 +583,7 @@ class PoliteFetcher:
                                     body=None, error="challenge_page"), None)
             if (respect_robots
                     and not self._host_overridden(current, robots_override_host)
-                    and not self._robots_allowed(current, user_agent)):
+                    and not self._robots_allowed(current, user_agent, deadline)):
                 return (FetchResult(url=url, final_url=current, status=0,
                                     body=None, error="robots_disallowed",
                                     blocked_by_robots=True), None)
@@ -576,7 +604,7 @@ class PoliteFetcher:
                             resp_headers)
                 if (respect_robots
                         and not self._host_overridden(nxt, robots_override_host)
-                        and not self._robots_allowed(nxt, user_agent)):
+                        and not self._robots_allowed(nxt, user_agent, deadline)):
                     logger.info("robots.txt disallows redirect target")
                     return (FetchResult(url=url, final_url=nxt, status=0,
                                         body=None, error="robots_disallowed",
@@ -619,12 +647,16 @@ class PoliteFetcher:
         attempts = max(1, int(max_attempts or self.cfg.max_retries))
         for attempt in range(attempts):
             self._check_deadline(deadline)
-            self._rate_wait(host, deadline)
-            self._check_deadline(deadline)
+            self._reserve_host(host, deadline)
             try:
-                resp, body = self._send(method, url, headers,
-                                        read_body=read_body,
-                                        timeout_s=timeout_s, content=content)
+                # Keep the slot through dispatch too: a descheduled caller
+                # cannot send late, immediately after the next caller's turn.
+                with self._host_lock(host):
+                    self._rate_wait(host, deadline)
+                    self._check_deadline(deadline)
+                    resp, body = self._send(method, url, headers,
+                                            read_body=read_body,
+                                            timeout_s=timeout_s, content=content)
             except httpx.HTTPError as exc:
                 error = error_summary(exc)
                 logger.warning("%s failed (attempt %d/%d): %s",
@@ -714,7 +746,7 @@ class PoliteFetcher:
         )
         if not head_only and result.status in _HEAD_FALLBACK_STATUSES:
             self._check_deadline(deadline)
-            if not self._robots_allowed(url):
+            if not self._robots_allowed(url, deadline=deadline):
                 logger.info("robots.txt disallows GET fallback")
                 return (FetchResult(url=url, final_url=url, status=0,
                                     body=None, error="robots_disallowed",

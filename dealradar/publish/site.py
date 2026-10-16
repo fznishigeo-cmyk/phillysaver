@@ -64,6 +64,16 @@ _PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
 
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
 
+# Phones only: on a multi-column desktop wall, reload restore drifted ~1.5k px
+# in Chromium. Keep the first eight in every grid fully rendered, including
+# grids split by the Join band. The real card's content height replaces the
+# first-visit phone fallback (375px in the task-237 measurement) before the
+# next paint.
+OFFSCREEN_CARDS_STYLE = """\n@media (max-width:700px){#content{--offscreen-cards:auto}
+#content > .grid:not(.spotlight-grid) > .card:nth-child(n+9){content-visibility:auto;
+  contain-intrinsic-size:auto var(--offscreen-card-height,375px)}}
+"""
+
 
 @dataclass(frozen=True)
 class _BrowseScript:
@@ -106,6 +116,8 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = html.replace("</style>", AGED_STYLE + "</style>", 1)
     if home:
         html = manifest_refresh.template(html, cfg)
+        if cfg.offscreen_cards:
+            html = html.replace("</style>", OFFSCREEN_CARDS_STYLE + "</style>", 1)
     return html
 
 
@@ -813,6 +825,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256((site_version + clicks.endpoint(cfg)).encode()
             + (TEMPLATES_DIR / "click-signal.js").read_bytes()).hexdigest()[:12]
     site_version = manifest_refresh.site_version(site_version, cfg)
+    if cfg.offscreen_cards:
+        site_version = hashlib.sha256((site_version + OFFSCREEN_CARDS_STYLE).encode()).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),

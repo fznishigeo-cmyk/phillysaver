@@ -3450,7 +3450,26 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return loadRequest;
   }
 
+  function observeOffscreenCards() {
+    var wall = document.getElementById("content");
+    if (typeof ResizeObserver === "undefined" || typeof MutationObserver === "undefined" ||
+        getComputedStyle(wall).getPropertyValue("--offscreen-cards").trim() !== "auto") return;
+    // Observe a fully rendered card's content box, not a guessed outer
+    // height. ResizeObserver re-measures at every responsive breakpoint.
+    var sizing = new ResizeObserver(function (entries) {
+      var height = entries[0].contentRect.height;
+      if (height > 0) wall.style.setProperty("--offscreen-card-height", height + "px");
+    });
+    function observe() {
+      sizing.disconnect();
+      var first = wall.querySelector(".grid:not(.spotlight-grid) > .card");
+      if (first) sizing.observe(first);
+    }
+    new MutationObserver(observe).observe(wall, {childList: true});
+    observe();
+  }
   document.getElementById("load-retry").addEventListener("click", loadData);
+  observeOffscreenCards();
   loadData();
   setInterval(loadData, 5 * 60 * 1000);  // fallback self-refresh every 5 minutes
 })();

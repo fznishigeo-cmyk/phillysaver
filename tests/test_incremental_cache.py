@@ -478,10 +478,10 @@ def test_cli_enabled_respects_bounded_cache_config(db, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('mode,expected', [
-    ('membership', '4df4c6f1b71c1f46f57b264705cf8f54e72e90b17ea0e3c4424447dc22323ac8'),
-    ('open', 'a0d8c695793c14fc520382652d0c568293308296d021cb9c85734b4743b239a1'),
-    ('support', 'e6a44466a7fa6b1982bc59673e69d2782b40c0ec3c9cc67f14353ad4cefa760d'),
-    ('shipped', '721ac2b56fa587f1e5971e04163d6b52a23600a00ba1938ec7f2d5f5853ceb68'),
+    ('membership', '9d2aab882ffa41578f913f513682bbcff97b18b710a6df4a60576f8f73327d12'),
+    ('open', 'bc01018c7efa5f3a4b2b09321a70fb494fbfaf61a30d540d10742d73d2b0eae9'),
+    ('support', '7eb907c8053b118f9a871230f6f78a62e0f69d1e05cac6882a867b6e0db0546b'),
+    ('shipped', 'e7245d3ad56b7a03b0f3bc380eb89dda323e2c9df99495629e77b88756e47ed4'),
 ])
 def test_disabled_omitted_and_enabled_preserve_every_public_byte_and_member_payload(tmp_path, monkeypatch, mode, expected):
     import hashlib

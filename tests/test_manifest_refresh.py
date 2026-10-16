@@ -17,24 +17,24 @@ from tests.test_event_pages import tree
 from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 
 
-# Captured before any production edits, on this checkout (all names and bytes).
+# Manifest-off bytes; task 237 deliberately re-pins shared restore/sizing JS.
 BASELINES = json.loads('''{
-  "membership-show-False": "1aa5bac6e3ebc5d0854bfed067f38bb15066c1b23573b0654767c815e5c16680",
-  "membership-show-True": "b9e18a24b81e5634bacb780b37f39336b27053249db2327d5e4d82aa6b4bc488",
-  "membership-hide-False": "4ac7cb48f5f27a0bb58ccbbba3ca6f915d8401267388714a9efa56ff5361d425",
-  "membership-hide-True": "9302a4358082a59d62a468dad5e61eb075b43ff6ac5a7e37ca1c8e919a0db601",
-  "open-show-False": "0dc3144c60069cc7965653a914ad79ed8c172828d44200fcb918bc584b0c8c9b",
-  "open-show-True": "bc2ba6d922e01c94c15df4753ddea34499cfb64ff1c76e3450e1107f9b930072",
-  "open-hide-False": "5546012e75544bc424c14e73d233556147da9de398d609f70113be7d4b49c87f",
-  "open-hide-True": "909e6487f6e74b241aa6a1dae978a447850d4c1b379033a8b3c1a13e7d50e361",
-  "support-show-False": "69330531d23fe7457ac5bfb6d086ad25d60691961a1d84cf1bac2879f0538146",
-  "support-show-True": "017db95b51ea3e8e9a7175f743fc2909f4dc5f5696f5f55493a429fc0c2bf1d1",
-  "support-hide-False": "957e4dd65ab0601cff679cab69b6b592f6cee438fc03ebf28fb85c0145d74122",
-  "support-hide-True": "6252dce21b3db7e7ce3a28b493147d4737acf956a4d9b5df24f821b7cde7fe04",
-  "shipped-show-False": "9e986d5e98dcfa100c82bf16dd17ccd9db47e90283e474823ed59e4580391ca6",
-  "shipped-show-True": "a41dd60592104797c52fbeaf603beefe51f9a6556ddd4626b06baa06345cd9b4",
-  "shipped-hide-False": "7c97a7dab6d86c175458e2d25faafec44898d8f63b165a11a7e61f91987d2f69",
-  "shipped-hide-True": "ff366bbc9632c41c1fef8149c0250c6c7e822fb8e46f8de7b378be247b155b56"
+  "membership-show-False": "e47a6406d0709d3f7960613cd8ae116c91aee3118cec8e9b434b324db78b6398",
+  "membership-show-True": "c886e34d5c09e7f7652e03e8448314092cec73129839fda3f00232019571c15e",
+  "membership-hide-False": "ae6a6398bc8d7df9e2663bcea78d6b28a0c2c36482b9f3487acd75b05ec4fdf8",
+  "membership-hide-True": "6997e6971ce6c0fcd46472d126bc82c589bbf8bfcf1d1ae783784c9bfb2e60ed",
+  "open-show-False": "2bde125186291dc529049beb8242144663228f91ec99067f8f12c7bad635de38",
+  "open-show-True": "41490af3117921620489cd170fdbf7808c7171d882e4e032dca35fec8c72d14c",
+  "open-hide-False": "50730efe34c795cbb75d87640969c01de9d733d31c4d82a76c0b349c486596f8",
+  "open-hide-True": "776ef503d34b25d69573205a0bcc2aabd10508228f6dd9f189554b6a8529c01c",
+  "support-show-False": "9a61856a11a7d939980a8dbbc8365b4d6968624364ae1b52285cda58b23ddac5",
+  "support-show-True": "f0e4e1c3abe2bc8fad9b74ddf56def5d759ead41f3ea75ee87cd137067283347",
+  "support-hide-False": "5b20a0e4d75949011f5ed3f640111a133b2af3a35cf53fc54c76030479a1e4dd",
+  "support-hide-True": "69e9713cfbc130567de0cfd87015cfe5b6ddb88c1db5cd6556fbf785748da5a0",
+  "shipped-show-False": "c908b949fe2cc65ce026aa288a9b5564071e879344bd722da9ceaeb9bc919e9c",
+  "shipped-show-True": "a2d7c6fd2a141dca5ffd0fa7a63086dcd35b097d026facb5799381b38b517181",
+  "shipped-hide-False": "a4b3cbe47e116456f19f45b8f16a5e782bd91c48ca07594e02e7c40811a9e216",
+  "shipped-hide-True": "b684a13415034991b0a978b77e01ca9c0d119a7207340056921756f1151887f5"
 }
 ''')
 

@@ -19,6 +19,7 @@ quality:
     deals_json_gzip_max_bytes: 103976
 
 fetch:
+  parallel_sources: 1         # 1 = sequential; opt-in 2..6 independent web sources
   request_timeout_s: 20        # hard per-request timeout
   per_source_budget_s: 90      # hard per-source budget
   run_budget_s: 600            # hard 10 min per run; fetch ~5 min, parse ~3.5 min, publish ~1.5 min (hourly job timeout is 20 min)
@@ -131,6 +132,7 @@ intake:
   max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
 
 site:
+  offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
     enabled: true
     max_h_new: 48

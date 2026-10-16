@@ -193,6 +193,28 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Exact Back + off-screen cards (Codex task 237, 2026-10-16; ON, phones only):**
+  Anchor corrections stop after six frames/500ms plus one late redraw check;
+  user input cancels, with one restore event. `site.offscreen_cards: true` adds
+  home-only CSS inside `@media (max-width:700px)` with real-card sizing and the
+  first eight cards of each grid always rendered (desktop reload drifted
+  ~1.5k px with multi-column rows, so desktop is excluded). Chromium checks
+  (Oct 11 real snapshot, 199 deals; and the 180-offer test): Back and reload
+  land 0 px off at 390x844 and 1280x800, on and off. Local Lighthouse mobile,
+  3 alternating runs: off 70/69/65, on 80/91/81; TBT ~500 -> ~180 ms; CLS same.
+  Byte comparison and pins: [offscreen-cards.md](offscreen-cards.md).
+- **Fetch hosts side by side (Codex task 236, 2026-10-16; committed, OFF):**
+  `fetch.parallel_sources: 1` (validated 1..6). Opt-in web readers hold
+  registrable host sets, including discovered redirect/enrichment hosts;
+  paid/shared/unknown adapters and their hooks remain exclusive on the main
+  thread. SQLite calls return to its original thread/connection; host locks
+  preserve robots, spacing, backoff and deadlines. Results retain source order;
+  private summaries add `fetch_seconds`/`fetch_parallel`. Pre-edit `ca35c7c`
+  posts/errors/fetch DB rows and **45 public files** match at 1 and 4 workers.
+  Four fake hosts: **48 → 12 seconds**; live speedup unmeasured. **415 final
+  targeted checks pass**, including both rerun modes; earlier 353-check set
+  also passed. All used `-n 1`; owned `/tmp/task236-*` basetemps removed.
+  Review remains; no whole suite, workflow-test edits, live calls, commit or push.
 - **Keep parse pool full (Codex task 235, 2026-10-16; committed):**
   Refills unique reads at existing concurrency as slots finish; ordered
   recording, shared fingerprints and slot-free cached/structured/skipped posts.
