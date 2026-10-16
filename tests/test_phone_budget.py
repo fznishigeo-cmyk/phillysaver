@@ -296,7 +296,7 @@ def test_workflow_executes_config_to_env_to_parser_without_audit(tmp_path, enabl
     workflow = yaml.safe_load((ROOT / ".github/workflows/lighthouse.yml").read_text())
     gate = next(s for s in workflow["jobs"]["scan"]["steps"]
                 if "lighthouse_summary.js" in s.get("run", ""))
-    assert gate["if"] == "always()" and gate["env"] == {"LH_MIN": "85"}
+    assert gate["if"] == "always()" and gate["env"] == {"LH_MIN": "85", "LH_NOINDEX_OK": "deal"}
     assert "load_config" in gate["run"] and "LH_PHONE_BUDGET" in gate["run"]
     (tmp_path / "scripts").symlink_to(ROOT / "scripts", target_is_directory=True)
     path = config_file(tmp_path, {"enabled": enabled, "lab_lcp_max_ms": 1000, "lab_cls_max": 0.02})

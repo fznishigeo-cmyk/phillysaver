@@ -48,3 +48,34 @@ assert.equal(run([], "85").status, 1);
 const defaultGate = run([fixture("fail")]);
 assert.equal(defaultGate.status, 1);
 assert.match(defaultGate.stdout, /below 85/);
+
+// Noindex by design (LH_NOINDEX_OK): only the named page's SEO gate leaves out
+// "blocked from indexing"; any other SEO problem on it still fails.
+{
+  const os = require("node:os");
+  const report = structuredClone(passing);
+  report.categories.seo.auditRefs = [{ id: "is-crawlable", weight: 4 }, { id: "document-title", weight: 1 },
+    { id: "meta-description", weight: 1 }];
+  report.audits["is-crawlable"] = { score: 0, title: "Page is blocked from indexing", scoreDisplayMode: "binary" };
+  report.audits["document-title"] = { score: 1, title: "Document has a title", scoreDisplayMode: "binary" };
+  report.audits["meta-description"] = { score: 1, title: "Document has a meta description", scoreDisplayMode: "binary" };
+  report.categories.seo.score = 2 / 6;
+  assert.equal(summarize(report, 85).ok, false);
+  const exempt = summarize(report, 85, { enabled: false }, true);
+  assert.equal(exempt.ok, true); assert.equal(exempt.seoGate, 1);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lh-noindex-"));
+  try {
+    for (const name of ["deal", "home"]) fs.writeFileSync(path.join(dir, `${name}.json`), JSON.stringify(report));
+    process.env.LH_NOINDEX_OK = "deal";
+    const ok = run([path.join(dir, "deal.json")], "85");
+    assert.equal(ok.status, 0);
+    assert.match(ok.stdout, /noindex by design: SEO gate 100/);
+    assert.equal(run([path.join(dir, "home.json")], "85").status, 1); // only the named page
+    report.audits["document-title"].score = 0;
+    fs.writeFileSync(path.join(dir, "deal.json"), JSON.stringify(report));
+    assert.equal(run([path.join(dir, "deal.json")], "85").status, 1); // real SEO problems still fail
+  } finally {
+    delete process.env.LH_NOINDEX_OK;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}

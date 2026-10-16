@@ -135,7 +135,7 @@ def test_lighthouse_schedule_versions_pages_and_gate():
     for tracker in block.split("|"):
         assert f"'*{tracker.replace(chr(92), '')}*'" in audit["run"]
     gate = next(s for s in steps if "lighthouse_summary.js" in s.get("run", ""))
-    assert gate["env"] == {"LH_MIN": "85"} and gate["if"] == "always()"
+    assert gate["env"] == {"LH_MIN": "85", "LH_NOINDEX_OK": "deal"} and gate["if"] == "always()"
     assert "continue-on-error" not in gate
     for page in ("home", "hub", "deal", "best-today"):
         assert f"lighthouse-reports/{page}.json" in gate["run"]

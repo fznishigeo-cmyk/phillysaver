@@ -87,6 +87,7 @@ jobs:
         if: always()
         env:
           LH_MIN: '85'
+          LH_NOINDEX_OK: 'deal'  # single-deal pages are noindex,follow on purpose (317ae77)
         run: |
           budget=$(python - <<'PY'
           import json

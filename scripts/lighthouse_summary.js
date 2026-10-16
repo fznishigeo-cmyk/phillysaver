@@ -26,7 +26,20 @@ function vitals(report, budget) {
   });
 }
 
-function summarize(report, minimum, budget = { enabled: false }) {
+// A page that is noindex on purpose (single-deal pages) is gated on SEO without
+// the "blocked from indexing" audit; every other page keeps the full score.
+function seoWithout(report, id) {
+  let sum = 0, weights = 0;
+  for (const ref of report.categories.seo.auditRefs || []) {
+    const audit = (report.audits || {})[ref.id];
+    if (ref.id === id || !audit || !(ref.weight > 0) || typeof audit.score !== "number" ||
+        ["manual", "informative", "notApplicable"].includes(audit.scoreDisplayMode)) continue;
+    sum += ref.weight * audit.score; weights += ref.weight;
+  }
+  return weights ? sum / weights : report.categories.seo.score;
+}
+
+function summarize(report, minimum, budget = { enabled: false }, noindexByDesign = false) {
   phoneBudget(budget);
   if (report.runtimeError) throw new Error("audit did not finish");
   const scores = {}, failing = new Map();
@@ -49,8 +62,11 @@ function summarize(report, minimum, budget = { enabled: false }) {
   }
   const worst = [...failing.values()].sort((a, b) => b.weight - a.weight || a.score - b.score ||
     a.title.localeCompare(b.title)).slice(0, 5).map((audit) => audit.title);
-  const result = { scores, worst, ok: report.categories.accessibility.score * 100 >= minimum &&
-    report.categories.seo.score * 100 >= minimum };
+  const crawl = (report.audits || {})["is-crawlable"];
+  const seoGate = noindexByDesign && crawl && typeof crawl.score === "number" && crawl.score < 1
+    ? seoWithout(report, "is-crawlable") : report.categories.seo.score;
+  const result = { scores, worst, seoGate, ok: report.categories.accessibility.score * 100 >= minimum &&
+    seoGate * 100 >= minimum };
   if (budget.enabled) {
     result.vitals = vitals(report, budget);
     result.ok = result.ok && result.vitals.every(metric => metric.ok);
@@ -74,16 +90,20 @@ function main(files) {
   const metricLines = metrics => metrics.map(metric =>
     `  ${metric.name}: ${metric.actual === null ? "not measured" : metric.actual} ${metric.units}; ` +
     `limit ${metric.limit} ${metric.units} (${metric.ok ? "PASS" : "FAIL"})`);
+  const noindexOk = new Set((process.env.LH_NOINDEX_OK || "").split(",").map(s => s.trim()).filter(Boolean));
   let failed = false;
   for (const file of files) {
     const label = path.basename(file, ".json");
     try {
       const report = JSON.parse(fs.readFileSync(file, "utf8"));
-      const result = summarize(report, minimum, budget);
+      const result = summarize(report, minimum, budget, noindexOk.has(label));
       lines.push(`${label}: ${CATEGORIES.map((name) => `${name} ${result.scores[name]}`).join(" | ")}`);
       for (const title of result.worst) lines.push(`  ${title}`);
       if (budget.enabled) lines.push(...metricLines(result.vitals));
-      if (report.categories.accessibility.score * 100 < minimum || report.categories.seo.score * 100 < minimum) {
+      if (result.seoGate !== report.categories.seo.score) {
+        lines.push(`  noindex by design: SEO gate ${Math.round(result.seoGate * 100)} without "blocked from indexing"`);
+      }
+      if (report.categories.accessibility.score * 100 < minimum || result.seoGate * 100 < minimum) {
         failed = true; lines.push(`  FAIL: accessibility or SEO below ${minimum}`);
       }
       if (!result.ok) failed = true;
@@ -98,5 +118,5 @@ function main(files) {
   return failed ? 1 : 0;
 }
 
-module.exports = { summarize, main };
+module.exports = { summarize, main, seoWithout };
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
