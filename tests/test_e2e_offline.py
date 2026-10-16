@@ -456,6 +456,7 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
                             "products", "product_keys", "product_offers", "meta")}
     audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
     receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
+    history_before = [tuple(row) for row in db.conn.execute("SELECT * FROM price_history ORDER BY id")]
     db.close()
     second = _run(env)
     assert second["appeal"] == first["appeal"] == {
@@ -474,6 +475,7 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
                                        run_key=second["run_key"], now=NOW) == 0
     assert len(requests) == 1
     assert [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")] == receipts_before
+    assert [tuple(row) for row in db.conn.execute("SELECT * FROM price_history ORDER BY id")] == history_before
     db.close()
 
     import sqlite3

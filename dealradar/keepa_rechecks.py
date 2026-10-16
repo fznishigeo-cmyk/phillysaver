@@ -231,6 +231,23 @@ def live_price(deal, product):
     return min((p for i in (9, 2) if (p := verify._current_price(current, i)) is not None), default=None)
 
 
+def record_price_check(db, cfg, deal, product, now, *, shopper=None):
+    """Record the trusted price's own data time, never a request-time fallback."""
+    from . import price_checks
+
+    if not cfg.seo_product_pages_record_own_checks_enabled or product.get("asin") != deal.get("asin"):
+        return False
+    stats = product.get("stats")
+    stats = stats if isinstance(stats, dict) else {}
+    used_offers = verify.is_used_deal(deal) and isinstance(product.get("offers"), list)
+    stamp = (stats.get("lastBuyBoxUpdate") if shopper else stats.get("lastOffersUpdate")
+             if used_offers else product.get("lastUpdate"))
+    if used_offers and product.get("offersSuccessful") is False:
+        return False
+    price = shopper[0] if shopper else live_price(deal, product)
+    return price_checks.record(db, cfg, deal, price, verify.keepa_time(stamp), now, source="keepa")
+
+
 class Schedule:
     def __init__(self, history, picks, wall):
         self.history = history

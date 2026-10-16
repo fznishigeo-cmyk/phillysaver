@@ -201,6 +201,10 @@ def test_build_reads_history_once_per_built_page_and_uses_existing_index(db, cfg
     finally:
         db.conn.set_trace_callback(None)
     reads = [q for q in queries if re.match(r"SELECT .* FROM price_history\b", q)]
+    # The private product-page summary counts today's own checks once per build.
+    totals = [q for q in reads if q.startswith("SELECT COUNT(*)")]
+    assert len(totals) == 1 and "check:*" in totals[0]
+    reads = [q for q in reads if q not in totals]
     pages = list((tmp_path / "deal").glob("*/index.html"))
     assert len(reads) == len(pages) == 5
     assert all('canonical_key=' in q and 'observed_at>=' in q and 'observed_at<=' in q for q in reads)

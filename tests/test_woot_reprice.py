@@ -82,8 +82,8 @@ def test_lower_price_corrects_card_math_history_and_keeps_source(db, cfg, monkey
     computed = savings.compute_savings(evidence[0])
     assert after["pct_at_checkout"] == computed.pct_at_checkout == 66.6
     assert after["abs_savings"] == computed.abs_savings == 19.91
-    assert counts(db) == dict(initial, price_history=initial["price_history"] + 1)
-    assert [p["price"] for p in db.price_observations(after["dedupe_key"], NOW - timedelta(days=3), NOW)] == [15.99, 9.99]
+    assert counts(db) == dict(initial, price_history=initial["price_history"] + 2)
+    assert [p["price"] for p in db.price_observations(after["dedupe_key"], NOW - timedelta(days=3), NOW)] == [15.99, 9.99, 9.99]
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     site.render_site(db, cfg, NOW)
     card = json.loads((Path(cfg.site_dir) / "deals.json").read_text())["deals"][0]
@@ -101,7 +101,8 @@ def test_equal_price_only_confirms_and_repeating_the_read_adds_no_rows(db, cfg):
     for field in ("final_price", "regular_price", "pct_at_checkout", "price_since", "sightings", "critic"):
         assert after.get(field) == before.get(field)
     check(db, cfg, [offer(15.99)])
-    assert db.get_deal(before["dedupe_key"]) == after and counts(db) == initial
+    assert db.get_deal(before["dedupe_key"]) == after
+    assert counts(db) == dict(initial, price_history=initial["price_history"] + 1)
 
 
 @pytest.mark.parametrize("shown,sale,changed", [
@@ -267,7 +268,7 @@ def test_pipeline_summary_and_same_run_key_rerun_use_only_existing_feed(tmp_path
         assert result["store_checks"]["woot"] == dict(
             confirmed=1, repriced=int(index == 0), range_skipped=0, above_range=0)
         db = DB(str(db_path))
-        assert counts(db) == dict(initial, price_history=initial["price_history"] + 1)
+        assert counts(db) == dict(initial, price_history=initial["price_history"] + 2)
         assert db.get_deal(before["dedupe_key"])["final_price"] == 9.99
         assert db.conn.execute("SELECT count(*) FROM run_stats").fetchone()[0] == 1
         db.close()

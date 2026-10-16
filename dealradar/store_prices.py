@@ -401,7 +401,7 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
     from .publish.site import PICKS_META, WALL_META
     from .savings import compute_savings
     from .verify import CONFIRM_GONE_H, is_used_deal, live_price_reading
-    from . import accuracy
+    from . import accuracy, price_checks
 
     stats = {store: dict.fromkeys(COUNTERS, 0) for store in SECRETS}
 
@@ -512,6 +512,8 @@ def recheck_store_prices(db, cfg, now: datetime, *, fetcher=None, deadline=None,
                         counts[{"live": "confirmed", "suspect": "suspect", "waiting": "suspect", "dead": "gone"}[outcome]] += 1
                         db.update_deal(deal["dedupe_key"], payload=payload,
                                        status="dead" if outcome == "dead" else None)
+                        if outcome == "live" and not reading.group:
+                            price_checks.record(db, cfg, payload, reading.price, now, now, source=store)
             if api.diagnostics:
                 counts["diagnostics"] = api.diagnostics
         log.info("%s live checks: %s", store, counts)

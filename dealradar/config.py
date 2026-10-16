@@ -241,6 +241,8 @@ class AppConfig:
     seo_posted_deal_redirects_enabled: bool = True
     seo_posted_deal_redirects_max_rules: int = 1500
     seo_product_pages_enabled: bool = False
+    seo_product_pages_record_own_checks_enabled: bool = True
+    seo_product_pages_record_own_checks_max_per_offer_per_day: int = 24
     seo_product_pages_min_checks: int = 6
     seo_product_pages_min_span_days: float = 7
     seo_product_pages_max_new_indexable_per_day: int = 50
@@ -813,6 +815,16 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             or not 1 <= cfg.seo_posted_deal_redirects_max_rules <= 1900):
         raise ValueError("seo.posted_deal_redirects.max_rules must be an integer in 1..1900")
     cfg.seo_product_pages_enabled = bool(g("seo", "product_pages", "enabled", default=False))
+    own_checks = g("seo", "product_pages", "record_own_checks", default={})
+    if not isinstance(own_checks, dict):
+        raise ValueError("seo.product_pages.record_own_checks must be a mapping")
+    cfg.seo_product_pages_record_own_checks_enabled = own_checks.get("enabled", True)
+    if type(cfg.seo_product_pages_record_own_checks_enabled) is not bool:
+        raise ValueError("seo.product_pages.record_own_checks.enabled must be boolean")
+    cfg.seo_product_pages_record_own_checks_max_per_offer_per_day = own_checks.get("max_per_offer_per_day", 24)
+    if (type(cfg.seo_product_pages_record_own_checks_max_per_offer_per_day) is not int
+            or not 1 <= cfg.seo_product_pages_record_own_checks_max_per_offer_per_day <= 96):
+        raise ValueError("seo.product_pages.record_own_checks.max_per_offer_per_day must be an integer in 1..96")
     for name in ("min_checks", "max_new_indexable_per_day", "max_indexable"):
         attr = "seo_product_pages_" + name
         setattr(cfg, attr, max(1 if name == "min_checks" else 0, int(g(

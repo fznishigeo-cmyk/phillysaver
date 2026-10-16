@@ -80,8 +80,9 @@ def template(text, enabled):
 
 
 def empty_summary():
-    return dict.fromkeys(("eligible", "indexable", "new_today", "noindex",
-                          "with_live_deal", "related_links_avg"), 0)
+    return {**dict.fromkeys(("eligible", "indexable", "new_today", "noindex",
+                            "with_live_deal", "related_links_avg", "own_check_rows_today"), 0),
+            "not_eligible": dict.fromkeys(("few_checks", "short_span", "not_recent"), 0)}
 
 
 def _price(value):
@@ -94,11 +95,16 @@ def prepare(db, cfg, now, public, source):
     Product anchors survive deal deletion. Only previously published offer keys
     contribute checks, so a locked or rejected offer cannot leak into a history.
     """
+    now = now.astimezone(timezone.utc)
+    report = empty_summary()
+    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    report["own_check_rows_today"] = db.conn.execute(
+        "SELECT COUNT(*) FROM price_history WHERE content_hash GLOB 'check:*'"
+        " AND observed_at>=? AND observed_at<?", (iso(day), iso(day + timedelta(days=1)))).fetchone()[0]
     if not cfg.seo_product_pages_enabled:
-        return {}, {}, empty_summary()
+        return {}, {}, report
     from . import seo
 
-    now = now.astimezone(timezone.utc)
     state = json.loads(db.meta_get(META) or '{"pages":{},"day":"","admitted":[]}')
     pages = state["pages"]
     today = now.date().isoformat()
@@ -174,9 +180,15 @@ def prepare(db, cfg, now, public, source):
         checks = [r for r in observations[key] if parse_iso(r["observed_at"]) >= now - timedelta(days=90)]
         recent = any(now - timedelta(days=90) <= parse_iso(o["published_at"]) <= now
                      for o in page["offers"].values())
-        if (len(checks) >= cfg.seo_product_pages_min_checks and recent
-                and parse_iso(checks[-1]["observed_at"]) - parse_iso(checks[0]["observed_at"])
-                >= timedelta(days=cfg.seo_product_pages_min_span_days)):
+        # Exclusive reasons: thin histories first, then span, then recency.
+        if len(checks) < cfg.seo_product_pages_min_checks:
+            report["not_eligible"]["few_checks"] += 1
+        elif (parse_iso(checks[-1]["observed_at"]) - parse_iso(checks[0]["observed_at"])
+              < timedelta(days=cfg.seo_product_pages_min_span_days)):
+            report["not_eligible"]["short_span"] += 1
+        elif not recent:
+            report["not_eligible"]["not_recent"] += 1
+        else:
             qualifying.add(key)
         page["indexable"] = bool(page.get("indexable") and parse_iso(page.get("last_qualified"))
                                   and now <= parse_iso(page["last_qualified"]) + timedelta(days=30))
@@ -203,8 +215,8 @@ def prepare(db, cfg, now, public, source):
                 if field in page:
                     state["pages"][key][field] = page[field]
     db.meta_set(META, json.dumps(state, sort_keys=True, separators=(",", ":")))
-    report = {"eligible": len(qualifying), "indexable": len(admitted),
-              "new_today": sum(key in pages for key in state["admitted"]), "noindex": len(pages) - len(admitted)}
+    report.update(eligible=len(qualifying), indexable=len(admitted),
+                  new_today=sum(key in pages for key in state["admitted"]), noindex=len(pages) - len(admitted))
     models = {}
     for key, page in pages.items():
         live_keys = {d["dedupe_key"] for d in live.get(key, [])}

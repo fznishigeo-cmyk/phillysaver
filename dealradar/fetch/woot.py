@@ -243,7 +243,7 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
                     source: SourceConfig | None = None) -> dict[str, int]:
     """Reuse the official feed; absence is never evidence an offer ended."""
     from ..dedupe import reprice_existing
-    from .. import accuracy
+    from .. import accuracy, price_checks
 
     _backfill_feed_photos(db, items)
     cfg = cfg if cfg is not None else AppConfig()
@@ -297,6 +297,8 @@ def _recheck_offers(db: DB, items: list, now: datetime, *,
                     payload["woot_listed_at"] = util.iso(now)
                     db.update_deal(deal["dedupe_key"], payload=payload)
                     stats["confirmed"] += 1
+                    if low == price:
+                        price_checks.record(db, cfg, payload, price, now, now, source="woot")
         checked = util.parse_iso(deal.get("price_rechecked_at") or "")
         every = CONFIRM_GONE_H if deal.get("gone_suspect_at") else 3.0
         if checked and (now - checked).total_seconds() < every * 3600:

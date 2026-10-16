@@ -767,15 +767,19 @@ class DB:
     # ---------------- price_history ----------------
 
     def record_price(self, canonical_key: str, store: str, price: float,
-                     observed_at: datetime, content_hash: str) -> bool:
+                     observed_at: datetime, content_hash: str, *, max_check_rows_per_day: int | None = None) -> bool:
+        sql = ("INSERT INTO price_history(canonical_key, store, price, observed_at, content_hash)"
+               " SELECT ?,?,?,?,?")
+        params = (canonical_key, store, price, iso(observed_at), content_hash)
+        if max_check_rows_per_day is not None:
+            day = observed_at.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            sql += (" WHERE (SELECT COUNT(*) FROM price_history WHERE canonical_key=?"
+                    " AND content_hash GLOB 'check:*' AND observed_at>=? AND observed_at<?) < ?")
+            params += (canonical_key, iso(day), iso(day + timedelta(days=1)), max_check_rows_per_day)
         try:
-            self.conn.execute(
-                "INSERT INTO price_history(canonical_key, store, price, observed_at, content_hash)"
-                " VALUES (?,?,?,?,?)",
-                (canonical_key, store, price, iso(observed_at), content_hash),
-            )
+            cursor = self.conn.execute(sql, params)
             self.conn.commit()
-            return True
+            return cursor.rowcount > 0
         except sqlite3.IntegrityError:
             return False
 
@@ -1375,6 +1379,10 @@ class DB:
         for table in ("accuracy_samples", "accuracy_extra_runs", "accuracy_extra_reads"):
             self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
                               (iso(now - timedelta(days=35)),))
+        # Own checks serve the existing 90-day history window. Post observations
+        # retain their lifetime facts; frequent API checks must not grow forever.
+        self.conn.execute("DELETE FROM price_history WHERE content_hash GLOB 'check:*' AND observed_at < ?",
+                          (iso(now - timedelta(days=90)),))
         self.conn.execute(
             "DELETE FROM posts_seen WHERE first_seen_at < ?",
             (iso(now - timedelta(days=posts_seen_days)),),

@@ -1223,7 +1223,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     from datetime import timedelta
 
     from . import rank
-    from .keepa_rechecks import History, Schedule
+    from .keepa_rechecks import History, Schedule, record_price_check
     from . import buybox
     from .dedupe import _DEAL_FIELDS, reprice_existing
     from .fetch.keepa import reprice_post
@@ -1908,6 +1908,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     spent = stats["tokens"]["surplus_spent"]
                     spent[category] += min(cost, max(0, surplus - sum(spent.values())))
                 current = db.get_deal(deal["dedupe_key"])
+                if verdict is True and product is not None and original["status"] == "alive":
+                    record_price_check(db, cfg, current, product, now, shopper=shopper)
                 if is_recovery:
                     stats["hidden_recovery"]["tokens"] += cost
                     stats["hidden_recovery"]["estimated_tokens"] += estimated

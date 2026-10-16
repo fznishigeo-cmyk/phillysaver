@@ -193,6 +193,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **History from own checks (Codex task 233, 2026-10-16; uncommitted, ON):**
+  Validated `seo.product_pages.record_own_checks`: trusted exact Woot, Best
+  Buy/eBay and paid/feed Keepa readings use their own UTC hours, deduped with
+  an atomic 24/offer/day cap (1..96). Failed/suspect/unconfirmed/mismatched
+  readings add nothing. Gates, admissions and Amazon hiding stay unchanged;
+  private summary adds exclusive eligibility reasons and today's check count.
+  No existing price-history age prune was present: new `check:` rows expire
+  after 90 days; post history stays. Offline hourly fixture with repeated feeds:
+  300 Woot + 10 Best Buy + 10 eBay = 7,680 rows/day at 24/offer; shipped at **1/offer/day = 320 rows/day** (~29k over 90 days).
+  Disabled: all five paths match untouched HEAD's full DB dumps and **162 public
+  files across four modes**. Targeted regressions, both offline rerun modes and
+  **82 final feature/chart checks pass**; three strengthened cases also reran
+  green. All runs used `-n 1`; owned `/tmp/task233-*` basetemps removed. Review
+  remains; no whole suite, live calls, workflow-test edits, commit or push.
 - **Posted deal redirects (Codex task 231, 2026-10-16; uncommitted, ON):**
   `seo.posted_deal_redirects` enables 1,500 sorted 301s to matching category
   hubs (validated 1..1,900); private targets/dates survive pruning, published

@@ -288,6 +288,9 @@ seo:
     max_rules: 1500          # Oldest redirects drop first; Cloudflare permits 2,000 static rules.
   product_pages:
     enabled: true            # operator 2026-10-15: "high quality index pages ... that's what we need to do now"
+    record_own_checks:
+      enabled: true
+      max_per_offer_per_day: 1  # Enough for the 6-checks-over-7-days gate; keeps state small (~320 rows/day).
     min_checks: 6
     min_span_days: 7
     max_new_indexable_per_day: 50 # Pilot of the 200 best (operator 2026-10-16), admitted best-first.

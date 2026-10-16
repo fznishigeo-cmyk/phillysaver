@@ -454,8 +454,9 @@ class _TokensShort(Exception):
 class _FeedConfirmations:
     """Confirm existing prices before mapping, caps or content-hash skips."""
 
-    def __init__(self, db: DB | None, now: datetime):
+    def __init__(self, db: DB | None, now: datetime, cfg: AppConfig | None = None):
         self.db, self.now = db, now
+        self.cfg = cfg if cfg is not None else AppConfig()
         self.confirmed: dict[str, set[str]] = {"new": set(), "used": set()}
         self.by_asin: dict[str, list[dict[str, Any]]] = {}
         for deal in db.all_deals(status="alive") if db is not None else []:
@@ -465,6 +466,7 @@ class _FeedConfirmations:
 
     def note(self, rows: list[dict[str, Any]], *, used: bool) -> None:
         from ..dedupe import _DEAL_FIELDS
+        from .. import price_checks
 
         for row in rows:
             at = keepa_time(row.get("lastUpdate"))
@@ -491,6 +493,8 @@ class _FeedConfirmations:
                     self.db.update_deal(deal["dedupe_key"], payload={
                         k: deal[k] for k in _DEAL_FIELDS if k in deal})
                     self.confirmed["used" if used else "new"].add(deal["dedupe_key"])
+                    price_checks.record(self.db, self.cfg, deal, price,
+                                        keepa_time(row.get("lastUpdate")), self.now, source="keepa")
 
 
 @dataclass
@@ -598,7 +602,7 @@ class KeepaDealsAdapter(SourceAdapter):
         # as the bucket refills. Every further page (DEEP's first included)
         # must leave cfg.keepa_reserve_tokens untouched.
         budget = KeepaBudget.load(db)
-        confirmations = _FeedConfirmations(db, now)
+        confirmations = _FeedConfirmations(db, now, cfg)
         self.feed_confirmed = confirmations.confirmed
         amazon: list[RawPost] = []
         fresh: list[RawPost] = []
@@ -741,7 +745,7 @@ class KeepaDealsAdapter(SourceAdapter):
         limited = False
         # Due checks may have repriced or killed a row since the first page.
         # Free confirmations must match that current row, never its old copy.
-        pull.confirmations = _FeedConfirmations(pull.db, pull.now)
+        pull.confirmations = _FeedConfirmations(pull.db, pull.now, cfg)
         pull.confirmations.confirmed = self.feed_confirmed
         pull.overflow_only = True
         gap = run_gap_forecast(pull.db, cfg, pull.now)["minutes"]
