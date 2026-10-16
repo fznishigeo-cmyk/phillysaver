@@ -307,16 +307,16 @@ def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, option
     assert titles((out / "best-deals-today/index.html").read_text()) == [d["item"] for d in source[:30]]
 
 
-def test_best_today_has_a_dated_intro_and_category_summary(tmp_path, cfg, db, options):
-    # Its own words (date + where the picks come from), not just a copy of the home wall.
+def test_best_today_has_a_category_summary(tmp_path, cfg, db, options):
+    # Its own words (where the picks come from), not just a copy of the home wall.
     cfg.paywall_open_access = True
     cfg.front_page = options
-    source = [make_deal(**{k: v for k, v in d.items() if k != "key"}) for d in rows()]
+    categories = ["home", "beauty", "electronics", "kitchen", "auto"] * 8
+    source = [make_deal(dedupe_key=f"k{i}", item=f"Item {i}", category=cat, pct_at_checkout=80,
+                        image_url="https://img.example/item.jpg") for i, cat in enumerate(categories)]
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=source)
     best = (out / "best-deals-today/index.html").read_text()
-    eastern = NOW.astimezone(seo.ZoneInfo("America/New_York"))
-    assert f"updated {eastern.strftime('%A, %B')} {eastern.day}, {eastern.year}." in best
     assert "ranked like the live wall" not in best
     summary = re.search(r'<p class="best-summary">(.*?)</p>', best).group(1)
     assert summary.startswith("Top categories today: ")

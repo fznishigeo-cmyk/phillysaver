@@ -942,9 +942,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
-    eastern = now.astimezone(ZoneInfo("America/New_York"))
-    updated = f"{eastern.strftime('%A, %B')} {eastern.day}, {eastern.year}"
-    intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now, updated {updated}."
+    intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now."
              if confirmed else "Our top picks are selected from offers that pass our price checks.")
     best_rows = pick_order(confirmed, cfg.front_page)[:30]
     best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
