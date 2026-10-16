@@ -61,20 +61,28 @@ def smtp_connect(host: str, port: int, *, smtp_factory: Any = None):
     sends and quits. Shared by the digest and the newsletter so the TLS
     rules live in one place; `smtp_factory` (tests) replaces the socket.
     """
-    if smtp_factory is not None:
-        server = smtp_factory(host, port)
-    elif port == 465:
-        # Implicit-TLS providers (e.g. gmail:465); 587 uses STARTTLS below.
-        server = smtplib.SMTP_SSL(host, port, timeout=30)
-    else:
-        server = smtplib.SMTP(host, port, timeout=30)
+    stage = "connect"  # the failing step, logged without any secret or server text
+    try:
+        if smtp_factory is not None:
+            server = smtp_factory(host, port)
+        elif port == 465:
+            # Implicit-TLS providers (e.g. gmail:465); 587 uses STARTTLS below.
+            server = smtplib.SMTP_SSL(host, port, timeout=30)
+        else:
+            server = smtplib.SMTP(host, port, timeout=30)
+    except Exception as e:
+        e.smtp_stage = stage
+        raise
     try:
         if port == 587:
+            stage = "starttls"
             server.starttls()
         user = get_secret("SMTP_USER")
         if user:
+            stage = "login"
             server.login(user, get_secret("SMTP_PASSWORD"))
-    except Exception:
+    except Exception as e:
+        e.smtp_stage = stage
         try:
             server.quit()
         except Exception:  # pragma: no cover - best-effort cleanup

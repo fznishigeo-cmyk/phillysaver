@@ -1183,13 +1183,53 @@ def test_exit_code_only_fails_when_every_configured_section_failed(cfg, rsa_key,
     assert code == 0  # the other sections worked
 
 
-def test_a_failed_delivery_is_logged_but_exits_0(cfg, rsa_key, monkeypatch, caplog):
-    """Per the brief, only sections set the exit code; delivery logs its error."""
+def test_a_failed_delivery_is_logged_and_turns_the_run_red(cfg, rsa_key, monkeypatch, caplog):
+    """2026-10-16: an undelivered report must show as a failed run (the failure watch reads those)."""
     caplog.set_level(logging.INFO)
     set_telegram(monkeypatch)
     code, _, _ = full_run(cfg, rsa_key, monkeypatch, fail={"api.telegram.org": 403})
-    assert code == 0
+    assert code == 1
     assert "telegram: error HTTP 403" in caplog.messages
+
+
+class _DropFirst(FakeSMTPFactory):
+    """The first connection drops like Gmail did on 2026-10-16; the second works."""
+    def __init__(self, drops=1):
+        super().__init__()
+        self.drops = drops
+
+    def __call__(self, host, port, timeout=None):
+        if self.drops:
+            self.drops -= 1
+            raise smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+        return super().__call__(host, port, timeout)
+
+
+@pytest.mark.parametrize("drops,code,sent", [(1, 0, 1), (2, 1, 0)])
+def test_a_dropped_smtp_connection_is_retried_once(cfg, rsa_key, monkeypatch, caplog, drops, code, sent):
+    caplog.set_level(logging.INFO)
+    set_sources(monkeypatch, rsa_key)
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(report.clock, "sleep", lambda s: None)
+    smtp = _DropFirst(drops)
+    with client_for(FakeApis()) as client:
+        assert report.run(cfg, NOW, http_client=client, smtp_factory=smtp) == code
+    assert len(smtp.sent) == sent
+    assert "email: error SMTPServerDisconnected at connect; retrying" in caplog.messages
+
+
+def test_a_rejected_login_is_not_retried(cfg, rsa_key, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    set_sources(monkeypatch, rsa_key)
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    calls = []
+
+    def refuse(host, port, timeout=None):
+        calls.append(host)
+        raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+    with client_for(FakeApis()) as client:
+        assert report.run(cfg, NOW, http_client=client, smtp_factory=refuse) == 1
+    assert len(calls) == 1 and "email: error SMTPAuthenticationError at connect 535" in caplog.messages
 
 
 def test_telegram_text_stays_under_the_limit(cfg, rsa_key, monkeypatch):
@@ -1688,3 +1728,24 @@ def test_copy_only_saves_without_email_or_telegram(cfg, monkeypatch):
 
 def test_shipped_report_copy_goes_to_the_private_repo():
     assert load_config().raw["growth"]["reports_repo"] == "fznishigeo-cmyk/wowpriced-reports"
+
+
+def test_smtp_errors_name_the_failing_step_and_code_only(cfg, rsa_key, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    set_sources(monkeypatch, rsa_key)
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SMTP_USER", "private-user@example.com")
+    monkeypatch.setenv("SMTP_PASSWORD", "private-password")
+
+    class Refuses(FakeSMTP):
+        def login(self, user, password):
+            raise smtplib.SMTPAuthenticationError(535, b"5.7.8 private-server-text")
+
+    class Factory(FakeSMTPFactory):
+        def __call__(self, host, port, timeout=None):
+            self.servers.append(Refuses(host, port))
+            return self.servers[-1]
+    with client_for(FakeApis()) as client:
+        assert report.run(cfg, NOW, http_client=client, smtp_factory=Factory()) == 1
+    assert "email: error SMTPAuthenticationError at login 535" in caplog.messages
+    assert "private" not in caplog.text

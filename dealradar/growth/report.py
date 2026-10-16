@@ -14,6 +14,7 @@ import functools
 import html as html_lib
 import logging
 import re
+import smtplib
 import time as clock
 from datetime import date, datetime, time, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
@@ -43,10 +44,12 @@ NOT_CONNECTED = "not connected yet"
 
 
 def _error(e: Exception) -> str:
-    """The class name (plus the HTTP status), never the message."""
+    """The class name (plus the HTTP status, or the SMTP step and reply
+    code), never the message."""
     if isinstance(e, httpx.HTTPStatusError):
         return f"{type(e).__name__} {e.response.status_code}"
-    return type(e).__name__
+    detail = " ".join(str(v) for v in (getattr(e, "smtp_stage", ""), getattr(e, "smtp_code", "")) if v)
+    return f"{type(e).__name__} at {detail}" if detail else type(e).__name__
 
 
 def _critic_shadow(db_path, now: datetime) -> dict:
@@ -1088,6 +1091,9 @@ def _send_email(host: str, to: str, subject: str, text: str, smtp_factory: Any) 
     server = smtp_connect(host, int(get_secret("SMTP_PORT") or "587"), smtp_factory=smtp_factory)
     try:
         server.send_message(msg)
+    except Exception as e:
+        e.smtp_stage = "send"
+        raise
     finally:
         try:
             server.quit()
@@ -1103,12 +1109,21 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
     to = get_secret("REPORT_EMAIL_TO") or cfg.contact_email
     if host and to:
         configured += 1
-        try:
-            _send_email(host, to, subject, text, smtp_factory)
-            delivered += 1
-            log.info("email: sent")
-        except Exception as e:
-            log.warning("email: error %s", _error(e))
+        for attempt in (1, 2):
+            try:
+                _send_email(host, to, subject, text, smtp_factory)
+                delivered += 1
+                log.info("email: sent")
+                break
+            except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, TimeoutError) as e:
+                # A dropped connection is usually transient (2026-10-16: one
+                # SMTPServerDisconnected lost the day's email); retry once.
+                log.warning("email: error %s%s", _error(e), "; retrying" if attempt == 1 else "")
+                if attempt == 1:
+                    clock.sleep(5)
+            except Exception as e:
+                log.warning("email: error %s", _error(e))
+                break
     if get_secret("TELEGRAM_BOT_TOKEN") and get_secret("TELEGRAM_ADMIN_CHAT_ID"):
         configured += 1
         try:
@@ -1170,8 +1185,9 @@ def save_copy(cfg, subject: str, text: str, day: date, *, client: Any,
 
 def run(cfg, now: datetime | None = None, *, http_client: Any = None,
         smtp_factory: Any = None, db_path=None, copy_only: bool = False) -> int:
-    """The exit code: 1 only when every configured section failed; a
-    delivery failure is logged (channel + error class) but exits 0."""
+    """The exit code is 1 when every configured section failed, or when a
+    configured channel (email, Telegram) did not deliver: the private copy is
+    still saved first, and the red run is what the failure watch sees."""
     now = now or now_utc()
     client = http_client or httpx.Client(timeout=30)
     try:
@@ -1182,10 +1198,11 @@ def run(cfg, now: datetime | None = None, *, http_client: Any = None,
             return 0
         yesterday = now.astimezone(ZoneInfo(cfg.timezone)).date() - timedelta(days=1)
         subject, text = build_report(cfg, data, status, yesterday)
+        configured = delivered = 0
         if not copy_only:
-            deliver(cfg, subject, text, client=client, smtp_factory=smtp_factory)
+            configured, delivered = deliver(cfg, subject, text, client=client, smtp_factory=smtp_factory)
         save_copy(cfg, subject, text, yesterday, client=client)
     finally:
         if http_client is None:
             client.close()
-    return 1 if all(s == "error" for s in ran) else 0
+    return 1 if all(s == "error" for s in ran) or delivered < configured else 0
