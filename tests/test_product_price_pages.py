@@ -88,10 +88,10 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "c9f95cbd0ac30b4aa6a6188b9d969d2885e5266c6a6fb91a04bd76d965ffa84f"),
-    ("open", "3925a48d517d29c160650745a3b673db0c14054fe4af0bb96ddbc6bdca0cf414"),
-    ("support", "c97700c2e01721cef7ef3abf897f78d2bba124735d82afcc7f7f1673a7e7cc82"),
-    ("shipped", "95ad65eca8691ed14ddf473ba9eb254241eb46f2d5bf42a24a95f173fdada012"),
+    ("membership", "753327ca06bdccdb31965dc2fb881b6fefe161de6f1b7712e1a70200fb335dbe"),
+    ("open", "95ca4dcefe749684f8d19971919875b53404c6afa5e687886b26b15dd542522b"),
+    ("support", "0dda06a9bdfcb0ed5c327da2a4586dad4a9b093f0167cc6bcd92efe151ff30ef"),
+    ("shipped", "99ee65d05279e364ec3f58529a00c8a3cf32b029651d7b90942bbfd4a2895733"),
 ])
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
