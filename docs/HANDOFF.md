@@ -88,6 +88,13 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **"AI sells" (2026-10-16):** public copy may say "AI" (Deal Check subhead,
+  the AI take label, how-it-works#ai). Keepa, Claude, Codex, LLM, Python and the
+  other internals stay out of public copy (tests/test_public_copy.py).
+- **Walmart history everywhere (2026-10-16, operator's call with Walmart):** Deal
+  Check `checker.stores.walmart: history`, AI takes and the extension include
+  Walmart; `store_policy.walmart` can switch it to live-only in one line. eBay stays
+  live-only because listings end.
 - **Amazon price history (2026-10-16, Associates phone support, reference
   amz378_998):** approved 90-day price history charts, lowest recent price
   next to Amazon links, Keepa as the data source, our own history kept longer
@@ -219,6 +226,207 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Device-local extension index (Codex task 244c, 2026-10-16; uncommitted, checker OFF):**
+  Adds versioned, deterministic `/check/data/all.json` with lossless dictionary
+  columns/front-coded JSON values; every alias/field matches the shards. The
+  10,000-alias full-history fixture is **1,414,035 bytes uncompressed**, with no
+  dropped aliases. Oldest ended aliases (date, then alias) drop from both outputs
+  at the 1.5 MB cap; live overflow fails before replacing files. Existing
+  noindex/no-store headers apply. The extension saves the compact public list in
+  local storage and downloads only on install/browser startup/six-hour alarms;
+  page visits, misses, SPA navigation and popup paste make no network requests.
+  Missing/expired data waits for a scheduled background refresh. Both publish
+  and download clocks enforce 24 hours; open cards expire, and alarm updates
+  refresh open cards/clear old popup results. No unlimitedStorage; global/site
+  controls and Amazon/Walmart/eBay policies stay intact. Listing, permission
+  justifications and privacy now explain device-local checks; PUBLISH.md
+  documents the version-1 native-app decoder (the referenced task-248 iOS brief
+  is absent from this tree). Rules/runtime-only zip rebuilt reproducibly.
+  Initial focused checks: **9 passed / 0 failed**, then **152 passed / 2 failed /
+  2 skipped**; both failures were the old rerun helper's checker file count,
+  updated for all.json without changing its byte/state/send assertions.
+  Final `-q -n 1 -p no:cacheprovider` across checker index/page, browser extension
+  and the touched offline e2e file: **168 passed / 0 failed / 2 skipped (154.68s)**,
+  including both enabled rerun modes, reproducible packaging and fresh rules.
+  Node checks: **22 passed / 0 failed**. Both Chromium checks attempted the real
+  browser but sandbox permissions blocked launch; browser assertions remain
+  unverified. Owned `/tmp/task244c-*` basetemps/logs removed; `git diff --check`
+  passed. Review, native browser QA and checker activation remain.
+  No whole suite, workflow-test edits, retailer/Keepa/LLM calls, commit or push.
+- **Checker/page review fixes (Codex task 252a, 2026-10-16; uncommitted, checker OFF):**
+  AI wording follows the operator decision; Walmart checker history is on and
+  eBay stays live-only. Amazon hide falls back to links with a private config
+  note; prices/as-of clocks require Amazon confirmations. Checker cards credit
+  sources, name other stores by host, clear interrupted lookups, and use slug
+  words handed to home through sessionStorage, with no search query in the URL.
+  Shared PWA/footer passes now include /check/ while tracking skips it; Android's
+  checker adapter follows the new signature. Product retention counting and
+  mixed Amazon-hide blank-photo behavior are pinned. Photo failures print two
+  decimals; search caps are 20/run and 49/day, with the 90% floor unchanged.
+  Each lookup can cost 11 finder + 50 product tokens: 49 * 61 = 2,989/day.
+  Raising the old 120/day cap cannot meet the requested ~3,000-token limit;
+  the initial 270/day estimate counted only finder calls and was corrected.
+  Scoped `-n 1`: **517 passed, 0 failed, 2 skipped** across checker index/page,
+  store policy, own checks, public copy, product prices, photos, Android, tracking
+  and PWA. After correcting the daily cap, the final photo rerun was **75 passed,
+  0 failed**. Node site-check harness: **1 passed, 0 failed**. Historical privacy
+  fixtures preserve old store/Android comparisons; only 12 checker-enabled
+  home/reader/policy-metadata hashes were refreshed, with member payloads unchanged.
+  Native Chromium launch is blocked by sandbox socket permissions even with
+  crash reporting disabled; checker/Android browser QA remains unverified.
+  Owned `/tmp/task252a-*` scratch removed. Review/merge remain; no whole suite,
+  live calls, commit or push. Parallel task 252b's AI-take files and workflow
+  tests are untouched.
+- **AI take review fixes (Codex task 252b, 2026-10-16; uncommitted, OFF):**
+  Findings 2–18 (including duplicates) use verdict-specific leads and a closed
+  sentence grammar binding each price, percentage, count and date to its fact.
+  Best Buy and the shipped About-usual answer remain valid; arbitrary advice,
+  price predictions, free-text numbers, unsupported currencies and invisible
+  format characters fail closed. Prompts carry canonical store/condition facts.
+  Character/word caps precede regex work; optional preparation failures clear
+  every take and allow publishing. The two explicitly requested `site.py`
+  changes remove stale `last_run` replay and add that failure boundary.
+  Fenced/truncated/deep/malformed replies salvage only complete top-level rows.
+  Paid attempts, including rejections/interruption, persist before the request;
+  never-attempted then oldest-attempted pages rotate first. One cache row per
+  page retains its latest outcome plus four previous facts/version pairs;
+  matching retained rejections are not paid for again. Claims expire after 30
+  days; obsolete publish/per-facts cache rows are pruned. Batch sizing subtracts
+  shared feature/global/day/run spend and pacing before the atomic reservation.
+  Walmart may feed takes; eBay never does; Deal Check still requires history mode.
+  Disabled baseline regenerated from untouched pre-task HEAD `87f21bcd2156`:
+  **1,189 public files/four modes plus member payloads**, preserving current
+  newsletter/Android/privacy changes rather than old task-245 snapshots.
+  Initial AI-only run: **154 passed, 10 failed** (fixture assumptions/snapshots,
+  corrected). Final focused regression: **364 passed, 0 failed (182.10s)**:
+  `test_ai_take.py`, `test_e2e_offline.py`, `test_claude_client.py`,
+  `test_publish_site.py`, `test_uncertain_reservations.py`, `test_lighter_state.py`.
+  Both runs used `-q -n 1 -p no:cacheprovider` with owned `/tmp/task252b-*`
+  basetemps; all owned scratch/baseline directories removed. `git diff --check`
+  passed. Finding 1 remains assigned to parallel
+  task 252a as the brief requires; `tests/test_public_copy.py` is untouched.
+  Review/activation remain; no whole suite, live calls, commit or push.
+- **Newsletter review fixes (Codex task 252c, 2026-10-16; uncommitted, OFF):**
+  Shared customer-email exclusions unwrap tracker URLs, reject excluded store
+  text and named product marks, and scan subject/plain/HTML before sending
+  (including personalized links and confirmations). Display-name credits remove
+  internal source IDs; newsletter credits deduplicate names. Remembered deal
+  paths require a written page; unsupported exclusion keys fail config loading.
+  Confirm GET is read-only with one POST button; POST confirms without TTL.
+  Confirm/unsubscribe responses depend only on link syntax, never KV existence
+  or token match; only matching tokens mutate records. Existing limits stay.
+  The task's narrow workflow-harness exception changes only confirm GET/POST
+  checks; the unsubscribe assertions remain unchanged. Legacy-record/TTL and
+  dispatch-only deployment docs corrected. Scoped `-q -n 1` checks: initial
+  **312 passed / 7 failed** across newsletter, policy, partner policies, members,
+  digest and workflows (all seven are untouched Stripe localhost tests blocked
+  by sandbox socket permissions); final affected checks plus both offline
+  idempotency modes **266 passed / 0 failed**; expanded Fire-tablet policy
+  regressions **153 passed / 0 failed**. Worker direct module: **77 passed /
+  0 failed**; file and required directory runners each **1 passed / 0 failed**.
+  Owned `/tmp/task252c-*` basetemps/logs removed. No protected workflow changes
+  beyond the authorized confirm checks; the seven socket tests remain unverified.
+  Review and manual Worker deployment remain before enabling either switch.
+  No whole suite, external calls, email, commit, push or deployment.
+- **Best-deals newsletter (Codex task 247, 2026-10-16; uncommitted, OFF):**
+  Both switches default off; postal address required. Daily/ISO-week picks exclude
+  Amazon/eBay before the model and link only to written wowpriced pages. Independent
+  opt-in retains sign-up dates; legacy records are pending, expire 30 days after
+  their one confirmation email, and lose the TTL when confirmed. Read-only local
+  `newsletter-preview --out DIR`; no support-mode trial CTA or external thumbnails.
+  Updated assertions in `test_newsletter.py`: retailer/source links → deal pages
+  and plain credits; wall → `/best-deals-today/?ref=email`; image → permitted own
+  asset; button/counts → “See the deal”; trial/membership links → `?ref=email#signup`;
+  capped-batch equality excludes the current as-of line; pending rows add `ts`.
+  Partner-policy assertions expect plain credits/dropped Amazon trackers; delivery
+  and unconfirmed-price fixtures add the required address, daily cadence and pages.
+  Final scoped run: **601 Python passed, 0 failed** (`-q -n 1`, both audit reruns);
+  **75 Worker tests passed, 0 failed** via direct module; required directory runner
+  also passed (one file). Initial newsletter run: 84 passed/7 body-fixture failures,
+  all corrected. Owned `/tmp/task247-*` scratch removed after every run. Pre-task
+  HEAD: **205 public files/four modes plus member payloads match**, without repins.
+  Re-run deploy-subscribe-worker BEFORE setting confirmations_enabled or enabled;
+  the old Worker treats legacy sign-ups as confirmed. Before launch: approve the
+  local preview, deploy reviewed Worker, set address and Amazon SES `SMTP_*` secrets;
+  check SPF/DKIM/DMARC alignment and DKIM `h=` includes List-Unsubscribe and
+  List-Unsubscribe-Post; enable confirmations before issues. Amazon stays excluded;
+  eBay needs written EPN email approval before removal. No extension edits, whole
+  suite, live calls, upload, email, commit, push or deployment.
+- **Android TWA + shared Deal Check (Codex task 246, 2026-10-16; uncommitted, OFF):**
+  Validated config stays disabled, certificates empty, Amazon `limited`; app-only
+  guards, untagged clicks, shares, asset links and price-free offline fallback.
+  Preserves **1,352 HEAD files/eight modes**. Bubblewrap 1.27.0 manifest, manual
+  build workflow, listing, feature graphic and local screenshot tools are ready.
+  Regression: **432 passed/0 failed/2 skipped**; final Android checks:
+  **53 passed/0 failed/1 skipped**, all `-n 1`; own scratch removed. Historical
+  privacy fixture fixes four old comparisons without repinning. Protected tests
+  and `extension/` unchanged. Chromium socket restrictions block browser QA/four
+  screenshot PNGs; actual Android build unverified. Follow [operator steps](../android/README.md)
+  before launch: review, QA/build, signing/certificates, app-link verification,
+  manual Play upload and 12-tester/14-day testing; Amazon needs written app approval
+  before `as_site`. No whole suite, external calls, email, upload, commit or push.
+- **Store policy + bounded /p/ output (Codex task 250, 2026-10-16; uncommitted, ON):**
+  All stores ship `history` (Walmart explicit); shared `live_only` gates histories,
+  lowest-seen, badges and saved-price watches using original stored facts.
+  Product output keeps 90 days, prunes state/admissions after 180, caps at 6,000
+  product files and shares only written paths; private counts warn above 15,000
+  site files. Pre-task HEAD matches all 324 public files/eight variants + members.
+  **364 final scoped checks pass**, including byte pins and both rerun modes
+  (`-n 1`); owned `/tmp/task250-*` basetemps/logs removed. Review/commit/push
+  remain before Amazon-show deployment; no live calls, full suite, commit or push.
+- **Deal Check page (Codex task 241, 2026-10-16; uncommitted, OFF):**
+  `/check/` displays shipped verdicts through same-origin SHA256 shards, with
+  prefill, dated results, short-link guidance and enabled-only search/navigation.
+  Amazon `history` requires `amazon_history: show` and reuses the existing
+  Eastern-time disclosure helper; watches stay off, Walmart/eBay live-only.
+  The reader excludes tracking scripts. Disabled output matches untouched
+  `7c202391bee4`: **141 public files/four modes plus member payloads**, no repins.
+  Regression run: **615 passed, 1 failed, 1 skipped**; the new Node test's
+  hardcoded date was corrected, final checker rerun **12 passed, 1 skipped**.
+  Thus **616 distinct checks pass in their final state**, including both
+  offline rerun modes, alias/shard parity and controller/error/race flows.
+  All runs used `-n 1`; owned `/tmp/task241-*` scratch/logs removed. Chromium
+  and its headless shell hit sandbox socket permissions: native browser QA
+  and Lighthouse measurements remain, along with review/activation. No whole
+  suite, workflow-test edits, live/paid calls, commit or push.
+- **Checked AI price takes (Codex task 245, 2026-10-16; uncommitted, OFF):**
+  `product_pages.ai_take` adds one budgeted batch, exact number/date and direction
+  checks, facts-hash/prompt-version caching and immediate stale-take withdrawal.
+  Verified summaries appear above `/p/` facts and in history-only Deal Check
+  entries; Amazon follows its history switch, Walmart/eBay are excluded.
+  Disabled output matches **1,185 public files across four access modes** plus
+  member payloads. Focused regression: **649 passed, 3 failed**; all corrected
+  (duplicate fixture and replay JSON key order). Final feature/rerun checks:
+  **75 passed, 0 failed**, including both enabled audit modes with identical
+  bytes, rows and calls. All runs used `-n 1`; owned `/tmp/task245-*` scratch
+  was deleted. Review/activation remain; no whole suite, live calls or commit/push.
+- **Browser extension (Codex tasks 244/244b, 2026-10-16; uncommitted, ON after install):**
+  One plain-JS MV3 package for Chrome/Firefox; URL-only shared aliases/shards,
+  30-minute session cache, popup checker and global/per-site controls. Review
+  fixes refresh/clear cards on URL changes (popstate + a URL-only 1 s timer),
+  prune expired cache keys and tolerate quota failures, and list hidden sites
+  with Unhide buttons even on tabs without a content script. Firefox minimum
+  is 140. `extension.amazon_mode: full` (Amazon OK, amz378_998) is validated
+  and read by `build-extension`; `link` is the configurable fallback. This tree
+  already permits Amazon checker history; cards show only item/link if the
+  entry lacks price facts. Walmart history is supported by the extension;
+  eBay remains live-only. Default-on wording agrees in popup, listing and privacy.
+  Rules and the reproducible runtime-only zip were rebuilt. Reviewer steps,
+  matching manifest/listing summary, navigation limitation, local promo source
+  and an Amazon fixture without price facts are in the store kit.
+  Final extension-only pytest: **64 passed, 0 failed, 1 skipped** (`-n 1`),
+  including four modes with privacy-only site changes and **17/17 Node cases**.
+  The browser network allowlist now requires an observed shard request; the
+  real-browser script also checks default-on and SPA/Back navigation. Actual
+  browser execution and rendering were attempted, but Chromium launch returned
+  `Operation not permitted` (browser exit 77, renderer exit 1). The two existing
+  1280×800 PNGs are retained; refreshed screenshots and the 440×280 promo PNG
+  remain ungenerated, and browser assertions remain unverified. Rerun the local
+  renderer and browser QA before listing; instructions are in
+  [PUBLISH.md](../extension/store/PUBLISH.md). Owned `/tmp/task244b-*` scratch
+  was deleted. Checker stays disabled; task 241's live page/data and a concrete
+  indexed reviewer URL chosen at submission still precede listing. No whole
+  suite, commit, push or deploy.
 - **Deal Check index (Codex task 240, 2026-10-16; merged, OFF):**
   Validated `checker:` builds deterministic, bounded SHA256 lookup shards after
   product pages, with shared URL rules/40-row fixture, dated public facts and

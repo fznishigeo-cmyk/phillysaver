@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>wowpriced Deal Check</title><link rel="stylesheet" href="popup.css"></head>
+<body><main><h1>wowpriced</h1>
+<label class="toggle"><input id="enabled" type="checkbox"> Turn on wowpriced</label>
+<p class="muted">On after install. Checks product addresses only.</p>
+<label id="site-row" class="toggle" hidden><input id="hide" type="checkbox"> <span id="site-label">Hide on this site</span></label>
+<div id="hidden-sites"></div>
+<form id="check-form"><label for="product-url">Paste a product link</label>
+<input id="product-url" type="url" required placeholder="https://…" autocomplete="off">
+<button type="submit">Check</button></form>
+<p id="status" role="status" aria-live="polite"></p><div id="result" role="region" aria-label="Price check result" aria-live="polite"></div>
+<p><a href="https://wowpriced.com/check/" target="_blank" rel="noopener noreferrer">Open Deal Check on wowpriced</a></p>
+<p class="muted">No browsing log, page scraping or affiliate link changes. <a href="https://wowpriced.com/privacy.html" target="_blank" rel="noopener noreferrer">Privacy</a></p>
+</main><script src="lookup.js"></script><script src="card.js"></script><script src="popup.js"></script></body></html>

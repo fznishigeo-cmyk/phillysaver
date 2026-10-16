@@ -1,22 +1,23 @@
 /**
- * wowpriced Worker: the daily top-10 sign-up list plus the paywall API, in one
+ * wowpriced Worker: the best-deals sign-up list plus the paywall API, in one
  * deployment with no server of our own. KV (binding SUBS) holds one key per
  * subscriber,
  *   sub:<email> -> {"ts", "token", "confirmed", "confirm_sent_at"}  (also in metadata)
  * No mail is sent from here: the pipeline (GitHub Actions) reads the list via
  * GET /list with the shared NEWSLETTER_SECRET and sends over SMTP, confirm
- * links first (double opt-in, subscribers.js), the daily email to confirmed
+ * links first (double opt-in, subscribers.js), the deals email to confirmed
  * addresses only.
  *
  *   POST /subscribe              {email} as JSON or a form field -> 200 {ok:true};
  *                                a form post gets a 303 to <site>/subscribe.html?ok=1
- *   GET  /confirm?e=&t=          sets confirmed=true when the token matches -> 200 HTML
+ *   GET  /confirm?e=&t=          200 HTML page with one POST button (no writes)
+ *   POST /confirm?e=&t=          sets confirmed=true when the token matches -> 200 HTML
  *   GET  /unsubscribe?e=&t=      200 HTML page with one POST button "Unsubscribe"
  *   POST /unsubscribe?e=&t=      deletes when the token matches -> 200 HTML
  *                                (also the RFC 8058 one-click form mail apps send)
  *   GET  /list                   Authorization: Bearer <NEWSLETTER_SECRET>
  *                                -> {emails:[{email, token}]} confirmed only, at most 10k;
- *                                ?pending=1 -> unconfirmed addresses not yet mailed a link
+ *                                ?pending=1 -> unconfirmed {email, token, ts}, not yet mailed a link
  *   POST /list/confirm-sent      same bearer, {emails:[...]} -> 204, stamps confirm_sent_at
  *   /api/*                       the paywall: accounts, sessions, membership, Stripe
  *                                Checkout + billing portal and the members-only deals
@@ -29,11 +30,11 @@
  * https://fznishigeo-cmyk.github.io), GOOGLE_CLIENT_ID, STRIPE_PAYMENT_LINK,
  * STRIPE_PORTAL_LINK, STRIPE_PRICE_ID, STRIPE_YEARLY_PRICE_ID ($49/year; empty = unavailable),
  * STRIPE_PORTAL_CONFIG, SITE_URL,
- * TRIAL_DAYS, PBKDF2_ITERATIONS (wrangler.toml).
+ * TRIAL_DAYS, CONFIRM_EXPIRE_DAYS (default 30), PBKDF2_ITERATIONS (wrangler.toml).
  */
 
 import { EMAIL_RE, allowedOrigins, corsHeaders, json, safeEqual, readJson, overLimit } from "./util.js";
-import { page, isConfirmed, getSub, putSub, confirm, unsubscribe } from "./subscribers.js";
+import { page, isConfirmed, getSub, putSub, markConfirmSent, confirm, unsubscribe } from "./subscribers.js";
 import { handleApi } from "./api.js";
 import { handleClicks } from "./clicks.js";
 
@@ -107,7 +108,7 @@ async function list(request, env, url) {
       const m = k.metadata;
       if (!m || !m.token) continue;
       const wanted = pending ? !isConfirmed(m) && !m.confirm_sent_at : isConfirmed(m);
-      if (wanted) emails.push({ email: k.name.slice(4), token: m.token });
+      if (wanted) emails.push({ email: k.name.slice(4), token: m.token, ...(pending ? { ts: m.ts || "" } : {}) });
     }
     cursor = res.list_complete ? undefined : res.cursor;
   } while (cursor && emails.length < LIST_MAX);
@@ -124,7 +125,7 @@ async function confirmSent(request, env) {
   for (const e of emails) {
     const email = String(e || "").trim().toLowerCase();
     const rec = EMAIL_RE.test(email) ? await getSub(env, email) : null;
-    if (rec && !isConfirmed(rec)) await putSub(env, email, { ...rec, confirm_sent_at: now });
+    if (rec && !isConfirmed(rec)) await markConfirmSent(env, email, rec, now);
   }
   return new Response(null, { status: 204 });
 }
@@ -140,7 +141,7 @@ export default {
     }
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
     if (method === "POST" && url.pathname === "/subscribe") return subscribe(request, env);
-    if (method === "GET" && url.pathname === "/confirm") return confirm(url, env);
+    if ((method === "GET" || method === "POST") && url.pathname === "/confirm") return confirm(request, url, env);
     if ((method === "GET" || method === "POST") && url.pathname === "/unsubscribe") return unsubscribe(request, url, env);
     if (method === "GET" && url.pathname === "/list") return list(request, env, url);
     if (method === "POST" && url.pathname === "/list/confirm-sent") return confirmSent(request, env);

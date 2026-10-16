@@ -268,6 +268,7 @@ def test_off_restores_every_byte_including_existing_traffic_and_tracking(db, cfg
     assert before == snapshot()
 
 
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
     from tests.test_pwa import baseline_config, sample_deals, tree_hash
     from tests.test_support import NOW as FIXED, render

@@ -218,6 +218,29 @@ def cmd_domains(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_newsletter_preview(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .db import DB
+    from .publish.newsletter import preview_newsletter
+    from .util import now_utc
+
+    cfg = load_config(args.config)
+    db = DB(args.db, read_only=True)
+    try:
+        for path in preview_newsletter(db, cfg, now_utc(), args.out):
+            print(path)
+    finally:
+        db.close()
+    return 0
+
+
+def cmd_build_extension(args: argparse.Namespace) -> int:
+    from .build_extension import build
+
+    print(build())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="dealradar",
                                 description="Polite online-deal aggregator.")
@@ -227,6 +250,14 @@ def main(argv: list[str] | None = None) -> int:
     def common(sp: argparse.ArgumentParser) -> None:
         sp.add_argument("--db", default="state.db")
         sp.add_argument("--config", default=None)
+
+    sp = sub.add_parser("newsletter-preview", help="preview the next best-deals email offline")
+    common(sp)
+    sp.add_argument("--out", default=".", help="directory for newsletter-preview.html and .txt")
+    sp.set_defaults(fn=cmd_newsletter_preview)
+
+    sp = sub.add_parser("build-extension", help="build offline extension rules and reproducible zip")
+    sp.set_defaults(fn=cmd_build_extension)
 
     sp = sub.add_parser("run", help="one pipeline run (hourly semantics)")
     common(sp)

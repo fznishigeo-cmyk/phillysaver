@@ -157,11 +157,13 @@ def test_defaults_off_and_omission(tmp_path):
 
 
 @pytest.mark.parametrize("setting", ["omitted", False])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_disabled_exact_pre_edit_calls_reservations_decisions_and_four_public_trees(tmp_path, monkeypatch, setting):
     baseline = json.loads(lzma.decompress((Path(__file__).parent / "fixtures/bounded_prefilter_baseline.json.xz").read_bytes()))
     assert capture(tmp_path, monkeypatch, setting) == baseline
 
 
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_enabled_adversarial_eligibility_change_is_capped_and_public_bytes_stay_identical(tmp_path, monkeypatch):
     baseline = json.loads(lzma.decompress((Path(__file__).parent / "fixtures/bounded_prefilter_baseline.json.xz").read_bytes()))
     result = capture(tmp_path, monkeypatch, True)

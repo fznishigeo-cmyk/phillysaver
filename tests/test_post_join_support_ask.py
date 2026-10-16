@@ -37,6 +37,7 @@ def test_post_join_support_ask_behavior(tmp_path, monthly):
 
 
 @pytest.mark.parametrize("link,monthly", [("", ""), ("", MONTHLY), ("https://invalid.example/stripe", "")])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_missing_support_link_preserves_every_published_byte(tmp_path, monkeypatch, link, monthly):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = AppConfig(support_enabled=True, support_payment_link=link,

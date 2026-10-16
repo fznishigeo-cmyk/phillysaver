@@ -39,6 +39,7 @@ BASELINES = json.loads('''{
 ''')
 
 
+@pytest.mark.usefixtures("pre_extension_privacy")  # pinned before task 244's privacy section
 @pytest.mark.parametrize('mode', ['membership', 'open', 'support', 'shipped'])
 @pytest.mark.parametrize('history', ['show', 'hide'])
 @pytest.mark.parametrize('as_of', [False, True])

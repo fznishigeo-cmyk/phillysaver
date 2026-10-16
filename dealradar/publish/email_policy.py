@@ -5,8 +5,43 @@ from html import escape
 
 from ..http_client import extract_asin, tracker_target
 from ..source_policy import host_of, source_image_allowed
-from .credits import source_sightings
+from .credits import source_display_name, source_sightings
 from .social import _without_prices
+
+
+AMAZON_MARKS = re.compile(
+    r"\b(?:alexa|kindle|echo\s+(?:dot|show|pop|spot|studio|auto|hub|smart\s+speaker)|"
+    r"echo\s*\(\d+(?:st|nd|rd|th)\s+gen\)|"
+    r"fire\s*(?:tv|tablet|hd|max|kids|7)|eero|"
+    r"ring\s+(?:alarm|intercom|(?:(?:video|battery|wired|spotlight|floodlight|stick\s+up|indoor)\s+)*(?:doorbell|cam(?:era)?))|"
+    r"blink\s+(?:mini|outdoor|indoor|video|doorbell|camera|cam))(?!\w)", re.I)
+
+
+def email_content_excluded(cfg, *parts: str) -> bool:
+    """Fail closed on excluded store names/links anywhere in the final copy."""
+    tokens = set(cfg.newsletter_exclude_stores) | {"amazon", "amzn.", "a.co/"}
+    return any(token in part.casefold() for part in parts for token in tokens)
+
+
+def email_excluded(deal: dict, cfg) -> bool:
+    """Shared store/product exclusions for every customer email channel."""
+    from .amazon_history import store_of
+
+    url = deal.get("canonical_url") or ""
+    excluded = set(cfg.newsletter_exclude_stores) | {"amazon"}
+    text = " ".join(str(deal.get(k) or "") for k in ("item", "store", "conditions"))
+    return (store_of(dict(deal, canonical_url=tracker_target(url) or url)) in excluded
+            or email_deal(deal, cfg)["email_hide_price"]
+            or email_content_excluded(cfg, text)
+            or bool(AMAZON_MARKS.search(text)))
+
+
+def email_message(deal: dict, cfg) -> str:
+    from .telegram_pub import format_message
+
+    sightings = [dict(s, source_name=source_display_name(s.get("source_name") or ""))
+                 for s in deal.get("sightings") or []]
+    return format_message(dict(deal, sightings=sightings), cfg=cfg)
 
 
 def email_credits(deal: dict) -> list[tuple[str, str]]:

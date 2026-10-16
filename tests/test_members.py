@@ -34,12 +34,12 @@ def db(tmp_path):
 
 
 def _deal(key: str, pct: float = 70.0, price: float = 9.99) -> dict:
-    return {"dedupe_key": key, "item": f"Item {key}", "store": "Amazon",
+    return {"dedupe_key": key, "item": f"Item {key}", "store": "Walmart",
             "final_price": price, "pct_at_checkout": pct,
             "verify_tier": "corroborated", "conditions": [],
             "sightings": [{"source_name": "hip2save",
                            "source_url": "https://hip2save.com/deals/x/"}],
-            "canonical_url": "https://www.amazon.com/dp/B0X"}
+            "canonical_url": "https://www.walmart.com/ip/12345"}
 
 
 class FakeSMTP:
@@ -151,7 +151,7 @@ class TestMemberEmail:
         raw = msg.as_string()
         assert "a@x.com" not in raw and "b@x.com" not in raw  # no address leaks
         text = msg.get_payload()[0].get_payload(decode=True).decode("utf-8")
-        assert "Item k1" in text and "$9.99" not in text and "91% off" in text
+        assert "Item k1" in text and "$9.99" in text and "91% off" in text
         assert "Live wall: https://wowpriced.com/" in text
         assert "Manage membership: https://billing.stripe.com/p/login/x" in text
 

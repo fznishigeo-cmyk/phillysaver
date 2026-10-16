@@ -1152,6 +1152,24 @@ class DB:
             (run_key, run_key)).fetchone()
         return float(row[0])
 
+    def kind_spend_usd_for_run(self, kind: str, run_key: str) -> float:
+        return float(self.conn.execute(
+            "SELECT COALESCE(SUM(COALESCE(cost_usd,reserved_usd)),0) FROM llm_calls"
+            " WHERE run_key=? AND kind=? AND status!='released'", (run_key, kind)).fetchone()[0])
+
+    def kind_spend_usd_for_day(self, kind: str, now: datetime) -> float:
+        day = now.astimezone(timezone.utc).date().isoformat()
+        return self._kind_day_spend(self.conn, kind, day)
+
+    @staticmethod
+    def _kind_day_spend(conn, kind: str, day: str) -> float:
+        return float(conn.execute(
+            "SELECT (SELECT COALESCE(SUM(cost_usd),0) FROM llm_calls"
+            " WHERE kind=? AND status='settled' AND substr(billed_at,1,10)=?)"
+            " + (SELECT COALESCE(SUM(r.usd),0) FROM llm_reservations r"
+            " JOIN llm_calls c USING(call_key) WHERE c.kind=? AND r.day=?)",
+            (kind, day, kind, day)).fetchone()[0])
+
     @staticmethod
     def _day_spend(conn, day: str) -> float:
         # Uncertain calls retain their full reservation, including the next
@@ -1168,7 +1186,9 @@ class DB:
     def reserve_llm_call(self, call_key: str, run_key: str, model: str,
                          cost: float, now: datetime, allowances: dict[str, float],
                          run_cap: float, *, kind: str = "unknown", source_name: str = "",
-                         daily_call_cap: int | None = None) -> bool:
+                         daily_call_cap: int | None = None,
+                         kind_run_cap: float | None = None,
+                         kind_day_cap: float | None = None) -> bool:
         from .errors import SpendCapReached
 
         # Separate connections allow parser workers and other parser
@@ -1191,6 +1211,17 @@ class DB:
             if used + cost > run_cap or any(
                     self._day_spend(conn, day) + cost > cap for day, cap in allowances.items()):
                 raise SpendCapReached("insufficient run or daily allowance for LLM reservation")
+            if kind_run_cap is not None:
+                used_kind = conn.execute(
+                    "SELECT COALESCE(SUM(COALESCE(cost_usd,reserved_usd)),0) FROM llm_calls"
+                    " WHERE run_key=? AND kind=? AND status!='released'", (run_key, kind)).fetchone()[0]
+                if used_kind + cost > kind_run_cap:
+                    raise SpendCapReached("insufficient kind run allowance for LLM reservation")
+            if kind_day_cap is not None:
+                for day in allowances:
+                    used_kind = self._kind_day_spend(conn, kind, day)
+                    if used_kind + cost > kind_day_cap:
+                        raise SpendCapReached("insufficient kind daily allowance for LLM reservation")
             conn.execute(
                 "INSERT INTO llm_calls(call_key, run_key, model, started_at, reserved_usd, kind, source_name)"
                 " VALUES (?,?,?,?,?,?,?)", (call_key, run_key, model, iso(now), cost, kind, source_name))
@@ -1424,6 +1455,13 @@ class DB:
         self.conn.execute("DELETE FROM critic_tier_batches WHERE day < ?", (cutoff[:10],))
         self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
                           (iso(now - timedelta(days=run_stats_days)),))
+        self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take_run:*' AND v < ?",
+                          (iso(now - timedelta(days=min(30, run_stats_days))),))
+        self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take_publish:*'")
+        # Retire the old per-facts hashed keys (prompt v1); current caches are
+        # one row per page, with a bounded history inside that row.
+        self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take:*' AND CASE WHEN json_valid(v)"
+                          " THEN k != 'ai_take:' || COALESCE(json_extract(v,'$.key'),'') ELSE 1 END")
         self.conn.execute("DELETE FROM keepa_recheck_history WHERE deal_key NOT IN"
                           " (SELECT dedupe_key FROM deals)")
         self.conn.execute("DELETE FROM keepa_recheck_yield WHERE day < ?",

@@ -1,0 +1,15 @@
+*.keystore
+*.jks
+*.p12
+*.apk
+*.aab
+.gradle/
+local.properties
+build/
+app/
+gradle/
+gradlew
+gradlew.bat
+settings.gradle
+build.gradle
+gradle.properties

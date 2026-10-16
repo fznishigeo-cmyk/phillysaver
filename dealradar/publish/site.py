@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import amazon_as_of, amazon_history, checker, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
+from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
 from . import link_facts
@@ -107,6 +107,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
     html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
     html = amazon_history.template(html, cfg)
     html = product_pages.template(html, cfg.seo_product_pages_enabled)
+    html = ai_take.template(html, cfg.ai_take["enabled"])
     if cfg.seo_product_pages_enabled and home:
         html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
     if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and home:
@@ -316,7 +317,8 @@ def linked_disclosure(disclosure: str) -> str:
 
 def site_footer(html: str, now: datetime, disclosure: str, support: bool,
                 account: bool = False, *, amazon_as_of_enabled: bool = False,
-                product_pages_enabled: bool = False, event_links: list | None = None) -> str:
+                product_pages_enabled: bool = False, event_links: list | None = None,
+                checker_enabled: bool = False) -> str:
     """One footer for root and nested pages, with the configured disclosure."""
     if "{{SITE_FOOTER}}" not in html:
         return html
@@ -327,6 +329,8 @@ def site_footer(html: str, now: datetime, disclosure: str, support: bool,
     if product_pages_enabled:
         footer = footer.replace('<a href="/hacks.html">Deal hacks</a>',
                                 '<a href="/hacks.html">Deal hacks</a> · <a href="/p/">Price history</a>', 1)
+    if checker_enabled:
+        footer = footer.replace('</nav>', ' · ' + checker_page.LINK + '\n  </nav>', 1)
     if amazon_as_of_enabled:
         footer = footer.replace("</span></p>", "</span> " + amazon_as_of.FOOTER + "</p>", 1)
     footer = seo._fill(footer, FOOTER_YEAR=str(now.year), FOOTER_DISCLOSURE=linked_disclosure(disclosure),
@@ -537,6 +541,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     }
     if amazon_history.watches_hidden(cfg):
         public["amazon"] = is_amazon_deal(deal)
+    # Legacy field name: true means "no saved-price watch" for this deal.
+    if amazon_history.live_only(cfg, deal):
+        public["amazon"] = True
     from ..store_prices import store_offer
     checked = price_confirmed_at(deal) if is_amazon_deal(deal) or store_offer(deal)[0] else None
     if checked is not None and checked <= now:
@@ -588,7 +595,7 @@ def health_markdown(doc: dict[str, Any]) -> str:
 
 def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 deals: list[dict[str, Any]] | None = None,
-                last_run: dict[str, Any] | None = None) -> dict[str, Any]:
+                last_run: dict[str, Any] | None = None, ai_parser=None) -> dict[str, Any]:
     """Write deals.json and the HTML pages to out_dir; return the counts,
     the members' full payload and the operator's source health."""
     # Preflight the one required home slot before ranking, state writes or
@@ -734,6 +741,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     product_public = [d for d in teaser + spotlight + deal_pages[1] if not d.get("locked")]
     products, product_paths, product_summary = product_pages.prepare(
         db, cfg, now, product_public, spotlight_rows + deals)
+    try:
+        take_summary = ai_take.prepare(db, cfg, now, products, parser=ai_parser,
+                                      run_key=(last_run or {}).get("run_key", ""))
+    except Exception as exc:
+        logger.warning("AI takes unavailable (%s)", type(exc).__name__)
+        for page in products.values():
+            page.pop("ai_take", None)
+        take_summary = dict(eligible=0, requested=0, verified=0,
+                            rejected={"unavailable": 1}, cached=0, usd=0.0)
     product_public_keys = {d["key"] for d in product_public}
     for d in serialized + spotlight:
         path = paths.get(d["key"][:8])
@@ -811,16 +827,21 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.seo_product_pages_enabled:
         site_version = hashlib.sha256((site_version + product_pages.LINK_STYLE).encode()
             + "".join(product_pages.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    if cfg.checker["enabled"]:
+        site_version = hashlib.sha256((site_version + "deal-check-page").encode()).hexdigest()[:12]
     if cfg.amazon_history == "hide":
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
     elif amazon_history.watches_hidden(cfg):
         site_version = hashlib.sha256((site_version + "amazon-watches-off").encode()).hexdigest()[:12]
+    if "live_only" in cfg.store_policy.values():
+        site_version = hashlib.sha256((site_version + json.dumps(
+            cfg.store_policy, sort_keys=True)).encode()).hexdigest()[:12]
     if cfg.seo_event_pages_enabled:
         site_version = hashlib.sha256((site_version + "event-pages" + json.dumps(
             cfg.seo_event_pages_events, sort_keys=True)).encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
-    if cfg.pwa_enabled:
+    if cfg.pwa_enabled or cfg.pwa_android["enabled"]:
         site_version = pwa.site_version(site_version, cfg)
     from .. import clicks
     if clicks.enabled(cfg) and clicks.endpoint(cfg):
@@ -971,7 +992,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                            account=name == "index.html" and not support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
                            product_pages_enabled=cfg.seo_product_pages_enabled,
-                           event_links=seo.event_pages.links(cfg))
+                           event_links=seo.event_pages.links(cfg), checker_enabled=cfg.checker["enabled"])
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
     # when a newer publish (meta.site_version) appears.
@@ -1021,12 +1042,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         checker_summary = checker.publish(out, cfg, now, checker.build(
             db, cfg, now, product_public, products, spotlight_rows + deals))
     else:
-        data_dir = out / "check" / "data"
-        if data_dir.exists():
-            shutil.rmtree(data_dir)
         check_dir = out / "check"
-        if check_dir.is_dir() and not any(check_dir.iterdir()):
-            check_dir.rmdir()
+        if check_dir.is_dir():
+            shutil.rmtree(check_dir)
     (out / "robots.txt").write_text(
         "User-agent: *\nAllow: /\nDisallow: /welcome.html\n"
         + ("Disallow: /check/data/\n" if cfg.checker["enabled"] else "")
@@ -1037,6 +1055,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if getattr(cfg, "custom_domain", ""):
         (out / "CNAME").write_text(cfg.custom_domain + "\n", encoding="utf-8")
 
+    if cfg.checker["enabled"]:
+        checker_page.publish(out, cfg, now, site_url, meta["disclosure"])
+        seo_paths.append("/check/")
+
     if support and link:
         # Generated pages share the same footer join success as root pages.
         before, after = support_script(), support_script(link, monthly)
@@ -1046,7 +1068,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             if updated != html:
                 path.write_text(updated, encoding="utf-8")
 
-    pwa.publish(out, cfg)
+    if not cfg.pwa_android["enabled"]:
+        pwa.publish(out, cfg)
     traffic.publish(out, cfg, [d for d in deal_pages[1] if not d.get("price_unconfirmed")], paths, site_url)
     profiles.publish(out, cfg, site_url)
     inventory.publish(out, cfg)
@@ -1056,6 +1079,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     apply_tracking(out, cfg)
     click_signal.publish(out, cfg)
     manifest_refresh.publish(out, cfg)
+    if cfg.pwa_android["enabled"]:
+        # App detection must precede tracking, including on the private reader.
+        # Write the price-free offline page after every global script pass.
+        pwa.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
@@ -1077,6 +1104,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
 
     logger.info("site rendered: %d deals (%d locked) -> %s",
                 meta["count"], locked_count, out)
+    site_files = sum(p.is_file() for p in out.rglob("*"))
+    if site_files > 15000:
+        logger.warning("site_files exceeds 15000: %d", site_files)
     from ..keepa_rechecks import History
     top_candidates = [d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]]
     label_report = price_labels.diagnostic(before_labels, cfg, now, teaser)
@@ -1102,12 +1132,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     accuracy.publish(db, spotlight + audit_wall, now,
                      (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "site_files": site_files,
             "public_deals": teaser + spotlight_only,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
             "checkout_price_deals": checkout_summary,
             "product_pages": product_summary,
+            **({"ai_take": take_summary} if cfg.ai_take["enabled"] else {}),
             **({"checker": checker_summary} if cfg.checker["enabled"] else {}),
             "posted_redirects": deal_pages[3],
             "confirmed_age": {

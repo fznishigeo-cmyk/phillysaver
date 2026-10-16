@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Local example — wowpriced</title>
+<style>body{margin:0;background:#f3f7f6;color:#172b32;font:18px/1.6 system-ui,sans-serif}header{padding:18px 48px;background:#10232a;color:white;font-weight:700}main{max-width:1040px;margin:64px auto}small{color:#4e6268}h1{font-size:42px;max-width:640px;line-height:1.15}.product{border:1px solid #cee0da;border-radius:20px;padding:36px;width:600px;background:white}.shape{height:190px;background:#e4efec;border-radius:14px;display:grid;place-items:center;font-size:70px}a{color:#0e7569}#example{position:fixed;right:28px;bottom:28px;width:350px}</style>
+<header>wowpriced · local demonstration</header><main><small>EXAMPLE ONLY · No retailer page or live price</small><h1>Check a product's price in a glance.</h1><section class="product"><div class="shape" aria-hidden="true">◒</div><h2>Example countertop cooker</h2><p>A synthetic product page for the store listing screenshots.</p><a href="https://retailer.example.invalid/product?affiliate=original">Original retailer link (unchanged)</a></section></main><div id="example"></div>
+<script src="../lookup.js"></script><script src="../card.js"></script>
+<script>
+const amazon = new URLSearchParams(location.search).has("amazon");
+const model = {item: amazon ? "Example Amazon product" : "Example countertop cooker", href:"https://wowpriced.com/p/example/?ref=ext", verdict:amazon ? "" : "Yes — $77.00 is 23% below its usual $100.00 (90-day median).", detail:amazon ? "" : "$77.00", at:amazon ? "" : new Date(Date.now()-12*60000).toISOString()};
+document.getElementById("example").attachShadow({mode:"closed"}).appendChild(Wowpriced.card(document, model, () => {}, () => {}));
+</script></html>

@@ -409,6 +409,14 @@ def head_snippet(cfg) -> str:
                                         '    support_ask_shown: { ga4Only: true },\n'
                                         '    support_ask_click: { ga4Only: true, methods: ["once", "monthly"] },\n'
                                         '    support_ask_dismiss: { ga4Only: true },')
+    if cfg.pwa_android["enabled"]:
+        app = 'document.documentElement.classList.contains("in-app")'
+        blocks = [block.replace('if (ads) {', f'if (ads && !{app}) {{')
+                  if 'connect.facebook.net' in block or 'clarity.ms' in block else block
+                  for block in blocks]
+        blocks = [block.replace('  if (internal) ga4Config.traffic_type',
+                                f'  if ({app}) ga4Config.app_context = "android";\n'
+                                '  if (internal) ga4Config.traffic_type') for block in blocks]
     code = _HEAD + ''.join(blocks) + dispatch if blocks else '(function () {\n' + _INTERNAL + '})();\n'
     script = f"<script>\n{code}</script>\n"
     return f"{_START}\n{''.join(metas)}{script}{_END}\n"
@@ -430,6 +438,8 @@ def apply_tracking(out_dir: str | Path, cfg) -> int:
     snippet = head_snippet(cfg)
     changed = 0
     for path in sorted(Path(out_dir).rglob("*.html")):
+        if path.relative_to(out_dir).as_posix() == "check/index.html":
+            continue
         page = path.read_text(encoding="utf-8")
         new = inject(page, snippet)
         if new != page:

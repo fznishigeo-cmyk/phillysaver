@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "wowpriced — Is this a good deal?",
+  "version": "0.1.0",
+  "description": "Check product links against prices wowpriced has verified. No page scraping, browsing log or affiliate link changes.",
+  "minimum_chrome_version": "121",
+  "browser_specific_settings": {
+    "gecko": {"id": "extension@wowpriced.com", "strict_min_version": "140.0", "data_collection_permissions": {"required": ["none"]}}
+  },
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://wowpriced.com/*"],
+  "background": {"service_worker": "background.js", "scripts": ["lookup.js", "background.js"]},
+  "action": {"default_popup": "popup.html", "default_title": "wowpriced Deal Check"},
+  "icons": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src https://wowpriced.com 'self'"},
+  "content_scripts": [{
+    "matches": [
+      "*://*.amazon.com/dp/*", "*://*.amazon.com/*/dp/*",
+      "*://*.amazon.com/gp/product/*", "*://*.amazon.com/*/gp/product/*",
+      "*://*.amazon.com/gp/aw/d/*", "*://*.amazon.com/product/*",
+      "*://*.bestbuy.com/site/*.p*", "*://*.bestbuy.com/product/*/sku/*",
+      "*://*.target.com/p/*A-*", "*://*.walmart.com/ip/*",
+      "*://*.ebay.com/itm/*", "*://*.woot.com/offers/*"
+    ],
+    "js": ["lookup.js", "card.js", "content.js"],
+    "run_at": "document_idle"
+  }]
+}

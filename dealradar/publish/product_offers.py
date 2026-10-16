@@ -133,13 +133,15 @@ def blocks(live: list[dict], source: list[dict], paths: dict[str, str], cfg=None
 def evaluate(db, cfg, now, pages, source, paths, run_key):
     selected, pairs = comparisons(pages, source, paths, cfg)
     eligible = _eligible(pages, source, paths)
+    original_facts = {d["dedupe_key"]: d for d in db.all_deals() + source}
     histories, lowest = {}, {}
     for key, (d, facts) in eligible.items():
         product_id = facts["product_id"]
         if product_id not in histories:
             histories[product_id] = [row for row in db.product_price_history(product_id, 30, now=now)
-                                    if not amazon_history.hidden(cfg, dict(row, canonical_url=
-                                        row["dedupe_key"][4:] if row["dedupe_key"].startswith("url|") else ""))]
+                                    if not amazon_history.hidden(cfg, original_facts.get(row["dedupe_key"],
+                                        dict(row, canonical_url=row["dedupe_key"][4:]
+                                             if row["dedupe_key"].startswith("url|") else "")))]
         fact = lowest_seen(histories[product_id], condition(facts), now)
         if fact:
             lowest[key] = fact

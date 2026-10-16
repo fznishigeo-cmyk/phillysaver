@@ -2690,7 +2690,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         site_res = render_site(db, cfg, now, last_run={
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
-        })
+        }, **({"ai_parser": parser} if cfg.ai_take["enabled"] else {}))
         summary["photo_coverage"] = photo_recovery.coverage([
             db.get_deal(d["dedupe_key"]) or d for d in site_res["public_deals"]
             if not d.get("locked")], cfg)
@@ -2714,6 +2714,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})
         summary["product_pages"] = site_res.get("product_pages", {})
+        summary["site_files"] = site_res.get("site_files", 0)
+        if "ai_take" in site_res:
+            summary["ai_take"] = site_res["ai_take"]
         if "checker" in site_res:
             summary["checker"] = site_res["checker"]
         summary["posted_redirects"] = site_res.get("posted_redirects", {})

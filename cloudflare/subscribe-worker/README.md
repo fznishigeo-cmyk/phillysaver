@@ -38,13 +38,21 @@ bundles the ES modules; `main` in wrangler.toml is `worker.js`.
 | Route | What it does |
 |---|---|
 | `POST /subscribe` | `{"email": ...}` JSON or a form field `email`. Validates, lowercases, stores `sub:<email>` as `{ts, token, confirmed: false, confirm_sent_at: ""}` with a random token (idempotent: signing up twice keeps the first record, confirmed or not). JSON callers get `200 {"ok": true}`; form posts get a `303` back to `<site>/subscribe.html?ok=1` (or `?err=email`). Abuse control: 20 posts per client IP per hour. |
-| `GET /confirm?e=<email>&t=<token>` | Double opt-in: sets `confirmed: true` when the token matches, 200 HTML "You're confirmed" linking to `<site>/subscribe.html?confirmed=1`; a bad link is 403. Records written before double opt-in (no `confirmed` key) count as confirmed. |
-| `GET /unsubscribe?e=<email>&t=<token>` | 200 HTML page with one POST button "Unsubscribe" (403 when the token does not match). A GET never deletes: mail scanners prefetch links. |
+| `GET /confirm?e=<email>&t=<token>` | 200 HTML page with one POST button "Confirm my email"; no KV writes, so mail scanners cannot confirm. Only `confirmed: true` counts; records written before double opt-in are pending and get one confirmation email. |
+| `POST /confirm?e=<email>&t=<token>` | Confirms only a matching record and removes its pending TTL. Returns the same 200 HTML acknowledgment for an unknown address or wrong token. Accepts `e`/`t` form fields too. |
+| `GET /unsubscribe?e=<email>&t=<token>` | 200 HTML page with one POST button "Unsubscribe", regardless of record existence or token match. A GET never deletes: mail scanners prefetch links. |
 | `POST /unsubscribe?e=<email>&t=<token>` | Deletes the record when the token matches, 200 HTML "You're unsubscribed" (also when already gone). The page's button and the RFC 8058 one-click form mail apps send both land here; `e`/`t` as form fields work too. |
-| `GET /list` | `Authorization: Bearer <NEWSLETTER_SECRET>` -> `{"emails": [{"email", "token"}]}` of **confirmed** addresses, at most 10,000 (KV list pagination; the record rides in key metadata so a page of 1,000 costs one KV operation). `?pending=1` lists the unconfirmed addresses not yet sent a confirm link instead. |
-| `POST /list/confirm-sent` | Same bearer, `{"emails": [...]}` (at most 1,000): stamps `confirm_sent_at` on those pending records so the next `?pending=1` leaves them out -> 204; 400 on a bad body. |
+| `GET /list` | `Authorization: Bearer <NEWSLETTER_SECRET>` -> `{"emails": [{"email", "token"}]}` of **confirmed** addresses, at most 10,000 (KV list pagination; the record rides in key metadata so a page of 1,000 costs one KV operation). `?pending=1` lists the unconfirmed addresses not yet sent a confirm link instead; rows are `{email, token, ts}`. |
+| `POST /list/confirm-sent` | Same bearer, `{"emails": [...]}` (at most 1,000): stamps `confirm_sent_at` on pending records and re-puts them with `expirationTtl = CONFIRM_EXPIRE_DAYS × 86400` (once; retries do not extend it), so the next `?pending=1` leaves them out -> 204; 400 on a bad body. |
 | `OPTIONS *` | CORS preflight for `ALLOWED_ORIGINS` only (`GET, POST, OPTIONS`; `Authorization, Content-Type`). |
 | anything else | 404. |
+
+Confirm/unsubscribe responses depend only on link syntax, never subscription
+state: malformed email addresses or tokens (not 32 lowercase hexadecimal
+characters) return the same 403 whether a record exists or not. Well-formed
+links return the same page even when their token does not match; only a match
+can confirm or delete. Existing rate limits are unchanged; one-click unsubscribe
+POSTs have no new per-IP limit.
 
 ### Paywall (`docs/paywall.md` "Worker API")
 
@@ -125,7 +133,7 @@ scheme-2 password as well as every session.
 
 | Key | Value |
 |---|---|
-| `sub:<email>` | `{ts, token, confirmed, confirm_sent_at}` (also in metadata); no `confirmed` key = confirmed (pre double opt-in) |
+| `sub:<email>` | `{ts, token, confirmed, confirm_sent_at}` (also in metadata); only `confirmed: true` is confirmed; a pending record expires `CONFIRM_EXPIRE_DAYS` (default 30) after confirm-sent |
 | `acct:<email>` | `{email, scheme, iterations, salt, hash, created_at, google_sub, email_verified, stripe_customer, claimed_at, trial_used, session_version}`, plus `released_customer` once a takeover unbound a customer; `scheme|iterations|salt|hash` null for a Google-only account; a session token carries the version it was signed under and dies when a takeover bumps it; older records may still carry an unused `trial_ends_at` |
 | `deals:full` | the full payload exactly as the pipeline posted it |
 | `jwks:google` | Google's signing keys, one hour |
@@ -218,8 +226,11 @@ paywall:
 
 The next site deploy carries them in `deals.json` meta (`newsletter_url`,
 `api_url`), the forms and the sign-in modal start talking to the Worker, the
-pipeline starts sending the daily email at `newsletter.hour_local` and
-uploading the full payload after every render.
+pipeline uploads the full payload after every render. Email additionally
+requires `newsletter.enabled` and a nonempty `newsletter.mailing_address`;
+cadence follows the newsletter config. Re-run **deploy subscribe worker** before
+setting `newsletter.confirmations_enabled` or `newsletter.enabled`: the old
+Worker treats legacy sign-ups as confirmed. Deployment is dispatch-only.
 
 Manual deploy from a laptop (same steps the workflow runs):
 

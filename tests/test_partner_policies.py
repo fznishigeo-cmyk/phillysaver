@@ -119,16 +119,22 @@ def test_social_skips_source_hosted_images(db, cfg, host):
 
 @pytest.mark.parametrize("channel", ["newsletter", "member", "digest"])
 def test_email_retains_every_credit_and_disclosure(cfg, channel):
-    d = make_deal(codes=[], sightings=[
+    d = make_deal(codes=[], deal_path="/deal/widget-12345678/", sightings=[
         {"source_name": "independent", "source_url": "https://example.org/widget"},
         {"source_name": "hip2save", "source_url": "https://hip2save.com/widget/"}])
     parts = email_parts([d], cfg, channel)
     for body in parts[1:]:
-        assert "https://hip2save.com/widget/" in body
-        assert "https://example.org/widget" in body
+        if channel == "newsletter":
+            assert "via Hip2Save" in body and "via independent" in body
+            assert "https://hip2save.com/widget/" not in body
+            assert "https://example.org/widget" not in body
+        else:
+            assert "https://hip2save.com/widget/" in body
+            assert "https://example.org/widget" in body
         assert cfg.ftc_disclosure in body
-    assert 'href="https://hip2save.com/widget/"' in parts[2]
-    assert 'href="https://example.org/widget"' in parts[2]
+    if channel != "newsletter":
+        assert 'href="https://hip2save.com/widget/"' in parts[2]
+        assert 'href="https://example.org/widget"' in parts[2]
 
 
 def email_parts(deals, cfg, channel):
@@ -140,11 +146,12 @@ def email_parts(deals, cfg, channel):
 
 
 @pytest.mark.parametrize("channel", ["newsletter", "member", "digest"])
-def test_amazon_email_has_no_price_or_tag(cfg, channel):
+def test_amazon_email_has_no_product_price_or_tag(cfg, channel):
     d = make_deal(store="Amazon", item="Acme widget now $30.00", final_price=30.0,
                   codes=[], canonical_url="https://www.amazon.com/dp/B012345678?tag=source-20")
     parts = email_parts([d], cfg, channel)
-    for body in parts[1:]:
+    for body in parts:
+        assert "amazon" not in body.casefold() and "Acme widget" not in body
         assert "$30.00" not in body
         assert "$50.00" not in body
         assert "tag=source-20" not in body
@@ -157,7 +164,7 @@ def test_email_keeps_source_tracker_exactly(cfg, channel):
     d = make_deal(store="Amazon", codes=[], canonical_url=link,
                   sightings=[{"source_name": "dealsofamerica", "source_url": "https://www.dealsofamerica.com/widget/"}])
     parts = email_parts([d], cfg, channel)
-    assert link in parts[1]
+    assert link not in parts[1] and "amazon" not in "".join(parts).casefold()
     assert "$10.00" not in parts[1]
 
 

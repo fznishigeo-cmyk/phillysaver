@@ -1940,7 +1940,7 @@ describe("newsletter routes", () => {
     assert.deepEqual([r.status, r.headers.get("Location")], [303, "https://wowpriced.com/subscribe.html?err=email"]);
     r = await call(env, "POST", "/subscribe", { body: { email: "nope@" } });
     assert.deepEqual([r.status, r.json], [400, { ok: false, error: "invalid email" }]);
-    // A record from before double opt-in has no "confirmed" key: confirmed.
+    // A record from before double opt-in is pending until explicitly confirmed.
     const legacy = { ts: "2026-01-01T00:00:00.000Z", token: "a".repeat(32) };
     await env.SUBS.put("sub:early@example.com", JSON.stringify(legacy), { metadata: legacy });
 
@@ -1948,10 +1948,10 @@ describe("newsletter routes", () => {
     assert.equal((await call(env, "GET", "/list", { token: "wrong" })).status, 401);
     assert.equal((await call(env, "GET", "/list?pending=1", { token: "wrong" })).status, 401);
     r = await list(env);
-    assert.deepEqual(r.json, { emails: [{ email: "early@example.com", token: legacy.token }] });
+    assert.deepEqual(r.json, { emails: [] });
     r = await list(env, "?pending=1");
     const second = JSON.parse(await env.SUBS.get("sub:second@example.com"));
-    assert.deepEqual(r.json, { emails: [{ email: "second@example.com", token: second.token }, { email: "you@example.com", token: first.token }] });
+    assert.deepEqual(r.json, { emails: [{ email: "early@example.com", token: legacy.token, ts: legacy.ts }, { email: "second@example.com", token: second.token, ts: second.ts }, { email: "you@example.com", token: first.token, ts: first.ts }] });
 
     // The pipeline mailed one of them a confirm link.
     r = await call(env, "POST", "/list/confirm-sent", { body: { emails: ["You@example.com", "unknown@example.com", "early@example.com"] }, token: "s3cret" });
@@ -1960,9 +1960,11 @@ describe("newsletter routes", () => {
     assert.ok(Date.now() - Date.parse(stamped.confirm_sent_at) < 5000);
     assert.deepEqual({ ...stamped, confirm_sent_at: "" }, first);
     assert.equal(env.SUBS.m.get("sub:you@example.com").metadata.confirm_sent_at, stamped.confirm_sent_at);
-    assert.deepEqual(JSON.parse(await env.SUBS.get("sub:early@example.com")), legacy, "a confirmed record is left alone");
+    assert.ok(JSON.parse(await env.SUBS.get("sub:early@example.com")).confirm_sent_at, "legacy record gets one confirmation too");
+    assert.equal(env.SUBS.m.get("sub:early@example.com").ttl, 30 * 86400);
+    assert.equal(env.SUBS.m.get("sub:you@example.com").ttl, 30 * 86400);
     assert.deepEqual(emails(await list(env, "?pending=1")), ["second@example.com"]);
-    assert.deepEqual(emails(await list(env)), ["early@example.com"], "sent is not confirmed");
+    assert.deepEqual(emails(await list(env)), [], "sent is not confirmed");
     assert.equal((await call(env, "POST", "/list/confirm-sent", { body: { emails: [] } })).status, 401);
     for (const bad of [{}, { emails: "you@example.com" }, "{not json"]) {
       assert.equal((await call(env, "POST", "/list/confirm-sent", { body: bad, token: "s3cret" })).status, 400);
@@ -1970,30 +1972,57 @@ describe("newsletter routes", () => {
 
     // The confirm link.
     r = await call(env, "GET", `/confirm?e=you@example.com&t=${"0".repeat(32)}`);
-    assert.equal(r.status, 403);
-    assert.match(r.text, /isn't valid/);
+    assert.equal(r.status, 200);
+    assert.match(r.text, /Confirm my email/);
     assert.equal((await call(env, "GET", "/confirm?e=you@example.com")).status, 403);
-    assert.equal((await call(env, "GET", `/confirm?e=nobody@example.com&t=${first.token}`)).status, 403);
+    assert.equal((await call(env, "GET", `/confirm?e=nobody@example.com&t=${first.token}`)).status, 200);
     assert.equal((await call(env, "GET", "/confirm")).status, 403);
-    assert.deepEqual(emails(await list(env)), ["early@example.com"], "nothing confirmed by a bad link");
+    assert.deepEqual(emails(await list(env)), [], "nothing confirmed by a bad link");
     r = await call(env, "GET", `/confirm?e=You@Example.com&t=${first.token}`);
     assert.equal(r.status, 200);
     assert.equal(r.headers.get("Content-Type"), "text/html; charset=utf-8");
-    assert.match(r.text, /You're confirmed/);
-    // The free list gets the day's top 10 (members get every deal).
-    assert.ok(r.text.includes("The day's top 10 deals now land in your inbox every morning."));
+    assert.match(r.text, /<form method="post" action="\/confirm\?e=you%40example.com&amp;t=/);
+    assert.equal((r.text.match(/<button /g) || []).length, 1);
+    assert.deepEqual(JSON.parse(await env.SUBS.get("sub:you@example.com")), stamped, "GET changes no state");
+    assert.equal(env.SUBS.m.get("sub:you@example.com").ttl, 30 * 86400);
+    assert.deepEqual(emails(await list(env)), [], "link scanners cannot confirm");
+    r = await call(env, "POST", `/confirm?e=You@Example.com&t=${first.token}`);
+    assert.equal(r.status, 200);
+    // Copy works for either cadence.
+    assert.ok(r.text.includes("If this link matches your sign-up, you're confirmed for our best-deals email."));
     assert.ok(!r.text.includes("Every new verified deal"));
     assert.ok(r.text.includes('href="https://wowpriced.com/subscribe.html?confirmed=1"'));
     const confirmed = JSON.parse(await env.SUBS.get("sub:you@example.com"));
     assert.deepEqual(confirmed, { ...stamped, confirmed: true });
     assert.equal(env.SUBS.m.get("sub:you@example.com").metadata.confirmed, true);
-    assert.deepEqual(emails(await list(env)), ["early@example.com", "you@example.com"]);
+    assert.equal(env.SUBS.m.get("sub:you@example.com").ttl, undefined, "confirmation removes the expiry");
+    assert.deepEqual(emails(await list(env)), ["you@example.com"]);
+    assert.deepEqual((await list(env)).json.emails, [{ email: "you@example.com", token: first.token }]);
     assert.deepEqual(emails(await list(env, "?pending=1")), ["second@example.com"]);
     const writes = env.SUBS.writes;
-    assert.equal((await call(env, "GET", `/confirm?e=you@example.com&t=${first.token}`)).status, 200, "clicking twice is fine");
+    assert.equal((await call(env, "POST", `/confirm?e=you@example.com&t=${first.token}`)).status, 200, "clicking twice is fine");
     assert.equal(env.SUBS.writes, writes, "and writes nothing");
     assert.equal((await call(env, "POST", "/subscribe", { body: { email: "you@example.com" } })).status, 200);
     assert.deepEqual(JSON.parse(await env.SUBS.get("sub:you@example.com")), confirmed, "re-subscribing keeps a confirmed record");
+  });
+
+  test("confirmation expiry uses the configured days, is not extended on retry, and ignores confirmed records", async () => {
+    const env = newEnv({ CONFIRM_EXPIRE_DAYS: "7" });
+    await call(env, "POST", "/subscribe", { body: { email: "ttl@example.com" } });
+    const report = () => call(env, "POST", "/list/confirm-sent", { body: { emails: ["ttl@example.com"] }, token: "s3cret" });
+    await report();
+    const before = env.SUBS.m.get("sub:ttl@example.com");
+    assert.equal(before.ttl, 7 * 86400);
+    const writes = env.SUBS.writes;
+    await report();
+    assert.equal(env.SUBS.writes, writes, "retry does not reset the expiry");
+    const rec = JSON.parse(before.value);
+    await call(env, "POST", `/confirm?e=ttl@example.com&t=${rec.token}`);
+    assert.equal(env.SUBS.m.get("sub:ttl@example.com").ttl, undefined);
+    const confirmedWrites = env.SUBS.writes;
+    await report();
+    assert.equal(env.SUBS.writes, confirmedWrites);
+    assert.deepEqual((await list(env)).json.emails, [{ email: "ttl@example.com", token: rec.token }]);
   });
 
   test("unsubscribe: GET shows the button, POST (button or one-click) deletes", async () => {
@@ -2008,6 +2037,7 @@ describe("newsletter routes", () => {
     r = await call(env, "GET", `/unsubscribe?e=You@example.com&t=${tok}`);
     assert.equal(r.status, 200);
     assert.match(r.text, /Unsubscribe from wowpriced\?/);
+    assert.ok(r.text.includes("Stop the wowpriced deals email to you@example.com."));
     assert.ok(r.text.includes(`<form method="post" action="/unsubscribe?e=you%40example.com&amp;t=${tok}">`), r.text);
     assert.match(r.text, /<button type="submit"[^>]*>Unsubscribe<\/button>/);
     assert.ok(await env.SUBS.get("sub:you@example.com"), "a GET (link scanners prefetch) removes nobody");
@@ -2016,6 +2046,7 @@ describe("newsletter routes", () => {
     r = await form(env, `/unsubscribe?e=you@example.com&t=${tok}`, { "List-Unsubscribe": "One-Click" });
     assert.equal(r.status, 200);
     assert.match(r.text, /You're unsubscribed/);
+    assert.equal(r.headers.get("Location"), null);
     assert.ok(r.text.includes('href="https://wowpriced.com/subscribe.html?unsubscribed=1"'));
     assert.equal(await env.SUBS.get("sub:you@example.com"), null);
     assert.equal((await form(env, `/unsubscribe?e=you@example.com&t=${tok}`, { "List-Unsubscribe": "One-Click" })).status, 200, "twice is fine");
@@ -2026,7 +2057,47 @@ describe("newsletter routes", () => {
     r = await form(env, "/unsubscribe", { e: "again@example.com", t: tok2 });
     assert.equal(r.status, 200);
     assert.equal(await env.SUBS.get("sub:again@example.com"), null);
-    assert.equal((await call(env, "GET", "/unsubscribe?e=gone@example.com&t=x")).status, 200, "unknown address: the page, then success");
+    assert.equal((await call(env, "GET", "/unsubscribe?e=gone@example.com&t=x")).status, 403, "malformed tokens are rejected independently of address existence");
+  });
+
+  test("confirm and unsubscribe never expose record existence or token matches", async () => {
+    for (const route of ["confirm", "unsubscribe"]) {
+      for (const method of ["GET", "POST"]) {
+        for (const token of ["badtoken", "0".repeat(32), "1".repeat(32)]) {
+          const env = newEnv();
+          const path = `/${route}?e=you@example.com&t=${token}`;
+          const absent = await call(env, method, path);
+          for (const rec of [
+            { token: "1".repeat(32), confirmed: false },
+            { token: "1".repeat(32), confirmed: true },
+            { token: "1".repeat(32) }, // legacy
+          ]) {
+            await env.SUBS.put("sub:you@example.com", JSON.stringify(rec), { metadata: rec });
+            const before = env.SUBS.writes;
+            const present = await call(env, method, path);
+            assert.equal(present.status, absent.status, `${route} ${method} status`);
+            assert.equal(present.text, absent.text, `${route} ${method} body`);
+            assert.deepEqual([...present.headers], [...absent.headers]);
+            if (method === "GET" || token !== rec.token) {
+              assert.equal(env.SUBS.writes, before, "GET and wrong tokens write nothing");
+              assert.deepEqual(JSON.parse(await env.SUBS.get("sub:you@example.com")), rec);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  test("confirm accepts form fields and repeated POSTs keep the confirmed record", async () => {
+    const env = newEnv();
+    await call(env, "POST", "/subscribe", { body: { email: "you@example.com" } });
+    const rec = JSON.parse(await env.SUBS.get("sub:you@example.com"));
+    for (let i = 0; i < 2; i++) {
+      const r = await form(env, "/confirm", { e: "You@Example.com", t: rec.token });
+      assert.equal(r.status, 200);
+      assert.deepEqual(JSON.parse(await env.SUBS.get("sub:you@example.com")), { ...rec, confirmed: true });
+    }
+    assert.equal(env.SUBS.writes, 2);
   });
 
   test("subscribe keeps its own 20-per-hour counter", async () => {
@@ -2045,7 +2116,7 @@ describe("newsletter routes", () => {
   test("everything else is 404", async () => {
     const env = newEnv();
     for (const [method, path] of [["GET", "/"], ["GET", "/subscribe"], ["DELETE", "/list"], ["GET", "/api"],
-                                  ["POST", "/confirm"], ["GET", "/list/confirm-sent"]]) {
+                                  ["PUT", "/confirm"], ["GET", "/list/confirm-sent"]]) {
       const r = await call(env, method, path);
       assert.deepEqual([r.status, r.text], [404, "not found"], path);
     }

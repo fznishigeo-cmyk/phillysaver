@@ -295,6 +295,7 @@ def test_daily_usage_midnight_legacy_uncertain_and_private_report(tmp_path):
     assert "AI usage" in text.split(report.TECHNICAL_HEADING)[1]
     assert "tokens unavailable" in text and "usage missing for 1" in text
     db.close()
+@pytest.mark.usefixtures("pre_extension_privacy")  # pinned before task 244's privacy section
 
 
 def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):

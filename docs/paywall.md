@@ -574,36 +574,47 @@ and the in-memory price and portal configuration live in memory.
 ## Newsletter: double opt-in and unsubscribe
 
 KV `sub:<email>` = `{ts, token, confirmed, confirm_sent_at}` (also in key
-metadata). A record written before this version has no `confirmed` key and
-**counts as confirmed**, so no existing subscriber is dropped.
+metadata). Only `confirmed: true` counts as confirmed. Legacy records without
+that key are pending and get one confirmation email. Pending records expire
+`CONFIRM_EXPIRE_DAYS` (default 30) after confirm-sent; retries do not extend it.
+POST confirmation removes the TTL. Re-run **deploy subscribe worker** before
+enabling confirmations or issues: the old Worker treats legacy sign-ups as confirmed.
 
 | Route | Auth | Behavior |
 |---|---|---|
 | `POST /subscribe` | none | creates `{confirmed: false, confirm_sent_at: ""}`; an existing record (confirmed or not) is left alone and the call still answers ok (`200 {ok:true}` / `303` to `subscribe.html?ok=1`) |
-| `GET /confirm?e=<email>&t=<token>` | the link | sets `confirmed: true` when the token matches; `200` HTML page linking to `<site>/subscribe.html?confirmed=1`; clicking twice is still `200`; a bad link is `403` |
-| `GET /unsubscribe?e=&t=` | the link | **no longer deletes**: `200` HTML page with one POST form button "Unsubscribe" (`403` when the token does not match) |
+| `GET /confirm?e=<email>&t=<token>` | the link | `200` HTML page with one POST button "Confirm my email"; no writes |
+| `POST /confirm?e=&t=` | the link | sets `confirmed: true` only when the token matches, with no TTL; same `200` acknowledgment regardless of record existence or token match; `e`/`t` form fields work too |
+| `GET /unsubscribe?e=&t=` | the link | `200` HTML page with one POST form button "Unsubscribe"; no writes, same page regardless of record existence or token match |
 | `POST /unsubscribe?e=&t=` | the link | deletes when the token matches (the page's button, or the RFC 8058 one-click form mail apps send; `e`/`t` also accepted as form fields); `200` HTML "You're unsubscribed", also when already gone |
 | `GET /list` | `Bearer NEWSLETTER_SECRET` | `{emails:[{email, token}]}`, **confirmed addresses only** |
-| `GET /list?pending=1` | same | `{emails:[{email, token}]}`: unconfirmed addresses whose `confirm_sent_at` is empty (the ones still owed a confirm email) |
-| `POST /list/confirm-sent` | same | body `{emails:[...]}` (≤ 1000): sets `confirm_sent_at = now` on those pending records; `204`; `400` on a bad body |
+| `GET /list?pending=1` | same | `{emails:[{email, token, ts}]}`: unconfirmed addresses whose `confirm_sent_at` is empty (the ones still owed a confirm email) |
+| `POST /list/confirm-sent` | same | body `{emails:[...]}` (≤ 1000): sets `confirm_sent_at = now` and `expirationTtl = CONFIRM_EXPIRE_DAYS × 86400` once on pending records; `204`; `400` on a bad body |
 
 The pipeline builds the links as `<worker_url>/confirm?e=<email>&t=<token>`
-and `<worker_url>/unsubscribe?e=<email>&t=<token>`.
+and `<worker_url>/unsubscribe?e=<email>&t=<token>`. Both endpoints return the
+same response for subscribed and unknown addresses. Malformed addresses/tokens
+(tokens must be 32 lowercase hexadecimal characters) are always `403`; a
+well-formed wrong token returns the same page as a matching token and changes
+nothing. Existing rate limits remain; one-click POST unsubscribe has no new limit.
 
 ## Newsletter double opt-in
 
 KV `sub:<email>` = `{ts, token, confirmed, confirm_sent_at}`. A record
-written before the field existed (no `confirmed` key) counts as confirmed,
-so nobody already on the list is dropped. `POST /subscribe` creates
+written before the field existed (no `confirmed` key) is pending and gets one
+confirmation email, then expires after `CONFIRM_EXPIRE_DAYS` (default 30) unless
+confirmed by POST. Confirm-sent retries do not extend that TTL; confirmation
+removes it. `POST /subscribe` creates
 `confirmed: false` (and leaves an existing record alone: re-subscribing an
 unconfirmed address just returns ok).
 
 | Route | Auth | Effect |
 |---|---|---|
-| `GET /confirm?e=&t=` | token | sets `confirmed: true`; 200 HTML page linking to `<site>/subscribe.html?confirmed=1` (or a 303 there for a browser) |
+| `GET /confirm?e=&t=` | token | 200 HTML page with one POST button; no writes |
+| `POST /confirm?e=&t=` | token | confirms a matching record with no TTL; same 200 acknowledgment for unknown addresses and wrong tokens |
 | `GET /list` | `Bearer NEWSLETTER_SECRET` | confirmed addresses only, `{emails:[{email, token}]}` (unchanged shape) |
-| `GET /list?pending=1` | same bearer | unconfirmed addresses with an empty `confirm_sent_at`, same shape |
-| `POST /list/confirm-sent` `{emails:[...]}` | same bearer | sets `confirm_sent_at = now` on those records; `204` |
+| `GET /list?pending=1` | same bearer | unconfirmed addresses with an empty `confirm_sent_at`, `{emails:[{email, token, ts}]}` |
+| `POST /list/confirm-sent` `{emails:[...]}` | same bearer | sets `confirm_sent_at = now` with the one-time pending TTL; `204` |
 | `GET /unsubscribe?e=&t=` | token | no longer deletes: 200 HTML page with a POST form button "Unsubscribe" |
 | `POST /unsubscribe?e=&t=` | token | deletes when the token matches (the form, or the RFC 8058 one-click POST mail clients send) |
 

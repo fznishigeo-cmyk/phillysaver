@@ -1,0 +1,45 @@
+{
+  "packageId": "com.wowpriced.app",
+  "host": "wowpriced.com",
+  "name": "wowpriced: Is it a good deal?",
+  "launcherName": "wowpriced",
+  "startUrl": "/check/?src=twa",
+  "display": "standalone",
+  "fallbackType": "customtabs",
+  "enableNotifications": false,
+  "themeColor": "#4fd8c6",
+  "themeColorDark": "#0f1b22",
+  "navigationColor": "#4fd8c6",
+  "navigationColorDark": "#0f1b22",
+  "backgroundColor": "#f3f5f7",
+  "iconUrl": "https://wowpriced.com/pwa-icons/icon-512.png",
+  "maskableIconUrl": "https://wowpriced.com/pwa-icons/icon-maskable-512.png",
+  "webManifestUrl": "https://wowpriced.com/manifest.webmanifest",
+  "fullScopeUrl": "https://wowpriced.com/",
+  "shareTarget": {
+    "action": "/check/",
+    "method": "GET",
+    "params": {"title": "title", "text": "text", "url": "u"}
+  },
+  "shortcuts": [
+    {
+      "name": "Check a price",
+      "shortName": "Check a price",
+      "url": "https://wowpriced.com/check/?src=twa",
+      "chosenIconUrl": "https://wowpriced.com/pwa-icons/icon-192.png"
+    },
+    {
+      "name": "Today's best deals",
+      "shortName": "Best deals",
+      "url": "https://wowpriced.com/best-deals-today/?src=twa",
+      "chosenIconUrl": "https://wowpriced.com/pwa-icons/icon-192.png"
+    }
+  ],
+  "signingKey": {"path": "./upload.keystore", "alias": "upload"},
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "minSdkVersion": 21,
+  "orientation": "default",
+  "enableSiteSettingsShortcut": false,
+  "generatorApp": "bubblewrap-cli"
+}

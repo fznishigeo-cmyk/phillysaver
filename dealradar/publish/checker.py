@@ -16,13 +16,13 @@ from datetime import timedelta, timezone
 from urllib.parse import urlsplit
 
 from ..conditions import normalize_conditions
-from ..http_client import _ASIN_RE, _TRACKING_EXACT, canonicalize_url, extract_asin
+from ..http_client import _AMAZON_HOST_RE, _ASIN_RE, _TRACKING_EXACT, canonicalize_url, extract_asin
 from ..products import WALMART_PATH, WOOT_PATH
 from ..savings import DEAL_TYPE_PCT, product_price_facts
 from ..store_prices import BESTBUY_PATHS, EBAY_PATH, plain_price, store_offer
 from ..util import iso, parse_iso
 from ..verify import is_amazon_deal, price_confirmed_at
-from . import amazon_history, product_pages
+from . import amazon_as_of, amazon_history, product_pages
 
 HOSTS = {name + ".com": name for name in ("amazon", "bestbuy", "ebay", "walmart", "woot", "target")}
 SHORT_HOSTS = ("amzn.to", "a.co", "link.amazon", "on.ltk.com", "goto.target.com", "zdcs.link",
@@ -30,8 +30,10 @@ SHORT_HOSTS = ("amzn.to", "a.co", "link.amazon", "on.ltk.com", "goto.target.com"
                "clicks.trx-hub.com", "bit.ly", "tinyurl.com", "t.co", "ebay.us", "walmrt.us",
                "sovrn.co", "redirect.viglink.com")
 TARGET_PATH = r"/p/(?:[^/]+/)?(?:-/)?A-(\d+)/?"
-HEADERS = "\n/check/data/*\n  X-Robots-Tag: noindex\n  Cache-Control: no-store\n"
+HEADERS = ("\n/check/\n  Cache-Control: no-cache\n"
+           "\n/check/data/*\n  X-Robots-Tag: noindex\n  Cache-Control: no-store\n")
 MAX_SHARD_BYTES = 64 * 1024  # strict upper bound, including braces and UTF-8
+MAX_INDEX_BYTES = 1_500_000  # also fits the browsers' default local-storage quotas
 
 
 def js_rules() -> dict:
@@ -50,7 +52,8 @@ def js_rules() -> dict:
             "ebay": {"path": EBAY_PATH, "reject_query": "var"},
             "walmart": {"path": WALMART_PATH}, "woot": {"path": WOOT_PATH},
             "target": {"path": TARGET_PATH},
-            "canonical": {"tracking_exact": sorted(_TRACKING_EXACT), "tracking_prefix": "utm_"},
+            "canonical": {"tracking_exact": sorted(_TRACKING_EXACT), "tracking_prefix": "utm_",
+                          "amazon_host": _AMAZON_HOST_RE.pattern},
             "fallback": "url:<canonical>", "schemes": ["http", "https"],
             "shard": {"hash": "SHA-256", "prefix_bits": True, "min_hex_width": 2}}
 
@@ -100,15 +103,6 @@ def aliases(url) -> list[str]:
     return ["url:" + canonicalize_url(url)]
 
 
-def _store(deal):
-    # Amazon URL offers with an unrelated store name still have Amazon policy.
-    if is_amazon_deal(deal):
-        return "amazon"
-    store = store_key(deal.get("canonical_url"))
-    name = re.sub(r"[^a-z]", "", str(deal.get("store") or "").lower())
-    return name if store == "other" and name in {"walmart", "ebay"} else store
-
-
 def _clean(deal):
     return not (deal.get("locked") or deal.get("members_only") or deal.get("member_only")
                 or deal.get("price_unconfirmed") or deal.get("flags") or deal.get("gone_suspect_at")
@@ -140,7 +134,7 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
     """Alias → one live deal or last plain ended price; no DB writes.
 
     `public` is this render's unlocked wall/spotlight plus emitted ended deal
-    pages. `models` is product_pages.prepare's already Amazon-filtered output.
+    pages. `models` is product_pages.prepare's already policy-filtered output.
     Unknown/deleted offer requirements cannot certify a plain history price.
     """
     now = now.astimezone(timezone.utc)
@@ -172,7 +166,7 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
                     and died and cutoff <= died <= now and _price(facts.get("final_price"))):
                 clean.setdefault(key, facts)
 
-    history = {key for key, d in clean.items() if cfg.checker["stores"][_store(d)] == "history"
+    history = {key for key, d in clean.items() if cfg.checker["stores"][amazon_history.store_of(d)] == "history"
                and not amazon_history.hidden(cfg, d) and _plain(d)}
     page_keys = {product: {key for key in page["offers"] if key in history
                           and str(clean[key].get("product_id")) == product}
@@ -182,8 +176,10 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
     result = {}
     for key, facts in sorted(clean.items()):
         d = visible.get(key, {})
-        store = _store(facts)
+        store = amazon_history.store_of(facts)
         policy = cfg.checker["stores"][store]
+        if store == "amazon" and amazon_history.hidden(cfg, facts):
+            policy = "link_only"
         live = facts.get("status") == "alive"
         if not live and (policy != "history" or key not in history):
             continue
@@ -197,6 +193,14 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
             if checks:
                 last = max(checks, key=lambda r: (parse_iso(r["observed_at"]), r["price"]))
                 price, at = last["price"], parse_iso(last["observed_at"])
+        if store == "amazon" and policy != "link_only":
+            confirmed = price_confirmed_at(facts if live else dict(facts, death=""))
+            if confirmed is not None and confirmed <= until:
+                at, price = confirmed, facts["final_price"]
+            elif live:
+                policy = "link_only"  # no confirmation: no price or 'as of'
+            else:
+                continue
         if at is None or (not live and at < cutoff):
             continue
         entry = {"kind": "live" if live else "ended", "store": store, "item": facts["item"],
@@ -205,6 +209,8 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
             entry["deal_path"] = paths.get(hashlib.sha256(key.encode()).hexdigest()[:8], "")
         if policy != "link_only":
             entry.update(price=price, credit=d.get("credits") or (page or {}).get("offers", {}).get(key, {}).get("credits", []))
+            if store == "amazon":
+                entry["amazon_as_of"] = amazon_as_of.time_text(at)
         if policy == "history":
             entry.update(p_path=page["path"] if page else "", verdict="", checks=0, since="")
             if page:
@@ -214,6 +220,14 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
                 stats = product_price_facts(checks, offers, now)
                 entry.update(checks=stats["checks"], since=iso(stats.get("first")),
                              verdict=product_pages.answer(price if live else None, stats, cfg))
+                if cfg.ai_take["enabled"]:
+                    from .ai_take import current_take
+
+                    view = dict(page, checks=checks, offers={k: o for k, o in page["offers"].items() if k in allowed},
+                                live=facts if live else None, store=facts["store"], conditions=facts.get("conditions"))
+                    take = current_take(view, cfg, now)
+                    if take:
+                        entry["take"] = take
         for alias in aliases(facts.get("canonical_url")):
             old = result.get(alias)
             order = lambda e: (e["kind"] == "live", e["at"], e["deal_path"], e["item"])
@@ -234,7 +248,63 @@ def shard(alias, count):
     return f'{bucket:0{max(2, digits)}x}'
 
 
+def compact_index(now, entries):
+    """Version 1: alias → column value IDs, -1 means the field is absent.
+
+    Values are sorted, canonical ASCII JSON, front-coded as [prefix length,
+    remaining text] against the previous value. Decode those strings with
+    JSON.parse/json.loads. This also preserves nested credits/takes and types.
+    ASCII escaping makes prefix lengths identical in Python, JS and native apps.
+    """
+    fields = sorted({field for entry in entries.values() for field in entry})
+    encoded = {alias: {field: _encode(value).decode("ascii") for field, value in entry.items()}
+               for alias, entry in entries.items()}
+    strings = sorted({value for entry in encoded.values() for value in entry.values()})
+    ids = {value: i for i, value in enumerate(strings)}
+    previous, values = "", []
+    for value in strings:
+        prefix = 0
+        for a, b in zip(previous, value):
+            if a != b:
+                break
+            prefix += 1
+        values.append([prefix, value[prefix:]])
+        previous = value
+    return _encode({"version": 1, "generated_at": iso(now), "fields": fields, "values": values,
+                    "entries": {alias: [ids[entry[field]] if field in entry else -1 for field in fields]
+                                for alias, entry in encoded.items()}})
+
+
+def _bounded_index(now, entries):
+    data = compact_index(now, entries)
+    if len(data) < MAX_INDEX_BYTES:
+        return entries, data, 0
+    ended = sorted((k for k in entries if entries[k]["kind"] == "ended"),
+                   key=lambda k: (entries[k]["at"], k))
+    live = {k: v for k, v in entries.items() if v["kind"] == "live"}
+    if len(compact_index(now, live)) >= MAX_INDEX_BYTES:
+        raise ValueError("checker live entries exceed all.json size")
+    # Find a fitting oldest-ended prefix with logarithmically many encodes.
+    low, high = 1, len(ended)
+    while low < high:
+        middle = (low + high) // 2
+        removed = set(ended[:middle])
+        candidate = {k: v for k, v in entries.items() if k not in removed}
+        if len(compact_index(now, candidate)) < MAX_INDEX_BYTES:
+            high = middle
+        else:
+            low = middle + 1
+    removed = set(ended[:low])
+    kept = {k: v for k, v in entries.items() if k not in removed}
+    return kept, compact_index(now, kept), len(removed)
+
+
 def publish(out, cfg, now, entries):
+    folder = out / "check" / "data"
+    if not cfg.checker["enabled"]:
+        if folder.exists():
+            shutil.rmtree(folder)
+        return {}
     count = cfg.checker["shards"]
     width = max(2, len(f"{count - 1:x}"))
     buckets = {f'{i:0{width}x}': {} for i in range(count)}
@@ -254,11 +324,18 @@ def publish(out, cfg, now, entries):
             # Never silently discard a live offer or emit an oversized shard.
             raise ValueError("checker live entries exceed shard size; increase checker.shards")
         payloads[name + ".json"] = data
-    kept = [entry for rows in buckets.values() for entry in rows.values()]
+    retained, index, index_dropped = _bounded_index(now, {
+        alias: entry for rows in buckets.values() for alias, entry in rows.items()})
+    dropped += index_dropped
+    # Apply the same removals to shards, preserving policy and alias parity.
+    if index_dropped:
+        for name, rows in buckets.items():
+            payloads[name + ".json"] = _encode({k: v for k, v in rows.items() if k in retained})
+    payloads["all.json"] = index
+    kept = list(retained.values())
     payloads["meta.json"] = _encode({"generated_at": iso(now), "shards": count,
         "counts": {"store": dict(Counter(e["store"] for e in kept)),
                    "kind": dict(Counter(e["kind"] for e in kept))}, "stores": cfg.checker["stores"]})
-    folder = out / "check" / "data"
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir(parents=True)

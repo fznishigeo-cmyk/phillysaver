@@ -81,7 +81,7 @@ function photoRules(config) {
 
 function checkPhotos({live, showing, broken, firstScreen}, rules) {
   const problems = [], pct = live ? (100 * showing) / live : 100;
-  if (pct < rules.minPhotoPct) problems.push(`photos showing ${pct.toFixed(1)}% < ${rules.minPhotoPct}%`);
+  if (pct < rules.minPhotoPct) problems.push(`photos showing ${pct.toFixed(2)}% < ${rules.minPhotoPct}%`);
   if (broken > rules.maxBroken) problems.push(`${broken} broken photos > ${rules.maxBroken}`);
   if (firstScreen < rules.firstScreen) {
     problems.push(`${firstScreen} of the top 24 cards show a photo < ${rules.firstScreen}`);

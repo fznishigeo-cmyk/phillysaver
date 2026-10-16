@@ -93,6 +93,7 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
     ("support", "eab1d00030352dde9e463e8af567091e0affeb7241bae27a992f3469365111f3"),
     ("shipped", "357c17ccd07f8f4e203256c66f91b95e550004601da64cbe050350a13d116042"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
     cfg.amazon_history = "show"  # predates task 121b
@@ -194,7 +195,9 @@ def test_requires_a_published_deal_in_last_ninety_days(db, cfg):
     for i in range(6):
         db.record_price(rows[0]["dedupe_key"], "Amazon", 20, later - timedelta(days=i * 2), f"later-{i}")
     pages, _, report = prepare(db, cfg, [], later)
-    assert len(next(iter(pages.values()))["checks"]) == 12  # includes lifetime checks
+    assert pages == {}  # No live/indexable page after the default 90-day keep window.
+    assert report["not_written_old"] == 1
+    assert report["state_pages"] == 1  # History remains private until prune_days.
     assert gates(report) == {"eligible": 0, "indexable": 0, "new_today": 0, "noindex": 1}
 
 

@@ -1010,6 +1010,8 @@ out.pending = { status: r.status, emails: (await r.json()).emails.map((e) => e.e
 for (const k of out.stored_keys) {
   const rec = JSON.parse(await env.SUBS.get(k));
   r = await call("GET", "/confirm?e=" + k.slice(4) + "&t=" + rec.token);
+  out.confirm_page = { status: r.status, text: await r.text(), confirmed: JSON.parse(await env.SUBS.get(k)).confirmed };
+  r = await call("POST", "/confirm?e=" + k.slice(4) + "&t=" + rec.token);
   out.confirm = { status: r.status, confirmed: JSON.parse(await env.SUBS.get(k)).confirmed };
 }
 r = await call("GET", "/list", { headers: { "Authorization": "Bearer s3cret" } });
@@ -1101,11 +1103,13 @@ def test_worker_behaviour(tmp_path: Path) -> None:
     assert out["foreign_origin_cors"] is None
     assert out["stored_keys"] == ["sub:second@example.com", "sub:x@y.com", "sub:you@example.com"]
     # GET /list: bearer secret only; confirmed emails + tokens, nothing else.
-    # New addresses are pending (?pending=1) until GET /confirm?e=&t=.
+    # Task 252c's narrow exception: GET is read-only; only POST confirms.
     assert out["list_unauth"] == 401 and out["list_wrong"] == 401
     assert out["list_before_confirm"] == 0
     assert out["pending"] == {"status": 200,
                               "emails": ["second@example.com", "x@y.com", "you@example.com"]}
+    assert out["confirm_page"]["status"] == 200 and out["confirm_page"]["confirmed"] is False
+    assert 'method="post"' in out["confirm_page"]["text"]
     assert out["confirm"] == {"status": 200, "confirmed": True}
     assert out["list"]["status"] == 200
     rows = out["list"]["body"]["emails"]

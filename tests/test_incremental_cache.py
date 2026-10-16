@@ -483,6 +483,7 @@ def test_cli_enabled_respects_bounded_cache_config(db, tmp_path, monkeypatch):
     ('support', '7eb907c8053b118f9a871230f6f78a62e0f69d1e05cac6882a867b6e0db0546b'),
     ('shipped', 'e7245d3ad56b7a03b0f3bc380eb89dda323e2c9df99495629e77b88756e47ed4'),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_disabled_omitted_and_enabled_preserve_every_public_byte_and_member_payload(tmp_path, monkeypatch, mode, expected):
     import hashlib
     from dealradar.publish import site

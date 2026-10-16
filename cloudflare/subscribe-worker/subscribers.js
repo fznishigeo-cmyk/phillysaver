@@ -8,10 +8,9 @@
  *
  * Double opt-in: POST /subscribe writes confirmed=false; the pipeline mails a
  * confirm link to every pending address (GET /list?pending=1, then
- * POST /list/confirm-sent stamps confirm_sent_at); GET /confirm?e=&t= sets
- * confirmed=true; only confirmed addresses get the daily email. A record
- * written before double opt-in (no "confirmed" key) counts as confirmed, so
- * nobody who signed up earlier is dropped.
+ * POST /list/confirm-sent stamps confirm_sent_at); GET /confirm shows a POST
+ * button; only POST confirms. Only explicitly confirmed addresses get email.
+ * Records written before double opt-in are pending and get one confirmation.
  *
  * Unsubscribe: GET shows a page with one POST button (a mail scanner that
  * prefetches links must not remove anyone); POST, from that button or the RFC
@@ -35,7 +34,7 @@ export function page(title, text, link, status = 200, extra = "") {
 }
 
 export function isConfirmed(rec) {
-  return !("confirmed" in rec) || rec.confirmed === true;
+  return rec.confirmed === true;
 }
 
 export async function getSub(env, email) {
@@ -43,33 +42,49 @@ export async function getSub(env, email) {
   try { return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 }
 
-export async function putSub(env, email, rec) {
-  await env.SUBS.put(`sub:${email}`, JSON.stringify(rec), { metadata: rec });
+export async function putSub(env, email, rec, options = {}) {
+  await env.SUBS.put(`sub:${email}`, JSON.stringify(rec), { ...options, metadata: rec });
 }
 
-// {email, rec} for a link whose token matches a stored record, {email} when
-// there is no such record, null when the link is bad. A POST also accepts
+export async function markConfirmSent(env, email, rec, now) {
+  if (rec.confirm_sent_at) return; // Retries must not extend the expiry.
+  const days = Number(env.CONFIRM_EXPIRE_DAYS ?? 30);
+  const expirationTtl = (Number.isInteger(days) && days > 0 ? days : 30) * 86400;
+  await putSub(env, email, { ...rec, confirm_sent_at: now }, { expirationTtl });
+}
+
+// Only request syntax affects the response, never record existence or a
+// token match. Only a matching stored record can be changed. POST also accepts
 // form fields e and t (the button on the GET page sends the query anyway).
 async function fromLink(env, url, form) {
   const pick = (k) => url.searchParams.get(k) || (form && form.get(k)) || "";
   const email = pick("e").trim().toLowerCase();
   const token = pick("t").trim();
-  if (!EMAIL_RE.test(email)) return null;
+  if (!EMAIL_RE.test(email) || !/^[0-9a-f]{32}$/.test(token)) return null;
   const rec = await getSub(env, email);
-  if (!rec) return { email };
-  const stored = typeof rec.token === "string" ? rec.token : "";
-  return token && safeEqual(stored, token) ? { email, rec } : null;
+  const stored = rec && typeof rec.token === "string" ? rec.token : "";
+  return { email, token, rec: safeEqual(stored, token) ? rec : null };
 }
 
 const badLink = (site) => page("That link isn't valid", "This link doesn't match our records. Use the link in your latest email from wowpriced.",
                                { href: site, text: "Back to wowpriced" }, 403);
 
-export async function confirm(url, env) {
+export async function confirm(request, url, env) {
   const site = allowedOrigins(env)[0];
-  const hit = await fromLink(env, url);
-  if (!hit || !hit.rec) return badLink(site);
-  if (!isConfirmed(hit.rec)) await putSub(env, hit.email, { ...hit.rec, confirmed: true });
-  return page("You're confirmed", "The day's top 10 deals now land in your inbox every morning. Welcome aboard.",
+  let form = null;
+  if (request.method === "POST") {
+    try { form = await request.formData(); } catch (e) { /* query-only POST */ }
+  }
+  const hit = await fromLink(env, url, form);
+  if (!hit) return badLink(site);
+  if (request.method === "GET") {
+    const action = `/confirm?e=${encodeURIComponent(hit.email)}&t=${encodeURIComponent(hit.token)}`;
+    return page("Confirm your wowpriced email", "Press the button to confirm your best-deals email.",
+                { href: site, text: "Back to wowpriced" }, 200,
+                `<form method="post" action="${esc(action)}"><button type="submit" style="font:inherit;padding:8px 16px">Confirm my email</button></form>`);
+  }
+  if (hit.rec && !isConfirmed(hit.rec)) await putSub(env, hit.email, { ...hit.rec, confirmed: true });
+  return page("Confirmation received", "If this link matches your sign-up, you're confirmed for our best-deals email.",
               { href: `${site}/subscribe.html?confirmed=1`, text: "Back to wowpriced" });
 }
 
@@ -82,8 +97,8 @@ export async function unsubscribe(request, url, env) {
   const hit = await fromLink(env, url, form);
   if (!hit) return badLink(site);
   if (request.method !== "POST") {
-    const action = `/unsubscribe?e=${encodeURIComponent(hit.email)}&t=${encodeURIComponent(hit.rec ? hit.rec.token : "")}`;
-    return page("Unsubscribe from wowpriced?", `Stop the daily deal email to ${hit.email}.`, { href: site, text: "Keep my subscription" }, 200,
+    const action = `/unsubscribe?e=${encodeURIComponent(hit.email)}&t=${encodeURIComponent(hit.token)}`;
+    return page("Unsubscribe from wowpriced?", `Stop the wowpriced deals email to ${hit.email}.`, { href: site, text: "Keep my subscription" }, 200,
                 `<form method="post" action="${esc(action)}"><button type="submit" style="font:inherit;padding:8px 16px">Unsubscribe</button></form>`);
   }
   if (hit.rec) await env.SUBS.delete(`sub:${hit.email}`);

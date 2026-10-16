@@ -77,12 +77,14 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   const ok = {live: 1000, showing: 925, broken: 3, firstScreen: 20};
   assert.deepEqual(checkPhotos(ok, rules), {ok: true, reason: ""});
   assert.deepEqual(checkPhotos({...ok, live: 0, showing: 0}, rules), {ok: true, reason: ""});
-  for (const [change, reason] of [[{showing: 924}, "photos showing 92.4% < 92.5%"],
+  for (const [change, reason] of [[{showing: 924}, "photos showing 92.40% < 92.5%"],
                                   [{broken: 4}, "4 broken photos > 3"],
                                   [{firstScreen: 19}, "19 of the top 24 cards show a photo < 20"]]) {
     assert.deepEqual(checkPhotos({...ok, ...change}, rules), {ok: false, reason});
   }
   assert.equal(checkPhotos({live: 10, showing: 0, broken: 9, firstScreen: 0}, rules).reason.split("; ").length, 3);
+  assert.deepEqual(checkPhotos({live: 10000, showing: 8997, broken: 0, firstScreen: 24}, shipped),
+    {ok: false, reason: "photos showing 89.97% < 90%"});
   const script = fs.readFileSync(path.join(__dirname, "../scripts/site_check.js"), "utf8");
   assert.ok(script.includes("if (!photos.ok || !front.ok || [desktop, mobile].some("));
   assert.ok(script.includes('say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);'));

@@ -18,11 +18,72 @@ from .models import SourceConfig
 
 ROOT = Path(__file__).resolve().parent.parent
 
-CHECKER_STORES = {"amazon": "link_only", "walmart": "live_only", "ebay": "live_only",
+CHECKER_STORES = {"amazon": "link_only", "walmart": "history", "ebay": "live_only",
                   "bestbuy": "history", "target": "history", "woot": "history", "other": "history"}
 
 
-def validated_checker(value) -> dict:
+def validated_extension(value) -> dict:
+    if not isinstance(value, dict) or set(value) - {"amazon_mode"}:
+        raise ValueError("extension must contain amazon_mode only")
+    settings = {"amazon_mode": "full"} | value
+    if not isinstance(settings["amazon_mode"], str) or settings["amazon_mode"] not in {"full", "link"}:
+        raise ValueError("extension.amazon_mode must be full or link")
+    return settings
+
+
+def validated_android(value) -> dict:
+    defaults = dict(enabled=False, package="com.wowpriced.app",
+                    sha256_cert_fingerprints=[], amazon_in_app="limited")
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("pwa.android must contain supported settings only")
+    settings = defaults | value
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("pwa.android.enabled must be boolean")
+    package = settings["package"]
+    if not isinstance(package, str) or not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+", package):
+        raise ValueError("pwa.android.package must be an Android package identifier")
+    fingerprints = settings["sha256_cert_fingerprints"]
+    if not isinstance(fingerprints, list) or any(
+            not isinstance(f, str) or not re.fullmatch(r"(?:[0-9A-F]{2}:){31}[0-9A-F]{2}", f)
+            for f in fingerprints):
+        raise ValueError("pwa.android.sha256_cert_fingerprints must contain uppercase SHA-256 certificates")
+    settings["sha256_cert_fingerprints"] = list(fingerprints)
+    if settings["amazon_in_app"] not in ("limited", "as_site"):
+        raise ValueError("pwa.android.amazon_in_app must be limited or as_site")
+    return settings
+
+
+def validated_store_policy(value) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError("store_policy must be a mapping")
+    if "amazon" in value:
+        raise ValueError("Amazon uses amazon_history / amazon_watches")
+    if (set(value) - (set(CHECKER_STORES) - {"amazon"})
+            or any(not isinstance(v, str) or v not in {"history", "live_only"} for v in value.values())):
+        raise ValueError("store_policy must map known stores to history or live_only")
+    return dict.fromkeys(sorted(set(CHECKER_STORES) - {"amazon"}), "history") | value
+
+
+def validated_ai_take(value) -> dict:
+    defaults = dict(enabled=False, model="claude-haiku-5-5", max_pages_per_run=40,
+                    max_usd_per_run=0.05, max_usd_per_day=0.40, max_words=45)
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("product_pages.ai_take must contain supported settings only")
+    settings = defaults | value
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("product_pages.ai_take.enabled must be boolean")
+    if not isinstance(settings["model"], str) or not re.fullmatch(r"[a-zA-Z0-9._:-]+", settings["model"]):
+        raise ValueError("product_pages.ai_take.model must be a model identifier")
+    for key, maximum in (("max_pages_per_run", 40), ("max_words", 45)):
+        if type(settings[key]) is not int or not 1 <= settings[key] <= maximum:
+            raise ValueError(f"product_pages.ai_take.{key} must be an integer in 1..{maximum}")
+    for key in ("max_usd_per_run", "max_usd_per_day"):
+        if type(settings[key]) not in {int, float} or not math.isfinite(settings[key]) or settings[key] < 0:
+            raise ValueError(f"product_pages.ai_take.{key} must be finite and nonnegative")
+    return settings
+
+
+def validated_checker(value, amazon_history="show") -> dict:
     if not isinstance(value, dict) or set(value) - {"enabled", "stores", "ended_days", "shards"}:
         raise ValueError("checker must contain supported settings only")
     settings = {"enabled": False, "stores": dict(CHECKER_STORES), "ended_days": 90, "shards": 256} | value
@@ -34,9 +95,12 @@ def validated_checker(value) -> dict:
                    for v in stores.values())):
         raise ValueError("checker.stores must map known stores to link_only, live_only or history")
     settings["stores"] = dict(CHECKER_STORES) | stores
-    if (settings["stores"]["amazon"] != "link_only"
-            or any(settings["stores"][s] == "history" for s in ("walmart", "ebay"))):
+    if (settings["stores"]["amazon"] not in {"link_only", "history"}
+            or settings["stores"]["ebay"] == "history"):
         raise ValueError("checker.stores cannot enable restricted store prices or history")
+    if settings["stores"]["amazon"] == "history" and amazon_history != "show":
+        settings["stores"]["amazon"] = "link_only"
+        logging.getLogger(__name__).info("checker.stores.amazon uses link_only while amazon_history: hide")
     for name, low, high in (("ended_days", 1, 365), ("shards", 16, 1024)):
         n = settings[name]
         if type(n) is not int or not low <= n <= high or (name == "shards" and n & (n - 1)):
@@ -135,6 +199,7 @@ class AppConfig:
     raw: dict[str, Any] = field(default_factory=dict)
     accuracy_extra_samples_per_day: int = 0
     checker: dict = field(default_factory=lambda: validated_checker({}))
+    extension: dict = field(default_factory=lambda: validated_extension({}))
 
     # -- identity / politeness --
     contact_email: str = "set-me@example.com"
@@ -239,6 +304,7 @@ class AppConfig:
     amazon_as_of_enabled: bool = False
     amazon_history: str = "show"
     amazon_watches: str = ""  # "" follows amazon_history; on | off
+    store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
@@ -272,12 +338,16 @@ class AppConfig:
     seo_posted_deal_redirects_enabled: bool = True
     seo_posted_deal_redirects_max_rules: int = 1500
     seo_product_pages_enabled: bool = False
+    ai_take: dict = field(default_factory=lambda: validated_ai_take({}))
     seo_product_pages_record_own_checks_enabled: bool = True
     seo_product_pages_record_own_checks_max_per_offer_per_day: int = 24
     seo_product_pages_min_checks: int = 6
     seo_product_pages_min_span_days: float = 7
     seo_product_pages_max_new_indexable_per_day: int = 50
     seo_product_pages_max_indexable: int = 2000
+    seo_product_pages_keep_days: int = 90
+    seo_product_pages_prune_days: int = 180
+    seo_product_pages_max_pages: int = 6000
     seo_product_pages_lower_ratio: float = 0.95
     seo_product_pages_higher_ratio: float = 1.05
     seo_product_pages_deal_history_limit: int = 20
@@ -378,8 +448,14 @@ class AppConfig:
     pwa_enabled: bool = False
     pwa_name: str = "wowpriced"
     pwa_short_name: str = "wowpriced"
-    # -- newsletter: the free sign-up list's daily top N (Cloudflare Worker + KV) --
-    newsletter_enabled: bool = True
+    pwa_android: dict = field(default_factory=lambda: validated_android({}))
+    # -- newsletter: the free sign-up list's best deals (Cloudflare Worker + KV) --
+    newsletter_enabled: bool = False
+    newsletter_cadence: str = "weekly"
+    newsletter_weekday: str = "tue"
+    newsletter_mailing_address: str = ""
+    newsletter_exclude_stores: list[str] = field(default_factory=lambda: ["amazon", "ebay"])
+    newsletter_confirmations_enabled: bool = False
     newsletter_worker_url: str = ""    # https://wowpriced-subscribe.<sub>.workers.dev
     newsletter_hour_local: int = 8
     newsletter_timezone: str = "America/New_York"
@@ -619,7 +695,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
-    cfg.checker = validated_checker(raw.get("checker", {}))
+    cfg.extension = validated_extension(raw.get("extension", {}))
+    cfg.checker = validated_checker(raw.get("checker", {}), raw.get("amazon_history", "show"))
+    product_settings = raw.get("product_pages", {})
+    if not isinstance(product_settings, dict) or set(product_settings) - {"ai_take"}:
+        raise ValueError("product_pages must contain ai_take settings only")
+    cfg.ai_take = validated_ai_take(product_settings.get("ai_take", {}))
     quality = raw.get("quality", {})
     if not isinstance(quality, dict):
         raise ValueError("quality must be a mapping")
@@ -778,6 +859,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.amazon_watches = ("on" if watches else "off") if type(watches) is bool else str(watches)
     if cfg.amazon_watches not in {"", "on", "off"}:
         raise ValueError("amazon_watches must be on or off")
+    cfg.store_policy = validated_store_policy(g("store_policy", default={}))
     cfg.offscreen_cards = g("site", "offscreen_cards", default=False)
     if type(cfg.offscreen_cards) is not bool:
         raise ValueError("site.offscreen_cards must be a boolean")
@@ -902,10 +984,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if (type(cfg.seo_product_pages_record_own_checks_max_per_offer_per_day) is not int
             or not 1 <= cfg.seo_product_pages_record_own_checks_max_per_offer_per_day <= 96):
         raise ValueError("seo.product_pages.record_own_checks.max_per_offer_per_day must be an integer in 1..96")
-    for name in ("min_checks", "max_new_indexable_per_day", "max_indexable"):
+    for name in ("min_checks", "max_new_indexable_per_day"):
         attr = "seo_product_pages_" + name
         setattr(cfg, attr, max(1 if name == "min_checks" else 0, int(g(
             "seo", "product_pages", name, default=getattr(cfg, attr)))))
+    for name in ("max_indexable", "max_pages", "keep_days", "prune_days"):
+        attr = "seo_product_pages_" + name
+        value = g("seo", "product_pages", name, default=getattr(cfg, attr))
+        if type(value) is not int:
+            raise ValueError(f"seo.product_pages.{name} must be an integer")
+        setattr(cfg, attr, value)
+    if not 1 <= cfg.seo_product_pages_max_indexable <= cfg.seo_product_pages_max_pages <= 20000:
+        raise ValueError("seo.product_pages requires 1 <= max_indexable <= max_pages <= 20000")
+    if not 1 <= cfg.seo_product_pages_keep_days <= cfg.seo_product_pages_prune_days <= 730:
+        raise ValueError("seo.product_pages requires 1 <= keep_days <= prune_days <= 730")
     cfg.seo_product_pages_min_span_days = max(0.0, float(g(
         "seo", "product_pages", "min_span_days", default=7)))
     cfg.seo_product_pages_lower_ratio = max(0.0, min(1.0, float(g(
@@ -1033,7 +1125,37 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.pwa_enabled = bool(g("pwa", "enabled", default=cfg.pwa_enabled))
     cfg.pwa_name = str(g("pwa", "name", default=cfg.pwa_name) or cfg.pwa_name).strip() or cfg.pwa_name
     cfg.pwa_short_name = str(g("pwa", "short_name", default=cfg.pwa_short_name) or cfg.pwa_short_name).strip() or cfg.pwa_short_name
-    cfg.newsletter_enabled = bool(g("newsletter", "enabled", default=cfg.newsletter_enabled))
+    cfg.pwa_android = validated_android(g("pwa", "android", default={}))
+    enabled = g("newsletter", "enabled", default=cfg.newsletter_enabled)
+    if not isinstance(enabled, bool):
+        raise ValueError("newsletter.enabled must be a boolean")
+    cfg.newsletter_enabled = enabled
+    cfg.newsletter_cadence = g("newsletter", "cadence", default=cfg.newsletter_cadence)
+    if cfg.newsletter_cadence not in ("daily", "weekly"):
+        raise ValueError("newsletter.cadence must be daily or weekly")
+    cfg.newsletter_weekday = g("newsletter", "weekday", default=cfg.newsletter_weekday)
+    if cfg.newsletter_weekday not in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
+        raise ValueError("newsletter.weekday must be mon..sun")
+    address = g("newsletter", "mailing_address", default="")
+    if not isinstance(address, str):
+        raise ValueError("newsletter.mailing_address must be text")
+    cfg.newsletter_mailing_address = address.strip()
+    excluded = g("newsletter", "exclude_stores", default=cfg.newsletter_exclude_stores)
+    if not isinstance(excluded, list) or not all(isinstance(s, str) and s.strip() for s in excluded):
+        raise ValueError("newsletter.exclude_stores must be a list of store names")
+    cfg.newsletter_exclude_stores = [s.strip().casefold() for s in excluded]
+    if "amazon" not in cfg.newsletter_exclude_stores:
+        raise ValueError("newsletter.exclude_stores must include amazon")
+    # The store keys store_of() can return (checker.HOSTS values); config stays import-free.
+    known = set(CHECKER_STORES) - {"other"}
+    unknown = sorted(set(cfg.newsletter_exclude_stores) - known)
+    if unknown:
+        raise ValueError(f"newsletter.exclude_stores has unknown store(s) {unknown}; "
+                         f"use one of {sorted(known)}")
+    confirmations = g("newsletter", "confirmations_enabled", default=False)
+    if not isinstance(confirmations, bool):
+        raise ValueError("newsletter.confirmations_enabled must be a boolean")
+    cfg.newsletter_confirmations_enabled = confirmations
     cfg.newsletter_worker_url = str(g("newsletter", "worker_url", default="") or "").strip().rstrip("/")
     cfg.newsletter_hour_local = int(g("newsletter", "hour_local", default=cfg.newsletter_hour_local))
     cfg.newsletter_timezone = g("newsletter", "timezone", default=cfg.newsletter_timezone)

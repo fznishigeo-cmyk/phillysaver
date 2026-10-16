@@ -82,13 +82,25 @@ def files(out):
 def data(out):
     entries = {}
     for path in (out / "check" / "data").glob("*.json"):
-        if path.name != "meta.json":
+        if path.name not in {"meta.json", "all.json"}:
             entries.update(json.loads(path.read_bytes()))
     return entries
 
 
+def index_data(out):
+    body = json.loads((out / "check/data/all.json").read_bytes())
+    assert body["version"] == 1 and body["generated_at"] == iso(NOW)
+    previous, values = "", []
+    for prefix, suffix in body["values"]:
+        previous = previous[:prefix] + suffix
+        values.append(json.loads(previous))
+    return {alias: {field: values[i] for field, i in zip(body["fields"], row) if i >= 0}
+            for alias, row in body["entries"].items()}
+
+
 def test_default_config_and_valid_overrides(tmp_path):
-    assert AppConfig().checker == load_config().checker == validated_checker({})
+    assert AppConfig().checker == validated_checker({})
+    assert load_config().checker == validated_checker({"stores": {"amazon": "history"}})
     assert not load_config().checker["enabled"]
     path = tmp_path / "config.yaml"
     path.write_text("{}")
@@ -106,8 +118,8 @@ def test_default_config_and_valid_overrides(tmp_path):
     {"ended_days": 0}, {"ended_days": 366}, {"ended_days": True}, {"ended_days": 1.5},
     {"shards": 15}, {"shards": 1025}, {"shards": 48}, {"shards": 256.0},
     {"stores": []}, {"stores": {"target": "off"}}, {"stores": {"unknown": "history"}},
-    {"stores": {"target": {}}}, {"stores": {"amazon": "history"}},
-    {"stores": {"walmart": "history"}}, {"stores": {"ebay": "history"}}])
+    {"stores": {"target": {}}}, {"stores": {"amazon": "live_only"}},
+    {"stores": {"ebay": "history"}}])
 def test_invalid_config_fails_even_when_disabled(tmp_path, value):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"checker": value}))
@@ -116,6 +128,7 @@ def test_invalid_config_fails_even_when_disabled(tmp_path, value):
 
 
 @pytest.mark.parametrize("mode", ["membership", "open", "support", "shipped"])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_disabled_every_published_byte_matches_untouched_head(db, tmp_path, mode):
     # Frozen from untouched d28b551eebd4, at NOW, using this same seed/config.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
@@ -140,6 +153,7 @@ def test_enabled_store_policies_public_metadata_and_no_other_public_fields(db, c
     out = tmp_path / "site"
     result = site.render_site(db, cfg, NOW, out_dir=out, deals=rows)
     entries = data(out)
+    assert index_data(out) == entries
     assert len(entries) == 7
     for store, url in URLS.items():
         entry = entries[checker.aliases(url)[0]]
@@ -147,7 +161,7 @@ def test_enabled_store_policies_public_metadata_and_no_other_public_fields(db, c
         assert entry["at"] == iso(NOW) and entry["deal_path"].startswith("/deal/")
         if store == "amazon":
             assert set(entry) == {"kind", "store", "item", "at", "deal_path"}
-        elif store in {"walmart", "ebay"}:
+        elif store == "ebay":
             assert set(entry) == {"kind", "store", "item", "at", "deal_path", "price", "credit"}
         else:
             assert set(entry) == {"kind", "store", "item", "at", "deal_path", "price", "credit",
@@ -161,6 +175,8 @@ def test_enabled_store_policies_public_metadata_and_no_other_public_fields(db, c
     assert "Disallow: /check/data/\n" in (out / "robots.txt").read_text()
     assert checker.HEADERS in (out / "_headers").read_text()
     for name, body in files(out).items():
+        if name == "check/index.html":
+            continue
         if name.endswith((".html", ".xml")) or name == "deals.json":
             assert b'"checker"' not in body and b"/check/data/" not in body
 
@@ -205,6 +221,7 @@ def test_conditional_price_is_live_deal_only_never_history_or_verdict(db, cfg, r
 
 
 def test_verdict_exactly_reuses_product_answer_and_filters_restricted_checks(db, cfg):
+    cfg.checker["stores"]["walmart"] = "live_only"
     d = add(db)
     models, _, _ = product_pages.prepare(db, cfg, NOW, public([d]), [d])
     page = models[str(d["product_id"])]
@@ -242,7 +259,7 @@ def test_ended_is_last_dated_plain_check_and_restricted_stores_have_none(db, cfg
     models, _, _ = product_pages.prepare(db, cfg, NOW, public(rows), rows)
     rows = [end(db, d) for d in rows]
     result = build(db, cfg, rows, models)
-    assert {e["store"] for e in result.values()} == {"bestbuy", "target", "woot", "other"}
+    assert {e["store"] for e in result.values()} == {"bestbuy", "target", "woot", "walmart", "other"}
     assert all(e["kind"] == "ended" and e["price"] == 10 and e["at"] == iso(NOW) for e in result.values())
     bestbuy = rows[3]
     page = models[str(bestbuy["product_id"])]
@@ -303,7 +320,7 @@ def test_shard_count_first_sha_digits_and_repeat_bytes(db, cfg, tmp_path, count)
     entries = build(db, cfg, [add(db)])
     report = checker.publish(tmp_path, cfg, NOW, entries)
     before = files(tmp_path)
-    assert len(before) == count + 1 and data(tmp_path) == entries
+    assert len(before) == count + 2 and data(tmp_path) == index_data(tmp_path) == entries
     assert checker.publish(tmp_path, cfg, NOW.astimezone(timezone(timedelta(hours=12))), entries) == report
     assert files(tmp_path) == before
     alias = next(iter(entries))
@@ -331,10 +348,11 @@ def test_actual_64kb_cap_drops_oldest_ended_first_and_removes_old_shards(cfg, tm
     (folder / "obsolete.json").write_text("private old data")
     result = checker.publish(tmp_path, cfg, NOW, entries)
     kept = data(tmp_path)
+    assert index_data(tmp_path) == kept
     assert result["dropped_ended"] > 0 and keys[0] in kept
     assert result["dropped_ended"] == len(entries) - len(kept)
     assert keys[-1] not in kept and keys[1] in kept
-    assert all(p.stat().st_size < 64 * 1024 for p in folder.glob("*.json") if p.name != "meta.json")
+    assert all(p.stat().st_size < 64 * 1024 for p in folder.glob("*.json") if p.name not in {"meta.json", "all.json"})
     assert not (folder / "obsolete.json").exists()
     before = files(tmp_path)
     assert checker.publish(tmp_path, cfg, NOW, dict(reversed(list(entries.items())))) == result
@@ -349,11 +367,82 @@ def test_disable_removes_previous_data_and_directives(db, cfg, tmp_path):
     rows = [add(db)]
     site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=rows)
     assert data(tmp_path)
+    assert (tmp_path / "check/data/all.json").is_file()
     cfg.checker["enabled"] = False
     site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=rows)
     assert not (tmp_path / "check").exists()
     assert "/check/data/" not in (tmp_path / "robots.txt").read_text()
     assert checker.HEADERS not in (tmp_path / "_headers").read_text()
+
+
+@pytest.mark.parametrize("amazon", ["show", "hide"])
+@pytest.mark.parametrize("policy", ["history", "live_only", "link_only"])
+def test_compact_index_preserves_all_policy_filtered_fields(db, cfg, tmp_path, amazon, policy):
+    cfg.amazon_history = amazon
+    for store in ("bestbuy", "target", "walmart", "woot", "other"):
+        cfg.checker["stores"][store] = policy
+    cfg.checker["stores"]["amazon"] = "history"
+    rows = [add(db, s, item="Café 🎧 " + s) for s in URLS]
+    models, _, _ = product_pages.prepare(db, cfg, NOW, public(rows), rows)
+    rows[3] = end(db, rows[3])
+    entries = build(db, cfg, rows, models)
+    checker.publish(tmp_path, cfg, NOW, entries)
+    assert index_data(tmp_path) == data(tmp_path) == entries
+    original = files(tmp_path)
+    checker.publish(tmp_path, cfg, NOW, dict(reversed(list(entries.items()))))
+    assert files(tmp_path) == original
+
+
+def synthetic_aliases():
+    # Full history rows, distinct titles, prices, paths and source URLs; no lost fields.
+    return {f"bestbuy:{6500000+i}": {
+        "kind": "live", "store": "bestbuy",
+        "item": f"Example Brand Wireless Headphones Model {i:05d} (Black)",
+        "at": iso(NOW), "deal_path": f"/deal/wireless-headphones-{i:08x}/",
+        "price": round(19.99 + i % 200, 2),
+        "credit": [{"name": "Example deals", "url": "https://deals.example/posts/" + str(i)}],
+        "p_path": f"/p/wireless-headphones-{i:08x}/", "verdict": "Yes — lower than usual.",
+        "checks": 50, "since": iso(NOW - timedelta(days=88))} for i in range(10_000)}
+
+
+def test_compact_10000_alias_build_size_and_repeat_bytes(cfg, tmp_path):
+    entries = synthetic_aliases()
+    report = checker.publish(tmp_path, cfg, NOW, entries)
+    path = tmp_path / "check/data/all.json"
+    body = path.read_bytes()
+    assert len(body) < checker.MAX_INDEX_BYTES == 1_500_000
+    assert report["aliases"] == 10_000 and report["dropped_ended"] == 0
+    assert index_data(tmp_path) == data(tmp_path) == entries
+    assert checker.publish(tmp_path, cfg, NOW, dict(reversed(list(entries.items())))) == report
+    assert path.read_bytes() == body
+    print(f"all.json for 10,000 full-history aliases: {len(body):,} bytes")
+
+
+def test_index_cap_drops_oldest_ended_with_ties_and_preserves_live(cfg, tmp_path, monkeypatch):
+    entries = {f"bestbuy:{i}": {"kind": "ended", "store": "bestbuy", "item": "Widget " + str(i),
+        "at": iso(NOW - timedelta(days=i // 2)), "price": i, "deal_path": f"/deal/widget-{i}/"}
+        for i in range(24)}
+    entries["bestbuy:live"] = dict(entries["bestbuy:0"], kind="live")
+    oldest = sorted((k for k in entries if entries[k]["kind"] == "ended"), key=lambda k: (entries[k]["at"], k))
+    expected = {k: v for k, v in entries.items() if k not in oldest[:10]}
+    monkeypatch.setattr(checker, "MAX_INDEX_BYTES", len(checker.compact_index(NOW, expected)) + 1)
+    report = checker.publish(tmp_path, cfg, NOW, entries)
+    assert report["dropped_ended"] == 10
+    assert index_data(tmp_path) == data(tmp_path) == expected
+    assert (tmp_path / "check/data/all.json").stat().st_size < checker.MAX_INDEX_BYTES
+    before = files(tmp_path)
+    assert checker.publish(tmp_path, cfg, NOW, dict(reversed(list(entries.items())))) == report
+    assert files(tmp_path) == before
+    monkeypatch.setattr(checker, "MAX_INDEX_BYTES", len(checker.compact_index(NOW, {"bestbuy:live": entries["bestbuy:live"]})))
+    with pytest.raises(ValueError, match="live entries exceed all.json"):
+        checker.publish(tmp_path, cfg, NOW, entries)
+    assert files(tmp_path) == before
+
+
+def test_direct_disabled_publish_never_writes_an_index(cfg, tmp_path):
+    cfg.checker["enabled"] = False
+    assert checker.publish(tmp_path, cfg, NOW, {}) == {}
+    assert not (tmp_path / "check/data/all.json").exists()
 
 
 def test_alias_fixture_and_json_safe_shared_rules():

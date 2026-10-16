@@ -322,6 +322,9 @@ class ClaudeParser:
             bound = self._cost_bound(kwargs)
             if self.spend_usd + self._reserved_usd + bound > self.run_cap_usd:
                 raise SpendCapReached("insufficient allowance for worst-case LLM call")
+            if kind == "ai_take" and (self.spend_by_kind.get(kind, {}).get("usd", 0) + bound
+                                      > self.cfg.ai_take["max_usd_per_run"]):
+                raise SpendCapReached("insufficient AI take allowance")
             if self._ledger is not None:
                 at = util.now_utc().astimezone(timezone.utc)
                 tomorrow = at + timedelta(days=1)
@@ -331,7 +334,9 @@ class ClaudeParser:
                     key, self._run_key, model, bound, at, allowances, self.cfg.spend_cap_usd_per_run,
                     kind=kind, source_name=source_name,
                     daily_call_cap=(tier["second_opinion_calls_per_day"]
-                                    if limited and model == self.cfg.second_opinion_model else None))
+                                    if limited and model == self.cfg.second_opinion_model else None),
+                    **({"kind_run_cap": self.cfg.ai_take["max_usd_per_run"],
+                        "kind_day_cap": self.cfg.ai_take["max_usd_per_day"]} if kind == "ai_take" else {}))
                 if not admitted:
                     kwargs["model"] = tier["model"]
                     bound = self._cost_bound(kwargs)

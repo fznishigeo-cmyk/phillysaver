@@ -20,14 +20,14 @@ from zoneinfo import ZoneInfo
 
 from ..config import get_secret
 from ..util import clamp_window_24h, parse_iso
-from .telegram_pub import format_message
-from .email_policy import email_line_html
+from .email_policy import email_content_excluded, email_excluded, email_line_html, email_message
 
 logger = logging.getLogger("dealradar.publish.email")
 
 
 def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, str, str]:
     """Return (subject, text_body, html_body) for the daily digest."""
+    deals = [d for d in deals if not email_excluded(d, cfg)]
     local = now.astimezone(ZoneInfo(cfg.digest_timezone))
     domain = getattr(cfg, "custom_domain", "") or ""
     brand = domain.split(".")[0] if domain else "wowpriced"
@@ -45,7 +45,7 @@ def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, 
             + html_lib.escape(cfg.ftc_disclosure) + "</p></body></html>"
         )
         return subject, text_body + cfg.ftc_disclosure + "\n", html_body
-    lines = [format_message(d, cfg=cfg) for d in deals]
+    lines = [email_message(d, cfg) for d in deals]
     text_body = "\n".join(lines) + "\n\n" + cfg.ftc_disclosure + "\n"
     items = "\n".join(f"<li>{email_line_html(line, d)}</li>" for d, line in zip(deals, lines))
     html_body = (f"<html><body><ul>\n{items}\n</ul>"
@@ -113,7 +113,7 @@ def maybe_send_digest(db, cfg, now: datetime, *,
 
         deals = rank.published_deals(db, cfg, now)
     from .price_labels import push_excluded
-    deals = [d for d in deals if not push_excluded(d, cfg, now)]
+    deals = [d for d in deals if not push_excluded(d, cfg, now) and not email_excluded(d, cfg)]
     fresh = []
     for deal in deals:
         first_seen = parse_iso(deal.get("first_seen_at") or "")
@@ -124,6 +124,9 @@ def maybe_send_digest(db, cfg, now: datetime, *,
     if dedup_token not in selected:
         return False
     subject, text_body, html_body = build_digest(fresh, cfg, now)
+    if email_content_excluded(cfg, subject, text_body, html_body):
+        logger.warning("digest skipped: excluded store token in email")
+        return False
     port = int(get_secret("SMTP_PORT") or "587")
     user = get_secret("SMTP_USER")
     sender = get_secret("SMTP_FROM") or user or f"dealradar@{host}"

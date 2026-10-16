@@ -433,6 +433,7 @@ def test_enabled_pipeline_summary_and_same_run_idempotency(env, capsys, monkeypa
     (True, False, '15ffecc2d302620d4776a44104539729d4daaa19d77eddec84d0f7da8c995645'),
     (True, True, '15ffecc2d302620d4776a44104539729d4daaa19d77eddec84d0f7da8c995645'),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, support, opened, expected):
     # Recaptured on untouched HEAD: its four old pins already fail there.
     # Adding private checkout facts below must preserve every published byte.

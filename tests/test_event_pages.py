@@ -287,6 +287,7 @@ def test_previously_pending_events_leave_submission_manifest_below_floor_or_disa
     ("support", "66c7c8f883517d379c92d96ee09f3687eaa7571660dc49c1cad417a413ca2812"),
     ("shipped", "293168d700ba0a7ef81c33fe89265639f0e50ea5ee02833f8716931af1732e28"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_matches_every_untouched_head_byte(db, tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, "util_now", lambda: BASE_NOW)
     configured = baseline_config(mode)

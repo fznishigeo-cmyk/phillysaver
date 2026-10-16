@@ -46,6 +46,7 @@ def test_non_boolean_rejected(tmp_path, value):
     ("support", "91c77988b99c3ff7ba842caeb623e67d0a981f996fbec09cb0bc6b4ab972c230"),
     ("shipped", "145e417e40d46eda3289bcf930eb694149ace00c9c739d30eb838eba2a08686e"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_bytes_and_on_only_css(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config(mode)

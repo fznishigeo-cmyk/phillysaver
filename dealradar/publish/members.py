@@ -30,8 +30,7 @@ from ..savings import display_pct
 from ..persistence import checkpoint_state, delivery_run_key, message_id
 from ..config import get_secret
 from ..util import iso, parse_iso
-from .telegram_pub import format_message
-from .email_policy import email_line_html
+from .email_policy import email_content_excluded, email_excluded, email_line_html, email_message
 
 log = logging.getLogger("dealradar.publish.members")
 
@@ -105,6 +104,7 @@ def _cap(cfg) -> int:
 def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]:
     """(subject, text_body, html_body) for one bundle of new deals: the best
     _cap(cfg) of them, and a line saying how many more are on the wall."""
+    deals = [d for d in deals if not email_excluded(d, cfg)]
     more = max(0, len(deals) - _cap(cfg))
     deals = deals[:_cap(cfg)]
     top = max((float(d.get("pct_at_checkout") or 0.0) for d in deals),
@@ -114,7 +114,7 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     brand = domain.split(".")[0] if domain else "wowpriced"
     subject = (f"{brand}: {n} new verified deal{'s' if n != 1 else ''} "
                f"(up to {display_pct(top)}% off)")
-    lines = [format_message(d, cfg=cfg) for d in deals]
+    lines = [email_message(d, cfg) for d in deals]
     footer = []
     if more:
         footer.append(f"+{more} more new deal{'s' if more != 1 else ''} on the live wall"
@@ -161,7 +161,7 @@ def send_member_alerts(db, cfg, now: datetime, *,
 
         deals = rank.published_deals(db, cfg, now)
     from .price_labels import push_excluded
-    deals = [d for d in deals if not push_excluded(d, cfg, now)]
+    deals = [d for d in deals if not push_excluded(d, cfg, now) and not email_excluded(d, cfg)]
     last = parse_iso(db.meta_get(META_LAST_EMAIL) or "")
     window = timedelta(minutes=int(getattr(cfg, "members_email_every_minutes", 60)))
     daily = window >= timedelta(days=1)
@@ -196,6 +196,10 @@ def send_member_alerts(db, cfg, now: datetime, *,
 
     subject, text_body, html_body = build_member_email(fresh + [d for d in all_fresh
                                                              if d not in fresh], cfg)
+    if email_content_excluded(cfg, subject, text_body, html_body):
+        stats["skipped"] = "excluded store token in email"
+        log.warning("member email skipped: %s", stats["skipped"])
+        return stats
     port = int(get_secret("SMTP_PORT") or "587")
     user = get_secret("SMTP_USER")
     sender = get_secret("SMTP_FROM") or user or f"{_brand(cfg)}@{host}"

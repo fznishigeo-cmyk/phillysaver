@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from ..savings import display_pct
+from ..verify import is_amazon_deal
 from ..util import iso, parse_iso
 from ..rank import pick_order
 from .. import checkout_prices
@@ -643,7 +644,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                observations: list[dict[str, Any]], now: datetime, *, indexable: bool = True,
                noindex_follow: bool = False,
                discovery: str = "", sharing: str = "", share_head: str = "",
-               also_at: str = "", lowest_seen: str = "") -> str:
+               also_at: str = "", lowest_seen: str = "", app_amazon: bool = False) -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -695,7 +696,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     explanation = {"history-checked": "The price was checked against price history.",
                    "verified": "The price was verified.",
                    "corroborated": "Two or more independent sources confirmed this price."}
-    content += (f'<p>{_TIER_LABEL.get(badge, "single source")}: '
+    verification_attrs = ' data-app-amazon-history' if app_amazon and badge == "history-checked" else ""
+    content += (f'<p{verification_attrs}>{_TIER_LABEL.get(badge, "single source")}: '
                 f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
     checkout = d.get("checkout") or {}
     checkout_text = (f'<p>{escape(checkout.get("now", ""))} '
@@ -763,7 +765,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
             product["brand"] = {"@type": "Brand", "name": d["brand"]}
         ld = _json_ld(product)
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
-                         '<div class="deal-detail" data-deal-detail>' + content + '</div>', dead=dead,
+                         '<div class="deal-detail" data-deal-detail' + (' data-app-amazon' if app_amazon else '') + '>' + content + '</div>', dead=dead,
                          indexable=indexable, noindex_follow=noindex_follow,
                          extra_head=ld + (PRICE_HISTORY_STYLE if chart else "") + share_head,
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
@@ -983,7 +985,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     not_found = site_footer((TEMPLATES_DIR / "404.html").read_text(encoding="utf-8"),
                             now, meta["disclosure"], support,
                             amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                            product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events)
+                            product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events,
+                            checker_enabled=cfg.checker["enabled"])
     (out / "404.html").write_text(_fill(not_found,
                                         HUB_LINKS=_hub_links(events),
                                         DROP_MINUTES=str(int(cfg.drop_minutes))), encoding="utf-8")
@@ -1013,7 +1016,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     template = copy_variant(template, open_access, support)
     template = site_footer(template, now, meta["disclosure"], support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                           product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events)
+                           product_pages_enabled=cfg.seo_product_pages_enabled, event_links=events,
+                           checker_enabled=cfg.checker["enabled"])
     template = _fill(template, HUB_LINKS=_hub_links(events))
     if cfg.seo_product_pages_enabled:
         template = template.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
@@ -1048,27 +1052,41 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     shadow_run = run_key or "publish:" + iso(now)
     also_at, lowest, shadow = product_offers.evaluate(
         db, cfg, now, deal_rows, source_deals, paths, shadow_run)
+    original_facts = {d["dedupe_key"]: d for d in db.all_deals() + source_deals}
     for d in deal_rows:
         path = paths[d["key"][:8]]
-        observations = ([] if amazon_history.hidden(cfg, d) else
+        hide_history = amazon_history.hidden(cfg, original_facts.get(d["dedupe_key"], d))
+        observations = ([] if hide_history else
                         db.price_observations(d["dedupe_key"], now - timedelta(days=90), now))
         sharing, share_head = traffic.share_html(d, path, site_url) if (
             cfg.traffic_share_enabled and not d.get("price_unconfirmed")) else ("", "")
         discovery = traffic.related_hubs(d, stores, prices) if cfg.traffic_related_hubs_enabled else ""
         discovery += inventory.family_link(d, family_members)
         detail_template = (template.replace(' · <a href="/p/">Price history</a>', "")
-                           if amazon_history.hidden(cfg, d) else template)
+                           if hide_history else template)
         html = _deal_page(detail_template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1 and not d.get("price_unconfirmed"),
                           noindex_follow=not cfg.seo_deal_pages_indexable,
                           discovery=discovery, sharing=sharing, share_head=share_head,
+                          app_amazon=cfg.pwa_android["enabled"] and (
+                              original_facts.get(d["dedupe_key"], d).get("amazon") is True
+                              or is_amazon_deal(original_facts.get(d["dedupe_key"], d))),
                           also_at=also_at.get(d["dedupe_key"], ""),
                           lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))
-                          if cfg.product_entities_lowest_seen_enabled and not amazon_history.hidden(cfg, d) else "")
+                          if cfg.product_entities_lowest_seen_enabled and not hide_history else "")
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
-    product_paths = product_pages.publish(out, cfg, now, products, template, site_url, meta["disclosure"], paths)
+    app_sources = None
+    if cfg.pwa_android["enabled"]:
+        # Retained/pruned offers and mislabeled Amazon URLs follow the same
+        # original-store facts as the publication history policy.
+        app_sources = {r["dedupe_key"]: {"store": r["store"], "canonical_url":
+                       r["dedupe_key"][4:] if r["dedupe_key"].startswith("url|") else ""}
+                       for r in db.conn.execute("SELECT dedupe_key,store FROM product_offers")}
+        app_sources.update(original_facts)
+    product_paths = product_pages.publish(out, cfg, now, products, template, site_url, meta["disclosure"], paths,
+                                         app_sources=app_sources)
     best_path = "/best-deals-today/"
     best_title = "Best deals today | wowpriced"
     n = sum(d.get("status") == "alive" and not d.get("price_unconfirmed") for d in teaser)

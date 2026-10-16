@@ -46,10 +46,13 @@ def product(title='Acme Steel Kitchen Kettle', price=10000):
 
 
 def test_config(tmp_path):
+    from dealradar.fetch.keepa import _finder_cost
+
     assert not AppConfig().photoless_last
     assert load_config().photoless_last
     cfg = load_config()
     assert (cfg.images_keepa_search_per_run, cfg.images_keepa_search_per_day, cfg.images_keepa_match_min) == (10, 120, .85)
+    assert cfg.images_keepa_search_per_day * (_finder_cost(50) + 50) <= 7400  # 61 tokens/search, after rechecks
     path = tmp_path/'config.yaml'
     path.write_text('{}')
     assert not load_config(path).photoless_last
@@ -64,6 +67,7 @@ def test_config(tmp_path):
     ('support','a348c507188dfd049f65c04ec8567dd4edfba3aff0b4c2b76f9a4d2dfe01998e'),
     ('shipped','bb88b869bdff5a65667c3417cf12e0177e55f98075ee36d1e4e324c8ffc2f810'),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_all_bytes_match_untouched_head(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, 'util_now', lambda: NOW)
     cfg = config(mode)

@@ -51,6 +51,9 @@ def cfg():
     cfg = AppConfig(ftc_disclosure=DISCLOSURE, min_pct=70.0)
     cfg.custom_domain = "wowpriced.com"
     cfg.newsletter_worker_url = WORKER
+    cfg.newsletter_enabled = True
+    cfg.newsletter_cadence = "daily"
+    cfg.newsletter_mailing_address = "PO Box 247, Philadelphia, PA 19101"
     cfg.newsletter_hour_local = 8
     cfg.newsletter_timezone = "America/New_York"
     cfg.newsletter_max_per_run = 200
@@ -136,6 +139,7 @@ def make_deal(**overrides):
         "store": "Walmart",
         "item": "LEGO Star Wars Set",
         "canonical_url": "https://www.walmart.com/ip/12345",
+        "deal_path": "/deal/lego-set-12345678/",
         "image_url": "https://i5.walmartimages.com/asr/lego.jpg",
         "final_price": 10.0,
         "regular_price": 50.0,
@@ -263,10 +267,14 @@ class TestGating:
 class TestSending:
     def test_one_personalised_message_per_subscriber(self, db, cfg, monkeypatch):
         configure(monkeypatch)
+        # The synthetic inbox source owns wowpriced.com in sources.yaml;
+        # this fixture's first-party image has no external source owner.
+        monkeypatch.setattr("dealradar.source_policy.sources_for_url", lambda url: [])
         worker = FakeWorker([("a@x.com", "tok-a"), ("b@x.com", "tok-b")])
         factory = Factory()
-        deals = [make_deal(), make_deal(dedupe_key="target|mug", item="Coffee Mug",
+        deals = [make_deal(image_url="https://wowpriced.com/images/lego.jpg"), make_deal(dedupe_key="target|mug", item="Coffee Mug",
                                         store="Target", final_price=4.5,
+                                        deal_path="/deal/mug-23456789/",
                                         regular_price=None, pct_at_checkout=91.0,
                                         image_url="", canonical_url="",
                                         sightings=[{"source_name": "hip2save",
@@ -289,24 +297,25 @@ class TestSending:
         # Facts: item, price, was-price, % off, store, link, credit, disclosure.
         assert "LEGO Star Wars Set" in text and "$10.00" in text
         assert "was $50.00" in text and "80% off" in text and "at Walmart" in text
-        assert "Get deal: https://www.walmart.com/ip/12345" in text
-        assert "via Slickdeals: https://slickdeals.net/f/1" in text
-        assert "Live wall: https://wowpriced.com/" in text
+        assert "See the deal: https://wowpriced.com/deal/lego-set-12345678/?ref=email" in text
+        assert "via Slickdeals" in text and "https://slickdeals.net" not in text
+        assert "Live wall: https://wowpriced.com/best-deals-today/?ref=email" in text
         # The free list's email ends with the membership pitch.
         assert ("Members get every deal. Start the 7-day free trial: "
-                "https://wowpriced.com/#signup") in text
-        assert 'href="https://wowpriced.com/#signup"' in html
+                "https://wowpriced.com/?ref=email#signup") in text
+        assert 'href="https://wowpriced.com/?ref=email#signup"' in html
         assert "Members get every deal." in html and "Start the 7-day free trial" in html
         assert DISCLOSURE in text and DISCLOSURE in html
         assert "You get this because you subscribed at wowpriced.com" in text
         assert "You get this because you subscribed at wowpriced.com" in html
         # Thumbnail only when the deal has an image; the mug has none.
-        assert '<img src="https://i5.walmartimages.com/asr/lego.jpg"' in html
+        assert '<img src="https://wowpriced.com/images/lego.jpg"' in html
         assert html.count("<img ") == 1
         assert "Coffee Mug" in html and "$4.50" in html and "91% off" in html
-        # No product URL -> the source post is the link (as on the site).
-        assert 'href="https://hip2save.com/p/2"' in html
-        assert "Get deal: https://hip2save.com/p/2" in text
+        # Every click goes to its written wowpriced page, including source-only deals.
+        assert 'href="https://wowpriced.com/deal/mug-23456789/?ref=email"' in html
+        assert "See the deal: https://wowpriced.com/deal/mug-23456789/?ref=email" in text
+        assert "https://hip2save.com" not in text and "https://hip2save.com" not in html
         # Personalised only by the unsubscribe link.
         unsub_a = f"{WORKER}/unsubscribe?e=a%40x.com&t=tok-a"
         unsub_b = f"{WORKER}/unsubscribe?e=b%40x.com&t=tok-b"
@@ -416,7 +425,7 @@ class TestSending:
         # No model this run: the top 10 in rank order.
         assert "Item 09" in text and "Item 10" not in text
         assert "Item 09" in html and "Item 10" not in html
-        assert text.count("Get deal: ") == 10 and html.count(">Get deal</a>") == 10
+        assert text.count("See the deal: ") == 10 and html.count(">See the deal</a>") == 10
         for body in (text, html):
             assert "VERBATIM QUOTE" not in body
             assert "evidence" not in body
@@ -698,7 +707,8 @@ class TestDailyTop:
         a, b = factory.messages
         unsub_a = f"{WORKER}/unsubscribe?e=a%40x.com&t=ta"
         unsub_b = f"{WORKER}/unsubscribe?e=b%40x.com&t=tb"
-        assert bodies(a)["plain"].replace(unsub_a, "") == bodies(b)["plain"].replace(unsub_b, "")
+        # Each batch carries its current check time; the picked facts stay identical.
+        assert bodies(a)["plain"].replace(unsub_a, "").splitlines()[1:] == bodies(b)["plain"].replace(unsub_b, "").splitlines()[1:]
         assert "1. Item 30" in bodies(b)["plain"]
 
     def test_a_picked_deal_that_died_drops_out(self, db, cfg, monkeypatch):
@@ -767,17 +777,17 @@ class TestTopEmail:
         numbered = [ln for ln in text.splitlines() if ln[:1].isdigit()]
         assert len(numbered) == 10 and numbered[-1].startswith("10. Item 10 — $10.00")
         assert "Item 11" not in text and "Item 11" not in html
-        assert html.count(">Get deal</a>") == 10
-        cta = "Members get every deal. Start the 7-day free trial: https://wowpriced.com/#signup"
+        assert html.count(">See the deal</a>") == 10
+        cta = "Members get every deal. Start the 7-day free trial: https://wowpriced.com/?ref=email#signup"
         assert cta in text
-        assert 'href="https://wowpriced.com/#signup"' in html
+        assert 'href="https://wowpriced.com/?ref=email#signup"' in html
         # Unsubscribe mechanics unchanged: the placeholder in both bodies.
         assert f"Unsubscribe any time: {N.UNSUB_PLACEHOLDER}" in text
         assert f'<a href="{N.UNSUB_PLACEHOLDER}"' in html
         # The CTA follows the trial knob, and needs a site to link to.
         cfg.paywall_trial_days = 0
         _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
-        assert "Members get every deal. Become a member: https://wowpriced.com/#signup" in text
+        assert "Members get every deal. Become a member: https://wowpriced.com/?ref=email#signup" in text
         assert "free trial" not in text and "free trial" not in html
         cfg.custom_domain = ""
         _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
@@ -791,7 +801,7 @@ class TestTopEmail:
         _s, text, html = N.build_newsletter(ranked(3), cfg, AFTER_8_LOCAL)
         assert "Members get every deal" not in text and "Members get every deal" not in html
         assert "#signup" not in text and "#signup" not in html
-        assert "Live wall: https://wowpriced.com/" in text  # the rest is unchanged
+        assert "Live wall: https://wowpriced.com/best-deals-today/?ref=email" in text  # the rest is unchanged
 
 
 class TestSiteCopy:
@@ -1098,7 +1108,7 @@ class TestConfirmations:
 
         client = httpx.Client(transport=httpx.MockTransport(handler))
         assert N.fetch_subscribers(WORKER, "k", client, pending=True) == [
-            {"email": "a@x.com", "token": "t"}]
+            {"email": "a@x.com", "token": "t", "ts": ""}]
         assert N.fetch_subscribers(WORKER, "k", client) == [{"email": "a@x.com", "token": "t"}]
         assert urls == [WORKER + "/list?pending=1", WORKER + "/list"]
 

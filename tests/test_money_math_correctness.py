@@ -514,6 +514,8 @@ def test_accepted_smtp_delivery_is_never_replayed(audit_db, audit_cfg, monkeypat
     monkeypatch.setenv('SMTP_HOST', 'smtp.example')
     monkeypatch.setenv('NEWSLETTER_SECRET', 'synthetic-secret')
     audit_cfg.newsletter_enabled = audit_cfg.members_email_enabled = True
+    audit_cfg.newsletter_cadence = 'daily'
+    audit_cfg.newsletter_mailing_address = 'PO Box 247, Philadelphia, PA 19101'
     audit_cfg.newsletter_hour_local = audit_cfg.digest_hour_local = audit_cfg.members_email_hour_local = 0
     audit_cfg.digest_recipient = 'synthetic@example.com'
     subscriber = {'email': 'synthetic@example.com', 'token': 'synthetic-token'}
@@ -535,7 +537,8 @@ def test_accepted_smtp_delivery_is_never_replayed(audit_db, audit_cfg, monkeypat
         def quit(self):
             if failure == 'quit':
                 raise OSError('quit failed after acceptance')
-    deals = [candidate('same', 1, first_seen_at=iso(AUDIT_NOW))]
+    deals = [candidate('same', 1, first_seen_at=iso(AUDIT_NOW), store='Walmart',
+                       canonical_url='https://www.walmart.com/ip/123', deal_path='/deal/widget-12345678/')]
     def send(database):
         if surface == 'member':
             return members.send_member_alerts(database, audit_cfg, AUDIT_NOW, deals=deals, smtp_factory=SMTP)
@@ -830,6 +833,8 @@ def test_finished_email_run_does_not_send_a_new_day_batch(audit_db, audit_cfg, m
     monkeypatch.setenv('SMTP_HOST', 'smtp.example')
     monkeypatch.setenv('NEWSLETTER_SECRET', 'synthetic-secret')
     audit_cfg.newsletter_enabled = True
+    audit_cfg.newsletter_cadence = 'daily'
+    audit_cfg.newsletter_mailing_address = 'PO Box 247, Philadelphia, PA 19101'
     audit_cfg.newsletter_max_per_run = 1
     audit_cfg.newsletter_hour_local = audit_cfg.digest_hour_local = 0
     audit_cfg.digest_recipient = 'synthetic@example.com'
@@ -843,7 +848,8 @@ def test_finished_email_run_does_not_send_a_new_day_batch(audit_db, audit_cfg, m
         def send_message(self, msg, **kwargs): delivered.append(msg)
         def quit(self): pass
     def send(at):
-        deals = [candidate('same', 1, first_seen_at=iso(at))]
+        deals = [candidate('same', 1, first_seen_at=iso(at), store='Walmart',
+                           canonical_url='https://www.walmart.com/ip/123', deal_path='/deal/widget-12345678/')]
         if surface == 'newsletter':
             return newsletter.send_daily_newsletter(audit_db, audit_cfg, at, deals=deals, smtp_factory=SMTP)
         return email_digest.maybe_send_digest(audit_db, audit_cfg, at, deals=deals, smtp_factory=SMTP)

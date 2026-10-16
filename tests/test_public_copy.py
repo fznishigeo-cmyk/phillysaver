@@ -15,7 +15,7 @@ from tests.test_support import render
 # Whole names avoid treating the required API hostname's "workers.dev" as prose.
 # Meta robots tags do not contain "robots.txt"; the actual file is exempt below.
 INTERNAL = re.compile(
-    r"\b(?:Cloudflare|Worker|GitHub|Keepa|Python|Claude|Codex|AI|LLM)\b"
+    r"\b(?:Cloudflare|Worker|GitHub|Keepa|Python|Claude|Codex|LLM)\b"  # AI allowed by operator, 2026-10-16.
     r"|small\s+crew|part-time\s+developer|robots\.txt"
     r"|polite\s+fetch|\bcrawler\b|checked\s+in\s+code|fake-list-price\s+critic",
     re.I,
@@ -30,9 +30,11 @@ def test_public_templates_do_not_expose_internal_details(path):
 
 @pytest.mark.parametrize("mode", ["membership", "open", "support", "shipped"])
 @pytest.mark.parametrize("pwa", [False, True])
-def test_published_pages_do_not_expose_internal_details(tmp_path, mode, pwa):
+@pytest.mark.parametrize("checking", [False, True])
+def test_published_pages_do_not_expose_internal_details(tmp_path, mode, pwa, checking):
     cfg = baseline_config(mode)
     cfg.pwa_enabled = pwa
+    cfg.checker["enabled"] = checking
     shipped = load_config()
     cfg.ftc_disclosure = shipped.ftc_disclosure
     cfg.affiliate_disclosure = shipped.affiliate_disclosure
@@ -52,6 +54,7 @@ def test_published_pages_do_not_expose_internal_details(tmp_path, mode, pwa):
             "stores/walmart/index.html", "deals/under-25/index.html",
             "best-deals-today/index.html"} <= pages.keys()
     assert any(name.startswith("deal/") for name in pages)
+    assert ("check/index.html" in pages) is checking
     for path in out.rglob("*"):
         if not path.is_file() or path.suffix == ".png" or path.name == "robots.txt":
             continue

@@ -59,6 +59,7 @@ def test_config_rejects_non_integer_or_out_of_range(tmp_path, value):
 
 
 @pytest.mark.parametrize("parallel", [1, 4])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_matches_pre_change_posts_errors_database_and_public_bytes(tmp_path, monkeypatch, parallel):
     from dealradar import store_prices
 

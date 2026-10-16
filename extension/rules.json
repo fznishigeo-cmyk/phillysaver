@@ -1,0 +1,107 @@
+{
+  "AMAZON_MODE": "full",
+  "amazon": {
+    "flags": "i",
+    "pattern": "/(?:dp|gp/product|gp/aw/d|product)/([A-Z0-9]{10})(?=[/?#]|$)",
+    "uppercase": true
+  },
+  "bestbuy": {
+    "id": "\\d{1,16}",
+    "paths": [
+      "/site/.*[/-](\\d{1,16})\\.p",
+      "/product/.+/sku/(\\d{1,16})/?"
+    ],
+    "query": "skuId",
+    "require_agreement": true
+  },
+  "canonical": {
+    "amazon_host": "(^|\\.)amazon\\.[a-z]{2,3}(\\.[a-z]{2})?$",
+    "tracking_exact": [
+      "aff_id",
+      "affid",
+      "afftrack",
+      "ascsubtag",
+      "camp",
+      "cjevent",
+      "clickid",
+      "cmpid",
+      "creative",
+      "creativeasin",
+      "dclid",
+      "fbclid",
+      "gclid",
+      "irclickid",
+      "linkcode",
+      "linkid",
+      "mc_cid",
+      "mc_eid",
+      "msclkid",
+      "psc",
+      "ref",
+      "ref_",
+      "s_kwcid",
+      "share",
+      "siteid",
+      "smid",
+      "spm",
+      "srsltid",
+      "tag",
+      "th"
+    ],
+    "tracking_prefix": "utm_"
+  },
+  "ebay": {
+    "path": "/itm/(?:[^/]+/)?(\\d{1,16})/?",
+    "reject_query": "var"
+  },
+  "fallback": "url:<canonical>",
+  "hosts": {
+    "amazon.com": "amazon",
+    "bestbuy.com": "bestbuy",
+    "ebay.com": "ebay",
+    "target.com": "target",
+    "walmart.com": "walmart",
+    "woot.com": "woot"
+  },
+  "schemes": [
+    "http",
+    "https"
+  ],
+  "shard": {
+    "hash": "SHA-256",
+    "min_hex_width": 2,
+    "prefix_bits": true
+  },
+  "shards": 256,
+  "short_hosts": [
+    "amzn.to",
+    "a.co",
+    "link.amazon",
+    "on.ltk.com",
+    "goto.target.com",
+    "zdcs.link",
+    "creator.anchor.store",
+    "go.magik.ly",
+    "shoplowes.me",
+    "go.dealmoon.com",
+    "clicks.trx-hub.com",
+    "bit.ly",
+    "tinyurl.com",
+    "t.co",
+    "ebay.us",
+    "walmrt.us",
+    "sovrn.co",
+    "redirect.viglink.com"
+  ],
+  "subdomains": true,
+  "target": {
+    "path": "/p/(?:[^/]+/)?(?:-/)?A-(\\d+)/?"
+  },
+  "version": "0.1.0",
+  "walmart": {
+    "path": "/ip/(?:[^/]+/)?(\\d+)/?"
+  },
+  "woot": {
+    "path": "/offers/([^/]+)/?"
+  }
+}

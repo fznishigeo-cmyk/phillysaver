@@ -437,7 +437,7 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     redirects = env["site"] / "_redirects"
     checker_before = {p.name: p.read_bytes() for p in (env["site"] / "check" / "data").glob("*.json")}
     if cfg.checker["enabled"]:
-        assert len(checker_before) == cfg.checker["shards"] + 1
+        assert len(checker_before) == cfg.checker["shards"] + 2  # meta.json and the device index
         assert first["checker"]["aliases"] > 0
     redirects_before = redirects.read_bytes() if redirects.exists() else b""
     assert redirects_before == (f"{_path(expired)} /deals/home-kitchen/ 301\n".encode() if pruned_post else b"")
@@ -512,6 +512,61 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
 @pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
 def test_posted_pruned_rerun_is_idempotent(env, capsys, audit_mode):
     test_rerun_is_idempotent(dict(env, pruned_post=True), capsys, audit_mode)
+
+
+@pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
+def test_ai_take_rerun_is_idempotent(env, monkeypatch, audit_mode):
+    from tests.test_ai_take import Messages
+    from tests.test_checker_index import add, files
+
+    path = Path(env["cfg"])
+    path.write_text(path.read_text().replace("ai_take:\n    enabled: false", "ai_take:\n    enabled: true")
+                    .replace("mode: shadow                 # enforce", f"mode: {audit_mode}                 # enforce"))
+    messages = Messages()
+    calls = []
+
+    class CombinedMessages(_FakeMessages):
+        def create(self, **kwargs):
+            calls.append("create")
+            if kwargs["system"].startswith("Write one plain-English price take"):
+                return messages.create(**kwargs)
+            return super().create(**kwargs)
+
+        def parse(self, **kwargs):
+            calls.append("parse")
+            return super().parse(**kwargs)
+
+    monkeypatch.setattr(_FakeClaudeClient, "messages", CombinedMessages())
+    db = DB(env["db"])
+    add(db, "bestbuy", item="Copper Pan Duo")
+    db.close()
+    first = _run(env)
+    assert first["ai_take"]["requested"] == first["ai_take"]["verified"] == 1
+    assert len(messages.calls) == 1
+    public_before = files(env["site"])
+    db = DB(env["db"])
+    tables = [r[0] for r in db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    before = {table: db.conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables}
+    cached_before = [tuple(r) for r in db.conn.execute("SELECT * FROM meta WHERE k LIKE 'ai_take%' ORDER BY k")]
+    ledger_before = [tuple(r) for r in db.conn.execute("SELECT * FROM llm_calls ORDER BY call_key")]
+    db.close()
+    calls.clear()
+    second = _run(env)
+    assert second["run_key"] == first["run_key"]
+    assert second["ai_take"]["requested"] == second["ai_take"]["verified"] == 0
+    assert second["ai_take"]["cached"] == 1
+    assert calls == [] and len(messages.calls) == 1
+    public_after = files(env["site"])
+    before_json, after_json = (json.loads(tree.pop("deals.json")) for tree in (public_before, public_after))
+    before_run = before_json["meta"].pop("last_run")
+    after_run = after_json["meta"].pop("last_run")
+    assert before_run["posts_new"] > 0 and after_run["posts_new"] == 0
+    assert before_json == after_json and public_after == public_before
+    db = DB(env["db"])
+    assert {table: db.conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables} == before
+    assert [tuple(r) for r in db.conn.execute("SELECT * FROM meta WHERE k LIKE 'ai_take%' ORDER BY k")] == cached_before
+    assert [tuple(r) for r in db.conn.execute("SELECT * FROM llm_calls ORDER BY call_key")] == ledger_before
+    db.close()
 
 
 @pytest.mark.parametrize("signal,dead_items", [

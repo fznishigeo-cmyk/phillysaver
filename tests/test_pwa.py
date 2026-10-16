@@ -62,6 +62,7 @@ def tree_hash(out):
     ("support", "e0e143cc97595f85eb90e1e1dae914200840512109af9956034ebf1c210d9c37"),
     ("shipped", "90463b0b59890defc6e2f6d020db2bf6eda4f32ff89f20c7f200f7ed7079c33b"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Shipped only: the label blocks also skip aged offers (task 102) and the
     # days-old Walmart samples are no longer top picks (non_amazon_max_age_h).
@@ -159,6 +160,7 @@ def test_pwa_preserves_every_outbound_link_and_the_home_before_footer(tmp_path, 
     assert renamed["meta"]["site_version"] != version
 
 
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, monkeypatch):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = baseline_config("support")

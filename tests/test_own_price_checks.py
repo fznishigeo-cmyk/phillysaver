@@ -268,7 +268,8 @@ def test_not_eligible_counts_each_page_once_and_stays_private(db, cfg, tmp_path,
     prepare(db, cfg, [old], NOW - timedelta(days=91))
     pages, _, report = prepare(db, cfg, [few, short, good])
     assert report["not_eligible"] == dict(few_checks=1, short_span=1, not_recent=1)
-    assert sum(report["not_eligible"].values()) + report["eligible"] == len(pages) == 4
+    assert sum(report["not_eligible"].values()) + report["eligible"] == report["state_pages"] == 4
+    assert len(pages) == 3 and report["not_written_old"] == 1
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     site.render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=[few, short, good])
     assert all(b"not_eligible" not in data and b"own_check_rows_today" not in data

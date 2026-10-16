@@ -81,6 +81,7 @@ def test_validated_switch_is_off_unless_explicitly_true(tmp_path):
     ("locked", "8ea4b01db5d4216acc9f664fe66e72d7925cb142e9edb2b8db987068400f68ac"),
     ("member", "8ea4b01db5d4216acc9f664fe66e72d7925cb142e9edb2b8db987068400f68ac"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")  # pinned before task 244's privacy section
 @pytest.mark.parametrize("enabled", [False, True])
 def test_all_published_files_and_member_payload_match_before_editing(
         tmp_path, monkeypatch, mode, expected, enabled):

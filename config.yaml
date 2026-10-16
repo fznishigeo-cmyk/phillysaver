@@ -120,6 +120,15 @@ parse:
     claude-haiku-4-5: { input: 1.00, output: 5.00, cache_write: 1.25, cache_read: 0.10 }
     claude-sonnet-5-5: { input: 2.00, output: 10.00, cache_write: 1.25, cache_read: 0.05 }
 
+product_pages:
+  ai_take:
+    enabled: false             # review before activation; all numbers checked in code
+    model: "claude-haiku-5-5"
+    max_pages_per_run: 40
+    max_usd_per_run: 0.05
+    max_usd_per_day: 0.40
+    max_words: 45
+
 intake:
   mode: shadow                 # off | shadow | on; shadow never changes reads
   window_days: 7               # rolling useful yield, starting with 067/073 coverage
@@ -143,8 +152,17 @@ site:
 # keeping our own record privately. Follow-up call (same reference): the browser
 # extension may show our history on Amazon pages; Amazon price-drop emails are NOT
 # allowed, so Amazon watches stay off (best-deals newsletter instead).
-amazon_history: show          # show | hide (charts, lowest-seen, Amazon /p/ pages)
+amazon_history: show          # show | hide; hide also makes checker Amazon link_only
 amazon_watches: "off"         # on | off; Amazon said no to price-drop alerts
+
+store_policy:
+  # Walmart verbal OK 2026-10-16 (operator call); set live_only if Walmart or Sovrn objects in writing.
+  walmart: history
+  ebay: history
+  bestbuy: history
+  target: history
+  woot: history
+  other: history
 
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
@@ -278,11 +296,14 @@ affiliate:
     their prices. Prices and availability may change. As an Amazon Associate,
     wowpriced earns from qualifying purchases.
 
+extension:
+  amazon_mode: full           # full | link; Amazon extension OK, amz378_998 (2026-10-16)
+
 checker:
   enabled: false
   stores:
-    amazon: link_only
-    walmart: live_only
+    amazon: history           # amazon_history: hide overrides this to link_only
+    walmart: history          # operator permission, 2026-10-16
     ebay: live_only
     bestbuy: history
     target: history
@@ -322,6 +343,9 @@ seo:
     min_span_days: 7
     max_new_indexable_per_day: 50 # Pilot of the 200 best (operator 2026-10-16), admitted best-first.
     max_indexable: 200
+    keep_days: 90
+    prune_days: 180
+    max_pages: 6000
     lower_ratio: 0.95         # Current / our 90-day median; equality is about usual.
     higher_ratio: 1.05
     deal_history_limit: 20    # Bound the visible deal list; facts use all stored deals.
@@ -610,6 +634,11 @@ pwa:
   enabled: true
   name: "wowpriced"
   short_name: "wowpriced"
+  android:
+    enabled: false
+    package: "com.wowpriced.app"  # permanent after the first Play upload
+    sha256_cert_fingerprints: []  # Play app-signing cert first, then upload cert
+    amazon_in_app: limited       # as_site requires written Associates app approval
 
 join:
   prompt: true
@@ -645,14 +674,19 @@ newsletter:
   # The free sign-up list, with no server of our own: a Cloudflare
   # Worker + KV (cloudflare/subscribe-worker) holds the addresses, the
   # pipeline reads them through the Worker (NEWSLETTER_SECRET secret) and
-  # sends one email per subscriber per day over the same SMTP_* secrets.
-  # Operator call (2026-10-11): that email is the day's top_n deals, picked
-  # once a day by the parse model (parse.model) from the best 40 by rank,
-  # under the same spend caps (rank order when it can't run). Members get
-  # every deal. The site copy says "top 10": keep them equal.
-  enabled: false   # operator call (2026-10-11): no daily emails for anyone
+  # sends through Amazon SES using the existing SMTP_* secrets. Before launch,
+  # check SPF, DKIM and DMARC alignment; DKIM h= must cover List-Unsubscribe
+  # and List-Unsubscribe-Post. Preview locally with newsletter-preview.
+  # Picks once per issue from the best 40 eligible deals, under shared spend
+  # caps (rank order on failure). Emails link only to written wowpriced pages.
+  enabled: false   # operator: launch in 1–3 months, after preview approval
+  cadence: weekly             # daily | weekly
+  weekday: tue                # weekly only; mon..sun
+  mailing_address: ""         # required for ANY email; PO box or CMRA mailbox
+  exclude_stores: [amazon, ebay]  # amazon mandatory; ebay needs written EPN email approval
+  confirmations_enabled: false   # can start double opt-in before issues launch
   worker_url: "https://wowpriced-subscribe.wowpriced.workers.dev"             # printed by the "deploy subscribe worker" workflow; paste it here
-  hour_local: 8              # first run at/after 08:00 local sends the day's email
+  hour_local: 8              # first eligible run at/after 08:00 local sends the issue
   timezone: "America/New_York"
   max_per_run: 200           # messages per run; a longer list continues next run
   top_n: 10                  # deals per email (the page copy says "top 10")
@@ -970,5 +1004,7 @@ images:
   asin_backfill_per_run: 60   # existing Amazon links, once per deal
   short_links_per_run: 10     # additional amzn.to/a.co chains, HEAD only
   keepa_search_per_run: 10
+  # Per search: 10 + ceil(50 / 100) finder + up to 50 product reads = 61 tokens,
+  # so 120/day is up to ~7,300 tokens; unchanged (photo fix: see HANDOFF).
   keepa_search_per_day: 120   # UTC; shares Keepa budget, after price rechecks
   keepa_match_min: 0.85       # strict photo-only title matches

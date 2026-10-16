@@ -310,6 +310,7 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
     ("support", "cf1dd3addff7e4e4e4f1eba87dc5adbec1415dad7656e1f4907656b93965e4cd"),
     ("shipped", "2ab7c7ca910778703c2131d3fd4858552df1658e1ce96f4070dca61573048d42"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.
     from tests.test_publish_site import NOW as snapshot_time
@@ -346,6 +347,8 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
 
 def test_newsletter_does_not_select_or_send_raw_unconfirmed_prices(db, cfg, monkeypatch):
     cfg.newsletter_enabled = True
+    cfg.newsletter_cadence = "daily"
+    cfg.newsletter_mailing_address = "PO Box 247, Philadelphia, PA 19101"
     cfg.newsletter_hour_local = 0
     cfg.newsletter_worker_url = "https://newsletter.example.test"
     monkeypatch.setenv("SMTP_HOST", "smtp.example.test")

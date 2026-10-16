@@ -1,0 +1,24 @@
+.in-app #pwa-actions,.in-app #pwa-help,.in-app #paywall,.in-app .supportask,
+.in-app a[href^="https://buy.stripe.com/"],.in-app #account,.in-app #loginlink,
+.in-app [data-auth],.in-app .trialcta,.in-app .trialband,.in-app #authmodal,
+.in-app #planmodal,.in-app #member,.in-app #memberterms,.in-app .plans,
+.in-app #portalline,.in-app #account-footer,.in-app #join-google,
+.in-app #join-google-or,.in-app #join-google-message,.in-app #join-apple{display:none!important}
+.in-app.app-amazon-limited [data-app-amazon-history],
+.in-app.app-amazon-limited [data-app-amazon] .price-history,
+.in-app.app-amazon-limited [data-app-amazon] .lowest-seen,
+.in-app.app-amazon-limited [data-app-amazon] .price-verdict,
+.in-app.app-amazon-limited [data-app-amazon] .product-history-link,
+.in-app.app-amazon-limited [data-app-amazon] .headline,
+.in-app.app-amazon-limited [data-app-amazon] .tier-history-checked,
+.in-app.app-amazon-limited .card:has(a[href^="https://www.amazon.com/"]) .headline,
+.in-app.app-amazon-limited .card:has(a[href^="https://www.amazon.com/"]) .tier-history-checked,
+.in-app.app-amazon-limited .card:has(a[href^="https://www.amazon.com/"]) .product-history-link{display:none!important}
+.app-amazon-note{display:none}
+.in-app.app-amazon-limited .app-amazon-note{display:block}
+.in-app #acctfoot,.in-app #footterms,.in-app #billing,.in-app #portal,.in-app #claim,
+.in-app a[href$="#signup"],.in-app a[href$="#login"],
+.in-app [data-support-note],.in-app .supportask-terms{display:none!important}
+.in-app.app-amazon-limited .card:has(a[href^="https://amazon.com/"]) .headline,
+.in-app.app-amazon-limited .card:has(a[href^="https://amazon.com/"]) .tier-history-checked,
+.in-app.app-amazon-limited .card:has(a[href^="https://amazon.com/"]) .product-history-link{display:none!important}

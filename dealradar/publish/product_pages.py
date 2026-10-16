@@ -81,7 +81,9 @@ def template(text, enabled):
 
 def empty_summary():
     return {**dict.fromkeys(("eligible", "indexable", "new_today", "noindex",
-                            "with_live_deal", "related_links_avg", "own_check_rows_today"), 0),
+                            "with_live_deal", "related_links_avg", "own_check_rows_today",
+                            "written", "not_written_old", "capped", "pruned_state",
+                            "state_pages", "state_bytes", "walmart_hidden_offers"), 0),
             "not_eligible": dict.fromkeys(("few_checks", "short_span", "not_recent"), 0)}
 
 
@@ -101,11 +103,13 @@ def prepare(db, cfg, now, public, source):
     report["own_check_rows_today"] = db.conn.execute(
         "SELECT COUNT(*) FROM price_history WHERE content_hash GLOB 'check:*'"
         " AND observed_at>=? AND observed_at<?", (iso(day), iso(day + timedelta(days=1)))).fetchone()[0]
+    stored = db.meta_get(META)
+    state = json.loads(stored or '{"pages":{},"day":"","admitted":[]}')
+    report.update(state_pages=len(state["pages"]), state_bytes=len(stored or ""))
     if not cfg.seo_product_pages_enabled:
         return {}, {}, report
     from . import seo
 
-    state = json.loads(db.meta_get(META) or '{"pages":{},"day":"","admitted":[]}')
     pages = state["pages"]
     today = now.date().isoformat()
     if state["day"] != today:
@@ -149,18 +153,24 @@ def prepare(db, cfg, now, public, source):
             "date": price_date, "price": d["final_price"],
             "credits": d.get("credits") or [], "published_at": published,
             "discount": d.get("pct_at_checkout")}
-        if d["status"] == "alive" and not amazon_history.hidden(cfg, d):
+        if d["status"] == "alive" and not amazon_history.hidden(cfg, facts):
             live.setdefault(key, []).append(d)
 
     current = {key: min(rows, key=lambda d: (d["final_price"], d["key"])) for key, rows in live.items()}
     for key, d in current.items():
         pages[key].update({field: d.get(field) for field in
                            ("item", "store", "image_url", "category", "conditions", "brand")})
-    if cfg.amazon_history == "hide":
+    filtered = cfg.amazon_history == "hide" or "live_only" in cfg.store_policy.values()
+    if filtered:
         # product_offers retains the original store even after a deal is pruned.
         stores = {r["dedupe_key"]: {"store": r["store"], "canonical_url":
                   r["dedupe_key"][4:] if r["dedupe_key"].startswith("url|") else ""} for r in db.conn.execute(
             "SELECT dedupe_key,store FROM product_offers")}
+        stores.update(raw)
+        hidden_offers = {offer for page in pages.values() for offer in page["offers"]
+                         if offer in stores and amazon_history.hidden(cfg, stores[offer])}
+        report["walmart_hidden_offers"] = sum(amazon_history.store_of(stores[k]) == "walmart"
+                                              for k in hidden_offers)
         visible = {}
         for key, page in pages.items():
             offers = {offer: facts for offer, facts in page["offers"].items()
@@ -168,10 +178,16 @@ def prepare(db, cfg, now, public, source):
             if not offers:
                 continue
             visible[key] = dict(page, offers=offers)
-            if amazon_history.hidden(cfg, page) or not any(
+            # Only store_policy offers refill from the visible store; Amazon hide keeps its blank photo.
+            refill = key not in current and any(amazon_history.live_only(cfg, stores[offer])
+                                                for offer in hidden_offers.intersection(page["offers"]))
+            if refill or amazon_history.hidden(cfg, page) or not any(
                     stores[offer]["store"] == page.get("store") for offer in offers):
                 latest = max(offers, key=lambda offer: (offers[offer]["date"], offer))
                 visible[key].update(store=stores[latest]["store"], image_url="")
+                if refill and latest in raw:
+                    visible[key].update({field: raw[latest].get(field) for field in
+                                         ("item", "store", "image_url", "category", "conditions", "brand")})
         pages = visible
     observations, qualifying = {}, set()
     for key, page in pages.items():
@@ -193,6 +209,19 @@ def prepare(db, cfg, now, public, source):
         page["indexable"] = bool(page.get("indexable") and parse_iso(page.get("last_qualified"))
                                   and now <= parse_iso(page["last_qualified"]) + timedelta(days=30))
 
+    def newest(page):
+        return max((parse_iso(o["published_at"]) for o in page["offers"].values()),
+                   default=datetime.min.replace(tzinfo=timezone.utc))
+
+    def prunable(key, page):
+        return (not live.get(key) and newest(page) < now - timedelta(days=cfg.seo_product_pages_prune_days)
+                and not (page.get("indexable") and parse_iso(page.get("last_qualified"))
+                         and now <= parse_iso(page["last_qualified"]) + timedelta(days=30)))
+
+    # Reclaim stale admission bookkeeping before spending today's slots; a
+    # retry must not be the first run that can use a just-pruned page's slot.
+    state["admitted"] = [key for key in state["admitted"] if key in state["pages"]
+                         and not prunable(key, pages.get(key, state["pages"][key]))]
     # Existing admissions keep their slots through a sparse day. A lowered
     # total cap still takes effect deterministically.
     retained = sorted((key for key, page in pages.items() if page["indexable"]),
@@ -210,13 +239,32 @@ def prepare(db, cfg, now, public, source):
         page["indexable"] = key in admitted
         if key in admitted and key in qualifying:
             page["last_qualified"] = iso(now)
-        if cfg.amazon_history == "hide":
+        if filtered:
             for field in ("indexable", "last_qualified", "indexed_since"):
                 if field in page:
                     state["pages"][key][field] = page[field]
-    db.meta_set(META, json.dumps(state, sort_keys=True, separators=(",", ":")))
+
+    # Prune the underlying state too, including pages currently hidden by policy.
+    # Hidden offers can affect private retention, never a visible page's dates.
+    pruned = {key for key, page in state["pages"].items() if prunable(key, page)}
+    for key in pruned:
+        del state["pages"][key]
+        pages.pop(key, None)
+    state["admitted"] = [key for key in state["admitted"] if key not in pruned]
+    state_json = json.dumps(state, sort_keys=True, separators=(",", ":"))
+    db.meta_set(META, state_json)
+    report.update(pruned_state=len(pruned), state_pages=len(state["pages"]), state_bytes=len(state_json))
     report.update(eligible=len(qualifying), indexable=len(admitted),
                   new_today=sum(key in pages for key in state["admitted"]), noindex=len(pages) - len(admitted))
+    candidates = {key: page for key, page in pages.items()
+                  if page["indexable"] or key in current
+                  or newest(page) >= now - timedelta(days=cfg.seo_product_pages_keep_days)}
+    report["not_written_old"] = len(pages) - len(candidates)
+    selected = sorted(candidates, key=lambda key: (
+        not candidates[key]["indexable"], _admission_order(candidates[key], live.get(key, []))))
+    selected = selected[:cfg.seo_product_pages_max_pages]
+    report.update(written=len(selected), capped=len(candidates) - len(selected))
+    pages = {key: candidates[key] for key in selected}
     models = {}
     for key, page in pages.items():
         live_keys = {d["dedupe_key"] for d in live.get(key, [])}
@@ -224,7 +272,7 @@ def prepare(db, cfg, now, public, source):
                     else "No live deal currently published" for offer in page["offers"]}
         models[key] = dict(page, checks=observations[key], live=current.get(key), statuses=statuses)
     index = related_index(models)
-    report.update(with_live_deal=len(current), related_links_avg=(
+    report.update(with_live_deal=sum(key in current for key in models), related_links_avg=(
         sum(len(related(p, models, index)) for p in models.values()) / len(models) if models else 0))
     # A later variant conflict can quarantine an offer without deleting its
     # former product page. Only still-linked offers get navigation to it.
@@ -341,8 +389,8 @@ def social_head(title, description, url, image):
                    for k, v in tags.items())
 
 
-def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
-    from . import seo
+def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths, *, app_sources=None):
+    from . import ai_take, android_app, seo
     from .site import linked_disclosure
 
     template = reader_template(template)
@@ -364,7 +412,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
                    '<a href="/">Home</a> › '
                    f'<a href="{seo.hub_href(slug)}">{escape(label)}</a> › '
                    f'<span aria-current="page">{escape(page["item"])}</span></nav>')
-        content += facts_html(facts, price)
+        content += ai_take.html(page, cfg, now) + facts_html(facts, price)
         if facts["checks"]:
             content += (f'<p>Last checked: <time class="last-check" datetime="{iso(facts["last"])}">'
                         f'{seo._date(facts["last"])}, {facts["last"].astimezone(timezone.utc):%H:%M} UTC</time></p>')
@@ -456,7 +504,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
         if explanation:
             description += " " + explanation
         html = seo._landing_page(template, title, page["item"], description, path, site_url,
-            '<div class="product-detail">' + content + '</div>', indexable=page["indexable"],
+            '<div class="product-detail">' + android_app.product_content(content, page, cfg, deal_paths, app_sources) + '</div>', indexable=page["indexable"],
             breadcrumbs=breadcrumbs, extra_head=seo._json_ld(schema)
             + social_head(title, description, site_url + path, image) + STYLE + (price_history.STYLE if chart else ""))
         if page["indexable"]:
@@ -474,6 +522,8 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
                 content += f'<h2>{escape(label)}</h2><ul>' + ''.join(
                     f'<li><a href="{escape(p["path"])}">{escape(p["item"])}</a></li>' for p in members) + '</ul>'
         content += '</div>' if rows else '<p>Price histories are published only when they meet our verification standards. <a href="/">Browse verified deals</a>.</p></div>'
+        if cfg.checker["enabled"]:
+            content += '<p>Have a product link? <a href="/check/">Try Deal Check</a>.</p>'
         html = seo._landing_page(template, "Product price history | wowpriced", "Price history",
             "Our recorded product price checks, grouped by category.", "/p/", site_url, content,
             indexable=bool(rows), extra_head=STYLE)

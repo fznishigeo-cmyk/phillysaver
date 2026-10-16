@@ -90,6 +90,7 @@ def test_config_default_off_shipped_on_and_overrides(tmp_path):
     ("support", "a348c507188dfd049f65c04ec8567dd4edfba3aff0b4c2b76f9a4d2dfe01998e"),
     ("shipped", "0c19df6ebd4329d4b529861321bd865a9b657609ca80a2ac163e698f556e0223"),
 ])
+@pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
