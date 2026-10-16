@@ -147,6 +147,7 @@ class AppConfig:
     parse_concurrency: int = 1
     fast_lane_parse_budget_s: float = 150.0
     prefilter_below_floor: str = "off"  # off | shadow | on
+    bounded_prefilter: dict = field(default_factory=lambda: validated_bounded_prefilter({}))
     prefilter_complete_days: int = 7
     prefilter_min_candidates: int = 200
     prefilter_min_source_sites: int = 3
@@ -538,6 +539,22 @@ def validated_phone_budget(value) -> dict:
     return limits
 
 
+def validated_bounded_prefilter(value: Any) -> dict:
+    """Finite heuristic work only; these limits never truncate model evidence."""
+    defaults = {"enabled": False, "max_chars": 12000, "max_numeric_chars": 32,
+                "max_numeric_tokens": 128, "max_price_pairs": 256}
+    if not isinstance(value, dict) or value.keys() - defaults.keys():
+        raise ValueError("parse.bounded_prefilter must be a mapping of supported limits")
+    limits = {**defaults, **value}
+    if type(limits["enabled"]) is not bool:
+        raise ValueError("parse.bounded_prefilter.enabled must be boolean")
+    for name, ceiling in (("max_chars", 100000), ("max_numeric_chars", 128),
+                          ("max_numeric_tokens", 4096), ("max_price_pairs", 65536)):
+        if type(limits[name]) is not int or not 1 <= limits[name] <= ceiling:
+            raise ValueError(f"parse.bounded_prefilter.{name} must be an integer in 1..{ceiling}")
+    return limits
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path) if path else ROOT / "config.yaml"
     raw = yaml.safe_load(path.read_text())
@@ -600,6 +617,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.prefilter_below_floor = str(prefilter)
     if cfg.prefilter_below_floor not in {"off", "shadow", "on"}:
         raise ValueError("parse.prefilter_below_floor must be off, shadow, or on")
+    cfg.bounded_prefilter = validated_bounded_prefilter(g("parse", "bounded_prefilter", default={}))
     for name in ("complete_days", "min_candidates", "min_source_sites", "max_gap_minutes"):
         field = "prefilter_" + name
         value = int(g("parse", "prefilter_readiness", name, default=getattr(cfg, field)))

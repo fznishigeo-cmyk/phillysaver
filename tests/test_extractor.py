@@ -176,6 +176,8 @@ class TestParsePosts:
         assert post is posts[0]
         assert deal.item == "Widget"
         assert deal.source_url == post.url
+        assert stats.pop("parse_seconds") >= 0
+        assert stats.pop("max_in_flight") == 1
         assert stats == {
             "posts_sent": 1, "deals_extracted": 1, "deals_dropped_evidence": 0,
             "second_opinions": 0, "spend_usd": 0.05,
@@ -184,6 +186,7 @@ class TestParsePosts:
                           "unevaluated": 0, "by_source": {}},
             "reused_posts": 0, "reused_deals": 0,
             "aborted_spend_cap": False,
+            "deadline_hit": False,
             "processed_hashes": [posts[0].content_hash],
             "post_counts": {posts[0].content_hash: {"extracted": 1, "evidence": 0}},
             "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},

@@ -33,7 +33,7 @@ from ..publish.admin_alerts import send_admin_text
 from ..publish.email_digest import smtp_connect
 from ..publish import indexnow
 from ..util import now_utc
-from . import ads_guard, bing, cloudflare_traffic, google, google_ads, meta, site_health, stripe_stats, subscribers
+from . import ads_guard, bing, cloudflare_traffic, google, google_ads, hands_off, meta, site_health, stripe_stats, subscribers
 
 log = logging.getLogger("dealradar.growth")
 
@@ -297,6 +297,7 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
     site = ("growth.search_console_site", cfg.growth_search_console_site)
 
     sections = {
+        "hands_off": ([], lambda: hands_off.collect(db_path, now)),
         "accuracy": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                      lambda: _accuracy(db_path, cfg, now)),
         "pinterest": ([("social.pinterest.analytics.enabled",
@@ -1072,9 +1073,11 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
                   f"Cancellations ({days} days): {_n(st['canceled'])}"]
     from ..accuracy import report_lines
     lines += ["", *report_lines(data.get("accuracy"))]
+    lines += ["", *hands_off.report_lines(data.get("hands_off"))]
     lines += ["", "Sections: " + ", ".join(f"{k} {v}" for k, v in status.items())]
     brand = cfg.custom_domain or "dealradar"
-    lines = [*_visitor_scoreboard(data, yesterday), *_scoreboard(cfg, data, yesterday), *_plain_summary(cfg, data, yesterday),
+    lines = [hands_off.summary_line(data.get("hands_off")),
+             *_visitor_scoreboard(data, yesterday), *_scoreboard(cfg, data, yesterday), *_plain_summary(cfg, data, yesterday),
              *_newsletter_lines(data), "", TECHNICAL_HEADING, "",
              *_collapse_unmeasured(lines)]
     return f"{brand} growth report {yesterday.isoformat()}", "\n".join(lines) + "\n"
@@ -1192,7 +1195,8 @@ def run(cfg, now: datetime | None = None, *, http_client: Any = None,
     client = http_client or httpx.Client(timeout=30)
     try:
         data, status = collect(cfg, now, client, db_path=db_path)
-        ran = [s for s in status.values() if s != "skipped"]
+        # The local scorecard must not change the existing exit/delivery rules.
+        ran = [s for name, s in status.items() if name != "hands_off" and s != "skipped"]
         if not ran:
             log.info("no section configured; nothing to send")
             return 0

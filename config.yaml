@@ -64,6 +64,13 @@ parse:
   fast_lane_parse_budget_s: 150       # leave fast-lane time for judging and deploy
   # Observe simple, plainly below-floor price pairs before enabling any skips.
   prefilter_below_floor: shadow       # off | shadow | on
+  # Proposed only; offline bounds/unknown cases: docs/bounded-prefilter.md.
+  bounded_prefilter:
+    enabled: false
+    max_chars: 12000                 # analysis only; model cleaning stays at 6000
+    max_numeric_chars: 32
+    max_numeric_tokens: 128
+    max_price_pairs: 256
   # Evidence for a later manual activation. Gaps longer than 90 minutes
   # make a UTC day incomplete; a matching offline supply replay is required.
   prefilter_readiness:

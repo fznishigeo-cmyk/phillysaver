@@ -193,6 +193,31 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Keep parse pool full (Codex task 235, 2026-10-16; committed):**
+  Refills unique reads at existing concurrency as slots finish; ordered
+  recording, shared fingerprints and slot-free cached/structured/skipped posts.
+  Deadline/cap cutoffs drain paid reads; backlog logs count remaining retries.
+  Added private `parse_seconds`/`max_in_flight`; old-loop fixture preserves
+  pairs, other stats, cache and spend. Clock/event and real-ledger guards pass:
+  **262 focused checks (both offline rerun modes)** plus **69 final guards**.
+  All `-n 1`; own `/tmp/task235-*` basetemps removed. Review/live throughput
+  observation remain; no whole suite, workflow-test edits, commit or push.
+- **Hands-off scorecard (Codex task 234, 2026-10-16; committed):**
+  Records idempotent deadline/backlog counters; private report opens with
+  OK/CHECK and UTC publication gaps, unfinished runs, per-lane backlog and
+  lost AI calls for yesterday plus seven prior days. Missing data is unknown;
+  no new requests or public fields. **379 focused checks pass**, including
+  23 final scorecard checks and unchanged public bytes in four access modes.
+  All runs used `-n 1`; owned `/tmp/task234-*` basetemps removed. Review remains;
+  no whole suite, workflow-test edits, commit or push.
+- **Bounded prefilter (Codex task 224, 2026-10-16; committed, OFF):**
+  Indexed scan: 12,000 chars / 32 per number / 128 numbers / 256 savings pairs.
+  Known fixtures match legacy; unknowns retain capped reads (+1 Haiku in the
+  malformed fixture). Disabled: 196 public files/four modes plus calls,
+  reservations, decisions and member payloads match. **371 final focused checks
+  pass** (`-n 1`, own `/tmp/task224-*` removed), including reruns/recovery.
+  Details and remaining fence/HTML regex risks: [bounded-prefilter.md](bounded-prefilter.md).
+  Review/operator's whole suite remain; workflow tests untouched, no commit/push.
 - **History from own checks (Codex task 233, 2026-10-16; uncommitted, ON):**
   Validated `seo.product_pages.record_own_checks`: trusted exact Woot, Best
   Buy/eBay and paid/feed Keepa readings use their own UTC hours, deduped with

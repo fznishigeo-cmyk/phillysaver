@@ -471,7 +471,7 @@ class DB:
         if "products_backfilled" not in {r["name"] for r in self.conn.execute("PRAGMA table_info(run_stats)")}:
             self.conn.execute("ALTER TABLE run_stats ADD COLUMN products_backfilled INTEGER NOT NULL DEFAULT 0")
         columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(run_stats)")}
-        for name in ("cache_examined", "cache_deleted", "cache_completed"):
+        for name in ("cache_examined", "cache_deleted", "cache_completed", "posts_left", "deadline_hit"):
             if name not in columns:
                 self.conn.execute(f"ALTER TABLE run_stats ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
         # Uncertain calls, and calls a run never settled (cut off at its parse
@@ -1112,15 +1112,19 @@ class DB:
     def finish_run(self, run_key: str, *, now: datetime, items_fetched: int,
                    posts_new: int, deals_parsed: int, published: int,
                    spend_usd: float, accounted_spend_usd: float = 0.0,
-                   untracked_at: datetime | None = None) -> None:
+                   untracked_at: datetime | None = None,
+                   posts_left: int = 0, deadline_hit: int = 0) -> None:
         self.conn.execute(
             # spend ADDS: two runs can share a quarter-hour key (10-minute
             # cron), and real money spent must never vanish from the daily
             # cap's ledger (live review finding).
-            "UPDATE run_stats SET finished_at=?, items_fetched=?, posts_new=?,"
+            # Preserve the first finish's backlog when this run key is replayed.
+            "UPDATE run_stats SET posts_left=CASE WHEN finished_at IS NULL THEN ? ELSE posts_left END,"
+            " deadline_hit=CASE WHEN finished_at IS NULL THEN ? ELSE deadline_hit END,"
+            " finished_at=?, items_fetched=?, posts_new=?,"
             " deals_parsed=?, published=?,"
             " spend_usd=COALESCE(spend_usd, 0) + ? WHERE run_key=?",
-            (iso(now), items_fetched, posts_new, deals_parsed, published,
+            (posts_left, int(deadline_hit), iso(now), items_fetched, posts_new, deals_parsed, published,
              spend_usd, run_key),
         )
         untracked = max(0.0, spend_usd - accounted_spend_usd)

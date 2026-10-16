@@ -15,8 +15,8 @@ import math
 import re
 import threading
 import time
-from collections import Counter
-from concurrent.futures import Future, ThreadPoolExecutor
+from collections import Counter, deque
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -363,21 +363,32 @@ def _below_floor_post(text: str, floor: float) -> bool:
     return pct is not None and pct < floor - 10
 
 
-def prefilter_post_counts(posts: list[RawPost], cfg: AppConfig) -> dict:
+def prefilter_post_counts(posts: list[RawPost], cfg: AppConfig,
+                          deadline: float | None = None) -> dict:
     """Observe every candidate before caps/deadlines, without saving post text."""
-    if cfg.prefilter_below_floor == "off":
+    bounded = cfg.bounded_prefilter["enabled"]
+    if cfg.prefilter_below_floor == "off" and not bounded:
         return {}
     floor = min(cfg.min_pct, cfg.site_show_from_pct)
     counts = {}
     for post in posts:
-        if post.structured is not None:
+        if post.structured is not None or bounded and post.content_hash in counts:
             continue
         cleaned = clean_for_llm(post, cfg.max_chars_per_post)
-        if _below_floor_post(cleaned, floor):
-            counts[post.content_hash] = {
+        if bounded:
+            from .bounded_prefilter import analyze
+
+            analysis = analyze(cleaned, floor, cfg.bounded_prefilter, deadline)
+            counts[post.content_hash] = {"bounded_prefilter": analysis.counters(),
+                                         "bounded_second_opinion": analysis.second_opinion}
+            below = analysis.state == "known" and analysis.below_floor
+        else:
+            below = _below_floor_post(cleaned, floor)
+        if cfg.prefilter_below_floor != "off" and below:
+            counts.setdefault(post.content_hash, {}).update({
                 "extracted": 0, "evidence": 0, "prefilter_would_skip": True,
                 "text_fingerprint": hashlib.sha256(cleaned.encode("utf-8")).hexdigest(),
-                "evaluation_complete": False, "evaluation_gap": "not_parsed"}
+                "evaluation_complete": False, "evaluation_gap": "not_parsed"})
     return counts
 
 
@@ -385,11 +396,13 @@ def prefilter_counts(posts: list[RawPost], post_counts: dict) -> dict:
     """Count candidate POSTS, including incomplete post-critic evaluations."""
     by_source = {}
     seen = set()
+    bounded = Counter()
     for post in posts:
         if post.content_hash in seen:
             continue
         seen.add(post.content_hash)
         counts = post_counts.get(post.content_hash, {})
+        bounded.update(counts.get("bounded_prefilter", {}))
         if not counts.get("prefilter_would_skip"):
             continue
         source = by_source.setdefault(post.source_name or "unknown", {
@@ -398,7 +411,8 @@ def prefilter_counts(posts: list[RawPost], post_counts: dict) -> dict:
         source["would_skip_publishable"] += int(bool(counts.get("prefilter_miss")))
         source["unevaluated"] += int(not counts.get("evaluation_complete", False))
     return {**{key: sum(s[key] for s in by_source.values()) for key in (
-        "would_skip", "would_skip_publishable", "unevaluated")}, "by_source": by_source}
+        "would_skip", "would_skip_publishable", "unevaluated")}, "by_source": by_source,
+        **({"bounded_prefilter": dict(bounded)} if bounded else {})}
 
 
 def _post_for_deals(post: RawPost, n_deals: int) -> RawPost:
@@ -418,6 +432,7 @@ def parse_posts(
     tz_by_source: dict[str, str],
     deadline: float | None = None,
     db=None,
+    post_counts: dict | None = None,
 ) -> tuple[list[tuple[RawPost, ExtractedDeal]], dict]:
     """Parse API facts in code or read posts with the LLM. Verify evidence
     against the synthesized source text or the SAME cleaned model input.
@@ -434,6 +449,8 @@ def parse_posts(
     ``reused_posts``/``reused_deals`` count cache reuse without paid calls.
     ``second_opinion`` measures paid calls and evidence yield; ``prefilter``
     measures candidates (the pipeline adds their post-gate publishable yield).
+    ``parse_seconds`` times the loop, including settlement of submitted reads;
+    ``max_in_flight`` counts the peak outstanding unique LLM reads.
     ``db`` supplies cached LLM facts and stored categories for ASIN reuse.
     """
     stats = {
@@ -447,8 +464,11 @@ def parse_posts(
         "prefilter": {},
         "spend_usd": 0.0,
         "aborted_spend_cap": False,
+        "parse_seconds": 0.0,
+        "max_in_flight": 0,
+        "deadline_hit": False,
         "processed_hashes": [],
-        "post_counts": prefilter_post_counts(posts, cfg),
+        "post_counts": (post_counts if post_counts is not None else prefilter_post_counts(posts, cfg, deadline)),
         "structured_parse": {"posts": 0, "deals": 0, "dropped_evidence": 0},
     }
     observed_posts = posts
@@ -476,8 +496,15 @@ def parse_posts(
         }
         llm_deals = parser.extract(cleaned, meta, kind="extract")
         second_opinion = False
-        if (not llm_deals and so_model and _smells_like_deal(cleaned)
-                and _can_clear_floor(cleaned, min(cfg.min_pct, cfg.site_show_from_pct))):
+        if cfg.bounded_prefilter["enabled"]:
+            eligible = stats["post_counts"][post.content_hash]["bounded_second_opinion"]
+            # The initial request can consume the remaining headroom. Unknown
+            # never bypasses that guard or the parser's existing reservations.
+            eligible &= deadline is None or time.monotonic() + 2 * cfg.request_timeout_s + 2 <= deadline
+        else:
+            eligible = (not llm_deals and so_model and _smells_like_deal(cleaned)
+                        and _can_clear_floor(cleaned, min(cfg.min_pct, cfg.site_show_from_pct)))
+        if not llm_deals and so_model and eligible:
             with lock:
                 take = stats["second_opinions"] < so_cap
                 if take:
@@ -513,6 +540,9 @@ def parse_posts(
         post = _post_for_deals(post, len(llm_deals))
         deals = [to_extracted(d, post, tz_name, now) for d in llm_deals]
         counts = {"extracted": len(deals), "evidence": 0}
+        if cfg.bounded_prefilter["enabled"] and not structured:
+            prior = stats["post_counts"][post.content_hash]
+            counts.update({key: prior[key] for key in ("bounded_prefilter", "bounded_second_opinion")})
         if would_skip:
             counts["text_fingerprint"] = stats["post_counts"][post.content_hash]["text_fingerprint"]
             counts["prefilter_would_skip"] = True
@@ -562,26 +592,49 @@ def parse_posts(
             # parse (including a genuine empty answer) is saved as facts.
             db.cache_post_parse(fingerprint, [d.model_dump(mode="json") for d in llm_deals], now)
 
-    # Posts go out in batches of `workers` concurrent reads (throughput is
-    # bound by API round-trip time, not tokens); results are collected in
-    # submission order so pairs stay deterministic. A spend-cap hit inside
-    # a batch keeps the batch-mates that completed (they were paid for) and
-    # stops submitting more; the rest stay unrecorded and retry next run.
+    def _abort_spend_cap(error: SpendCapReached) -> None:
+        if not stats["aborted_spend_cap"]:
+            log.warning("spend cap reached, aborting parse: %s", error)
+        stats["aborted_spend_cap"] = True
+
+    def _past_deadline() -> bool:
+        return (deadline is not None
+                and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline)
+
+    # Refill on any completed read, independently of the ordered recording
+    # queue. Only unique LLM reads take slots; SQLite stays on this thread.
+    # A cap/deadline stops submissions but every submitted read still settles.
     idx = 0
-    # Share each read's future, even within a concurrent batch. SQLite stays
-    # on the main thread; every source still verifies and records its own post.
     reads: dict[str, Future | tuple[list, bool, bool]] = {}
+    jobs = deque()
+    in_flight: set[Future] = set()
+    stopped = False
+    parse_started = time.monotonic()
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        while idx < len(posts) and not stats["aborted_spend_cap"]:
-            if deadline is not None and time.monotonic() + 2 * cfg.request_timeout_s + 2 > deadline:
-                log.warning("run deadline reached: stopping parse with %d posts left"
-                            " (they stay unrecorded and retry next run)",
-                            len(posts) - len(stats["processed_hashes"]))
-                break
-            batch = posts[idx: idx + workers]
-            idx += len(batch)
-            jobs = []
-            for post in batch:
+        while idx < len(posts) or jobs:
+            done = {read for read in in_flight if read.done()}
+            in_flight.difference_update(done)
+            for read in done:
+                error = read.exception()
+                if isinstance(error, SpendCapReached):
+                    _abort_spend_cap(error)
+            while jobs:
+                post, cleaned, fingerprint, read, reused, skipped, would_skip = jobs[0]
+                if isinstance(read, Future) and not read.done():
+                    break
+                jobs.popleft()
+                try:
+                    llm_deals, second_opinion, complete = read.result() if isinstance(read, Future) else read
+                    _record(post, cleaned, llm_deals, fingerprint=fingerprint,
+                            reused=reused, second_opinion=second_opinion and not reused,
+                            skipped=skipped, would_skip=would_skip, complete=complete)
+                except SpendCapReached as e:
+                    _abort_spend_cap(e)
+
+            if idx < len(posts) and not stopped and not stats["aborted_spend_cap"]:
+                stopped = _past_deadline()
+            if idx < len(posts) and not stopped and not stats["aborted_spend_cap"]:
+                post = posts[idx]
                 fingerprint = ""
                 reused = False
                 cleaned = (post.text if post.structured is not None
@@ -612,24 +665,40 @@ def parse_posts(
                                     stats["post_counts"][post.content_hash]["evaluation_gap"] = "legacy_cache"
                             read, reused = ([LLMDeal.model_validate(d) for d in cached], False, complete), True
                         else:
+                            # A read can finish during recording/cache lookup.
+                            # Observe it (especially a cap) before any refill.
+                            if any(read.done() for read in in_flight):
+                                continue
+                            if len(in_flight) >= workers:
+                                wait(in_flight, return_when=FIRST_COMPLETED)
+                                continue
+                            stopped = _past_deadline()
+                            if stopped:
+                                continue
                             read = pool.submit(_extract, post, cleaned)
+                            in_flight.add(read)
+                            stats["max_in_flight"] = max(stats["max_in_flight"], len(in_flight))
                         reads[fingerprint] = read
                 jobs.append((post, cleaned, fingerprint, read, reused, skipped, would_skip))
-            for post, cleaned, fingerprint, read, reused, skipped, would_skip in jobs:
-                try:
-                    llm_deals, second_opinion, complete = read.result() if isinstance(read, Future) else read
-                    _record(post, cleaned, llm_deals, fingerprint=fingerprint,
-                            reused=reused, second_opinion=second_opinion and not reused,
-                            skipped=skipped, would_skip=would_skip, complete=complete)
-                except SpendCapReached as e:
-                    if not stats["aborted_spend_cap"]:
-                        log.warning("spend cap reached, aborting parse: %s", e)
-                    stats["aborted_spend_cap"] = True
+                idx += 1
+                continue
+            if in_flight:
+                wait(in_flight, return_when=FIRST_COMPLETED)
+            else:
+                break
+    stats["parse_seconds"] = time.monotonic() - parse_started
+    stats["deadline_hit"] = stopped
+    if stopped:
+        log.warning("run deadline reached: stopping parse with %d posts left"
+                    " (they stay unrecorded and retry next run)",
+                    len(posts) - len(stats["processed_hashes"]))
 
     processed = set(stats["processed_hashes"])
     capped = {p.content_hash for p in observed_posts[len(posts):]}
-    for h, counts in stats["post_counts"].items():
+    for post in observed_posts:
+        h = post.content_hash
         if h not in processed:
+            counts = stats["post_counts"].setdefault(h, {"extracted": 0, "evidence": 0})
             counts["evaluation_gap"] = ("max_posts" if h in capped else
                                         "spend_cap" if stats["aborted_spend_cap"] else "deadline")
     stats["prefilter"] = prefilter_counts(observed_posts, stats["post_counts"])

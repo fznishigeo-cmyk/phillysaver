@@ -453,7 +453,10 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     before = {table: db.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
               for table in ("deals", "sightings", "price_history", "alerts_sent", "source_audit_posts",
                             "indexnow_pages", "indexnow_batches", "legitimacy_audits", "legitimacy_batches",
-                            "products", "product_keys", "product_offers", "meta")}
+                            "products", "product_keys", "product_offers", "meta", "run_stats")}
+    run_stats_before = [tuple(row) for row in db.conn.execute(
+        "SELECT run_key,posts_left,deadline_hit FROM run_stats ORDER BY run_key")]
+    assert run_stats_before == [(first["run_key"], 0, 0)]
     audit_before = [tuple(row) for row in db.conn.execute("SELECT * FROM source_audit_posts ORDER BY content_hash")]
     receipts_before = [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")]
     history_before = [tuple(row) for row in db.conn.execute("SELECT * FROM price_history ORDER BY id")]
@@ -476,6 +479,8 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert len(requests) == 1
     assert [tuple(row) for row in db.conn.execute("SELECT * FROM indexnow_pages ORDER BY url")] == receipts_before
     assert [tuple(row) for row in db.conn.execute("SELECT * FROM price_history ORDER BY id")] == history_before
+    assert [tuple(row) for row in db.conn.execute(
+        "SELECT run_key,posts_left,deadline_hit FROM run_stats ORDER BY run_key")] == run_stats_before
     db.close()
 
     import sqlite3

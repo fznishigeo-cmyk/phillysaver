@@ -250,6 +250,8 @@ def test_fast_lane_tiered_replay_stops_parse_and_critic_and_is_idempotent(env, m
     assert "run deadline reached: stopping parse" in caplog.text
     assert "critic: Sonnet deadline reached" in caplog.text
     db = DB(env["db"])
+    run_stats = tuple(db.conn.execute("SELECT posts_left,deadline_hit FROM run_stats").fetchone())
+    assert run_stats == (150 - len(first["parse"]["processed_hashes"]), 1)
     pending = [d for d in db.all_deals() if "critic_tier_pending" in d["flags"]]
     assert pending and all(not rank.is_publishable(d, load_config(env["cfg"]))[0] for d in pending)
     public = json.loads((env["site"] / "deals.json").read_text())["deals"]
@@ -264,6 +266,7 @@ def test_fast_lane_tiered_replay_stops_parse_and_critic_and_is_idempotent(env, m
     assert again["run_key"] == first["run_key"]
     assert again["spend_usd"] == again["posts_new"] == 0
     assert repeated.extracts == repeated.critics == []
+    assert tuple(db.conn.execute("SELECT posts_left,deadline_hit FROM run_stats").fetchone()) == run_stats
     assert {t: db.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables} == before
     monkeypatch.setenv("DEALRADAR_RUN_KEY", "timing:next")
     following, retried, _ = run()

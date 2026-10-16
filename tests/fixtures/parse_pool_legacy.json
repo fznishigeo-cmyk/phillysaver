@@ -1,0 +1,1312 @@
+{
+  "capture": "Unmodified HEAD extractor batch loop; fake clock and fixed offline API replies; excludes only parse_seconds and max_in_flight.",
+  "captured_from": "ded9a301252ca920b024b1739c3a02d73268b611",
+  "outcomes": {
+    "on": {
+      "cache": [
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "c2fd4dccabcd77ad2a0aa5d6abe61990feee76a156c706a1d56cd5cc45af9884"
+        },
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "f3cb1965369721ca3792961384bfc231c71966a9f2280eb55d18ca34f2cfeab9"
+        },
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "1262d2d177549d220f56353e7903aa311ff1148b5f48de2fe33c848c8385b163"
+        },
+        {
+          "deals": "[]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "35ff60856e7cdc215714af29209a67a3349f120e03ceeeb168731e8963319bfb"
+        }
+      ],
+      "calls": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.004958,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.004958375,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.0049585,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.0049585,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.00495925,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0007,
+          "input_tokens": 100,
+          "kind": "second_opinion",
+          "model": "sonnet",
+          "output_tokens": 50,
+          "reserved_usd": 0.099185,
+          "source_name": "hip2save",
+          "status": "settled"
+        }
+      ],
+      "extract_by_source": {
+        "hip2save": {
+          "calls": 5,
+          "deals": 7,
+          "publishable": 0,
+          "usd": 0.00017499999999999997
+        }
+      },
+      "ledger_spend_usd": 0.000875,
+      "pairs": [
+        [
+          "p0",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p0",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p1",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p1",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p2",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "home",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p2",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p3",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p3",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p5",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p5",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p8",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p8",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p9",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p9",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ]
+      ],
+      "parsed": [
+        [
+          "p0",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p1",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p2",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p3",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p4",
+          []
+        ],
+        [
+          "p5",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p6",
+          []
+        ],
+        [
+          "p7",
+          []
+        ],
+        [
+          "p8",
+          [
+            [
+              "Widget",
+              ""
+            ],
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p9",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ]
+      ],
+      "second_opinion_yield": [
+        {
+          "event_key": "4229251f80e2bd253a3ae3634832e92fe4ae8b77267c5184c1cdd299aa590d6b",
+          "evidence": 1,
+          "extracted": 1,
+          "observed_at": "2026-10-09T12:00:00+00:00",
+          "source_name": "hip2save"
+        }
+      ],
+      "spend_by_kind": {
+        "category": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "critic": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "critic_shadow": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "extract": {
+          "calls": 5,
+          "usd": 0.00017499999999999997
+        },
+        "newsletter_pick": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "other": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "second_opinion": {
+          "calls": 1,
+          "usd": 0.0007
+        }
+      },
+      "spend_usd": 0.0008749999999999999,
+      "stats": {
+        "aborted_spend_cap": false,
+        "deals_dropped_evidence": 1,
+        "deals_extracted": 8,
+        "post_counts": {
+          "0a8822138a7a8991ab4253d09b36af3973b03901a94a703acbd69f2bb819ee8d": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "136cbdcb9847b58718b2bf5628553615419e557c3dd3cb458d5f5dcbd4b99c35": {
+            "evidence": 0,
+            "extracted": 0
+          },
+          "1d14fee256235f119386f51ea1e9b911bfaebd0930ddc4d964328652fe7f7fee": {
+            "evaluation_complete": false,
+            "evaluation_gap": "skipped",
+            "evidence": 0,
+            "extracted": 0,
+            "prefilter_would_skip": true,
+            "text_fingerprint": "9e19044bf2d44c7892984c4089855a691ac9787f97b26b775d30444e369fa55d"
+          },
+          "80055b3f59125cc4ea6c7c9e720648ea7963723477b29e74d98139ff0ba4875f": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "8e4276ec43c185660a56f0fba7754ba160b384e869a80e84fdfda10e8882b50e": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "90001a4c1edebd698f2d71b6ae842a5520f8b1b7c9a2201c84fabb9b18e89331": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "a15cf40f5e61b14bc83190207b700b5ff41d231f3b96e28d2b39325d886c1536": {
+            "evidence": 0,
+            "extracted": 0
+          },
+          "bcc97b088c8be582617dbcfe50b300d6dce4d08c15e858b561c77dc7b9c6c853": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "cd8be4fa377a90288bc98289784c11826cbf600564cf626caaf886349f006984": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "e0251f6e4c05b47cc3ce6bc2bdcdbb8676e5c41ac81a9a3ab4731efc816198e3": {
+            "evidence": 1,
+            "extracted": 2
+          }
+        },
+        "posts_sent": 5,
+        "prefilter": {
+          "by_source": {
+            "hip2save": {
+              "unevaluated": 1,
+              "would_skip": 1,
+              "would_skip_publishable": 0
+            }
+          },
+          "unevaluated": 1,
+          "would_skip": 1,
+          "would_skip_publishable": 0
+        },
+        "processed_hashes": [
+          "bcc97b088c8be582617dbcfe50b300d6dce4d08c15e858b561c77dc7b9c6c853",
+          "cd8be4fa377a90288bc98289784c11826cbf600564cf626caaf886349f006984",
+          "0a8822138a7a8991ab4253d09b36af3973b03901a94a703acbd69f2bb819ee8d",
+          "80055b3f59125cc4ea6c7c9e720648ea7963723477b29e74d98139ff0ba4875f",
+          "1d14fee256235f119386f51ea1e9b911bfaebd0930ddc4d964328652fe7f7fee",
+          "8e4276ec43c185660a56f0fba7754ba160b384e869a80e84fdfda10e8882b50e",
+          "a15cf40f5e61b14bc83190207b700b5ff41d231f3b96e28d2b39325d886c1536",
+          "136cbdcb9847b58718b2bf5628553615419e557c3dd3cb458d5f5dcbd4b99c35",
+          "e0251f6e4c05b47cc3ce6bc2bdcdbb8676e5c41ac81a9a3ab4731efc816198e3",
+          "90001a4c1edebd698f2d71b6ae842a5520f8b1b7c9a2201c84fabb9b18e89331"
+        ],
+        "reused_deals": 3,
+        "reused_posts": 3,
+        "second_opinion": {
+          "calls": 1,
+          "deals_extracted": 1,
+          "deals_passed_evidence": 1
+        },
+        "second_opinions": 1,
+        "spend_usd": 0.0008749999999999999,
+        "structured_parse": {
+          "deals": 1,
+          "dropped_evidence": 0,
+          "posts": 1
+        }
+      }
+    },
+    "shadow": {
+      "cache": [
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "c2fd4dccabcd77ad2a0aa5d6abe61990feee76a156c706a1d56cd5cc45af9884"
+        },
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "f3cb1965369721ca3792961384bfc231c71966a9f2280eb55d18ca34f2cfeab9"
+        },
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 45.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $45\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "9e19044bf2d44c7892984c4089855a691ac9787f97b26b775d30444e369fa55d"
+        },
+        {
+          "deals": "[{\"item\": \"Widget\", \"store\": \"Amazon\", \"brand\": \"\", \"product_url\": \"\", \"online_only\": \"unknown\", \"regular_price\": null, \"final_price\": 10.0, \"pct_off\": null, \"abs_savings\": null, \"shipping_cost_or_threshold\": \"\", \"stack_steps\": [], \"codes\": [], \"rebates\": [], \"deferred_value\": \"\", \"conditions\": [], \"expires_at_raw\": \"\", \"quantity_or_unit\": \"\", \"regular_price_unit\": \"\", \"final_price_unit\": \"\", \"currency\": \"USD\", \"region\": \"US\", \"category\": \"other\", \"evidence\": {\"regular_price_quote\": \"\", \"final_price_quote\": \"now $10\", \"pct_quote\": \"\", \"price_upper_bound_quote\": \"\", \"shipping_quote\": \"\", \"deal_type_quote\": \"\"}, \"confidence\": 0.0, \"deal_type\": \"\", \"price_is_range\": false, \"price_upper_bound\": null}]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "1262d2d177549d220f56353e7903aa311ff1148b5f48de2fe33c848c8385b163"
+        },
+        {
+          "deals": "[]",
+          "parsed_at": "2026-10-09T12:00:00+00:00",
+          "text_fingerprint": "35ff60856e7cdc215714af29209a67a3349f120e03ceeeb168731e8963319bfb"
+        }
+      ],
+      "calls": [
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.004958,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.00495825,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.004958375,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.0049585,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.0049585,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 3.5e-05,
+          "input_tokens": 100,
+          "kind": "extract",
+          "model": "haiku",
+          "output_tokens": 50,
+          "reserved_usd": 0.00495925,
+          "source_name": "hip2save",
+          "status": "settled"
+        },
+        {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "cost_usd": 0.0007,
+          "input_tokens": 100,
+          "kind": "second_opinion",
+          "model": "sonnet",
+          "output_tokens": 50,
+          "reserved_usd": 0.099185,
+          "source_name": "hip2save",
+          "status": "settled"
+        }
+      ],
+      "extract_by_source": {
+        "hip2save": {
+          "calls": 6,
+          "deals": 8,
+          "publishable": 0,
+          "usd": 0.00020999999999999995
+        }
+      },
+      "ledger_spend_usd": 0.00091,
+      "pairs": [
+        [
+          "p0",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p0",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p1",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p1",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p2",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "home",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p2",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p3",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p3",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p4",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $45",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 45.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p4",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p5",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p5",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p8",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p8",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ],
+        [
+          "p9",
+          {
+            "abs_savings": null,
+            "brand": "",
+            "category": "other",
+            "codes": [],
+            "conditions": [],
+            "confidence": 0.0,
+            "currency": "USD",
+            "deal_type": "",
+            "deferred_value": "",
+            "evidence": {
+              "deal_type_quote": "",
+              "final_price_quote": "now $10",
+              "pct_quote": "",
+              "price_upper_bound_quote": "",
+              "regular_price_quote": "",
+              "shipping_quote": ""
+            },
+            "expires_at": "",
+            "final_price": 10.0,
+            "final_price_unit": "",
+            "item": "Widget",
+            "link_as_posted": "",
+            "link_shared": false,
+            "online_only": "unknown",
+            "pct_off": null,
+            "price_is_range": false,
+            "price_upper_bound": null,
+            "product_url": "",
+            "quantity_or_unit": "",
+            "rebates": [],
+            "region": "US",
+            "regular_price": null,
+            "regular_price_unit": "",
+            "shipping_cost_or_threshold": "",
+            "source_name": "hip2save",
+            "source_url": "https://one.example/p9",
+            "stack_steps": [],
+            "store": "Amazon"
+          }
+        ]
+      ],
+      "parsed": [
+        [
+          "p0",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p1",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p2",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p3",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p4",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p5",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p6",
+          []
+        ],
+        [
+          "p7",
+          []
+        ],
+        [
+          "p8",
+          [
+            [
+              "Widget",
+              ""
+            ],
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ],
+        [
+          "p9",
+          [
+            [
+              "Widget",
+              ""
+            ]
+          ]
+        ]
+      ],
+      "second_opinion_yield": [
+        {
+          "event_key": "4229251f80e2bd253a3ae3634832e92fe4ae8b77267c5184c1cdd299aa590d6b",
+          "evidence": 1,
+          "extracted": 1,
+          "observed_at": "2026-10-09T12:00:00+00:00",
+          "source_name": "hip2save"
+        }
+      ],
+      "spend_by_kind": {
+        "category": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "critic": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "critic_shadow": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "extract": {
+          "calls": 6,
+          "usd": 0.00020999999999999995
+        },
+        "newsletter_pick": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "other": {
+          "calls": 0,
+          "usd": 0.0
+        },
+        "second_opinion": {
+          "calls": 1,
+          "usd": 0.0007
+        }
+      },
+      "spend_usd": 0.0009099999999999999,
+      "stats": {
+        "aborted_spend_cap": false,
+        "deals_dropped_evidence": 1,
+        "deals_extracted": 9,
+        "post_counts": {
+          "0a8822138a7a8991ab4253d09b36af3973b03901a94a703acbd69f2bb819ee8d": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "136cbdcb9847b58718b2bf5628553615419e557c3dd3cb458d5f5dcbd4b99c35": {
+            "evidence": 0,
+            "extracted": 0
+          },
+          "1d14fee256235f119386f51ea1e9b911bfaebd0930ddc4d964328652fe7f7fee": {
+            "evaluation_complete": true,
+            "evidence": 0,
+            "extracted": 1,
+            "prefilter_would_skip": true,
+            "text_fingerprint": "9e19044bf2d44c7892984c4089855a691ac9787f97b26b775d30444e369fa55d"
+          },
+          "80055b3f59125cc4ea6c7c9e720648ea7963723477b29e74d98139ff0ba4875f": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "8e4276ec43c185660a56f0fba7754ba160b384e869a80e84fdfda10e8882b50e": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "90001a4c1edebd698f2d71b6ae842a5520f8b1b7c9a2201c84fabb9b18e89331": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "a15cf40f5e61b14bc83190207b700b5ff41d231f3b96e28d2b39325d886c1536": {
+            "evidence": 0,
+            "extracted": 0
+          },
+          "bcc97b088c8be582617dbcfe50b300d6dce4d08c15e858b561c77dc7b9c6c853": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "cd8be4fa377a90288bc98289784c11826cbf600564cf626caaf886349f006984": {
+            "evidence": 0,
+            "extracted": 1
+          },
+          "e0251f6e4c05b47cc3ce6bc2bdcdbb8676e5c41ac81a9a3ab4731efc816198e3": {
+            "evidence": 1,
+            "extracted": 2
+          }
+        },
+        "posts_sent": 6,
+        "prefilter": {
+          "by_source": {
+            "hip2save": {
+              "unevaluated": 0,
+              "would_skip": 1,
+              "would_skip_publishable": 0
+            }
+          },
+          "unevaluated": 0,
+          "would_skip": 1,
+          "would_skip_publishable": 0
+        },
+        "processed_hashes": [
+          "bcc97b088c8be582617dbcfe50b300d6dce4d08c15e858b561c77dc7b9c6c853",
+          "cd8be4fa377a90288bc98289784c11826cbf600564cf626caaf886349f006984",
+          "0a8822138a7a8991ab4253d09b36af3973b03901a94a703acbd69f2bb819ee8d",
+          "80055b3f59125cc4ea6c7c9e720648ea7963723477b29e74d98139ff0ba4875f",
+          "1d14fee256235f119386f51ea1e9b911bfaebd0930ddc4d964328652fe7f7fee",
+          "8e4276ec43c185660a56f0fba7754ba160b384e869a80e84fdfda10e8882b50e",
+          "a15cf40f5e61b14bc83190207b700b5ff41d231f3b96e28d2b39325d886c1536",
+          "136cbdcb9847b58718b2bf5628553615419e557c3dd3cb458d5f5dcbd4b99c35",
+          "e0251f6e4c05b47cc3ce6bc2bdcdbb8676e5c41ac81a9a3ab4731efc816198e3",
+          "90001a4c1edebd698f2d71b6ae842a5520f8b1b7c9a2201c84fabb9b18e89331"
+        ],
+        "reused_deals": 3,
+        "reused_posts": 3,
+        "second_opinion": {
+          "calls": 1,
+          "deals_extracted": 1,
+          "deals_passed_evidence": 1
+        },
+        "second_opinions": 1,
+        "spend_usd": 0.0009099999999999999,
+        "structured_parse": {
+          "deals": 1,
+          "dropped_evidence": 0,
+          "posts": 1
+        }
+      }
+    }
+  }
+}

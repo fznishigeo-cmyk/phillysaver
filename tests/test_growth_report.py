@@ -766,7 +766,7 @@ def test_each_missing_secret_skips_only_its_sections(cfg, rsa_key, monkeypatch, 
     fake = FakeApis()
     with client_for(fake) as client:
         data, status = report.collect(cfg, NOW, client)
-    ok = ok | {"site_health"} | ({"product", "saved", "deal_pages"} if google_ else set())
+    ok = ok | {"site_health", "hands_off"} | ({"product", "saved", "deal_pages"} if google_ else set())
     assert {k for k, v in status.items() if v == "ok"} == ok
     assert {k for k, v in status.items() if v == "skipped"} == set(status) - ok
     assert set(data) == ok | {"subscribers"}
@@ -870,6 +870,7 @@ def test_report_headline_first_then_sections(cfg, rsa_key, monkeypatch):
     assert all(msg["chat_id"] == ADMIN_CHAT for msg in fake.telegram)  # admin only
     text = "".join(msg["text"] for msg in fake.telegram)
     lines = text.splitlines()
+    assert lines.pop(0).startswith("CHECK Hands-off: unknown/24 hours published;")
     assert lines[0] == "Real visitors yesterday: 731,942 (people), 812,345 sessions"
     assert lines[1] == ""
     lines = lines[2:]

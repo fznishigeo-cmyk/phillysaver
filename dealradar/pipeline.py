@@ -287,11 +287,13 @@ def _build_parser(cfg: AppConfig, claude_client=None,
 
 def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
                      now: datetime, tz_by_source: dict[str, str],
-                     deadline: float | None, db: DB | None = None
+                     deadline: float | None, db: DB | None = None,
+                     candidate_counts: dict | None = None
                      ) -> tuple[list[tuple[RawPost, Any]], dict]:
     from .parse.extractor import parse_posts, prefilter_counts, prefilter_post_counts
 
-    post_counts = prefilter_post_counts(new_posts, cfg)
+    post_counts = (candidate_counts if candidate_counts is not None else
+                   prefilter_post_counts(new_posts, cfg, deadline))
 
     stats = {"posts_sent": 0, "deals_extracted": 0, "deals_dropped_evidence": 0,
              "spend_usd": 0.0, "aborted_spend_cap": False, "parser": "disabled",
@@ -306,7 +308,8 @@ def _parse_new_posts(new_posts: list[RawPost], parser, cfg: AppConfig,
     stats["parser"] = parser.model
     try:
         pairs, pstats = parse_posts(new_posts, parser, cfg, now, tz_by_source,
-                                    deadline=deadline, db=db)
+                                    deadline=deadline, db=db,
+                                    **({"post_counts": post_counts} if cfg.bounded_prefilter["enabled"] else {}))
     except SpendCapReached:
         log.warning("spend cap reached before parsing could start")
         return [], stats
@@ -2383,7 +2386,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             mark_ended_post(db, post, now, cfg)
         record_deaths()
 
-        candidate_counts = prefilter_post_counts(new_posts, cfg)
+        candidate_counts = prefilter_post_counts(new_posts, cfg, deadline - _RESERVE_FOR_TAIL_S)
         pstats["post_counts"] = candidate_counts
         ai_yield.observe_prefilter(db, cfg, new_posts, candidate_counts, now,
                                   [*sources, *(inbox.sources if inbox is not None else [])])
@@ -2434,7 +2437,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             parse_stop = min(parse_stop, time.monotonic() + cfg.fast_lane_parse_budget_s)
         pairs, pstats = _parse_new_posts(
             parse_posts, parser, cfg, now, tz_by_source,
-            parse_stop, db=db)
+            parse_stop, db=db,
+            **({"candidate_counts": candidate_counts} if cfg.bounded_prefilter["enabled"] else {}))
         if cfg.intake_mode == "on":
             pstats["post_counts"] = {**candidate_counts, **pstats.get("post_counts", {})}
             selected = {p.content_hash for p in parse_posts}
@@ -2622,7 +2626,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                     counts[gate] = counts.get(gate, 0) + 1
             for post in new_posts:
                 counts = pstats.get("post_counts", {}).get(post.content_hash)
-                if counts is not None:
+                # Deadline-only counters (234) and bounded diagnostics (224)
+                # do not make a deferred post a completed parse observation.
+                if counts is not None and (post.content_hash in processed or (
+                        counts.get("prefilter_would_skip") and not cfg.bounded_prefilter["enabled"])):
                     db.audit_parsed(post, counts, now)
             ai_yield.observe_prefilter(db, cfg, new_posts, pstats.get("post_counts", {}), now,
                                       [*sources, *(inbox.sources if inbox is not None else [])])
@@ -2853,7 +2860,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                           published=summary.get("published", 0),
                           spend_usd=float(getattr(parser, "spend_usd", 0.0)),
                           accounted_spend_usd=float(getattr(parser, "ledger_spend_usd", 0.0)),
-                          untracked_at=now)
+                          untracked_at=now,
+                          posts_left=sum(c.get("evaluation_gap") == "deadline"
+                                         for c in pstats.get("post_counts", {}).values()),
+                          deadline_hit=pstats.get("deadline_hit", False))
         finally:
             try:
                 try:
