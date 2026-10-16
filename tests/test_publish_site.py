@@ -246,7 +246,7 @@ def test_index_template_references_disclosure_from_meta(db, cfg, tmp_path):
     assert "m.disclosure" in html or "meta.disclosure" in html
     assert DISCLOSURE in re.sub(r"<[^>]+>", "", html)
     # Required UI affordances live in the template.
-    assert "No qualifying deals right now" in html
+    assert "Verified offers appear here after passing our price checks." in html
     assert 'rel="sponsored noopener"' in html
     assert "health.html" not in html  # source health is never public
     assert "prefers-color-scheme" in html

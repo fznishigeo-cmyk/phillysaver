@@ -179,7 +179,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   h.handlers.storage({key:'wp.join.joined',newValue:'1'}); assert.equal(h.prompt.hidden,true);
   for (const [status, text] of [[400, 'Please enter a valid email address.'],
     [429, 'Too many tries. Please try again in an hour.'],
-    [503, 'Sign-up is unavailable right now. Please try again soon.']]) {
+    [503, 'Sign-up is temporarily unavailable. Please try again.']]) {
     h=harness({pathname:'/join'}); h.click(h.choice); h.sub({status,body:{}}); h.submitEmail();
     await flush(); assert.equal(h.message.textContent,text); assert.equal(h.message.role,'alert');
     assert.equal(h.fields.hidden,false); assert.equal(h.success.hidden,true); assert.equal(h.submit.disabled,false);
@@ -281,8 +281,8 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   for (const [response,text] of [
     [{status:400,body:{}},'Please enter a valid email address.'],
     [{status:429,body:{}},'Too many tries. Please try again in an hour.'],
-    [{status:503,body:{}},'Sign-up is unavailable right now. Please try again soon.'],
-    [{status:200,body:{}},'Sign-up is unavailable right now. Please try again soon.'],
+    [{status:503,body:{}},'Sign-up is temporarily unavailable. Please try again.'],
+    [{status:200,body:{}},'Sign-up is temporarily unavailable. Please try again.'],
     [Error('network'),"Couldn't reach the server. Please check your connection and try again."]
   ]) {
     h=harness({card:false}); h.sub(response); h.submitFooter(); await flush();
@@ -296,7 +296,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   h=harness(); h.footerInput.value='invalid'; h.submitFooter();
   assert.equal(h.requests.length,0); assert.equal(h.footerMessage.role,'alert');
   h=harness({api:''}); h.submitFooter(); assert.equal(h.requests.length,0);
-  assert.equal(h.footerMessage.textContent,'Sign-up is unavailable right now. Please try again soon.');
+  assert.equal(h.footerMessage.textContent,'Sign-up is temporarily unavailable. Please try again.');
   h=harness({blocked:'write'}); h.submitFooter(); await flush();
   assert.equal(h.footerSuccess.hidden,false); assert.equal(h.events.at(-1).params.method,'footer');
   h.engage(); h.advance(15000); assert.equal(h.prompt.hidden,true);

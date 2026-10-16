@@ -84,7 +84,7 @@ for(const [floor,count,priceOnly,expected] of [
   [70,12,false,'verified deals, 70–90% off · 12 live deals'],
   [90,101,false,'verified deals, 90%+ off · 100+ live deals'],
   [40,3,true,'verified deals · 4 live deals'],
-  [null,0,false,'verified deals · 0 live deals'],
+  [null,0,false,'verified deals · Offers checked before publication'],
   [40,1,false,'verified deals, 40–90% off · 1 live deal']
 ]) {
   ctx.state.meta.floors.min_pct=floor;
@@ -94,7 +94,8 @@ for(const [floor,count,priceOnly,expected] of [
   ctx.Date.parse=Date.parse;
   vm.runInContext(meta.slice(meta.indexOf('{')+1),ctx);
   assert.equal(element('tagline').textContent,expected);
-  if(count!==1) assert.match(element('tagline').textContent,/\b[\d,]+\+? live deals\b/);
+  if(count>1 || priceOnly) assert.match(element('tagline').textContent,/\b[\d,]+\+? live deals\b/);
+  if(!count && !priceOnly) assert.equal(element('q').placeholder,'Search deals');
   const dot=element('tagline').children.find(n=>n.className==='live-dot');
   assert.equal(dot.attributes['aria-hidden'],'true');
   const off=element('tagline').children.find(n=>n.className==='tag-off');

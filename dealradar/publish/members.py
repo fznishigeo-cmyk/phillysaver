@@ -110,11 +110,12 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     top = max((float(d.get("pct_at_checkout") or 0.0) for d in deals),
               default=0.0)
     n = len(deals)
-    subject = (f"{_brand(cfg)}: {n} new verified deal{'s' if n != 1 else ''} "
+    domain = getattr(cfg, "custom_domain", "") or ""
+    brand = domain.split(".")[0] if domain else "wowpriced"
+    subject = (f"{brand}: {n} new verified deal{'s' if n != 1 else ''} "
                f"(up to {display_pct(top)}% off)")
     lines = [format_message(d, cfg=cfg) for d in deals]
     footer = []
-    domain = getattr(cfg, "custom_domain", "") or ""
     if more:
         footer.append(f"+{more} more new deal{'s' if more != 1 else ''} on the live wall"
                       + (f": https://{domain}/" if domain else "."))

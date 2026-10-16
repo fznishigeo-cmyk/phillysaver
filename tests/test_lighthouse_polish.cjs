@@ -29,6 +29,7 @@ const ctx = {
 };
 vm.createContext(ctx);
 vm.runInContext(fragment('  function mediaHtml(', '  // ---- the deal ticker ----'), ctx);
+vm.runInContext(fragment('  function nicheLast(rows)', '  function ordered('), ctx);
 vm.runInContext(fragment('  function gridHtml(', '  function showMore('), ctx);
 ctx.render();
 const wall = content.innerHTML;

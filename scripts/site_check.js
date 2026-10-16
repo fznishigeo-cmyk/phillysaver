@@ -88,7 +88,7 @@ function checkFooter(html, meta) {
   const nav = (footer.match(/<nav id="footerlinks"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || "";
   const links = [...nav.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/g)].map(m => [m[1], m[2]]);
   const expectedLinks = [
-    ["/about.html", "About"], ["/how-it-works.html", "How it works"], ["/hacks.html", "Deal hacks"],
+    ["/about.html", "About"], ["/how-it-works.html", "How we verify"], ["/hacks.html", "Deal hacks"],
     ["/careers.html", "Work with us"], ["/contact.html", "Contact"],
     ["/subscribe.html", "Join &amp; support"], ["/privacy.html", "Privacy"], ["/disclosure.html", "Disclosure"]
   ];

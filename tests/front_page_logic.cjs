@@ -51,6 +51,6 @@ const results = cases.map(c => {
     mixed:ctx.frontPageMix(c.rows, c.options).map(d=>d.key),
     rendered:[...content.innerHTML.matchAll(/data-key="([^"]+)"/g)].map(m=>m[1]),
     active:!!ctx.frontPageView(), seed:ctx.state.seed, dropRenders, observed, defaultSort,
-    strongSection:content.innerHTML.includes('Strong deals')};
+    strongSection:content.innerHTML.includes('More verified deals')};
 });
 process.stdout.write(JSON.stringify(results));

@@ -208,14 +208,14 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
     everyone: both bodies carry UNSUB_PLACEHOLDER, swapped per subscriber at
     send time. Facts, links and credit only."""
     deals = [email_deal(d, cfg) for d in deals[:_top_n(cfg)]]
-    brand = _brand(cfg)
     domain = getattr(cfg, "custom_domain", "") or ""
+    brand = domain.split(".")[0] if domain else "wowpriced"
     site = f"https://{domain}/" if domain else ""
     local = now.astimezone(ZoneInfo(cfg.newsletter_timezone))
     n = len(deals)
     top = f"top {n} deal{'s' if n != 1 else ''}"
     subject = f"{brand}: Today's {top}"
-    heading = f"The day's {top} — {local.strftime('%A, %b %d')}"
+    heading = f"The day's {top} — {local:%A, %b} {local.day}, {local.year}"
     because = f"You get this because you subscribed at {domain or brand}."
     disclosure = getattr(cfg, "ftc_disclosure", "") or ""
     # Members get every deal: the free list's email ends with the trial.
@@ -236,7 +236,7 @@ def build_newsletter(deals: list[dict[str, Any]], cfg,
         if d.get("pct_at_checkout") is not None:
             bits.append(f"{display_pct(d['pct_at_checkout'])}% off")
         line = (f"{i}. {d.get('item') or ''} — "
-                + ("" if d["email_hide_price"] else f"${final:,.2f}" if final is not None else "$?")
+                + ("" if d["email_hide_price"] else f"${final:,.2f}" if final is not None else "Price not listed")
                 + (f" ({', '.join(bits)})" if bits else "")
                 + f" at {d.get('store') or ''}")
         lines.append(line)
@@ -588,7 +588,8 @@ def _confirm_guard(db, now: datetime) -> dict[str, str]:
 def build_confirmation(cfg, confirm_url: str) -> tuple[str, str, str]:
     """(subject, text_body, html_body) for ONE address: the link and nothing
     else. No deals: nothing is owed to someone who may never have asked."""
-    brand = _brand(cfg)
+    domain = getattr(cfg, "custom_domain", "") or ""
+    brand = domain.split(".")[0] if domain else "wowpriced"
     subject = f"Confirm your {brand} email"
     lead = ("Click the link below to start getting the daily email: "
             f"the day's top {_top_n(cfg)} deals, once a day.")

@@ -306,7 +306,7 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
             "the last update. Turn it on for live drops, search and sorting, or browse the "
             "categories above.</p></noscript>")
     if not (free or stubs or spotlight):
-        return html + '<p class="empty">No qualifying deals right now</p>'
+        return html + '<p class="empty">Verified offers appear here after passing our price checks.</p>'
     html += '<h2 class="secth sr-only">Verified deals right now</h2>'
     if spotlight:
         html += '<div class="grid spotlight-grid">' + "".join(card_html(d, deal_paths, now) for d in spotlight) + '</div>'
@@ -492,17 +492,17 @@ def _hub_page(template: str, copy: dict[str, str], label: str, slug: str,
     line = (f"<strong>Last 7 days:</strong> {n} new deal{'' if n == 1 else 's'} in this category "
             f"passed our checks, median {stats['median_pct']}% off, "
             f"{stats['corroborated']} confirmed by 2+ independent sources."
-            if n else "No deal in this category passed our checks in the last 7 days.")
+            if n else "We publish offers in this category only when they pass our price checks.")
     if open_access:
         deals = "<h2>Deals right now</h2>" + (
             '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>" if free else
-            '<p class="muted">No deal in this category right now; new deals land at every '
-            'drop on <a href="/">the live wall</a>.</p>')
+            '<p class="muted">This category features offers that pass our price checks. '
+            'Explore <a href="/">all live deals</a>.</p>')
     else:
         deals = "<h2>Free right now</h2>" + (
             '<div class="grid">' + "".join(card_html(d, deal_paths, now) for d in free) + "</div>" if free else
-            '<p class="muted">No free deal in this category right now; the free deals change '
-            'at every drop on <a href="/">the live wall</a>.</p>')
+            '<p class="muted">Browse the current free deals on <a href="/">the deal wall</a>. '
+            'They rotate at every drop.</p>')
     if more:
         deals += (f'<p class="muted">{more} more in this category on '
                   '<a href="/">the live wall</a>.</p>')
@@ -926,11 +926,14 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
-    intro = f"The {min(30, len(confirmed))} best of {count} live deals right now, ranked like the live wall."
+    intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now, ranked like the live wall."
+             if confirmed else "Our top picks are selected from offers that pass our price checks.")
     best_rows = pick_order(confirmed, cfg.front_page)[:30]
+    best_content = ('<h2 class="sr-only">Best live deals</h2><div class="grid">'
+                    + ''.join(card_html(d, paths, now) for d in best_rows) + '</div>' if best_rows else
+                    '<p><a href="/">Explore current verified deals</a>.</p>')
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
-                              intro, best_path, site_url,
-                              '<h2 class="sr-only">Best live deals</h2><div class="grid">' + ''.join(card_html(d, paths, now) for d in best_rows) + '</div>',
+                              intro, best_path, site_url, best_content,
                               intro=intro, extra_head=_item_list(best_rows, paths, site_url),
                               indexable=len(best_rows) >= floors["best_today"])
     (out / "best-deals-today").mkdir(parents=True, exist_ok=True)

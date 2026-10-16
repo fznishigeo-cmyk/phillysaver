@@ -289,7 +289,7 @@ class Page(HTMLParser):
             except (KeyError, ValueError):
                 return True
             qualifier = f"(our median since {short[2]})" if short else "(90-day median)"
-            if verdict and not verdict.text().startswith("No live deal") and not verdict.text().endswith(qualifier + "."):
+            if verdict and not verdict.text().startswith("A current offer is not listed") and not verdict.text().endswith(qualifier + "."):
                 return True
         elif verdict and "median" in verdict.text():
             return True

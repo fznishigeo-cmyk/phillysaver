@@ -1047,13 +1047,13 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       tagline.appendChild(off);
     }
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length + priceOnly.length;
-    document.getElementById("q").placeholder = "Search " + roughCount(live) + " deals";
+    document.getElementById("q").placeholder = live ? "Search " + roughCount(live) + (live === 1 ? " deal" : " deals") : "Search deals";
     tagline.appendChild(document.createTextNode(" · "));
     var liveDot = document.createElement("span");
     liveDot.className = "live-dot";
     liveDot.setAttribute("aria-hidden", "true");
     tagline.appendChild(liveDot);
-    tagline.appendChild(document.createTextNode(live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals"));
+    tagline.appendChild(document.createTextNode(live ? (live < 100 ? plural(live, "live deal") : roughCount(live) + " live deals") : "Offers checked before publication"));
     // The visit note has its own slot so it never flattens the pill and dot.
     var since = document.createElement("span");
     since.id = "tagsince";
@@ -1434,7 +1434,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       }).join("");
     }
     var clear = buttons("clear"), suggestions = buttons("suggestion");
-    return '<section class="search-recovery" aria-labelledby="search-recovery-title"><h2 id="search-recovery-title">No matching live deals</h2>' +
+    return '<section class="search-recovery" aria-labelledby="search-recovery-title"><h2 id="search-recovery-title">Try a broader search or different filters</h2>' +
       '<p>' + (searchText() ? 'Try fewer words or check the model number.' : 'Try clearing a filter.') + '</p>' +
       (clear ? '<div class="search-actions">' + clear + '</div>' : '') +
       (suggestions ? '<p>Browse available deals instead:</p><div class="search-actions">' + suggestions + '</div>' : '') + '</section>';
@@ -2042,7 +2042,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     renderSearchCount(rows.concat(spotlight));
     updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length && !searchInventory().length) {
-      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">No qualifying deals right now</p>';
+      content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">Verified offers appear here after passing our price checks.</p>';
       return;
     }
     if (!rows.some(function (d) { return d.status !== "dead"; }) && !spotlight.length) {
@@ -2051,7 +2051,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     if (!rows.length) {
       content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->spotlightHtml +
-        (spotlight.length ? '' : '<p class="empty">No deals match the current filters</p>');
+        (spotlight.length ? '' : '<p class="empty">Try changing your filters to explore more deals.</p>');
       return;
     }
     var floors = (state.meta && state.meta.floors) || {};
@@ -2105,14 +2105,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--/support-->    if (headliners.length) {
       html += '<h2 class="secth sr-only">Verified deals right now</h2>' + grid(headliners);
     } else {
-      html += '<p class="empty">No deals above the ' +
-        (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
-        "alert bar right now</p>";
+      html += '<p class="empty">Browse more verified offers below.</p>';
     }
     if (strong.length && remaining > 0) {
-      html += '<h2 class="secth">Strong deals <span class="meta">— below the ' +
-        (isNaN(alertFloor) ? "" : Math.round(alertFloor) + "% ") +
-        "alert bar, still big savings</span></h2>" + grid(strong);
+      html += '<h2 class="secth">More verified deals <span class="meta">— ' +
+        (isNaN(alertFloor) ? "more savings" : "under " + Math.round(alertFloor) + "% off") +
+        "</span></h2>" + grid(strong);
     }
     if (rows.length > state.shown) {
       html += '<div class="more"><button type="button" id="moremore" class="pwbtn alt">Show more deals</button>' +

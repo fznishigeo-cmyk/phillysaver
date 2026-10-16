@@ -94,6 +94,7 @@ function harness({stored={}, throwing='', switches={}, now=NOW, deals=[row('a')]
   vm.runInContext(fragment('  function goneText(d)', '  function lockedHtml(d)'), ctx);
   vm.runInContext(fragment('  function lockedHtml(d)', '  function cardHtml(d)'), ctx);
   vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
+  vm.runInContext(fragment('  function nicheLast(rows)', '  function ordered('), ctx);
   vm.runInContext(fragment('  function gridHtml(deals)', '  function showMore()'), ctx);
   const renderWall = ctx.render;
   ctx.render = () => {renders++; renderWall(); cards();};

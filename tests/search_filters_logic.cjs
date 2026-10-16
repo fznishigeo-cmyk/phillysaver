@@ -74,7 +74,7 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
       querySelectorAll:()=>[], appendChild(){}, focus(){}, setAttribute(){}, reportValidity:()=>true,
       querySelector(selector) {return selector === '.card' && /<article class="card/.test(this.innerHTML) ? {} : null;}};
   }
-  el('content').innerHTML=staticDeals ? staticWall : '<p class="empty">No qualifying deals right now</p>';
+  el('content').innerHTML=staticDeals ? staticWall : '<p class="empty">Verified offers appear here after passing our price checks.</p>';
   el('load-status').hidden=true;
   el('cattabs').innerHTML=html.match(/<nav id="cattabs"[^>]*>(.*?)<\/nav>/)[1];
   el('toast').textContent='unrelated notice';
@@ -121,6 +121,7 @@ function loadHarness(next, {staticDeals=true, signedIn=false, memberFails=false,
   for (const [a,b] of [
     ['  function esc(s)', '  function sortVal'],
     ['  function renderTabs()', '  function filtered('],
+    ['  function nicheLast(rows)', '  function ordered('],
     ['  function render()', '  function showMore()'],
     ['  function resetWall()', '  // Easy sorting:'],
     ['  // ---- browse filters and return state ----', '  // ---- /browse filters and return state ----'],
@@ -183,7 +184,7 @@ async function checkFirstLoad() {
   missing.c.next={body:goodPublish()}; await missing.retry(); assert.equal(missing.count('first_load_recovered'),1);
   const empty=loadHarness({body:{meta:{},deals:[]}}); await flush();
   assert.equal(empty.c.loadedOnce,true); assert.equal(empty.firstAdoptions,1);
-  assert.equal(empty.el('load-status').hidden,true); assert.match(empty.el('content').innerHTML,/No qualifying deals right now/);
+  assert.equal(empty.el('load-status').hidden,true); assert.match(empty.el('content').innerHTML,/Verified offers appear here after passing our price checks./);
   assert.deepEqual(empty.events.map(e=>e[0]),['home_load_attempt']);
   for(const timerFirst of [false,true]) {
     const h=loadHarness({error:Error('unavailable')}); await flush();
@@ -325,7 +326,7 @@ async function checkFirstLoad() {
   ctx.state.deals=[];
   ctx.state.spotlight=[{pct_at_checkout:null, spotlight:{until:new Date(now+3600000).toISOString()}}];
   vm.runInContext(countCode,ctx);
-  assert.equal(element('q').placeholder,'Search 1 deals');
+  assert.equal(element('q').placeholder,'Search 1 deal');
   ctx.state.spotlight=[];
   ctx.state.deals=payload.deals;
   handlers['window:pageshow']({persisted:false}); await flush(); assert.equal(requests.length,0);

@@ -15,7 +15,7 @@ from tests.test_publish_site import make_deal
 from tests.test_support import NOW, LINK, MONTHLY, render
 
 LINKS = [
-    ("/about.html", "About"), ("/how-it-works.html", "How it works"),
+    ("/about.html", "About"), ("/how-it-works.html", "How we verify"),
     ("/hacks.html", "Deal hacks"), ("/careers.html", "Work with us"),
     ("/contact.html", "Contact"), ("/subscribe.html", "Join & support"),
     ("/privacy.html", "Privacy"), ("/disclosure.html", "Disclosure"),

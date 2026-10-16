@@ -210,6 +210,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   full suite (`-q -n 2 -p no:cacheprovider --basetemp=/tmp/task210-full`):
   **4,574 passed** (20m04s). Test logs and own scratch removed. No new production
   requests, images, scripts or LLM calls; no commit or push. Review/deployment remain.
+- **Established look (Codex task 212, 2026-10-16; uncommitted):** audited all
+  page families/templates and email builders; calmer empty/retry states,
+  consistent How we verify links, email branding/grammar and readable dates.
+  Every wording change and retained issue is listed in
+  `docs/research/established-look-changes.md`. Prices, evidence, disclosures,
+  checked-price chips and sign-up behavior unchanged. Added visible-copy/trust
+  guards; refreshed intended byte pins. Three stale Node harness failures also
+  reproduce on HEAD; harnesses now load the existing niche-order helper.
+  Final full `-n 2` suite: **4,541 passed, 7 failed** (18m32s), including
+  offline reruns; all seven Stripe workflow socket-permission failures reproduce
+  on untouched HEAD (`test_workflows.py`, yearly change0–5 and no-price/no-key).
+  **Zero new failures**; 84 byte/baseline checks and 829-file comparisons pass.
+  Review and the seven checks outside this sandbox remain. Own test logs/temp
+  removed; no LLM calls, outgoing email, commit or push.
 - **Safety and real numbers (Codex task 121, 2026-10-16; uncommitted):** shared
   Pinterest rich-pin opt-out; phone audit blocks the hourly check's analytics/ad
   pattern, including Clarity. `?internal=1` remembers this browser, tags GA4 as

@@ -142,7 +142,7 @@ def test_after_8am_sends_and_records(db, cfg, monkeypatch):
     # Single recipient only, straight from cfg.digest_recipient.
     assert msg["To"] == RECIPIENT
     assert "," not in msg["To"]
-    assert "1 deals" in msg["Subject"]
+    assert "1 deal at 70% off or more" in msg["Subject"]
     assert "LEGO Set" in bodies(msg)["plain"]
 
     assert db.alert_exists("email_digest", LOCAL_DAY)
@@ -223,7 +223,7 @@ def test_deals_older_than_24h_excluded_from_body(db, cfg, monkeypatch):
     assert "LEGO Set" in body["plain"]
     assert "Stale Coffee Mug" not in body["plain"]
     assert "Stale Coffee Mug" not in body["html"]
-    assert "1 deals" in msg["Subject"]  # stale deal not counted either
+    assert "1 deal at 70% off or more" in msg["Subject"]  # stale deal not counted either
 
 
 def test_zero_qualifying_deals_still_sends_valid_digest(db, cfg, monkeypatch):
@@ -233,10 +233,10 @@ def test_zero_qualifying_deals_still_sends_valid_digest(db, cfg, monkeypatch):
                                smtp_factory=factory)
     assert result is True
     (msg,) = factory.servers[0].sent_messages
-    assert "0 deals" in msg["Subject"]
+    assert "price-check update" in msg["Subject"]
     body = bodies(msg)
-    assert "no qualifying deals in the last 24 h" in body["plain"]
-    assert "no qualifying deals in the last 24 h" in body["html"]
+    assert "no new offers met our deal criteria in the last 24 hours" in body["plain"]
+    assert "no new offers met our deal criteria in the last 24 hours" in body["html"]
     assert db.alert_exists("email_digest", LOCAL_DAY)
 
 
@@ -248,4 +248,4 @@ def test_build_digest_subject_contains_deal_count(cfg):
     assert "LEGO Set" in text_body
     assert "Mug" in text_body
     subject0, _, _ = build_digest([], cfg, AFTER_8_LOCAL)
-    assert "0 deals" in subject0
+    assert "price-check update" in subject0

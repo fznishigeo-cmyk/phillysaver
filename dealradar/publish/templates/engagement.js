@@ -443,7 +443,7 @@
       '" data-clarity-mask="true" aria-pressed="true" aria-label="' + esc("Remove saved deal: " + label) + '">Remove</button></div></article>';
   }
   function savedViewHtml() {
-    if (!savedDeals.entries.length) return '<h2 class="secth">Saved deals (0)</h2><p class="empty">Save a deal to revisit it here.</p>';
+    if (!savedDeals.entries.length) return '<h2 class="secth">Saved deals</h2><p class="empty">Save a deal to revisit it here.</p>';
     return '<h2 class="secth">Saved deals (' + savedDeals.entries.length + ')</h2><div class="grid">' +
       savedDeals.entries.filter(function (entry) { return savedDeals.matches.has(entry.key); })
       .concat(savedDeals.entries.filter(function (entry) { return !savedDeals.matches.has(entry.key); }))/*unconfirmed*/.sort(function (a, b) {

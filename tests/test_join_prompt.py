@@ -78,7 +78,7 @@ def test_shared_footer_signup_markup(tmp_path):
         assert 'type="email" data-clarity-mask="true" placeholder="Email address" autocomplete="email" required' in signup
         assert '<button type="submit" aria-label="Sign up">' in signup
         assert 'We use your email only to send deals. Unsubscribe anytime. See our <a href="/privacy.html">privacy policy</a>.' in signup
-        assert 'role="status" hidden>Thank you for signing up!</p>' in signup
+        assert 'role="status" hidden>Thank you for signing up.</p>' in signup
         assert 'height:48px' in html and 'border-radius:12px' in html and 'width:48px;height:48px;border:0;border-radius:50%' in html
         assert html.count('window.wpSupport =') == 1
     assert len(footers) >= 20  # home, info pages and the generated hub/deal pages

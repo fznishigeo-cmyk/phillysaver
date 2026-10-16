@@ -235,7 +235,7 @@ def test_all_amazon_hidden_leaves_no_product_urls_in_the_index_or_sitemap(db, cf
     assert not list(tmp_path.glob("p/*/index.html"))
     assert not _page(tmp_path, path).exists()
     index = seo_audit.Page(_page(tmp_path, "/p/").read_text(), "/p/")
-    assert not index.indexable and "No price histories available yet." in index.scope.text()
+    assert not index.indexable and "Price histories are published only when they meet our verification standards." in index.scope.text()
     assert not any("/p/" in url for url in seo_audit.sitemap_urls(tmp_path, "https://wowpriced.com"))
     assert result["product_pages"]["indexable"] == result["product_pages"]["new_today"] == 0
     assert all(result["seo_audit"][key] == 0 for key in

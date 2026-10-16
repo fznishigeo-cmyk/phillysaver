@@ -396,7 +396,7 @@
     if (!emailReady(input)) {
       say("Please enter a valid email address.", true); return;
     }
-    if (!api) { say("Sign-up is unavailable right now. Please try again soon.", true); return; }
+    if (!api) { say("Sign-up is temporarily unavailable. Please try again.", true); return; }
     emailBusy = true;
     btn.disabled = true;
     msg.hidden = true;
@@ -424,7 +424,7 @@
         } else {
           say(r.status === 429 ? "Too many tries. Please try again in an hour."
             : r.status === 400 ? "Please enter a valid email address."
-            : "Sign-up is unavailable right now. Please try again soon.", true);
+            : "Sign-up is temporarily unavailable. Please try again.", true);
         }
       });
     }).catch(function () { say("Couldn't reach the server. Please check your connection and try again.", true); })

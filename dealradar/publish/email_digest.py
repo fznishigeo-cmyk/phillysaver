@@ -29,12 +29,16 @@ logger = logging.getLogger("dealradar.publish.email")
 def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, str, str]:
     """Return (subject, text_body, html_body) for the daily digest."""
     local = now.astimezone(ZoneInfo(cfg.digest_timezone))
+    domain = getattr(cfg, "custom_domain", "") or ""
+    brand = domain.split(".")[0] if domain else "wowpriced"
+    summary = (f"{len(deals)} deal{'s' if len(deals) != 1 else ''} at {cfg.min_pct:g}% off or more"
+               if deals else "price-check update")
     subject = (
-        f"dealradar digest — {len(deals)} deals >={cfg.min_pct:g}% — "
-        f"{local.strftime('%b %d')}"
+        f"{brand} digest — {summary} — "
+        f"{local:%b} {local.day}, {local.year}"
     )
     if not deals:
-        line = "no qualifying deals in the last 24 h"
+        line = "Today's price-check update: no new offers met our deal criteria in the last 24 hours."
         text_body = line + "\n"
         html_body = (
             "<html><body><p>" + html_lib.escape(line) + "</p><p>"

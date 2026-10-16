@@ -267,7 +267,7 @@ def answer(price, facts, cfg):
     from . import seo
 
     if price is None:
-        return ("No live deal right now." + (f' The lowest we’ve seen is ${facts["low"]:.2f}'
+        return ("A current offer is not listed for this product." + (f' The lowest we’ve seen is ${facts["low"]:.2f}'
                 f' ({seo._date(facts["low_at"])}).' if facts["checks"] else ""))
     verdict = price_verdict(price, facts["median"], cfg.seo_product_pages_lower_ratio,
                             cfg.seo_product_pages_higher_ratio)
@@ -371,7 +371,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
             content += (f'<p class="detail-price">Current deal price: <strong>${price:.2f}</strong> USD</p>'
                         '<p class="detail-availability">Availability: Live offer</p>')
         chart = price_history.chart_html(page["checks"], now, price)
-        content += chart or '<p>Not enough recorded checks to chart a price history yet.</p>'
+        content += chart or '<p>Price charts require at least three recorded checks spanning two days.</p>'
         if current:
             checkout = current.get("checkout") or {}
             for field in ("summary", "now", "shipping"):
@@ -393,7 +393,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
             if detail:
                 content += f'<p><a href="{escape(detail)}">See deal details</a></p>'
         else:
-            content += '<p>No live deal currently published.</p>'
+            content += '<p>Explore <a href="/">current verified deals</a>.</p>'
         content += '<h2>Deals we found</h2><ul>'
         # Keep long-lived products compact; totals above still use every deal.
         for key, offer in offers[:cfg.seo_product_pages_deal_history_limit]:
@@ -402,7 +402,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
                 if seo._http(c.get("url")) else escape(c["name"]) for c in offer["credits"])
             status = page["statuses"][key]
             date = parse_iso(offer["date"])
-            content += (f'<li><time datetime="{escape(offer["date"])}">{date:%Y-%m-%d}</time> (UTC)'
+            content += (f'<li><time datetime="{escape(offer["date"])}">{seo._date(date)}</time> (UTC)'
                         f' · ${offer["price"]:.2f} USD · {credits} · {status}</li>')
         content += f'</ul><p>Browse <a href="{seo.hub_href(slug)}">{escape(label)} deals</a>.</p>'
         if len(offers) > cfg.seo_product_pages_deal_history_limit:
@@ -451,7 +451,7 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths):
             if members:
                 content += f'<h2>{escape(label)}</h2><ul>' + ''.join(
                     f'<li><a href="{escape(p["path"])}">{escape(p["item"])}</a></li>' for p in members) + '</ul>'
-        content += '</div>' if rows else '<p>No price histories available yet.</p></div>'
+        content += '</div>' if rows else '<p>Price histories are published only when they meet our verification standards. <a href="/">Browse verified deals</a>.</p></div>'
         html = seo._landing_page(template, "Product price history | wowpriced", "Price history",
             "Our recorded product price checks, grouped by category.", "/p/", site_url, content,
             indexable=bool(rows), extra_head=STYLE)

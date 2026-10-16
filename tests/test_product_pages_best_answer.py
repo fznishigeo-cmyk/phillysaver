@@ -110,7 +110,7 @@ def test_missing_data_is_omitted_and_no_live_deal_has_no_product_offer(db, cfg, 
     db.conn.commit()
     result = site.render_site(db, cfg, NOW, out_dir=tmp_path, deals=[])
     page = seo_audit.Page(_page(tmp_path, page.path).read_text(), page.path)
-    assert page.first(cls='price-verdict').text() == 'No live deal right now. The lowest we’ve seen is $10.00 (Oct 9, 2026).'
+    assert page.first(cls='price-verdict').text() == 'A current offer is not listed for this product. The lowest we’ve seen is $10.00 (Oct 9, 2026).'
     assert 'Current price' not in page.first(cls='product-facts').text()
     assert not page.products() and not page.first(cls='getdeal')
     assert not page.schema_mismatch()
@@ -270,7 +270,7 @@ const pages = '<urlset>' + paths.map(p => `<url><loc>${site}${p}</loc></url>`).j
   assert(!requested.includes('/p/widget/'));
   const footerCode = source.slice(source.indexOf('function checkFooter('), source.indexOf('\nasync function ', source.indexOf('function checkFooter(')));
   const checkFooter = new Function('check', footerCode + ';return checkFooter;')((ok, why) => {if (!ok) throw new Error(why);});
-  const links = [['/about.html','About'],['/how-it-works.html','How it works'],['/hacks.html','Deal hacks'],
+  const links = [['/about.html','About'],['/how-it-works.html','How we verify'],['/hacks.html','Deal hacks'],
     ['/careers.html','Work with us'],['/contact.html','Contact'],['/subscribe.html','Join &amp; support'],
     ['/privacy.html','Privacy'],['/disclosure.html','Disclosure']];
   const footer = (extra, at = 3) => '<footer><nav id="footerlinks">© 2026 wowpriced' +
