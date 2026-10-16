@@ -21,14 +21,14 @@ def test_shipped_board_mapping_pace_and_ramp(cfg):
         assert pinterest.board_name(cfg, category) == "Tech Deals"
     assert pinterest.board_name(cfg, "kitchen") == "Kitchen Deals"
     assert pinterest.board_name(cfg, "unknown") == cfg.pinterest["board_name"]
-    assert pinterest._pace(cfg, NOW) == (20, 2)
+    assert pinterest._pace(cfg, NOW) == (10, 2)
     cfg.pinterest["ramp"]["schedule"] = [
         {"from": (NOW + timedelta(days=2)).date().isoformat(), "daily_max": 30, "pins_per_run": 3},
         {"from": NOW.date().isoformat(), "daily_max": 25},
     ]
-    assert pinterest._pace(cfg, NOW + timedelta(days=10)) == (20, 2)
+    assert pinterest._pace(cfg, NOW + timedelta(days=10)) == (10, 2)
     cfg.pinterest["ramp"]["enabled"] = True
-    assert pinterest._pace(cfg, NOW - timedelta(days=1)) == (20, 2)
+    assert pinterest._pace(cfg, NOW - timedelta(days=1)) == (10, 2)
     assert pinterest._pace(cfg, NOW) == (25, 2)
     assert pinterest._pace(cfg, NOW + timedelta(days=2)) == (30, 3)
 
@@ -409,7 +409,7 @@ def test_private_report_read_only_top_groups_hours_and_shadow(db, cfg, monkeypat
     published(db, cfg, [candidate("first", 1, category="home"), candidate("second", 2, category="kitchen")])
     selected = pinterest._spread(pinterest._pin_candidates(db, cfg, {}), cfg, {}, 2)
     assert [d["dedupe_key"] for d, _ in selected] == ["first", "second"]
-    assert pinterest._pace(cfg, NOW) == (20, 2)
+    assert pinterest._pace(cfg, NOW) == (10, 2)
 
 
 def test_private_collection_reads_snapshot_without_network_or_writes(db, cfg, monkeypatch, caplog):

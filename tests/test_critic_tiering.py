@@ -307,6 +307,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     # This byte pin predates the durable-pages SEO switch.
     path.write_text(path.read_text().replace("deal_pages_indexable: false", "deal_pages_indexable: true"))
     config = yaml.safe_load(path.read_text())
+    config["amazon_history"] = "show"  # predates task 121b
     config["publish"]["front_page"]["appeal"]["enabled"] = False  # predates the broad-appeal switch
     config["publish"]["front_page"]["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
     config["publish"]["amazon_as_of"]["enabled"] = False  # predates the Amazon as-of switch
@@ -323,7 +324,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
              for p in sorted(env["site"].rglob("*")) if p.is_file()}
     # Captured from untouched HEAD with this same offline fixture before task 106.
     digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    assert digest == "e45a8396ad104771f88ee7e1057bfa147d9efa5d41163ba67c7ecdf0fc9327ec"
+    assert digest == "27047a2ab6f4e58ca98991376e0a1f67597aa67d7f310e73216b28517d37dbf5"
     assert _run(env)["spend_usd"] == 0
 
 

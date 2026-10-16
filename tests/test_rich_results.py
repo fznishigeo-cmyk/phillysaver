@@ -153,6 +153,7 @@ def test_preconnect_omits_missing_own_and_duplicate_hosts(db, cfg, tmp_path, hos
 
 def test_preconnect_tracks_top_picks_and_excludes_locked_images(db, cfg, tmp_path):
     cfg.front_page = load_config(ROOT / "config.yaml").front_page
+    cfg.front_page["checkout_price_deals"]["enabled"] = False  # predates task 121b
     deals = [make_deal(dedupe_key=f"i{i}", item=f"Product {i} title", brand="",
                        store="A" if i < 24 else "B",
                        category="auto" if i < 24 else ("kitchen" if i % 2 else "home"),

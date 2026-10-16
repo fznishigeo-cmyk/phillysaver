@@ -35,7 +35,8 @@ def test_facts_use_lifetime_checks_but_ninety_day_median_and_distinct_deal_dates
     offers = [{'date': iso(NOW - timedelta(days=d)), 'discount': pct}
               for d, pct in [(0, 20), (90, 40), (91, 99), (-1, 80), (3, None), (2, float('inf'))]]
     facts = product_price_facts(observations[::-1], offers, NOW)
-    assert facts == dict(checks=4, median=12, low=5, low_at=NOW - timedelta(days=120),
+    assert facts == dict(checks=4, median=12, median_checks=3, median_since=NOW - timedelta(days=90),
+                        median_90d=True, low=5, low_at=NOW - timedelta(days=120),
                         high=14, high_at=NOW, first=NOW - timedelta(days=120), last=NOW,
                         deals_90d=4, latest_deal=NOW, average_discount=30, discount_samples=2)
     assert product_price_facts(observations, offers, NOW) == facts
@@ -62,7 +63,7 @@ def test_all_sections_head_and_schema_match_stored_facts(db, cfg, tmp_path):
     table = {n.children[0].text(): n.children[1].text() for n in facts.nodes() if n.tag == 'tr'}
     assert table['Current price (live deal)'] == '$10.00 USD'
     assert table['Lowest we’ve seen'] == '$5.00 (Jun 11, 2026)'
-    assert table['Typical price (90-day median)'] == '$12.50 USD'
+    assert table['Typical price (median of our 6 checks since Oct 2, 2026)'] == '$12.50 USD'
     assert table['Highest we’ve seen'] == '$15.00 (Oct 2, 2026)'
     assert table['Number of our checks'] == '7'
     assert table['First check'] == 'Jun 11, 2026'
@@ -71,7 +72,7 @@ def test_all_sections_head_and_schema_match_stored_facts(db, cfg, tmp_path):
     assert table['Deals found in the last 90 days'] == '1'
     assert table['Average deal discount (90 days)'] == '80% across 1 deal'
     assert all(n.attrs.get('scope') == 'row' for n in facts.nodes() if n.tag == 'th')
-    assert page.first(cls='price-verdict').text() == 'Yes — $10.00 is 20% below its usual $12.50 (90-day median).'
+    assert page.first(cls='price-verdict').text() == 'Yes — $10.00 is 20% below its usual $12.50 (our median since Oct 2, 2026).'
     assert 'On sale 1 time in the last 90 days; most recent Oct 9, 2026' in page.scope.text()
     assert not page.schema_mismatch()
     assert result['product_pages']['with_live_deal'] == 2
@@ -200,6 +201,7 @@ def test_audit_rejects_missing_or_invalid_head_dates_breadcrumb_and_image(db, cf
 def test_static_reader_is_small_even_with_many_deals_and_checks(db, cfg, tmp_path, monkeypatch, shipped):
     if shipped:
         cfg = load_config()
+        cfg.amazon_history = "show"  # predates task 121b; exercise the full Amazon reader
         cfg.seo_product_pages_enabled = cfg.paywall_open_access = True
     rows = seed(db, 1, checks=100)
     pages, _, _ = prepare(db, cfg, rows)

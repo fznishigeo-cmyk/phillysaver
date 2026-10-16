@@ -112,7 +112,7 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     n = len(deals)
     subject = (f"{_brand(cfg)}: {n} new verified deal{'s' if n != 1 else ''} "
                f"(up to {display_pct(top)}% off)")
-    lines = [format_message(d) for d in deals]
+    lines = [format_message(d, cfg=cfg) for d in deals]
     footer = []
     domain = getattr(cfg, "custom_domain", "") or ""
     if more:

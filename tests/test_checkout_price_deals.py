@@ -43,10 +43,10 @@ def remember(d, cfg, at=NOW, price=50, now=NOW):
     return d
 
 
-def test_defaults_and_shipped_switch_are_off():
+def test_default_off_and_shipped_switch_on():
     assert not checkout_prices.enabled(AppConfig())
     shipped = load_config().front_page['checkout_price_deals']
-    assert shipped == dict(enabled=False, max_stated_days=7, repost_window_h=24, max_silent_h=72,
+    assert shipped == dict(enabled=True, max_stated_days=7, repost_window_h=24, max_silent_h=72,
                            top_pick_window=5, top_pick_max_in_window=1)
 
 
@@ -428,10 +428,10 @@ def test_enabled_pipeline_summary_and_same_run_idempotency(env, capsys, monkeypa
 
 
 @pytest.mark.parametrize('support,opened,expected', [
-    (False, False, '2e8343e6f9e5e2d93018f0389d6de8adc08198d745324d2179b76147d6eb57ad'),
-    (False, True, '5214705ef83a5a5fa51e7d61f6a944608563cce6e56bda50cfe76cb967c194aa'),
-    (True, False, 'ca75fb9cd7d8c8da7156dab22cddd6ff23b99f0004e617376104400a0d2a8270'),
-    (True, True, 'ca75fb9cd7d8c8da7156dab22cddd6ff23b99f0004e617376104400a0d2a8270'),
+    (False, False, '025ab3b890f88aec06e244cc18ac0c47185bb84bd0f3c06225420164f2caf46b'),
+    (False, True, '84f4bb42f8219822ef96a615a567225bd7f1bf94faf25a6f0d71fcfd41170bdb'),
+    (True, False, 'aebbfcc9b08c280cff606d63ba561081a43fa28390c962d59206a4f2e56e3009'),
+    (True, True, 'aebbfcc9b08c280cff606d63ba561081a43fa28390c962d59206a4f2e56e3009'),
 ])
 def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, support, opened, expected):
     # Recaptured on untouched HEAD: its four old pins already fail there.
@@ -440,6 +440,7 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     snapshots = []
     for mode in ('omitted', 'off'):
         config = load_config()
+        config.amazon_history = 'show'  # predates task 121b
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         config.photoless_last = False  # predates photos-first
         config.seo_product_pages_enabled = False  # predates product pages

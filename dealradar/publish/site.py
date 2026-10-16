@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import host_of, source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import amazon_as_of, click_signal, indexnow, inventory, price_labels, product_pages, pwa, seo, seo_audit, traffic
+from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, price_labels, product_pages, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import source_display_name, source_sightings
 from .tracking import apply_tracking
@@ -76,6 +76,7 @@ def site_template_version(price_presets: list[int] | None = None) -> str:
     html = checkout_prices.template(html, False)
     html = _PHOTOLESS_BLOCK.sub("", html)
     html = amazon_as_of.template(html, False)
+    html = amazon_history.BLOCK.sub("", html)
     html = product_pages.template(html, False)
     html = _WATCH_BLOCK.sub("", html).replace("<!--saved--><!--/saved-->", "")
     # Adding the support switch leaves the standard page, including its
@@ -263,7 +264,7 @@ def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "", *,
             "amazon_untagged_flag": bool(amazon_tag and counts["amazon_untagged"])}
 
 
-def _headline(deal: dict[str, Any]) -> str:
+def _headline(deal: dict[str, Any], cfg=None) -> str:
     """One plain-English sentence or two per deal, for humans skimming the page."""
     item = deal.get("item") or "This item"
     store = deal.get("store") or "an online store"
@@ -298,7 +299,8 @@ def _headline(deal: dict[str, Any]) -> str:
     if tier == "corroborated":
         parts.append("Confirmed by multiple independent sources.")
     elif tier == "history-checked":
-        parts.append("Well below the usual price in our own price history.")
+        if not amazon_history.hidden(cfg, deal):
+            parts.append("Well below the usual price in our own price history.")
     else:
         parts.append("Reported by one source — not yet confirmed.")
     expires = parse_iso(deal.get("expires_at") or "")
@@ -668,8 +670,9 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "checkout": checkout,
         "conditions": deal.get("conditions") or [],
         "category": deal.get("category") or "other",
-        "badge": deal.get("verify_tier", "unverified"),
-        "headline": _headline(deal),
+        "badge": "verified" if amazon_history.hidden(cfg, deal) and deal.get("verify_tier") == "history-checked"
+                 else deal.get("verify_tier", "unverified"),
+        "headline": _headline(deal, cfg),
         "status": status,
         "alive": status == "alive",
         "gone": status == "dead" and deal.get("death") in {"confirmed", "api_ended"},
@@ -678,6 +681,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "age_hours": age_hours,
         "credits": credits,
     }
+    if getattr(cfg, "amazon_history", "show") == "hide":
+        public["amazon"] = is_amazon_deal(deal)
     from ..store_prices import store_offer
     checked = price_confirmed_at(deal) if is_amazon_deal(deal) or store_offer(deal)[0] else None
     if checked is not None and checked <= now:
@@ -867,6 +872,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         home = checkout_prices.template(home, False)
         home = _PHOTOLESS_BLOCK.sub("", home)
         home = amazon_as_of.template(home, False)
+        home = amazon_history.BLOCK.sub("", home)
         home = product_pages.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
@@ -889,6 +895,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     saved_limit = max(1, min(200, cfg.engagement_saved_deals_limit))
     if cfg.engagement:
         engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
+        engagement_script = amazon_history.template(engagement_script, cfg)
         engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
         engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
                                    lambda m: m.group(1) if saved_deals else "",
@@ -919,6 +926,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.seo_product_pages_enabled:
         site_version = hashlib.sha256((site_version + product_pages.LINK_STYLE).encode()
             + "".join(product_pages.BLOCK.findall((TEMPLATES_DIR / "index.html").read_text(encoding="utf-8"))).encode()).hexdigest()[:12]
+    if cfg.amazon_history == "hide":
+        site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
     if inventory.enabled(cfg):
         site_version = inventory.site_version(site_version, cfg)
     if cfg.pwa_enabled:
@@ -1010,6 +1019,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = checkout_prices.template(html, checkout_prices.enabled(cfg))
         html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
         html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
+        html = amazon_history.template(html, cfg)
         html = product_pages.template(html, cfg.seo_product_pages_enabled)
         if cfg.seo_product_pages_enabled and name == "index.html":
             html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)

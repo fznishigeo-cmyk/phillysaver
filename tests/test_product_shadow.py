@@ -293,10 +293,10 @@ def test_config_defaults_switches_and_guard_limits(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "51f2b41df7f3e18914bd7fc2c7a1c0cf9ac52fdc27114bf926733ef8f5a3fd1f"),
-    ("open", "c1771bdc521b82fcd8c49c0c0021827b2591d9c0f0930e9a5f119edd31ffff04"),
-    ("support", "ab0b1f778bd5a0071a3a3c95180484cad5fd39e572d7f4ff311a833692845c77"),
-    ("shipped", "2a7aed9677414bbeb357922642ca346a15afda6305a0806f1a2cf1ab78c52106"),
+    ("membership", "c1daabfae715ad654b3c28e07fac892355585d68d7f9a873450c54a304716cbf"),
+    ("open", "1c6f6be29f8a2ebd7dc54a050d155250b861de577185ded238ffbbe6e2164c0f"),
+    ("support", "d243a0f7f0de39f0a58b91c94893302b40327a6a82f20d1365baffe97c87ec12"),
+    ("shipped", "6f389dea954a5cc45a4137538d13b60a4eac3839ccd3221f15ae116b1e212e72"),
 ])
 def test_both_off_match_untouched_head_with_real_product_links_and_history(db, tmp_path, mode, expected):
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
@@ -304,6 +304,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     # Task 120 refreshes shared home styles, clock metadata and support copy.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     if mode == "shipped":
+        cfg.amazon_history = "show"  # predates task 121b
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering
         cfg.raw["first_party_clicks"]["enabled"] = False  # pin predates the click signal switch-on
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim

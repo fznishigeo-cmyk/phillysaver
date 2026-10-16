@@ -221,7 +221,8 @@
     if (!entry || !savedText(entry.key, 256, false) ||
         !savedText(entry.label, 200, false) || !savedText(entry.store, 80, true)) return null;
     var clean = {key: entry.key, label: entry.label, store: entry.store};
-    var path = savedPath(entry.path);
+/*amazon-history*/    clean.amazon = entry.amazon === true;
+/*/amazon-history*/    var path = savedPath(entry.path);
     if (path) clean.path = path;
     clean.final_price = watchPrice(entry.final_price);
     clean.condition = watchCondition(entry.condition);
@@ -284,7 +285,8 @@
     return savedDeals.publicDeals.find(function (d) { return d.key === key; });
   }
   function savedWatchMatch(entry, current) {
-    if (!current || isLocked(current)/*unconfirmed*/ || current.price_unconfirmed || current.price_aged/*/unconfirmed*/ || current.status !== "alive" || current.gone === true ||
+/*amazon-history*/    if (entry.amazon || (current || {}).amazon) return null;
+/*/amazon-history*/    if (!current || isLocked(current)/*unconfirmed*/ || current.price_unconfirmed || current.price_aged/*/unconfirmed*/ || current.status !== "alive" || current.gone === true ||
         current.alive === false || current.key !== entry.key || entry.condition === null) return null;
     var price = watchPrice(current.final_price), condition = watchCondition(current.conditions);
     if (price === null || condition === null || JSON.stringify(condition) !== JSON.stringify(entry.condition)) return null;
@@ -324,7 +326,8 @@
   function setWatchTarget(key, target) {
     if (!savedOn() || (target !== null && watchPrice(target) === null)) return false;
     var entry = savedDeals.entries.find(function (e) { return e.key === key; });
-    if (!entry || (entry.target_price == null ? null : entry.target_price) === target) return false;
+/*amazon-history*/    if (entry && (entry.amazon || (savedPublicMatch(key) || {}).amazon)) return false;
+/*/amazon-history*/    if (!entry || (entry.target_price == null ? null : entry.target_price) === target) return false;
     if (target !== null) {
       var current = savedPublicMatch(key), condition = current && watchCondition(current.conditions);
       if (!current || isLocked(current) || current.status !== "alive" || current.gone === true ||
@@ -342,7 +345,7 @@
     if (!savedOn() || !d || isSaved(dealKey(d))) return false;
     var current = savedPublicMatch(dealKey(d));
     if (!current || isLocked(current) || current.status !== "alive" || current.gone === true || current.alive === false) return false;
-    var entry = savedEntry({key: dealKey(current), label: String(current.item || "").slice(0, 200),
+    var entry = savedEntry({/*amazon-history*/amazon: current.amazon, /*/amazon-history*/key: dealKey(current), label: String(current.item || "").slice(0, 200),
       store: String(current.store || "").slice(0, 80), path: current.deal_path,
       final_price: /*unconfirmed*/current.price_unconfirmed ? null : /*/unconfirmed*/current.final_price, condition: current.conditions});
     if (!entry) return false;
@@ -353,7 +356,7 @@
     savedDeals.entries.unshift(entry); // Newest saves first; duplicate saves never reorder.
     persistSaved();
     track("deal_save", {method: "save", count: 1});
-    if (entry.final_price !== null && entry.condition !== null) track("watch_create", {method: "save"});
+    if (/*amazon-history*/!current.amazon && /*/amazon-history*/entry.final_price !== null && entry.condition !== null) track("watch_create", {method: "save"});
     return true;
   }
   function removeSaved(key) {
@@ -452,7 +455,8 @@
       }).join("") + '</div>';
   }
   function savedWatchHtml(d) {
-    if (!savedOn() || !savedDeals.view) return "";
+/*amazon-history*/    if (d.amazon) return "";
+/*/amazon-history*/    if (!savedOn() || !savedDeals.view) return "";
     var entry = savedDeals.entries.find(function (e) { return e.key === dealKey(d); });
     if (!entry) return "";
     var match = savedWatchMatch(entry, d), note = "", condition = watchCondition(d.conditions);

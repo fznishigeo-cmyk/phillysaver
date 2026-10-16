@@ -234,6 +234,7 @@ def test_scheduler_other_reasons_are_named_without_changing_recovery(db, cfg):
 
 
 def test_browser_label_sort_ticker_watch_and_surprise(db, cfg, monkeypatch):
+    cfg.amazon_history = "show"  # predates task 121b; exercise the unconfirmed-price watch guard
     render(db, cfg, [offer(), offer("confirmed", 1)], monkeypatch)
     proc = subprocess.run(["node", "tests/unconfirmed_label_logic.cjs", cfg.site_dir], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -303,10 +304,10 @@ def test_labeled_overflow_page_cannot_meet_confirmed_floor(db, cfg, monkeypatch)
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "0fda8b1290211fd49de9814d26d692cbddfb19627cd2d7aed36caaa12a540799"),
-    ("open", "ea600a1cfae0dd6bb3217ffa3c490d375402477bcf1e16804f2ab0367ed15d47"),
-    ("support", "dea40dc1c01a6d6c333c723fa4baba8d8a05c0e70bbe312bde0550b3af46f8d5"),
-    ("shipped", "864f576aca2f043bbf43b2b10c6717df782d784a90a8860e63e6cf284425846b"),
+    ("membership", "09776bdcffdeee850520c5cfa0bd7e49296fa8553a9e8aff22f4bc57550f9010"),
+    ("open", "26fcfb2440ffc8583210d2040e9175923a5e74a3d9c053f804355dbf9f0c767d"),
+    ("support", "95f70356379177813c398e31b27543b50db098e402d2b391cda56e04f9e0e1b2"),
+    ("shipped", "fc88979f58a1fc2fe6cf0484bd44361f98d65113fe27f8d54991f2c479924b7d"),
 ])
 def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mode, expected):
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.
@@ -315,6 +316,8 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.unconfirmed_label_enabled = False
     if mode == "shipped":
+        cfg.amazon_history = "show"  # predates task 121b
+        cfg.front_page["checkout_price_deals"]["enabled"] = False  # predates task 121b
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering
         cfg.non_amazon_freshness_enabled = False  # this pin predates task 102's independent age gate
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim

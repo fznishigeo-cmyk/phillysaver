@@ -161,7 +161,8 @@ def publish(out: Path, cfg, rows: list[dict], paths: dict[str, str], site_url: s
         if active and path.name != "welcome.html":
             head = (('<link rel="alternate" type="application/rss+xml" title="wowpriced deals" '
                      'href="/feed.xml">\n') if feed else "") + f'<style>{css}</style>\n'
-            page = page.replace("</head>", '<!-- wp-traffic -->' + head + '<!-- /wp-traffic -->\n</head>', 1)
+            anchor = "<!-- wp-tracking -->" if "<!-- wp-tracking -->" in page else "</head>"
+            page = page.replace(anchor, '<!-- wp-traffic -->' + head + '<!-- /wp-traffic -->\n' + anchor, 1)
             if feed:
                 page = page.replace("</footer>", '<!-- wp-traffic --><p><a class="traffic-feed" '
                     'href="/feed.xml" data-feed-link>Follow deals by RSS</a></p><!-- /wp-traffic -->\n</footer>', 1)

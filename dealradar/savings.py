@@ -63,7 +63,10 @@ def product_price_facts(observations: list[dict], offers: list[dict], now: datet
     sales = [o for o in offers if (at := parse_iso(o.get("date"))) and since <= at <= now]
     discounts = [o["discount"] for o in sales if isinstance(o.get("discount"), (int, float))
                  and math.isfinite(o["discount"]) and 0 <= o["discount"] <= 100]
-    facts = {"checks": len(points), "median": median, "deals_90d": len(sales),
+    facts = {"checks": len(points), "median": median,
+             "median_checks": len(recent), "median_since": recent[0][0] if recent else None,
+             "median_90d": bool(recent and points[0][0] <= since and recent[0][0] <= since + timedelta(days=1)),
+             "deals_90d": len(sales),
              "latest_deal": max((parse_iso(o["date"]) for o in sales), default=None),
              "average_discount": statistics.mean(discounts) if discounts else None,
              "discount_samples": len(discounts)}

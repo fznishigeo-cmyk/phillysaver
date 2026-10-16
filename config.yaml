@@ -118,6 +118,9 @@ site:
     max_h_new: 48
     max_h_used: 48
 
+# Hide Amazon charts, saved price watches and Amazon-only /p/ pages pending a written answer.
+amazon_history: hide          # show | hide; operator: no Amazon history or watches
+
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
                                # Verification thresholds (history-checked, the
@@ -147,8 +150,8 @@ publish:
     max_same_category_run: 2
     max_same_store_top: 8
     prefer_photos: true
-    checkout_price_deals:       # operator approval pending; no change while off
-      enabled: false
+    checkout_price_deals:       # operator approved honest checkout-price labels
+      enabled: true
       max_stated_days: 7        # cap end-date evidence from its source statement
       repost_window_h: 24       # a sighting/re-post of the current checkout price
       max_silent_h: 72          # silence backstop; never overrides a gone signal
@@ -246,8 +249,8 @@ seo:
     enabled: true            # operator 2026-10-15: "high quality index pages ... that's what we need to do now"
     min_checks: 6
     min_span_days: 7
-    max_new_indexable_per_day: 50
-    max_indexable: 2000
+    max_new_indexable_per_day: 0 # Pilot: admissions resume when score-ordered admission lands.
+    max_indexable: 200
     lower_ratio: 0.95         # Current / our 90-day median; equality is about usual.
     higher_ratio: 1.05
     deal_history_limit: 20    # Bound the visible deal list; facts use all stored deals.
@@ -655,7 +658,7 @@ social:
       sports: "Outdoor & Sports Deals"
     max_consecutive_board: 2      # across runs; wait if no other board is eligible
     pins_per_run: 2               # hourly lane
-    daily_max: 20                 # per UTC day
+    daily_max: 10                 # per UTC day
     ramp:
       enabled: false
       # Optional dated overrides: [{from: "2026-11-01", daily_max: 25, pins_per_run: 2}]
@@ -679,10 +682,10 @@ social:
     facebook:
       mode: live                  # draft | live
       posts_per_run: 1
-      daily_max: 4                # per UTC day
-      hours_utc: [13, 17, 21, 1]  # live only: 9am 1pm 5pm 9pm New York (EDT)
+      daily_max: 1                # per UTC day
+      hours_utc: [17]            # live only: 1pm New York (EDT)
     instagram:
-      mode: live                  # draft | live
+      mode: draft                 # auto-posting paused; drafts only
       posts_per_run: 1
       daily_max: 3
       hours_utc: [14, 19, 23]     # live only: 10am 3pm 7pm New York (EDT)

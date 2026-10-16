@@ -283,7 +283,7 @@ def test_new_switches_off_keep_pre_task_shipped_bytes(tmp_path, monkeypatch):
     cfg.traffic_product_families_enabled = cfg.traffic_hub_pagination_enabled = False
     monkeypatch.setattr(site, "util_now", lambda: FIXED)
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "a227146409ac27c152ee67b5333b2eb16d999e9c36bb5d030c14ca21a43246c5"
+    assert tree_hash(out) == "e382f8d2f4ab2131204347e81fd8487ff0f3ff63d7a08a44cbee9b5a3fc728a2"
 
 
 def test_inventory_node_links_and_phone_styles(tmp_path):

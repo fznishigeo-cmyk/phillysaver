@@ -45,7 +45,7 @@ def test_missing_support_link_preserves_every_published_byte(tmp_path, monkeypat
     out, *_ = render(tmp_path, cfg, sample_deals())
     # Task 079 refresh: shared home search/recovery, tracking and version.
     # The missing-link variants still contain no post-join support ask.
-    assert tree_hash(out) == "781859ccd22b7a0fb62f421df5a08063bf913975291754af2ca1336c54b9107e"
+    assert tree_hash(out) == "3ab06a15843dc2b8babdbefde67dbd4e10fcebed6eaf8aeb71d61354ac7cde44"
     for path in out.rglob("*.html"):
         assert "support_ask_" not in path.read_text()
 

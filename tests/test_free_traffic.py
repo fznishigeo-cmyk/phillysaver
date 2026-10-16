@@ -40,8 +40,10 @@ def test_config_default_switches_and_feed_bound(tmp_path):
         assert not cfg.traffic_related_hubs_enabled and cfg.traffic_feed_max_items == expected
 
 
-def test_feed_only_current_public_pages_and_stable_rerun(db, cfg, tmp_path):
+@pytest.mark.parametrize("tracking", [{}, {"ga4_measurement_id": "G-ABC123XYZ9"}])
+def test_feed_only_current_public_pages_and_stable_rerun(db, cfg, tmp_path, tracking):
     enable(cfg)
+    cfg.tracking = tracking
     cfg.seo_deal_pages_max = 1
     out = tmp_path / "site"
     _render(db, cfg, out)

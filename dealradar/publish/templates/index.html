@@ -959,7 +959,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // Every published deal passed the price checks;
   // the badge only says how it was corroborated. No badge = single source.
   var TIER_LABEL = {
-    "corroborated": "✓ 2+ sources",
+/*amazon-history*/    "verified": "✓ verified",
+/*/amazon-history*/    "corroborated": "✓ 2+ sources",
     "history-checked": "✓ price history"
   };
 
@@ -1729,9 +1730,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var metarow = '<span class="chip storechip">' + esc(d.store || "") + "</span>";
     // Right after the store, so the one-line phone row never clips it.
     var checked = d.checked_at ? priceCheckedText(d.checked_at, Date.now()) : "";
-    if (checked && !d.spotlight) metarow += '<span class="chip price-checked" data-checked-at="' +
-      esc(d.checked_at)/*amazon-as-of*/ + (d.amazon_as_of ? '" title="' + esc("Price as of " + d.amazon_as_of) : "")/*/amazon-as-of*/ + '"><span class="pcl">price checked </span>' +
-/*amazon-as-of*/      (d.amazon_as_of ? '<span class="sr-only"> (Price as of ' + esc(d.amazon_as_of) + ') </span>' : "") +
+/*amazon-as-of*/    var amazonAsOf = d.amazon_as_of ? "Price as of " + d.amazon_as_of + ". Product prices and availability are accurate as of the date/time indicated and are subject to change. Any price and availability information displayed on Amazon.com at the time of purchase will apply to the purchase of this product." : "";
+/*/amazon-as-of*/    if (checked && !d.spotlight) metarow += '<span class="chip price-checked" data-checked-at="' +
+      esc(d.checked_at)/*amazon-as-of*/ + (amazonAsOf ? '" title="' + esc(amazonAsOf) : "")/*/amazon-as-of*/ + '"><span class="pcl">price checked </span>' +
+/*amazon-as-of*/      (amazonAsOf ? '<span class="sr-only"> (' + esc(amazonAsOf) + ') </span>' : "") +
 /*/amazon-as-of*/      esc(checked.replace(/^price checked /, "")) + "</span>";
     var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
     if (countdown) metarow += '<span class="chip spotlight-time" data-ends-at="' +

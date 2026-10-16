@@ -182,6 +182,7 @@ class AppConfig:
     images_keepa_search_per_day: int = 120
     images_keepa_match_min: float = 0.85
     amazon_as_of_enabled: bool = False
+    amazon_history: str = "show"
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -587,6 +588,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if not 0.85 <= cfg.images_keepa_match_min <= 1:
         raise ValueError("images.keepa_match_min must be between 0.85 and 1")
     cfg.amazon_as_of_enabled = bool(g("publish", "amazon_as_of", "enabled", default=False))
+    cfg.amazon_history = str(g("amazon_history", default="show"))
+    if cfg.amazon_history not in {"show", "hide"}:
+        raise ValueError("amazon_history must be show or hide")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

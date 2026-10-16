@@ -85,15 +85,17 @@ def test_config_default_off_shipped_on_and_overrides(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "16035e28b3dd3cde53860a41e122746c39723145d30f01a1bf5ffeefb32c2dcb"),
-    ("open", "7ec22a7b35e77b72acdbe798f6bee3f18d08821250a674868cfc5f56203342d8"),
-    ("support", "7898c1d3d7f651c0f2e4b989a0b82b219f9770e43e48fe48537ad654652a2277"),
-    ("shipped", "3a1e10a89797fffeea3e0f087b1ee3d95f12506344b91c0329d68f28b2bcfc27"),
+    ("membership", "ece97e6d1b72b4210f2768049db75e49af4a2c020cbdad6bf024091518ad8098"),
+    ("open", "be4273e88b7865e2c4c3d14aa8fdfd68d5806a0d59e444e7ecc7735faa0aa18a"),
+    ("support", "b854d34a874a19defc71aee35d18e7406378a52c979bcea0b81845e808d204a4"),
+    ("shipped", "3e51de1b63df8a704a45dbed84b89d42a02e1f0455658183ecaa2178a094b6b3"),
 ])
 def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = config(mode)
+    cfg.amazon_history = "show"  # predates task 121b
+    cfg.front_page.get("checkout_price_deals", {})["enabled"] = False  # predates task 121b
     cfg.seo_product_pages_enabled = False  # predates product pages
     cfg.amazon_as_of_enabled = False
     cfg.photoless_last = False  # predates photos-first
@@ -119,14 +121,15 @@ def test_card_absolute_time_and_relative_label_share_the_check_clock(stamp, expe
     assert public["checked_at"] == iso(checked)
     assert public["amazon_as_of"] == expected
     markup = seo.card_html(public, now=now)
-    assert f'title="Price as of {expected}"' in markup
-    assert f'<span class="sr-only"> (Price as of {expected}) </span>' in markup
+    as_of = f'Price as of {expected}. {DISCLAIMER.replace("Amazon.com", "Amazon")}'
+    assert f'title="{as_of}"' in markup
+    assert f'<span class="sr-only"> ({as_of}) </span>' in markup
     assert f'data-checked-at="{iso(checked)}"' in markup
     visible = re.sub(r'<span class="sr-only">.*?</span>', "", markup)
     cfg.amazon_as_of_enabled = False
     cfg.photoless_last = False  # predates photos-first
     before = seo.card_html(site._serialize_deal(raw, now, cfg=cfg), now=now)
-    assert visible.replace(f' title="Price as of {expected}"', "") == before
+    assert visible.replace(f' title="{as_of}"', "") == before
     assert '<span class="pcl">price checked </span>2h ago' in visible
 
 

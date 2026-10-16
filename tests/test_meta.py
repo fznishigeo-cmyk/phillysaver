@@ -25,6 +25,7 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("META_SYSTEM_TOKEN", SYSTEM)
     monkeypatch.setattr(meta.time, "sleep", lambda seconds: None)
     config = load_config()
+    config.meta["facebook"].update(daily_max=4, hours_utc=[13, 17, 21, 1])  # predates task 121b
     # Fixture deals live only in deals.json; the stock-evidence rule
     # (sightings in the DB) is covered in tests/test_social_stock.py.
     config.social_require_stock_evidence = False
@@ -121,7 +122,10 @@ def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):
     assert cfg.meta["page_id"] == "1382622794936174"
     assert cfg.meta["ig_user_id"] == "17841412621006331"
     production = load_config().meta
-    assert production["facebook"]["mode"] == production["instagram"]["mode"] == "live"
+    assert production["facebook"]["mode"] == "live"
+    assert production["instagram"]["mode"] == "draft"
+    assert production["facebook"]["daily_max"] == 1
+    assert production["facebook"]["hours_utc"] == [17]
     assert cfg.meta["facebook"]["hours_utc"] == [13, 17, 21, 1]
     assert cfg.meta["instagram"]["hours_utc"] == [14, 19, 23]
     assert "META_SYSTEM_TOKEN" in SECRET_NAMES

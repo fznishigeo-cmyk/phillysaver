@@ -88,13 +88,15 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "5d3bf6f40295c8db9ba9d02c2d09d739218423cc60bc4b6981e3e00374f74d5f"),
-    ("open", "3cc2570576263cc2467918d5b4cbc3e5f60b76f394fbb3e45d93a8f847a78852"),
-    ("support", "fee581827be7f5ee5f5bc72074f780e1de02139c672b0539104850e2c008b2a6"),
-    ("shipped", "0ddd498e96b0384ecef024b67e784bf07192e25f33fffd4f1133ea324d6e0de2"),
+    ("membership", "c9f95cbd0ac30b4aa6a6188b9d969d2885e5266c6a6fb91a04bd76d965ffa84f"),
+    ("open", "3925a48d517d29c160650745a3b673db0c14054fe4af0bb96ddbc6bdca0cf414"),
+    ("support", "c22d02d6f26ba1ba99dad3d2a2d7b2795e9609c46bd12a8d0acca1cf0a2fc050"),
+    ("shipped", "ce2cf599f653dbee3a74e1794a5a52793319125dcc292f092316fedbbfb810ae"),
 ])
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.amazon_history = "show"  # predates task 121b
+    cfg.front_page.get("checkout_price_deals", {})["enabled"] = False  # predates task 121b
     cfg.photoless_last = False  # predates photos-first
     if mode != "shipped":
         cfg.support_enabled = mode == "support"

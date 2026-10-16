@@ -34,6 +34,7 @@ from ..util import iso, parse_iso
 from ..rank import pick_order
 from .. import checkout_prices
 from .price_history import chart_html as price_history_chart, STYLE as PRICE_HISTORY_STYLE
+from . import amazon_history
 from . import amazon_as_of, inventory, product_pages, seo_audit, traffic
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
@@ -69,7 +70,7 @@ CATGROUPS: tuple[tuple[str, Any, str], ...] = (
 HUB_GROUPS = tuple(g for g in CATGROUPS if g[2])
 
 #: The page's badge labels (index.html TIER_LABEL); no badge = single source.
-_TIER_LABEL = {"corroborated": "✓ 2+ sources", "history-checked": "✓ price history"}
+_TIER_LABEL = {"corroborated": "✓ 2+ sources", "history-checked": "✓ price history", "verified": "✓ verified"}
 #: Open deals drawn as static HTML on the home page and on each hub (open
 #: access puts every deal in the teaser: hundreds of cards would make the
 #: page heavy before its script draws the live wall).
@@ -210,7 +211,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     if checked is not None and not dead and checked <= (now or datetime.now(timezone.utc)):
         minutes = int(((now or datetime.now(timezone.utc)) - checked).total_seconds() / 60)
         age = f"{minutes}m" if minutes < 60 else f"{minutes // 60}h" if minutes < 1440 else f"{minutes // 1440}d"
-        as_of = f'Price as of {d["amazon_as_of"]}' if d.get("amazon_as_of") else ""
+        as_of = f'Price as of {d["amazon_as_of"]}. {amazon_as_of.DISCLAIMER}' if d.get("amazon_as_of") else ""
         title_attr = f' title="{e(as_of)}"' if as_of else ""
         hidden = f'<span class="sr-only"> ({e(as_of)}) </span>' if as_of else ""
         meta += (f'<span class="chip price-checked" data-checked-at="{e(iso(checked))}"{title_attr}>'
@@ -660,6 +661,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
         content += '<p class="detail-availability">Availability: Live offer</p>'
     badge = d.get("badge") or "unverified"
     explanation = {"history-checked": "The price was checked against price history.",
+                   "verified": "The price was verified.",
                    "corroborated": "Two or more independent sources confirmed this price."}
     content += (f'<p>{_TIER_LABEL.get(badge, "single source")}: '
                 f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
@@ -877,18 +879,21 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         db, cfg, now, deal_rows, source_deals, paths, shadow_run)
     for d in deal_rows:
         path = paths[d["key"][:8]]
-        observations = db.price_observations(d["dedupe_key"], now - timedelta(days=90), now)
+        observations = ([] if amazon_history.hidden(cfg, d) else
+                        db.price_observations(d["dedupe_key"], now - timedelta(days=90), now))
         sharing, share_head = traffic.share_html(d, path, site_url) if (
             cfg.traffic_share_enabled and not d.get("price_unconfirmed")) else ("", "")
         discovery = traffic.related_hubs(d, stores, prices) if cfg.traffic_related_hubs_enabled else ""
         discovery += inventory.family_link(d, family_members)
-        html = _deal_page(template, d, path, site_url, meta["disclosure"], live, paths,
+        detail_template = (template.replace(' · <a href="/p/">Price history</a>', "")
+                           if amazon_history.hidden(cfg, d) else template)
+        html = _deal_page(detail_template, d, path, site_url, meta["disclosure"], live, paths,
                           observations, now, indexable=floors["deal"] <= 1 and not d.get("price_unconfirmed"),
                           noindex_follow=not cfg.seo_deal_pages_indexable,
                           discovery=discovery, sharing=sharing, share_head=share_head,
                           also_at=also_at.get(d["dedupe_key"], ""),
                           lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))
-                          if cfg.product_entities_lowest_seen_enabled else "")
+                          if cfg.product_entities_lowest_seen_enabled and not amazon_history.hidden(cfg, d) else "")
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")

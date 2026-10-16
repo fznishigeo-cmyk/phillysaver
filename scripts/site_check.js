@@ -14,7 +14,7 @@ const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
-const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing/;
+const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
 const PHOTO_TIMEOUT_MS = 15000, CONCURRENCY = 12, EXAMPLES = 12;
 
 const host = (u) => { try { return new URL(u).host.replace(/^www\./, ""); } catch (e) { return "?"; } };

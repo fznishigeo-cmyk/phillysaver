@@ -10,6 +10,53 @@ Module._load = function (name, ...args) {
 const {rect, pseudoRect, union, effectiveRect} = require('../scripts/mobile_audit.cjs');
 Module._load = load;
 
+test('audit intercepts requests before navigation using the site-check block pattern', async () => {
+  const fs = require('node:fs');
+  const site = fs.readFileSync(require.resolve('../scripts/site_check.js'), 'utf8');
+  const audit = fs.readFileSync(require.resolve('../scripts/mobile_audit.cjs'), 'utf8');
+  assert.equal(site.match(/const BLOCK = (.*);/)[1], audit.match(/const BLOCK = (.*);/)[1]);
+  assert(audit.indexOf('await guardPage(page, base)') < audit.indexOf('await page.goto('));
+  let handler;
+  const aborted = await require('../scripts/mobile_audit.cjs').guardPage({route: async (pattern, fn) => {
+    assert.equal(pattern, '**/*'); handler = fn;
+  }}, 'https://wowpriced.com/');
+  for (const host of ['www.googletagmanager.com', 'www.google-analytics.com', 'region1.google-analytics.com',
+    'www.googleadservices.com', 'stats.g.doubleclick.net', 'pagead2.googlesyndication.com',
+    'connect.facebook.net', 'www.facebook.com/tr', 'analytics.tiktok.com', 's.pinimg.com/ct',
+    'bat.bing.com', 'www.clarity.ms']) {
+    for (const type of ['script', 'image', 'fetch']) {
+      let action;
+      await handler({request: () => ({url: () => 'https://' + host + '/tag',
+        method: () => 'GET', resourceType: () => type}), abort: () => {action = 'abort';},
+        continue: () => {action = 'continue';}});
+      assert.equal(action, 'abort', host + ' ' + type);
+      assert(aborted.has('https://' + host + '/tag'));
+    }
+  }
+  for (const [url, method, type, expected] of [
+    ['https://wowpriced.com/deals.json', 'GET', 'fetch', 'continue'],
+    ['https://m.media-amazon.com/image.jpg', 'GET', 'image', 'continue'],
+    ['https://unknown.test/tag.js', 'GET', 'script', 'abort'],
+    ['https://wowpriced.com/collect', 'POST', 'fetch', 'abort']]) {
+    let action;
+    await handler({request: () => ({url: () => url, method: () => method, resourceType: () => type}),
+      abort: () => {action = 'abort';}, continue: () => {action = 'continue';}});
+    assert.equal(action, expected);
+    assert.equal(aborted.has(url), expected === 'abort');
+  }
+  const errors = [], {recordConsoleError} = require('../scripts/mobile_audit.cjs');
+  for (const url of aborted) recordConsoleError({type: () => 'error', text: () => 'net::ERR_FAILED',
+    location: () => ({url})}, aborted, errors);
+  assert.deepEqual(errors, []);
+  for (const [type, text, url] of [['error', 'app failed', 'https://wowpriced.com/app.js'],
+    ['error', 'image failed', 'https://m.media-amazon.com/image.jpg'],
+    ['error', 'unknown origin', ''], ['warning', 'ignore', 'https://wowpriced.com/']]) {
+    recordConsoleError({type: () => type, text: () => text, location: () => ({url})}, aborted, errors);
+  }
+  assert.deepEqual(errors, [{text: 'app failed', url: 'https://wowpriced.com/app.js'},
+    {text: 'image failed', url: 'https://m.media-amazon.com/image.jpg'}, {text: 'unknown origin', url: ''}]);
+});
+
 function style(overrides = {}) {
   return {content: '""', position: 'absolute', pointerEvents: 'auto',
     left: '50%', right: 'auto', top: '50%', bottom: 'auto',

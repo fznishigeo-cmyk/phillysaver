@@ -7,6 +7,7 @@ from html import escape
 
 from ..products import condition, identity
 from ..savings import comparable_prices, lowest_seen
+from . import amazon_history
 
 MATCH_TYPES = ("asin", "gtin", "sku", "brand_model")
 _PACK = re.compile(r"\b(?:pack|set|case|box|lot|bundle|qty|quantity)\s*(?:of\s*)?(\d+)\b"
@@ -136,7 +137,9 @@ def evaluate(db, cfg, now, pages, source, paths, run_key):
     for key, (d, facts) in eligible.items():
         product_id = facts["product_id"]
         if product_id not in histories:
-            histories[product_id] = db.product_price_history(product_id, 30, now=now)
+            histories[product_id] = [row for row in db.product_price_history(product_id, 30, now=now)
+                                    if not amazon_history.hidden(cfg, dict(row, canonical_url=
+                                        row["dedupe_key"][4:] if row["dedupe_key"].startswith("url|") else ""))]
         fact = lowest_seen(histories[product_id], condition(facts), now)
         if fact:
             lowest[key] = fact

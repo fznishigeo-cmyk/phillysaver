@@ -262,6 +262,32 @@ class Page(HTMLParser):
                     and set(offer) == {"@type", "price", "priceCurrency", "availability", "url"})
 
     def _product_metadata_mismatch(self) -> bool:
+        facts = self.first(cls="product-facts")
+        rows = {n.children[0].text(): n.children[1].text() for n in facts.nodes()
+                if n.tag == "tr" and len(n.children) == 2} if facts else {}
+        typical = [label for label in rows if label.startswith("Typical price")]
+        verdict = self.first(cls="price-verdict")
+        if typical:
+            label = typical[0]
+            short = re.fullmatch(r"Typical price \(median of our ([1-9]\d*) checks since (.+)\)", label)
+            if len(typical) != 1 or (label != "Typical price (90-day median)" and not short):
+                return True
+            try:
+                first = datetime.strptime(rows["First check"], "%b %d, %Y")
+                last = datetime.strptime(rows["Last check"], "%b %d, %Y")
+                if short:
+                    since = datetime.strptime(short[2], "%b %d, %Y")
+                    if not first <= since <= last or not 3 <= int(short[1]) <= int(rows["Number of our checks"]):
+                        return True
+                elif last - first < timedelta(days=90):
+                    return True
+            except (KeyError, ValueError):
+                return True
+            qualifier = f"(our median since {short[2]})" if short else "(90-day median)"
+            if verdict and not verdict.text().startswith("No live deal") and not verdict.text().endswith(qualifier + "."):
+                return True
+        elif verdict and "median" in verdict.text():
+            return True
         nodes = list(self.root.nodes())
         meta = {n.attrs.get("property") or n.attrs.get("name"): n.attrs.get("content")
                 for n in nodes if n.tag == "meta"}

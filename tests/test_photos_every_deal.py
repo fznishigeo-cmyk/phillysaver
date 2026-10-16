@@ -59,14 +59,16 @@ def test_config(tmp_path):
 
 
 @pytest.mark.parametrize('mode,expected', [
-    ('membership','16035e28b3dd3cde53860a41e122746c39723145d30f01a1bf5ffeefb32c2dcb'),
-    ('open','7ec22a7b35e77b72acdbe798f6bee3f18d08821250a674868cfc5f56203342d8'),
-    ('support','7898c1d3d7f651c0f2e4b989a0b82b219f9770e43e48fe48537ad654652a2277'),
-    ('shipped','bd0267caa7b7163630d7bcffad1010ebc96e32b9e49db0c511cda403740ae696'),
+    ('membership','ece97e6d1b72b4210f2768049db75e49af4a2c020cbdad6bf024091518ad8098'),
+    ('open','be4273e88b7865e2c4c3d14aa8fdfd68d5806a0d59e444e7ecc7735faa0aa18a'),
+    ('support','b854d34a874a19defc71aee35d18e7406378a52c979bcea0b81845e808d204a4'),
+    ('shipped','2ba1db49b91128b1301832d9948f7b7fcbe0416852044e6d5d4ca7422ca970f9'),
 ])
 def test_off_all_bytes_match_untouched_head(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, 'util_now', lambda: NOW)
     cfg = config(mode)
+    cfg.amazon_history = 'show'  # predates task 121b
+    cfg.front_page.get('checkout_price_deals', {})['enabled'] = False  # predates task 121b
     cfg.photoless_last = False
     render(tmp_path/'site', cfg)
     assert digest(tree(tmp_path/'site')) == expected

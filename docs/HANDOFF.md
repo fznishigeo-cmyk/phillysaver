@@ -193,6 +193,33 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Safety and real numbers (Codex task 121, 2026-10-16; uncommitted):** shared
+  Pinterest rich-pin opt-out; phone audit blocks the hourly check's analytics/ad
+  pattern, including Clarity. `?internal=1` remembers this browser, tags GA4 as
+  internal and suppresses ads/Clarity; `?internal=0` clears it, preserving other
+  URL parameters. Review 121b ships `amazon_history: hide`: suppresses Amazon
+  charts/lowest summaries/watches and Amazon-only `/p/` pages, filters mixed
+  histories, and keeps hearts/prices/as-of notes. `/p/` medians name the actual
+  checks/window; "90-day median" now requires checks near the window start.
+  Review fixes use `verify.is_amazon_deal`, including Amazon URL offers with
+  other store names; mixed-store histories/lowest-seen exclude those offers by
+  key. Saved entries carry the same Amazon boolean; Amazon history badges,
+  headlines and member/digest alerts use plain verification wording. Amazon's
+  checked chip has the full disclaimer in its title and hidden text; the footer
+  sentence stays unchanged. Phone audit ignores only errors from its own
+  aborted URLs and records other console errors with their URL.
+  Operator decisions (2026-10-16): checkout-price labels ON; Pinterest 10/day;
+  Facebook 1/day at 17 UTC; Instagram drafts only; product-page pilot capped at
+  200 indexable, zero new admissions until score-ordered admission lands.
+  Code defaults stay unchanged; legacy fixtures retain their former switches.
+  Four-mode comparison with staged task 121: **140 show-mode files identical**
+  with as-of off; as-of-on differences are only the requested chip disclaimer
+  and derived versions. Refreshed published-byte pins; **49 preflight checks
+  pass**, including seven Stripe workflow checks whose unmodified step now uses
+  a socket-free fake transport. First full run: **4,526 passed, 7 failed**
+  (17m02s); four photo pins and three legacy pace/preconnect assertions fixed.
+  Final full suite running under `/tmp/task121c-final`.
+  Staged task 121 preserved; no external requests/LLM calls, commit or push.
 - **Home polish (Codex task 120, 2026-10-16; uncommitted, ON):** validated
   `publish.drop_clock` thresholds drive calm/warm/hot/final colors, labels,
   bounded pulses and a short burst; reduced motion disables animation and

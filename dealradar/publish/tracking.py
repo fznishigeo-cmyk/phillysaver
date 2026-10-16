@@ -4,11 +4,13 @@ pages included.
 
 Only public IDs, each checked against a strict pattern: an invalid one is
 skipped with a warning, so no arbitrary text reaches HTML or JS. With every
-ID empty nothing is added and no page makes a third-party request.
+ID empty no page makes a third-party request. The shared head still carries
+the rich-pin opt-out and the device-local internal-visit flag.
 
 Consent (US audience): GA4 loads for everyone, but without Google signals or
 ad personalization for a visitor whose browser sends Global Privacy Control
-or who opted out on /privacy.html (localStorage wp.adsOptOut). For them the
+or who opted out on /privacy.html (localStorage wp.adsOptOut). Internal visits
+send GA4's traffic_type filter key. For these visitors the
 ad pixels (Google Ads, Meta, TikTok, Pinterest, Microsoft UET) and Clarity do not load
 at all, so they make no request.
 """
@@ -54,15 +56,37 @@ _VERIFY = (("google_site_verification", "google-site-verification"),
 _START, _END = "<!-- wp-tracking -->", "<!-- /wp-tracking -->"
 _BLOCK = re.compile(re.escape(_START) + r".*?" + re.escape(_END) + r"\n?", re.S)
 
+_INTERNAL = """\
+  var internal = false;
+  try { internal = localStorage.getItem("wp.internal") === "1"; } catch (e) { /* storage blocked */ }
+  try {
+    var params = new URLSearchParams(window.location.search), flag = params.get("internal");
+    if (flag === "1" || flag === "0") {
+      internal = flag === "1";
+      if (internal) {
+        try { localStorage.setItem("wp.internal", "1"); } catch (e) { /* page-local choice */ }
+      } else {
+        try { localStorage.removeItem("wp.internal"); } catch (e) { /* page-local choice */ }
+      }
+    }
+    if (params.has("internal")) {
+      params.delete("internal");
+      var query = params.toString();
+      history.replaceState(history.state, "", window.location.pathname + (query ? "?" + query : "") + (window.location.hash || ""));
+    }
+  } catch (e) { /* URL or history unavailable */ }
+"""
+
 _HEAD = """\
 (function () {
   "use strict";
+""" + _INTERNAL + """\
   // Ad pixels and Clarity load only when the browser sends no Global Privacy Control
   // and the visitor did not opt out on /privacy.html; GA4 loads for
   // everyone, without Google signals or ad personalization when either holds.
   var optOut = false;
   try { optOut = localStorage.getItem("wp.adsOptOut") === "1"; } catch (e) { /* storage blocked */ }
-  var ads = !optOut && navigator.globalPrivacyControl !== true;
+  var ads = !internal && !optOut && navigator.globalPrivacyControl !== true;
   var on = {};
   function load(src, onload) {
     var s = document.createElement("script");
@@ -82,8 +106,10 @@ _GA4 = """\
   // Google Analytics 4: for everyone.
   load("https://www.googletagmanager.com/gtag/js?id=" + %(ga4)s);
   window.gtag("js", new Date());
-  window.gtag("config", %(ga4)s, ads ? {} :
-              { allow_google_signals: false, allow_ad_personalization_signals: false });
+  var ga4Config = ads ? {} :
+              { allow_google_signals: false, allow_ad_personalization_signals: false };
+  if (internal) ga4Config.traffic_type = "internal";
+  window.gtag("config", %(ga4)s, ga4Config);
   on.ga4 = %(ga4)s;
 """
 
@@ -302,7 +328,7 @@ def tracking_ids(cfg) -> dict[str, str]:
 
 def head_snippet(cfg) -> str:
     """The marked block for every page's <head>: the verification meta tags
-    and the tags' script; "" when nothing is configured."""
+    and the tags' script, including device-local internal-visit choices."""
     ids = tracking_ids(cfg)
     js = lambda key: json.dumps(ids[key])  # validated [A-Za-z0-9_-] only
     # Impact reads a `value` attribute; it rides beside `content`.
@@ -310,6 +336,7 @@ def head_snippet(cfg) -> str:
              + (f' value="{html.escape(ids[key], quote=True)}"' if name == "impact-site-verification" else "")
              + f' content="{html.escape(ids[key], quote=True)}">\n'
              for key, name in _VERIFY if key in ids]
+    metas.insert(0, '<meta name="pinterest-rich-pin" content="false">\n')
     blocks = []
     ga4, aw = ids.get("ga4_measurement_id"), ids.get("google_ads_id")
     if ga4 or aw:
@@ -364,9 +391,8 @@ def head_snippet(cfg) -> str:
                                         '    support_ask_shown: { ga4Only: true },\n'
                                         '    support_ask_click: { ga4Only: true, methods: ["once", "monthly"] },\n'
                                         '    support_ask_dismiss: { ga4Only: true },')
-    script = f"<script>\n{_HEAD}{''.join(blocks)}{dispatch}</script>\n" if blocks else ""
-    if not metas and not script:
-        return ""
+    code = _HEAD + ''.join(blocks) + dispatch if blocks else '(function () {\n' + _INTERNAL + '})();\n'
+    script = f"<script>\n{code}</script>\n"
     return f"{_START}\n{''.join(metas)}{script}{_END}\n"
 
 

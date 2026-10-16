@@ -3,6 +3,28 @@
 // height, deals visible before scrolling, console errors. Writes screenshots
 // and prints JSON. Our own site only; never pointed at a partner's.
 // Usage: node mobile_audit.cjs <base_url> <shot_prefix> [chrome_path]
+const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
+
+async function guardPage(page, base) {
+  const origin = new URL(base).origin;
+  const aborted = new Set();
+  await page.route('**/*', route => {
+    const request = route.request(), url = new URL(request.url());
+    if (BLOCK.test(url.href) || request.method() !== 'GET' ||
+        (url.origin !== origin && request.resourceType() !== 'image')) {
+      aborted.add(url.href);
+      return route.abort();
+    }
+    return route.continue();
+  });
+  return aborted;
+}
+
+function recordConsoleError(message, aborted, errors) {
+  const url = message.location().url;
+  if (message.type() === 'error' && !aborted.has(url)) errors.push({text: message.text(), url});
+}
+
 // This factory also runs in the page; its geometry can be tested without a
 // browser or Playwright. CSS geometry is only a candidate: probes verify it.
 function hitAreaMath() {
@@ -152,9 +174,10 @@ async function runAudit() {
   for (const [name, dev] of [['iphone14', devices['iPhone 14']], ['pixel7', devices['Pixel 7']], ['small360', {viewport:{width:360,height:740}, deviceScaleFactor:2, isMobile:true, hasTouch:true, userAgent:devices['Pixel 7'].userAgent}], ['iphone14-dark', {...devices['iPhone 14'], colorScheme:'dark'}]]) {
     const ctx = await browser.newContext({ ...dev });
     const page = await ctx.newPage();
+    const aborted = await guardPage(page, base);
     const errors = [];
     page.on('pageerror', e => errors.push(String(e)));
-    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
+    page.on('console', m => recordConsoleError(m, aborted, errors));
     await page.goto(base + '/', { waitUntil: 'networkidle' });
     await page.waitForTimeout(1200);
     const r = await page.evaluate(`(${inspectPage.toString()})((${hitAreaMath.toString()})())`);
@@ -170,4 +193,6 @@ async function runAudit() {
 }
 
 module.exports = hitAreaMath();
+module.exports.guardPage = guardPage;
+module.exports.recordConsoleError = recordConsoleError;
 if (require.main === module) runAudit().catch(e => { console.error(e); process.exit(1); });

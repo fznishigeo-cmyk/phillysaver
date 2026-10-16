@@ -24,6 +24,7 @@ from ..util import parse_iso
 from .site import rewrite_affiliate
 from .social import _candidates, _word_trim, _without_prices, social_title
 from .email_policy import email_credits, email_deal
+from . import amazon_history
 
 logger = logging.getLogger("dealradar.publish.telegram")
 
@@ -42,7 +43,7 @@ _TIER_WORDS = {"corroborated": "2+ sources", "history-checked": "price history"}
 
 
 def format_message(deal: dict[str, Any], path: str | None = None,
-                   disclosure: str = "#ad") -> str:
+                   disclosure: str = "#ad", *, cfg=None) -> str:
     """Price-free channel copy with a deal path; preserve the email format otherwise."""
     if path is not None:
         item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
@@ -53,12 +54,15 @@ def format_message(deal: dict[str, Any], path: str | None = None,
                 f"At {store}, verified by wowpriced: https://wowpriced.com{path}\n"
                 f"{disclosure}")
 
+    hide_history = amazon_history.hidden(cfg, deal)
     deal = email_deal(deal)
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
     pct_s = f"{display_pct(pct)}% off" if pct is not None else "?% off"
     tier = _TIER_WORDS.get(deal.get("verify_tier") or "", "")
+    if deal.get("verify_tier") == "history-checked" and hide_history:
+        tier = "verified"
     head = f"{pct_s}, {tier}" if tier else pct_s
     parts = [
         f"{deal.get('item', '')} — "
@@ -178,7 +182,7 @@ def send_alerts(db, cfg, now: datetime, *, dry_run: bool | None = None, http_cli
             if db.alert_exists("telegram", dedup_token):
                 skipped += 1  # idempotent re-run: already sent exactly this alert
                 continue
-            msg = format_message(deal, path, settings.get("disclosure", "#ad"))
+            msg = format_message(deal, path, settings.get("disclosure", "#ad"), cfg=cfg)
             if dry:
                 logger.info("TELEGRAM DRY-RUN: %s", msg)
                 print(f"TELEGRAM DRY-RUN: {msg}")

@@ -13,7 +13,7 @@ from html import escape
 from ..savings import display_pct, price_difference_pct, price_verdict, product_price_facts
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
-from . import amazon_as_of, price_history
+from . import amazon_as_of, amazon_history, price_history
 
 META = "seo_product_pages"
 BLOCK = re.compile(r"/\*product-pages\*/(.*?)/\*/product-pages\*/", re.S)
@@ -143,13 +143,30 @@ def prepare(db, cfg, now, public, source):
             "date": price_date, "price": d["final_price"],
             "credits": d.get("credits") or [], "published_at": published,
             "discount": d.get("pct_at_checkout")}
-        if d["status"] == "alive":
+        if d["status"] == "alive" and not amazon_history.hidden(cfg, d):
             live.setdefault(key, []).append(d)
 
     current = {key: min(rows, key=lambda d: (d["final_price"], d["key"])) for key, rows in live.items()}
     for key, d in current.items():
         pages[key].update({field: d.get(field) for field in
                            ("item", "store", "image_url", "category", "conditions", "brand")})
+    if cfg.amazon_history == "hide":
+        # product_offers retains the original store even after a deal is pruned.
+        stores = {r["dedupe_key"]: {"store": r["store"], "canonical_url":
+                  r["dedupe_key"][4:] if r["dedupe_key"].startswith("url|") else ""} for r in db.conn.execute(
+            "SELECT dedupe_key,store FROM product_offers")}
+        visible = {}
+        for key, page in pages.items():
+            offers = {offer: facts for offer, facts in page["offers"].items()
+                      if stores.get(offer) and not amazon_history.hidden(cfg, stores[offer])}
+            if not offers:
+                continue
+            visible[key] = dict(page, offers=offers)
+            if amazon_history.hidden(cfg, page) or not any(
+                    stores[offer]["store"] == page.get("store") for offer in offers):
+                latest = max(offers, key=lambda offer: (offers[offer]["date"], offer))
+                visible[key].update(store=stores[latest]["store"], image_url="")
+        pages = visible
     observations, qualifying = {}, set()
     for key, page in pages.items():
         observations[key] = [row for row in db.product_price_history(int(key), None, now=now)
@@ -181,9 +198,13 @@ def prepare(db, cfg, now, public, source):
         page["indexable"] = key in admitted
         if key in admitted and key in qualifying:
             page["last_qualified"] = iso(now)
+        if cfg.amazon_history == "hide":
+            for field in ("indexable", "last_qualified", "indexed_since"):
+                if field in page:
+                    state["pages"][key][field] = page[field]
     db.meta_set(META, json.dumps(state, sort_keys=True, separators=(",", ":")))
     report = {"eligible": len(qualifying), "indexable": len(admitted),
-              "new_today": len(state["admitted"]), "noindex": len(pages) - len(admitted)}
+              "new_today": sum(key in pages for key in state["admitted"]), "noindex": len(pages) - len(admitted)}
     models = {}
     for key, page in pages.items():
         live_keys = {d["dedupe_key"] for d in live.get(key, [])}
@@ -258,7 +279,8 @@ def answer(price, facts, cfg):
                   "above" if verdict == "Higher than usual" else "about")
     prefix = {"Lower than usual": "Yes", "Higher than usual": "Higher than usual",
               "About usual": "About usual"}[verdict]
-    return f'{prefix} — ${price:.2f} is {comparison} its usual ${facts["median"]:.2f} (90-day median).'
+    window = "90-day median" if facts["median_90d"] else f'our median since {seo._date(facts["median_since"])}'
+    return f'{prefix} — ${price:.2f} is {comparison} its usual ${facts["median"]:.2f} ({window}).'
 
 
 def facts_html(facts, price):
@@ -274,7 +296,9 @@ def facts_html(facts, price):
                      ("First check", seo._date(facts["first"])),
                      ("Last check", seo._date(facts["last"]))])
     if facts["median"] is not None:
-        rows.append(("Typical price (90-day median)", f'${facts["median"]:.2f} USD'))
+        window = ("90-day median" if facts["median_90d"] else
+                  f'median of our {facts["median_checks"]} checks since {seo._date(facts["median_since"])}')
+        rows.append((f"Typical price ({window})", f'${facts["median"]:.2f} USD'))
     rows.append(("Deals found in the last 90 days", str(facts["deals_90d"])))
     if facts["average_discount"] is not None:
         samples = facts["discount_samples"]

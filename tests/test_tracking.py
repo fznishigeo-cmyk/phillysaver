@@ -95,11 +95,12 @@ def test_loader_reads_the_block(tmp_path):
 def test_no_ids_means_no_tag_and_no_third_party_url(db, cfg, tmp_path):
     out = tmp_path / "site"
     render_site(db, cfg, NOW, out_dir=out, deals=[])
-    assert head_snippet(cfg) == "" and apply_tracking(out, cfg) == 0
+    assert apply_tracking(out, cfg) == 0
     pages = _pages(out)
     assert "privacy.html" in pages
     for name, page in pages.items():
-        assert "wp-tracking" not in page and "window.wpTrack = function" not in page, name
+        assert page.count('<meta name="pinterest-rich-pin" content="false">') == 1, name
+        assert "window.wpTrack = function" not in page, name
         assert "verification" not in page and "msvalidate" not in page, name
         for host in HOSTS:
             assert host not in page, (name, host)
@@ -139,7 +140,8 @@ def test_changed_ids_replace_the_block_and_cleared_ids_remove_it():
     swapped = inject(once, head_snippet(two))
     assert swapped.count(START) == 1 and "G-OTHER1" in swapped
     assert "connect.facebook.net" not in swapped and "G-ABC123XYZ9" not in swapped
-    assert inject(swapped, head_snippet(AppConfig())) == NESTED
+    assert inject(swapped, head_snippet(AppConfig())) == inject(NESTED, head_snippet(AppConfig()))
+    assert inject(swapped, "") == NESTED
     assert inject("<p>no head</p>", head_snippet(one)) == "<p>no head</p>"
 
 
@@ -167,7 +169,7 @@ def test_changed_ids_replace_the_block_and_cleared_ids_remove_it():
 def test_invalid_ids_are_skipped_with_a_warning(caplog, key, bad):
     caplog.set_level(logging.WARNING, logger="dealradar.publish.tracking")
     snippet = head_snippet(AppConfig(tracking={key: bad}))
-    assert snippet == ""
+    assert snippet == head_snippet(AppConfig())
     assert f"tracking.{key} is not a valid value" in caplog.text
     assert bad.strip() not in caplog.text  # the key is logged, never the value
 
@@ -254,8 +256,13 @@ for (const [name, sc] of Object.entries(scenarios)) {
   const store = sc.storage || {};
   const ctx = {
     navigator: sc.gpc ? { globalPrivacyControl: true } : {},
-    localStorage: sc.blocked ? { getItem() { throw new Error("blocked"); } }
-                             : { getItem: (k) => (k in store ? store[k] : null) },
+    localStorage: {
+      getItem(k) { if (sc.blocked) throw new Error("blocked"); return k in store ? store[k] : null; },
+      setItem(k, v) { if (sc.blocked || sc.readonly) throw new Error("readonly"); store[k] = v; },
+      removeItem(k) { if (sc.blocked || sc.readonly) throw new Error("readonly"); delete store[k]; }
+    },
+    URLSearchParams, location: {search: sc.search || "", pathname: "/nested/page/", hash: "#keep"},
+    history: {state: {keep: true}, replaceState(state, title, url) { this.url = url; }},
     document: { createElement: () => ({}), head: { appendChild: (s) => srcs.push(s.src) } },
   };
   ctx.window = ctx;
@@ -266,6 +273,7 @@ for (const [name, sc] of Object.entries(scenarios)) {
   try { for (const c of sc.calls || []) ctx.wpTrack(c[0], c[1]); } catch (e) { error = String(e); }
   out[name] = {
     srcs, error,
+    storage: store, url: ctx.history.url,
     dataLayer: ctx.dataLayer ? ctx.dataLayer.map((a) => Array.from(a)) : null,
     fbq: ctx.fbq && ctx.fbq.queue ? ctx.fbq.queue.map((a) => Array.from(a)) : null,
     ttq: ctx.ttq ? plain(ctx.ttq) : null,
@@ -410,7 +418,7 @@ def test_clarity_alone_loads_only_without_gpc_or_opt_out(tmp_path):
     assert out["open"]["srcs"] == ["https://www.clarity.ms/tag/ywsuwmrauy"]
     for key in ("gpc", "out"):
         assert out[key]["srcs"] == [] and not out[key]["clarity"]
-    assert head_snippet(AppConfig(tracking={"clarity_project_id": ""})) == ""
+    assert head_snippet(AppConfig(tracking={"clarity_project_id": ""})) == head_snippet(AppConfig())
 
 
 @pytest.mark.parametrize("ids", [SAMPLE, {k: v for k, v in SAMPLE.items() if k != "ga4_measurement_id"}])
@@ -655,8 +663,8 @@ def test_welcome_takes_the_session_id_off_the_url_before_any_tag(db, cfg, tmp_pa
     # The scrub is a head script ahead of the tags' block, and nothing after
     # it reads the address: the page script takes the id from its stash.
     scrub = _between(page[:page.index(START)], "<script>\n", "</script>")[len("<script>\n"):]
-    assert 'history.replaceState(null, "", location.pathname)' in scrub
-    assert "location.search" not in page[page.index(START):] and "location.href" not in page
+    assert 'params.delete("session_id")' in scrub
+    assert "location.search" not in page[page.index(START):].replace("window.location.search", "") and "location.href" not in page
     assert 'var fromUrl = window.wpCheckoutId || "";' in page
     if shutil.which("node") is None:
         pytest.skip("node is not installed")

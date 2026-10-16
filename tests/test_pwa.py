@@ -19,6 +19,7 @@ from tests.test_support import NOW, render
 def baseline_config(mode):
     if mode == "shipped":
         cfg = load_config()
+        cfg.amazon_history = "show"  # predates task 121b
         cfg.non_amazon_freshness_enabled = False  # pin predates task 102's age gate
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim
         cfg.seo_deal_pages_indexable = True  # predates the durable-pages SEO switch
@@ -55,10 +56,10 @@ def tree_hash(out):
 
 
 @pytest.mark.parametrize("mode,expected", [
-    ("membership", "5bb21464d118ef175268e69a0bbfcb3a3e02906e76a897702bf21f9ad96ba5cc"),
-    ("open", "8d630ba94405bd9d51d53a3185669b8a7891b9c10cc7c1d343cc6461c04674d6"),
-    ("support", "46f146311dc854ff914c75262921774387dd9ce95ff78df3d5a1a3dc17c77b1e"),
-    ("shipped", "fdba1935b2b1c0ac7074e8254a9f919f628e0d34d0a6300eec282a2c47e4dff3"),
+    ("membership", "cf2c5ac8a76cc6431b57eaed8ee53ae30d5cec3010b32b5702829998dac0941e"),
+    ("open", "5e05410f07a1dd9b623f7a856d897b23255d309804857e25f95393128ff3755d"),
+    ("support", "4c7518b647b08ede7ea789f73608204956b69fa09b01921d6690c231bb3da279"),
+    ("shipped", "33553cc24e7b67f4aaddf8f21b6d3ce7713eddaeb12a1ef3654c3f44a679f2f0"),
 ])
 def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatch, mode, expected):
     # Shipped only: the label blocks also skip aged offers (task 102) and the
@@ -167,7 +168,7 @@ def test_switch_off_removes_assets_and_restores_all_original_bytes(tmp_path, mon
     assert (out / "manifest.webmanifest").is_file()
     cfg.pwa_enabled = False
     out, _, _, _ = render(tmp_path, cfg, sample_deals())
-    assert tree_hash(out) == "46f146311dc854ff914c75262921774387dd9ce95ff78df3d5a1a3dc17c77b1e"
+    assert tree_hash(out) == "4c7518b647b08ede7ea789f73608204956b69fa09b01921d6690c231bb3da279"
     assert not (out / "manifest.webmanifest").exists() and not (out / "pwa-icons").exists()
 
 

@@ -41,7 +41,7 @@ def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, 
             + html_lib.escape(cfg.ftc_disclosure) + "</p></body></html>"
         )
         return subject, text_body + cfg.ftc_disclosure + "\n", html_body
-    lines = [format_message(d) for d in deals]
+    lines = [format_message(d, cfg=cfg) for d in deals]
     text_body = "\n".join(lines) + "\n\n" + cfg.ftc_disclosure + "\n"
     items = "\n".join(f"<li>{email_line_html(line, d)}</li>" for d, line in zip(deals, lines))
     html_body = (f"<html><body><ul>\n{items}\n</ul>"

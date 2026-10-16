@@ -62,7 +62,7 @@ jobs:
               --output=json --output-path="lighthouse-reports/$name.json" --quiet \
               --blocked-url-patterns='*googletagmanager*' '*google-analytics*' '*googleadservices*' \
               '*doubleclick*' '*googlesyndication*' '*facebook.net*' '*facebook.com/tr*' \
-              '*analytics.tiktok*' '*pinimg.com/ct*' '*bat.bing*'; then
+              '*analytics.tiktok*' '*pinimg.com/ct*' '*bat.bing*' '*clarity.ms*'; then
               echo "$name: Lighthouse run failed"
               failed=1
             fi

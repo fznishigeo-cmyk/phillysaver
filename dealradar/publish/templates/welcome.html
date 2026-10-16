@@ -12,9 +12,13 @@
 // analytics and ad tags in the head, when on) can read or send the URL.
 // The page script below takes it from window.wpCheckoutId.
 (function () {
-  var id = new URLSearchParams(location.search).get("session_id") || "";
+  var params = new URLSearchParams(location.search), id = params.get("session_id") || "";
   window.wpCheckoutId = id;
-  if (id) { try { history.replaceState(null, "", location.pathname); } catch (e) { /* fine */ } }
+  if (id) { try {
+    params.delete("session_id");
+    var query = params.toString();
+    history.replaceState(null, "", location.pathname + (query ? "?" + query : "") + (location.hash || ""));
+  } catch (e) { /* fine */ } }
 })();
 </script>
 <style>
