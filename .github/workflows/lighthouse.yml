@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '20'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install existing config loader dependency
+        run: python -m pip install 'PyYAML>=6.0'
       - name: Install Playwright Chromium
         run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
       - name: Select pages from the sitemap
@@ -72,7 +77,19 @@ jobs:
         if: always()
         env:
           LH_MIN: '85'
-        run: node scripts/lighthouse_summary.js lighthouse-reports/home.json lighthouse-reports/hub.json lighthouse-reports/deal.json lighthouse-reports/best-today.json
+        run: |
+          budget=$(python - <<'PY'
+          import json
+          from dealradar.config import load_config
+          try:
+              budget = load_config("config.yaml").phone_budget
+          except Exception:
+              raise SystemExit("Lighthouse: invalid quality config") from None
+          print(json.dumps(budget, allow_nan=False))
+          PY
+          )
+          export LH_PHONE_BUDGET="$budget"
+          node scripts/lighthouse_summary.js lighthouse-reports/home.json lighthouse-reports/hub.json lighthouse-reports/deal.json lighthouse-reports/best-today.json
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@v6

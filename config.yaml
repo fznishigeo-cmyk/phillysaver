@@ -7,6 +7,17 @@ user_agent: "dealradar/0.1 (+https://github.com/fznishigeo-cmyk/phillysaver; con
 
 timezone: "America/New_York"   # default tz for feeds with naive dates and for "ends today"
 
+quality:
+  phone_budget:
+    enabled: false             # proposed offline/lab gates; review before activation
+    lab_lcp_max_ms: 2500
+    lab_cls_max: 0.1
+    # ceil(1.05 * largest task-206 fixed-fixture gzip size across four modes).
+    home_html_gzip_max_bytes: 77360
+    home_js_gzip_max_bytes: 53767
+    home_css_gzip_max_bytes: 14913
+    deals_json_gzip_max_bytes: 103976
+
 fetch:
   request_timeout_s: 20        # hard per-request timeout
   per_source_budget_s: 90      # hard per-source budget

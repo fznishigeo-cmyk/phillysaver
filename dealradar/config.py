@@ -458,6 +458,7 @@ class AppConfig:
     incremental_cache_budget_s: float = 0.25
     outgoing_days: int = 60
     feature_flags: dict[str, bool] = field(default_factory=dict)
+    phone_budget: dict = field(default_factory=lambda: phone_budget_defaults())
 
     def resolved_user_agent(self) -> str:
         return self.user_agent.replace("{contact_email}", self.contact_email)
@@ -501,9 +502,44 @@ def validate_incremental_cache_limits(max_examined_per_run, budget_s) -> None:
         raise ValueError("retention.incremental_cache.budget_s must be finite and in 0.05..5")
 
 
+PHONE_BYTE_METRICS = ("home_html", "home_js", "home_css", "deals_json")
+
+
+def phone_budget_defaults() -> dict:
+    # ceil(1.05 * the largest fixed task-206 fixture), not measured live vitals.
+    return {"enabled": False, "lab_lcp_max_ms": 2500, "lab_cls_max": 0.1,
+            "home_html_gzip_max_bytes": 77360, "home_js_gzip_max_bytes": 53767,
+            "home_css_gzip_max_bytes": 14913, "deals_json_gzip_max_bytes": 103976}
+
+
+def validated_phone_budget(value) -> dict:
+    defaults = phone_budget_defaults()
+    if not isinstance(value, dict) or value.keys() - defaults.keys():
+        raise ValueError("quality.phone_budget must be a mapping with known fields")
+    limits = defaults | value
+    if type(limits["enabled"]) is not bool:
+        raise ValueError("quality.phone_budget.enabled must be a boolean")
+    for key in defaults.keys() - {"enabled"}:
+        number = limits[key]
+        try:
+            valid = (type(number) in (int, float) and math.isfinite(number) and number > 0)
+        except OverflowError:
+            valid = False
+        if key.endswith("_bytes"):
+            valid = valid and type(number) is int
+        if not valid:
+            kind = "a positive integer" if key.endswith("_bytes") else "finite and positive"
+            raise ValueError(f"quality.phone_budget.{key} must be {kind}")
+    return limits
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path) if path else ROOT / "config.yaml"
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yaml.safe_load(path.read_text())
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("config must be a mapping")
 
     def g(*keys: str, default: Any = None) -> Any:
         cur: Any = raw
@@ -514,6 +550,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    quality = raw.get("quality", {})
+    if not isinstance(quality, dict):
+        raise ValueError("quality must be a mapping")
+    cfg.phone_budget = validated_phone_budget(quality.get("phone_budget", {}))
     cfg.accuracy_extra_samples_per_day = max(0, int(
         (raw.get("accuracy") or {}).get("extra_samples_per_day", 0)))
     cfg.contact_email = g("contact_email", default=cfg.contact_email)

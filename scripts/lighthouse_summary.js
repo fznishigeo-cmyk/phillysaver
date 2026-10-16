@@ -3,7 +3,31 @@ const fs = require("node:fs");
 const path = require("node:path");
 const CATEGORIES = ["performance", "accessibility", "best-practices", "seo"];
 
-function summarize(report, minimum) {
+function phoneBudget(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || typeof value.enabled !== "boolean") {
+    throw new Error("invalid phone budget");
+  }
+  if (value.enabled && [value.lab_lcp_max_ms, value.lab_cls_max].some(
+      limit => typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0)) {
+    throw new Error("invalid phone budget");
+  }
+  return value;
+}
+
+function vitals(report, budget) {
+  return [["LCP", "largest-contentful-paint", budget.lab_lcp_max_ms, "ms"],
+    ["CLS", "cumulative-layout-shift", budget.lab_cls_max, "unitless"]].map(([name, id, limit, units]) => {
+    const audit = report && report.audits && report.audits[id];
+    const measured = Boolean(!(report && report.runtimeError) && audit && !audit.errorMessage &&
+      audit.scoreDisplayMode !== "error" && typeof audit.numericValue === "number" &&
+      Number.isFinite(audit.numericValue) && audit.numericValue >= 0);
+    const actual = measured ? audit.numericValue : null;
+    return { name, actual, limit, units, ok: measured && actual <= limit };
+  });
+}
+
+function summarize(report, minimum, budget = { enabled: false }) {
+  phoneBudget(budget);
   if (report.runtimeError) throw new Error("audit did not finish");
   const scores = {}, failing = new Map();
   for (const name of CATEGORIES) {
@@ -25,8 +49,13 @@ function summarize(report, minimum) {
   }
   const worst = [...failing.values()].sort((a, b) => b.weight - a.weight || a.score - b.score ||
     a.title.localeCompare(b.title)).slice(0, 5).map((audit) => audit.title);
-  return { scores, worst, ok: report.categories.accessibility.score * 100 >= minimum &&
+  const result = { scores, worst, ok: report.categories.accessibility.score * 100 >= minimum &&
     report.categories.seo.score * 100 >= minimum };
+  if (budget.enabled) {
+    result.vitals = vitals(report, budget);
+    result.ok = result.ok && result.vitals.every(metric => metric.ok);
+  }
+  return result;
 }
 
 function main(files) {
@@ -35,17 +64,33 @@ function main(files) {
     console.error("Lighthouse: reports required; LH_MIN must be 0-100");
     return 1;
   }
+  let budget;
+  try {
+    budget = phoneBudget(JSON.parse(process.env.LH_PHONE_BUDGET ?? '{"enabled":false}'));
+  } catch {
+    console.error("Lighthouse: invalid phone budget");
+    return 1;
+  }
+  const metricLines = metrics => metrics.map(metric =>
+    `  ${metric.name}: ${metric.actual === null ? "not measured" : metric.actual} ${metric.units}; ` +
+    `limit ${metric.limit} ${metric.units} (${metric.ok ? "PASS" : "FAIL"})`);
   let failed = false;
   for (const file of files) {
     const label = path.basename(file, ".json");
     try {
-      const result = summarize(JSON.parse(fs.readFileSync(file, "utf8")), minimum);
+      const report = JSON.parse(fs.readFileSync(file, "utf8"));
+      const result = summarize(report, minimum, budget);
       lines.push(`${label}: ${CATEGORIES.map((name) => `${name} ${result.scores[name]}`).join(" | ")}`);
       for (const title of result.worst) lines.push(`  ${title}`);
-      if (!result.ok) { failed = true; lines.push(`  FAIL: accessibility or SEO below ${minimum}`); }
+      if (budget.enabled) lines.push(...metricLines(result.vitals));
+      if (report.categories.accessibility.score * 100 < minimum || report.categories.seo.score * 100 < minimum) {
+        failed = true; lines.push(`  FAIL: accessibility or SEO below ${minimum}`);
+      }
+      if (!result.ok) failed = true;
     } catch {
       failed = true;
       lines.push(`${label}: FAIL: missing, invalid, or unfinished report`);
+      if (budget.enabled) lines.push(...metricLines(vitals(null, budget)));
     }
   }
   console.log(lines.join("\n"));

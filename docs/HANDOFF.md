@@ -193,6 +193,84 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Phone publication budgets (Codex task 206, 2026-10-16; uncommitted, OFF):**
+  Recovered the interrupted worktree; `tests/test_phone_budget.py` was complete,
+  the compressed baseline decoded, and this handoff had no task-206 entry.
+  `quality.phone_budget.enabled: false` in code/config; strict booleans and
+  finite positive limits, with positive integer byte ceilings. Proposed lab
+  limits are **LCP 2,500 ms / CLS 0.1 unitless**, separate from category scores.
+  The existing Lighthouse summary receives resolved values through Python's
+  config loader and `LH_PHONE_BUDGET`; OFF preserves prior output/status.
+  ON retains accessibility/SEO gates and fails missing/error/non-finite or
+  negative vitals as "not measured", with actual/limit/units for each page.
+  The existing audit pages, schedule and tracker blocks stay unchanged.
+
+  Read-only `python -m scripts.publication_budget OUTPUT --config config.yaml
+  --expected-offers 1400` emits bounded JSON and a short stderr summary. It
+  validates the local directory, offer count/unique keys, matching site version
+  and home markup. Missing/unsafe assets fail with controlled labels; URLs,
+  query strings and payload bodies stay out of diagnostics. Root/asset symlink
+  escapes fail. Inline executable JS/styles plus unique local assets are
+  concatenated in document order without separators; MIME types, query/path
+  aliases, external-script bodies and preload boundaries are covered. External
+  JS/CSS references get bounded labels/counts and are never fetched. JSON-LD
+  remains separately reported markup. HTML includes its actual inline content;
+  JS/CSS component measurements overlap HTML and must **never be summed into
+  a transfer total**. Compression is gzip level 9, mtime 0.
+
+  Frozen input: `tests/phone_budget_fixture.py`, **1,400 offers**, seed **206**,
+  **2026-10-16 12:00 UTC**, stable keys, 11 categories, seven stores, seven
+  current-price tuples, codes/steps, new/used conditions and 90% synthetic
+  `images.example.invalid` URLs. Uses the existing publisher's `make_deal`,
+  in-memory DB and fake/unavailable network; no real state or fetched images.
+  Support/open/closed configs and full shipped config are captured in
+  `tests/fixtures/phone_budget_baseline.json.xz`, pre-edit HEAD **755371a280d8**;
+  the input digest is checked and configs cannot silently simplify. The
+  reference measurement includes shipped `click-signal.js` and `traffic.js`.
+  Before/after raw/gzip bytes are identical (each cell is **raw / gzip**):
+
+  | Mode | Home HTML | Own home JS | Own home CSS | deals.json |
+  |---|---:|---:|---:|---:|
+  | Support | 256179 / 58767 | 130201 / 37567 | 54021 / 13257 | 1474106 / 91763 |
+  | Open | 262050 / 62104 | 143711 / 42300 | 45925 / 11765 | 1474108 / 91761 |
+  | Closed | 213772 / 59396 | 143711 / 42300 | 45925 / 11765 | 346386 / 29994 |
+  | Shipped | 319136 / 73676 | 181972 / 51206 | 59606 / 14202 | 1509792 / 99024 |
+  | Proposed gzip ceiling | 77360 | 53767 | 14913 | 103976 |
+
+  Each ceiling is **ceil(1.05 × the largest baseline gzip size)**, measured
+  before implementation; proposed headroom, not live-vitals observations.
+  JSON-LD is 130 raw / 118 gzip bytes in every mode. Four public trees contain
+  **4,448 files** (support 1,440; open 1,439; closed 37; shipped 1,532), plus
+  eight adjacent IndexNow files. Tests compare filename/digest/raw/gzip with
+  bounded file-delta diagnostics, versions, full state/meta, receipts and
+  member payloads against the archive with the knob OFF and ON. Repeated
+  analysis must be byte-identical and leave all file bytes/mtimes and DB
+  contents unchanged. Existing snapshot tests/pins are untouched.
+  Independent regeneration from untouched HEAD matches all four archived
+  public trees, state/meta, receipts, member payloads and byte measurements.
+  Final focused set: **619 passed, 7 failed**, including all **201 task checks**
+  and both offline pipeline rerun modes. Main run: 611 passed / 7 failed
+  (3m28s); final eight full-publication comparisons: 8 passed (3m15s).
+  Ran only `test_phone_budget.py`, `test_workflows.py`, `test_publish_site.py`,
+  `test_pwa.py`, `test_support.py`, `test_lighthouse_polish.py`,
+  `test_e2e_offline.py`, `test_photos_every_deal.py`, `test_home_polish.py` and
+  `test_safety_real_numbers.py`, always **-q -n 1 -p no:cacheprovider**, with
+  isolated `/tmp/task206-*` basetemps deleted when each run ended. Seven Stripe
+  workflow checks independently fail on untouched HEAD at localhost socket
+  creation (`PermissionError: Operation not permitted`):
+  `test_deploy_checks_the_yearly_price_with_stripe` change0–5 and
+  `test_deploy_yearly_check_skips_without_a_price_and_fails_without_a_key`.
+  No new failures; those seven checks outside this sandbox and review remain.
+
+  No local real Lighthouse reports were available; only synthetic reports
+  are exercised, including the workflow's actual loader/env/parser command.
+  Real-user LCP, INP (including the ≤200 ms target), cache reuse, visual
+  accessibility and retention remain **not measured**; existing lab LCP/CLS
+  would be lab samples only. Review precedes activation. No product templates,
+  shopper scripts, Worker or fast/hourly jobs changed; accepted 119–121 remain.
+  `tests/test_workflows.py` is unchanged. No external calls, browser install,
+  workflow dispatch, commit, push or deployment. Full suite is left to the
+  operator; only owned `/tmp/task206-*` scratch is removed after each run.
 - **Strict home browse slot (Codex task 205, 2026-10-16; uncommitted):**
   `dealradar/publish/template_slots.py` counts literal slots and reports safe,
   distinct missing/duplicate errors. `publish/site.py` validates the home slot

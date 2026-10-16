@@ -1,0 +1,175 @@
+{
+ "head": "755371a280d820ab8e5da7d60d32d6e916f2f300",
+ "lighthouse_disabled": [
+  {
+   "files": [
+    "tests/fixtures/lighthouse_pass.json"
+   ],
+   "minimum": "85",
+   "status": 0,
+   "stderr": "",
+   "stdout": "lighthouse_pass: performance 42 | accessibility 91 | best-practices 73 | seo 85\n  Largest Contentful Paint\n  Form elements have labels\n  Document has a title\n  Uses HTTPS\n  Background and foreground colors have sufficient contrast\n"
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_fail.json"
+   ],
+   "minimum": "85",
+   "status": 1,
+   "stderr": "",
+   "stdout": "lighthouse_fail: performance 100 | accessibility 84 | best-practices 100 | seo 82\n  Form elements have labels\n  Document has a meta description\n  FAIL: accessibility or SEO below 85\n"
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_fail.json"
+   ],
+   "minimum": "80",
+   "status": 0,
+   "stderr": "",
+   "stdout": "lighthouse_fail: performance 100 | accessibility 84 | best-practices 100 | seo 82\n  Form elements have labels\n  Document has a meta description\n"
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_pass.json",
+    "tests/fixtures/lighthouse_fail.json"
+   ],
+   "minimum": "85",
+   "status": 1,
+   "stderr": "",
+   "stdout": "lighthouse_pass: performance 42 | accessibility 91 | best-practices 73 | seo 85\n  Largest Contentful Paint\n  Form elements have labels\n  Document has a title\n  Uses HTTPS\n  Background and foreground colors have sufficient contrast\nlighthouse_fail: performance 100 | accessibility 84 | best-practices 100 | seo 82\n  Form elements have labels\n  Document has a meta description\n  FAIL: accessibility or SEO below 85\n"
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_pass.json"
+   ],
+   "minimum": "invalid",
+   "status": 1,
+   "stderr": "Lighthouse: reports required; LH_MIN must be 0-100\n",
+   "stdout": ""
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_pass.json"
+   ],
+   "minimum": "101",
+   "status": 1,
+   "stderr": "Lighthouse: reports required; LH_MIN must be 0-100\n",
+   "stdout": ""
+  },
+  {
+   "files": [
+    "tests/fixtures/lighthouse_missing.json"
+   ],
+   "minimum": "85",
+   "status": 1,
+   "stderr": "",
+   "stdout": "lighthouse_missing: FAIL: missing, invalid, or unfinished report\n"
+  },
+  {
+   "files": [],
+   "minimum": "85",
+   "status": 1,
+   "stderr": "Lighthouse: reports required; LH_MIN must be 0-100\n",
+   "stdout": ""
+  }
+ ],
+ "measurement_note": "Reference JS measurement corrected to include existing click-signal.js and traffic.js from the frozen pre-edit shipped output; files, inputs, versions, state and receipts unchanged.",
+ "modes": {
+  "closed": {
+   "sizes": {
+    "deals_json": {
+     "gzip": 29994,
+     "raw": 346386
+    },
+    "home_css": {
+     "gzip": 11765,
+     "raw": 45925
+    },
+    "home_html": {
+     "gzip": 59396,
+     "raw": 213772
+    },
+    "home_js": {
+     "gzip": 42300,
+     "raw": 143711
+    },
+    "json_ld": {
+     "gzip": 118,
+     "raw": 130
+    }
+   }
+  },
+  "open": {
+   "sizes": {
+    "deals_json": {
+     "gzip": 91761,
+     "raw": 1474108
+    },
+    "home_css": {
+     "gzip": 11765,
+     "raw": 45925
+    },
+    "home_html": {
+     "gzip": 62104,
+     "raw": 262050
+    },
+    "home_js": {
+     "gzip": 42300,
+     "raw": 143711
+    },
+    "json_ld": {
+     "gzip": 118,
+     "raw": 130
+    }
+   }
+  },
+  "shipped": {
+   "sizes": {
+    "deals_json": {
+     "gzip": 99024,
+     "raw": 1509792
+    },
+    "home_css": {
+     "gzip": 14202,
+     "raw": 59606
+    },
+    "home_html": {
+     "gzip": 73676,
+     "raw": 319136
+    },
+    "home_js": {
+     "gzip": 51206,
+     "raw": 181972
+    },
+    "json_ld": {
+     "gzip": 118,
+     "raw": 130
+    }
+   }
+  },
+  "support": {
+   "sizes": {
+    "deals_json": {
+     "gzip": 91763,
+     "raw": 1474106
+    },
+    "home_css": {
+     "gzip": 13257,
+     "raw": 54021
+    },
+    "home_html": {
+     "gzip": 58767,
+     "raw": 256179
+    },
+    "home_js": {
+     "gzip": 37567,
+     "raw": 130201
+    },
+    "json_ld": {
+     "gzip": 118,
+     "raw": 130
+    }
+   }
+  }
+ }
+}
