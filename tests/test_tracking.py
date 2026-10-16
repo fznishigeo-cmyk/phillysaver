@@ -261,7 +261,7 @@ for (const [name, sc] of Object.entries(scenarios)) {
       setItem(k, v) { if (sc.blocked || sc.readonly) throw new Error("readonly"); store[k] = v; },
       removeItem(k) { if (sc.blocked || sc.readonly) throw new Error("readonly"); delete store[k]; }
     },
-    URLSearchParams, location: {search: sc.search || "", pathname: "/nested/page/", hash: "#keep"},
+    URLSearchParams, location: {search: sc.search || "", pathname: "/nested/page/", hash: "#keep", origin: "https://wowpriced.com"},
     history: {state: {keep: true}, replaceState(state, title, url) { this.url = url; }},
     document: { createElement: () => ({}), head: { appendChild: (s) => srcs.push(s.src) } },
   };
@@ -301,6 +301,21 @@ def _run_node(tmp_path: Path, ids: dict, scenarios: dict) -> dict:
                          capture_output=True, text=True, timeout=60)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout)
+
+
+def test_ga4_keeps_landing_campaign_tags_after_the_wall_rewrites_the_url(tmp_path):
+    out = _run_node(tmp_path, SAMPLE, {
+        "utm": {"search": "?utm_source=pinterest&utm_medium=social&internal=0"},
+        "click_id": {"search": "?gclid=abc&q=lamp"},
+        "plain": {"search": "?q=lamp&internal=1"},
+    })
+
+    def config(name):
+        return next(c[2] for c in out[name]["dataLayer"] if c[:2] == ["config", "G-ABC123XYZ9"])
+    assert config("utm")["page_location"] == \
+        "https://wowpriced.com/nested/page/?utm_source=pinterest&utm_medium=social"
+    assert config("click_id")["page_location"] == "https://wowpriced.com/nested/page/?gclid=abc&q=lamp"
+    assert "page_location" not in config("plain") and config("plain")["traffic_type"] == "internal"
 
 
 def test_checkout_plan_reaches_tags_only_as_month_or_year(tmp_path):

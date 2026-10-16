@@ -109,6 +109,14 @@ _GA4 = """\
   var ga4Config = ads ? {} :
               { allow_google_signals: false, allow_ad_personalization_signals: false };
   if (internal) ga4Config.traffic_type = "internal";
+  // The deal wall rewrites the address bar before gtag.js reads it: keep the
+  // landing URL's campaign tags (utm_*, click IDs) so GA4 credits the source.
+  try {
+    var landing = new URLSearchParams(window.location.search);
+    landing.delete("internal");
+    if (/(^|&)(utm_[a-z_]+|gclid|gbraid|wbraid|fbclid)=/.test(landing.toString()))
+      ga4Config.page_location = window.location.origin + window.location.pathname + "?" + landing.toString();
+  } catch (e) { /* URL unavailable */ }
   window.gtag("config", %(ga4)s, ga4Config);
   on.ga4 = %(ga4)s;
 """
