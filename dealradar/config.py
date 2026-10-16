@@ -314,6 +314,7 @@ class AppConfig:
     growth_google_ads_api_version: str = "v26"
     growth_google_ads_customer_id: str = ""
     growth_google_ads_login_customer_id: str = ""
+    growth_keyword_volumes: dict = field(default_factory=dict)
     growth_monthly_price_usd: float = 9.99
 
     # -- members: Stripe subscribers get every new verified deal by email --
@@ -555,6 +556,22 @@ def validated_bounded_prefilter(value: Any) -> dict:
         if type(limits[name]) is not int or not 1 <= limits[name] <= ceiling:
             raise ValueError(f"parse.bounded_prefilter.{name} must be an integer in 1..{ceiling}")
     return limits
+
+
+def validated_keyword_volumes(value) -> dict:
+    if not isinstance(value, dict) or set(value) - {"keywords", "geo_target", "language"}:
+        raise ValueError("growth.keyword_volumes must contain supported settings only")
+    settings = {"geo_target": 2840, "language": 1000, **value}
+    keywords = settings.get("keywords")
+    if (not isinstance(keywords, list) or not 1 <= len(keywords) <= 100
+            or any(not isinstance(k, str) or k != k.strip()
+                   or not re.fullmatch(r"[a-z0-9 '-]{1,80}", k) for k in keywords)
+            or len(set(keywords)) != len(keywords)):
+        raise ValueError("growth.keyword_volumes.keywords must be 1..100 unique, stripped lowercase phrases (max 80 chars)")
+    for name in ("geo_target", "language"):
+        if type(settings[name]) is not int or settings[name] <= 0:
+            raise ValueError(f"growth.keyword_volumes.{name} must be a positive integer")
+    return settings
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -942,6 +959,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                                          or cfg.growth_google_ads_api_version)
     cfg.growth_google_ads_customer_id = re.sub(r"\D", "", gs("google_ads_customer_id"))
     cfg.growth_google_ads_login_customer_id = re.sub(r"\D", "", gs("google_ads_login_customer_id"))
+    if "keyword_volumes" in (g("growth", default={}) or {}):
+        cfg.growth_keyword_volumes = validated_keyword_volumes(g("growth", "keyword_volumes"))
     cfg.growth_monthly_price_usd = float(g("growth", "monthly_price_usd",
                                            default=cfg.growth_monthly_price_usd))
 

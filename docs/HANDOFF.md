@@ -63,7 +63,15 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `google_ads` section uses the OAuth secrets `GOOGLE_ADS_CLIENT_ID`,
   `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN` (refresh token from
   the OAuth Playground with the project's own web client) and logs only
-  Google's error codes. API version pinned in config (`v26`).
+  Google's error codes. API version pinned in config (`v25`).
+- **Keyword volumes (manual, read-only):** after review, select Actions →
+  keyword volumes → Run workflow (or `gh workflow run keyword-volumes.yml`).
+  Results save only to `keywords/<UTC date>.md` in `growth.reports_repo` using
+  `REPORTS_REPO_TOKEN`; public logs show counts, save status and error codes.
+  Explorer access is expected to refuse Keyword Planner: exit 1, no private
+  file. Owner: complete brand verification on the OAuth consent screen, then
+  apply for Basic access from the Google Ads API page in Cloud Console.
+  First real run remains for Claude after review; record the observed codes here.
 - **Source health is private to the operator's view:** it is in each run's
   Actions summary, never on the site (note: Actions pages of a public repo
   are viewable by anyone who looks).
@@ -193,6 +201,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Keyword volumes (Codex task 238, 2026-10-16; uncommitted):** manual-only
+  CLI/workflow, 40 validated US/English phrases, exact Google URL allowlist,
+  paced three-request ceiling and one 30-second retry. Sorted metrics save
+  privately; existing growth-report copy defaults stay unchanged. **276 targeted
+  checks pass** (`test_keyword_volumes.py`, unchanged `test_growth_report.py`
+  and `test_ads_guard.py`, `-q -n 1`); own `/tmp/task238-*` basetemps removed.
+  Review and the first real access test remain. No whole suite, workflow
+  dispatch, live calls, workflow-test edits, commit or push.
 - **Exact Back + off-screen cards (Codex task 237, 2026-10-16; ON, phones only):**
   Anchor corrections stop after six frames/500ms plus one late redraw check;
   user input cancels, with one restore event. `site.offscreen_cards: true` adds

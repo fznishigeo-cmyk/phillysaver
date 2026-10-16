@@ -133,6 +133,13 @@ def cmd_growth_report(args: argparse.Namespace) -> int:
     return run(load_config(args.config), db_path=args.db, copy_only=args.copy_only)
 
 
+def cmd_keyword_volumes(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .growth.keyword_volumes import run
+
+    return run(load_config(args.config))
+
+
 def cmd_ads_guard(args: argparse.Namespace) -> int:
     from .config import load_config
     from .growth.ads_guard import run
@@ -257,6 +264,10 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--copy-only", action="store_true",
                     help="save the private copy only (no email, no Telegram)")
     sp.set_defaults(fn=cmd_growth_report)
+
+    sp = sub.add_parser("keyword-volumes", help="read Keyword Planner volumes into the private reports repo")
+    common(sp)
+    sp.set_defaults(fn=cmd_keyword_volumes)
 
     sp = sub.add_parser("ads-guard", help="pause-only Google Ads spend guard (admin Telegram)")
     common(sp)

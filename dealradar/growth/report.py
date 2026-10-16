@@ -1159,17 +1159,19 @@ def deliver(cfg, subject: str, text: str, *, client: Any,
 
 
 def save_copy(cfg, subject: str, text: str, day: date, *, client: Any,
-              pause_s: float = 1.0) -> bool:
+              pause_s: float = 1.0, path: str | None = None,
+              message: str | None = None) -> bool:
     """One private file per report day (growth.reports_repo, REPORTS_REPO_TOKEN)
     so the operator's assistant can read the report without a mailbox."""
     repo = str((cfg.raw.get("growth") or {}).get("reports_repo") or "")
     token = get_secret("REPORTS_REPO_TOKEN")
     if not (repo and token):
         return False
-    url = f"https://api.github.com/repos/{repo}/contents/reports/{day.isoformat()}.md"
+    path = path if path is not None else f"reports/{day.isoformat()}.md"
+    url = f"https://api.github.com/repos/{repo}/contents/{path}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": cfg.resolved_user_agent()}
-    body = {"message": f"Growth report {day.isoformat()}",
+    body = {"message": message if message is not None else f"Growth report {day.isoformat()}",
             "content": base64.b64encode(f"# {subject}\n\n{text}".encode()).decode()}
     try:
         current = client.get(url, headers=headers)

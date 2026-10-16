@@ -827,6 +827,50 @@ growth:
   google_ads_api_version: "v25"   # v26 answers "Method not found" for this project (2026-10-12)
   google_ads_customer_id: "441-227-5803"       # the wowpriced ad account (reached directly)
   google_ads_login_customer_id: ""             # manager 586-101-9939 holds no accounts yet; "" = direct
+  keyword_volumes:
+    geo_target: 2840  # US; manual read-only Keyword Planner run
+    language: 1000   # English
+    keywords:
+      - best buy price history
+      - best buy price tracker
+      - target price history
+      - target price tracker
+      - woot price history
+      - price drop alert
+      - price drop alerts
+      - price drop alert email
+      - price tracker
+      - price history chart
+      - is this a good deal
+      - is this a good price
+      - price checker
+      - was price checker
+      - is this sale real
+      - fake discount
+      - fake discount checker
+      - walmart was price
+      - walmart rollback meaning
+      - is walmart rollback a good deal
+      - walmart price history
+      - walmart price tracker
+      - costco price adjustment
+      - target price adjustment
+      - target price match
+      - best buy price match
+      - best buy price match after purchase
+      - home depot price adjustment
+      - lowes price adjustment
+      - kohls price adjustment
+      - macys price adjustment
+      - price adjustment after purchase
+      - black friday price adjustment
+      - amazon price checker
+      - amazon price tracker
+      - amazon price history
+      - amazon typical price
+      - ps5 price history
+      - airpods price history
+      - camelcamelcamel walmart
   monthly_price_usd: 9.99                    # MRR fallback; annual prices count as amount / 12
 
 retention:
