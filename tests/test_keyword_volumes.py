@@ -222,7 +222,7 @@ def test_oauth_error_also_uses_codes_only(clock, caplog):
     assert_private(caplog)
 
 
-@pytest.mark.parametrize("secret", SECRETS.keys() - {"REPORTS_REPO_TOKEN"})
+@pytest.mark.parametrize("secret", sorted(SECRETS.keys() - {"REPORTS_REPO_TOKEN"}))
 def test_missing_google_secret_sends_nothing(clock, monkeypatch, caplog, secret):
     monkeypatch.delenv(secret)
     api = API(clock)
