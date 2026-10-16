@@ -185,9 +185,11 @@ def appeal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
-               require_confirmation: bool = True, allow_used: bool = False) -> float | None:
+               require_confirmation: bool = True, allow_used: bool = False,
+               links=None) -> float | None:
     """Landing quality; internal recovery may score used items without featuring them."""
-    from .publish.site import _needs_steps, _serialize_deal, _simple_code_deal
+    from .publish.credits import link_policy
+    from .publish.link_facts import _needs_steps, _simple_code_deal, derive_link_facts
     from .verify import _price_hidden_by_promo, is_amazon_deal, price_confirmation_recent
     from . import checkout_prices
 
@@ -238,15 +240,19 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     price = deal.get("final_price")
     if price is not None and price < options["cheap_below"]:
         quality *= options["cheap_factor"]
-    if _needs_steps(deal) and not _simple_code_deal(deal):
-        quality *= options["steps_factor"]
     earns = deal.get("earns")
+    if links is None and earns is None:
+        links = derive_link_facts(deal, link_policy(
+            cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
+            sovrn_key=cfg.affiliate_sovrn_key, sovrn_enabled=cfg.affiliate_sovrn_enabled,
+            competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
+            ebay_campid=cfg.affiliate_ebay_campaign_id))
+    steps = links.needs_steps if links is not None else _needs_steps(deal)
+    simple = links.simple_code if links is not None else (steps and _simple_code_deal(deal))
+    if steps and not simple:
+        quality *= options["steps_factor"]
     if earns is None:
-        earns = _serialize_deal(deal, now, cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
-                                sovrn_key=cfg.affiliate_sovrn_key,
-                                sovrn_enabled=cfg.affiliate_sovrn_enabled,
-                                competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
-                                ebay_campid=cfg.affiliate_ebay_campaign_id)["earns"]
+        earns = links.earns
     if not earns:
         quality *= options.get("no_earn_factor", 0.5)
     result = quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)

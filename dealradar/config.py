@@ -201,6 +201,7 @@ class AppConfig:
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
     photoless_last: bool = False
+    reuse_link_facts_enabled: bool = False
     images_asin_backfill_per_run: int = 60
     images_short_links_per_run: int = 10
     images_keepa_search_per_run: int = 10
@@ -684,6 +685,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.manifest_refresh = validated_manifest_refresh(g("publish", "manifest_refresh"))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
+    reuse = g("publish", "reuse_link_facts", default={})
+    if not isinstance(reuse, dict):
+        raise ValueError("publish.reuse_link_facts must be a mapping")
+    cfg.reuse_link_facts_enabled = reuse.get("enabled", False)
+    if type(cfg.reuse_link_facts_enabled) is not bool:
+        raise ValueError("publish.reuse_link_facts.enabled must be a boolean")
     for name in ("asin_backfill_per_run", "short_links_per_run", "keepa_search_per_run", "keepa_search_per_day"):
         setattr(cfg, "images_" + name, max(0, int(g("images", name, default=getattr(cfg, "images_" + name)))))
     cfg.images_keepa_match_min = float(g("images", "keepa_match_min", default=0.85))

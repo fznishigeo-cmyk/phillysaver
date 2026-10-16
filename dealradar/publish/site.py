@@ -15,23 +15,25 @@ import shutil
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
-from functools import lru_cache
 from html import escape
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from ..savings import display_pct, known_shipping, parse_stack_step
-from ..config import AppConfig, load_sources, redact_secrets, support_link, validated_drop_clock
+from ..config import AppConfig, redact_secrets, support_link, validated_drop_clock
 from ..rank import appeal_summary, daily_spotlight, pick_order, pick_score, top_picks
 from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
-from ..source_policy import host_of, source_image_allowed
+from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
 from . import amazon_as_of, amazon_history, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
-from .credits import source_display_name, source_sightings
+from .credits import _deal_source_hosts, _display_names, link_policy
+from . import link_facts
+from .link_facts import (LinkFacts, _link_destination, _needs_steps, _override_key,
+                         _simple_code_deal, earning_link, is_competitor_tracker_host)
 from .tracking import apply_tracking
 from .template_slots import replace_slot, validate_slot
 
@@ -41,13 +43,7 @@ TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 
 def _credit(sighting: dict[str, Any]) -> dict[str, str]:
-    """Public credit, including stored sightings from before the rename."""
-    name = sighting.get("source_name", "")
-    url = sighting.get("source_url", "")
-    host = (urlsplit(url or "").hostname or "").lower()
-    if name.lower().startswith("keepa") or host == "keepa.com" or host.endswith(".keepa.com"):
-        return {"name": "Amazon price drop", "url": ""}
-    return {"name": source_display_name(name), "url": url}
+    return link_facts._credit(sighting, _display_names())
 
 
 #: meta key: the keys the last drops unlocked for visitors (paywall.teaser_memory).
@@ -139,24 +135,6 @@ def site_template_version(price_presets: list[int] | None = None,
     return hashlib.sha256(data).hexdigest()[:12]
 
 
-_AMAZON_HOSTS = {"amazon.com", "www.amazon.com", "smile.amazon.com"}
-_AMAZON_NETWORK_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
-_SOVRN_HOSTS = {"redirect.viglink.com", "sovrn.co"}
-_EBAY_HOSTS = {"ebay.com", "www.ebay.com"}
-#: eBay Partner Network (US) tracking: these replace any already in the link.
-_EPN_PARAMS = ("mkcid", "mkrid", "siteid", "campid", "customid", "toolid", "mkevt")
-_AFFILIATE_PARAMS = {
-    "irgwc", "afsrc", "sourceid", "veh", "wmlspartner", "affiliates_ad_id",
-    "campaign_id", "sharedid", "clickid", "irclickid", "cjevent", "cjdata",
-    "ranmid", "raneaid", "ransiteid", "siteid", "sscid",
-}
-
-
-def is_competitor_tracker_host(host: str, hosts: list[str] | tuple[str, ...]) -> bool:
-    host = host.lower().removeprefix("www.")
-    return any(host == h or host.endswith("." + h) for h in hosts)
-
-
 def keeps_source_tracker(url: str, cfg) -> bool:
     """True when ``url`` is a source's tracker that must stay exactly as posted.
 
@@ -174,115 +152,17 @@ def keeps_source_tracker(url: str, cfg) -> bool:
         host, getattr(cfg, "affiliate_competitor_tracker_hosts", ()))
 
 
-@lru_cache(maxsize=1)
-def _deal_source_hosts() -> set[str]:
-    """Known source/blog hosts, including paused sources; stores can also have feeds."""
-    primary, backup = load_sources()
-    retailers = {"woot.com", "meh.com", "morningsave.com", "sidedeal.com",
-                 "dealgenius.com", "dailysteals.com", "tanga.com", "1sale.com"}
-    return {(urlsplit(s.site or s.url).hostname or "").lower().removeprefix("www.")
-            for s in primary + backup} - retailers - {""}
-
-
 def rewrite_affiliate(url: str, amazon_tag: str = "", *, sovrn_key: str = "",
                       sovrn_enabled: bool = False, cuid: str = "",
                       credit_urls: list[str] | None = None,
                       competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
                       ebay_campid: str = "") -> str:
-    """The one place outbound links are rewritten (nothing else may).
-
-    With the operator's Amazon Associates Store ID (config affiliate.amazon_tag)
-    an https amazon.com link carries tag=<id>, replacing any tag already in it;
-    with the eBay Partner Network campaign ID (affiliate.ebay_campaign_id) an
-    https ebay.com link carries our EPN parameters, replacing any in it;
-    eligible other retailers use Sovrn after removing affiliate tracking.
-    Emails pass neither a tag nor a Sovrn key, leaving their links unchanged.
-    """
-    if not url:
-        return url
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return url
-    host = (parts.hostname or "").lower()
-    if parts.scheme != "https" or not host:
-        return url
-    if is_competitor_tracker_host(host, competitor_tracker_hosts):
-        return url
-    if amazon_tag and host in _AMAZON_HOSTS:
-        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "tag"]
-        query.append(("tag", amazon_tag))
-        return urlunsplit(parts._replace(query=urlencode(query)))
-    if re.fullmatch(r"[0-9]{10}", ebay_campid) and host in _EBAY_HOSTS:
-        query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-                 if k.lower() not in _EPN_PARAMS]
-        query += [("mkcid", "1"), ("mkrid", "711-53200-19255-0"), ("siteid", "0"),
-                  ("campid", ebay_campid)]
-        if re.fullmatch(r"[A-Za-z0-9]{1,32}", cuid):
-            query.append(("customid", cuid))
-        query += [("toolid", "10001"), ("mkevt", "1")]
-        return urlunsplit(parts._replace(query=urlencode(query)))
-    if not sovrn_enabled or not re.fullmatch(r"[0-9a-f]{32}", sovrn_key):
-        return url
-    excluded = (_deal_source_hosts() | _SOVRN_HOSTS | set(competitor_tracker_hosts)
-                | {"wowpriced.com", "amzn.to", "a.co", "link.amazon"})
-    for credit in credit_urls or []:
-        try:
-            credit_host = (urlsplit(credit).hostname or "").lower().removeprefix("www.")
-        except ValueError:
-            continue
-        if credit_host:
-            excluded.add(credit_host)
-    if _AMAZON_NETWORK_HOST.search(host) or any(host == h or host.endswith("." + h) for h in excluded):
-        return url
-    # Keep product options (and their original encoding) exactly as posted.
-    query = [p for p in parts.query.split("&")
-             if (k := unquote_plus(p.split("=", 1)[0]).lower()) not in _AFFILIATE_PARAMS
-             and not k.startswith("utm_")]
-    merchant = urlunsplit(parts._replace(query="&".join(query)))
-    wrapped = f"https://redirect.viglink.com?key={sovrn_key}&u={quote(merchant, safe='')}"
-    if re.fullmatch(r"[A-Za-z0-9]{1,32}", cuid):
-        wrapped += f"&cuid={cuid}"
-    return wrapped
-
-
-def _link_destination(deal: dict[str, Any], amazon_tag: str,
-                      competitor_tracker_hosts: list[str] | tuple[str, ...],
-                      ebay_campid: str = "") -> tuple[str, str, bool]:
-    """Classify the final Get deal URL once for earning checks and counts."""
-    url = deal.get("url") or ""
-    try:
-        parts = urlsplit(url)
-        host = (parts.hostname or "").lower().removeprefix("www.")
-    except ValueError:
-        return "none", "", False
-    if not host or parts.scheme not in ("http", "https"):
-        return "none", "", False
-    ours = bool(amazon_tag and parts.scheme == "https"
-                and ("tag", amazon_tag) in parse_qsl(parts.query))
-    if host in {"amazon.com", "smile.amazon.com"}:
-        bucket = "amazon_tagged" if ours else "amazon_untagged"
-    elif host in {"amzn.to", "a.co", "link.amazon"}:
-        bucket = "amazon_short"
-    elif any(url == c.get("url") for c in deal.get("credits") or []):
-        bucket = "source_post"
-    elif host in _SOVRN_HOSTS:
-        bucket = "sovrn"
-    elif host == "ebay.com" and ebay_campid and ("campid", ebay_campid) in parse_qsl(parts.query):
-        bucket = "ebay_epn"
-    else:
-        bucket = "other_store"
-    earns = (parts.scheme == "https" and not is_competitor_tracker_host(host, competitor_tracker_hosts)
-             and (bucket in {"amazon_tagged", "sovrn", "ebay_epn"}
-                  or (bucket == "amazon_short" and ours)))
-    return bucket, host, earns
-
-
-def earning_link(deal: dict[str, Any], amazon_tag: str = "", *,
-                 competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
-                 ebay_campid: str = "") -> bool:
-    """Whether this deal's final Get deal destination credits our affiliate link."""
-    return _link_destination(deal, amazon_tag, competitor_tracker_hosts, ebay_campid)[2]
+    """Compatibility entry point for the sole pure affiliate rewriter."""
+    hosts = frozenset(_deal_source_hosts()) if sovrn_enabled and re.fullmatch(r"[0-9a-f]{32}", sovrn_key) else frozenset()
+    return link_facts.rewrite_affiliate(
+        url, amazon_tag, sovrn_key=sovrn_key, sovrn_enabled=sovrn_enabled, cuid=cuid,
+        credit_urls=credit_urls, competitor_tracker_hosts=competitor_tracker_hosts,
+        ebay_campid=ebay_campid, source_hosts=hosts)
 
 
 def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "", *,
@@ -353,38 +233,6 @@ def _headline(deal: dict[str, Any], cfg=None) -> str:
     if expires is not None:
         parts.append(f"Expires {expires.strftime('%b %d')}.")
     return " ".join(parts)
-
-
-#: Conditions under which the product page alone may not show the price
-#: (a cart-only drop, a targeted or new-customer offer, a multi-buy, an
-#: in-store price): the source post says how to get it.
-_STEP_CONDITIONS = frozenset(("subscribe_save", "in_cart", "new_customer", "targeted",
-                              "ymmv", "multi_buy", "in_store_only", "clearance_aisle"))
-
-
-def _needs_steps(deal: dict[str, Any]) -> bool:
-    """True when the price takes more than opening the product page: a code,
-    a coupon to clip, Subscribe & Save, a rebate or a step condition (live:
-    a $2.99 thermometer whose Amazon page said $8.99 before the code)."""
-    from ..verify import _price_hidden_by_promo
-
-    return bool(_price_hidden_by_promo(deal) or deal.get("rebates")
-                or _STEP_CONDITIONS & set(deal.get("conditions") or []))
-
-
-def _simple_code_deal(deal: dict[str, Any]) -> bool:
-    """Only applying a listed code is needed; unfamiliar steps stay on the post."""
-    codes = [re.escape(str(c).strip()) for c in deal.get("codes") or []
-             if str(c).strip()]
-    if not codes or deal.get("rebates") or "rebate_dependent" in (deal.get("flags") or []) \
-            or _STEP_CONDITIONS & set(deal.get("conditions") or []):
-        return False
-    code_step = re.compile(
-        r"(?:use|enter|apply)\s+(?:the\s+)?"
-        r"(?:(?:(?:coupon|promo|discount)\s+)?code\s*:?\s*)?"
-        r"[\"']?(?:" + "|".join(codes) + r")[\"']?(?:\s+at\s+checkout)?[.!]?", re.I)
-    return all(code_step.fullmatch(str(step).strip())
-               for step in deal.get("stack_steps") or [])
 
 
 #: What a step condition asks of the shopper, when the post gave no steps.
@@ -620,77 +468,24 @@ def checkout_metrics(deals: list[dict[str, Any]]) -> dict[str, Any]:
             "with_requirements": len(required), "covered": len(covered)}
 
 
-def _override_key(url: str) -> str:
-    """"walmart.com/222918738": a store page's host and its last path segment
-    (the product id), so the slug and tracking query never matter."""
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return ""
-    host = (parts.hostname or "").lower().removeprefix("www.")
-    last = parts.path.rstrip("/").rsplit("/", 1)[-1]
-    return f"{host}/{last}" if host and last else ""
-
-
 def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
                     overrides: dict[str, str] | None = None, *,
                     sovrn_key: str = "", sovrn_enabled: bool = False,
                     competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
-                    ebay_campid: str = "", cfg=None) -> dict[str, Any]:
+                    ebay_campid: str = "", cfg=None, links: LinkFacts | None = None) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
     if first_seen is not None:
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
-    # One credit per source as shown: two feeds of one partner (Hip2Save and
-    # Hip2Save Amazon), or its feed and newsletter, read "via Hip2Save" once,
-    # with its first post's link.
-    credits = []
-    for credit in (_credit(s) for s in source_sightings(deal)):
-        if all(credit["name"] != c["name"] for c in credits):
-            credits.append(credit)
+    links = links if links is not None else link_facts.derive_link_facts(deal, link_policy(
+        amazon_tag, overrides, sovrn_key=sovrn_key, sovrn_enabled=sovrn_enabled,
+        competitor_tracker_hosts=competitor_tracker_hosts, ebay_campid=ebay_campid))
+    # Each projection owns its JSON credits; internal facts never share lists.
+    credits = [{"name": name, "url": url} for name, url in links.credits]
     status = deal.get("status", "alive")
-    # No resolved product URL -> link the deal to the source post that
-    # reported it (which also carries the credit) rather than nothing. A
-    # deal that needs steps links there too: the product page alone shows
-    # a higher price, the post says how to get this one.
-    canon = deal.get("canonical_url") or ""
-    posted = deal.get("link_as_posted") or ""
-    protected_link = next((u for u in (posted, canon) if u and
-                           is_competitor_tracker_host(host_of(u), competitor_tracker_hosts)), "")
-    protected = bool(protected_link)
-    if protected:
-        canon = protected_link
-    post = next((c["url"] for c in credits
-                 if str(c["url"]).startswith(("https://", "http://"))), "")
-    steps = _needs_steps(deal)
+    steps = links.needs_steps
     checkout = _checkout(deal, steps)
-    key = hashlib.sha256(str(deal.get("dedupe_key", "")).encode("utf-8")).hexdigest()[:16]
-    store_link = rewrite_affiliate(canon, amazon_tag, sovrn_key=sovrn_key,
-                                   sovrn_enabled=sovrn_enabled, cuid=key,
-                                   credit_urls=[c["url"] for c in credits],
-                                   competitor_tracker_hosts=competitor_tracker_hosts,
-                                   ebay_campid=ebay_campid) if canon else ""
-    override = (overrides or {}).get(_override_key(canon)) if canon else None
-    # Get deal goes to the store when it earns (operator, 2026-10-12): any
-    # Amazon deal with our tag, and simple code deals at a store with a
-    # Sovrn wrap or override. Other steps keep the post. The card keeps the
-    # code, the steps and the "via" credit either way.
-    try:
-        host = (urlsplit(canon).hostname or "").lower() if canon.startswith("https://") else ""
-    except ValueError:
-        host = ""
-    if override and not protected:
-        store_link = override
-    earning = earning_link({"url": store_link, "credits": credits}, amazon_tag,
-                           competitor_tracker_hosts=competitor_tracker_hosts,
-                           ebay_campid=ebay_campid)
-    amazon = bool(amazon_tag and host in _AMAZON_HOSTS)
-    ours = amazon or (earning and _simple_code_deal(deal))
-    url = post if steps and post and not ours else \
-        store_link if canon else (credits[0]["url"] if credits else "")
-    if protected:
-        url = canon
     image = deal.get("image_url") or ""
     if not source_image_allowed(image, deal.get("sightings") or [], cfg):
         image = ""
@@ -698,14 +493,12 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         "dedupe_key": deal.get("dedupe_key", ""),
         # Opaque id (locked stubs carry only this: the dedupe key names the
         # product link or the item words, which a visitor must not see).
-        "key": key,
+        "key": links.key,
         "store": deal.get("store", ""),
         "item": deal.get("item", ""),
         "brand": deal.get("brand", ""),
-        "url": url,
-        "earns": earning_link({"url": url, "credits": credits}, amazon_tag,
-                              competitor_tracker_hosts=competitor_tracker_hosts,
-                              ebay_campid=ebay_campid),
+        "url": links.url,
+        "earns": links.earns,
         "image_url": image,
         "final_price": deal.get("final_price"),
         "regular_price": deal.get("regular_price"),
@@ -831,8 +624,23 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                         sovrn_enabled=cfg.affiliate_sovrn_enabled,
                         competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                         ebay_campid=cfg.affiliate_ebay_campaign_id, cfg=cfg)
+    policy = (link_policy(amazon_tag, overrides,
+                          **{k: v for k, v in link_options.items() if k != "cfg"})
+              if cfg.reuse_link_facts_enabled else None)
+    link_cache: dict[tuple, LinkFacts] = {}
+
+    def facts_for(deal):
+        if policy is None:
+            return None
+        # Labels may copy a row. A complete routing key lets those copies
+        # reuse facts, while a changed URL/credit/condition derives again.
+        key = link_facts.routing_key(deal)
+        if key not in link_cache:
+            link_cache[key] = link_facts.derive_link_facts(deal, policy)
+        return link_cache[key]
+
     candidate_scores = [(d, value) for d in deals
-                        if (value := pick_score(d, cfg, now, require_confirmation=False)) is not None]
+                        if (value := pick_score(d, cfg, now, require_confirmation=False, links=facts_for(d))) is not None]
     candidate_scores.sort(key=lambda pair: pair[1], reverse=True)
     db.meta_set(PICKS_META, json.dumps([d["dedupe_key"] for d, _ in
                                       candidate_scores[:cfg.keepa_recheck_top_n]]))
@@ -844,11 +652,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     deals.sort(key=lambda d: bool(d.get("price_aged")))
     labeled = [dict(d, price_unconfirmed=True) for d in deals if price_labels.qualifies(d, cfg, now)]
     deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)] + labeled
-    serialized = [_serialize_deal(d, now, amazon_tag, overrides, **link_options) for d in deals
+    serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
     scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
-                                       require_confirmation=False)
+                                       require_confirmation=False, links=facts_for(d))
               for d in deals if d["dedupe_key"] in earns}
     for d in serialized:
         value = scores[d["dedupe_key"]]
@@ -874,7 +682,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         teaser += [dict(_stub(d), price_unconfirmed=True) for d in extras]
         locked_count += len(extras)
     unlocked = {d["dedupe_key"] for d in teaser if not d.get("locked")}
-    spotlight = [_serialize_deal(d, now, amazon_tag, overrides, **link_options)
+    spotlight = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options)
                  for d in daily_spotlight([d for d in spotlight_rows
                      if d.get("pct_at_checkout") is None or d["dedupe_key"] in unlocked], cfg, now)]
     spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]

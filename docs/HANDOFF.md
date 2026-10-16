@@ -271,6 +271,34 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `tests/test_workflows.py` is unchanged. No external calls, browser install,
   workflow dispatch, commit, push or deployment. Full suite is left to the
   operator; only owned `/tmp/task206-*` scratch is removed after each run.
+- **Publish link facts (Codex task 225, 2026-10-16; uncommitted, OFF):**
+  Validated `publish.reuse_link_facts.enabled: false`. Pure identity, credits,
+  steps, final Get deal and earns live in `publish/link_facts.py`; source-file
+  resolution stays outside. Ranking derives current link facts without a full
+  public projection; enabled publication alone shares immutable results in one
+  render-local map, keyed by every routing input. Labels, checkout/confirmation,
+  images, scores and public/pick selection remain separate. Compatibility site
+  imports/wrappers, tracker protection and Amazon routing/history/as-of rules stay.
+  Pre-edit **755371a280d8**, fixed **2026-10-16 12:00 UTC**: **287 public files +
+  8 adjacent IndexNow files** match with reuse off/on across four access modes,
+  including versions, raw/gzip sizes, member JSON, link mix and selected order;
+  no existing repins. **3,267 distinct targeted checks across 91 files are green**
+  in their final context, including **71 feature checks**, both enabled offline
+  pipeline rerun modes and complete DB dumps after reopen. All pytest runs use
+  `-n 1` and dedicated `/tmp/task225-*` basetemps; the full suite remains for the
+  operator. Per-file isolation exposed the registry fixture's fake RSS module
+  missing `MAX_ENTRIES`: **the same failure reproduces on untouched HEAD**.
+  Pages + registry together: **58 passed on HEAD and 58 on this change**, with no
+  fixture edits. Shared disk exhaustion interrupted the first adjacent run;
+  restarted checks cleared owned temporary outputs per test/file and completed.
+  Fixed 2,300/5,000-deal profiles (all distinct routing keys): full projections
+  **4,284/9,313 → 2,300/5,000**, off and on. Enabled link derivations fall by the
+  same **1,984/4,313**. Separate uninstrumented CPU/peak-RSS samples show the map
+  does **not** consistently beat the extracted off path; keep it OFF for review.
+  Counts, CPU/RSS, bytes, costs and remaining coupling:
+  [publish-link-facts.md](publish-link-facts.md). Own scratch/logs removed; existing
+  workflow tests untouched. Review, the operator's full suite and representative
+  measurements precede activation. No live/paid calls, commit, push or deploy.
 - **Strict home browse slot (Codex task 205, 2026-10-16; uncommitted):**
   `dealradar/publish/template_slots.py` counts literal slots and reports safe,
   distinct missing/duplicate errors. `publish/site.py` validates the home slot

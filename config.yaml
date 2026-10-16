@@ -145,6 +145,8 @@ publish:
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
   photoless_last: true        # photos first within each wall group; search stays unchanged
+  reuse_link_facts:
+    enabled: false           # reuse pure routing facts only within one publish
   show_dead_hours: 24          # confirmed-gone cards linger inline for one day
   amazon_as_of:
     enabled: true
