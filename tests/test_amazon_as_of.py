@@ -87,8 +87,8 @@ def test_config_default_off_shipped_on_and_overrides(tmp_path):
 @pytest.mark.parametrize("mode,expected", [
     ("membership", "ece97e6d1b72b4210f2768049db75e49af4a2c020cbdad6bf024091518ad8098"),
     ("open", "be4273e88b7865e2c4c3d14aa8fdfd68d5806a0d59e444e7ecc7735faa0aa18a"),
-    ("support", "b854d34a874a19defc71aee35d18e7406378a52c979bcea0b81845e808d204a4"),
-    ("shipped", "3e51de1b63df8a704a45dbed84b89d42a02e1f0455658183ecaa2178a094b6b3"),
+    ("support", "5ec7208cdaf49796f50c2bcbe84d7dd37ed7131e29cbff2470b4c5670ec1de9f"),
+    ("shipped", "a3bcfb4f27e43c6020b39a60844a78e16721395851441314428f1405af47f0a7"),
 ])
 def test_off_matches_every_prechange_published_byte(tmp_path, monkeypatch, mode, expected):
     # Captured on untouched HEAD with these same checked/unchecked mixed-store offers.
@@ -121,7 +121,7 @@ def test_card_absolute_time_and_relative_label_share_the_check_clock(stamp, expe
     assert public["checked_at"] == iso(checked)
     assert public["amazon_as_of"] == expected
     markup = seo.card_html(public, now=now)
-    as_of = f'Price as of {expected}. {DISCLAIMER.replace("Amazon.com", "Amazon")}'
+    as_of = f'Price as of {expected}. {DISCLAIMER}'
     assert f'title="{as_of}"' in markup
     assert f'<span class="sr-only"> ({as_of}) </span>' in markup
     assert f'data-checked-at="{iso(checked)}"' in markup

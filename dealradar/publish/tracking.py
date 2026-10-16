@@ -102,6 +102,8 @@ _GTAG = """\
   window.gtag = function () { window.dataLayer.push(arguments); };
 """
 
+# The deal wall rewrites the address bar before gtag.js reads it, so GA4 gets
+# the landing URL's campaign tags (utm_*, click IDs) as page_location.
 _GA4 = """\
   // Google Analytics 4: for everyone.
   load("https://www.googletagmanager.com/gtag/js?id=" + %(ga4)s);
@@ -109,8 +111,6 @@ _GA4 = """\
   var ga4Config = ads ? {} :
               { allow_google_signals: false, allow_ad_personalization_signals: false };
   if (internal) ga4Config.traffic_type = "internal";
-  // The deal wall rewrites the address bar before gtag.js reads it: keep the
-  // landing URL's campaign tags (utm_*, click IDs) so GA4 credits the source.
   try {
     var landing = new URLSearchParams(window.location.search);
     landing.delete("internal");

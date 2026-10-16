@@ -324,7 +324,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
              for p in sorted(env["site"].rglob("*")) if p.is_file()}
     # Captured from untouched HEAD with this same offline fixture before task 106.
     digest = hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
-    assert digest == "27047a2ab6f4e58ca98991376e0a1f67597aa67d7f310e73216b28517d37dbf5"
+    assert digest == "2ed618ea2036544be859a9f9c55f8709b29ef69ef74f01216fc67fccb589fdea"
     assert _run(env)["spend_usd"] == 0
 
 
