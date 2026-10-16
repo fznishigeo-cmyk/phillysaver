@@ -124,7 +124,7 @@ def test_lighthouse_schedule_versions_pages_and_gate():
     for needle in ("playwright@1.48.2", "npx playwright install --with-deps chromium",
                    "npx --yes lighthouse@12.6.1", "CHROME_PATH=", "chromium.executablePath()",
                    "--only-categories=performance,accessibility,best-practices,seo", "--output=json",
-                   "sitemap.xml", "best-deals-today/", "urls.find", "sleep 1"):
+                   "sitemap.xml", "best-deals-today/", "urls.find", "sleep 1", "deals.json", "deal_path"):
         assert needle in body, needle
     audit = next(s for s in steps if s.get("name") == "Audit four pages")
     assert "--preset=" not in "\n".join(line for line in audit["run"].splitlines() if not line.strip().startswith("#"))

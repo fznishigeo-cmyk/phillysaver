@@ -46,12 +46,22 @@ jobs:
             }
             const urls = [...body.matchAll(/<loc>\s*([^<]+)\s*<\/loc>/g)].map(m => new URL(m[1].trim()));
             const first = pattern => urls.find(u => u.origin === new URL(site).origin && pattern.test(u.pathname));
-            const hub = first(/^\/deals\/(?!under-)[^/]+\/$/), deal = first(/^\/deal\/[^/]+\/$/);
+            const hub = first(/^\/deals\/(?!under-)[^/]+\/$/);
+            let deal = first(/^\/deal\/[^/]+\/$/);
+            if (!deal) {
+              // Single-deal pages are noindex,follow (out of the sitemap): take one from the live list.
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              const list = await fetch(new URL('deals.json', site), { signal: AbortSignal.timeout(15000) });
+              if (!list.ok) throw new Error('deals.json unavailable');
+              const path = ((await list.json()).deals || []).map(d => d.deal_path)
+                .find(p => /^\/deal\/[^/]+\/$/.test(p || ''));
+              if (path) deal = new URL(path, site);
+            }
             if (!hub || !deal) throw new Error('sitemap missing hub or deal');
             fs.writeFileSync('lighthouse-pages.tsv', [['home', site], ['hub', hub.href],
               ['deal', deal.href], ['best-today', new URL('best-deals-today/', site).href]]
               .map(row => row.join('\t')).join('\n') + '\n');
-          })().catch(() => { console.error('Lighthouse: could not select four pages'); process.exitCode = 1; });
+          })().catch(e => { console.error('Lighthouse: could not select four pages: ' + e.message); process.exitCode = 1; });
           NODE
       - name: Audit four pages
         run: |
