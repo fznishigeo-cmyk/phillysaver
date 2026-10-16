@@ -307,6 +307,34 @@ def test_static_wall_best_today_and_category_unchanged(tmp_path, cfg, db, option
     assert titles((out / "best-deals-today/index.html").read_text()) == [d["item"] for d in source[:30]]
 
 
+def test_best_today_has_a_dated_intro_and_category_summary(tmp_path, cfg, db, options):
+    # Its own words (date + where the picks come from), not just a copy of the home wall.
+    cfg.paywall_open_access = True
+    cfg.front_page = options
+    source = [make_deal(**{k: v for k, v in d.items() if k != "key"}) for d in rows()]
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out, deals=source)
+    best = (out / "best-deals-today/index.html").read_text()
+    eastern = NOW.astimezone(seo.ZoneInfo("America/New_York"))
+    assert f"updated {eastern.strftime('%A, %B')} {eastern.day}, {eastern.year}." in best
+    assert "ranked like the live wall" not in best
+    summary = re.search(r'<p class="best-summary">(.*?)</p>', best).group(1)
+    assert summary.startswith("Top categories today: ")
+    assert len(re.findall(r'<a href="/deals/[a-z-]+/">', summary)) == 3
+    assert 'href="/deals/home-kitchen/"' in summary
+    assert "Automotive" not in summary  # car parts sink below the 30 picks
+
+
+def test_best_summary_needs_two_categories():
+    assert seo._best_summary([dict(category="home")] * 5) == ""
+    html = seo._best_summary([dict(category="home")] * 3 + [dict(category="beauty")] * 2
+                             + [dict(category="auto")])
+    assert html == ('<p class="best-summary">Top categories today: '
+                    '<a href="/deals/home-kitchen/">Home &amp; Kitchen</a> (3), '
+                    '<a href="/deals/beauty-personal-care/">Beauty &amp; Personal Care</a> (2) and '
+                    '<a href="/deals/automotive/">Automotive</a> (1).</p>')
+
+
 def test_no_niche_card_on_the_first_screen():
     from dealradar.rank import front_page_mix
     opts = {"broad_categories": ["home", "beauty"], "niche_categories": ["auto"],

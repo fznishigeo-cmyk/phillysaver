@@ -557,6 +557,22 @@ def _landing_page(template: str, title: str, heading: str, description: str,
                  HUB_LINKS=_hub_links())
 
 
+def _best_summary(rows: list[dict[str, Any]]) -> str:
+    """Which categories today's picks come from, linked to their hubs: the
+    page's own words, so it is more than a copy of the home wall (Google
+    left it "Crawled - currently not indexed", 2026-10-16)."""
+    counts: dict[tuple[str, str], int] = {}
+    for d in rows:
+        label, _group, slug = next((g for g in HUB_GROUPS if g[1] != "USED" and in_group(d, g[1])),
+                                   CATGROUPS[-1])
+        counts[(label, slug)] = counts.get((label, slug), 0) + 1
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+    if len(top) < 2:
+        return ""
+    parts = [f'<a href="{hub_href(slug)}">{escape(label)}</a> ({n})' for (label, slug), n in top]
+    return f'<p class="best-summary">Top categories today: {", ".join(parts[:-1])} and {parts[-1]}.</p>'
+
+
 def _listing_pages(template, heading, intro, root, site_url, rows, paths, now,
                    floor, paginate, family):
     count = max(1, math.ceil(len(rows) / _HUB_MAX)) if paginate else 1
@@ -926,12 +942,14 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     # Counts top out at "1,000+", like the home header (operator, 2026-10-12).
     count = "1,000+" if n >= 1000 else f"{n // 100 * 100:,}+" if n >= 100 else str(n)
     confirmed = [d for d in live if not d.get("price_unconfirmed") and not d.get("price_aged")]
-    intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now, ranked like the live wall."
+    eastern = now.astimezone(ZoneInfo("America/New_York"))
+    updated = f"{eastern.strftime('%A, %B')} {eastern.day}, {eastern.year}"
+    intro = (f"The {min(30, len(confirmed))} best of {count} live deals right now, updated {updated}."
              if confirmed else "Our top picks are selected from offers that pass our price checks.")
     best_rows = pick_order(confirmed, cfg.front_page)[:30]
-    best_content = ('<h2 class="sr-only">Best live deals</h2><div class="grid">'
-                    + ''.join(card_html(d, paths, now) for d in best_rows) + '</div>' if best_rows else
-                    '<p><a href="/">Explore current verified deals</a>.</p>')
+    best_content = ('<h2 class="sr-only">Best live deals</h2>' + _best_summary(best_rows)
+                    + '<div class="grid">' + ''.join(card_html(d, paths, now) for d in best_rows)
+                    + '</div>' if best_rows else '<p><a href="/">Explore current verified deals</a>.</p>')
     best_html = _landing_page(template, best_title, best_title.removesuffix(" | wowpriced"),
                               intro, best_path, site_url, best_content,
                               intro=intro, extra_head=_item_list(best_rows, paths, site_url),
