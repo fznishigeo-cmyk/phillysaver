@@ -221,6 +221,20 @@ publish:
       category_factors: {home: 1.15, kitchen: 1.15, beauty: 1.15, fashion: 1.15,
                          toys_games: 1.05, kids_baby: 1.05, health: 1.05, grocery: 1.05,
                          auto: 0.85}
+    popular_affordable:        # task 255: private Amazon popularity + low checkout price
+      enabled: false           # flip after reviewing the 1-day shadow
+      shadow: true             # encrypted-state comparison; private growth report only
+      min_monthly_sold: 1000
+      max_price: 50
+      pct_over_floor: 10        # derives the threshold from publish.min_pct
+      max_age_h: 72
+      weight: 1.25
+      max_share: 0.25           # at most 6 boosted picks per 24-card window
+    everyday_price:          # operator 2026-10-17: lean toward everyday prices, softly
+      enabled: true          # operator 2026-10-17 ~02:00Z: "$200 items at the top, nobody will buy that"
+      full_until: 50         # final_price <= this: factor 1.0
+      floor_from: 150        # final_price >= this: floor_factor
+      floor_factor: 0.75     # linear between full_until and floor_from
     top_picks:                # the All tab's first cards (operator, 2026-10-12)
       count: 120
       pct_weight: 1.0
@@ -411,6 +425,7 @@ accuracy:
   extra_samples_per_day: 0       # optional random paid audits; existing reads are always reused
 
 keepa:
+  popular_affordable_page: false  # separate opt-in: one existing Amazon page slot
   unique_asin_rechecks:
     enabled: false               # share one product request within each compatible recheck group
   buybox_rule: shadow             # off | shadow | on; publication rule only

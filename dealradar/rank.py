@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from .conditions import USED_CONDITIONS, normalize_conditions
 
+import heapq
 import logging
 import math
 import re
@@ -31,6 +32,8 @@ log = logging.getLogger("dealradar.rank")
 #: Deaths the site may show as GONE: two live checks agreed, or the
 #: store's own API ended the deal (models.Deal.death).
 VERIFIED_DEATHS = frozenset({"confirmed", "api_ended"})
+# Keep in sync with DROP_WINDOW in publish/templates/index.html.
+PICK_WINDOW = 24
 
 
 def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
@@ -184,10 +187,57 @@ def appeal_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "niche_examples": [d["item"] for d in niche[:3]]}
 
 
+def popular_affordable_factor(deal: dict[str, Any], cfg, now: datetime,
+                              options: dict | None = None) -> float:
+    """Pure ordering factor; popularity is private and specific to one ASIN."""
+    from .verify import is_amazon_deal
+
+    options = options if options is not None else cfg.front_page.get("popular_affordable") or {}
+    if not options or not is_amazon_deal(deal) \
+            or USED_CONDITIONS & set(normalize_conditions(deal.get("conditions"))):
+        return 1.0
+    price, pct = deal.get("final_price"), deal.get("pct_at_checkout")
+    if any(not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v)
+           for v in (price, pct)) or price < 0 or price > options.get("max_price", 50) \
+            or pct < cfg.min_pct + options.get("pct_over_floor", 10):
+        return 1.0
+    record = deal.get("keepa_popularity")
+    if not isinstance(record, dict) or not deal.get("asin") or record.get("asin") != deal["asin"]:
+        return 1.0
+    sold = record.get("monthly_sold")
+    sold_at = record.get("sold_at")
+    at = parse_iso(sold_at) if isinstance(sold_at, str) else None
+    if type(sold) is not int or sold < max(0, options.get("min_monthly_sold", 1000)) \
+            or at is None or not -1 <= (now - at).total_seconds() / 3600 <= options.get("max_age_h", 72):
+        return 1.0
+    return float(options.get("weight", 1.25))
+
+
+def everyday_price_factor(deal: dict[str, Any], options: dict) -> float:
+    """Softly favor everyday checkout prices across all stores."""
+    price = deal.get("final_price")
+    if not options or not isinstance(price, (int, float)) or isinstance(price, bool):
+        return 1.0
+    try:
+        finite = math.isfinite(price)
+    except OverflowError:  # an int too large for a float is still finite
+        finite = True
+    if not finite or price < 0:
+        return 1.0
+    full, floor = options.get("full_until", 60), options.get("floor_from", 200)
+    factor = options.get("floor_factor", .85)
+    if price <= full:
+        return 1.0
+    if price >= floor:
+        return float(factor)
+    return 1.0 - (1.0 - factor) * (price - full) / (floor - full)
+
+
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                require_confirmation: bool = True, allow_used: bool = False,
-               links=None) -> float | None:
-    """Landing quality; internal recovery may score used items without featuring them."""
+               links=None, popularity: bool = True) -> float | None:
+    """Landing quality; internal recovery may score used items without featuring them.
+    popularity=False leaves out the private popularity boost (public ``ps``)."""
     from .publish.credits import link_policy
     from .publish.link_facts import _needs_steps, _simple_code_deal, derive_link_facts
     from .verify import _price_hidden_by_promo, is_amazon_deal, price_confirmation_recent
@@ -262,11 +312,17 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
         result *= (appeal.get("category_factors") or {}).get(category, 1.0)
         if niche_reason(deal):
             result *= appeal.get("niche_factor", 1.0)
+    if popularity and (cfg.front_page.get("popular_affordable") or {}).get("enabled", False):
+        result *= popular_affordable_factor(deal, cfg, now)
+    everyday = cfg.front_page.get("everyday_price") or {}
+    if everyday.get("enabled", False):
+        result *= everyday_price_factor(deal, everyday)
     return result
 
 
 def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
-              now: datetime | None = None, *, summary: dict | None = None, cfg=None) -> list[dict[str, Any]]:
+              now: datetime | None = None, *, summary: dict | None = None, cfg=None,
+              boosted: set[str] | None = None) -> list[dict[str, Any]]:
     """Greedy selection with strict caps; ties retain the input's order."""
     from .verify import _price_hidden_by_promo
     from . import checkout_prices
@@ -276,7 +332,9 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
         return []
     checkout = options.get("checkout_price_deals") or {}
     enabled = checkout.get("enabled", False)
-    if enabled and cfg is None:
+    popular = options.get("popular_affordable") or {}
+    popular_on = popular.get("enabled", False)
+    if (enabled or popular_on) and cfg is None:
         from .config import AppConfig
         cfg = AppConfig(front_page=options)
     now = now or datetime.now(timezone.utc)
@@ -285,8 +343,29 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
     promo_positions = []
     stores, brands, categories, twins = Counter(), Counter(), Counter(), Counter()
     picked, last, run = [], "", 0
-    for deal, _score in sorted((pair for pair in scored if pair[1] is not None),
-                               key=lambda pair: pair[1], reverse=True):
+    ranked = sorted((pair for pair in scored if pair[1] is not None),
+                    key=lambda pair: pair[1], reverse=True)
+    pending = iter(ranked)
+    boost_counts = Counter()
+    boost_cap = math.floor(popular.get("max_share", .25) * PICK_WINDOW) if popular_on else 0
+    queue = [(-value, i, deal, popular_affordable_factor(deal, cfg, now, popular))
+             for i, (deal, value) in enumerate(ranked)] if popular_on else []
+    heapq.heapify(queue)
+    while True:
+        factor = 1.0
+        if popular_on:
+            if not queue:
+                break
+            negative, i, deal, factor = heapq.heappop(queue)
+            if factor > 1 and boost_counts[len(picked) // PICK_WINDOW] >= boost_cap:
+                # Compete again at the ordinary score; never discard overflow.
+                heapq.heappush(queue, (negative / factor, i, deal, 1.0))
+                continue
+        else:
+            try:
+                deal, _score = next(pending)
+            except StopIteration:
+                break
         if deal.get("price_unconfirmed") or deal.get("price_aged"):
             continue
         if len(picked) >= picks["count"]:
@@ -319,6 +398,10 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
             if summary is not None:
                 for reason in kept_by:
                     summary["kept_by"][reason] += 1
+        if factor > 1:
+            boost_counts[len(picked) // PICK_WINDOW] += 1
+            if boosted is not None:
+                boosted.add(deal["dedupe_key"])
         picked.append(deal)
         stores[store] += 1
         brands[brand] += 1

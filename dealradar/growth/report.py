@@ -185,6 +185,16 @@ def _product_shadow(db_path, cfg, now) -> dict:
         db.close()
 
 
+def _popular_affordable(db_path, now) -> dict:
+    from ..popular_affordable import report_data
+
+    db = DB(db_path, read_only=True)
+    try:
+        return report_data(db, now)
+    finally:
+        db.close()
+
+
 def _pinterest(db_path, cfg, now) -> dict:
     from .pinterest import report_data
 
@@ -328,6 +338,8 @@ def collect(cfg, now: datetime, client: Any, *, db_path=None) -> tuple[dict, dic
                                 lambda: _non_amazon_freshness(db_path)),
         "product_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                            lambda: _product_shadow(db_path, cfg, now)),
+        "popular_affordable": ([("state.db", bool(db_path) and Path(db_path).is_file())],
+                               lambda: _popular_affordable(db_path, now)),
         "critic_shadow": ([("state.db", bool(db_path) and Path(db_path).is_file())],
                           lambda: _critic_shadow(db_path, now)),
         "ai_usage": ([("state.db", bool(db_path) and Path(db_path).is_file())],
@@ -769,6 +781,8 @@ def build_report(cfg, data: dict, status: dict, yesterday: date) -> tuple[str, s
         lines += ["", *click_lines(data.get("click_signal"))]
     from ..product_shadow import report_lines as product_shadow_lines
     lines += ["", *product_shadow_lines(data.get("product_shadow"))]
+    from ..popular_affordable import report_lines as popular_affordable_lines
+    lines += ["", *popular_affordable_lines(data.get("popular_affordable"))]
     if (cfg.pinterest.get("analytics") or {}).get("enabled", False):
         from .pinterest import report_lines as pinterest_lines
         lines += ["", *pinterest_lines(data.get("pinterest"))]

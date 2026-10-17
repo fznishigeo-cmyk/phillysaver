@@ -481,6 +481,7 @@ class AppConfig:
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
+    keepa_popular_affordable_page: bool = False
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
     keepa_tokens_per_minute: float = 20.0
@@ -1177,6 +1178,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg.keepa_amazon_pages_per_pull = max(1, int(g(
         "keepa", "amazon_pages_per_pull", default=cfg.keepa_amazon_pages_per_pull)))
+    cfg.keepa_popular_affordable_page = bool(g(
+        "keepa", "popular_affordable_page", default=cfg.keepa_popular_affordable_page))
     cfg.keepa_warehouse_pages_per_pull = max(1, int(g(
         "keepa", "warehouse_pages_per_pull", default=cfg.keepa_warehouse_pages_per_pull)))
     cfg.keepa_reserve_tokens = max(0.0, float(g(

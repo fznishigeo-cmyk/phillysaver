@@ -355,6 +355,24 @@ def _harvest_image(deal: dict[str, Any], product: dict[str, Any]) -> None:
         deal["image_url"] = f"https://m.media-amazon.com/images/I/{name}"
 
 
+def _harvest_popularity(deal: dict[str, Any], product: dict[str, Any]) -> None:
+    """Private facts from an already-paid exact-variation product reading."""
+    asin = deal.get("asin")
+    if not asin or product.get("asin") != asin:
+        return
+    sold = product.get("monthlySold")
+    at = keepa_time(product.get("lastSoldUpdate"))
+    stats = product.get("stats")
+    current = stats.get("current") if isinstance(stats, dict) else None
+    rank = current[3] if isinstance(current, list) and len(current) > 3 else None
+    deal["keepa_popularity"] = {
+        "asin": asin,
+        "monthly_sold": sold if type(sold) is int and sold >= 0 else None,
+        "sold_at": iso(at) if at is not None else "",
+        "sales_rank": rank if type(rank) is int and rank > 0 else None,
+    }
+
+
 #: Stack-step wording whose discount Amazon's listed price never shows: the
 #: shopper only sees it in the cart (clip coupon, promo code, Subscribe &
 #: Save, checkout promo). A plain sale step IS the listed price.
@@ -725,6 +743,7 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
     asin = str(deal.get("asin") or "").strip().upper()
     final = deal.get("final_price")
     _harvest_image(deal, product)
+    _harvest_popularity(deal, product)
     stats = product.get("stats")
     if is_used_deal(deal):
         return _judge_used(asin, deal, product,
@@ -947,6 +966,7 @@ def keepa_check(deal: dict[str, Any], cfg,
         if answered is not None:
             answered["yes"] = True  # Keepa answered (even if inconclusive)
         _harvest_image(deal, product)
+        _harvest_popularity(deal, product)
         stats = product.get("stats")
         avg = None
         if isinstance(stats, dict):

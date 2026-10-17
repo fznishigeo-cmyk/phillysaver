@@ -250,6 +250,7 @@ class Deal:
     source_recheck_run: str = ""
     store_recheck_run: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
+    keepa_popularity: dict[str, Any] | None = None  # private, exact-variation ordering facts
     keepa_warehouse_seen_at: str = ""     # exact used price in the Warehouse lane
     keepa_checked: bool = False           # the one-time Keepa cross-check ran
     # ISO UTC of the moment status flipped to 'dead' (site shows a dead deal

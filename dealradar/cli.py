@@ -43,7 +43,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     summary = run(fast_lane=args.fast_lane, db_path=args.db,
                   config_path=args.config,
                   dry_run_telegram=True if args.dry_run_telegram else None)
-    print(json.dumps({k: v for k, v in summary.items() if k != "source_errors"},
+    print(json.dumps({k: v for k, v in summary.items() if k not in {"source_errors", "popular_affordable"}},
                      default=str, indent=2))
     return 0
 

@@ -1257,7 +1257,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     from .verify import (KEEPA_BATCH, KEEPA_OFFERS_BATCH, USED_RECHECK_TOKENS,
                          confirmation_coverage, is_amazon_deal, is_used_deal,
                          _live_new_price, _price_hidden_by_promo,
-                         _keepa_since_price, keepa_time, keepa_observed_at,
+                         _harvest_popularity, _keepa_since_price, keepa_time, keepa_observed_at,
                          live_price_reading, price_confirmed_at, price_unconfirmed,
                          recheck_amazon_prices, woot_offer_url)
     from .publish.site import PICKS_META, WALL_META
@@ -1911,6 +1911,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                         stats["drift"][bucket] += 1
                     post = reprice_post(product, deal, cfg, now, buybox=shopper is not None)
                     if post is not None and reprice_existing(db, deal, post, cfg, now, observed_at=observed):
+                        _harvest_popularity(deal, product)  # repricing reloads the stored payload
                         stats["drift"]["repriced"] += 1
                         verdict = True  # a moved but corrected price is live, never gone
                     if shopper is not None:
@@ -2882,7 +2883,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                         and not summary["prefilter"]["unevaluated"]
                         and len(processed) == len(new_posts))
         log.info("run %s done in %.1fs: %s", run_key, summary["elapsed_s"],
-                 {k: v for k, v in summary.items() if k != "source_errors"})
+                 {k: v for k, v in summary.items() if k not in {"source_errors", "popular_affordable"}})
         return summary
     finally:
         try:

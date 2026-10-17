@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
-from .. import checkout_prices
+from .. import checkout_prices, popular_affordable
 from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
@@ -677,8 +677,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
                                        require_confirmation=False, links=facts_for(d))
               for d in deals if d["dedupe_key"] in earns}
+    originals = {d["dedupe_key"]: d for d in deals}
+    # Public ps never carries the private popularity boost (scored without it,
+    # not divided out: float rounding would still leak it).
+    public_scores = {d["dedupe_key"]: pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
+                                                 require_confirmation=False, links=facts_for(d),
+                                                 popularity=False)
+                     for d in deals if d["dedupe_key"] in earns} \
+        if (cfg.front_page.get("popular_affordable") or {}).get("enabled", False) else scores
     for d in serialized:
-        value = scores[d["dedupe_key"]]
+        value = public_scores[d["dedupe_key"]]
         if value is not None:
             d["ps"] = round(value, 1)
     # The public file is a teaser when the paywall is on: the top deals in
@@ -707,7 +715,6 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]
     candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
-    originals = {d["dedupe_key"]: d for d in deals}
     confirmed_candidates = [(d, value) for d, value in candidates
                             if not is_amazon_deal(originals[d["dedupe_key"]])
                             or (checkout_prices.enabled(cfg) and checkout_prices.kind(originals[d["dedupe_key"]]))
@@ -716,9 +723,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     checkout_summary = checkout_prices.summary()
     # Rank original facts: public rows omit sightings and raw checkout steps.
     public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
-    picked = [public_candidates[d["dedupe_key"]] for d in top_picks(
-        [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates],
-        cfg.front_page, now, summary=checkout_summary, cfg=cfg)]
+    original_candidates = [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates]
+    original_picks = top_picks(original_candidates, cfg.front_page, now,
+                               summary=checkout_summary, cfg=cfg)
+    picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
+    popular_summary = None
+    popular_options = cfg.front_page.get("popular_affordable") or {}
+    if popular_options.get("shadow") or popular_options.get("enabled") \
+            or (cfg.front_page.get("everyday_price") or {}).get("enabled"):
+        try:
+            popular_summary = popular_affordable.compare(original_candidates, cfg, now)
+            popular_affordable.record(db, now, (last_run or {}).get("run_key"), popular_summary)
+        except Exception as e:
+            logger.warning("%s", type(e).__name__)
+            popular_summary = None
     for n, d in enumerate(picked, 1):
         d["pick"] = n
     if checkout_prices.enabled(cfg):
@@ -898,9 +916,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                  "prompt_delay_s": max(15, cfg.join_prompt_delay_s), "apple": cfg.join_apple},
         "engagement": engagement,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
-        # Appeal is applied in Python; omit its knobs so disabling it restores
+        # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
-        "front_page": {k: v for k, v in cfg.front_page.items() if k != "appeal"
+        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price"}
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
@@ -1140,6 +1158,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
             "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
+            **({"popular_affordable": popular_summary} if popular_summary is not None else {}),
             "checkout_price_deals": checkout_summary,
             "product_pages": product_summary,
             **({"ai_take": take_summary} if cfg.ai_take["enabled"] else {}),

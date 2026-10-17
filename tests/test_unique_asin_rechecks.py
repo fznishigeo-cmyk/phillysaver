@@ -120,9 +120,9 @@ def test_disabled_transport_and_pipeline_match_pre_edit_baseline(db, cfg, monkey
     assert digest(snapshot) == "e24faa8be7f9e1e7f19c02d6a7f3b3df4b0020e7c9aef60cd3426eb93506ae5a"
     calls.clear()
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False, fetcher=fetcher)
-    # Task 253 added the identity fields after this pin; compare the recorded fields.
-    rows = [{k: v for k, v in d.items() if k not in {"product_identity_url", "product_identity_tried"}}
-            for d in db.all_deals()]
+    # Tasks 253 and 255 added fields after this pin; compare the recorded fields.
+    later = {"product_identity_url", "product_identity_tried", "keepa_popularity"}
+    rows = [{k: v for k, v in d.items() if k not in later} for d in db.all_deals()]
     assert digest({"calls": calls, "stats": stats, "rows": rows,
                    "history": History(db, cfg, NOW).samples}) == "5b91008419009dfd1bfd455a4fb7705f3a9523f1325c43e25182542c0e3ca379"
 

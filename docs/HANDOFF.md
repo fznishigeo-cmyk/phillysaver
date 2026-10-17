@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-16)
+# Handoff — state of wowpriced.com (updated 2026-10-17)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -251,6 +251,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Internet dark mode. Ask the marketing contact for browser/app, a screenshot
   and inversion settings. Owned `/tmp/task254-*` basetemps/logs removed;
   screenshots/rerun fixtures retained. No network calls, full suite, commit or push.
+- **Popular affordable drops (Codex tasks 255/255b, 2026-10-17; 255b uncommitted, OFF):**
+  Both `publish.front_page.{popular_affordable,everyday_price}.enabled` switches stay
+  false; `popular_affordable.shadow: true`, `keepa.popular_affordable_page: false`.
+  `rank.py`/`publish/site.py`/`pipeline.py`/`cli.py`/`fetch/keepa.py` fix private
+  scores/logs, first-window membership, shadow/page errors and clock skew, and add
+  the soft price tilt. `popular_affordable.py`/`growth/report.py` deliver latest
+  plus 24h medians privately from the same-key 26h encrypted-state ring
+  `popular_affordable_shadow`. Capture: +0 tokens/+0 requests; tilts/shadow:
+  0 tokens/0 LLM calls; existing read costs unchanged. Optional page: 5 tokens
+  within six pages, normally 0 extra, at most +5/pull or 720/day. Offline targeted
+  feature/report runs: **200 passed in 74.19s (0:01:14)**, **201 passed in 72.99s (0:01:12)**;
+  front-page/appeal/unique-ASIN/Keepa: **307 passed in 132.40s (0:02:12)**;
+  e2e `-k rerun`: **6 passed in 55.52s**. All used `-n 1 -p no:cacheprovider`;
+  owned `/tmp/task255b-*` scratch deleted, hashes unchanged. Review then flip both
+  ranking switches true; optional-page validation/activation remains separate.
+  No full suite, network, commit or push.
 - **Device-local extension index (Codex task 244c, 2026-10-16; uncommitted, checker OFF):**
   Adds versioned, deterministic `/check/data/all.json` with lossless dictionary
   columns/front-coded JSON values; every alias/field matches the shards. The

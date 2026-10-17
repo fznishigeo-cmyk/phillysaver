@@ -115,6 +115,7 @@ DATE_RANGE_90D = 3
 #: first: percent-sorting surfaces $5 junk), 4 = percent drop.
 SORT_NEWEST = 1
 SORT_ABS_DROP = 2
+SORT_SALES_RANK = 3
 SORT_PCT_DROP = 4
 
 #: Keepa's /deal page size: a page with fewer rows is the query's last.
@@ -564,6 +565,7 @@ class KeepaDealsAdapter(SourceAdapter):
         self.token_usage = TokenUsage()
         self.recheck: Callable | None = None  # pipeline: due work before overflow discovery
         self.rate_limited = False
+        self.pull_summary = {"popular_page_rows": 0, "popular_page_admitted": 0}
 
     def fetch_posts(
         self,
@@ -578,6 +580,7 @@ class KeepaDealsAdapter(SourceAdapter):
         from ..keepa_budget import TokenUsage
         self.token_usage = TokenUsage()
         self.rate_limited = False
+        self.pull_summary = {"popular_page_rows": 0, "popular_page_admitted": 0}
         key = get_secret("KEEPA_KEY")
         if not key:
             raise AdapterNotConfigured("keepa api key missing")
@@ -653,6 +656,8 @@ class KeepaDealsAdapter(SourceAdapter):
                                         all_roots=bool(cfg.keepa_focus_categories))
                 self._run_focus(pull, cfg, amazon_sel, amazon_seen,
                                 map_amazon, amazon, amazon_lane)
+                popular_ran = self._run_popular_page(
+                    pull, cfg, amazon_sel, amazon_seen, map_amazon, amazon, amazon_lane)
                 # Pass 1, page 0: Amazon's own NEW price dropped
                 # >= MIN_DROP_PCT below its 90-day average.
                 _, amazon_next = self._run_pass(
@@ -662,6 +667,9 @@ class KeepaDealsAdapter(SourceAdapter):
                 self._lookup_categories(pull, [], all_roots=bool(cfg.keepa_focus_categories))
                 self._run_focus(pull, cfg, amazon_sel, amazon_seen,
                                 map_amazon, amazon, amazon_lane)
+                if not popular_ran:
+                    popular_ran = self._run_popular_page(
+                        pull, cfg, amazon_sel, amazon_seen, map_amazon, amazon, amazon_lane)
                 # Pass 2: warehouse, a third of the pages FRESH and the rest
                 # (plus any FRESH left unused) DEEP. Only the Amazon and
                 # FRESH first pages may run under the reserve.
@@ -679,7 +687,7 @@ class KeepaDealsAdapter(SourceAdapter):
                 if amazon_next is not None:
                     _, amazon_next = self._run_pass(
                         pull, amazon_sel, amazon_next,
-                        cfg.keepa_amazon_pages_per_pull - 1, source.name,
+                        cfg.keepa_amazon_pages_per_pull - 1 - int(popular_ran), source.name,
                         amazon_seen, map_amazon, amazon, amazon_lane,
                         first_is_extra=True)
                 # Last and lowest: the warehouse sweep, on idle tokens only.
@@ -856,6 +864,37 @@ class KeepaDealsAdapter(SourceAdapter):
                 post = mapper(row)
                 if post is not None and lane.admit(post):
                     out.append(post)
+
+    def _run_popular_page(self, pull: _Pull, cfg: AppConfig, selection: dict,
+                          seen: set[str], mapper, out: list[RawPost], lane: _Lane) -> bool:
+        """One optional page using a general Amazon page slot and its lane cap."""
+        maximum = (cfg.front_page.get("popular_affordable") or {}).get("max_price")
+        if not cfg.keepa_popular_affordable_page or maximum is None \
+                or cfg.keepa_amazon_pages_per_pull < 2 or lane.full \
+                or not self._may_fetch(pull, "popular", extra=True):
+            return False
+        available = pull.budget.available(pull.now)
+        if available is None or available - DEAL_PAGE_COST < max(300, pull.reserve):
+            return False
+        try:
+            rows = self._query_rows(pull, {**selection, "currentRange": [0, round(maximum * 100)],
+                                          "sortType": SORT_SALES_RANK, "page": 0}, "popular")
+        except (RuntimeError, httpx.HTTPError) as e:
+            log.warning("keepa popular page: %s; paging stops, retried next pull", error_summary(e))
+            return True  # the attempted page still consumes its general Amazon slot
+        self.pull_summary["popular_page_rows"] = len(rows)
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            asin = str(row.get("asin") or "").strip().upper()
+            if not asin or asin in seen:
+                continue
+            seen.add(asin)
+            post = mapper(row)
+            if post is not None and lane.admit(post):
+                out.append(post)
+                self.pull_summary["popular_page_admitted"] += 1
+        return True
 
     def _run_pass(self, pull: _Pull, selection: dict[str, Any], start: int,
                   max_pages: int, label: str, seen: set[str],

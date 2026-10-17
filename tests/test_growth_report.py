@@ -13,7 +13,7 @@ import stat
 import subprocess
 import tempfile
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import parse_qs
 
 import httpx
@@ -1750,3 +1750,139 @@ def test_smtp_errors_name_the_failing_step_and_code_only(cfg, rsa_key, monkeypat
         assert report.run(cfg, NOW, http_client=client, smtp_factory=Factory()) == 1
     assert "email: error SMTPAuthenticationError at login 535" in caplog.messages
     assert "private" not in caplog.text
+
+
+def test_homepage_shadow_report_aggregates_only_24h_and_never_logs_values(cfg, tmp_path, caplog, capsys):
+    from dealradar import popular_affordable
+    from dealradar.db import DB
+    from dealradar.util import iso
+
+    path = tmp_path / "shadow.db"
+    database = DB(path)
+
+    def sample(count, price, title):
+        return {"amazon_candidates": count, "with_monthly_sold": count,
+                "fresh": count, "qualifying_at": {"500": count, "1000": count, "5000": 0},
+                "boosted_in_picks": count, "entered_picks": count, "left_picks": count,
+                "first_window_changed": count,
+                "median_price_top24": {"without": price, "with": price / 2},
+                "under_60_share_top24": {"without": 0, "with": .5},
+                "amazon_in_picks": {"without": count, "with": count},
+                "tilted_top24": {"without": count, "with": count + 2}, "examples": [title]}
+
+    first = sample(2, 180, "Synthetic alpha sheets")
+    latest = sample(6, 140, "Synthetic beta kettle")
+    popular_affordable.record(database, NOW - timedelta(hours=25), "outside-day",
+                              sample(100, 999, "Synthetic old item"))
+    popular_affordable.record(database, NOW - timedelta(hours=24), "boundary",
+                              sample(100, 999, "Synthetic boundary item"))
+    popular_affordable.record(database, NOW - timedelta(hours=23), "first", first)
+    popular_affordable.record(database, NOW - timedelta(minutes=30), "latest", latest)
+    # Replacement cannot count a rerun as a second observation.
+    popular_affordable.record(database, NOW - timedelta(minutes=30), "latest", latest)
+    database.close()
+    before = path.read_bytes()
+    with caplog.at_level(logging.INFO), client_for(FakeApis()) as client:
+        data, status = report.collect(cfg, NOW, client, db_path=path)
+    assert status["popular_affordable"] == "ok"
+    assert data["popular_affordable"]["latest"] == {"at": iso(NOW - timedelta(minutes=30)), **latest}
+    expected = sample(4, 160, "unused")
+    expected["examples"] = [latest["examples"][0], first["examples"][0]]
+    assert data["popular_affordable"]["last24h"] == {"runs": 2, **expected}
+    assert path.read_bytes() == before
+    _, text = report.build_report(cfg, data, status, date(2026, 10, 10))
+    assert "== Homepage tilts (private) ==" in text
+    for field in ("qualifying_at", "median_price_top24", "under_60_share_top24", "tilted_top24",
+                  "entered_picks", "left_picks", "boosted_in_picks", "24h medians"):
+        assert field in text
+    assert all(title in text for title in expected["examples"])
+    assert [r.getMessage() for r in caplog.records if "popular_affordable" in r.getMessage()] == [
+        "popular_affordable: ok"]
+    captured = capsys.readouterr()
+    public = caplog.text + captured.out + captured.err
+    assert all(value not in public for value in (
+        "monthly_sold", "qualifying_at", "median_price_top24", "Synthetic alpha sheets", "Synthetic beta kettle"))
+
+
+def test_homepage_shadow_report_retention_empty_prices_and_missing_state(cfg, tmp_path):
+    from dealradar import popular_affordable
+    from dealradar.db import DB
+
+    path = tmp_path / "shadow.db"
+    database = DB(path)
+    assert popular_affordable.report_data(database, NOW) == {
+        "latest": None, "last24h": {"runs": 0, "examples": []}}
+    popular_affordable.record(database, NOW, "null-prices", {
+        "median_price_top24": {"without": None, "with": None},
+        "under_60_share_top24": {"without": None, "with": None}, "examples": []})
+    private = popular_affordable.report_data(database, NOW)
+    assert private["last24h"]["median_price_top24"] == {"without": None, "with": None}
+    assert popular_affordable.report_data(database, NOW + timedelta(hours=26))["latest"] is None
+    database.close()
+    assert report._popular_affordable(path, NOW) == private
+    with client_for(FakeApis()) as client:
+        data, status = report.collect(cfg, NOW, client, db_path=tmp_path / "missing.db")
+    assert status["popular_affordable"] == "skipped"
+    assert "popular_affordable" not in data
+    assert "Unavailable" in "\n".join(popular_affordable.report_lines(None))
+
+
+def test_homepage_shadow_examples_are_bounded_and_aggregate_ignores_future():
+    from dealradar import popular_affordable
+    from dealradar.db import DB
+    from dealradar.util import iso
+
+    database = DB(":memory:")
+    try:
+        rows = {str(i): {"at": iso(NOW - timedelta(hours=i)), "amazon_candidates": i,
+                         "examples": [f"Synthetic item {i}", "Synthetic repeated item"]}
+                for i in range(5)}
+        rows["future"] = {"at": iso(NOW + timedelta(seconds=1)), "amazon_candidates": 999}
+        rows["expired"] = {"at": iso(NOW - timedelta(hours=26)), "amazon_candidates": 999}
+        database.meta_set(popular_affordable.META, json.dumps(rows))
+        private = popular_affordable.report_data(database, NOW)
+        assert private["latest"] == rows["0"]
+        assert private["last24h"] == {"runs": 5, "amazon_candidates": 2,
+                                      "examples": ["Synthetic item 0", "Synthetic repeated item", "Synthetic item 1"]}
+    finally:
+        database.close()
+
+
+def test_homepage_shadow_reaches_only_private_email_and_repo(tmp_path, monkeypatch, caplog, capsys):
+    from dealradar import popular_affordable
+    from dealradar.db import DB
+
+    path = tmp_path / "shadow.db"
+    database = DB(path)
+    try:
+        popular_affordable.record(database, NOW, "synthetic-run", {
+            "qualifying_at": {"1000": 7}, "examples": ["Synthetic private kettle"]})
+    finally:
+        database.close()
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("REPORT_EMAIL_TO", "owner@example.com")
+    monkeypatch.setenv("REPORTS_REPO_TOKEN", "github_pat_FAKE")
+    saved = []
+
+    def handler(request):
+        assert request.url.host == "api.github.com"
+        assert request.url.path.startswith("/repos/owner/reports/contents/reports/")
+        if request.method == "GET":
+            return httpx.Response(404)
+        assert request.method == "PUT"
+        saved.append(base64.b64decode(json.loads(request.content)["content"]).decode())
+        return httpx.Response(201, json={})
+
+    smtp = FakeSMTPFactory()
+    with caplog.at_level(logging.INFO), client_for(handler) as client:
+        # The latest retained observation is still reported outside the 24h window.
+        assert report.run(_copy_cfg(), NOW + timedelta(hours=25), http_client=client,
+                          smtp_factory=smtp, db_path=path) == 0
+    assert len(smtp.sent) == len(saved) == 1
+    plain = smtp.sent[0].get_payload()[0].get_payload(decode=True).decode()
+    for private in (plain, saved[0]):
+        assert "Synthetic private kettle" in private and '"1000": 7' in private
+        assert '24h medians: {"runs": 0}' in private
+    captured = capsys.readouterr()
+    public = caplog.text + captured.out + captured.err
+    assert all(value not in public for value in ("Synthetic private kettle", "qualifying_at", '"1000": 7'))
