@@ -373,6 +373,9 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if cfg.home_link_resets:
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    home_reset: { ga4Only: true, methods: ["logo", "ticker", "timer"] },')
     from .search_results import enabled as search_results_enabled
     if search_results_enabled(cfg):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\

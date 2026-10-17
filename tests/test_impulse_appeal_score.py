@@ -90,7 +90,7 @@ def db_state(db):
 
 def test_shipped_on_defaults_and_missing_is_off(tmp_path):
     cfg = load_config()
-    assert cfg.appeal_score == dict(enabled=True, model=cfg.parse_model, candidates=80, ttl_h=72,
+    assert cfg.appeal_score == dict(enabled=True, model=cfg.parse_model, candidates=120, ttl_h=72,
                                     max_usd_per_run=.03, max_usd_per_day=.40, factors=appeal_score.FACTORS)
     assert appeal.allure_spacing(cfg.front_page["appeal"]) == (2, 4)
     path = tmp_path / "empty.yaml"
@@ -125,6 +125,7 @@ def test_invalid_spacing_config(tmp_path, key, value):
 
 def test_batches_only_best_80_and_actual_model_ledger(database):
     cfg = settings()
+    cfg.appeal_score = dict(cfg.appeal_score, candidates=80)  # batching fixture written for 80 (shipped 120 since 10-17)
     cfg.parse_model = cfg.critic_model  # appeal is still billed at the cheaper configured model
     parser, messages = parser_for(cfg)
     rows = list(reversed(candidates(90)))

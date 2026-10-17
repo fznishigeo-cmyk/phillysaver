@@ -68,6 +68,7 @@ _DEMOTE_WORDS_BLOCK = re.compile(r"/\*demote-words\*/(.*?)/\*/demote-words\*/", 
 
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
 _SEARCH_AMAZON_BLOCK = re.compile(r"/\*search-amazon\*/(.*?)/\*/search-amazon\*/", re.S)
+_HOME_LINK_RESETS_BLOCK = re.compile(r"/\*home-link-resets\*/(.*?)/\*/home-link-resets\*/", re.S)
 
 # Phones only: on a multi-column desktop wall, reload restore drifted ~1.5k px
 # in Chromium. Keep the first eight in every grid fully rendered, including
@@ -95,8 +96,10 @@ class _BrowseScript:
     rendered: str
 
 
-def _browse_script(price_presets: list[int], saved: bool = False) -> _BrowseScript:
+def _browse_script(price_presets: list[int], saved: bool = False,
+                   home_link_resets: bool = False) -> _BrowseScript:
     marked = (TEMPLATES_DIR / "browse.js").read_text(encoding="utf-8")
+    marked = _HOME_LINK_RESETS_BLOCK.sub(lambda m: m[1] if home_link_resets else "", marked)
     marked = marked.replace("{{PRICE_PRESETS}}", json.dumps(price_presets))
     without_saved = re.sub(r"<!--saved-->.*?<!--/saved-->", "", marked, flags=re.S)
     rendered = (re.sub(r"<!--saved-->(.*?)<!--/saved-->", lambda m: m.group(1), marked, flags=re.S)
@@ -140,6 +143,9 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         from ..non_amazon_freshness import STYLE as AGED_STYLE
         html = html.replace("</style>", AGED_STYLE + "</style>", 1)
     if home:
+        if cfg.home_link_resets:
+            for selector in ('class="tklabel"', 'id="drop" class="drop"'):
+                html = html.replace(selector, selector + ' style="cursor:pointer" title="Back to all deals"', 1)
         html = _SEARCH_AMAZON_BLOCK.sub(
             lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
@@ -693,7 +699,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     open_access = is_open(cfg)
     saved_deals = support and bool(cfg.engagement.get("saved_deals", False))
     price_presets = sorted({n for n in cfg.seo_price_pages if type(n) is int and n > 0})
-    browse = _browse_script(price_presets, saved_deals)
+    browse = _browse_script(price_presets, saved_deals, cfg.home_link_resets)
     home_html = _page_template(home_template, cfg, home=True)
     # A moved slot must still belong to the selected home variant.
     active_home = copy_variant(home_html, open_access, support)

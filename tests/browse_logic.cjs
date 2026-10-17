@@ -24,7 +24,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
   const elements={}, listeners={}, timers=new Map(), frames=new Map(), observers=new Set(), events=[], entries=[{url:'/'+search,state:historyState}];
   let serial=0, historyIndex=0, renders=0, refreshes=0, nextRows=null, pendingRefresh=null, scrolls=[];
   let cards=[], clock=NOW, wallShift=0, cardHeight=220, frameCount=0;
-  const session = stored || new Map();
+  const session = stored || new Map(), local = new Map();
   function listen(key, fn) { (listeners[key] ||= []).push(fn); }
   function unlisten(key, fn) { listeners[key] = (listeners[key] || []).filter(listener=>listener!==fn); }
   function fire(key, e={}) { for (const fn of [...(listeners[key] || [])]) fn.call(elements[key.split(':')[0]], e); }
@@ -70,6 +70,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     state:{deals:rows,spotlight,meta:{floors:{min_pct:70,site_show_from_pct:50},front_page:doc.meta.front_page || {}},
       shown:60,seed:42,catTab:0,sortKey:'top',sortDir:-1,newKeys:{}},
     document:{hidden:false,body:{contains:()=>true},activeElement:null,
+      querySelector:selector=>el(selector),
       getElementById:id=>['moremore','totop'].includes(id) && !el('content').innerHTML.includes('id="'+id+'"') ? null : el(id),createElement:()=>({}),
       addEventListener(type,fn){listen('document:'+type,fn);}},
     window:{innerWidth:390,innerHeight:844,scrollY:0,wpSupport:{refresh(){}},wpTrack:(name,params)=>events.push({name,params}),
@@ -77,7 +78,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
       addEventListener(type,fn){listen('window:'+type,fn);},
       removeEventListener(type,fn){unlisten('window:'+type,fn);}},
     history,location,performance:{getEntriesByType:()=>[{type:navigation}]},
-    localStorage:{getItem:()=>null,setItem(){}},
+    localStorage:{getItem:k=>local.get(k) || null,setItem(k,v){local.set(k,v);}},
     sessionStorage:{getItem(k){if(blocked) throw Error('blocked');return session.get(k) || null;},
       setItem(k,v){if(blocked) throw Error('blocked');session.set(k,v);}},
     setTimeout(fn,delay){timers.set(++serial,{fn,delay,at:clock+delay});return serial;},clearTimeout:id=>timers.delete(id),
@@ -150,7 +151,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     }
     fire('filterform:submit',{preventDefault(){}});
   };
-  return {ctx,el,fire,apply,events,session,entries,scrolls,nextFrame,flushFrames,
+  return {ctx,el,fire,apply,events,session,local,entries,scrolls,nextFrame,flushFrames,
     keys:()=>cards.map(c=>c.key),get renders(){return renders;},get refreshes(){return refreshes;},
     get frameCount(){return frameCount;},get pendingFrames(){return frames.size;},get observers(){return observers.size;},
     shift(top=wallShift,height=cardHeight){wallShift=top;cardHeight=height;},
@@ -212,6 +213,71 @@ function fillGridRows(markup, cols) {
   return grids;
 }
 (async()=>{
+  if(process.argv[4]==='home-links') {
+    const selectors={'h1.brand a':'logo','.tklabel':'ticker','#drop':'timer'};
+    const hasSaved=home.includes('snapshot.savedView');
+    for(const [selector,method] of Object.entries(selectors)) {
+      const h=harness({saved:hasSaved});
+      h.apply({pricepreset:'25',maxprice:'20'});
+      h.el('storesel').value='walmart';h.fire('storesel:change');
+      h.el('minpct').value='95';h.fire('minpct:change');
+      h.el('sortsel').value='price:1';h.fire('sortsel:change');
+      h.ctx.state.catTab=3;h.ctx.renderTabs();
+      h.el('q').value='hijab';h.ctx.updateSearch();
+      assert.equal(h.keys().length,0);
+      h.ctx.window.scrollY=250;h.ctx.rememberBrowse(false);
+      const previous=h.ctx.browseId, pushes=h.pushCount;
+      for(const changes of [{button:1},{button:2},{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true}]) {
+        h.fire(selector+':click',{...changes,preventDefault(){assert.fail('modified click intercepted');}});
+        assert.equal(h.el('q').value,'hijab');assert.equal(h.pushCount,pushes);
+      }
+      h.ctx.loadedOnce=false;
+      h.fire(selector+':click',{preventDefault(){assert.fail('unloaded link intercepted');}});
+      h.ctx.loadedOnce=true;
+      let prevented=0;
+      h.fire(selector+':click',{button:0,preventDefault(){prevented++;}});
+      assert.equal(prevented,1);assert.equal(h.el('q').value,'');assert(h.el('clearsearch').hidden);
+      assert.equal(h.el('storesel').value,'');assert.equal(h.el('minpct').value,'0');
+      assert.equal(h.ctx.eligibilityActive(),false);assert.equal(h.ctx.state.catTab,0);
+      assert.equal(h.ctx.savedDeals.view,false);assert.equal(h.el('sortsel').value,'top:-1');
+      assert.equal(h.ctx.state.sortKey,'top');assert.equal(h.ctx.state.sortDir,-1);
+      assert.equal(h.local.get('wp.sort'),'top:-1');
+      assert(h.keys().length>0);assert.equal(h.ctx.state.shown,60);assert.equal(h.ctx.window.scrollY,0);
+      assert.equal(h.pushCount,pushes+1);assert.notEqual(h.ctx.browseId,previous);
+      assert.deepEqual(JSON.parse(JSON.stringify(h.events.filter(e=>e.name==='home_reset'))),
+        [{name:'home_reset',params:{method}}]);
+      assert(!JSON.stringify(h.events).includes('hijab'));
+      h.navigation(-1);h.flushFrames();
+      assert.equal(h.ctx.browseId,previous);assert.equal(h.el('q').value,'hijab');
+      assert.equal(h.el('storesel').value,'walmart');assert.equal(h.el('minpct').value,'95');
+      assert.equal(h.ctx.state.catTab,3);assert.equal(h.ctx.state.sortKey,'price');
+      assert.equal(h.ctx.browseFilters.max,'20');assert.equal(h.keys().length,0);
+      for(const navigation of ['reload','back_forward']) {
+        const restored=harness({saved:hasSaved,stored:new Map(h.session),navigation,
+          search:h.ctx.location.search,historyState:h.ctx.history.state});
+        assert.equal(restored.el('q').value,'hijab');assert.equal(restored.ctx.state.sortKey,'price');
+        assert.equal(restored.ctx.browseFilters.max,'20');assert.equal(restored.keys().length,0);
+      }
+      const fresh=harness({saved:hasSaved,stored:new Map(h.session),navigation:'navigate',historyState:h.ctx.history.state});
+      assert.equal(fresh.el('q').value,'');assert.equal(fresh.ctx.state.catTab,0);
+      assert.equal(fresh.ctx.state.sortKey,'top');assert.equal(fresh.ctx.eligibilityActive(),false);
+      assert(fresh.keys().length>0);assert.equal(fresh.ctx.window.scrollY,0);
+      const shared=harness({stored:new Map(h.session),navigation:'navigate',search:'?store=amazon&sort=price&price=25'});
+      assert.equal(shared.el('q').value,'');assert.equal(shared.el('storesel').value,'amazon');
+      assert.equal(shared.ctx.state.sortKey,'price');assert.equal(shared.ctx.browseFilters.preset,'25');
+      // Saved disables filter fields; Home must still leave it and reset.
+      if(hasSaved) {
+        h.savedView(true);assert(h.el('filterfields').disabled);
+      }
+      h.fire(selector+':click',{preventDefault(){}});
+      assert.equal(h.ctx.savedDeals.view,false);assert.equal(h.el('filterfields').disabled,false);
+      assert(h.keys().length>0);assert.equal(h.ctx.window.scrollY,0);
+      const before=h.pushCount;h.fire(selector+':click',{preventDefault(){}});
+      assert.equal(h.pushCount,before+1,'even a fresh Home click gets its own history entry');
+    }
+    console.log('home links reset, history, navigation, Saved and modifiers: passed');
+    return;
+  }
   if(process.argv[4]==='pagination-restore') {
     const source=Array.from({length:180},(_,i)=>row('page-'+i));
     const h=harness({rows:source});

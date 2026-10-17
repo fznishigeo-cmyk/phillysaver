@@ -26,7 +26,7 @@ jobs:
           TERM_INPUT: ${{ inputs.term }}
         run: |
           python3 - <<'PY'
-          import json, os, urllib.error, urllib.parse, urllib.request
+          import gzip, json, os, urllib.error, urllib.parse, urllib.request
           key = os.environ.get("KEEPA_KEY", "").strip()
           if not key:
               print("KEEPA_KEY is empty or missing"); raise SystemExit(1)
@@ -48,6 +48,8 @@ jobs:
                   status, body = e.code, e.read()
               except Exception as e:
                   print(f"{name}: request failed: {type(e).__name__}"); continue
+              if body[:2] == b"\x1f\x8b":
+                  body = gzip.decompress(body)
               try:
                   data = json.loads(body)
               except ValueError:

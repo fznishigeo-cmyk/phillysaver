@@ -343,6 +343,7 @@ class AppConfig:
     amazon_watches: str = ""  # "" follows amazon_history; on | off
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
+    home_link_resets: bool = False
     dark_polish: bool = False
     strip_comments: bool = False
     home_title: str = ""
@@ -951,6 +952,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.offscreen_cards = g("site", "offscreen_cards", default=False)
     if type(cfg.offscreen_cards) is not bool:
         raise ValueError("site.offscreen_cards must be a boolean")
+    cfg.home_link_resets = g("site", "home_link_resets", default=False)
+    if type(cfg.home_link_resets) is not bool:
+        raise ValueError("site.home_link_resets must be a boolean")
     cfg.dark_polish = g("site", "dark_polish", default=False)
     if type(cfg.dark_polish) is not bool:
         raise ValueError("site.dark_polish must be a boolean")

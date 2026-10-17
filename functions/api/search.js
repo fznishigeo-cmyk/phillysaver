@@ -117,6 +117,16 @@ function detailOf(error) {
   return /^[A-Za-z]{1,30}$/.test(error.name || "") ? "fetch_" + error.name : "fetch";
 }
 
+// Keepa answers with a gzip body; decode it ourselves when the runtime has not.
+async function jsonBody(response) {
+  let bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+    bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 async function keepa(q, key) {
   const controller = new AbortController();
   let timer;
@@ -126,7 +136,8 @@ async function keepa(q, key) {
         const url = new URL("https://api.keepa.com/search");
         Object.entries({key, domain:"1", type:"product", term:q, page:"0", stats:"1", history:"0"})
           .forEach(([k, v]) => url.searchParams.set(k, v));
-        const response = await fetch(url, {signal:controller.signal, redirect:"error",
+        // Workers reject redirect:"error"; "manual" returns any 3xx unfollowed (not ok → failure).
+        const response = await fetch(url, {signal:controller.signal, redirect:"manual",
           headers:{"User-Agent":"dealradar/0.1 (+https://wowpriced.com; contact: hello@wowpriced.com)"}});
         if (response.status === 429) {
           // Honor Keepa's own cooldown (seconds, max 1 h); 60 s when it gives none.
@@ -135,7 +146,7 @@ async function keepa(q, key) {
           throw error;
         }
         if (!response.ok) throw failure("http_" + response.status);
-        const data = await response.json();
+        const data = await jsonBody(response);
         if (!data || data.error || !Array.isArray(data.products)) {
           const type = data && data.error && data.error.type;
           throw failure(!data ? "empty" : !data.error ? "no_products" :

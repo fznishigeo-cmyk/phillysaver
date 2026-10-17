@@ -894,3 +894,12 @@ def test_stale_non_amazon_price_is_no_top_pick(cfg, options):
     assert pick_score(dict(stale, price_published_at="2026-10-09T02:00:00Z"), cfg, NOW) is None  # 12 h
     # Internal recovery scoring (no confirmation required) is unaffected.
     assert pick_score(stale, cfg, NOW, require_confirmation=False) is not None
+
+
+def test_spotlight_never_promotes_adult_titles(cfg, options):
+    """Operator 2026-10-17: adult items are never pushed, the spotlight included."""
+    from dealradar.config import load_config
+    from dealradar.rank import daily_spotlight
+    cfg.front_page = dict(options, appeal=load_config().front_page["appeal"])
+    assert daily_spotlight([daily_deal(item="Rose Toy Vibrator for Women")], cfg, NOW) == []
+    assert daily_spotlight([daily_deal(item="Kids Plush Toy Bundle")], cfg, NOW)

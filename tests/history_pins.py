@@ -99,7 +99,7 @@ def _pre_task_284(front_page):
     if not isinstance(front_page, dict):
         return
     if isinstance(front_page.get("demote_words"), list):
-        front_page["demote_words"] = [w for w in front_page["demote_words"] if w not in ("christmas", "xmas")]
+        front_page["demote_words"] = [w for w in front_page["demote_words"] if w not in ("christmas", "xmas", "tupperware")]
     ((front_page.get("appeal") or {}).get("want") or {}).pop("group_factors", None)
     groups = ((front_page.get("appeal") or {}).get("want") or {}).get("groups")
     if isinstance(groups, dict):
@@ -126,6 +126,7 @@ def pre_task_282(cfg):
     """Recorded before private ratings and configurable allure spacing; no re-pins."""
     pre_task_284(cfg)  # recorded before task 284
     pre_task_283(cfg)  # recorded before task 283
+    cfg.home_link_resets = False  # recorded before task 286
     cfg.appeal_score = {}
     for key in ("allure_first", "allure_every"):
         cfg.front_page.get("appeal", {}).pop(key, None)
@@ -138,6 +139,7 @@ def pre_task_282(cfg):
 def pre_task_282_raw(config):
     _pre_task_284(config.get("publish", {}).get("front_page"))  # recorded before task 284
     pre_task_283_raw(config)  # recorded before task 283
+    config.get("site", {}).pop("home_link_resets", None)  # recorded before task 286
     config.pop("appeal_score", None)
     for key in ("allure_first", "allure_every"):
         config.get("publish", {}).get("front_page", {}).get("appeal", {}).pop(key, None)
@@ -145,3 +147,29 @@ def pre_task_282_raw(config):
     if isinstance(popular, dict):
         popular["enabled"] = False
     return config
+
+
+# Launch-night tuning (operator 2026-10-17 ~22:10Z, from the live first 24): Tupperware
+# demoted, 120 rated candidates, wider clothing words, no bare "satin" allure, gadgets 1.3.
+PRE_288_CLOTHING = {"blouse", "quarter zip", "polo", "flannel", "fleece", "romper", "jumpsuit",
+                    "tank top", "crop top", "camisole", "bodysuit", "tunic", "kimono", "swimsuit", "bikini"}
+PRE_288_ALLURE = ["lingerie", "babydoll", "bralette", "bra", "bras", "panties", "bodysuit", "bikini",
+                  "swimsuit", "corset", "satin", "silk robe", "sleepwear", "nightgown", "cologne",
+                  "perfume", "boxer briefs", "swim trunks", "date night"]
+
+
+def pre_task_288(cfg):
+    front_page = cfg.front_page
+    if isinstance(front_page.get("demote_words"), list):
+        front_page["demote_words"] = [w for w in front_page["demote_words"] if w != "tupperware"]
+    picks = front_page.get("top_picks") or {}
+    if isinstance(picks.get("clothing_words"), list):
+        picks["clothing_words"] = [w for w in picks["clothing_words"] if w not in PRE_288_CLOTHING]
+    want = (front_page.get("appeal") or {}).get("want") or {}
+    if isinstance(want.get("groups"), dict) and "allure" in want["groups"]:
+        want["groups"]["allure"] = list(PRE_288_ALLURE)
+    if isinstance(want.get("group_factors"), dict):
+        want["group_factors"].pop("gadgets", None)
+    if cfg.appeal_score:
+        cfg.appeal_score = dict(cfg.appeal_score, candidates=80)
+    return cfg

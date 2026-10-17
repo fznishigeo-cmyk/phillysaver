@@ -51,7 +51,7 @@ audit:
 appeal_score:
   enabled: true
   model: "claude-haiku-5-5"
-  candidates: 80
+  candidates: 120          # operator 2026-10-17: rate more of the wall (was 80)
   ttl_h: 72
   max_usd_per_run: 0.03
   max_usd_per_day: 0.40
@@ -178,6 +178,7 @@ site:
   home_title: "wowpriced: The Best Deals, Coupons, Promo Codes & Discounts"
   home_description: "Verified deals, coupons and promo codes from Amazon, Walmart, Target, Woot and more. We check every price before we show it."
   search_amazon: true         # tagged search fallback; queries stay local until clicked
+  home_link_resets: true      # logo, Live deals and timer return to all deals; Back keeps the previous view
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
     enabled: true
@@ -245,7 +246,8 @@ publish:
                   screen protector, tempered glass, replacement, replacement part,
                   toner, ink cartridge, filter cartridge, adapter plate, mounting bracket,
                   fuse, gasket, o-ring, hose clamp,
-                  christmas, xmas]   # operator 2026-10-17 ("why do i still see the christmas tree"):
+                  christmas, xmas,   # operator 2026-10-17 ("why do i still see the christmas tree"):
+                  tupperware]        # operator 2026-10-17: "crap tupperware deal" (4 plastic shakers for $19.97)
                                      # off-season until the gifts window; drop these two on Nov 1
     max_niche_top: 2
     niche_after: 8              # never a niche card on the first screen (cards 1-8)
@@ -326,10 +328,11 @@ publish:
                     doorbell camera, dash cam, fire tv stick, streaming stick, gaming controller,
                     led strip lights, electric toothbrush, massage gun, digital frame]
           allure: [lingerie, babydoll, bralette, bra, bras, panties, bodysuit, bikini, swimsuit,
-                   corset, satin, silk robe, sleepwear, nightgown, cologne, perfume, boxer briefs,
-                   swim trunks, date night]
+                   corset, satin robe, satin pajamas, satin slip, silk robe, sleepwear, nightgown,
+                   cologne, perfume, boxer briefs, swim trunks, date night]   # bare "satin" lifted a comforter set
         group_factors:          # operator 2026-10-17: "bras panties, sexy items ... to catch women's attention"
           allure: 1.35          # spacing still applies (first at card 3, then 1 in 4); adult items never lift
+          gadgets: 1.3          # operator 2026-10-17: "tech gadgets should be available" (live first 24 had 2)
       season:                  # operator 2026-10-17: push holiday items ~2 weeks before each holiday
         - name: halloween
           from: "10-17"
@@ -423,7 +426,10 @@ publish:
       clothing_categories: [fashion]
       clothing_words: [sweatshirt, hoodie, crewneck, pullover, t-shirt, tee, shirt, jacket, coat, vest,
                        sweater, cardigan, dress, skirt, jeans, pants, joggers, leggings, shorts, bra,
-                       sports bra, underwear, socks, pajamas, sneakers, shoes, boots, sandals, slippers]
+                       sports bra, underwear, socks, pajamas, sneakers, shoes, boots, sandals, slippers,
+                       # operator 2026-10-17 (live first 24): blouses and quarter zips read as clothing too
+                       blouse, quarter zip, polo, flannel, fleece, romper, jumpsuit, tank top, crop top,
+                       camisole, bodysuit, tunic, kimono, swimsuit, bikini]
       known_stores: [amazon, walmart, target, best buy, home depot, lowe's,
                      costco, kohl's, macy's, nike, adidas, woot, ebay, sephora,
                      ulta, gap, old navy, wayfair, dell, lenovo, samsung, apple,

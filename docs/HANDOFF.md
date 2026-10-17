@@ -236,6 +236,30 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Home links start fresh (Codex task 286, 2026-10-17; uncommitted, ON):**
+  Strict `site.home_link_resets` defaults OFF and ships ON. Plain logo,
+  Live deals and timer clicks reuse the Amazon-selection reset, clear every
+  browse selection/Saved, persist Top picks, render from the first page and
+  scroll to the top, pushing history so Back restores the previous search.
+  Modified clicks and the pre-load logo retain native navigation. Ordinary
+  home navigation starts fresh; explicit public URL selections still apply,
+  while reload/Back retain the existing exact-anchor restore. Ticker/timer
+  have pointer cursors and titles with no new focus stops. One GA4-only
+  `home_reset` allows logo/ticker/timer and drops all other input.
+  Five pre-edit full-tree captures cover missing/OFF and switching back OFF;
+  historical helpers explicitly disable the new knob, with no hash re-pins.
+  Emitted-JS checks cover all three access modes with comments ON/OFF.
+  Feature/search/shipped phone budgets/both pipeline rerun modes:
+  **35 passed, 1 skipped in 233.27s (0:03:53)**. Final extended emitted-JS
+  card-120 restore plus eight existing frozen byte checks:
+  **14 passed in 52.16s**. Initial harness runs were **6 failed, 17 passed,
+  1 skipped in 72.56s (0:01:12)** and **4 failed, 2 passed in 15.85s**;
+  corrected cross-realm object comparison and the history-length assertion
+  when a new entry after Back replaces Forward. No failing targeted checks remain. Chromium
+  launch returns 77; native phone/desktop QA remains unverified. Node syntax
+  and `git diff --check` pass. All pytest runs use `-q -n 1 -p no:cacheprovider`;
+  every owned `/tmp/task286-*` basetemp was removed after its run. No network,
+  whole suite, hash re-pin, commit or push. Review/native browser QA remain.
 - **Release C adversarial review fixes (2026-10-17; local, uncommitted, fixes complete):**
   The existing local Release C config remains `compare.refresh: true`,
   `compare.publish: "preview"`; no deployment or activation was performed.

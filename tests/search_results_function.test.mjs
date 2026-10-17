@@ -45,7 +45,7 @@ beforeEach(() => {
     assert.equal(url.pathname, '/search'); assert.equal(url.searchParams.get('key'), KEY);
     assert.equal(url.searchParams.get('page'), '0'); assert.equal(url.searchParams.get('history'), '0');
     assert.equal(url.searchParams.get('domain'), '1'); assert.equal(url.searchParams.get('type'), 'product');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     assert(options.headers['User-Agent'].includes('contact: hello@wowpriced.com'));
     return Response.json({products:Array.from({length:15}, (_, i) => product(i)), tokensConsumed:20,
       private:KEY, errorDetail:KEY});
@@ -301,7 +301,7 @@ test('upstream HTTP, JSON, error bodies and thrown secret URLs are reduced to sa
 });
 test('4s timeout covers a hung body and retains its reservation', async () => {
   let signal; globalThis.fetch = async (url, options) => {
-    signal = options.signal; return {ok:true, json:() => new Promise(() => {})};
+    signal = options.signal; return {ok:true, json:() => new Promise(() => {}), arrayBuffer:() => new Promise(() => {})};
   };
   const result = await body(await run()); assert.deepEqual(result, {items:[], reason:'timeout'});
   assert(signal.aborted); assert.equal(JSON.parse([...values.values()][0]).tokens, 110);
@@ -310,4 +310,21 @@ test('disabled/missing/unreadable published config never calls Keepa', async () 
   config.amazon_results = 'off'; assert.deepEqual((await body(await run())).items, []);
   config.amazon_results = 'on'; config.tokens_per_day = '3000'; await run();
   context.env.ASSETS = null; await run(); assert.equal(calls.length, 0);
+});
+test('a gzip body the runtime did not decode is decoded before parsing', async () => {
+  const zlib = await import('node:zlib');
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]);
+    return new Response(zlib.gzipSync(JSON.stringify({products:[product()], tokensConsumed:20})),
+      {headers:{'Content-Type':'application/json'}});
+  };
+  const result = await body(await run('gzipped'));
+  assert.equal(result.items.length, 1); assert.equal(result.items[0].price_cents, 1399);
+});
+test('a redirect is never followed and counts as a Keepa error', async () => {
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); assert.equal(options.redirect, 'manual');
+    return new Response(null, {status:302, headers:{Location:'https://elsewhere.example/'}});
+  };
+  assert.deepEqual(await body(await run('moved')), {items:[], reason:'keepa_error', detail:'http_302'});
 });

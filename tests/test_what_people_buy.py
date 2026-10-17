@@ -823,3 +823,19 @@ def test_group_factors_are_validated(value):
     options["want"]["group_factors"] = value
     with pytest.raises(ValueError, match="group_factors"):
         appeal.validate(options)
+
+
+def test_live_first_24_fixes_gadgets_lift_and_satin_bedding_is_not_allure():
+    """Operator 2026-10-17 (live first 24): more gadgets; a satin comforter is not flirty;
+    blouses and quarter zips count toward the clothing mix."""
+    cfg = copy.deepcopy(SHIPPED)
+    cfg.front_page["popular_affordable"]["enabled"] = False
+    cfg.appeal_score = {}
+    options = cfg.front_page["appeal"]
+    assert appeal.signals(deal(item="Anker Bluetooth Speaker, Portable"), cfg, NOW)[2] == 1.3
+    assert not appeal.is_allure({"item": "BEDELITE Satin Comforter Set, 7 ct"}, options)
+    assert appeal.is_allure({"item": "Women's Satin Pajamas Set"}, options)
+    picks = cfg.front_page["top_picks"]
+    for title in ("Satin One-Shoulder Blouse", "Penn State Sierra Quarter Zip Team Color"):
+        assert rank.is_clothing({"item": title, "category": "home"}, picks), title
+    assert not rank.is_clothing({"item": "Laptop Stand, Adjustable", "category": "electronics"}, picks)

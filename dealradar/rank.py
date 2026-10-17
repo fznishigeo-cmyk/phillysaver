@@ -563,11 +563,14 @@ def daily_spotlight(rows: list[dict[str, Any]], cfg, now: datetime) -> list[dict
     sources = spotlight_sources(cfg)
     if not sources or not rows:
         return []
+    from .appeal import blocked
+    appeal_options = cfg.front_page.get("appeal") or {}
     primary, backup = load_sources()
     zones = {s.name: s.tz for s in primary + backup}
     candidates = []
     for deal in rows:
-        if push_excluded(deal, cfg, now):
+        # Adult titles are never promoted, the spotlight included (operator 2026-10-17).
+        if push_excluded(deal, cfg, now) or blocked(deal, appeal_options):
             continue
         if not is_publishable(deal, cfg, allow_spotlight_price=True)[0]:
             continue

@@ -160,7 +160,11 @@
   function initBrowse() {
     readBrowseMemory();
     browseId = historyBrowseId();
-    var snapshot = browseMemory.entries[browseId] || browseMemory.entries[browseMemory.last];
+    var snapshot = browseMemory.entries[browseId] || browseMemory.entries[browseMemory.last];/*home-link-resets*/
+    if (!navigationMethod()) {
+      snapshot = {sort: "top"};
+      browseId = "";
+    }/*/home-link-resets*/
     document.getElementById("filterfields").disabled = false;
     document.getElementById("filtertoggle").disabled = false;
     applyBrowseSnapshot(snapshot, true);
@@ -336,4 +340,23 @@
     renderTabs();
     finishBrowseAction("clear", true);
     closeFilters();
-  });
+  });/*home-link-resets*/
+  [["h1.brand a", "logo"], [".tklabel", "ticker"], ["#drop", "timer"]].forEach(function (binding) {
+    var target = document.querySelector(binding[0]);
+    if (!target) return;
+    target.addEventListener("click", function (e) {
+      if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !loadedOnce) return;
+      e.preventDefault();
+      if (browseCorrection) browseCorrection();
+      rememberBrowse(false);
+      selectAmazonDeals();
+      document.getElementById("storesel").value = "";
+      renderTabs();
+      resetWall();
+      closeFilters();
+      window.scrollTo({top: 0, behavior: "instant"});
+      browseSignature = actionSignature();
+      rememberBrowse(true);
+      track("home_reset", {method: binding[1]});
+    });
+  });/*/home-link-resets*/
