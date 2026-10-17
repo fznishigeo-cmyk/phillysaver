@@ -36,6 +36,9 @@ def exclusion(deal, cfg, now):
         return "suspect"
     if not is_publishable(deal, cfg, min_pct=min(cfg.min_pct, cfg.site_show_from_pct))[0]:
         return "publish_gate"
+    from ..click_price import has_gap
+    if cfg.keepa_click_price_rule == "on" and has_gap(deal, now):
+        return "click_price_above"
     if not price_unconfirmed(deal, cfg, now):
         return "confirmed_or_in_grace"
     at = price_confirmed_at(deal) or parse_iso(deal.get("first_seen_at") or "")
@@ -48,7 +51,10 @@ def exclusion(deal, cfg, now):
 
 
 def qualifies(deal, cfg, now):
-    return cfg.unconfirmed_label_enabled and not exclusion(deal, cfg, now)
+    from ..click_price import status
+    enabled = cfg.unconfirmed_label_enabled or (
+        cfg.keepa_click_price_rule == "on" and status(deal, cfg, now) == "unknown")
+    return enabled and not exclusion(deal, cfg, now)
 
 
 def push_excluded(deal, cfg, now):
@@ -56,7 +62,9 @@ def push_excluded(deal, cfg, now):
     # limit must stay out of pushes while the display exception is enabled.
     from ..non_amazon_freshness import promotion_excluded
     from ..buybox import would_unconfirm
+    from ..click_price import excluded
     return bool(promotion_excluded(deal, cfg, now) or deal.get("price_unconfirmed") or
+                excluded(deal, cfg, now) or
                 (cfg.keepa_buybox_rule == "on" and would_unconfirm(deal, now)) or
                 (cfg.unconfirmed_label_enabled and price_unconfirmed(deal, cfg, now)))
 

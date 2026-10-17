@@ -24,6 +24,7 @@ const results = cases.map(c => {
     CATGROUPS:[['Trending', null, ''], ['All deals', null, ''], ['Used & Open-Box', 'USED', 'used-open-box'],
                ['Home & Kitchen', ['home', 'kitchen'], 'home-kitchen']],
     filtered:()=>c.rows, eligibilityActive:()=>false, paintTicker(){}, updatePaywall(){}, openNudge:()=>false,
+    searchText:()=>controls.q.value.trim(),
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
     cardHtml:d=>`<i data-key="${d.key}"></i>`
@@ -51,6 +52,6 @@ const results = cases.map(c => {
     mixed:ctx.frontPageMix(c.rows, c.options).map(d=>d.key),
     rendered:[...content.innerHTML.matchAll(/data-key="([^"]+)"/g)].map(m=>m[1]),
     active:!!ctx.frontPageView(), seed:ctx.state.seed, dropRenders, observed, defaultSort,
-    strongSection:content.innerHTML.includes('More verified deals')};
+    strongSection:content.innerHTML.includes('More verified deals'), html:content.innerHTML};
 });
 process.stdout.write(JSON.stringify(results));

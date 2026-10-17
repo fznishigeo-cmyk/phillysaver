@@ -515,3 +515,39 @@ def test_stated_abs_savings_is_never_trusted():
     assert r.pct_at_checkout == approx(70.0)
     assert r.abs_savings is None                  # derived-or-nothing
     assert r.basis == "list_price_claim"
+
+
+@pytest.mark.parametrize('final,listed,pct,saved', [(9.99, 24.99, 60.0, 15.0),
+                                                 (37.5, 100, 62.5, 62.5),
+                                                 (0, 25, 100, 25)])
+def test_amazon_list_price_rounding(final, listed, pct, saved):
+    from datetime import datetime, timezone
+    from dealradar.savings import amazon_list_price, display_pct
+    now = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    reading = dict(asin='B012345678', price=listed, observed_at=now.isoformat())
+    result = amazon_list_price(final, reading, asin='B012345678', confirmed_at=now,
+                               now=now, max_age_h=12)
+    assert result.computable and result.basis == 'amazon_list_price'
+    assert result.regular_price == listed and result.final_price == final
+    assert result.pct_at_checkout == result.pct_with_rebates == pct
+    assert result.abs_savings == saved
+    assert display_pct(result.pct_at_checkout) == int(pct + .5)
+
+
+@pytest.mark.parametrize('listed,offset,age,asin', [
+    (10, 0, 0, 'B012345678'), (9.99, 0, 0, 'B012345678'),
+    (None, 0, 0, 'B012345678'), (float('nan'), 0, 0, 'B012345678'),
+    (float('inf'), 0, 0, 'B012345678'), (True, 0, 0, 'B012345678'),
+    (25, -1, 0, 'B012345678'), (25, 0, 13, 'B012345678'),
+    (25, 0, -1, 'B012345678'), (25, 0, 0, 'B000000002'),
+])
+def test_amazon_list_price_requires_above_final_and_same_fresh_reading(listed, offset, age, asin):
+    from datetime import datetime, timedelta, timezone
+    from dealradar.savings import amazon_list_price
+    now = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    confirmed = now - timedelta(hours=age)
+    reading = dict(asin=asin, price=listed, observed_at=(confirmed + timedelta(minutes=offset)).isoformat())
+    result = amazon_list_price(10, reading, asin='B012345678', confirmed_at=confirmed,
+                               now=now, max_age_h=12)
+    assert not result.computable and result.exclude_reason == 'no_basis'
+    assert result.regular_price is result.pct_at_checkout is result.abs_savings is None

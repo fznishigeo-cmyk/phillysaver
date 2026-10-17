@@ -28,11 +28,16 @@ logger = logging.getLogger("dealradar.publish.email")
 def build_digest(deals: list[dict[str, Any]], cfg, now: datetime) -> tuple[str, str, str]:
     """Return (subject, text_body, html_body) for the daily digest."""
     deals = [d for d in deals if not email_excluded(d, cfg)]
+    from ..amazon_reference import enabled, project
+    if enabled(cfg):
+        deals = [project(d, cfg, now) for d in deals]
     local = now.astimezone(ZoneInfo(cfg.digest_timezone))
     domain = getattr(cfg, "custom_domain", "") or ""
     brand = domain.split(".")[0] if domain else "wowpriced"
     summary = (f"{len(deals)} deal{'s' if len(deals) != 1 else ''} at {cfg.min_pct:g}% off or more"
                if deals else "price-check update")
+    if enabled(cfg) and any(d.get("pct_at_checkout") is None for d in deals):
+        summary = f"{len(deals)} verified offers"
     subject = (
         f"{brand} digest — {summary} — "
         f"{local:%b} {local.day}, {local.year}"

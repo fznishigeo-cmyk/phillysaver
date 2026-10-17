@@ -40,6 +40,7 @@ from typing import Any
 import httpx
 
 from .. import util
+from ..amazon_reference import list_reading, remember_list_price
 from ..config import AppConfig, get_secret, error_summary
 from ..db import DB
 from ..http_client import PoliteFetcher, api_fetcher
@@ -391,26 +392,34 @@ def reprice_post(product: dict[str, Any], deal: dict[str, Any], cfg,
     avg30 = _price_at(stats.get("avg30"), PRICE_TYPE_AMAZON)
     avg90 = _price_at(stats.get("avg90"), PRICE_TYPE_AMAZON)
     shown = deal.get("final_price")
-    if live is None or avg30 is None or avg90 is None or min(avg30, avg90) <= 0 \
+    exact_buybox = buybox and cfg.keepa_click_price_rule == "on"
+    has_averages = avg30 is not None and avg90 is not None and min(avg30, avg90) > 0
+    if live is None or (not has_averages and not exact_buybox) \
             or not isinstance(shown, (int, float)) or shown <= 0:
         return None
-    if live == shown or abs(live - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct:
+    if live == shown or (not exact_buybox and
+            abs(live - shown) * 100 / shown + 1e-9 < cfg.keepa_reprice_min_pct):
         return None
     # The same reference rule as the /deal lane (_amazon_basis): a List
     # Price the item recently sold near, else the Typical-price stand-in.
-    regular = min(avg30, avg90)
-    label = "30-day average" if avg30 < avg90 else "90-day average"
+    regular = min(avg30, avg90) if has_averages else None
+    label = ("30-day average" if avg30 < avg90 else "90-day average") if has_averages else ""
     listed = _price_at(stats.get("current"), PRICE_TYPE_LIST)
-    if listed and listed > regular \
+    if has_averages and listed and listed > regular \
             and avg90 >= cfg.keepa_list_price_min_avg_ratio * listed:
         regular, label = listed, "List Price"
     asin, title = str(deal["asin"]).upper(), str(deal["item"])
     lines = [title, f"On sale for ${live:,.2f} at Amazon.",
-             f"Regular price ({label} on Amazon): ${regular:,.2f}.",
+             f"Regular price ({label} on Amazon): ${regular:,.2f}." if regular is not None else "",
              "Sold online at Amazon.com (price tracked by Keepa).",
              f"Product link: https://www.amazon.com/dp/{asin}"]
     if buybox:
         lines[1] = f"Buy Box total including shipping: ${live:,.2f} at Amazon."
+    evidence = {"final_price_quote": lines[1], "regular_price_quote": lines[2]}
+    if regular is None:
+        # The qualified total is evidence by itself; invent no savings basis.
+        del lines[2]
+        evidence.pop("regular_price_quote")
     return RawPost(
         source_name="keepa", uid=f"reprice:{deal['dedupe_key']}",
         url=f"https://keepa.com/#!product/1-{asin}", title=title,
@@ -419,9 +428,8 @@ def reprice_post(product: dict[str, Any], deal: dict[str, Any], cfg,
         structured={"item": title, "store": "Amazon", "online_only": "true",
                     "product_url": f"https://www.amazon.com/dp/{asin}",
                     "final_price": live, "regular_price": regular,
-                    "regular_price_basis": f"{label} on Amazon", "confidence": 1.0,
-                    "evidence": {"final_price_quote": lines[1],
-                                 "regular_price_quote": lines[2]}})
+                    "regular_price_basis": f"{label} on Amazon" if label else "", "confidence": 1.0,
+                    "evidence": evidence})
 
 
 def _selection(price_type: int, delta_pct: tuple[int, int], date_range: int,
@@ -490,6 +498,9 @@ class _FeedConfirmations:
                     if previous is None or at > previous:
                         deal[name] = util.iso(at)
                         changed = True
+                if not used:
+                    changed = remember_list_price(deal, list_reading(row, keepa_time(row.get("lastUpdate"))),
+                                                  now=self.now) or changed
                 if changed:
                     self.db.update_deal(deal["dedupe_key"], payload={
                         k: deal[k] for k in _DEAL_FIELDS if k in deal})
@@ -1242,6 +1253,7 @@ class KeepaDealsAdapter(SourceAdapter):
             structured={
                 **_structured_category(row, category_names),
                 "keepa_price_seen_at": _feed_time(row, now),
+                "keepa_list_price": list_reading(row, keepa_time(row.get("lastUpdate"))),
                 "item": title, "asin": asin, "store": "Amazon",
                 "product_url": f"https://www.amazon.com/dp/{asin}",
                 "online_only": "true", "final_price": round(current, 2),

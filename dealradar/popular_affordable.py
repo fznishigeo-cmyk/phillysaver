@@ -1,6 +1,7 @@
 """Private homepage ordering comparison over stored facts; no paid work."""
 
 import json
+import copy
 from datetime import timedelta
 from statistics import median
 
@@ -17,7 +18,22 @@ def compare(scored, cfg, now):
     options = cfg.front_page.get("popular_affordable") or {}
     everyday = cfg.front_page.get("everyday_price") or {}
     baseline, tilted = [], []
+    from .appeal import active
+    title_on = active(cfg.front_page.get("appeal") or {})
+    if title_on:
+        # A capped lift cannot be divided back into independent factors.
+        # Recompute the two small score projections from the same stored facts.
+        from .rank import pick_score
+        without_cfg, with_cfg = copy.copy(cfg), copy.copy(cfg)
+        without_cfg.front_page = {**cfg.front_page, "popular_affordable": {**options, "enabled": False},
+                                  "everyday_price": {**everyday, "enabled": False}}
+        with_cfg.front_page = {**cfg.front_page, "popular_affordable": {**options, "enabled": True},
+                               "everyday_price": {**everyday, "enabled": True}}
     for deal, value in scored:
+        if title_on:
+            baseline.append((deal, pick_score(deal, without_cfg, now, require_confirmation=False)))
+            tilted.append((deal, pick_score(deal, with_cfg, now, require_confirmation=False)))
+            continue
         popular_factor = popular_affordable_factor(deal, cfg, now)
         price_factor = everyday_price_factor(deal, everyday)
         if options.get("enabled", False):
@@ -30,7 +46,7 @@ def compare(scored, cfg, now):
     with_options = {**cfg.front_page, "popular_affordable": {**options, "enabled": True}}
     without = top_picks(baseline, without_options, now, cfg=cfg)
     boosted = set()
-    with_boost = top_picks(tilted, with_options, now, cfg=cfg, boosted=boosted)
+    with_boost = top_picks(tilted, with_options, now, cfg=with_cfg if title_on else cfg, boosted=boosted)
     amazon = [d for d, _ in scored if is_amazon_deal(d)]
     records = [d for d in amazon if isinstance(d.get("keepa_popularity"), dict)
                and d.get("asin") and d["keepa_popularity"].get("asin") == d["asin"]

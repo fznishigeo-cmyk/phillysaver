@@ -47,6 +47,7 @@ class Messages:
 
 def parser_for(messages=None, **over):
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # critic fixtures recorded before task 275
     cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.critic_shadow_batches_per_day = 0  # these tests isolate the real critic
     for key, value in over.items():

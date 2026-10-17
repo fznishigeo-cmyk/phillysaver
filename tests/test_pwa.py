@@ -21,6 +21,15 @@ def baseline_config(mode):
     if mode == "shipped":
         cfg = load_config()
         cfg.dark_polish = False  # recorded before task 254
+        cfg.keepa_click_price_rule = "off"  # recorded before task 275
+        cfg.static_photos = False  # recorded before task 274
+        cfg.front_page["used_tab_only"] = False  # recorded before task 274
+        cfg.amazon_reference = "history"  # recorded before task 276
+        cfg.strip_comments = False  # recorded before task 278
+        cfg.open_box_scarcity = False  # recorded before task 273
+        if "appeal" in cfg.front_page:
+            cfg.front_page["appeal"].get("want", {})["enabled"] = False
+            cfg.front_page["appeal"]["season"] = []
         cfg.amazon_history = "show"  # predates task 121b
         cfg.non_amazon_freshness_enabled = False  # pin predates task 102's age gate
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim

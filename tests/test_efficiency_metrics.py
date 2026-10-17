@@ -201,6 +201,7 @@ def test_useful_threshold_both_directions_and_stale_or_hidden_prices(cents, expe
 def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
     db = DB(":memory:")
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     monkeypatch.setenv("KEEPA_KEY", "offline-key")
     monkeypatch.setattr(util, "now_utc", lambda: NOW + timedelta(minutes=1))
@@ -241,6 +242,7 @@ def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
 def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, status, receipt, tokens, useful):
     db = DB(":memory:")
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     seed(db, cfg)
     monkeypatch.setenv("KEEPA_KEY", "offline-key")
@@ -258,6 +260,7 @@ def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, 
 def test_photo_only_tokens_are_not_recheck_tokens(monkeypatch):
     db = DB(":memory:")
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     deal = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(minutes=10)))
     db.update_deal(deal["dedupe_key"], payload=dict(deal, image_url=""))
@@ -277,6 +280,7 @@ def test_feed_receipts_include_sweep_but_exclude_categories(monkeypatch):
     from tests.test_keepa import _adapter, SRC
 
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.keepa_focus_categories = []
     cfg.keepa_sweep_enabled = True
     db = DB(":memory:")
@@ -400,6 +404,7 @@ def test_open_pull_receipts_are_shared_without_counting_rechecks_or_photos_as_di
 
     db = DB(":memory:")
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     fake = setup_pull(cfg, db, monkeypatch)
     due = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(hours=2)))
     idle = seed(db, cfg, asin="B000000002", price_rechecked_at=util.iso(NOW - timedelta(minutes=35)))

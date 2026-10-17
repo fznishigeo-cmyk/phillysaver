@@ -56,13 +56,15 @@ Short links need the full product address. eBay results cover live deals only, b
 
 
 def publish(out, cfg, now, site_url, disclosure):
+    from .. import amazon_reference
     from . import seo
     from .site import copy_variant, site_footer
 
     template = (seo.TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8")
     template = copy_variant(template, True, cfg.support_enabled)
     template = site_footer(template, now, disclosure, cfg.support_enabled,
-        amazon_as_of_enabled=cfg.amazon_as_of_enabled, product_pages_enabled=cfg.seo_product_pages_enabled,
+        amazon_as_of_enabled=cfg.amazon_as_of_enabled,
+        product_pages_enabled=cfg.seo_product_pages_enabled and not amazon_reference.enabled(cfg),
         event_links=seo.event_pages.links(cfg), checker_enabled=True)
     template = product_pages.reader_template(template).replace(product_pages.CLICK_SCRIPT, "")
     template = template.replace("{{TABS}}", "")
@@ -86,6 +88,7 @@ def publish(out, cfg, now, site_url, disclosure):
     content = (CONTENT + '<script id="check-rules" type="application/json">' + rules + '</script>'
                + '<script id="check-options" type="application/json">' + options + '</script>'
                + '<script>' + script + '</script>')
+    content = amazon_reference.template(content, cfg)
     html = seo._landing_page(template, TITLE, "Is this a good deal?", DESCRIPTION, "/check/", site_url,
                              content, intro=INTRO, extra_head=head)
     html = seo._fill(html, DROP_MINUTES=str(int(cfg.drop_minutes)))

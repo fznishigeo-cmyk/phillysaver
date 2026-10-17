@@ -98,6 +98,11 @@ def plenty_of_stock(db, deal: dict, cfg) -> bool:
     clearance) is gone after the first click (operator, 2026-10-13/14)."""
     if deal.get("price_unconfirmed") or (deal.get("category") or "") in set(cfg.social_exclude_categories):
         return False
+    if cfg.keepa_click_price_rule == "on":
+        from ..click_price import excluded
+        from ..util import now_utc
+        if excluded((db.get_deal(deal["dedupe_key"]) if db is not None else None) or deal, cfg, now_utc()):
+            return False
     words = " ".join([str(deal.get("item") or ""), *map(str, deal.get("how") or []),
                       *map(str, deal.get("stack_steps") or [])])
     if _SCARCE.search(words) or _SIZED.search(str(deal.get("item") or "")):
@@ -110,7 +115,9 @@ def plenty_of_stock(db, deal: dict, cfg) -> bool:
     sources = {str(s.get("source_name") or "") for s in row.get("sightings") or []}
     sources = {s for s in sources | {str(row.get("source_name") or "")} if s}
     independent = len(sources - _AMAZON_SOLD)
-    if float(deal.get("pct_at_checkout") or 0) >= cfg.social_extreme_pct:
+    from ..amazon_reference import enabled
+    pct = row.get("pct_at_checkout") if enabled(cfg) else deal.get("pct_at_checkout")
+    if float(pct or 0) >= cfg.social_extreme_pct:
         return independent >= 2
     return bool(sources & _AMAZON_SOLD) or independent >= 2
 

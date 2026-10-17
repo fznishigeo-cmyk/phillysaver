@@ -1400,7 +1400,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return (rows || state.deals).filter(function (d) {
       if (q && skip.indexOf("query") === -1 && !matchesSearch(d, words)) return false;
       if (store && skip.indexOf("store") === -1 && storeKey(d.store) !== store) return false;
-      if (group && d.spotlight && d.pct_at_checkout == null) return false;
+/*used-tab-only*/      if (!q && group !== "USED" && usedOrOpenBox(d)) return false;
+/*/used-tab-only*/      if (group && d.spotlight && d.pct_at_checkout == null) return false;
       if (group === "USED") {
         var conds = d.conditions || [];
         if (conds.indexOf("used") === -1 && conds.indexOf("open_box") === -1) return false;
@@ -1613,7 +1614,12 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     return rows.filter(function (d) { return !d.price_unconfirmed && !d.price_aged; })
       .concat(rows.filter(function (d) { return d.price_unconfirmed || d.price_aged; }));
   }
-/*/unconfirmed*/  // Niche categories (car parts, office supplies) follow every other deal on
+/*/unconfirmed*//*click-price*/  function clickPriceHomeRows(rows) {
+    if ((CATGROUPS[state.catTab] || [])[1] || document.getElementById("q").value.trim()) return rows;
+    var known = rows.filter(function (d) { return !d.click_price_unknown; });
+    return known.length >= 120 ? known.concat(rows.filter(function (d) { return d.click_price_unknown; })) : known;
+  }
+/*/click-price*/  // Niche categories (car parts, office supplies) follow every other deal on
   // the front page; their own tab and search keep them (operator 2026-10-16).
   function nicheLast(rows) {
     var options = (state.meta || {}).front_page || {}, niche = options.niche_categories || [];
@@ -1621,7 +1627,15 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     function sunk(d) { return niche.indexOf(d.category || "other") !== -1; }
     return rows.filter(function (d) { return !sunk(d); }).concat(rows.filter(sunk));
   }
-  function ordered(rows, deferMix) {
+/*used-tab-only*/  function usedOrOpenBox(d) {
+    var conditions = d.conditions || [];
+    return conditions.indexOf("used") !== -1 || conditions.indexOf("open_box") !== -1;
+  }
+  function searchNewFirst(rows) {
+    if (!document.getElementById("q").value.trim()) return rows;
+    return rows.filter(function (d) { return !usedOrOpenBox(d); }).concat(rows.filter(usedOrOpenBox));
+  }
+/*/used-tab-only*/  function ordered(rows, deferMix) {
     // The teaser's unlocked deals (the top picks) always lead; the blurred
     // stubs follow, each group dealt within itself, whatever the sort.
     var fresh = state.sortKey === "fresh";
@@ -1637,7 +1651,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       locked = freshOrder(locked, false);
     }
     rows = nicheLast(open.concat(locked));
-    return /*unconfirmed*/confirmedFirst(/*/unconfirmed*//*photoless*/photosFirst(/*/photoless*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*photoless*/)/*/photoless*//*unconfirmed*/)/*/unconfirmed*/;
+    return /*used-tab-only*/searchNewFirst(/*/used-tab-only*//*click-price*/clickPriceHomeRows(/*/click-price*//*unconfirmed*/confirmedFirst(/*/unconfirmed*//*photoless*/photosFirst(/*/photoless*/!deferMix && fresh && frontPageView() ? frontPageMix(rows, state.meta.front_page) : rows/*photoless*/)/*/photoless*//*unconfirmed*/)/*/unconfirmed*//*click-price*/)/*/click-price*//*used-tab-only*/)/*/used-tab-only*/;
   }
 
   function storeHue(s) {
@@ -1786,7 +1800,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       esc(d.checked_at)/*amazon-as-of*/ + (amazonAsOf ? '" title="' + esc(amazonAsOf) : "")/*/amazon-as-of*/ + '"><span class="pcl">price checked </span>' +
 /*amazon-as-of*/      (amazonAsOf ? '<span class="sr-only"> (' + esc(amazonAsOf) + ') </span>' : "") +
 /*/amazon-as-of*/      esc(checked.replace(/^price checked /, "")) + "</span>";
-    var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
+/*click-price*/    if (d.select_sizes) metarow += '<span class="chip">select sizes</span>';
+/*/click-price*/    var countdown = d.spotlight && spotlightTime(d.spotlight.ends_at, Date.now());
     if (countdown) metarow += '<span class="chip spotlight-time" data-ends-at="' +
       esc(d.spotlight.ends_at) + '">' + countdown + '</span>';
     if (TIER_LABEL[tier]) {
@@ -1859,7 +1874,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   // never restarts the scroll.
   var TICKER_MAX = 16, TICKER_PX_S = 38, tickerSig = "";
   function tickerItems() {
-    var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed && !d.price_aged/*/unconfirmed*/; });
+    var live = state.deals.filter(function (d) { return d.status !== "dead"/*unconfirmed*/ && !d.price_unconfirmed && !d.price_aged/*/unconfirmed*//*used-tab-only*/ && !usedOrOpenBox(d)/*/used-tab-only*/; });
     var byPct = function (a, b) { return (num(b.pct_at_checkout) || 0) - (num(a.pct_at_checkout) || 0); };
     var byPick = function (a, b) {
       return (a.pick == null) - (b.pick == null) || (a.pick || 0) - (b.pick || 0) || byPct(a, b);
@@ -2079,11 +2094,14 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
 <!--engagement-->    var engagementHtml = engagementLineHtml();
 <!--/engagement-->    var spotlight = activeSpotlight(), spotlightKeys = spotlight.map(dealKey);
     browseRows = spotlight.slice();
-    var spotlightHtml = spotlight.length ? '<div class="grid spotlight-grid">' + spotlight.map(cardHtml).join("") + '</div>' : '';
+/*used-tab-only*/    var searchSpotlight = searchText() ? spotlight : [];
+    if (searchText()) spotlight = [];
+/*/used-tab-only*/    var spotlightHtml = spotlight.length ? '<div class="grid spotlight-grid">' + spotlight.map(cardHtml).join("") + '</div>' : '';
     var rows = state.deals.length ? ordered(filtered(), true).filter(function (d) {
       return spotlightKeys.indexOf(dealKey(d)) === -1;
     }) : [];
-    renderSearchCount(rows.concat(spotlight));
+/*used-tab-only*/    rows = searchSpotlight.concat(rows);
+/*/used-tab-only*/    renderSearchCount(rows.concat(spotlight));
     updatePaywall(rows.some(isLocked) || openNudge());
     if (!state.deals.length && !searchInventory().length/*search-amazon*/ && !searchText()/*/search-amazon*/) {
       content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">Verified offers appear here after passing our price checks.</p>';
@@ -2105,12 +2123,15 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       rows = rows.filter(function (d) { return num(d.pct_at_checkout) >= alertFloor; }).concat(
         rows.filter(function (d) { return num(d.pct_at_checkout) < alertFloor; }));
     }
-    rows = placeGone(rows);
+/*used-tab-only*/    if (!searchText())
+/*/used-tab-only*/    rows = placeGone(rows);
     var mixed = !top && frontPageView();
     if (mixed) rows = frontPageMix(rows, state.meta.front_page);
 /*photoless*/    if (mixed) rows = placeGone(photosFirst(rows));
 /*/photoless*//*unconfirmed*/    rows = confirmedFirst(rows);
-/*/unconfirmed*/    browseRows = spotlight.concat(rows);
+/*/unconfirmed*//*click-price*/    rows = clickPriceHomeRows(rows);
+/*/click-price*//*used-tab-only*/    if (searchText()) rows = placeGone(searchNewFirst(rows));
+/*/used-tab-only*/    browseRows = spotlight.concat(rows);
     // The mixed first screen can draw from either tier; deeper rows keep
     // their existing order and the below-alert-bar section.
     var split = rows.findIndex(function (d, i) {

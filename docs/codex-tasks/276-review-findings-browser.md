@@ -1,0 +1,2 @@
+# 276 — real Chromium results (operator, outside the Codex sandbox, 2026-10-17 ~05:45Z) — include as findings
+BLOCKER: tests/test_unconfirmed_label.py::test_browser_label_sort_ticker_watch_and_surprise FAILS (node assertion at test_unconfirmed_label.py:241) in wt276 with Chromium available; 171 other targeted tests pass. Root-cause (likely the card's crossed-out/price-drop markup changed what the label/sort/ticker logic reads) and keep the existing browser behavior.

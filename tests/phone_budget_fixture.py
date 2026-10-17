@@ -24,6 +24,16 @@ def fixture_config(mode):
     if mode == "shipped":
         cfg = pre_history_removal(load_config())
         cfg.dark_polish = False  # recorded before task 254
+        cfg.keepa_click_price_rule = "off"  # recorded before task 275
+        cfg.static_photos = False  # recorded before task 274
+        cfg.front_page["used_tab_only"] = False  # recorded before task 274
+        cfg.amazon_history = "show"  # recorded before task 274
+        cfg.amazon_reference = "history"  # recorded before task 276
+        cfg.strip_comments = False  # recorded before task 278
+        cfg.open_box_scarcity = False  # recorded before task 273
+        if "appeal" in cfg.front_page:
+            cfg.front_page["appeal"].get("want", {})["enabled"] = False
+            cfg.front_page["appeal"]["season"] = []
         return cfg
     return AppConfig(custom_domain="wowpriced.com", support_enabled=mode == "support",
                      support_payment_link="https://buy.stripe.com/test_task206",
@@ -89,8 +99,14 @@ def publish_fixture(root, cfg, *, inspect=None):
     out = root / "site"
     try:
         db.meta_set("teaser_recent", '["before"]')
+        rows = fixture_offers()
+        if cfg.keepa_click_price_rule == "on":
+            # Shipped Unknown offers still need critic evidence to enter the
+            # wall. Historical OFF fixtures keep their original facts/bytes.
+            for row in rows:
+                row["critic"] = {"plausible": True, "confidence": .9, "reason": "Backed basis"}
         with patch.object(site, "util_now", lambda: NOW):
-            result = site.render_site(db, cfg, NOW, out_dir=out, deals=fixture_offers(),
+            result = site.render_site(db, cfg, NOW, out_dir=out, deals=rows,
                                       last_run={"run_key": "task206-fixed"})
         versions = {url: row["content_hash"] for url, row in db.indexnow_pages().items()}
         assert versions

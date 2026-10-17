@@ -141,7 +141,11 @@ intake:
   max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
 
 site:
+  static_photos: true          # task 274: photos on static cards and deal pages
+  open_box_scarcity: true   # task 273: never infer a stock count
+  open_box_counts: false   # operator: publish only "often only 1" for now
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
+  strip_comments: true  # task 278: final home-only pass; missing/false preserves original bytes
   search_amazon: true         # tagged search fallback; queries stay local until clicked
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
@@ -171,6 +175,7 @@ store_policy:
   other: live_only
 
 publish:
+  amazon_reference: list_price  # history | list_price; comparisons stay private
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
                                # Verification thresholds (history-checked, the
                                # Keepa cross-check) derive from this one knob.
@@ -200,6 +205,7 @@ publish:
     max_deals_bytes: 33554432   # reject implausible manifest sizes
     max_future_s: 300          # bounded clock skew for publication timestamps
   front_page:                 # All top picks; fresh drops retains the top-24 mix.
+    used_tab_only: true         # used/open-box only in their tab and after new search matches
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]
     max_niche_top: 2
@@ -226,6 +232,48 @@ publish:
       category_factors: {home: 1.15, kitchen: 1.15, beauty: 1.15, fashion: 1.15,
                          toys_games: 1.05, kids_baby: 1.05, health: 1.05, grocery: 1.05,
                          auto: 0.85}
+      want:
+        enabled: true
+        factor: 1.2
+        max_price: 50
+        exclude_words: [toy, vibrator, sex, adult, erotic, intimate wellness,
+                        dildo, masturbator, bondage, fetish, sex lube, sexual lubricant]
+        groups:
+          basics: [bra, bras, bralette, underwear, panties, boxer, briefs, socks,
+                   leggings, pajamas, lingerie, bodysuit, bikini, swimsuit, slippers,
+                   sneakers, shoes, hat, beanie, hoodie, sweatshirt]
+          carry: [owala, stanley, hydro flask, yeti, tumbler, water bottle]
+          small wins: [light bulbs, led bulbs, usb c cable, charging cable,
+                       charger, power bank, watch, earbuds, batteries]
+          beauty: [perfume, makeup, lipstick, mascara, skincare, serum,
+                   moisturizer, sunscreen, shampoo, conditioner, hair dryer,
+                   straightener, curling iron, nail, lip gloss]
+          wear & carry: [sunglasses, purse, handbag, tote, backpack, jewelry,
+                         earrings, necklace, bracelet, jacket, coat, dress, jeans, pajama set]
+          home: [towels, sheets, pillow, blanket, throw, candle, storage bins,
+                 organizer, vacuum, air purifier, humidifier, string lights]
+          kitchen: [air fryer, knife set, cookware, pan, coffee, k cup, blender,
+                    food storage, lunch box]
+          kids: [diapers, wipes, toys, lego, crayons, kids shoes, school backpack,
+                 baby bottle, sippy cup, stroller]
+          everyday: [paper towels, toilet paper, detergent, dish soap, trash bags,
+                     toothpaste, toothbrush, deodorant, razor, vitamins]
+          pets & fitness: [dog treats, cat litter, dog toy, yoga mat, resistance bands, dumbbells]
+          allure: [lingerie, babydoll, bralette, corset, satin, silk robe,
+                   sleepwear, nightgown, cologne, perfume, boxer briefs, swim trunks, date night]
+      season:
+        - name: thanksgiving
+          from: "11-10"
+          to: "11-27"
+          words: [roasting pan, baking, casserole, tablecloth, slow cooker,
+                  air fryer, meat thermometer]
+          factor: 1.15
+        - name: gifts
+          from: "11-01"
+          to: "12-24"
+          words: [gift set, stocking stuffer, perfume, jewelry, watch, toy,
+                  lego, pajamas, slippers, blanket]
+          factor: 1.15
     popular_affordable:        # task 255: private Amazon popularity + low checkout price
       enabled: false           # flip after reviewing the 1-day shadow
       shadow: true             # encrypted-state comparison; private growth report only
@@ -437,6 +485,7 @@ keepa:
   unique_asin_rechecks:
     enabled: false               # share one product request within each compatible recheck group
   buybox_rule: on                 # operator 2026-10-17: "PRICES NEED TO BE RIGHT, NO COMPROMISE" (shadow probe: 18/30 top deals >10% under the Add-to-cart price)
+  click_price_rule: "on"          # fresh qualified Buy Box required for plain new Amazon prices
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
   buybox_interval_min: 60         # paid requests and maximum Buy Box observation age
   recheck_surplus: true           # use predicted overflow before the next scheduled run

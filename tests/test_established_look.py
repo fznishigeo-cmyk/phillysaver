@@ -43,9 +43,11 @@ def test_no_published_page_has_unfinished_visible_copy(tmp_path, monkeypatch, mo
     finally:
         db.close()
     paths = {p.relative_to(out).as_posix(): p for p in out.rglob("*.html")}
-    assert {"index.html", "404.html", "p/index.html", "best-deals-today/index.html"} <= paths.keys()
+    assert {"index.html", "404.html", "best-deals-today/index.html"} <= paths.keys()
+    # Task 276 suppresses the history reader in the shipped List Price mode.
+    assert ("p/index.html" in paths) is (cfg.amazon_reference == "history")
     if not empty:
-        assert any(p.startswith("p/") and p != "p/index.html" for p in paths)
+        assert any(p.startswith("p/") and p != "p/index.html" for p in paths) is (cfg.amazon_reference == "history")
         assert any(p.startswith("products/") for p in paths)
         assert any(p.startswith("stores/") for p in paths)
         assert any(p.startswith("deal/") for p in paths)

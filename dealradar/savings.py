@@ -118,6 +118,30 @@ def display_pct(value: float) -> int:
     return math.floor(float(value) + .5)
 
 
+def amazon_list_price(final: float | None, reading: dict | None, *, asin: str,
+                      confirmed_at: datetime | None, now: datetime,
+                      max_age_h: float) -> models.SavingsResult:
+    """Display savings from Amazon's List Price in the price-confirming reading.
+
+    The final is already shipping-adjusted. Never add shipping a second time,
+    substitute an older list, or reuse a reading for another product.
+    """
+    from .util import parse_iso
+
+    reading = reading or {}
+    listed, at = reading.get("price"), parse_iso(reading.get("observed_at") or "")
+    if (reading.get("asin") != asin or at is None or at != confirmed_at
+            or not timedelta() <= now - at <= timedelta(hours=max_age_h)
+            or type(listed) not in {int, float} or not math.isfinite(listed)
+            or type(final) not in {int, float} or not math.isfinite(final)
+            or final < 0 or listed <= final):
+        return models.SavingsResult(computable=False, exclude_reason="no_basis")
+    pct = round((listed - final) / listed * 100, 1)
+    return models.SavingsResult(computable=True, final_price=final, regular_price=listed,
+                                pct_at_checkout=pct, pct_with_rebates=pct,
+                                abs_savings=round(listed - final, 2), basis="amazon_list_price")
+
+
 def clears_reference_floor(final: float, reference: float, min_pct: float) -> bool:
     """Audit a stored checkout price against an independently supported basis."""
     return reference > 0 and final <= reference * max(0.0, 1 - min_pct / 100) + 1e-9

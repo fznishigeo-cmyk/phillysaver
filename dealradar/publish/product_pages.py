@@ -106,7 +106,8 @@ def prepare(db, cfg, now, public, source):
     stored = db.meta_get(META)
     state = json.loads(stored or '{"pages":{},"day":"","admitted":[]}')
     report.update(state_pages=len(state["pages"]), state_bytes=len(stored or ""))
-    if not cfg.seo_product_pages_enabled:
+    from ..amazon_reference import enabled
+    if not cfg.seo_product_pages_enabled or enabled(cfg):
         return {}, {}, report
     from . import seo
 
@@ -511,7 +512,8 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths, *,
             html = html.replace('</head>', '<meta name="robots" content="index,follow">\n</head>', 1)
         seo._write_page(out, path, html)
         emitted.append(path)
-    if cfg.seo_product_pages_enabled:
+    from ..amazon_reference import enabled
+    if cfg.seo_product_pages_enabled and not enabled(cfg):
         rows = sorted((p for p in pages.values() if p["indexable"]), key=lambda p: p["path"])
         content = '<div class="price-index">'
         for label, group, slug in seo.HUB_GROUPS:

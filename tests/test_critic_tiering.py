@@ -324,6 +324,14 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     config["keepa"]["buybox_rule"] = "shadow"  # recorded before the Buy Box rule went on
     config.get("non_amazon_freshness", {})["stores"] = {}  # recorded before the Woot freshness override
     config["publish"]["front_page"].get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config["publish"]["front_page"].get("top_picks", {}) else None  # recorded before 8 h
+    config["site"]["static_photos"] = False  # recorded before task 274
+    config["publish"]["front_page"]["used_tab_only"] = False  # recorded before task 274
+    config["keepa"]["click_price_rule"] = "off"  # recorded before task 275
+    config["publish"]["amazon_reference"] = "history"  # recorded before task 276
+    config["site"]["strip_comments"] = False  # recorded before task 278
+    config["site"]["open_box_scarcity"] = False  # recorded before task 273
+    config["publish"]["front_page"]["appeal"]["want"]["enabled"] = False
+    config["publish"]["front_page"]["appeal"]["season"] = []
     path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)

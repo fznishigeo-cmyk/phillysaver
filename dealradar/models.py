@@ -241,6 +241,7 @@ class Deal:
     # ISO UTC of the last live price re-check (Keepa, Best Buy or eBay).
     price_rechecked_at: str = ""
     buybox_check: dict[str, Any] | None = None  # private click-price facts, bound to this price
+    click_price_check: dict[str, Any] | None = None  # qualified Buy Box and compact variation facts
     checkout_price_reading: dict[str, Any] | None = None  # private paid price and observation time
     checkout_price_first_reading: dict[str, Any] | None = None  # immutable private page-price baseline
     checkout_source_ended_at: str = ""  # source verdict survives a page-only API confirmation
@@ -250,6 +251,7 @@ class Deal:
     source_recheck_run: str = ""
     store_recheck_run: str = ""
     keepa_price_seen_at: str = ""         # a backed current price from the Keepa lane
+    keepa_list_price: dict[str, Any] | None = None  # private, same-reading Amazon List Price
     keepa_popularity: dict[str, Any] | None = None  # private, exact-variation ordering facts
     keepa_warehouse_seen_at: str = ""     # exact used price in the Warehouse lane
     keepa_checked: bool = False           # the one-time Keepa cross-check ran

@@ -233,6 +233,23 @@ def everyday_price_factor(deal: dict[str, Any], options: dict) -> float:
     return 1.0 - (1.0 - factor) * (price - full) / (floor - full)
 
 
+def pick_popularity_factor(deal, cfg, now, options=None):
+    """Marginal private lift after the shared title-lift ceiling."""
+    from . import appeal
+
+    appeal_options = cfg.front_page.get("appeal") or {}
+    if appeal.blocked(deal, appeal_options):
+        return 1.0
+    popular = popular_affordable_factor(deal, cfg, now, options)
+    _, _, title = appeal.signals(deal, cfg, now)
+    if title <= 1:
+        return popular
+    everyday = cfg.front_page.get("everyday_price") or {}
+    price = everyday_price_factor(deal, everyday) if everyday.get("enabled") else 1.0
+    cap = (appeal_options.get("want") or {}).get("factor", 1.2)
+    return appeal.capped_lift([popular, price, title], cap, demand=popular) / appeal.capped_lift([price, title], cap)
+
+
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                require_confirmation: bool = True, allow_used: bool = False,
                links=None, popularity: bool = True) -> float | None:
@@ -245,6 +262,9 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
 
     from .non_amazon_freshness import promotion_excluded
     if deal.get("price_unconfirmed") or promotion_excluded(deal, cfg, now):
+        return None
+    from .click_price import excluded
+    if require_confirmation and excluded(deal, cfg, now):
         return None
     checkout = checkout_prices.enabled(cfg) and _price_hidden_by_promo(deal)
     if require_confirmation and is_amazon_deal(deal) and not checkout and not price_confirmation_recent(
@@ -308,15 +328,29 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     result = quality * 0.5 ** (_age_hours(deal.get("first_seen_at", ""), now)
                               / options["fresh_half_life_h"])
     appeal = cfg.front_page.get("appeal") or {}
+    from . import appeal as title_appeal
+    blocked = title_appeal.blocked(deal, appeal)
     if appeal.get("enabled", False):
-        result *= (appeal.get("category_factors") or {}).get(category, 1.0)
+        category_factor = (appeal.get("category_factors") or {}).get(category, 1.0)
+        result *= min(1.0, category_factor) if blocked else category_factor
         if niche_reason(deal):
             result *= appeal.get("niche_factor", 1.0)
+    popularity_factor = 1.0
     if popularity and (cfg.front_page.get("popular_affordable") or {}).get("enabled", False):
-        result *= popular_affordable_factor(deal, cfg, now)
+        popularity_factor = 1.0 if blocked else popular_affordable_factor(deal, cfg, now)
     everyday = cfg.front_page.get("everyday_price") or {}
+    price_factor = 1.0
     if everyday.get("enabled", False):
-        result *= everyday_price_factor(deal, everyday)
+        price_factor = everyday_price_factor(deal, everyday)
+    _, _, title_factor = title_appeal.signals(deal, cfg, now)
+    if title_factor > 1:
+        result *= title_appeal.capped_lift([popularity_factor, price_factor, title_factor],
+                                          (appeal.get("want") or {}).get("factor", 1.2),
+                                          demand=popularity_factor)
+    else:
+        # Preserve the exact historical operation order/rounding with switches off.
+        result *= popularity_factor
+        result *= price_factor
     return result
 
 
@@ -348,7 +382,7 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
     pending = iter(ranked)
     boost_counts = Counter()
     boost_cap = math.floor(popular.get("max_share", .25) * PICK_WINDOW) if popular_on else 0
-    queue = [(-value, i, deal, popular_affordable_factor(deal, cfg, now, popular))
+    queue = [(-value, i, deal, pick_popularity_factor(deal, cfg, now, popular))
              for i, (deal, value) in enumerate(ranked)] if popular_on else []
     heapq.heapify(queue)
     while True:
@@ -367,6 +401,9 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
             except StopIteration:
                 break
         if deal.get("price_unconfirmed") or deal.get("price_aged"):
+            continue
+        from .click_price import excluded
+        if cfg is not None and excluded(deal, cfg, now):
             continue
         if len(picked) >= picks["count"]:
             break

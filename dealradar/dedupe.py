@@ -317,6 +317,11 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
         payload["expires_published_at"] = util.iso(post_at) if extracted.expires_at else ""
         payload["price_published_at"] = util.iso(post_at)
+        if cfg.open_box_scarcity:
+            from .publish.open_box import capture
+            stock = capture(extracted, post, now)
+            if stock:
+                payload["open_box_stock_evidence"] = stock
         if identity:
             payload.update(identity_changes(payload, identity))
         payload["image_url"] = _post_image(photo_deal, post, cfg=cfg)
@@ -543,6 +548,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             previous = util.parse_iso(payload.get(field) or "")
             if at is not None and (previous is None or at > previous):
                 payload[field] = util.iso(min(at, now))
+        if "keepa_list_price" in facts:
+            from .amazon_reference import remember_list_price
+            remember_list_price(payload, facts["keepa_list_price"], now=now)
         if (post.structured or {}).get("regular_price_basis"):
             from .verify import is_used_deal
 
@@ -569,7 +577,8 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
 
 
 def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
-                     cfg, now: datetime, *, observed_at: datetime | None = None) -> bool:
+                     cfg, now: datetime, *, observed_at: datetime | None = None,
+                     buybox: bool = False) -> bool:
     """Verify/compute a live correction and update this exact row, without intake.
 
     This is a price reading, not a new sourced deal: keep the product's
@@ -604,11 +613,12 @@ def reprice_existing(db, deal: dict[str, Any], post: models.RawPost,
     extracted = to_extracted(LLMDeal.model_validate(post.structured), post, "UTC", now)
     if not verify_evidence(extracted, post.text)[0]:
         return False
-    savings = compute_savings(extracted, allow_price_only=True) if retailer else compute_savings(extracted)
+    exact_buybox = buybox and cfg.keepa_click_price_rule == "on"
+    savings = compute_savings(extracted, allow_price_only=True) if retailer or exact_buybox else compute_savings(extracted)
     if not savings.computable or savings.final_price is None:
         return False
     shown = current.get("final_price")
-    if woot:
+    if woot or exact_buybox:
         unchanged = shown == savings.final_price
     elif retailer:
         unchanged = (shown == savings.final_price

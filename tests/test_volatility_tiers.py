@@ -20,6 +20,7 @@ from tests.test_wall_confirmation_coverage import remember
 @pytest.fixture
 def cfg():
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275
     # Predates the Buy Box top picks and surplus scheduling.
     cfg.keepa_buybox_top_n = 0
     cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False

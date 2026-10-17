@@ -655,7 +655,9 @@ def critique_deals(parser: "ClaudeParser", deals: list[dict], *, shadow: bool = 
         parsed = CriticVerdicts.model_validate(resp.parsed_output)
     except (AttributeError, anthropic.BadRequestError, ValidationError,
             ValueError, TypeError) as e:
-        log.warning("deal critic unavailable (%s); no opinion", e)
+        # Type only: validation messages echo the reply, whose reasons can cite
+        # hidden comparisons, and Actions logs are public.
+        log.warning("deal critic unavailable (%s); no opinion", type(e).__name__)
         return opinions
     eligible = {entry["index"] for entry in entries}
     counts = {}

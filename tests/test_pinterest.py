@@ -30,6 +30,7 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("PINTEREST_APP_SECRET", APP_SECRET)
     monkeypatch.setattr(pinterest.time, "sleep", lambda seconds: None)
     config = load_config()
+    config.keepa_click_price_rule = "off"  # delivery fixtures recorded before task 275
     # Fixture deals live only in deals.json; the stock-evidence rule
     # (sightings in the DB) is covered in tests/test_social_stock.py.
     config.social_require_stock_evidence = False

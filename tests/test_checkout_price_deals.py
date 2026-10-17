@@ -352,8 +352,9 @@ def test_label_each_kind_in_json_static_live_card_and_detail(db, cfg, tmp_path, 
     assert all(private not in data for private in ('checkout_price_reading', 'checkout_price_first_reading',
                                                   'checkout_source_ended_at',
                                                   'buybox_check', 'sightings', 'keepa'))
-    subprocess.run(['node', str(ROOT / 'tests/checkout_price_logic.cjs'), str(out), expected],
-                   check=True, capture_output=True, text=True)
+    proc = subprocess.run(['node', str(ROOT / 'tests/checkout_price_logic.cjs'), str(out), expected],
+                          capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 @pytest.mark.parametrize('change', [
@@ -443,12 +444,21 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     for mode in ('omitted', 'off'):
         config = pre_history_removal(load_config())
         config.dark_polish = False  # recorded before task 254
+        config.strip_comments = False  # recorded before task 278
         config.search_amazon = False  # recorded before task 259
         config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
         config.join_prompt_delay_s = 15  # recorded before the 35 s delay
         config.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
         config.non_amazon_stores = {}  # recorded before the Woot freshness override
         config.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config.front_page.get("top_picks", {}) else None  # recorded before 8 h
+        config.keepa_click_price_rule = "off"  # recorded before task 275
+        config.static_photos = False  # recorded before task 274
+        config.front_page["used_tab_only"] = False  # recorded before task 274
+        config.amazon_reference = "history"  # recorded before task 276
+        config.open_box_scarcity = False  # recorded before task 273
+        if "appeal" in config.front_page:
+            config.front_page["appeal"].get("want", {})["enabled"] = False
+            config.front_page["appeal"]["season"] = []
         config.amazon_history = 'show'  # predates task 121b
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         config.photoless_last = False  # predates photos-first

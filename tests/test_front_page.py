@@ -19,7 +19,10 @@ from tests.test_seo import ROOT, cfg, db
 
 @pytest.fixture
 def options():
-    return load_config(ROOT / "config.yaml").front_page
+    options = load_config(ROOT / "config.yaml").front_page
+    options["appeal"]["want"]["enabled"] = False  # recorded before task 273
+    options["appeal"]["season"] = []
+    return options
 
 
 def rows():
@@ -46,7 +49,8 @@ def browser(tmp_path, cfg, db, cases):
     data.write_text(json.dumps([dict(c, state={"sortKey": "fresh", **c.get("state", {})}) for c in cases]))
     result = subprocess.run(["node", str(ROOT / "tests/front_page_logic.cjs"),
                              str(out / "index.html"), str(data)],
-                            capture_output=True, text=True, check=True)
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
     return json.loads(result.stdout)
 
 

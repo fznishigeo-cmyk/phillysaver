@@ -77,6 +77,7 @@ class _FakeClient:
 
 def _cfg(**over) -> AppConfig:
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # one-token recheck fixtures recorded before task 275
     cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.critic_enabled = True
     cfg.critic_model = "claude-sonnet-5-5"
@@ -142,6 +143,18 @@ class TestCritiqueDeal:
 
         parser = ClaudeParser(_cfg(), client=_FakeClient(_OddMessages()))
         assert critique_deal(parser, _deal_dict()) is None
+
+    def test_invalid_reply_log_never_echoes_reasons(self, caplog):
+        class _NoIndexMessages:
+            def parse(self, **kw):
+                return _FakeResponse({"verdicts": [{"plausible": False, "confidence": 0.9,
+                                                    "reason": "$100.00 avg90 is inflated"}]})
+
+        parser = ClaudeParser(_cfg(), client=_FakeClient(_NoIndexMessages()))
+        with caplog.at_level("WARNING"):
+            assert critique_deal(parser, _deal_dict()) is None
+        assert "deal critic unavailable (ValidationError)" in caplog.text
+        assert "avg90" not in caplog.text and "$100" not in caplog.text
 
 
 # --------------------------------------------------------------- _run_critic

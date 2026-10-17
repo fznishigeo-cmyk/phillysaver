@@ -29,6 +29,7 @@ ASIN = "B000000001"
 @pytest.fixture
 def cfg():
     result = load_config()
+    result.keepa_click_price_rule = "off"  # recorded before task 275
     # Predates the Buy Box top picks and surplus scheduling.
     result.keepa_buybox_top_n = 0
     result.keepa_recheck_surplus = result.keepa_recheck_top_live_adaptive = False
@@ -127,8 +128,15 @@ def test_up_down_and_exact_threshold_reprice_the_original_source_row(db, cfg, mo
     assert after["pct_at_checkout"] == computed.pct_at_checkout
     assert after["abs_savings"] == computed.abs_savings
     assert summary["drift"]["repriced"] == 1 and len(calls) == 1
-    monkeypatch.setattr("dealradar.parse.claude_client.critique_deals",
-                        lambda *a, **kw: pytest.fail("correction must not add an LLM call"))
+    # Import before patching: a lazy import must not retain this test's guard
+    # after monkeypatch restores the client for a later real-pipeline test.
+    from dealradar import critic_tiering
+
+    def no_critic(*args, **kwargs):
+        pytest.fail("correction must not add an LLM call")
+
+    monkeypatch.setattr("dealradar.parse.claude_client.critique_deals", no_critic)
+    monkeypatch.setattr(critic_tiering, "critique_deals", no_critic)
     assert pipeline._run_critic(db, cfg, object(), NOW)["calls"] == 0
     audited = db.get_deal(before["dedupe_key"])
     assert audited["audit"]["outcome"] == "verified"
@@ -370,8 +378,9 @@ def test_card_and_deal_page_timestamps_and_node_logic(db, cfg, tmp_path):
     page = (tmp_path / row["deal_path"].lstrip("/") / "index.html").read_text()
     assert 'Price checked <time datetime="2026-10-13T21:35:00+00:00">Oct 13, 2026 05:35 PM</time> ET' in page
     assert ".metarow{flex-wrap:nowrap;overflow:hidden;" in home  # phone height unchanged
-    subprocess.run(["node", str(Path(__file__).with_name("price_accuracy_logic.cjs")), str(tmp_path)],
-                   check=True, capture_output=True, text=True, timeout=30)
+    proc = subprocess.run(["node", str(Path(__file__).with_name("price_accuracy_logic.cjs")), str(tmp_path)],
+                          capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def test_config_knobs_defaults_overrides_and_operator_comments(cfg, tmp_path):

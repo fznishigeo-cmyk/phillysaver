@@ -98,6 +98,7 @@ def test_serialized_earns_uses_final_get_deal_url(changes, options, earns):
 @pytest.mark.parametrize("factor", [0.5, 0.2, 1.0])
 def test_equal_earning_pick_ranks_first_and_both_stay_on_wall(tmp_path, db, factor):
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # earning-score fixtures recorded before task 275
     cfg.front_page["top_picks"]["no_earn_factor"] = factor
     earning = pick_deal(dedupe_key="earning", canonical_url="https://amazon.com/dp/B012345678")
     other = dict(earning, dedupe_key="other", canonical_url="https://amazon.com/dp/B012345679")
@@ -114,7 +115,8 @@ def test_equal_earning_pick_ranks_first_and_both_stay_on_wall(tmp_path, db, fact
     result = render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=[other, earning])
     rows = result["full_payload"]["deals"]
     assert len(rows) == 2 and [d["earns"] for d in rows] == [False, True]
-    assert rows[0]["ps"] == round(pick_score(other, cfg, NOW), 1)
+    # List Price mode exposes dense ordinals; backend scores above stay numeric.
+    assert [d["ps"] for d in rows] == [1, 1 if factor == 1 else 2]
     assert result["link_mix"]["earning"] == result["link_mix"]["not_earning"] == 1
 
 
@@ -134,6 +136,7 @@ def test_config_defaults_and_tracker_hosts(tmp_path):
 @pytest.mark.parametrize("require", [True, False])
 def test_all_social_channels_share_earning_gate(tmp_path, db, require):
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # earning-gate fixtures recorded before task 275
     cfg.site_dir = str(tmp_path / "site")
     cfg.social_require_earning_link = require
     cfg.social_require_stock_evidence = False  # DB evidence: tests/test_social_stock.py
@@ -177,6 +180,7 @@ def test_deals_json_task049_byte_hash_baseline(tmp_path, db, monkeypatch, open_a
 def test_social_channels_never_post_used_items(tmp_path, db, condition):
     """A one-unit used item is gone after the first click (operator, 2026-10-13)."""
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # condition fixtures recorded before task 275
     cfg.site_dir = str(tmp_path / "site")
     cfg.social_require_stock_evidence = False  # DB evidence: tests/test_social_stock.py
     published(db, cfg, [candidate("used-one", 1, conditions=[condition]),

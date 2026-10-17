@@ -95,11 +95,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Check `checker.stores.walmart: history`, AI takes and the extension include
   Walmart; `store_policy.walmart` can switch it to live-only in one line. eBay stays
   live-only because listings end.
-- **Amazon price history (2026-10-16, Associates phone support, reference
-  amz378_998):** approved 90-day price history charts, lowest recent price
+- **Amazon price history (updated 2026-10-17, Amazon email, task 274):**
+  ships `amazon_history: hide`; no Amazon history links, charts or statistics.
+  This supersedes the earlier phone approval below; watches remain off.
+  Earlier Associates phone support (2026-10-16, reference amz378_998)
+  approved 90-day price history charts, lowest recent price
   next to Amazon links, Keepa as the data source, our own history kept longer
   than 24h only if private and secured, and "checked X minutes ago" prices.
-  Ships `amazon_history: show`. Follow-up call, same reference
+  Previously shipped `amazon_history: show`. Follow-up call, same reference
   (2026-10-16 evening): the browser extension MAY show our history/verdict on
   Amazon product pages; Amazon price-drop emails are NOT allowed, so
   `amazon_watches: "off"` is permanent. Instead: a daily or weekly
@@ -226,6 +229,458 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **int12 round-4 compatibility fixes (2026-10-17; local, uncommitted, fixes complete):**
+  Reproduced the review's 144 failures in the 26 affected files on `8740ee5`:
+  **144 failed, 1148 passed, 2 skipped in 288.12s (0:04:48)**.
+  Two production bugs: the missing-discount ticker rewrite escaped the new
+  price switches and changed historical OFF HTML; the want/scarcity version
+  hash included disabled watch fragments. Both are fixed at their template
+  and version inputs; new price modes retain their missing-discount behavior.
+  Other groups were stale expectations/fixtures: recorded prefilter/fetch/
+  critic/link captures now explicitly pin their pre-273/274/275/276/278 switches;
+  one-token cadence/efficiency fixtures pin click-price OFF; delivery/earning
+  fixtures likewise isolate their original gates. Shipped copy checks expect
+  List Price mode to omit /p/ history, while the historical reader/toggle checks
+  explicitly select history. Public earning-score checks expect dense ordinals
+  and still verify backend numeric scores. JS harnesses specialize feature
+  blocks and use executable boundaries surviving comment removal. The offline
+  click deploy fixture copies config validation's new local dependencies.
+  **Money/correctness: all 11 were fixture expectations, not money bugs.**
+  Missing Buy Box facts stopped Pinterest's second-batch/replay check,
+  Telegram's accepted-send replay and checkpoint/save-failure checks, each
+  reopened lost-response case (Pinterest/Facebook/Instagram/Telegram), and
+  Instagram's accepted-publish/lost-response check before any delivery.
+  Pending critic and both invalid-verdict retry cases judged successfully but
+  stayed behind the independent click-price gate. Explicit pre-275 settings
+  restore those tests' intended scope; every original replay/checkpoint,
+  verdict, arithmetic and evidence assertion remains. Delivery/critic/recheck
+  complete-file verification: **438 passed in 100.96s (0:01:40)**.
+  Publication/compatibility first pass: **7 failed, 847 passed, 2 skipped in
+  252.81s (0:04:12)**. Four failures were the grey-card harness omitting the
+  photo/confirmation helpers it explicitly exercises; two were missing browser
+  category context in the freshness harness; the historical reader still
+  needed its pre-275 click-price pin after selecting history. Corrected complete
+  files: **91 passed in 20.55s** (both harness files), **30 passed in 7.67s**
+  (product reader). Final combined 26-file verification:
+  **1292 passed, 2 skipped in 244.19s (0:04:04)**. All reported failures now
+  pass; the two optional native Chromium restore cases skip in this sandbox,
+  so native browser QA remains unverified.
+  Round-3 regression, hidden-discount JS in both modes, and shipped 1,400-offer
+  phone checks: **33 passed in 159.23s (0:02:39)**. Click rule OFF/ON gzip bytes:
+  HTML **66,705 / 66,942**, JS **44,751 / 44,863**, CSS **13,040 / 13,040**,
+  JSON **98,012 / 97,866**; original ceilings remain **77,360 / 53,767 /
+  14,913 / 103,976**. The comment-strip OFF/ON budget test also passes.
+  Existing SHA-256 pins, config, savings/evidence code and budgets are unchanged.
+  All runs use `-q -n 3 -p no:cacheprovider`, owned `/tmp/taskint12r4-*`
+  basetemps removed after each run; owned logs/list files were removed too.
+  `git diff --check` and the changed Node harness syntax check pass.
+  No full suite, network, commit or push.
+- **int12 adversarial fixes (2026-10-17; local, uncommitted, fixes complete):**
+  Qualified Buy Box totals correct plain Amazon prices exactly, including
+  one-cent changes and readings without optional averages. Corrections retain
+  the unchanged evidence verifier and compute savings only in `savings.py`;
+  missing comparison facts produce a verified price with no invented savings.
+  An unapplied mismatch stays hidden from the homepage, picks and spotlight.
+  Promo rechecks retain their private comparison target but omit it from
+  public logs in List Price mode, in both single and batched paid paths.
+  Public/member `ps` becomes a dense ordinal in List Price mode, preserving
+  the previous rounded-score ordering and ties; backend pick/popularity math
+  and history-mode numeric scores stay unchanged. The homepage ticker uses
+  the same used/open-box filter as the wall; inventory stays in the Used tab
+  and search. New real-pipeline/evidence and emitted-JS regressions cover all
+  four findings, exact corrections, rejection fallback and idempotency.
+  Final feature verification: **201 passed in 291.64s (0:04:51)**.
+  The expanded compatibility run finished **1 failed, 366 passed in 532.19s
+  (0:08:52)**, including all four recorded OFF publication hashes. Its one
+  failure was an existing test-isolation leak: a correction test's no-LLM
+  monkeypatch was retained by a lazy critic-tiering import. That test now
+  patches/restores both critic consumers; the affected complete price-accuracy
+  and popularity files pass together: **132 passed in 121.23s (0:02:01)**.
+  The strengthened real-feed-merge logging cases additionally passed:
+  **4 passed in 6.70s**; nonempty used/open-box emitted-JS checks:
+  **4 passed in 12.46s**. Shipped 1,400-offer phone checks, click rule OFF/ON,
+  comment stripping OFF/ON and unchanged ceiling derivation:
+  **5 passed in 350.57s (0:05:50)**. Shipping gzip bytes / original ceilings:
+  HTML **66,942 / 77,360**, JS **44,863 / 53,767**, CSS **13,040 / 14,913**,
+  JSON **97,865 / 103,976**. Existing OFF/SHADOW public/member comparisons
+  also pass; no hash re-pins or raised limits. Every run used
+  `-q -n 1 -p no:cacheprovider` and an owned `/tmp/taskint12fix-*` basetemp
+  removed after the run; owned logs were removed too. All four review findings
+  are addressed. Native Chromium QA was not rerun. No network, full suite,
+  commit or push.
+- **int11 integration review (2026-10-17; uncommitted, fixes complete):**
+  **Round 2 (273/274/275/276/278):** List Price keeps its own product clock;
+  fresh Buy Box data cannot refresh it. Feed confirmations, ingest and paid
+  reads share a monotone reference guard, preserving newer paid facts and
+  rejecting missing/future or mismatched readings. Critic reasons remain in
+  private state and are omitted from shipping List Price logs. Hub medians
+  use the same policy projection as public cards; unavailable comparisons
+  produce neither ticker percentages nor false department discount bands.
+  Backend popularity, everyday-price tilts and pick math retain hidden facts.
+  Final static/emitted-JS Allure spacing also preserves Unknown exclusion
+  from the first 120 cards when spacing reduces the known-card supply.
+  Confirmed popularity fixtures now include qualified Buy Box facts; the
+  historical one-token no-opinion case explicitly selects OFF. The shipped
+  1,400-offer budget fixture includes its required critic evidence. Native
+  comment-strip parity now uses qualified Amazon offers with the other shipped
+  switches ON and tracking IDs cleared for offline transport. Each finding
+  has a database, real-pipeline or actual emitted-JS regression, including feed ingestion,
+  public/member privacy and same-run idempotency. Initial round-2 reproduction:
+  **46 failed, 366 passed, 2 skipped in 150.30s (0:02:30)**; first corrected
+  feature check: **434 passed, 2 skipped in 226.85s (0:03:46)**.
+  Expanded primary: **1 failed, 470 passed, 2 skipped in 321.45s (0:05:21)**;
+  the byte comparison overlapped an edit to the List Price module, whose file
+  bytes deliberately enter the shipping page-version hash. With source held
+  steady, the four private-byte modes and final review/spacing regressions:
+  **35 passed in 70.25s (0:01:10)**. Compatibility: **362 passed, 1 skipped in
+  330.81s (0:05:30)**, including all 12 historical OFF hashes, four OFF/SHADOW
+  public/member byte comparisons, paid/feed rechecks and six audit-mode pipeline
+  reruns. Final source-frozen feature verification: **474 passed, 2 skipped
+  in 327.69s (0:05:27)**. All current review findings are addressed; native
+  Chromium QA remains unavailable (launch exit 77), including the corrected
+  shipped comment-strip smoke. Every run used `-q -n 1 -p no:cacheprovider`
+  and its own `/tmp/taskint11fix-*` basetemp, deleted after that run. Owned
+  logs/XML were removed. No full suite, network, existing hash re-pins, raised
+  limits, commit or push.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: HTML **66,935 / 77,360**,
+  JS **44,856 / 53,767**, CSS **13,040 / 14,913**, JSON **98,845 / 103,976**.
+  **Earlier integration review:**
+  Premium Buy Box scope follows the browser's default arrival order while
+  retaining the static/recovery scope, including sparse Unknowns. Timestamp
+  ties retain eligibility across drop jitter. Position-301 legacy candidates
+  have stable fallback ordering with either planner. Later partners' quoted
+  prices resolve attribution before the history filter; stored facts stay intact.
+  New emitted-JS/real-pipeline regressions cover browser card 121 versus static
+  order, tied arrivals across seeds, both planners, position 301 and sparse
+  recovery with same-run idempotency. Initial reported checks reproduced
+  **40 failed, 8 passed in 174.71s (0:02:54)**; the two recheck findings reproduced
+  **4 failed in 38.68s**, with separate tie/sparse failures before their fixes.
+  Historical fixtures select their recorded history/display/used-home switches;
+  shipped fixtures supply qualified Buy Box readings, critic facts and a funded
+  recovery bucket. The used-offer clock check runs all four features ON and
+  checks the Used hub instead of the intentionally empty home wall. JS harnesses
+  use executable boundaries that survive stripping. Backend byte pins exclude
+  the later private List Price fact alongside their existing later-field list;
+  all 19 existing pins in the touched tests and the recorded fixture files
+  remain unchanged. Dark QA artifacts stay under test basetemp.
+  The requested **32-file union**, started before the final fixture corrections,
+  finished **15 failed, 1568 passed, 4 skipped, 2 errors in 1491.19s (0:24:51)**.
+  Case-ID audit: 16 now pass; the native case reaches its explicit skip after
+  its fixture is fixed. Final complete-file reruns:
+  checkout + click price + new integration regressions **186 passed in 324.89s
+  (0:05:24)**; dark mode **19 passed, 1 skipped in 148.41s (0:02:28)**;
+  price accuracy engine **38 passed in 21.44s**; unconfirmed labels **43 passed
+  in 37.49s**; static photos **74 passed, 1 skipped in 100.48s (0:01:40)**;
+  unique ASIN rechecks **50 passed in 50.33s**. Corrected used-clock case:
+  **1 passed in 4.04s**; the union's unchanged day simulation/tier checks
+  passed. Native Chromium QA remains unverified (launch exit 77); its corrected
+  dark fixture now reaches the explicit skip instead of failing setup.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: HTML **66,543 / 77,360**,
+  JS **44,499 / 53,767**, CSS **13,018 / 14,913**, JSON **98,659 / 103,976**.
+  Every run used `-q -n 1 -p no:cacheprovider` and an owned
+  `/tmp/taskint11fix-*` basetemp, deleted after that run. Owned scratch/logs were
+  removed; no existing hash re-pins, raised limits, network, full suite, commit
+  or push. No open int11 findings remain; native browser QA remains external.
+- **Known click prices (Codex task 275, 2026-10-17; uncommitted, ON):**
+  Validated `keepa.click_price_rule: "on"`; code/missing-key default OFF.
+  Plain new Amazon prices require a qualified Buy Box with its own fresh
+  clock and the savings engine's 10% tolerance. Matching Amazon/NEW slots
+  alone stay Unknown: labeled in search/categories, excluded from picks,
+  spotlight, pushes/social and the first 120 home cards (including All deals
+  and sparse inventory). Known gaps hide; stale gaps count Unknown but stay
+  hidden until a valid later reading clears them. Fashion variation children
+  with confirmed prices show `select sizes`; promo/used paths stay unchanged.
+  Candidate/spotlight/social and first-300 wall reads reserve the +2-token
+  premium, shorten batches before dropping it, preserve reserves/grants and
+  expose extra demand/reservations in the plan. Shadow only measures, preserving
+  requests and published/member bytes. Private `price_source.click_price`
+  counts the frozen published pick/wall scopes before corrections, labels extra
+  tokens as reserved and includes at most five ASIN/price examples; no seller IDs.
+  Existing recorded fixtures explicitly select OFF; no hashes were re-pinned.
+  Broader targeted run: **1 failed, 479 passed in 354.01s (0:05:54)**. The failure
+  exposed a test seed retaining its $25 database column; the adidas fixture now
+  ingests verified $4.55/$32.93 quotes through the real savings/upsert path.
+  Final feature, pipeline/transport pins and four-mode public-byte checks:
+  **74 passed in 66.27s (0:01:06)**, including both enabled audit-mode reruns,
+  actual emitted-JS ordering/chips, scarce grants and failed-request allowances.
+  Every run used `-q -n 1 -p no:cacheprovider`; all owned `/tmp/task275-*`
+  basetemps were deleted after their runs. Review/live verification remain;
+  no network, full suite, commit or push.
+  Adversarial follow-up: legacy Buy Box gaps are carried into the click-price
+  check before either fact check is overwritten. Missing, clockless,
+  unqualified and older readings retain fresh/stale gaps; valid later readings
+  still recover. Actual published picks and the first 300 home cards now
+  precede hidden recovery candidates. New real-pipeline regressions reproduced
+  both findings: **14 failed, 2 passed in 20.48s** before fixes; feature checks
+  after fixes: **72 passed in 81.01s (0:01:21)**. Added shipped ON/OFF phone
+  byte-budget checks with the existing ceilings; no existing hashes changed.
+  Expanded compatibility run: **1 failed, 166 passed in 279.95s (0:04:39)**;
+  all 165 existing Buy Box/price correction/unique-ASIN tests passed, including
+  pipeline/transport and four-mode public/member byte pins. The new phone ON
+  check expected 1,400 offers but its historical fixture lacked critic facts,
+  so 133 Unknown rows correctly failed the normal publish gate. That fixture
+  now supplies critic facts and still requires all 1,400 offers in both modes.
+  Corrected phone checks: **2 passed in 106.80s (0:01:46)**; all shipped gzip
+  ceilings pass with dark mode ON and click prices OFF/ON. All follow-up runs
+  used `-q -n 1 -p no:cacheprovider` and owned `/tmp/task275fix-*` basetemps,
+  deleted after each run. Both review findings are fixed; review/live
+  verification remain. No network, full suite, commit or push.
+  Resumed the interrupted second review after the live-config rebase. Actual
+  published picks/home cards now lead hidden Buy Box recovery across new,
+  used and promo transport modes, with both planner and unique-ASIN switches.
+  Premium reads enter planner selection and, after acquisition, honor funded
+  paid-request cadence instead of overriding stretch with the hourly clock.
+  Compatibility checks exposed incomplete batches at the per-call minimum:
+  compatible following rows now fill a call without letting hidden work pass
+  another published transport mode. Due cards retain regular funding when
+  premium reads consume their surplus; selection keeps used-share limits,
+  per-ASIN charging, reserves and same-run allowances. Added 12 surplus
+  regressions alongside the 11 interrupted-review cases. The legacy volatility
+  fixture explicitly selects OFF; historical byte hashes and live history-off
+  settings stay unchanged. Overflow regression before its fix: **2 failed in
+  5.64s**. Initial compatibility run: **15 failed, 285 passed in 460.08s
+  (0:07:40)** (five batch-fill failures plus ten legacy volatility expectations
+  lacking the OFF pin). Corrected feature checks excluding phone renders:
+  **95 passed in 83.33s (0:01:23)**. Continued validation: feature, Buy Box,
+  volatility tiers and batching **182 passed in 278.14s (0:04:38)**. A planner
+  boundary regression exposed premium demand beyond the first 300 saved wall
+  cards; saved and fallback scopes now match the pipeline. Before/after:
+  **2 failed in 3.80s** / **2 passed in 3.46s**. Existing OFF byte pins across
+  publication modes plus shipped OFF/ON phone ceilings and the boundary cases:
+  **58 passed in 150.66s (0:02:30)**; no hashes changed. The historical
+  value-per-token fixture now explicitly selects OFF for its cached one-token
+  reads. Broader Buy Box/price-correction/unique-ASIN/value/wall compatibility:
+  **15 failed, 164 passed in 351.80s (0:05:51)**; all 15 failures were that
+  historical value-per-token fixture inheriting ON. Its corrected full-file
+  rerun, including the daily yield simulation: **29 passed in 144.46s
+  (0:02:24)**. No targeted failures remain. Every run used `-q -n 1
+  -p no:cacheprovider` and a private `/tmp/task275fix-*` basetemp removed
+  immediately afterward; the interrupted run's 384 MB basetemp was also removed.
+  Both review findings have real-pipeline regressions; review/live verification
+  remain. No network, full suite, hash re-pins, commit or push.
+  Latest review: otherwise-publishable Unknown Amazon deals now reach all three
+  capped identity/link recovery paths (redirects, ASIN short links, source posts)
+  when the click-price rule is ON. OFF/SHADOW selection and publication gates
+  stay unchanged. Nine real-pipeline regressions cover the three paths in all
+  modes, hourly/fast selection, confirmation only after recovery, and same-key
+  reruns. Initial fixture setup: **3 failed in 4.78s**, corrected without changing
+  shared helpers; the actual blockage then reproduced: **3 failed in 9.96s**.
+  Focused recovery/legacy pipeline checks after the fix: **10 passed in 39.95s**.
+  Final click-price/recovery compatibility, 12 recorded OFF publication-byte
+  pins and shipped OFF/ON phone budgets: **254 passed in 214.75s (0:03:34)**.
+  Additional ASIN caps, polite HEAD-only short links, deadline deferral and
+  retry checks: **9 passed in 2.84s**. All runs used `-q -n 1
+  -p no:cacheprovider`; owned `/tmp/task275fix-*` basetemps were deleted after
+  each run. No open findings remain in `275-review-findings.md`; review/live
+  verification remain. No network, full suite, hash re-pins, commit or push.
+- **Static photos + Used tab (Codex task 274, 2026-10-17; uncommitted, ON):**
+  Validated `site.static_photos` and `publish.front_page.used_tab_only` ship true;
+  omitted/false retains recorded bytes. Static grids use HTTPS product photos,
+  four eager per page (hero included), then lazy/async, fixed dimensions and
+  store-tile fallback. Deal pages have a contained 320px hero, up to four related
+  cards, wider columns and two-line titles/descriptions; dark tiles reuse 254.
+  Used/open-box offers stay in their tab/search; static home agrees. Category
+  pagination puts new offers before used/open-box/refurbished, in stable groups.
+  **All four adversarial findings fixed at their shared paths:** the public
+  serializer clears history-derived regular prices, basis, discount and savings
+  before generating headlines/JSON/cards; stored facts stay unchanged. Explicit
+  list prices and current new-offer comparisons (including "lowest new price
+  (current offer)") remain. Retained ended pages now serialize with `cfg`, so
+  they retain the history policy and verified badge after leaving the wall.
+  Search merges matching spotlights without duplicates, orders new live matches
+  before used, then applies ended-card spacing (outside the first eight).
+  **Live rebase baseline 75ad39f retained:** all stores' price history hidden,
+  `seo.product_pages` off, Buy Box rule on, Amazon search on, 35-second popup.
+  Historical fixtures retain their original switches/policies via
+  `tests/history_pins.py` and explicit "recorded before" settings. Redundant
+  shipped-policy assertions from the union merge were removed; no hash re-pinned.
+  `test_static_photos.py` and the actual published-JS Node harness cover every
+  finding: public/member JSON and all static/browser card surfaces, legacy and
+  explicit average bases, real current-price bases, retained ended Amazon pages,
+  nonempty used spotlight inventory and mixed live/ended search across 3 sorts.
+  Review reproduction: **8 failed, 12 passed in 13.16s**. Initial feature check:
+  **1 failed, 68 passed, 1 skipped in 97.87s (0:01:37)**; its static-card matcher
+  assumed a JS-only data attribute, corrected to match the rendered deal link.
+  Policy/publisher regression: **279 passed in 145.49s (0:02:25)**.
+  Final targeted compatibility/feature validation: **398 passed, 1 skipped in
+  418.23s (0:06:58)**, including original OFF hashes, all search/spotlight/event
+  cases, dark contrast, phone ceilings and both pipeline idempotency modes.
+  Shipped gzip bytes / unchanged ceilings: HTML **77,022 / 77,360**, JS
+  **53,219 / 53,767**, CSS **14,846 / 14,913**, deals.json **99,044 / 103,976**.
+  Four eager home photos; remaining static photos lazy. Chromium returns 77 in
+  the sandbox; native photo/CLS/console QA remains for the operator via
+  `test_static_photos.py::test_chromium_photos_and_cls_offline` (390x844 and
+  1280x800, light/dark). The test builds its own disposable fixture site.
+  Every run uses targeted `-n 1 -p no:cacheprovider` and its own
+  `/tmp/task274fix-*` basetemp, removed after each run; owned logs/runner removed.
+  `git diff --check` and both Node syntax checks pass. No network, full suite,
+  commit or push. Review/deployment and native browser QA remain.
+- **Amazon display references (Codex task 276, 2026-10-17; uncommitted, ON):**
+  Ships validated `publish.amazon_reference: list_price`; `history` preserves
+  the previous output. This supersedes earlier public-history permissions for
+  this mode: all stores' charts, past-price wording, saved-price watches,
+  product-history pages and checker history stay hidden; stored checks remain
+  private. New Amazon API-reference offers display only the same-confirmation,
+  fresh Amazon List Price, with savings computed in `savings.py` under the
+  `amazon_list_price` basis. Missing/non-discounted/stale lists show Price drop
+  with no reference, percentage or dollar savings. Source-stated pairs keep
+  their facts and attribution. Existing licensed feed/paid records supply the
+  list, through the unchanged evidence verifier, without new requests or LLMs.
+  **Qualification, `site_show_from_pct`, `min_pct`, pick scores and selection
+  still use the original hidden comparison**, including offers without a list;
+  browser tier membership uses only a boolean, never the hidden percentage.
+  Run summaries count public List price/Price drop offers. Cards, ticker
+  (including its accessible text), social/email subjects and bodies share the
+  display policy; stock-evidence gates retain private math. A later partner's
+  quoted pair keeps its attribution even after an original Keepa discovery;
+  used/current-new comparisons keep their facts without past-price wording.
+  Existing recorded fixtures explicitly select `history` ("recorded before
+  task 276"); no hashes re-pinned. Initial feature checks: `5 failed, 77 passed
+  in 7.97s`, then `4 failed, 78 passed in 9.91s`. Affected regression:
+  `3 failed, 511 passed in 330.13s (0:05:30)`; expanded regression:
+  `3 failed, 614 passed, 1 skipped in 535.12s (0:08:55)`. Isolated renderer:
+  `1 failed in 5.18s`. All failures corrected: historical AI/checker fixtures
+  now select history, the file count retains both split sitemap children but
+  omits /p/, and the renderer assertion excludes CSS color percentages.
+  **Initial targeted: `132 passed in 172.99s (0:02:52)`**, covering savings,
+  emitted browser cards/ticker/tier split, JSON/structured data/alt text,
+  source provenance, same-reading freshness, hidden site floors, remaining
+  historical byte trees and all six existing audit-mode rerun cases.
+  Every run used `-n 1 -p no:cacheprovider`; owned basetemps were deleted in
+  `finally` after each run, and `/tmp/task276-*` is empty. `git diff --check`
+  passes. One optional Chromium check skipped; native browser QA and review
+  remain. No network, full suite, commit or push.
+  **Review fixes (2026-10-17):** Keepa cross-check logs omit private averages
+  in `list_price` mode, including fallback averages and rejected offers;
+  history-mode logs and backend verdicts stay unchanged. Category introductions
+  and descriptions omit qualification-floor claims in this mode, including
+  used/open-box hubs; legacy copy still uses the configured floors. The failing
+  watch regression now explicitly selects `history`; a separate shipping-mode
+  Node check exercises the emitted label, every sort, ticker and Surprise logic,
+  and verifies Amazon/non-Amazon watch matching and controls stay suppressed
+  even with the older history gates open. Reproduction before fixes:
+  `9 failed, 7 passed in 10.26s`. **Final review checks: `205 passed in 185.99s
+  (0:03:05)`; `302 passed in 256.49s (0:04:16)`.** These cover each finding,
+  savings/rechecks, SEO, historical OFF byte trees, AI takes, Saved/public copy,
+  both the actual shipping and recorded 1,400-offer phone budgets, and all six
+  pipeline rerun cases. Existing SHA-256 pins are unchanged across every modified
+  tracked test; rebased fixtures and shipping expectations pass. All review runs
+  used `-n 1 -p no:cacheprovider` with owned `/tmp/task276fix-*` basetemps,
+  removed in `finally` after each run. No review findings remain; native Chromium
+  QA/review remain. No network, full suite, hash re-pins, commit or push.
+- **Home comment stripping (Codex task 278, 2026-10-17; uncommitted, ON):**
+  `site.strip_comments: true`, missing/false OFF; final home-only lexical pass
+  after all injections, before sitemap/audit/IndexNow sealing. Audited structural
+  wrappers and conditional comments stay; CSS strings/URLs and JS strings,
+  regexes/nested templates stay intact. Only standalone JS comments disappear;
+  blank-line collapse preserves literals and all five JS line-ending forms.
+  The switch and implementation feed `site_version`; OFF retains original bytes.
+  Recorded fixtures explicitly pin OFF (recorded before task 278); no repins
+  or budget increases. New checks compare every file across four access modes,
+  parse executable scripts, balance CSS and verify file/full-DB rerun stability.
+  Final targeted `-q -x -n 1 -p no:cacheprovider`: **103 passed, 1 skipped in
+  323.43s (0:05:23)**, including 72 compatibility/offline pipeline-rerun checks.
+  Earlier runs: **5 failed, 21 passed, 1 skipped** (Node argv limit; use stdin),
+  **21 passed** (lexical checks), **1 failed, 97 passed, 1 skipped** (closed
+  fixture advanced the deliberate free-eight rotation), **5 failed, 98 passed,
+  1 skipped** (new newline test expected uncollapsed blanks). All corrected;
+  CRLF matching was also tightened so a pair cannot split on a repeat pass.
+  Actual shipped config, existing 1,400-offer fixture, gzip bytes OFF → ON:
+  HTML **76,458 → 65,670**, JS **53,091 → 44,163**, CSS **14,846 → 13,018**;
+  HTML ceiling **77,360**, headroom **11,690**. JSON **99,031 → 99,032** changes
+  only through the version. The brief's `tests/test_drop_rotation.py` is absent
+  here; the new `test_home_comment_strip.py` runs the shipped-budget comparison.
+  Real Chromium was attempted at `/opt/pw-browsers/chromium` but cannot launch
+  (exit 77); phone/desktop, light/dark ON/OFF browser assertions remain unverified.
+  All owned `/tmp/task278-*` basetemps were deleted after each run. Review and
+  native browser QA remain; no network, whole suite, commit or push.
+- **What people buy (Codex task 273, 2026-10-17; uncommitted, ON):**
+  Validated `publish.front_page.appeal.want`/`season` and
+  `site.open_box_scarcity` ship ON; missing sections remain OFF. Literal,
+  plural-tolerant title groups and New York date windows share a soft ceiling;
+  stronger private sales evidence keeps its lift without stacking. Used,
+  unconfirmed, model-specific and configured adult titles receive no new lift.
+  The requested literal `toy` exclusion also blocks ordinary toy/toys titles;
+  the deny list remains configurable (no contextual exception was invented).
+  Allure starts after six cards and stays six positions apart in both Trending
+  and All deals; allure spotlights are hidden in both unfiltered tabs. Sparse
+  overflow remains in search/category views. Review fixes keep allure filtering
+  at homepage boundaries, so seasonal/best/category pages retain every offer;
+  Python/static and actual JS check the final visible sequence, including gone
+  allure cards: none in the first six and at least six positions apart; gone
+  cards remain outside the first eight and at least eight positions apart.
+  Conflicting cards stay off the unfiltered homepage. Popularity quota accounting
+  uses the caller's actual popularity settings and the capped marginal lift.
+  Open-box cards/details always use “often only 1” for now (operator decision
+  2026-10-17 ~08:45Z). Validated `site.open_box_counts: false` ships/defaults OFF;
+  serialization omits counts and generated JS ignores even cached count fields.
+  The retained opt-in exact “only N left” path needs a short,
+  verified source quote naming this offer, bound to its item/link/price/source
+  and original observation/publication clocks within two hours. Invented titles,
+  ambiguous roundups, changed offers and rechecks cannot supply/renew counts.
+  Current-stock parsing rejects historical, negated, conditional, quoted or
+  contradictory text inside the quote, including previously stored evidence.
+  Qualifiers outside a selected quote can still be missed; complete-context
+  validation remains required before enabling counts. Explicit hoodie/hoodies
+  and knife/knives normalization preserves the configured whole-word lift.
+  No new fetch/Keepa/LLM calls. Private `want_season`
+  counts also persist as the single latest `want_season_lifts` meta entry,
+  and join the private homepage report through its existing encrypted ring;
+  excluded from public logs/CLI/site bytes. Tasks 260/261 are absent in this
+  tree; no separate staples/learner implementation was added. Recorded fixtures
+  pin all three switches OFF (before task 273); no hashes/phone limits changed.
+  Initial task run: `11 failed, 219 passed in 125.68s (0:02:05)`; test setup
+  corrections applied. First regression:
+  `1 failed, 790 passed in 380.06s (0:06:20)`; the sales-only privacy fixture
+  now avoids a newly matched want word. Main targeted regression:
+  `795 passed, 1 skipped in 437.18s (0:07:17)`, including all recorded pins,
+  offline reruns, public copy, contrast and unchanged phone byte ceilings.
+  The skip is the native 390px light/dark check: Chromium cannot launch.
+  Final spotlight search/order/bytes/phone-budget follow-up:
+  `7 passed in 70.07s (0:01:10)`. All earlier failures are fixed.
+  All runs used `-n 1 -p no:cacheprovider`; every owned `/tmp/task273-*`
+  basetemp was deleted after its run. Review fixes resumed after the rebase onto
+  `75ad39f`, retaining the live history-off/Buy Box/everyday-price/search/35 s
+  settings. Every finding has a regression, including explicit Chromium path
+  `/opt/pw-browsers/chromium` and exit 77 only for an actual launch failure
+  (import/assertion failures stay red). Resumed review verification:
+  `257 passed, 1 skipped in 104.96s (0:01:44)` (findings, all switches ON,
+  the unchanged 1,400-offer phone ceilings); historical OFF fixtures:
+  `64 passed in 114.74s (0:01:54)` (all original hashes retained).
+  Additional targeted ranking/rendering/seasonal/budget/privacy/history-off/
+  idempotency checks: `795 passed, 1 skipped in 357.04s (0:05:57)`.
+  Native 390px light/dark visual QA remains unverified: the explicit Chromium
+  executable exits at launch with crashpad `setsockopt: Operation not permitted`.
+  All resumed runs used `-n 1 -p no:cacheprovider`; owned `/tmp/task273fix-*`
+  basetemps and run logs were removed. No regression remains failing.
+  Earlier adversarial follow-up (`273-review-findings.md`): all three findings
+  fixed with score-level plural tests, both unfiltered tabs/sorts/spotlights,
+  and historical/ambiguous stock regressions for new ingestion and old rows.
+  Regression-first run: `20 failed, 11 passed in 6.57s` (before fixes).
+  Final targeted ranking/ingestion/rendering/privacy/ON-phone-budget checks:
+  `833 passed, 1 skipped in 363.02s (0:06:03)`. Unchanged historical OFF hashes,
+  phone ceilings/boundaries and offline rerun idempotency:
+  `80 passed in 126.82s (0:02:06)`. The skip remains native 390px light/dark
+  layout: Chromium launch fails on sandbox `setsockopt`; actual JS checks pass.
+  These three runs used `-n 1 -p no:cacheprovider` and isolated
+  `/tmp/task273fix-*` basetemps, deleted after each run. No hash was re-pinned;
+  no regression remains failing. Native layout QA/review remain.
+  Current two-finding review: the operator's default-OFF count switch covers
+  fresh/legacy evidence and cached browser counts, including qualifiers outside
+  the selected quote; the final visible-card pass checks both spacing limits
+  after all ordering. Regressions cover both tabs, three sorts, pick settings,
+  sparse/ample gone allure supply and opt-in count freshness/validation.
+  Regression-first: `9 failed, 8 passed in 7.91s` (before fixes).
+  Targeted task/rendering/ranking/1,400-offer phone checks:
+  `520 passed, 1 skipped in 136.51s (0:02:16)`. The skip remains the native
+  390px light/dark check: Chromium launch fails on sandbox `setsockopt`.
+  Unchanged historical OFF hashes, phone ceiling/boundary checks and offline
+  rerun idempotency: `75 passed in 106.77s (0:01:46)`. All three current runs
+  used `-n 1 -p no:cacheprovider` with isolated `/tmp/task273fix-*` basetemps,
+  deleted after each run; no existing hash or phone limit changed. No regression
+  remains failing. Native layout QA and full-context validation before any
+  future count activation remain; counts stay OFF as the operator requested.
+  No full suite, network, commit or push.
 - **Dark polish (Codex task 254, 2026-10-17; uncommitted, ON):**
   `site.dark_polish: true` ships; code/missing-key defaults are false. New
   `publish/dark.py` injects the exact `templates/dark.css` and color-scheme meta

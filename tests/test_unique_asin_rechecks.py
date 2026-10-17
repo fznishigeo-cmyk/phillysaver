@@ -91,12 +91,22 @@ def test_all_published_files_and_member_payload_match_before_editing(
     monkeypatch.setattr(site, "util_now", lambda: OUTPUT_NOW)
     config = pre_history_removal(load_config())
     config.dark_polish = False  # recorded before task 254
+    config.strip_comments = False  # recorded before task 278
     config.search_amazon = False  # recorded before task 259
     config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     config.join_prompt_delay_s = 15  # recorded before the 35 s delay
     config.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
     config.non_amazon_stores = {}  # recorded before the Woot freshness override
     config.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config.front_page.get("top_picks", {}) else None  # recorded before 8 h
+    config.keepa_click_price_rule = "off"  # recorded before task 275
+    config.static_photos = False  # recorded before task 274
+    config.front_page["used_tab_only"] = False  # recorded before task 274
+    config.amazon_reference = "history"  # recorded before task 276
+    config.amazon_history = "show"  # recorded before task 274
+    config.open_box_scarcity = False  # recorded before task 273
+    if "appeal" in config.front_page:
+        config.front_page["appeal"].get("want", {})["enabled"] = False
+        config.front_page["appeal"]["season"] = []
     config.keepa_unique_asin_rechecks_enabled = enabled
     config.support_enabled = mode == "support"
     config.paywall_open_access = mode == "open"
@@ -127,8 +137,8 @@ def test_disabled_transport_and_pipeline_match_pre_edit_baseline(db, cfg, monkey
     assert digest(snapshot) == "e24faa8be7f9e1e7f19c02d6a7f3b3df4b0020e7c9aef60cd3426eb93506ae5a"
     calls.clear()
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False, fetcher=fetcher)
-    # Tasks 253 and 255 added fields after this pin; compare the recorded fields.
-    later = {"product_identity_url", "product_identity_tried", "keepa_popularity"}
+    # Tasks 253, 255 and 276 added fields after this pin; compare the recorded fields.
+    later = {"product_identity_url", "product_identity_tried", "keepa_popularity", "keepa_list_price"}
     rows = [{k: v for k, v in d.items() if k not in later} for d in db.all_deals()]
     assert digest({"calls": calls, "stats": stats, "rows": rows,
                    "history": History(db, cfg, NOW).samples}) == "5b91008419009dfd1bfd455a4fb7705f3a9523f1325c43e25182542c0e3ca379"

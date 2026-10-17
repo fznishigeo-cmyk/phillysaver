@@ -25,6 +25,7 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setenv("META_SYSTEM_TOKEN", SYSTEM)
     monkeypatch.setattr(meta.time, "sleep", lambda seconds: None)
     config = load_config()
+    config.keepa_click_price_rule = "off"  # delivery fixtures recorded before task 275
     config.meta["facebook"].update(daily_max=4, hours_utc=[13, 17, 21, 1])  # predates task 121b
     # Fixture deals live only in deals.json; the stock-evidence rule
     # (sightings in the DB) is covered in tests/test_social_stock.py.

@@ -14,6 +14,14 @@ from tests.test_publish_site import NOW
 from tests.test_seo import db
 
 
+def legacy_config():
+    cfg = load_config()
+    cfg.open_box_scarcity = False  # recorded before task 273
+    cfg.front_page["appeal"]["want"]["enabled"] = False
+    cfg.front_page["appeal"]["season"] = []
+    return cfg
+
+
 @pytest.mark.parametrize("title,reason", [
     ("OtterBox Case for Samsung Galaxy S25 Edge", "named-device accessory"),
     ("Spigen Cover for iPhone 17 Pro Max", "named-device accessory"),
@@ -94,7 +102,7 @@ def test_config_defaults_and_shipped_knobs(tmp_path):
 
 
 def test_only_pick_score_changes_and_all_factors_are_configurable():
-    cfg = load_config()
+    cfg = legacy_config()
     deal = sample_deals()[0]
     original = copy.deepcopy(deal)
     raw_rank = score(deal, cfg, NOW)
@@ -116,7 +124,7 @@ def test_only_pick_score_changes_and_all_factors_are_configurable():
 
 
 def test_category_tilt_moves_near_ties_but_preserves_clear_winners():
-    cfg = load_config()
+    cfg = legacy_config()
     electronics = pick_deal(category="electronics", pct_at_checkout=80)
     fashion = pick_deal(category="fashion", pct_at_checkout=78)
     winner = pick_deal(category="electronics", pct_at_checkout=99, abs_savings=200)
@@ -138,7 +146,7 @@ def tree(out):
 
 def test_niche_sinks_in_landing_order_but_remains_on_wall_and_other_pages(db, tmp_path, monkeypatch):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    cfg = load_config()
+    cfg = legacy_config()
     cfg.seo_store_page_min_deals = cfg.seo_price_page_min_deals = 1
     source = sample_deals()
     before = copy.deepcopy(source)
@@ -175,7 +183,7 @@ def test_summary_counts_full_wall_and_first_30_with_three_examples():
 
 
 def test_niche_leaves_top30_when_broad_choices_are_available(db, tmp_path):
-    cfg = load_config()
+    cfg = legacy_config()
     case = sample_deals()[0]
     categories = ["home", "kitchen", "fashion", "beauty", "health", "toys_games"]
     source = [case] + [pick_deal(dedupe_key=f"broad-{i}", item=f"Everyday Item {i}",
@@ -195,7 +203,7 @@ def test_niche_leaves_top30_when_broad_choices_are_available(db, tmp_path):
 @pytest.mark.parametrize("mode", ["membership", "open", "support", "shipped"])
 def test_disabled_and_omitted_switch_match_every_published_byte(db, tmp_path, monkeypatch, mode):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    cfg = load_config()
+    cfg = legacy_config()
     cfg.support_enabled = mode in {"support", "shipped"}
     cfg.paywall_open_access = mode == "open"
     cfg.paywall_teaser_count = 2

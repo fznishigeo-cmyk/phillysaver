@@ -303,11 +303,16 @@ class AppConfig:
     images_keepa_match_min: float = 0.85
     amazon_as_of_enabled: bool = False
     amazon_history: str = "show"
+    amazon_reference: str = "history"
     amazon_watches: str = ""  # "" follows amazon_history; on | off
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
     dark_polish: bool = False
+    strip_comments: bool = False
     search_amazon: bool = False
+    static_photos: bool = False
+    open_box_scarcity: bool = False
+    open_box_counts: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -512,6 +517,7 @@ class AppConfig:
     # Fallback kill tolerance when the paid record cannot re-price a deal.
     keepa_recheck_tolerance_pct: float = 10.0
     keepa_buybox_rule: str = "off"  # off | shadow | on (publication gate only)
+    keepa_click_price_rule: str = "off"  # off | shadow | on; qualified Buy Box required
     keepa_buybox_top_n: int = 0
     keepa_buybox_interval_min: float = 60.0
     keepa_recheck_surplus: bool = False
@@ -855,6 +861,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("images.keepa_match_min must be between 0.85 and 1")
     cfg.amazon_as_of_enabled = bool(g("publish", "amazon_as_of", "enabled", default=False))
     cfg.amazon_history = str(g("amazon_history", default="show"))
+    cfg.amazon_reference = g("publish", "amazon_reference", default="history")
+    if cfg.amazon_reference not in ("history", "list_price"):
+        raise ValueError("publish.amazon_reference must be history or list_price")
     if cfg.amazon_history not in {"show", "hide"}:
         raise ValueError("amazon_history must be show or hide")
     watches = g("amazon_watches", default="")
@@ -869,14 +878,30 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.dark_polish = g("site", "dark_polish", default=False)
     if type(cfg.dark_polish) is not bool:
         raise ValueError("site.dark_polish must be a boolean")
+    cfg.strip_comments = g("site", "strip_comments", default=False)
+    if type(cfg.strip_comments) is not bool:
+        raise ValueError("site.strip_comments must be a boolean")
     cfg.search_amazon = g("site", "search_amazon", default=False)
     if type(cfg.search_amazon) is not bool:
         raise ValueError("site.search_amazon must be a boolean")
+    cfg.static_photos = g("site", "static_photos", default=False)
+    if type(cfg.static_photos) is not bool:
+        raise ValueError("site.static_photos must be a boolean")
+    cfg.open_box_scarcity = g("site", "open_box_scarcity", default=False)
+    if type(cfg.open_box_scarcity) is not bool:
+        raise ValueError("site.open_box_scarcity must be a boolean")
+    cfg.open_box_counts = g("site", "open_box_counts", default=False)
+    if type(cfg.open_box_counts) is not bool:
+        raise ValueError("site.open_box_counts must be a boolean")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(
             "site", "unconfirmed_label", "max_h_" + condition, default=48.0))))
     cfg.front_page = g("publish", "front_page", default={}) or {}
+    if type(cfg.front_page.get("used_tab_only", False)) is not bool:
+        raise ValueError("publish.front_page.used_tab_only must be a boolean")
+    from .appeal import validate as validate_appeal
+    validate_appeal(cfg.front_page.get("appeal", {}))
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
     cfg.social_profiles = social_profiles(g("social", "profiles", default={}) or {})
@@ -1220,6 +1245,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.keepa_buybox_rule = ("on" if buybox else "off") if isinstance(buybox, bool) else str(buybox)
     if cfg.keepa_buybox_rule not in {"off", "shadow", "on"}:
         raise ValueError("keepa.buybox_rule must be off, shadow, or on")
+    click_price = g("keepa", "click_price_rule", default=cfg.keepa_click_price_rule)
+    cfg.keepa_click_price_rule = ("on" if click_price else "off") if isinstance(click_price, bool) else str(click_price)
+    if cfg.keepa_click_price_rule not in {"off", "shadow", "on"}:
+        raise ValueError("keepa.click_price_rule must be off, shadow, or on")
     for name in ("reprice_min_pct", "recheck_wall_h", "pick_max_unconfirmed_h", "recheck_surplus_reserve",
                  "show_max_unconfirmed_h", "show_max_unconfirmed_used_h"):
         attr = "keepa_" + name

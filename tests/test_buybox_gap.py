@@ -333,6 +333,8 @@ def test_repricing_binds_rule_to_corrected_final_and_stale_read_cannot_overwrite
 
 def test_full_pipeline_exposes_private_summary_and_keeps_rerun_idempotent(env):
     from tests.test_e2e_offline import _run
+    path = Path(env["cfg"])
+    path.write_text(path.read_text().replace('click_price_rule: "on"', 'click_price_rule: "off"'))  # recorded before task 275
     first = _run(env)
     assert first["price_source"] == dict(buybox.empty_summary(), buybox_rule={
         "mode": "on", "evaluated": 0, "would_label": 0, "would_hide": 0})

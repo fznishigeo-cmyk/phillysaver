@@ -116,6 +116,26 @@ class Plan:
         self.history, self.cfg, self.now = history, history.cfg, history.now
         self.options = self.cfg.keepa_volatility
         self.picks, self.wall, self.gap = picks, wall, gap
+        from . import click_price
+        self.published = set()
+        click_visible = set()
+        if self.cfg.keepa_click_price_rule == "on":
+            for name, fallback in ((click_price.PICKS_META, picks), (click_price.WALL_META, wall)):
+                try:
+                    saved = json.loads(history.db.meta_get(name) or "null")
+                except (TypeError, ValueError):
+                    saved = None
+                positions = enumerate(saved) if isinstance(saved, list) else ((i, k) for k, i in fallback.items())
+                self.published.update(k for i, k in positions if isinstance(k, str)
+                                      and (name == click_price.PICKS_META or i < click_price.WALL_CHECKS))
+            try:
+                saved = json.loads(history.db.meta_get(click_price.VISIBLE_META) or "[]")
+            except (TypeError, ValueError):
+                saved = []
+            click_visible = set(picks) | {k for k, i in wall.items() if i < click_price.WALL_CHECKS}
+            click_visible.update(self.published)
+            if isinstance(saved, list):
+                click_visible.update(k for k in saved if isinstance(k, str))
         self.cadence_minutes = cadence_minutes if cadence_minutes is not None else gap
         self.rows = {d["dedupe_key"]: d for d in deals if d.get("status") == "alive"
                      and d.get("asin") and verify.is_amazon_deal(d)
@@ -156,10 +176,10 @@ class Plan:
                              if s.get("reading")]
             self.facts[key] = tier(deal, observations, self.now,
                                   plenty_of_stock=plenty_of_stock(history.db, deal, self.cfg))
-            self.visibility[key] = ("top" if key in picks else "wall" if key in wall else
+            self.visibility[key] = ("top" if key in picks or (key in click_visible and key not in wall) else "wall" if key in wall else
                                     "hidden" if verify.price_unconfirmed(deal, self.cfg, self.now) else "rest")
             used = verify.is_used_deal(deal)
-            box = (wall.get(key, self.cfg.keepa_buybox_top_n) < self.cfg.keepa_buybox_top_n
+            box = ((wall.get(key, self.cfg.keepa_buybox_top_n) < self.cfg.keepa_buybox_top_n or key in click_visible)
                    and not used and not verify._price_hidden_by_promo(deal))
             live = bool(self.cfg.keepa_recheck_top_live and (key in picks or box))
             receipts = samples_by_deal_mode[key, used, live] or samples_by_mode[used, live]
@@ -178,6 +198,9 @@ class Plan:
         self.factors = stretch(self.demand, self.granted,
                               self.options.get("stretch_limits", {"SLOW": 4, "NORMAL": 4 / 3}))
         self.clicked = set()
+        self.click_price_extra_per_minute = sum(2 / (60 * self.targets[self.facts[k]["tier"]][self.visibility[k]])
+            for k in click_visible if k in self.rows and not verify.is_used_deal(self.rows[k])
+            and not verify._price_hidden_by_promo(self.rows[k]))
         if clicks.enabled(self.cfg):
             end = int(self.now.timestamp() // 3600)
             hours = max(1, int(self.options.get("click_lookback_hours", 6)))
@@ -207,42 +230,58 @@ class Plan:
         margin = max(0, float(self.options.get("batching", {}).get("time_margin_seconds", 5)))
         seconds = max(0, seconds - margin)
         left = available
-        groups, selected = {}, 0
+        groups, selected, requests = {}, set(), set()
         for deal, options in entries:
             need, ceiling, size, label, live, used, idle = options
             key = deal["dedupe_key"]
+            request = ((str(deal["asin"]).strip().upper(), used, live, label == "buybox_top_new",
+                        key in self.published, deadlines.get(key) == "top")
+                       if self.cfg.keepa_unique_asin_rechecks_enabled else key)
+            if request in requests:
+                continue
             hidden = label.startswith("hidden_")
+            surplus = label.startswith("surplus_")
             reserve = max(MIN_FOR_DEAL_QUERY, self.cfg.keepa_reserve_tokens) if hidden else MIN_FOR_DEAL_QUERY
             cost = min(ceiling, max(0, self.costs.get(key, ceiling)))
-            if left is not None and (left < need or left - cost < reserve):
+            mode = (key in self.published, deadlines.get(key) == "top", used, live,
+                    label == "buybox_top_new", surplus)
+            group = groups.get(mode)
+            # The final published call may take compatible following rows;
+            # never let hidden rows hitch ahead of another published mode.
+            if group is None and not mode[0] and groups:
+                previous = next(reversed(groups))
+                if previous[0] and previous[1:] == mode[1:]:
+                    mode, group = previous, groups[previous]
+            starts_call = group is None or len(group[0]) % size == 0
+            if left is not None and ((left < need and (
+                    self.cfg.keepa_click_price_rule != "on" or starts_call)) or left - cost < reserve):
                 continue
-            if used and used_left < ceiling:
+            if used and not surplus and used_left < ceiling:
                 continue
             if hidden and recovery_left[used] <= 0:
                 continue
-            if idle and (overflow is None or overflow < ceiling):
+            if (idle or surplus) and (overflow is None or overflow < ceiling):
                 continue
             # No non-deadline work can hitch a ride ahead of another mode's
             # overdue top batch. Within that boundary, labels do not split calls.
-            mode = deadlines.get(key) == "top", used, live
-            group = groups.get(mode)
-            extra = self.seconds_per_call(used, live) if group is None or len(group[0]) % size == 0 else 0
+            extra = self.seconds_per_call(used, live) if starts_call else 0
             if extra > seconds:
                 continue
             seconds -= extra
             if left is not None:
                 left -= cost
-            if used:
+            if used and not surplus:
                 used_left -= ceiling
             if hidden:
                 recovery_left[used] -= 1
-            if idle:
-                overflow -= cost
+            if overflow is not None and (self.cfg.keepa_click_price_rule == "on" or idle or surplus):
+                overflow = max(0, overflow - cost)
             if group is None:
                 group = groups[mode] = ([], *options)
             group[0].append(deal)
-            selected += 1
-        return list(groups.values()), len(entries) - selected
+            selected.add(key)
+            requests.add(request)
+        return list(groups.values()), len({d["dedupe_key"] for d, _ in entries} - selected)
 
     def prepare_clicks(self):
         """Freeze the allowance per run key, including process/retry restarts."""
@@ -350,6 +389,8 @@ class Plan:
                   "click_boosted": len(self.boosted), "tiers": {}}
         if self.cfg.keepa_recheck_surplus:
             result["surplus_granted"] = self.surplus
+        if self.cfg.keepa_click_price_rule != "off":
+            result["click_price_extra_per_minute"] = self.click_price_extra_per_minute
         for name in TIERS:
             classes = {}
             for visibility in VISIBILITY:

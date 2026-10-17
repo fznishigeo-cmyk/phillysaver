@@ -178,7 +178,11 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
         d = visible.get(key, {})
         store = amazon_history.store_of(facts)
         policy = cfg.checker["stores"][store]
-        if store == "amazon" and amazon_history.hidden(cfg, facts):
+        from ..amazon_reference import enabled
+        if enabled(cfg):
+            policy = "live_only"
+        if store == "amazon" and amazon_history.hidden(cfg, facts) \
+                and (not enabled(cfg) or cfg.amazon_history == "hide"):
             policy = "link_only"
         live = facts.get("status") == "alive"
         if not live and (policy != "history" or key not in history):

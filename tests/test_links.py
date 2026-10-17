@@ -180,6 +180,7 @@ class TestAmazonAffiliateTag:
         from tests.test_publish_site import NOW, make_deal
 
         cfg = load_config()
+        cfg.keepa_click_price_rule = "off"  # affiliate fixture recorded before task 275
         deals = [make_deal(dedupe_key="a", canonical_url="https://www.amazon.com/dp/B0ABCDEF12", store="Amazon",
                            codes=[], stack=[], conditions=[])]
         for tag, out in (("", tmp_path / "off"), ("wowpriced-20", tmp_path / "on")):

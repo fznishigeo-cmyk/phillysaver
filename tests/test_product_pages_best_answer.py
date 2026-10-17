@@ -202,6 +202,8 @@ def test_audit_rejects_missing_or_invalid_head_dates_breadcrumb_and_image(db, cf
 def test_static_reader_is_small_even_with_many_deals_and_checks(db, cfg, tmp_path, monkeypatch, shipped):
     if shipped:
         cfg = pre_history_removal(load_config())
+        cfg.keepa_click_price_rule = "off"  # reader fixture recorded before task 275
+        cfg.amazon_reference = "history"  # reader fixture recorded before task 276
         cfg.amazon_history = "show"  # predates task 121b; exercise the full Amazon reader
         cfg.seo_product_pages_enabled = cfg.paywall_open_access = True
     rows = seed(db, 1, checks=100)

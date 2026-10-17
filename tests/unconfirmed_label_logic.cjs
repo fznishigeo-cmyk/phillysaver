@@ -20,7 +20,7 @@ const ctx = {offer:()=>({}),TICKER_MAX:16,state:{deals:[label, confirmed], newKe
 vm.createContext(ctx);
 vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
 vm.runInContext(fragment('  function ageText(h)', '  function usedTag(d)'), ctx);
-vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
+vm.runInContext(fragment('  function cardHtml(d)', '  var TICKER_MAX'), ctx);
 vm.runInContext(fragment('  function spotlightTime(endsAt, now)', '  function frontPageView()'), ctx);
 vm.runInContext(fragment(html.includes('  function photosFirst(rows)') ? '  function photosFirst(rows)' : '  function confirmedFirst(rows)', '  function storeHue(s)'), ctx);
 for (const sort of ['top', 'fresh', 'final_price', 'pct_at_checkout', 'store']) {
@@ -42,6 +42,17 @@ assert(ctx.surpriseRows().every(d => !d.price_unconfirmed));
 vm.runInContext(fragment('  function savedWatchMatch(entry, current)', '  function checkSavedWatches('), ctx);
 const entry = {key:label.key,final_price:100,condition:label.conditions,target_price:99};
 assert.equal(ctx.savedWatchMatch(entry,label),null);
-assert(ctx.savedWatchMatch(entry,{...label,price_unconfirmed:false}));
+if (process.argv[3] === 'list_price') {
+  for (const row of rows) {
+    assert.equal(row.amazon, true); // The public no-watch flag covers every store in this mode.
+    const saved = {key:row.key,final_price:100,condition:row.conditions,target_price:99};
+    const current = {...row,price_unconfirmed:false,price_aged:false};
+    assert.equal(ctx.savedWatchMatch(saved,current),null);
+  }
+  vm.runInContext(fragment('  function savedWatchHtml(d)', '  function savedWatchEditor('), ctx);
+  assert(rows.every(d => ctx.savedWatchHtml(d) === ''));
+} else {
+  assert(ctx.savedWatchMatch(entry,{...label,price_unconfirmed:false}));
+}
 assert(html.includes('rows = confirmedFirst(rows);'));
 console.log('Label markup, every sort, ticker, Surprise and price watches passed.');

@@ -189,6 +189,7 @@ def test_successful_reprices_record_the_new_read_price(db, cfg, store_cfg, sourc
 
 
 def test_keepa_paid_read_uses_observation_time_and_records_privately(db, keepa_cfg, monkeypatch):
+    keepa_cfg.amazon_reference = "history"  # history-toggle fixture recorded before task 276
     # The shared Keepa fixture clock is the previous day; use its own data time.
     from tests.test_price_accuracy_engine import NOW as at
     deal = keepa_seed(db, keepa_cfg)

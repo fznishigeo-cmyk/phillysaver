@@ -27,7 +27,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
-from .. import checkout_prices, popular_affordable
+from .. import amazon_reference, checkout_prices, popular_affordable
 from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
@@ -36,6 +36,7 @@ from .link_facts import (LinkFacts, _link_destination, _needs_steps, _override_k
                          _simple_code_deal, earning_link, is_competitor_tracker_host)
 from .tracking import apply_tracking
 from .template_slots import replace_slot, validate_slot
+from . import comments
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -60,6 +61,7 @@ def util_now():
 
 
 _PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
+_USED_TAB_ONLY_BLOCK = re.compile(r"/\*used-tab-only\*/(.*?)/\*/used-tab-only\*/", re.S)
 
 
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
@@ -102,16 +104,21 @@ def _browse_script(price_presets: list[int], saved: bool = False) -> _BrowseScri
 
 def _page_template(html: str, cfg, *, home: bool = False) -> str:
     """Existing feature passes, before the home browse slot is inserted."""
-    html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
+    from .. import click_price
+    html = click_price.template(html, cfg.keepa_click_price_rule == "on")
+    html = price_labels.template(html, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled
+                                 or cfg.keepa_click_price_rule == "on")
     html = checkout_prices.template(html, checkout_prices.enabled(cfg))
     html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
+    html = _USED_TAB_ONLY_BLOCK.sub(lambda m: m[1] if cfg.front_page.get("used_tab_only") else "", html)
     html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
     html = amazon_history.template(html, cfg)
+    html = amazon_reference.template(html, cfg)
     html = product_pages.template(html, cfg.seo_product_pages_enabled)
     html = ai_take.template(html, cfg.ai_take["enabled"])
     if cfg.seo_product_pages_enabled and home:
         html = html.replace("</style>", product_pages.LINK_STYLE + "</style>", 1)
-    if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled) and home:
+    if (cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled or cfg.keepa_click_price_rule == "on") and home:
         html = html.replace("</style>", price_labels.STYLE + "</style>", 1)
     if cfg.non_amazon_freshness_enabled and home:
         from ..non_amazon_freshness import STYLE as AGED_STYLE
@@ -120,6 +127,10 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = _SEARCH_AMAZON_BLOCK.sub(
             lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
+        from .. import appeal as title_appeal
+        from . import open_box
+        html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
+        html = open_box.template(html, cfg.open_box_scarcity, counts=cfg.open_box_counts)
         html = manifest_refresh.template(html, cfg)
         if cfg.offscreen_cards:
             html = html.replace("</style>", OFFSCREEN_CARDS_STYLE + "</style>", 1)
@@ -133,9 +144,12 @@ def site_template_version(price_presets: list[int] | None = None,
     import hashlib
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8") if home is None else home
     html = _SEARCH_AMAZON_BLOCK.sub("", html)
+    from .. import click_price
+    html = click_price.template(html, False)
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
     html = _PHOTOLESS_BLOCK.sub("", html)
+    html = _USED_TAB_ONLY_BLOCK.sub("", html)
     html = amazon_as_of.template(html, False)
     html = amazon_history.BLOCK.sub("", html)
     html = product_pages.template(html, False)
@@ -226,7 +240,10 @@ def _headline(deal: dict[str, Any], cfg=None) -> str:
         lead = f"{item} is ${final:,.2f} at {store}"
     if pct is not None:
         lead += f" — {display_pct(pct)}% off"
-        if reg:
+        if reg and amazon_reference.enabled(cfg):
+            lead += (f" the List price ${reg:,.2f}" if deal.get("basis") == "amazon_list_price"
+                     else f" the stated ${reg:,.2f}")
+        elif reg:
             lead += f" the usual ${reg:,.2f}"
         elif deal.get("basis") == "list_price_claim":
             lead += " the claimed list price"
@@ -234,7 +251,8 @@ def _headline(deal: dict[str, Any], cfg=None) -> str:
     if codes and not _needs_steps(deal):  # else the card's "how" box shows them
         parts.append(("Code " if len(codes) == 1 else "Codes ") + ", ".join(codes) + ".")
     if "range" in flags:
-        parts.append("Price varies by option; the discount holds even at the highest price.")
+        parts.append("Price varies by option; the discount uses the upper price." if amazon_reference.enabled(cfg)
+                     else "Price varies by option; the discount holds even at the highest price.")
     if "rebate_dependent" in flags:
         parts.append("Rebate is later; not deducted from this price.")
     if "unknown_shipping" in flags:
@@ -242,6 +260,8 @@ def _headline(deal: dict[str, Any], cfg=None) -> str:
     tier = deal.get("verify_tier", "unverified")
     if tier == "corroborated":
         parts.append("Confirmed by multiple independent sources.")
+    elif tier == "verified" and amazon_reference.enabled(cfg):
+        parts.append("The price was verified.")
     elif tier == "history-checked":
         if not amazon_history.hidden(cfg, deal):
             parts.append("Well below the usual price in our own price history.")
@@ -495,6 +515,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
                     competitor_tracker_hosts: list[str] | tuple[str, ...] = (),
                     ebay_campid: str = "", cfg=None, links: LinkFacts | None = None) -> dict[str, Any]:
     """Project a deal dict to the public JSON shape (facts + link + credit)."""
+    original = deal
+    deal = amazon_reference.project(deal, cfg, now)
     first_seen = parse_iso(deal.get("first_seen_at") or "")
     age_hours: float | None = None
     if first_seen is not None:
@@ -504,6 +526,20 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         competitor_tracker_hosts=competitor_tracker_hosts, ebay_campid=ebay_campid))
     # Each projection owns its JSON credits; internal facts never share lists.
     credits = [{"name": name, "url": url} for name, url in links.credits]
+    if amazon_reference.enabled(cfg) and not deal.get("regular_price_basis") \
+            and deal.get("regular_price") is not None and credits and credits[0]["name"] == "Amazon price drop":
+        source = next((c["name"] for c in reversed(credits) if c["name"] != "Amazon price drop"), "")
+        if source:
+            # Resolve the later partner's attribution before the history gate
+            # can mistake the original discovery credit for a historical basis.
+            deal = dict(deal, regular_price_basis=f"as stated by {source}")
+    if amazon_history.hidden(cfg, deal) and re.search(
+            r"\b(?:\d+.day|average|median|histor(?:y|ical))\b",
+            seo._basis_label(dict(deal, credits=credits)), re.I):
+        # A historical comparator also supplies the discount and headline.
+        # Hide the entire comparison in public copies; keep stored facts intact.
+        deal = dict(deal, regular_price=None, pct_at_checkout=None, abs_savings=None)
+        deal.pop("regular_price_basis", None)
     status = deal.get("status", "alive")
     steps = links.needs_steps
     checkout = _checkout(deal, steps)
@@ -557,15 +593,34 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
             public["amazon_as_of"] = amazon_as_of.time_text(checked)
     if deal.get("regular_price_basis"):
         public["regular_price_basis"] = deal["regular_price_basis"]
+    if amazon_reference.enabled(cfg):
+        if deal.get("price_drop"):
+            public["price_drop"] = True
+        if amazon_reference.uses_api_reference(original):
+            # Tier membership only; the private percentage never leaves state.
+            public["primary_offer"] = (original.get("pct_at_checkout") or 0) >= cfg.min_pct
     if deal.get("spotlight"):
         public["spotlight"] = deal["spotlight"]
     if deal.get("price_unconfirmed"):
         public["price_unconfirmed"] = True
+    from .. import click_price
+    if cfg and cfg.keepa_click_price_rule == "on" and click_price.status(deal, cfg, now) == "unknown":
+        public["click_price_unknown"] = True
+    if cfg and click_price.select_sizes(deal, cfg, now):
+        public["select_sizes"] = True
     if deal.get("price_aged"):
         public["price_aged"] = deal["price_aged"]
     label = checkout_prices.label(deal, cfg, now)
     if label:
         public["checkout_price"] = label
+    from .. import appeal as title_appeal
+    from . import open_box
+    if title_appeal.is_allure(deal, getattr(cfg, "front_page", {}).get("appeal") or {}):
+        public["allure"] = True
+    if getattr(cfg, "open_box_scarcity", False) and (stock := open_box.facts(deal, now)) is not None:
+        public["open_box_scarcity"] = True
+        if stock and getattr(cfg, "open_box_counts", False):
+            public["open_box_stock"] = stock
     return public
 
 
@@ -690,10 +745,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                                  popularity=False)
                      for d in deals if d["dedupe_key"] in earns} \
         if (cfg.front_page.get("popular_affordable") or {}).get("enabled", False) else scores
+    # Preserve the existing rounded ordering/ties without exporting magnitudes
+    # that can reconstruct a withheld historical comparison.
+    ordinal_scores = {value: n for n, value in enumerate(sorted({round(v, 1)
+        for v in public_scores.values() if v is not None}), 1)} if amazon_reference.enabled(cfg) else None
     for d in serialized:
         value = public_scores[d["dedupe_key"]]
         if value is not None:
-            d["ps"] = round(value, 1)
+            d["ps"] = ordinal_scores[round(value, 1)] if ordinal_scores is not None else round(value, 1)
     # The public file is a teaser when the paywall is on: the top deals in
     # full, the rest as locked stubs (docs/paywall.md). The full payload is
     # returned for the member upload and never written to the site.
@@ -711,7 +770,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     else:
         from .paywall import _stub
         extras = [d for d in serialized if d.get("price_unconfirmed")]
-        teaser += [dict(_stub(d), price_unconfirmed=True) for d in extras]
+        teaser += [dict(_stub(d), price_unconfirmed=True,
+                        **({"click_price_unknown": True} if d.get("click_price_unknown") else {})) for d in extras]
         locked_count += len(extras)
     unlocked = {d["dedupe_key"] for d in teaser if not d.get("locked")}
     spotlight = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options)
@@ -725,6 +785,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                             or (checkout_prices.enabled(cfg) and checkout_prices.kind(originals[d["dedupe_key"]]))
                             or price_confirmation_recent(originals[d["dedupe_key"]], now,
                                                          cfg.keepa_pick_max_unconfirmed_h)]
+    from .. import click_price
+    confirmed_candidates = [(d, value) for d, value in confirmed_candidates
+                            if not click_price.excluded(originals[d["dedupe_key"]], cfg, now)]
     checkout_summary = checkout_prices.summary()
     # Rank original facts: public rows omit sightings and raw checkout steps.
     public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
@@ -732,18 +795,25 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     original_picks = top_picks(original_candidates, cfg.front_page, now,
                                summary=checkout_summary, cfg=cfg)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
+    for n, d in enumerate(picked, 1):
+        d["pick"] = n
+    from .. import appeal as title_appeal
+    want_on = (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled")
+    lift_summary = title_appeal.summary(
+        [originals[d["dedupe_key"]] for d in seo.home_order(teaser, cfg.front_page) if d.get("pick")], cfg, now) \
+        if title_appeal.active(cfg.front_page.get("appeal") or {}) else None
     popular_summary = None
     popular_options = cfg.front_page.get("popular_affordable") or {}
     if popular_options.get("shadow") or popular_options.get("enabled") \
             or (cfg.front_page.get("everyday_price") or {}).get("enabled"):
         try:
             popular_summary = popular_affordable.compare(original_candidates, cfg, now)
+            if lift_summary is not None:
+                popular_summary["want_season"] = lift_summary
             popular_affordable.record(db, now, (last_run or {}).get("run_key"), popular_summary)
         except Exception as e:
             logger.warning("%s", type(e).__name__)
             popular_summary = None
-    for n, d in enumerate(picked, 1):
-        d["pick"] = n
     if checkout_prices.enabled(cfg):
         for d in teaser + spotlight_only:
             if d.get("locked") or d.get("status") != "alive":
@@ -752,10 +822,40 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             checkout_summary["labelled"] += bool(d.get("checkout_price"))
             if is_amazon_deal(original) and checkout_prices.kind(original):
                 checkout_summary["unlabelled_no_reading"] += checkout_prices.reading(original, cfg, now) is None
-    wall = seo.place_gone(pick_order([d for d in teaser if not d.get("price_unconfirmed")],
-                                   cfg.front_page))[:cfg.keepa_recheck_wall_n]
+    wall = [d for d in teaser if not d.get("price_unconfirmed")]
+    wall = (seo.home_order(wall, cfg.front_page) if want_on else
+            seo.place_gone(pick_order(wall, cfg.front_page)))[:cfg.keepa_recheck_wall_n]
     db.meta_set(WALL_META, json.dumps([d["dedupe_key"] for d in wall
                                      if not d.get("locked") and d.get("status") == "alive"]))
+    if cfg.keepa_click_price_rule != "off":
+        db.meta_set(click_price.PICKS_META, json.dumps([d["dedupe_key"] for d in picked]))
+        static_wall = pick_order(teaser, cfg.front_page)[:click_price.WALL_CHECKS]
+        # topOrder in the browser puts non-picks in arrival order. The static
+        # score order is a separate scope: both surfaces need premium reads.
+        click_wall = [d for d in teaser if not (cfg.front_page.get("used_tab_only") and seo.in_group(d, "USED"))]
+        click_wall.sort(key=lambda d: (bool(d.get("locked")), d.get("pick", float("inf")),
+            -(at.timestamp() if (at := parse_iso(d.get("first_seen_at") or "")) else 0)))
+        if cfg.front_page.get("niche_last"):
+            click_wall.sort(key=lambda d: (d.get("category") or "other") in cfg.front_page.get("niche_categories", []))
+        if cfg.photoless_last:
+            click_wall.sort(key=lambda d: (bool(d.get("locked")), not bool(d.get("image_url"))))
+        click_wall.sort(key=lambda d: bool(d.get("price_unconfirmed") or d.get("price_aged")))
+        click_wall = click_price.home_rows(seo.place_gone(click_price.home_rows(click_wall)))
+        # Browser jitter/new-arrival state breaks timestamp ties differently
+        # on each drop. Any tied non-pick can cross the 300-card boundary.
+        boundary = click_wall[click_price.WALL_CHECKS - 1] if len(click_wall) >= click_price.WALL_CHECKS else None
+        arrival_ties = [d for d in click_wall[click_price.WALL_CHECKS:] if boundary
+            and d.get("pick") is None and boundary.get("pick") is None
+            and parse_iso(d.get("first_seen_at") or "") == parse_iso(boundary.get("first_seen_at") or "")]
+        click_wall = click_wall[:click_price.WALL_CHECKS]
+        db.meta_set(click_price.WALL_META, json.dumps([d["dedupe_key"] for d in click_wall
+            if not d.get("locked") and d.get("status") == "alive"]))
+        # Retain candidates as well as current features so an unknown price
+        # can earn its way back after the next qualified reading.
+        check_rows = [d for d, _ in candidate_scores[:cfg.keepa_recheck_top_n]]
+        check_rows += spotlight + static_wall + click_wall + arrival_ties
+        db.meta_set(click_price.VISIBLE_META, json.dumps(list(dict.fromkeys(
+            d["dedupe_key"] for d in check_rows if not d.get("locked") and d.get("status") == "alive"))))
     # Select once, before JSON is written: remembered URLs only for pages
     # this publish emits. Free rows share their objects with member rows;
     # locked stubs and member-only deals never gain a public path.
@@ -793,9 +893,11 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if support:
         home = home_template
         home = _SEARCH_AMAZON_BLOCK.sub("", home)
+        home = click_price.template(home, False)
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
         home = _PHOTOLESS_BLOCK.sub("", home)
+        home = _USED_TAB_ONLY_BLOCK.sub("", home)
         home = amazon_as_of.template(home, False)
         home = amazon_history.BLOCK.sub("", home)
         home = product_pages.template(home, False)
@@ -820,7 +922,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.engagement:
         engagement_script = (TEMPLATES_DIR / "engagement.js").read_text(encoding="utf-8")
         engagement_script = amazon_history.watches_template(engagement_script, cfg)
-        engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled)
+        engagement_script = amazon_reference.template(engagement_script, cfg)
+        engagement_script = price_labels.template(engagement_script, cfg.unconfirmed_label_enabled
+            or cfg.non_amazon_freshness_enabled or cfg.keepa_click_price_rule == "on")
         engagement_script = re.sub(r"/\* saved-deals \*/(.*?)/\* /saved-deals \*/",
                                    lambda m: m.group(1) if saved_deals else "",
                                    engagement_script, flags=re.S)
@@ -833,9 +937,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if traffic.enabled(cfg):
         site_version = traffic.site_version(site_version, cfg)
     site_version = profiles.site_version(site_version, cfg)
-    if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled:
+    if cfg.unconfirmed_label_enabled or cfg.non_amazon_freshness_enabled or cfg.keepa_click_price_rule == "on":
         site_version = hashlib.sha256((site_version + price_labels.STYLE).encode()
             + "".join(price_labels.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    if cfg.keepa_click_price_rule == "on":
+        site_version = hashlib.sha256(site_version.encode()
+            + "".join(click_price.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.non_amazon_freshness_enabled:
         site_version = hashlib.sha256((site_version + AGED_STYLE).encode()).hexdigest()[:12]
     if checkout_prices.enabled(cfg):
@@ -857,6 +964,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
     elif amazon_history.watches_hidden(cfg):
         site_version = hashlib.sha256((site_version + "amazon-watches-off").encode()).hexdigest()[:12]
+    if amazon_reference.enabled(cfg):
+        site_version = hashlib.sha256(site_version.encode() + Path(amazon_reference.__file__).read_bytes()).hexdigest()[:12]
     if "live_only" in cfg.store_policy.values():
         site_version = hashlib.sha256((site_version + json.dumps(
             cfg.store_policy, sort_keys=True)).encode()).hexdigest()[:12]
@@ -879,6 +988,15 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.search_amazon and amazon_tag:
         site_version = hashlib.sha256(site_version.encode() + amazon_tag.encode()
             + "".join(_SEARCH_AMAZON_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    if cfg.static_photos:
+        site_version = hashlib.sha256((site_version + "static-photos" + seo.STATIC_PHOTO_STYLE).encode()).hexdigest()[:12]
+    if cfg.front_page.get("used_tab_only"):
+        site_version = hashlib.sha256(site_version.encode()
+            + "".join(_USED_TAB_ONLY_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    site_version = comments.site_version(site_version, cfg)
+    if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
+        version_home = home_html if saved_deals else _WATCH_BLOCK.sub("", home_html).replace("<!--saved--><!--/saved-->", "")
+        site_version = hashlib.sha256((site_version + version_home).encode()).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -928,10 +1046,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
         "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price"}
+                       and (k != "used_tab_only" or v)
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
         "yearly_price_usd": max(0.0, getattr(cfg, "paywall_yearly_price_usd", 0) or 0),
     }
+    if amazon_reference.enabled(cfg) and "top_picks" in meta["front_page"]:
+        meta["front_page"]["top_picks"] = {k: v for k, v in meta["front_page"]["top_picks"].items()
+                                          if k != "history_bonus"}
     full_doc = {"meta": meta, "deals": serialized}
     public_doc = {"meta": meta, "deals": teaser}
     if spotlight:
@@ -1020,7 +1142,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         html = site_footer(html, now, meta["disclosure"], support,
                            account=name == "index.html" and not support,
                            amazon_as_of_enabled=cfg.amazon_as_of_enabled,
-                           product_pages_enabled=cfg.seo_product_pages_enabled,
+                           product_pages_enabled=cfg.seo_product_pages_enabled and not amazon_reference.enabled(cfg),
                            event_links=seo.event_pages.links(cfg), checker_enabled=cfg.checker["enabled"])
         (out / name).write_text(html, encoding="utf-8")
     # The home page learns its own version so a cached copy reloads itself
@@ -1113,6 +1235,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # App detection must precede tracking, including on the private reader.
         # Write the price-free offline page after every global script pass.
         pwa.publish(out, cfg)
+    # All template markers and injected scripts have had their final consumer.
+    comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
@@ -1157,16 +1281,21 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     from .. import accuracy
     spotlight_keys = {d["dedupe_key"] for d in spotlight}
     audit_wall = [d for d in teaser if not d.get("locked") and d["dedupe_key"] not in spotlight_keys]
-    audit_wall = (seo.place_gone(pick_order(audit_wall, cfg.front_page)) if cfg.front_page.get("top_picks")
-                  else pick_order(seo.place_gone(audit_wall), cfg.front_page))
+    audit_wall = seo.home_order(audit_wall, cfg.front_page)
     accuracy.publish(db, spotlight + audit_wall, now,
                      (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            **({"amazon_reference": {"list_price": sum(d.get("regular_price_basis") == "List price" for d in teaser if not d.get("locked")),
+                                      "price_drop": sum(bool(d.get("price_drop")) and is_amazon_deal(originals.get(d.get("dedupe_key"), d))
+                                                        for d in teaser if not d.get("locked"))}}
+               if amazon_reference.enabled(cfg) else {}),
             "site_files": site_files,
             "public_deals": teaser + spotlight_only,
             "unconfirmed_label": label_report,
             "checkout": checkout_metrics(teaser + spotlight_only),
-            "appeal": appeal_summary(pick_order(teaser, cfg.front_page)),
+            "appeal": appeal_summary(seo.home_order(teaser, cfg.front_page) if want_on
+                                     else pick_order(teaser, cfg.front_page)),
+            **({"want_season": lift_summary} if lift_summary is not None else {}),
             **({"popular_affordable": popular_summary} if popular_summary is not None else {}),
             "checkout_price_deals": checkout_summary,
             "product_pages": product_summary,

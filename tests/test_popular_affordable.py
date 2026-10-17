@@ -34,11 +34,15 @@ def popularity(**over):
 
 
 def deal(**over):
-    return pick_deal(**dict({"store": "Amazon", "asin": ASIN,
+    result = pick_deal(**dict({"store": "Amazon", "asin": ASIN,
                             "item": "Synthetic alpha sheets",
                             "canonical_url": f"https://www.amazon.com/dp/{ASIN}",
                             "final_price": 30, "regular_price": 60, "abs_savings": 30,
                             "pct_at_checkout": 50, "keepa_popularity": popularity()}, **over))
+    # Confirmed pick fixtures also satisfy task 275's independent shopper clock.
+    result.setdefault("click_price_check", dict(asin=result["asin"], final=result["final_price"],
+                                               buybox=result["final_price"], at=iso(NOW)))
+    return result
 
 
 def product(**over):
@@ -49,6 +53,9 @@ def product(**over):
 
 def settings(enabled=False):
     cfg = load_config()
+    cfg.open_box_scarcity = False  # recorded before task 273
+    cfg.front_page["appeal"]["want"]["enabled"] = False
+    cfg.front_page["appeal"]["season"] = []
     cfg.front_page["popular_affordable"]["enabled"] = enabled
     # These tests were written against the tilt's original (off) values; the
     # shipped values are pinned in test_shipped_switches_and_model_default.
@@ -137,6 +144,7 @@ def test_cross_check_harvests_without_changing_request(monkeypatch):
 def test_answered_no_opinion_is_persisted_by_apply(tmp_path, monkeypatch, used):
     monkeypatch.setenv("KEEPA_KEY", "offline")
     cfg = settings()
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275: cached one-token reads
     cfg.keepa_buybox_top_n = 0
     cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False
     cfg.keepa_volatility["enabled"] = cfg.keepa_recheck_adaptive["enabled"] = False
@@ -525,6 +533,7 @@ def test_everyday_price_applies_after_appeal_for_every_store(store, url):
 def test_public_ps_omits_popularity_but_keeps_everyday_price(db, tmp_path, monkeypatch, everyday):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = settings(True)
+    cfg.amazon_reference = "history"  # Numeric-score contract before int12's List Price ordinals.
     cfg.front_page["everyday_price"]["enabled"] = everyday
     cfg.front_page["everyday_price"]["full_until"] = 10
     rows = [deal(), deal(dedupe_key="without-facts", keepa_popularity=None)]
@@ -571,6 +580,7 @@ def test_shadow_includes_the_everyday_tilt_and_share_cap():
     # Both tilts keep the popularity cap and all over-cap cards compete again.
     for d in rows:
         d.update(final_price=30, keepa_popularity=popularity())
+        d["click_price_check"].update(final=30, buybox=30)
     summary = popular_affordable.compare(scored, cfg, NOW)
     assert summary["boosted_in_picks"] == 6
 
@@ -636,7 +646,8 @@ def test_shipped_pipeline_and_cli_never_output_shadow_data(tmp_path, monkeypatch
     assert cfg.front_page["everyday_price"]["enabled"]  # shipped on 2026-10-17
     assert not cfg.keepa_popular_affordable_page
     database = DB(env["db"])
-    rows = [deal(dedupe_key="private-example", item="Synthetic alpha sheets", score=50)]
+    # Avoid task 273's title lift so the sales-only shadow still has an entrant.
+    rows = [deal(dedupe_key="private-example", item="Synthetic alpha widget", score=50)]
     rows += [deal(dedupe_key=f"baseline-{i}", item=f"Synthetic beta{i} item", category=category,
                   final_price=200, regular_price=400, abs_savings=200,
                   keepa_popularity=None, score=100)

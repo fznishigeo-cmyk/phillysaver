@@ -8,7 +8,7 @@ function fragment(start, end) {
   assert(a >= 0 && b > a, start);
   return html.slice(a, b);
 }
-const ctx = {offer:()=>({}),TICKER_MAX:16,state:{deals:[aged,fresh], newKeys:{}, spotlight:[], sortKey:'top', sortDir:-1,
+const ctx = {offer:()=>({}),TICKER_MAX:16,CATGROUPS:[['Trending',null,'']],state:{deals:[aged,fresh], catTab:0, newKeys:{}, spotlight:[], sortKey:'top', sortDir:-1,
   meta:{front_page:{}, floors:{min_pct:0}}}, TIER_LABEL:{},
   document:{querySelectorAll:()=>[],getElementById:()=>({value:""})}, isLocked:d=>!!d.locked, lockedHtml:()=>'', num:v=>v == null ? null : Number(v),
   dealKey:d=>d.key, mediaHtml:()=>'', isNew:()=>false, lit:()=>false, isFreePick:()=>false,
@@ -19,7 +19,11 @@ const ctx = {offer:()=>({}),TICKER_MAX:16,state:{deals:[aged,fresh], newKeys:{},
 vm.createContext(ctx);
 vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
 vm.runInContext(fragment('  function ageText(h)', '  function usedTag(d)'), ctx);
-vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
+// Function/declaration boundaries survive the shipped comment-stripping pass.
+vm.runInContext(fragment('  function cardHtml(d)', '  var TICKER_MAX'), ctx);
+if (html.includes('  function usedOrOpenBox(d)')) {
+  vm.runInContext(fragment('  function usedOrOpenBox(d)', '  function searchNewFirst(rows)'), ctx);
+}
 vm.runInContext(fragment('  function spotlightTime(endsAt, now)', '  function frontPageView()'), ctx);
 vm.runInContext(fragment(html.includes('  function photosFirst(rows)') ? '  function photosFirst(rows)' : '  function confirmedFirst(rows)', '  function storeHue(s)'), ctx);
 for (const sort of ['top','fresh','final_price','pct_at_checkout','store']) {

@@ -27,7 +27,9 @@ def db(tmp_path):
 
 @pytest.fixture
 def cfg():
-    return load_config()
+    cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275; stock evidence only
+    return cfg
 
 
 def seed(db, key, *, item="Ninja Air Fryer 4 Qt", pct=60.0, sources=("keepa_amazon_drops",),

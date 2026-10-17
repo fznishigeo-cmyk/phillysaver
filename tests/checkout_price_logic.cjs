@@ -17,7 +17,7 @@ vm.createContext(ctx);
 vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
 vm.runInContext(fragment('  function ageText(h)', '  function usedTag(d)'), ctx);
 vm.runInContext(fragment('  function spotlightTime(endsAt, now)', '  function frontPageView()'), ctx);
-vm.runInContext(fragment('  function checkoutPriceHtml(d)', '  // ---- the deal ticker ----'), ctx);
+vm.runInContext(fragment('  function checkoutPriceHtml(d)', '  var TICKER_MAX'), ctx);
 const d = doc.deals[0];
 const live = ctx.cardHtml(d), expected = ctx.esc(process.argv[3]);
 assert(live.includes(expected));

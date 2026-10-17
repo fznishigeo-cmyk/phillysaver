@@ -26,6 +26,7 @@ from tests.test_keepa import SRC, _amazon_row, _wh_row, _junk_row
 @pytest.fixture
 def cfg():
     result = load_config()
+    result.keepa_click_price_rule = "off"  # recorded before task 275; cached one-token reads
     # Predates the Buy Box top picks and surplus scheduling.
     result.keepa_buybox_top_n = 0
     result.keepa_recheck_surplus = result.keepa_recheck_top_live_adaptive = False
@@ -208,6 +209,7 @@ def test_old_cache_cannot_make_rapid_reruns_buy_more_checks(db, cfg, monkeypatch
 
 
 def test_used_offer_timestamp_and_rendered_clocks(db, cfg, monkeypatch, tmp_path):
+    cfg.keepa_click_price_rule = "on"  # Exercise the shipped combination; used scans keep their own clock.
     deal = seed(db, cfg, conditions=["used"])
     remember(db, wall=[deal])
     at = NOW - timedelta(minutes=40)
@@ -219,7 +221,9 @@ def test_used_offer_timestamp_and_rendered_clocks(db, cfg, monkeypatch, tmp_path
     site.render_site(db, cfg, NOW, out_dir=tmp_path)
     row = json.loads((tmp_path / "deals.json").read_text())["deals"][0]
     assert row["checked_at"] == util.iso(at)
-    assert '40m ago</span>' in (tmp_path / "index.html").read_text()
+    assert cfg.front_page["used_tab_only"]
+    assert '40m ago</span>' not in (tmp_path / "index.html").read_text()
+    assert '40m ago</span>' in (tmp_path / "deals/used-open-box/index.html").read_text()
     page = (tmp_path / row["deal_path"].lstrip("/") / "index.html").read_text()
     assert f'Price checked <time datetime="{util.iso(at)}">' in page
 

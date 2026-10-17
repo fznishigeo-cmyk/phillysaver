@@ -25,7 +25,8 @@ STUB_KEYS = ("key", "pct_at_checkout", "store", "category",
 
 
 def _stub(deal: dict[str, Any]) -> dict[str, Any]:
-    return {"locked": True, **{k: deal.get(k) for k in STUB_KEYS}}
+    return {"locked": True, **{k: deal.get(k) for k in STUB_KEYS},
+            **{k: deal[k] for k in ("price_drop", "primary_offer") if k in deal}}
 
 
 def is_open(cfg) -> bool:

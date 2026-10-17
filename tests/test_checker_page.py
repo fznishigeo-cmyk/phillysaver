@@ -60,12 +60,22 @@ def test_disabled_matches_every_current_head_byte(db, tmp_path, mode):
     # Captured before task 241 edits, untouched 7c202391bee4 (Amazon show).
     cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
     cfg.dark_polish = False  # recorded before task 254
+    cfg.strip_comments = False  # recorded before task 278
     cfg.search_amazon = False  # recorded before task 259
     cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
     cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
     cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
     cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275
+    cfg.static_photos = False  # recorded before task 274
+    cfg.front_page["used_tab_only"] = False  # recorded before task 274
+    cfg.amazon_history = "show"  # recorded before task 274
+    cfg.amazon_reference = "history"  # recorded before task 276
+    cfg.open_box_scarcity = False  # recorded before task 273
+    if "appeal" in cfg.front_page:
+        cfg.front_page["appeal"].get("want", {})["enabled"] = False
+        cfg.front_page["appeal"]["season"] = []
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"
@@ -185,6 +195,7 @@ def test_enabled_page_seo_navigation_rules_budget_and_private_summary(db, tmp_pa
 
 def test_tracking_and_other_global_scripts_never_receive_pasted_url(db, tmp_path):
     cfg = load_config()
+    cfg.amazon_reference = "history"  # recorded before task 276: includes the /p/ reader
     cfg.checker["enabled"] = True
     cfg.paywall_open_access = True
     cfg.seo_product_pages_enabled = True

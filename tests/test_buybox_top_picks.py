@@ -22,6 +22,7 @@ from tests.test_value_per_token_rechecks import minutes
 @pytest.fixture
 def cfg():
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275
     cfg.feature_flags["keepa"] = True
     cfg.keepa_hidden_new_tokens_per_run = cfg.keepa_hidden_used_scans_per_run = 0
     return cfg

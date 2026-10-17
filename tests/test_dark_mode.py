@@ -24,7 +24,6 @@ from tests.test_pwa import baseline_config, tree_hash
 from tests.test_support import NOW, render
 from tests.history_pins import pre_history_removal
 
-SHOTS = Path("/tmp/task254-shots")
 TEMPLATES = Path(__file__).resolve().parents[1] / "dealradar/publish/templates"
 
 
@@ -238,8 +237,9 @@ def test_shipped_phone_budget_off_on(tmp_path):
         numbers["ON" if enabled else "OFF"] = {
             key: report["metrics"][key]["gzip"] for key in ("home_css", "home_html")}
     print("task254 gzip bytes: " + json.dumps(numbers, sort_keys=True))
-    SHOTS.mkdir(parents=True, exist_ok=True)
-    (SHOTS / "budget.json").write_text(json.dumps(numbers, indent=2) + "\n")
+    shots = tmp_path / "shots"
+    shots.mkdir()
+    (shots / "budget.json").write_text(json.dumps(numbers, indent=2) + "\n")
     assert numbers["ON"]["home_css"] <= 14913
     assert numbers["ON"]["home_html"] <= 77360
 
@@ -247,11 +247,14 @@ def test_shipped_phone_budget_off_on(tmp_path):
 @pytest.fixture
 def dark_trees(tmp_path):
     cfg = pre_history_removal(load_config())  # exercises product pages + charts
+    cfg.keepa_click_price_rule = "off"  # recorded before task 275: history/contrast fixture
+    cfg.amazon_reference = "history"  # recorded before task 276: charts are required here
     cfg.tracking = {}
     cfg.paywall_google_client_id = ""
     cfg.join_prompt = False  # browser opens the popup directly, as support.js does
     cfg.dark_polish = False
     cfg.seo_product_pages_enabled = True
+    cfg.strip_comments = False  # comparison recorded before task 278
     cfg.seo_hub_min_items = cfg.seo_store_page_min_deals = 1
     cfg.checker = validated_checker({"enabled": True, "stores": {"amazon": "history", "walmart": "history"}})
     stores = [("Amazon", f"https://www.amazon.com/dp/B{i:09d}") for i in range(12)]
@@ -296,16 +299,17 @@ def test_product_pages_and_checker_are_additive(dark_trees):
                     after["full_payload"]["meta"]["site_version"])
 
 
-def test_chromium_dark_mode_offline(dark_trees):
+def test_chromium_dark_mode_offline(dark_trees, tmp_path):
     if not shutil.which("node"):
         pytest.skip("Node unavailable")
     off, on, *_ = dark_trees
+    shots = tmp_path / "shots"
     result = subprocess.run(["node", str(Path(__file__).with_name("dark_mode_browser.cjs")),
-                             str(off), str(on), str(SHOTS)],
+                             str(off), str(on), str(shots)],
                             capture_output=True, text=True, timeout=300)
     print(result.stdout)
     if result.returncode == 77:
         for name, root in (("off", off), ("on", on)):
-            shutil.copytree(root, SHOTS / "fixtures" / name, dirs_exist_ok=True)
+            shutil.copytree(root, shots / "fixtures" / name, dirs_exist_ok=True)
         pytest.skip(result.stdout.strip())
     assert result.returncode == 0, (result.stdout + result.stderr)[-10000:]

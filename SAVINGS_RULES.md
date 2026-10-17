@@ -51,6 +51,19 @@ conditions → excluded `in_store`.
 `basis='quoted_regular'`. "70% off everything" with no prices → `pct = 70.0`,
 `basis='list_price_claim'`.
 
+**Amazon display reference (`publish.amazon_reference: list_price`):** new
+Amazon deals backed by API averages use Amazon's own List Price from the
+same reading that confirmed the current price. `amazon_list_price` in
+`savings.py` requires the exact ASIN, matching observation/confirmation time,
+and a reading within `keepa.show_max_unconfirmed_h`. The list must be finite
+and strictly above the shipping-adjusted final price. Compute
+`(list - final) / list * 100`, round to one decimal and derive dollar savings;
+`basis='amazon_list_price'`. Whole-percent copy still uses half-up rounding.
+Missing, stale or non-discounted lists yield `no_basis`: no public regular
+price, percentage or dollar savings, only a Price drop chip. The original
+comparison stays private for qualification, site floors and ranking; it is
+never replaced in stored facts. Source-stated price pairs are unchanged.
+
 **Used / open-box (e.g. Amazon Warehouse / Amazon Resale):** the used price
 is the final and the STATED new-condition price is the regular
 (`basis='quoted_regular'` — the same math as any quoted pair). The deal must

@@ -20,7 +20,7 @@ const ctx = {Date:Clock, state:{newKeys:{}, spotlight:[]}, TIER_LABEL:{},
 vm.createContext(ctx);
 vm.runInContext(fragment('  function esc(s)', '  function sortVal'), ctx);
 vm.runInContext(fragment('  function ageText(h)', '  function usedTag(d)'), ctx);
-vm.runInContext(fragment('  function cardHtml(d)', '  // ---- the deal ticker ----'), ctx);
+vm.runInContext(fragment('  function cardHtml(d)', '  var TICKER_MAX'), ctx);
 vm.runInContext(fragment('  function spotlightTime(endsAt, now)', '  function frontPageView()'), ctx);
 assert.equal(ctx.priceCheckedText(deal.checked_at, now), 'price checked 25m ago');
 for (const [minutes, label] of [[0,'0m'],[59,'59m'],[60,'1h'],[1440,'1d']]) {
@@ -48,7 +48,7 @@ const listing = {Date:Clock, location:{pathname:'/stores/amazon/'}, window:{}, n
   document:{getElementById:()=>null, querySelector:()=>scope}, setInterval:fn=>{update=fn;}};
 vm.createContext(listing);
 const actions = Array.from(html.matchAll(/<script>([\s\S]*?)<\/script>/g), m=>m[1])
-  .find(s=>s.includes('Static deals have explicit labels'));
+  .find(s=>s.includes('function paintChecked()'));
 assert(actions);
 vm.runInContext(actions, listing);
 assert.equal(listingStamp.textContent, 'price checked 25m ago');

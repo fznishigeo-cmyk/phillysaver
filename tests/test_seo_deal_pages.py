@@ -226,8 +226,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     # Existing files plus 26 overflow pages for each of category/store/three budgets,
     # plus the click-signal script once the shipped switch is on (2026-10-14).
     clicks = 1 if cfg.raw.get("first_party_clicks", {}).get("enabled") else 0
-    # Product pages on (2026-10-15): the /p/ index and the two sitemap children.
-    products = 3 if cfg.seo_product_pages_enabled else 0
+    # The split sitemap's two children remain; its /p/ index is history-only.
+    products = (3 if cfg.amazon_reference == "history" else 2) if cfg.seo_product_pages_enabled else 0
     events = len(cfg.seo_event_pages_events) if cfg.seo_event_pages_enabled else 0
     assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events
 

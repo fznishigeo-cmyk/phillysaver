@@ -45,15 +45,19 @@ _TIER_WORDS = {"corroborated": "2+ sources", "history-checked": "price history"}
 def format_message(deal: dict[str, Any], path: str | None = None,
                    disclosure: str = "#ad", *, cfg=None) -> str:
     """Price-free channel copy with a deal path; preserve the email format otherwise."""
+    from .. import amazon_reference
+    from ..util import now_utc
+    deal = amazon_reference.project(deal, cfg, now_utc())
     if path is not None:
         from .traffic import tagged_url
 
         item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
         store = _without_prices(str(deal.get("store") or ""))
-        pct = display_pct(deal["pct_at_checkout"])
+        pct = deal.get("pct_at_checkout")
+        lead = f"{display_pct(pct)}% OFF" if pct is not None else "Price drop"
         disclosure = _word_trim(_without_prices(disclosure), 100) or "#ad"
         url = tagged_url("https://wowpriced.com", path, "telegram", "social")
-        return (f"🔥 {pct}% OFF: {item}\n"
+        return (f"🔥 {lead}: {item}\n"
                 f"At {store}, verified by wowpriced: {url}\n"
                 f"{disclosure}")
 
@@ -62,7 +66,7 @@ def format_message(deal: dict[str, Any], path: str | None = None,
     final = deal.get("final_price")
     price = f"${final:.2f}" if final is not None else "$?"
     pct = deal.get("pct_at_checkout")
-    pct_s = f"{display_pct(pct)}% off" if pct is not None else "?% off"
+    pct_s = f"{display_pct(pct)}% off" if pct is not None else "Price drop" if amazon_reference.enabled(cfg) else "?% off"
     tier = _TIER_WORDS.get(deal.get("verify_tier") or "", "")
     if deal.get("verify_tier") == "history-checked" and hide_history:
         tier = "verified"

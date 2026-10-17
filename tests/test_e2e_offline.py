@@ -522,7 +522,8 @@ def test_ai_take_rerun_is_idempotent(env, monkeypatch, audit_mode):
     from tests.test_checker_index import add, files
 
     path = Path(env["cfg"])
-    path.write_text(path.read_text().replace("ai_take:\n    enabled: false", "ai_take:\n    enabled: true")
+    path.write_text(path.read_text().replace("amazon_reference: list_price", "amazon_reference: history")  # recorded before task 276
+                    .replace("ai_take:\n    enabled: false", "ai_take:\n    enabled: true")
                     .replace("mode: shadow                 # enforce", f"mode: {audit_mode}                 # enforce"))
     # AI takes live on product pages, which the 2026-10-17 history removal turned off.
     path.write_text(yaml.safe_dump(pre_history_removal_raw(yaml.safe_load(path.read_text()))))
@@ -621,10 +622,14 @@ def test_deaths_summary_counts_api_expiry_and_confirmation_but_not_old_deaths(en
 
     from dealradar import dedupe, util, verify
     from dealradar.fetch.woot import _recheck_offers
+    from dealradar.keepa_budget import KeepaBudget
     from tests.test_dedupe import make_cfg, make_extracted, make_post, make_savings
 
     now = util.now_utc()
     db = DB(env["db"])
+    # Shipped click-price mode routes this Unknown through budgeted recovery;
+    # the mocked verdict still needs a funded bucket, as a real run would have.
+    KeepaBudget(500, 20, now).save(db)
     keys = {}
     for item, store, url in [
         ("confirmed", "Amazon", "https://www.amazon.com/dp/B012345678"),

@@ -68,7 +68,9 @@ def email_line_html(line: str, deal: dict) -> str:
 
 def email_deal(deal: dict, cfg=None) -> dict:
     """Amazon prices stay on the site; emails use the credited article link."""
-    d = dict(deal)
+    from ..amazon_reference import project
+    from ..util import now_utc
+    d = dict(project(deal, cfg, now_utc()))
     url = d.get("canonical_url") or ""
     target = tracker_target(url) or url
     host = host_of(target)

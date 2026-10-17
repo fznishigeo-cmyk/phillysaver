@@ -31,6 +31,10 @@ POST = "https://slickdeals.net/f/1"
 
 def config(mode):
     cfg = load_config()
+    cfg.keepa_click_price_rule = "off"  # link fixtures recorded before task 275
+    cfg.front_page["used_tab_only"] = False  # recorded before task 274
+    cfg.front_page["appeal"]["want"]["enabled"] = False  # recorded before task 273
+    cfg.front_page["appeal"]["season"] = []
     cfg.support_enabled = mode == "support"
     cfg.paywall_enabled = mode != "unpaywalled"
     cfg.paywall_open_access = mode == "open"

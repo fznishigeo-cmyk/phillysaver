@@ -90,14 +90,18 @@ def _meta(db, key: str) -> dict:
 
 
 def caption(deal: dict, path: str, cfg, network: str) -> str:
+    from ..amazon_reference import project
+    from ..util import now_utc
     from .traffic import tagged_url
 
+    deal = project(deal, cfg, now_utc())
     item = social_title(str(deal.get("item") or ""), str(deal.get("brand") or ""))
     store = _word_trim(_without_prices(str(deal.get("store") or "")), 100)
-    pct = display_pct(deal["pct_at_checkout"])
+    pct = deal.get("pct_at_checkout")
+    lead = f"{display_pct(pct)}% OFF" if pct is not None else "Price drop"
     disclosure = _word_trim(_without_prices(str(cfg.meta.get("disclosure") or "#ad")), 100) or "#ad"
     url = tagged_url("https://wowpriced.com", path, network, "social")
-    facts = f"🔥 {pct}% OFF: {item}\nAt {store}, verified by wowpriced: {url}"
+    facts = f"🔥 {lead}: {item}\nAt {store}, verified by wowpriced: {url}"
     if network == "facebook":
         return f"{facts}\n{disclosure}"
     facts += "\nTap the link in our bio for today's deals."

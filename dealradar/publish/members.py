@@ -105,6 +105,10 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     """(subject, text_body, html_body) for one bundle of new deals: the best
     _cap(cfg) of them, and a line saying how many more are on the wall."""
     deals = [d for d in deals if not email_excluded(d, cfg)]
+    from ..amazon_reference import enabled, project
+    from ..util import now_utc
+    if enabled(cfg):
+        deals = [project(d, cfg, now_utc()) for d in deals]
     more = max(0, len(deals) - _cap(cfg))
     deals = deals[:_cap(cfg)]
     top = max((float(d.get("pct_at_checkout") or 0.0) for d in deals),
@@ -114,6 +118,8 @@ def build_member_email(deals: list[dict[str, Any]], cfg) -> tuple[str, str, str]
     brand = domain.split(".")[0] if domain else "wowpriced"
     subject = (f"{brand}: {n} new verified deal{'s' if n != 1 else ''} "
                f"(up to {display_pct(top)}% off)")
+    if enabled(cfg) and not any(d.get("pct_at_checkout") is not None for d in deals):
+        subject = f"{brand}: {n} new verified deal{'s' if n != 1 else ''}"
     lines = [email_message(d, cfg) for d in deals]
     footer = []
     if more:

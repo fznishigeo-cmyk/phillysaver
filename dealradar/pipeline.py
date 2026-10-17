@@ -1240,8 +1240,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     overflow_discovery=None, rate_limited=False) -> dict[str, Any]:
     """Budgeted volatility checks, correcting plain new prices in-place.
 
-    Published Buy Box picks and budgeted surplus precede ordinary cadence
-    lanes. Legacy visibility scheduling remains available with volatility off.
+    Click-price mode funds published picks and wall cards across transport
+    modes before hidden candidates. Legacy scheduling keeps Buy Box and
+    surplus lanes first when the click-price rule is disabled.
     Discovery precedes bounded hidden recovery and idle checks; photos use
     the remainder. Every batch preserves the deal lane's token reserve.
     """
@@ -1249,7 +1250,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
 
     from . import rank
     from .keepa_rechecks import History, Schedule, record_price_check
-    from . import buybox
+    from . import buybox, click_price
     from .dedupe import _DEAL_FIELDS, reprice_existing
     from .fetch.keepa import reprice_post
     from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_IMAGE_BACKFILL,
@@ -1283,9 +1284,24 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             return {}
 
     picks, wall = remembered(PICKS_META), remembered(WALL_META)
+    click_picks = remembered(click_price.PICKS_META) if db.meta_get(click_price.PICKS_META) else picks
+    click_wall = remembered(click_price.WALL_META) if db.meta_get(click_price.WALL_META) else wall
+    published_positions = {k: i for i, k in enumerate(dict.fromkeys([
+        *click_picks, *(k for k, i in click_wall.items() if i < click_price.WALL_CHECKS)]))}
     buybox_top = {k for k, position in wall.items() if position < cfg.keepa_buybox_top_n}
+    click_visible = {}
+    if cfg.keepa_click_price_rule == "on":
+        # Published picks and home cards precede candidates kept for recovery.
+        click_visible = dict.fromkeys([*click_picks,
+                                      *(k for k, i in click_wall.items() if i < click_price.WALL_CHECKS),
+                                      *picks, *remembered(click_price.VISIBLE_META),
+                                      *(k for k, i in wall.items() if i < click_price.WALL_CHECKS)])
+        buybox_top.update(click_visible)
+    if cfg.keepa_click_price_rule != "off":
+        stats["click_price_extra_tokens"] = 0
     visible = picks.keys() | wall.keys()
     inventory = db.all_deals(status="alive")
+    click_samples = {d["dedupe_key"]: d for d in inventory}
     history = History(db, cfg, now)
     schedule = Schedule(history, picks, wall)
     stats["run_gap"] = run_gap_forecast(db, cfg, now)
@@ -1354,6 +1370,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             for name, keys in (("top_candidates", picks), ("wall", wall)):
                 stats["confirmed_age"][name]["tiers"] = plan.coverage(
                     [d for d in rows if d["dedupe_key"] in keys])
+        if cfg.keepa_click_price_rule != "off":
+            if plan is not None:
+                stats["token_plan"]["click_price_extra_tokens_reserved"] = stats["click_price_extra_tokens"]
+            stats["price_source"]["click_price"] = click_price.summary(
+                None, cfg, now, [d for k, d in click_samples.items() if k in click_picks],
+                [d for k, d in click_samples.items() if k in click_wall], stats["click_price_extra_tokens"])
         stats["hidden_unconfirmed"] = hidden_counts(rows)
 
     def tried_recently(deal: dict[str, Any], used: bool) -> bool:
@@ -1465,7 +1487,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         urgent = overdue(deal)
         requested = util.parse_iso(deal.get("buybox_requested_at") or "")
         box_due = (key in buybox_top and buybox.eligible(deal) and not _price_hidden_by_promo(deal)
-                   and (requested is None or now - requested >= timedelta(minutes=cfg.keepa_buybox_interval_min)))
+                   and (requested is None or now - requested >= timedelta(minutes=cfg.keepa_buybox_interval_min)
+                        or (key in click_visible and (urgent or not in_cadence(deal)))))
+        if cfg.keepa_click_price_rule == "on" and plan is not None and requested is not None:
+            # Once acquired, premium evidence follows the funded paid-request
+            # cadence too; the hourly freshness clock cannot override stretch.
+            box_due = box_due and (urgent or not in_cadence(deal))
         if history.attempted(key) or (not box_due and not urgent and schedule.enabled and history.requested_recently(key)):
             continue
         condition = "used" if used else "new"
@@ -1494,6 +1521,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         if box_due and not suspect_wait:
             top_reads.append(deal)
             continue
+        if key in click_visible and not used and not _price_hidden_by_promo(deal) and not suspect_wait:
+            continue  # every visible price recheck needs the Buy Box premium
         # Overflow buys useful earlier checks, including off-wall search
         # inventory. Keep retry/death intervals and a minimum observation age.
         observed = observed_check(deal)
@@ -1623,17 +1652,44 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         remaining_groups.append(([d for d in group if d["dedupe_key"] not in deadlines], *options))
     urgent_groups.sort(key=lambda g: (deadlines[g[0][0]["dedupe_key"]] != "top", g[6]))
     groups = urgent_groups + remaining_groups
-    if plan is not None:
+    def ordered_entries(source):
         # Freeze selection order independently of transport labels/modes.
-        by_key = {d["dedupe_key"]: (d, options) for rows, *options in groups for d in rows}
-        ranked = plan.order([d for d, _ in by_key.values()], deadlines)
+        by_key, fallbacks = {}, {}
+        for rows, *options in source:
+            for deal in rows:
+                key = deal["dedupe_key"]
+                if options[3].startswith("surplus_") and key in by_key:
+                    previous = by_key[key]
+                    if not previous[1][-1] and not previous[1][3].startswith("hidden_"):
+                        fallbacks[key] = previous
+                by_key[key] = (deal, options)
+        ranked = [d for d, _ in by_key.values()]
+        if plan is not None:
+            ranked = plan.order(ranked, deadlines)
         positions = {d["dedupe_key"]: i for i, d in enumerate(ranked)}
+        box_positions = {k: i for i, k in enumerate(dict.fromkeys([*click_visible, *wall]))}
         def phase(d, options):
             return (0 if deadlines.get(d["dedupe_key"]) == "top" else
                     4 if options[-1] else 3 if options[3].startswith("hidden_") else
                     1 if d["dedupe_key"] in picks else 2)
-        entries = sorted(by_key.values(), key=lambda row: (
-            phase(*row), recovery_order(row[0]) if phase(*row) == 3 else (positions[row[0]["dedupe_key"]],)))
+        def value(row):
+            deal, options = row
+            key = deal["dedupe_key"]
+            if cfg.keepa_click_price_rule == "on":
+                if key in published_positions:
+                    return (0, published_positions[key])
+                if options[3] == "buybox_top_new":
+                    return (1, box_positions[key])
+            return (2, phase(*row), recovery_order(deal) if phase(*row) == 3 else (positions[key],))
+        # A due row keeps its regular funding if earlier checks consume the
+        # overflow. Published fallbacks still precede every hidden candidate.
+        entries = [(row, False) for row in by_key.values()]
+        entries += [(row, True) for row in fallbacks.values()]
+        return [row for row, _ in sorted(entries,
+            key=lambda entry: (value(entry[0])[0], entry[1], value(entry[0])[1:]))]
+
+    if plan is not None:
+        entries = ordered_entries(groups)
     stats["planned"]["photo"], stats["done"]["photo"] = len(photo), 0
     groups.append((photo, MIN_FOR_IMAGE_BACKFILL, 1, KEEPA_BATCH, "photo", False, False, False))
     # Reserve before each call, including lost answers; rerunning a run key
@@ -1661,16 +1717,18 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             stats["overflow_discovery"] = overflow_discovery(budget)
             rate_limited = stats["overflow_discovery"].get("rate_limited", False)
 
-    def planned_groups():
+    def planned_groups(extra_groups=None):
         # Plan each side of discovery against its actual remaining budget:
         # free feed confirmations and receipts can change the later selection.
+        request_entries = ordered_entries([*groups[:-1], *extra_groups]) if extra_groups is not None else entries
         for lane in ("due", "hidden", "idle", "photo"):
             if lane == "hidden":
                 discover()
             if rate_limited:
                 return
             candidates = []
-            source = [(d, list(groups[-1][1:])) for d in photo] if lane == "photo" else entries
+            candidate_labels = {}
+            source = [(d, list(groups[-1][1:])) for d in photo] if lane == "photo" else request_entries
             for deal, options in source:
                 label, used, is_idle = options[3], options[5], options[6]
                 own_lane = "photo" if label == "photo" else "idle" if is_idle else "hidden" if label.startswith("hidden_") else "due"
@@ -1684,7 +1742,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 if is_idle and not idle_eligible(deal):
                     continue
                 candidates.append((deal, options))
-                labels[deal["dedupe_key"]] = label
+                candidate_labels[deal["dedupe_key"], label.startswith("surplus_")] = label
             request_candidates = candidates
             request_consumers = {}
             if cfg.keepa_unique_asin_rechecks_enabled:
@@ -1693,34 +1751,45 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     asin = str(deal.get("asin") or "").strip().upper()
                     if not re.fullmatch(r"[A-Z0-9]{10}", asin) or deal.get("final_price") is None:
                         continue
-                    policy = asin, options[4], options[5], deadlines.get(deal["dedupe_key"]) == "top"
+                    policy = (asin, options[4], options[5], deadlines.get(deal["dedupe_key"]) == "top",
+                              options[3] == "buybox_top_new", options[3].startswith("surplus_"),
+                              cfg.keepa_click_price_rule == "on" and deal["dedupe_key"] in published_positions)
                     by_policy.setdefault(policy, []).append((deal, options))
                 request_candidates = [rows[0] for rows in by_policy.values()]
-                request_consumers = {rows[0][0]["dedupe_key"]: [d for d, _ in rows]
+                request_consumers = {(rows[0][0]["dedupe_key"], rows[0][1][3].startswith("surplus_")): [d for d, _ in rows]
                                      for rows in by_policy.values()}
-            selected, skipped = plan.batches(request_candidates, deadlines,
+            selected, _ = plan.batches(request_candidates, deadlines,
                 available=budget.available(now), used_left=max(0, (used_limit or 0) - used_spent),
                 seconds=max(0, deadline - time.monotonic()) if deadline is not None else float("inf"),
                 overflow=budget.overflow(gap, now), recovery_left={
                     False: max(0, cfg.keepa_hidden_new_tokens_per_run - recovery_spent["new"]),
                     True: max(0, cfg.keepa_hidden_used_scans_per_run - recovery_spent["used"])})
             if request_consumers:
-                selected = [([d for representative in rows for d in request_consumers[representative["dedupe_key"]]],
+                selected = [([d for representative in rows for d in request_consumers[
+                                representative["dedupe_key"], options[3].startswith("surplus_")]],
                              *options) for rows, *options in selected]
-                skipped = len(candidates) - sum(len(rows) for rows, *_ in selected)
-            stats["tokens_short"] += skipped
             selected_keys = {d["dedupe_key"] for group, *_ in selected for d in group}
-            stats["used_skipped_budget"] += sum(options[5] and d["dedupe_key"] not in selected_keys
-                                                for d, options in candidates)
+            stats["tokens_short"] += len({d["dedupe_key"] for d, _ in candidates} - selected_keys)
+            stats["used_skipped_budget"] += len({d["dedupe_key"] for d, options in candidates
+                                                if options[5] and d["dedupe_key"] not in selected_keys})
+            for rows, *options in selected:
+                for deal in rows:
+                    labels[deal["dedupe_key"]] = candidate_labels[
+                        deal["dedupe_key"], options[3].startswith("surplus_")]
             yield from selected
 
     def top_and_surplus_groups():
         # These barriers preserve value order even when transport modes differ.
-        top_reads.sort(key=lambda d: wall[d["dedupe_key"]])
+        if cfg.keepa_click_price_rule == "on":
+            positions = {k: i for i, k in enumerate(click_visible)}
+            top_reads.sort(key=lambda d: positions.get(d["dedupe_key"], len(positions)))
+        else:
+            top_reads.sort(key=lambda d: wall[d["dedupe_key"]])
         surplus_reads.sort(key=lambda d: (util.iso(observed_check(d)), d["dedupe_key"]))
         lanes = [("buybox_top_new", top_reads),
                  ("surplus_wall_used", [d for d in surplus_reads if is_used_deal(d) and d["dedupe_key"] in wall]),
                  ("surplus_rest", [d for d in surplus_reads if not (is_used_deal(d) and d["dedupe_key"] in wall)])]
+        extra_groups = []
         for label, rows in lanes:
             modes = {}
             requested = set()
@@ -1743,9 +1812,30 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             stats["planned"][label], stats["done"][label] = len(rows), 0
             for (used, live), rows in modes.items():
                 cost = (USED_RECHECK_TOKENS if used else 1) + live + 2 * (label == "buybox_top_new")
-                yield (rows, max(MIN_FOR_RECHECK, reserve + cost), cost,
-                       KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, label, live, used, False)
-        yield from planned_groups() if plan is not None else groups
+                group = (rows, max(MIN_FOR_RECHECK, reserve + cost), cost,
+                         KEEPA_OFFERS_BATCH if used else KEEPA_BATCH, label, live, used, False)
+                if cfg.keepa_click_price_rule == "on":
+                    extra_groups.append(group)
+                else:
+                    yield group
+        if cfg.keepa_click_price_rule != "on":
+            yield from planned_groups() if plan is not None else groups
+        elif plan is not None:
+            yield from planned_groups(extra_groups)
+        else:
+            # Keep publication priority across API modes in the legacy path
+            # as well. Only adjacent compatible rows may share a request.
+            pending, previous = [], None
+            for deal, options in ordered_entries([*groups[:-1], *extra_groups]):
+                mode = tuple(options)
+                if pending and mode != previous:
+                    yield (pending, *previous)
+                    pending = []
+                pending.append(deal)
+                previous = mode
+            if pending:
+                yield (pending, *previous)
+            yield groups[-1]
 
     for group, need, per_deal, per_call, label, live, used, is_idle in top_and_surplus_groups():
         is_photo = label == "photo"
@@ -1778,12 +1868,17 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         while i < len(group):
             remaining_count = sum(len(consumers.get(d["dedupe_key"], [d])) for d in group[i:])
             avail = budget.available(now)
-            # Keep the ordinary top read when the premium would crowd out
-            # its batch. An unknown bucket cannot authorize an extra charge.
+            # The click-price rule keeps the premium and shortens the batch.
+            # An unknown bucket cannot authorize an extra charge.
             if box_request and (avail is None or avail - reserve < min(per_call, len(group) - i) * per_deal):
-                box_request = False
-                per_deal -= 2
-                need = max(MIN_FOR_RECHECK, reserve + per_deal)
+                if cfg.keepa_click_price_rule == "on":
+                    if avail is None:
+                        stats["tokens_short"] += remaining_count
+                        break
+                else:
+                    box_request = False
+                    per_deal -= 2
+                    need = max(MIN_FOR_RECHECK, reserve + per_deal)
             overflow = budget.overflow(gap, now) if is_idle or is_surplus else None
             if (is_idle or is_surplus) and (overflow is None or overflow < per_deal):
                 break
@@ -1850,6 +1945,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
             if box_request:
                 options["buybox"] = True
                 stats["buybox_top"]["requested"] += requested_asins
+                if cfg.keepa_click_price_rule != "off":
+                    stats["click_price_extra_tokens"] += requested_asins * 2
                 if get_secret("KEEPA_KEY"):
                     for deal in batch:
                         deal["buybox_requested_at"] = util.iso(now)
@@ -1895,9 +1992,14 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     verdict = None  # never replace newer paid/feed evidence with older data
                 if product is not None:
                     buybox.measure(stats["price_source"], original, product, verdict)
+                    if cfg.keepa_click_price_rule != "off" and not regressed:
+                        click_price.remember(original, product, observed, now)
+                        click_samples[original["dedupe_key"]] = original
                 if shopper is not None and not regressed:
                     from .savings import exceeds_price_tolerance
-                    verdict = not exceeds_price_tolerance(shopper[0], deal["final_price"], cfg.keepa_recheck_tolerance_pct)
+                    verdict = not (exceeds_price_tolerance(shopper[0], deal["final_price"])
+                        if cfg.keepa_click_price_rule == "on" else exceeds_price_tolerance(
+                            shopper[0], deal["final_price"], cfg.keepa_recheck_tolerance_pct))
                 if product is not None and not is_used_deal(deal) and not regressed:
                     live_price = shopper[0] if shopper else _live_new_price(product)
                     shown = deal.get("final_price")
@@ -1910,7 +2012,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                                   "higher_1_5pct" if drift <= 5 + 1e-9 else "higher_over_5pct")
                         stats["drift"][bucket] += 1
                     post = reprice_post(product, deal, cfg, now, buybox=shopper is not None)
-                    if post is not None and reprice_existing(db, deal, post, cfg, now, observed_at=observed):
+                    if post is not None and reprice_existing(db, deal, post, cfg, now, observed_at=observed,
+                                                            buybox=shopper is not None):
                         _harvest_popularity(deal, product)  # repricing reloads the stored payload
                         stats["drift"]["repriced"] += 1
                         verdict = True  # a moved but corrected price is live, never gone
@@ -1919,9 +2022,17 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                                      "repriced_down" if deal["final_price"] < original["final_price"] else "unchanged")
                         stats["buybox_top"][direction] += 1
                 if product is not None and not regressed and buybox.eligible(deal):
+                    if cfg.keepa_click_price_rule != "off":
+                        click_price.remember(deal, product, observed, now)
                     buybox.remember(deal, product, observed, now=now)
                     from . import checkout_prices
                     checkout_prices.remember(deal, product, cfg, now)
+                if product is not None and verdict is True and not regressed and not is_used_deal(deal):
+                    from .amazon_reference import list_reading, remember_list_price
+                    # List Price belongs to the product observation, never to
+                    # the independently refreshed Buy Box confirmation.
+                    list_at = keepa_time(product.get("lastUpdate"))
+                    remember_list_price(deal, list_reading(product, list_at), now=now)
                 apply(deal, verdict, observed,
                       had_photo=deal["dedupe_key"] not in photo_less,
                       answered=deal["dedupe_key"] in verdicts)
@@ -2073,8 +2184,12 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             if "suspect_msrp" not in flags:
                 flags.append("suspect_msrp")
             payload["flags"] = flags
-            log.warning("deal critic flagged %s as suspect MSRP: %s",
-                        deal["dedupe_key"], verdict.get("reason", ""))
+            from .amazon_reference import enabled as list_price_mode
+            if list_price_mode(cfg):
+                log.warning("deal critic flagged %s as suspect MSRP", deal["dedupe_key"])
+            else:
+                log.warning("deal critic flagged %s as suspect MSRP: %s",
+                            deal["dedupe_key"], verdict.get("reason", ""))
         db.update_deal(deal["dedupe_key"], payload=payload)
         deal["critic"] = verdict  # available for reuse by later batches
         if tiered:
@@ -2557,10 +2672,13 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["redirects"] = {"resolved": 0, "tried": 0, "trackers_resolved": 0}
         summary["post_links"] = {"tried": 0, "found": 0}
         summary["source_credit_restored"] = _restore_source_credit_links(db, cfg)
+        # Unknown Amazon prices need identity recovery before they can confirm.
+        recover_unconfirmed = cfg.keepa_click_price_rule == "on"
         summary["short_links"] = (
             _resolve_short_links(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
                                  stats=summary["redirects"],
-                                 deals=rank.site_deals(db, cfg, now))
+                                 deals=rank.site_deals(db, cfg, now,
+                                                       include_unconfirmed=recover_unconfirmed))
             if fast_lane else 0)
         summary["image_backfill"] = (
             _backfill_blog_images(db, fetcher, sources,
@@ -2580,11 +2698,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2 if fast_lane else None)
 
         summary["photo_asins"] = photo_recovery.backfill_asins(
-            db, rank.site_deals(db, cfg, now), fetcher, cfg,
+            db, rank.site_deals(db, cfg, now, include_unconfirmed=recover_unconfirmed), fetcher, cfg,
             deadline - _RESERVE_FOR_TAIL_S) if fast_lane else {"tried": 0, "found": 0}
         if fast_lane:
             _links_from_posts(db, fetcher, deadline - _RESERVE_FOR_TAIL_S, cfg,
-                              deals=rank.site_deals(db, cfg, now),
+                              deals=rank.site_deals(db, cfg, now,
+                                                    include_unconfirmed=recover_unconfirmed),
                               stats=summary["post_links"])
 
         # ---- live price re-check (correct plain new prices, confirm deaths) ----
@@ -2710,6 +2829,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("photo_coverage: %s", summary["photo_coverage"])
         summary["published"] = site_res.get("published", 0)
         summary["appeal"] = site_res.get("appeal", {})
+        if "amazon_reference" in site_res:
+            summary["amazon_reference"] = site_res["amazon_reference"]
+        if "want_season" in site_res:
+            summary["want_season"] = site_res["want_season"]
+            db.meta_set("want_season_lifts", json.dumps({"run_key": run_key, **summary["want_season"]}, sort_keys=True))
         from . import buybox
         summary["price_source"] = summary["price_recheck"].get("price_source", buybox.empty_summary())
         summary["buybox_top"] = summary["price_recheck"].get("buybox_top", {})
@@ -2883,7 +3007,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                         and not summary["prefilter"]["unevaluated"]
                         and len(processed) == len(new_posts))
         log.info("run %s done in %.1fs: %s", run_key, summary["elapsed_s"],
-                 {k: v for k, v in summary.items() if k not in {"source_errors", "popular_affordable"}})
+                 {k: v for k, v in summary.items() if k not in {"source_errors", "popular_affordable", "want_season"}})
         return summary
     finally:
         try:

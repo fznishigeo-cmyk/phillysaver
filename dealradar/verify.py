@@ -28,7 +28,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .config import get_secret, error_summary, load_config
-from . import util
+from . import amazon_reference, util
 from .db import DB
 from .http_client import PoliteFetcher
 from .conditions import USED_CONDITIONS, normalize_conditions
@@ -426,6 +426,9 @@ def price_unconfirmed(deal: dict[str, Any], cfg, now: datetime) -> bool:
     """Hide stale Amazon offers; never-read posts get only the initial grace."""
     if not is_amazon_deal(deal):
         return False
+    from .click_price import excluded
+    if excluded(deal, cfg, now):
+        return True
     if cfg.keepa_buybox_rule == "on":
         from .buybox import would_unconfirm
         if would_unconfirm(deal, now):
@@ -726,7 +729,7 @@ def _judge_used(asin: str, deal: dict[str, Any], product: dict[str, Any],
 
 
 def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
-                     tolerance_pct: float = 10.0) -> bool | None:
+                     tolerance_pct: float = 10.0, *, cfg=None) -> bool | None:
     """The verdict for one deal given its Keepa product record: True =
     a current offer still matches the deal's final price within
     ``tolerance_pct`` (config keepa.recheck_tolerance_pct) (or,
@@ -782,8 +785,12 @@ def judge_live_price(deal: dict[str, Any], product: dict[str, Any],
                   float(final), live, iso(keepa_time(updated)),
                   deal.get("price_since") or deal.get("first_seen_at"))
         return None
-    log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (new)"
-             " -> %s", asin, float(final), live, basis, target, ok)
+    if cfg is not None and amazon_reference.enabled(cfg):
+        log.info("price recheck %s: final=$%.2f live=$%.2f (new) -> %s",
+                 asin, float(final), live, ok)
+    else:
+        log.info("price recheck %s: final=$%.2f live=$%.2f vs %s $%.2f (new)"
+                 " -> %s", asin, float(final), live, basis, target, ok)
     return ok
 
 
@@ -898,7 +905,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
                     own_product = deepcopy(product) if unique else product
                     out.products[deal["dedupe_key"]] = own_product
                     out[deal["dedupe_key"]] = judge_live_price(
-                        deal, own_product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
+                        deal, own_product, getattr(cfg, "keepa_recheck_tolerance_pct", 10.0), cfg=cfg)
                     if unique:
                         # Observation identity excludes request time/update: asking
                         # for a live read cannot make cached data independent.
@@ -925,7 +932,7 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
         if product is None:
             return None  # 429: the bucket is empty, try a later pass
         return judge_live_price(deal, product,
-                                getattr(cfg, "keepa_recheck_tolerance_pct", 10.0))
+                                getattr(cfg, "keepa_recheck_tolerance_pct", 10.0), cfg=cfg)
     except Exception as e:  # tokens exhausted, transport, schema drift
         log.warning("price recheck failed for %s: %s", asin, error_summary(e))
         return None
@@ -980,8 +987,11 @@ def keepa_check(deal: dict[str, Any], cfg,
         if avg is None:
             return None
         verdict = float(final) <= _history_ratio(cfg) * avg
-        log.info("keepa check %s: final=$%.2f avg90=$%.2f -> %s",
-                 asin, float(final), avg, verdict)
+        if amazon_reference.enabled(cfg):
+            log.info("keepa check %s: final=$%.2f -> %s", asin, float(final), verdict)
+        else:
+            log.info("keepa check %s: final=$%.2f avg90=$%.2f -> %s",
+                     asin, float(final), avg, verdict)
         return verdict
     except Exception as e:  # tokens exhausted, transport, schema drift
         log.warning("keepa check failed for %s: %s", asin, error_summary(e))

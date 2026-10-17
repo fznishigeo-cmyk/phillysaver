@@ -11,7 +11,7 @@ from dealradar import pipeline, rank, verify
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.fetch.woot import _recheck_offers
-from dealradar.publish import seo
+from dealradar.publish import seo, site
 from dealradar.publish.site import _serialize_deal, render_site
 from dealradar.util import iso
 from tests.test_publish_site import NOW, make_deal
@@ -144,7 +144,9 @@ def js_function(name):
     # Optional engagement and saved-list hooks are stripped, as the
     # publisher does when config.yaml engagement is empty.
     source = re.sub(r"<!--(engagement|saved)-->.*?<!--/\1-->", "",
-                    (seo.TEMPLATES_DIR / "index.html").read_text(), flags=re.S)
+                    site._page_template((seo.TEMPLATES_DIR / "index.html").read_text(),
+                                        AppConfig(photoless_last=True, unconfirmed_label_enabled=True),
+                                        home=True), flags=re.S)
     start = source.index(f"  function {name}(")
     end = source.index("\n  }", start) + 4
     return source[start:end]

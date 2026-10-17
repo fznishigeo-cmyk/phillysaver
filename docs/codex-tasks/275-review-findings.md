@@ -1,0 +1,5 @@
+- **Should-fix — Amazon deals without an ASIN cannot recover.** The new gate in [verify.py:430](/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt275/dealradar/verify.py:430) removes Unknown deals from `rank.site_deals()`, which supplies ASIN and product-link recovery at [pipeline.py:2686](/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt275/dealradar/pipeline.py:2686). A source-post-only Amazon deal therefore cannot obtain the ASIN needed for Buy Box confirmation. Offline reproduction: OFF recovered the ASIN; ON selected zero recovery candidates. **Minimal fix:** include otherwise-publishable unconfirmed deals in identity/link recovery, preserving existing caps; test the actual pipeline selection.
+
+224 targeted tests passed, including both recorded fixes, OFF bytes, and phone budgets. Scratch deleted; no edits, commits, or pushes.
+
+NOT
