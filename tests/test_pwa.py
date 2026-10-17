@@ -14,6 +14,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import pwa, site
 from tests.test_publish_site import make_deal
 from tests.test_support import NOW, render
+from tests.history_pins import pre_history_removal
 
 
 def baseline_config(mode):
@@ -31,6 +32,14 @@ def baseline_config(mode):
         # Predates the Buy Box top picks and surplus scheduling.
         cfg.keepa_buybox_top_n = 0
         cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False
+        # Recorded before the 2026-10-17 shipped changes (int10).
+        cfg.front_page["everyday_price"] = {"enabled": True, "full_until": 50, "floor_from": 150,
+                                            "floor_factor": 0.75}
+        cfg.join_prompt_delay_s = 15
+        cfg.keepa_buybox_rule = "shadow"
+        cfg.non_amazon_stores = {}
+        cfg.front_page["top_picks"]["non_amazon_max_age_h"] = 24
+        pre_history_removal(cfg)
     else:
         cfg = AppConfig(custom_domain="wowpriced.com", seo_store_page_min_deals=1)
         if mode == "open":
@@ -43,6 +52,7 @@ def baseline_config(mode):
     cfg.seo_product_pages_enabled = False  # predates product pages
     cfg.seo_event_pages_enabled = False  # predates event pages
     cfg.pwa_enabled = False
+    cfg.search_amazon = False  # recorded bytes predate the Amazon search fallback
     return cfg
 
 
@@ -76,6 +86,11 @@ def test_pwa_disabled_matches_every_baseline_published_byte(tmp_path, monkeypatc
     assert not (out / "pwa-icons").exists()
     for path in out.rglob("*.html"):
         assert "pwa-" not in path.read_text()
+    if not cfg.affiliate_amazon_tag:
+        # An enabled fallback without a tag must preserve the same recorded bytes.
+        cfg.search_amazon = True
+        render(tmp_path, cfg, sample_deals())
+        assert tree_hash(out) == expected
 
 
 def test_pwa_config_defaults_shipped_names_and_switch(tmp_path):

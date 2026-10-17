@@ -39,8 +39,16 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
     cfg["parse"]["critic_tiering"]["enabled"] = False
     cfg["site"]["offscreen_cards"] = False  # recorded before task 237
     cfg["site"]["dark_polish"] = False  # recorded before task 254
+    cfg["site"]["search_amazon"] = False  # recorded before task 259
+    cfg["publish"]["front_page"].get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.get("join", {})["prompt_delay_s"] = 15  # recorded before the 35 s delay
+    cfg["keepa"]["buybox_rule"] = "shadow"  # recorded before the Buy Box rule went on
+    cfg.get("non_amazon_freshness", {})["stores"] = {}  # recorded before the Woot freshness override
+    cfg["publish"]["front_page"].get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg["publish"]["front_page"].get("top_picks", {}) else None  # recorded before 8 h
     cfg["amazon_history"] = "hide"  # recorded before amz378_998
     cfg["checker"]["stores"]["amazon"] = "link_only"  # retain that recording's compatible policy
+    cfg["seo"]["product_pages"]["enabled"] = True  # recorded before the 2026-10-17 history removal
+    cfg["store_policy"] = dict.fromkeys(cfg["store_policy"], "history")  # likewise
     cfg_path.write_text(yaml.safe_dump(cfg))
     sources = offline.SOURCES + [
         SourceConfig("broken", "rss", "https://broken.example/feed"),

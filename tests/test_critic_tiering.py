@@ -21,6 +21,7 @@ from dealradar.parse.schema import CriticVerdicts
 from tests.test_ai_spend import Messages, deal, insert, parser_for
 from tests.test_e2e_offline import NOW, env, _run
 from tests.test_extractor import good_deal, make_post
+from tests.history_pins import pre_history_removal
 
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
@@ -290,7 +291,7 @@ def test_daily_usage_midnight_legacy_uncertain_and_private_report(tmp_path):
     assert today["legacy_usd"] == .03
     assert today["by_kind"]["category"]["unknown_usage_calls"] == 1
     assert ai_usage.daily(db, yesterday)["usd"] == .02
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     _, text = report.build_report(cfg, {"ai_usage": report._ai_usage(db.path, NOW)}, {}, NOW.date())
     assert "AI usage" in text.split(report.TECHNICAL_HEADING)[1]
     assert "tokens unavailable" in text and "usage missing for 1" in text
@@ -309,6 +310,7 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     path.write_text(path.read_text().replace("deal_pages_indexable: false", "deal_pages_indexable: true"))
     config = yaml.safe_load(path.read_text())
     config["amazon_history"] = "show"  # predates task 121b
+    config["store_policy"] = dict.fromkeys(config["store_policy"], "history")  # before 2026-10-17
     config["publish"]["front_page"]["appeal"]["enabled"] = False  # predates the broad-appeal switch
     config["publish"]["front_page"]["checkout_price_deals"]["enabled"] = False  # predates the checkout-price switch
     config["publish"]["amazon_as_of"]["enabled"] = False  # predates the Amazon as-of switch
@@ -316,6 +318,12 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     config["seo"]["product_pages"]["enabled"] = False  # predates product pages
     config["seo"]["event_pages"]["enabled"] = False  # predates event pages
     config["site"]["dark_polish"] = False  # predates task 254
+    config["site"]["search_amazon"] = False  # recorded before task 259
+    config["publish"]["front_page"].get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    config.get("join", {})["prompt_delay_s"] = 15  # recorded before the 35 s delay
+    config["keepa"]["buybox_rule"] = "shadow"  # recorded before the Buy Box rule went on
+    config.get("non_amazon_freshness", {})["stores"] = {}  # recorded before the Woot freshness override
+    config["publish"]["front_page"].get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config["publish"]["front_page"].get("top_picks", {}) else None  # recorded before 8 h
     path.write_text(yaml.safe_dump(config, sort_keys=False))
     summary = _run(env)
     assert summary["spend_usd"] == pytest.approx(.00729)
@@ -354,7 +362,7 @@ def day_replay(path, monkeypatch, *, enabled, all_escalate=False):
 
     db = DB(path)
     seed_yield(db, "good", success=30, calls=30)
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     # Baseline measures the entire demand under the existing $10 boost.
     # ON is tested under the normal $6 ceiling, without the temporary boost.
     if enabled:

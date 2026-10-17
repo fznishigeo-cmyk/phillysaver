@@ -20,6 +20,7 @@ from tests.test_product_price_pages import db, cfg, clock, seed, prepare
 from tests.test_product_offer_pages import tree
 from tests.test_publish_site import NOW
 from tests.test_seo_deal_pages import _page
+from tests.history_pins import pre_history_removal
 
 
 def render(db, cfg, out, rows):
@@ -200,7 +201,7 @@ def test_audit_rejects_missing_or_invalid_head_dates_breadcrumb_and_image(db, cf
 @pytest.mark.parametrize('shipped', [False, True])
 def test_static_reader_is_small_even_with_many_deals_and_checks(db, cfg, tmp_path, monkeypatch, shipped):
     if shipped:
-        cfg = load_config()
+        cfg = pre_history_removal(load_config())
         cfg.amazon_history = "show"  # predates task 121b; exercise the full Amazon reader
         cfg.seo_product_pages_enabled = cfg.paywall_open_access = True
     rows = seed(db, 1, checks=100)

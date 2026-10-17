@@ -54,7 +54,7 @@ def test_ceiling_derivation_and_shipped_switch():
     baseline = json.loads(BASELINE.read_text())
     assert not AppConfig().phone_budget["enabled"]
     cfg = load_config()
-    assert not cfg.phone_budget["enabled"] and cfg.amazon_history == "show"  # amz378_998
+    assert not cfg.phone_budget["enabled"] and cfg.amazon_history == "hide"  # Amazon's email 2026-10-17
     assert cfg.phone_budget["lab_lcp_max_ms"] == 2500
     assert cfg.phone_budget["lab_cls_max"] == 0.1
     for name in PHONE_BYTE_METRICS:

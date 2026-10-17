@@ -279,6 +279,7 @@ def test_older_rest_condition_wins_selection_before_packing_modes(db, cfg, monke
 
 
 def test_shadow_outside_top_only_counts_and_keeps_public_price(db, cfg, monkeypatch, tmp_path):
+    cfg.keepa_buybox_rule = "shadow"  # this test covers shadow mode; shipped is "on" since 2026-10-17
     cfg.keepa_buybox_top_n = 1
     rows = [seed(db, cfg, asin=f"B{i:09d}") for i in range(2)]
     remember(db, top=rows, wall=rows)

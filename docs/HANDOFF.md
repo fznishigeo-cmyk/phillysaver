@@ -267,6 +267,18 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   owned `/tmp/task255b-*` scratch deleted, hashes unchanged. Review then flip both
   ranking switches true; optional-page validation/activation remains separate.
   No full suite, network, commit or push.
+- **Amazon search fallback (Codex task 259, 2026-10-17; review fixes uncommitted, ON):**
+  Search URLs are built only on click and opened with `noopener`; the plain
+  Amazon href keeps the query out of GA4 automatic outbound URL collection.
+  Unicode hostname labels/decimal-digit runs fail privacy checks; Saved clears
+  stale search links. Regression checks cover each finding, including the real
+  tracking wrapper's argument shape and automatic href collection in both event
+  phases. Existing OFF/empty-tag byte hashes and phone budgets pass unchanged.
+  Targeted search/Saved/phone/public-copy/OFF-byte checks: **292 passed, 2 skipped
+  (105.57s)**; offline `-k rerun`: **6 passed (62.54s)**, all
+  `-n 1 -p no:cacheprovider`. Chromium launch blocked (exit 77); parent browser
+  QA/review remain. Own `/tmp/task259fix-*` scratch removed; no network, whole
+  suite, hash re-pins, commit or push.
 - **Device-local extension index (Codex task 244c, 2026-10-16; uncommitted, checker OFF):**
   Adds versioned, deterministic `/check/data/all.json` with lossless dictionary
   columns/front-coded JSON values; every alias/field matches the shards. The

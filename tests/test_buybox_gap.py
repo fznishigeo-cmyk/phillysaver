@@ -30,7 +30,7 @@ def record(asin, amazon=2500, new=2500, **stats):
 @pytest.mark.parametrize("mode", ["off", "shadow", "on"])
 def test_config_modes_and_shipped_shadow(tmp_path, mode):
     assert AppConfig().keepa_buybox_rule == "off"
-    assert load_config().keepa_buybox_rule == "shadow"
+    assert load_config().keepa_buybox_rule == "on"  # operator 2026-10-17: prices must match Add to cart
     path = tmp_path / "config.yaml"
     path.write_text("keepa:\n  buybox_rule: " + mode + "\n")
     assert load_config(path).keepa_buybox_rule == mode
@@ -335,7 +335,7 @@ def test_full_pipeline_exposes_private_summary_and_keeps_rerun_idempotent(env):
     from tests.test_e2e_offline import _run
     first = _run(env)
     assert first["price_source"] == dict(buybox.empty_summary(), buybox_rule={
-        "mode": "shadow", "evaluated": 0, "would_label": 0, "would_hide": 0})
+        "mode": "on", "evaluated": 0, "would_label": 0, "would_hide": 0})
     before = tree(env["site"])
     state = DB(env["db"])
     tables = ("deals", "sightings", "price_history", "alerts_sent")

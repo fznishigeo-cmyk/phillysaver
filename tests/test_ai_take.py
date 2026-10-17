@@ -18,6 +18,7 @@ from dealradar.util import iso
 from tests.test_checker_index import add, data, files, public
 from tests.test_product_price_pages import seed
 from tests.test_publish_site import NOW
+from tests.history_pins import pre_history_removal
 
 
 class Messages:
@@ -50,7 +51,7 @@ def db(tmp_path):
 
 @pytest.fixture
 def cfg():
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     cfg.ai_take['enabled'] = True
     cfg.spend_pacing = False
     cfg.checker['enabled'] = True
@@ -265,8 +266,14 @@ def test_facts_copy_code_numbers_and_shipped_answer(db, cfg):
 
 @pytest.mark.parametrize('mode', ['membership', 'open', 'support', 'shipped'])
 def test_off_all_published_bytes_match_pre_edit(db, tmp_path, mode):
-    cfg = load_config() if mode == 'shipped' else AppConfig(custom_domain='wowpriced.com', seo_product_pages_enabled=True)
+    cfg = pre_history_removal(load_config()) if mode == 'shipped' else AppConfig(custom_domain='wowpriced.com', seo_product_pages_enabled=True)
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     if mode != 'shipped':
         cfg.support_enabled = mode == 'support'
         cfg.paywall_open_access = mode == 'open'

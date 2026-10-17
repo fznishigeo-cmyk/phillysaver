@@ -127,7 +127,9 @@ def test_design_templates_add_no_external_urls(name):
     # literal external URLs; no new fonts, images, CDNs or protocol-relative assets.
     existing = {"http://www.w3.org/2000/svg"}
     if name == "index":
-        existing |= {"https://schema.org", "https://accounts.google.com/gsi/client"}
+        existing |= {"https://schema.org", "https://accounts.google.com/gsi/client",
+                     # task 259: the tagged Amazon search link is built only on click
+                     "https://www.amazon.com/s", "https://www.amazon.com/"}
     assert set(re.findall(r"https?://[\w./-]+", template)) == existing
     assert not re.search(r'(?:src|href)=["\']//|@import\b|url\(["\']?(?:https?:)?//', template)
 
@@ -875,11 +877,12 @@ def test_stale_non_amazon_price_is_no_top_pick(cfg, options):
     restated or re-checked within non_amazon_max_age_h to be a top pick."""
     cfg.front_page = options
     limit = options["top_picks"]["non_amazon_max_age_h"]
-    assert limit == 24
+    assert limit == 8  # operator 2026-10-17: Woot coat ended after 9 h (was 24)
     stale = pick_deal(store="Walmart", canonical_url="https://www.walmart.com/ip/1",
                       price_published_at="2026-10-05T14:00:00Z", price_rechecked_at="")
     assert pick_score(stale, cfg, NOW) is None
     assert pick_score(dict(stale, price_rechecked_at="2026-10-09T13:00:00Z"), cfg, NOW) is not None
-    assert pick_score(dict(stale, price_published_at="2026-10-09T02:00:00Z"), cfg, NOW) is not None
+    assert pick_score(dict(stale, price_published_at="2026-10-09T07:00:00Z"), cfg, NOW) is not None
+    assert pick_score(dict(stale, price_published_at="2026-10-09T02:00:00Z"), cfg, NOW) is None  # 12 h
     # Internal recovery scoring (no confirmation required) is unaffected.
     assert pick_score(stale, cfg, NOW, require_confirmation=False) is not None

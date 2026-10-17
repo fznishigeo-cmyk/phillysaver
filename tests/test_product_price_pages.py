@@ -21,6 +21,7 @@ from tests.test_product_offer_pages import tree
 from tests.test_publish_site import NOW
 from tests.test_seo_deal_pages import _page, _path
 from tests.test_e2e_offline import env as pipeline_env, test_rerun_is_idempotent as check_pipeline_rerun
+from tests.history_pins import pre_history_removal
 
 
 @pytest.fixture
@@ -66,7 +67,8 @@ def gates(report):
 
 def test_config_ships_off_and_all_knobs_load(tmp_path):
     assert not AppConfig().seo_product_pages_enabled
-    assert load_config().seo_product_pages_enabled  # operator switched it on 2026-10-15
+    # On 2026-10-15, off again 2026-10-17: operator dropped price history for every store.
+    assert not load_config().seo_product_pages_enabled
     path = tmp_path / "config.yaml"
     path.write_text("{}")
     assert not load_config(path).seo_product_pages_enabled
@@ -95,8 +97,14 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
 ])
 @pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
-    cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     cfg.amazon_history = "show"  # predates task 121b
     cfg.front_page.get("checkout_price_deals", {})["enabled"] = False  # predates task 121b
     cfg.photoless_last = False  # predates photos-first

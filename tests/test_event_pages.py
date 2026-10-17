@@ -15,13 +15,14 @@ from dealradar.publish import event_pages, indexnow, seo, seo_audit, site
 from tests.test_amazon_as_of import NOW as BASE_NOW, config as baseline_config, sample_deals
 from tests.test_publish_site import make_deal
 from tests.test_seo_deal_pages import _page
+from tests.history_pins import pre_history_removal
 
 NOW = datetime(2026, 11, 10, 16, tzinfo=timezone.utc)
 
 
 @pytest.fixture
 def cfg():
-    shipped = load_config()
+    shipped = pre_history_removal(load_config())
     return AppConfig(custom_domain="wowpriced.com", paywall_open_access=True,
         seo_event_pages_enabled=True, seo_event_pages_events=shipped.seo_event_pages_events,
         seo_indexnow_key="0123456789abcdef", front_page={"niche_categories": ["auto"]})
@@ -49,7 +50,7 @@ def tree(out):
 
 def test_config_shipped_on_code_default_off_and_custom_values(tmp_path):
     assert not AppConfig().seo_event_pages_enabled
-    shipped = load_config()
+    shipped = pre_history_removal(load_config())
     assert shipped.seo_event_pages_enabled
     assert [e["date"] for e in shipped.seo_event_pages_events] == ["2026-11-27", "2026-11-30"]
     path = tmp_path / "config.yaml"

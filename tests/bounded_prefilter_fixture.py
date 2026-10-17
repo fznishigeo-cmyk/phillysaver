@@ -16,14 +16,21 @@ from dealradar.savings import compute_savings
 from tests.test_amazon_as_of import NOW, sample_deals
 from tests.test_claude_client import FakeParseResponse, FakeUsage
 from tests.test_extractor import make_post
+from tests.history_pins import pre_history_removal
 
 
 def capture(out, monkeypatch, setting="omitted"):
     monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     cfg.offscreen_cards = False  # recorded before task 237's phone-only CSS
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     cfg.amazon_history = "hide"  # recorded before amz378_998
     if setting != "omitted":
         cfg.bounded_prefilter["enabled"] = setting
@@ -74,9 +81,15 @@ def capture(out, monkeypatch, setting="omitted"):
                       spend=parser.spend_usd, spend_by_kind=parser.spend_by_kind,
                       decisions=db.all_deals(), public={})
         for mode in ("membership", "open", "support", "shipped"):
-            publication = load_config()  # Retain 119/121 and every other shipped switch.
+            publication = pre_history_removal(load_config())  # Retain 119/121 and every other shipped switch.
             publication.offscreen_cards = False  # recorded before task 237
             publication.dark_polish = False  # recorded before task 254
+            publication.search_amazon = False  # recorded before task 259
+            publication.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+            publication.join_prompt_delay_s = 15  # recorded before the 35 s delay
+            publication.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+            publication.non_amazon_stores = {}  # recorded before the Woot freshness override
+            publication.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in publication.front_page.get("top_picks", {}) else None  # recorded before 8 h
             publication.amazon_history = "hide"  # recorded before amz378_998
             if mode != "shipped":
                 publication.support_enabled = mode == "support"

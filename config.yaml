@@ -142,6 +142,7 @@ intake:
 
 site:
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
+  search_amazon: true         # tagged search fallback; queries stay local until clicked
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
     enabled: true
@@ -153,17 +154,21 @@ site:
 # keeping our own record privately. Follow-up call (same reference): the browser
 # extension may show our history on Amazon pages; Amazon price-drop emails are NOT
 # allowed, so Amazon watches stay off (best-deals newsletter instead).
-amazon_history: show          # show | hide; hide also makes checker Amazon link_only
+# Operator 2026-10-17 ~04:05Z: Amazon emailed that price history may NOT be shown
+# on the site ("we aren't allowed to do this"). Back to hide until Amazon says otherwise in writing.
+amazon_history: hide          # show | hide; hide also makes checker Amazon link_only
 amazon_watches: "off"         # on | off; Amazon said no to price-drop alerts
 
 store_policy:
-  # Walmart verbal OK 2026-10-16 (operator call); set live_only if Walmart or Sovrn objects in writing.
-  walmart: history
-  ebay: history
-  bestbuy: history
-  target: history
-  woot: history
-  other: history
+  # Walmart verbal OK 2026-10-16 (operator call); operator 2026-10-17 ~04:15Z, after
+  # Amazon's email: "remove walmart history as well please".
+  walmart: live_only
+  # Operator 2026-10-17: no price history for any store for now.
+  ebay: live_only
+  bestbuy: live_only
+  target: live_only
+  woot: live_only
+  other: live_only
 
 publish:
   min_pct: 40                  # floor: pct_at_checkout (alerts + headline tier).
@@ -232,9 +237,9 @@ publish:
       max_share: 0.25           # at most 6 boosted picks per 24-card window
     everyday_price:          # operator 2026-10-17: lean toward everyday prices, softly
       enabled: true          # operator 2026-10-17 ~02:00Z: "$200 items at the top, nobody will buy that"
-      full_until: 50         # final_price <= this: factor 1.0
-      floor_from: 150        # final_price >= this: floor_factor
-      floor_factor: 0.75     # linear between full_until and floor_from
+      full_until: 40         # final_price <= this: factor 1.0 (operator 2026-10-17 ~03:00Z: impulse buys, mostly under $50)
+      floor_from: 100        # final_price >= this: floor_factor
+      floor_factor: 0.55     # linear between full_until and floor_from
     top_picks:                # the All tab's first cards (operator, 2026-10-12)
       count: 120
       pct_weight: 1.0
@@ -244,7 +249,7 @@ publish:
       known_store_bonus: 5
       brand_bonus: 3
       fresh_half_life_h: 36
-      non_amazon_max_age_h: 24  # newest price post / store re-check; Keepa can't see these
+      non_amazon_max_age_h: 8   # operator 2026-10-17: a 9h-old Woot pick's link had ended; was 24
       used_factor: 0.9
       cheap_factor: 0.8
       cheap_below: 5.0
@@ -349,8 +354,11 @@ seo:
   posted_deal_redirects:
     enabled: true            # Keep socially posted URLs useful after their deal pages disappear.
     max_rules: 1500          # Oldest redirects drop first; Cloudflare permits 2,000 static rules.
+  # Operator 2026-10-17 ~04:20Z: "drop price history.. consumers don't care about that they
+  # just want to see a big discount ... we might add price history one day but not today".
+  # product_pages was on since 2026-10-15; private own checks keep recording, unpublished.
   product_pages:
-    enabled: true            # operator 2026-10-15: "high quality index pages ... that's what we need to do now"
+    enabled: false
     record_own_checks:
       enabled: true
       max_per_offer_per_day: 1  # Enough for the 6-checks-over-7-days gate; keeps state small (~320 rows/day).
@@ -428,7 +436,7 @@ keepa:
   popular_affordable_page: false  # separate opt-in: one existing Amazon page slot
   unique_asin_rechecks:
     enabled: false               # share one product request within each compatible recheck group
-  buybox_rule: shadow             # off | shadow | on; publication rule only
+  buybox_rule: on                 # operator 2026-10-17: "PRICES NEED TO BE RIGHT, NO COMPROMISE" (shadow probe: 18/30 top deals >10% under the Add-to-cart price)
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
   buybox_interval_min: 60         # paid requests and maximum Buy Box observation age
   recheck_surplus: true           # use predicted overflow before the next scheduled run
@@ -658,7 +666,7 @@ pwa:
 
 join:
   prompt: true
-  prompt_delay_s: 15       # never earlier than 15 seconds, and only after engagement
+  prompt_delay_s: 35       # operator 2026-10-17: 35 s (floor 15 in code), and only after engagement
   apple: false             # reserved; no Apple Developer account yet
 
 support:
@@ -968,7 +976,7 @@ non_amazon_freshness:
   source_recheck_budget_s: 60  # preserve time for evidence parsing and publication
   stale_label_h: 24
   stale_hide_h: 48
-  stores: {}                  # e.g. Walmart: {stale_hide_h: 36}
+  stores: {Woot: {stale_hide_h: 12}, woot.com: {stale_hide_h: 12}}  # Woot offers end/sell out fast (operator 2026-10-17)
 
 # Official quotas and activation: docs/non-amazon-freshness.md
 bestbuy:

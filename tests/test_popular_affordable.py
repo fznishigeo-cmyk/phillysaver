@@ -65,7 +65,7 @@ def test_shipped_switches_and_model_default(tmp_path):
     assert not cfg.keepa_popular_affordable_page
     # Operator 2026-10-17: "$200 items at the top, nobody will buy that" -> on.
     assert cfg.front_page["everyday_price"] == {
-        "enabled": True, "full_until": 50, "floor_from": 150, "floor_factor": .75}
+        "enabled": True, "full_until": 40, "floor_from": 100, "floor_factor": .55}
     assert not AppConfig().front_page.get("everyday_price", {}).get("enabled")
     assert not AppConfig().front_page.get("popular_affordable", {}).get("enabled")
     assert not AppConfig().keepa_popular_affordable_page

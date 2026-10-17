@@ -5,6 +5,8 @@ import re
 from ..verify import is_amazon_deal
 
 BLOCK = re.compile(r"/\*amazon-history\*/(.*?)/\*/amazon-history\*/", re.S)
+#: Copy that explains our price-history badge; dropped when no store shows history.
+SHOWN = re.compile(r"<!--history-shown-->(.*?)<!--/history-shown-->", re.S)
 
 
 def store_of(deal):
@@ -34,7 +36,13 @@ def watches_hidden(cfg):
     return watches == "off" or (not watches and getattr(cfg, "amazon_history", "show") == "hide")
 
 
+def any_shown(cfg):
+    return (getattr(cfg, "amazon_history", "show") != "hide"
+            or any(v != "live_only" for v in getattr(cfg, "store_policy", {}).values()))
+
+
 def template(text, cfg):
+    text = SHOWN.sub(lambda m: m[1] if any_shown(cfg) else "", text)
     return BLOCK.sub(lambda m: m[1] if cfg.amazon_history == "hide" else "", text)
 
 

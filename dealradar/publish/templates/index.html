@@ -419,7 +419,11 @@ header .drop[data-phase="final"]{--chip:#5c1610}
 .search-actions{display:flex;flex-wrap:wrap;gap:8px;min-width:0}
 .search-actions button{min-width:44px;min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;font:inherit;font-size:16px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);cursor:pointer}
 .search-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.load-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
+/*search-amazon*/.search-amazon{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.search-amazon small{display:inline-block;font-size:12px;margin-left:8px}
+.search-amazon .getdeal{white-space:normal;overflow-wrap:anywhere}
+#search-amazon-result{margin:4px 16px 0}
+/*/search-amazon*/.load-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;
              margin:12px 0;color:var(--muted);font-size:13px}
 .load-status .pwbtn{min-width:44px;min-height:44px;flex:0 0 auto}
 .lockedlist{color:var(--muted);margin:10px 0;padding-left:20px}
@@ -772,7 +776,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         <input id="q" type="search" data-clarity-mask="true" placeholder="Search deals" aria-label="Search deals" aria-describedby="searchcount" enterkeyhint="search" autocomplete="off">
         <button id="clearsearch" type="button" aria-label="Clear search" hidden>✕</button>
       </div>
-      <p id="searchcount" role="status" aria-live="polite"></p>
+      <p id="searchcount" role="status" aria-live="polite"></p>/*search-amazon*/
+      <p id="search-amazon-result" class="search-amazon" data-clarity-mask="true" hidden></p>/*/search-amazon*/
     </div>
     <div id="drop" class="drop" role="timer" aria-live="off">
       <span id="dropdial" class="dial" aria-hidden="true">
@@ -1047,7 +1052,10 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
       tagline.appendChild(off);
     }
     var live = state.deals.filter(function (d) { return d.status !== "dead"; }).length + priceOnly.length;
-    document.getElementById("q").placeholder = live ? "Search " + roughCount(live) + (live === 1 ? " deal" : " deals") : "Search deals";
+    document.getElementById("q").placeholder = live ? "Search " + roughCount(live) + (live === 1 ? " deal" : " deals") : "Search deals";/*search-amazon*/
+    // Operator 2026-10-17: say up front that any Amazon product can be searched.
+    document.getElementById("q").placeholder = "Search deals or any Amazon product";
+    document.getElementById("q").setAttribute("aria-label", "Search deals or any Amazon product");/*/search-amazon*/
     tagline.appendChild(document.createTextNode(" · "));
     var liveDot = document.createElement("span");
     liveDot.className = "live-dot";
@@ -1318,12 +1326,45 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
         (/^[a-z]{5,}$/.test(word) && index.ordinary.some(function (part) { return oneSearchEdit(word, part); }));
     });
   }
-  function renderSearchCount(rows) {
+/*search-amazon*/  function searchAmazonQuery() {
+    var q = searchText().replace(/\s+/g, " ");
+    if (!q || /@|\p{Nd}{6}|\b[a-z][a-z0-9+.-]{0,30}:|\/\/|www\.|[.。．｡][\p{L}\p{M}]{2,}|\b(?:\d{1,3}\.){3}\d{1,3}\b/iu.test(q) ||
+        (typeof wpAndroidLimited === "function" && wpAndroidLimited())) return "";
+    q = Array.from(q).slice(0, 80).join("");
+    try { encodeURIComponent(q); }
+    catch (e) { return ""; }
+    return q;
+  }
+  function searchAmazonHtml(primary) {
+    var q = searchAmazonQuery();
+    if (!q) return "";
+    // Keep search URLs out of hrefs read by automatic outbound analytics.
+    return (primary ? "" : "Not what you're looking for? ") +
+      '<a data-search-amazon data-clarity-mask="true"' + (primary ? ' class="getdeal"' : '') +
+      ' href="https://www.amazon.com/" target="_blank" rel="sponsored noopener">Search Amazon for &quot;' + esc(q) +
+      '&quot;</a><small>Amazon links may earn us a commission.</small>';
+  }
+  function searchAmazonClick(e) {
+    if ((e.type === "auxclick" ? e.button !== 1 : e.button !== 0) ||
+        !e.target.closest || !e.target.closest("[data-search-amazon]")) return;
+    e.preventDefault();
+    var q = searchAmazonQuery();
+    if (!q) return;
+    var url = "https://www.amazon.com/s?k=" + encodeURIComponent(q) + "&tag=" + encodeURIComponent({{SEARCH_AMAZON_TAG}});
+    window.open(url, "_blank", "noopener");
+    track("search_amazon");
+  }
+  document.addEventListener("click", searchAmazonClick);
+  document.addEventListener("auxclick", searchAmazonClick);
+/*/search-amazon*/  function renderSearchCount(rows) {
     var q = searchText(), count = rows.filter(function (d) { return d.status !== "dead"; }).length;
     document.getElementById("clearsearch").hidden = !document.getElementById("q").value;
     document.getElementById("searchcount").textContent = !q ? "" : count
       ? plural(count, "deal") + ' match' + (count === 1 ? 'es' : '') + ' "' + q + '"'
-      : 'No deals match "' + q + '". Try fewer words or the options below.';
+      : 'No deals match "' + q + '". Try fewer words or the options below.';/*search-amazon*/
+    var amazon = document.getElementById("search-amazon-result");
+    amazon.innerHTML = q && count ? searchAmazonHtml(false) : "";
+    amazon.hidden = !amazon.innerHTML;/*/search-amazon*/
   }
 
   function renderTabs() {
@@ -1435,7 +1476,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }
     var clear = buttons("clear"), suggestions = buttons("suggestion");
     return '<section class="search-recovery" aria-labelledby="search-recovery-title"><h2 id="search-recovery-title">Try a broader search or different filters</h2>' +
-      '<p>' + (searchText() ? 'Try fewer words or check the model number.' : 'Try clearing a filter.') + '</p>' +
+      /*search-amazon*/'<div class="search-amazon" data-clarity-mask="true">' + searchAmazonHtml(true) + '</div>' +
+      /*/search-amazon*/'<p>' + (searchText() ? 'Try fewer words or check the model number.' : 'Try clearing a filter.') + '</p>' +
       (clear ? '<div class="search-actions">' + clear + '</div>' : '') +
       (suggestions ? '<p>Browse available deals instead:</p><div class="search-actions">' + suggestions + '</div>' : '') + '</section>';
   }
@@ -2024,7 +2066,8 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     browseRows = [];
 <!--saved-->    renderSavedControls();
     if (savedOn() && savedDeals.view) {
-      traceFree = false;
+/*search-amazon*/      renderSearchCount([]);
+/*/search-amazon*/      traceFree = false;
 <!--watch-->      var editor = savedWatchEditor();
 <!--/watch-->      content.innerHTML = savedViewHtml();
 <!--watch-->      restoreSavedWatchEditor(editor);
@@ -2042,7 +2085,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     }) : [];
     renderSearchCount(rows.concat(spotlight));
     updatePaywall(rows.some(isLocked) || openNudge());
-    if (!state.deals.length && !searchInventory().length) {
+    if (!state.deals.length && !searchInventory().length/*search-amazon*/ && !searchText()/*/search-amazon*/) {
       content.innerHTML = <!--engagement-->engagementHtml + <!--/engagement-->'<p class="empty">Verified offers appear here after passing our price checks.</p>';
       return;
     }

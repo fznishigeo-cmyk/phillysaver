@@ -15,11 +15,12 @@ from dealradar.publish import members, newsletter, price_labels, site, social
 from dealradar.publish.seo_audit import read_pages
 from tests.test_price_accuracy_engine import NOW, seed
 from tests.test_publish_site import make_deal
+from tests.history_pins import pre_history_removal
 
 
 @pytest.fixture
 def cfg(tmp_path):
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.used_min_pct = 80
     cfg.site_dir = str(tmp_path / "site")
@@ -52,7 +53,7 @@ def render(db, cfg, rows, monkeypatch, now=NOW):
 
 def test_config_off_by_default_on_in_shipped_file(tmp_path):
     assert not AppConfig().unconfirmed_label_enabled
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     assert cfg.unconfirmed_label_enabled
     assert cfg.unconfirmed_label_max_h_new == cfg.unconfirmed_label_max_h_used == 48
     path = tmp_path / "config.yaml"
@@ -315,8 +316,14 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     # Baselines rendered from untouched HEAD, including a hidden Amazon offer.
     from tests.test_publish_site import NOW as snapshot_time
 
-    cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
+    cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     cfg.unconfirmed_label_enabled = False
     if mode == "shipped":
         cfg.amazon_history = "show"  # predates task 121b

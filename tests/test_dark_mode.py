@@ -22,6 +22,7 @@ from tests.test_offscreen_cards import offers
 from tests.test_product_entities import insert
 from tests.test_pwa import baseline_config, tree_hash
 from tests.test_support import NOW, render
+from tests.history_pins import pre_history_removal
 
 SHOTS = Path("/tmp/task254-shots")
 TEMPLATES = Path(__file__).resolve().parents[1] / "dealradar/publish/templates"
@@ -245,7 +246,7 @@ def test_shipped_phone_budget_off_on(tmp_path):
 
 @pytest.fixture
 def dark_trees(tmp_path):
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())  # exercises product pages + charts
     cfg.tracking = {}
     cfg.paywall_google_client_id = ""
     cfg.join_prompt = False  # browser opens the popup directly, as support.js does

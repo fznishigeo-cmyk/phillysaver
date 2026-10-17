@@ -21,6 +21,7 @@ from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 from tests.test_price_accuracy_engine import NOW, cfg, db, product, seed
 from tests.test_value_per_token_rechecks import minutes
 from tests.test_wall_confirmation_coverage import remember
+from tests.history_pins import pre_history_removal
 
 
 def digest(value):
@@ -88,8 +89,14 @@ def test_all_published_files_and_member_payload_match_before_editing(
     # Compared against this checkout's original sources, with all previously
     # enabled switches retained: 177 files plus the complete member payload.
     monkeypatch.setattr(site, "util_now", lambda: OUTPUT_NOW)
-    config = load_config()
+    config = pre_history_removal(load_config())
     config.dark_polish = False  # recorded before task 254
+    config.search_amazon = False  # recorded before task 259
+    config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    config.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    config.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    config.non_amazon_stores = {}  # recorded before the Woot freshness override
+    config.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config.front_page.get("top_picks", {}) else None  # recorded before 8 h
     config.keepa_unique_asin_rechecks_enabled = enabled
     config.support_enabled = mode == "support"
     config.paywall_open_access = mode == "open"

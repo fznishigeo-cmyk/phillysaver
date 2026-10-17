@@ -18,6 +18,8 @@ import pytest
 from dealradar import pipeline
 from dealradar.db import DB
 from dealradar.models import SourceConfig
+import yaml
+from tests.history_pins import pre_history_removal_raw
 
 FIX = Path(__file__).parent / "fixtures"
 ROBOTS = "User-agent: *\nAllow: /\n"
@@ -522,6 +524,8 @@ def test_ai_take_rerun_is_idempotent(env, monkeypatch, audit_mode):
     path = Path(env["cfg"])
     path.write_text(path.read_text().replace("ai_take:\n    enabled: false", "ai_take:\n    enabled: true")
                     .replace("mode: shadow                 # enforce", f"mode: {audit_mode}                 # enforce"))
+    # AI takes live on product pages, which the 2026-10-17 history removal turned off.
+    path.write_text(yaml.safe_dump(pre_history_removal_raw(yaml.safe_load(path.read_text()))))
     messages = Messages()
     calls = []
 

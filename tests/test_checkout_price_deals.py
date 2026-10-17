@@ -17,6 +17,7 @@ from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 from tests.test_price_accuracy_engine import NOW, api, bucket, cfg, db, seed
 from tests.test_product_offer_pages import tree
 from tests.test_publish_site import make_deal
+from tests.history_pins import pre_history_removal
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -440,8 +441,14 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     monkeypatch.setattr(site, 'util_now', lambda: NOW)
     snapshots = []
     for mode in ('omitted', 'off'):
-        config = load_config()
+        config = pre_history_removal(load_config())
         config.dark_polish = False  # recorded before task 254
+        config.search_amazon = False  # recorded before task 259
+        config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+        config.join_prompt_delay_s = 15  # recorded before the 35 s delay
+        config.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+        config.non_amazon_stores = {}  # recorded before the Woot freshness override
+        config.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in config.front_page.get("top_picks", {}) else None  # recorded before 8 h
         config.amazon_history = 'show'  # predates task 121b
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         config.photoless_last = False  # predates photos-first

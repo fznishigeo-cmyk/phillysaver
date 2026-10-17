@@ -307,6 +307,7 @@ class AppConfig:
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
     dark_polish: bool = False
+    search_amazon: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -868,6 +869,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.dark_polish = g("site", "dark_polish", default=False)
     if type(cfg.dark_polish) is not bool:
         raise ValueError("site.dark_polish must be a boolean")
+    cfg.search_amazon = g("site", "search_amazon", default=False)
+    if type(cfg.search_amazon) is not bool:
+        raise ValueError("site.search_amazon must be a boolean")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

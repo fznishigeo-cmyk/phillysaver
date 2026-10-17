@@ -14,6 +14,7 @@ from dealradar.db import DB
 from dealradar.publish import indexnow, site
 from dealradar.util import iso
 from tests.test_publish_site import make_deal
+from tests.history_pins import pre_history_removal
 
 NOW = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
 MODES = ("support", "open", "closed", "shipped")
@@ -21,7 +22,7 @@ MODES = ("support", "open", "closed", "shipped")
 
 def fixture_config(mode):
     if mode == "shipped":
-        cfg = load_config()
+        cfg = pre_history_removal(load_config())
         cfg.dark_polish = False  # recorded before task 254
         return cfg
     return AppConfig(custom_domain="wowpriced.com", support_enabled=mode == "support",

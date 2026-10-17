@@ -373,6 +373,14 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    if cfg.search_amazon and cfg.affiliate_amazon_tag:
+        dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
+    if (name === "search_amazon") {
+      if (on.ga4) { try { window.gtag("event", name, {send_to: on.ga4}); } catch (e) {} }
+      if (on.meta) { try { window.fbq("trackCustom", "SearchAmazon", {}); } catch (e) {} }
+      return;
+    }
+    var ev = EVENTS[name];""")
     if cfg.traffic_hub_pagination_enabled or cfg.traffic_product_families_enabled:
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    hub_page_click: { ga4Only: true, methods: ["category", "store", "price", "product_family"] },\n'

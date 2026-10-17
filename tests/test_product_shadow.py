@@ -19,6 +19,7 @@ from tests.test_product_offer_pages import offers, tree
 from tests.test_publish_site import NOW
 from tests.test_seo import cfg, db
 from tests.test_seo_deal_pages import _page, _path
+from tests.history_pins import pre_history_removal
 
 
 @pytest.fixture(autouse=True)
@@ -303,8 +304,14 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     # Generated on untouched HEAD, with 18 offers / 6 linked products and
     # sufficient history, so the always-on shadow actually has work to do.
     # Task 120 refreshes shared home styles, clock metadata and support copy.
-    cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
+    cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     if mode == "shipped":
         cfg.amazon_history = "show"  # predates task 121b
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering

@@ -23,7 +23,7 @@ from tests.test_tracking import SAMPLE, _run_node
 @pytest.mark.parametrize("value", ["show", "hide"])
 def test_amazon_history_config_default_and_validation(tmp_path, value):
     assert AppConfig().amazon_history == "show"
-    assert load_config().amazon_history == "show"  # amz378_998; watches stay off
+    assert load_config().amazon_history == "hide"  # Amazon's email, operator 2026-10-17
     path = tmp_path / "config.yaml"
     path.write_text("{}")
     assert load_config(path).amazon_history == "show"
@@ -435,7 +435,7 @@ def test_90_day_median_requires_checks_near_window_start(offset, full):
 
 def test_operator_decisions_ship_without_changing_code_defaults():
     cfg, defaults = load_config(), AppConfig()
-    assert cfg.amazon_history == "show" and defaults.amazon_history == "show"
+    assert cfg.amazon_history == "hide" and defaults.amazon_history == "show"  # Amazon's email 2026-10-17
     assert cfg.amazon_watches == "off" and defaults.amazon_watches == ""
     assert cfg.front_page["checkout_price_deals"]["enabled"] is True
     assert not defaults.front_page.get("checkout_price_deals", {}).get("enabled", False)

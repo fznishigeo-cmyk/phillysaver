@@ -19,6 +19,7 @@ from tests.test_product_offer_pages import tree
 from tests.test_product_price_pages import db, cfg, clock, prepare, seed
 from tests.test_publish_site import NOW
 from tests.test_seo_deal_pages import _page
+from tests.history_pins import pre_history_removal
 
 FIXTURE = Path(__file__).parent / "fixtures" / "store_policy_pages.json"
 # Frozen before production edits on HEAD 90ae0ed6628151dc0a87594a9b3a59955a52b5ed.
@@ -46,8 +47,14 @@ def bestbuy(db, **facts):
 
 
 def byte_case(db, mode, include_walmart):
-    cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
     cfg.dark_polish = False  # recorded before task 254
+    cfg.search_amazon = False  # recorded before task 259
+    cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
+    cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
+    cfg.keepa_buybox_rule = "shadow"  # recorded before the Buy Box rule went on
+    cfg.non_amazon_stores = {}  # recorded before the Woot freshness override
+    cfg.front_page.get("top_picks", {}).update(non_amazon_max_age_h=24) if "non_amazon_max_age_h" in cfg.front_page.get("top_picks", {}) else None  # recorded before 8 h
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"
@@ -76,7 +83,9 @@ def test_all_history_every_byte_matches_pre_task_head(db, tmp_path, mode, includ
 
 def test_policy_defaults_shipped_values_and_valid_overrides(tmp_path):
     expected = dict.fromkeys(set(CHECKER_STORES) - {"amazon"}, "history")
-    assert AppConfig().store_policy == load_config().store_policy == expected
+    assert AppConfig().store_policy == expected
+    # Operator 2026-10-17: no price history for any store for now.
+    assert load_config().store_policy == dict.fromkeys(expected, "live_only")
     path = tmp_path / "config.yaml"
     path.write_text("store_policy: {walmart: live_only}\n")
     cfg = load_config(path)

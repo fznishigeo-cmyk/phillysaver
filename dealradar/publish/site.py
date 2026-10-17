@@ -63,6 +63,7 @@ _PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
 
 
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
+_SEARCH_AMAZON_BLOCK = re.compile(r"/\*search-amazon\*/(.*?)/\*/search-amazon\*/", re.S)
 
 # Phones only: on a multi-column desktop wall, reload restore drifted ~1.5k px
 # in Chromium. Keep the first eight in every grid fully rendered, including
@@ -116,6 +117,9 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         from ..non_amazon_freshness import STYLE as AGED_STYLE
         html = html.replace("</style>", AGED_STYLE + "</style>", 1)
     if home:
+        html = _SEARCH_AMAZON_BLOCK.sub(
+            lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
+        html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
         html = manifest_refresh.template(html, cfg)
         if cfg.offscreen_cards:
             html = html.replace("</style>", OFFSCREEN_CARDS_STYLE + "</style>", 1)
@@ -128,6 +132,7 @@ def site_template_version(price_presets: list[int] | None = None,
     when only the optional support variant changes."""
     import hashlib
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8") if home is None else home
+    html = _SEARCH_AMAZON_BLOCK.sub("", html)
     html = price_labels.template(html, False)
     html = checkout_prices.template(html, False)
     html = _PHOTOLESS_BLOCK.sub("", html)
@@ -787,6 +792,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = site_template_version(price_presets, home_template, browse) + ("-open" if open_access else "")
     if support:
         home = home_template
+        home = _SEARCH_AMAZON_BLOCK.sub("", home)
         home = price_labels.template(home, False)
         home = checkout_prices.template(home, False)
         home = _PHOTOLESS_BLOCK.sub("", home)
@@ -870,6 +876,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256((site_version + OFFSCREEN_CARDS_STYLE).encode()).hexdigest()[:12]
     if cfg.dark_polish:
         site_version = hashlib.sha256((site_version + dark.CSS).encode()).hexdigest()[:12]
+    if cfg.search_amazon and amazon_tag:
+        site_version = hashlib.sha256(site_version.encode() + amazon_tag.encode()
+            + "".join(_SEARCH_AMAZON_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),

@@ -21,6 +21,7 @@ from tests.test_amazon_as_of import NOW, config, render, digest, tree
 from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 from tests.test_dedupe import make_savings
 from tests.test_publish_site import make_deal
+from tests.history_pins import pre_history_removal
 
 A, B = 'B012345678', 'B087654321'
 URL = 'https://www.amazon.com/dp/' + A
@@ -50,7 +51,7 @@ def test_config(tmp_path):
 
     assert not AppConfig().photoless_last
     assert load_config().photoless_last
-    cfg = load_config()
+    cfg = pre_history_removal(load_config())
     assert (cfg.images_keepa_search_per_run, cfg.images_keepa_search_per_day, cfg.images_keepa_match_min) == (10, 120, .85)
     assert cfg.images_keepa_search_per_day * (_finder_cost(50) + 50) <= 7400  # 61 tokens/search, after rechecks
     path = tmp_path/'config.yaml'
