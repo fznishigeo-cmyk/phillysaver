@@ -29,8 +29,8 @@ would_hide 0 of 396 — the rule as built barely bites.
    Codes/coupons/Subscribe & Save (`_price_hidden_by_promo`) keep today's
    handling (probe: 6 of 30 top picks above 10% were all promo prices).
    - Known and >10% above → hidden (today's on-mode path).
-   - **Unknown** (no qualified Buy Box, no Amazon offer; only a marketplace
-     NEW price) → never a top pick, never in the first 120 home cards, rows,
+   - **Unknown** (no fresh qualified Buy Box, whatever the Amazon/NEW
+     slots say) → never a top pick, never in the first 120 home cards, rows,
      spotlight, push/social posts; elsewhere (search, category pages) it
      shows the existing "Price not confirmed" label. In `shadow`, only count.
 3. **Clothing/shoes sizes.** When the Keepa record already in hand shows the
