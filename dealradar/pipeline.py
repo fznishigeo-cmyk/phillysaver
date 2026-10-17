@@ -443,7 +443,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
                 url = str(sgt.get("source_url", ""))
                 article_items.setdefault(url, set()).add(_product_of(d))
                 article_names.setdefault(url, []).append(
-                    (str(d.get("item") or ""), str(d.get("canonical_url") or "")))
+                    (str(d.get("item") or ""), str(d.get("product_identity_url") or d.get("canonical_url") or "")))
                 if link:
                     article_links.setdefault((url, link), set()).add(_product_of(d))
     article_deals = {url: len(items) for url, items in article_items.items()}
@@ -491,7 +491,7 @@ def _backfill_blog_images(db: DB, fetcher, sources: list[SourceConfig],
         if html:
             if article not in photos:
                 photos[article] = post_photos(html, article)
-            canonical = str(deal.get("canonical_url") or "")
+            canonical = str(deal.get("product_identity_url") or deal.get("canonical_url") or "")
             # A store, search or category page names no product either.
             no_product = canonical.lower().startswith(("http://", "https://")) \
                 and _names_no_product(canonical)
@@ -934,8 +934,9 @@ def _links_from_posts(db: DB, fetcher, deadline: float | None,
         if deal.get("status") != "alive" or (deal.get("image_url") and not tentative_photo) or \
                 "post_link_tried" in (deal.get("flags") or []):
             continue
-        if deal.get("canonical_url") and (deal.get("asin") or
-                "amazon" not in (deal.get("store") or "").lower()):
+        if (deal.get("product_identity_url") and (deal.get("canonical_url")
+                or not extract_asin(deal["product_identity_url"]))) or (deal.get("canonical_url") and (
+                deal.get("asin") or "amazon" not in (deal.get("store") or "").lower())):
             continue
         if deadline is not None and time.monotonic() > deadline:
             break
@@ -1034,7 +1035,7 @@ def _photo_gap_summary(deals: list[dict[str, Any]], redirects: dict) -> tuple[di
 
 
 def _backfill_product_images(db: DB, fetcher, deadline: float | None,
-                             cfg: AppConfig | None = None) -> int:
+                             cfg: AppConfig | None = None, *, identity_only: bool = False) -> int:
     """Give photo-less deals linking straight to an HTTPS retailer the
     picture that retailer itself publishes for link previews.
 
@@ -1067,6 +1068,8 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
     now = util.now_utc()
     candidates = []
     for deal in db.all_deals():
+        if identity_only and not deal.get("product_identity_url"):
+            continue
         if "newsletter" in (deal.get("flags") or []):
             continue
         if deal.get("image_url") or \
@@ -1079,7 +1082,7 @@ def _backfill_product_images(db: DB, fetcher, deadline: float | None,
             died = util.parse_iso(deal.get("died_at") or "")
             if died is None or now - died > show_dead:
                 continue
-        link = deal.get("canonical_url") or deal.get("product_url") or ""
+        link = deal.get("product_identity_url") or deal.get("canonical_url") or deal.get("product_url") or ""
         link = tracker_target(link) or link
         try:
             parts = urlsplit(link)
@@ -2280,6 +2283,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     from .keepa_budget import TokenUsage
     fetcher.keepa_feed_usage = TokenUsage()
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
+    identity_before = {d["dedupe_key"]: bool(d.get("asin") or d.get("product_identity_url"))
+                       for d in db.all_deals()}
     parser = None
     yield_spend_before = db.spend_usd_for_run(run_key)
     yield_counts = {"unique_new_public_deals": 0, "useful_price_updates": 0}
@@ -2537,6 +2542,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         # card's link on every lane; the photo passes retry them).
         _repair_botwall_urls(db)
         _repair_tracker_asins(db)
+        from . import photo_recovery
+        photo_recovery.backfill_identities(db, db.all_deals(status="alive"), cfg,
+                                          deadline - _RESERVE_FOR_TAIL_S)
 
         # ---- photos for existing deals from image-granted sources ----
         # Fast lane only: after its small fetch and parse it has minutes to
@@ -2557,9 +2565,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             _backfill_blog_images(db, fetcher, sources,
                                   deadline - _RESERVE_FOR_TAIL_S, cfg)
             if fast_lane else 0)
-        # Non-Amazon photos come from granted sources or existing official
-        # API reads. Do not spend the photo pass on retailer/bot-wall pages.
-        summary["product_images"] = 0
+        # Exact recovered product facts can use the existing capped og:image
+        # path, after permitted source photos. Click/credit links stay intact.
+        summary["product_images"] = (
+            _backfill_product_images(db, fetcher, deadline - _RESERVE_FOR_TAIL_S,
+                                     cfg, identity_only=True) if fast_lane else 0)
 
         # ---- deal critic (runs BEFORE publish so flagged deals never ship) ----
         if parser is not None:
@@ -2568,7 +2578,6 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"],
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2 if fast_lane else None)
 
-        from . import photo_recovery
         summary["photo_asins"] = photo_recovery.backfill_asins(
             db, rank.site_deals(db, cfg, now), fetcher, cfg,
             deadline - _RESERVE_FOR_TAIL_S) if fast_lane else {"tried": 0, "found": 0}
@@ -2691,9 +2700,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
         }, **({"ai_parser": parser} if cfg.ai_take["enabled"] else {}))
-        summary["photo_coverage"] = photo_recovery.coverage([
+        photo_deals = [
             db.get_deal(d["dedupe_key"]) or d for d in site_res["public_deals"]
-            if not d.get("locked")], cfg)
+            if not d.get("locked")]
+        summary["photo_coverage"] = photo_recovery.coverage(photo_deals, cfg)
+        summary["photos"] = photo_recovery.identity_summary(identity_before, photo_deals)
+        log.info("photos: %s", summary["photos"])
         log.info("photo_coverage: %s", summary["photo_coverage"])
         summary["published"] = site_res.get("published", 0)
         summary["appeal"] = site_res.get("appeal", {})
@@ -2754,6 +2766,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 try:
                     with open(step_summary, "a", encoding="utf-8") as fh:
                         fh.write(photo_lines + "\nphoto_coverage: " + json.dumps(summary["photo_coverage"], sort_keys=True) + "\n")
+                        fh.write("photos: " + json.dumps(summary["photos"], sort_keys=True) + "\n")
                 except OSError as e:
                     log.warning("photo summary not written: %s", e)
         if step_summary and site_res.get("health"):

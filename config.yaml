@@ -1001,7 +1001,7 @@ site_check:
   first_screen_photos: 24   # of the top 24 cards on the home page
 
 images:
-  asin_backfill_per_run: 60   # existing Amazon links, once per deal
+  asin_backfill_per_run: 60   # offline identity repairs, plus existing Amazon link pass; once per deal
   short_links_per_run: 10     # additional amzn.to/a.co chains, HEAD only
   keepa_search_per_run: 10
   # Per search: 10 + ceil(50 / 100) finder + up to 50 product reads = 61 tokens,

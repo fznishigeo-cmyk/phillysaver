@@ -282,6 +282,7 @@ def test_amazon_asin_recovered_from_post_text(tmp_path) -> None:
     res = dedupe.upsert_extracted(db, ext, make_savings(), post, cfg, NOW)
     row = db.get_deal(res["dedupe_key"])
     assert row["asin"] == "B0TARTE123"
+    assert row["product_identity_url"] == "https://www.amazon.com/dp/B0TARTE123"
     assert row["canonical_url"] == "https://www.amazon.com/dp/B0TARTE123"
     assert res["dedupe_key"] == "url|https://www.amazon.com/dp/B0TARTE123"
     assert dedupe._asin_from_text(

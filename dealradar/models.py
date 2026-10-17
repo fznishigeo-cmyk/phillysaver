@@ -96,6 +96,7 @@ class RawPost:
     via_email: bool = False        # never fetch this newsletter's partner pages
     resolved_links: list[str] = field(default_factory=list)  # transient Amazon short-link targets
     price_recheck: bool = False    # current permitted post/feed read, bypasses seen hash
+    links: list[str] = field(default_factory=list)  # transient product anchors, independent of image grants
 
     @property
     def content_hash(self) -> str:
@@ -201,6 +202,8 @@ class Deal:
     # the post's photos are keyed by it (photo backfill, in-link evidence).
     link_as_posted: str = ""
     asin: str = ""
+    product_identity_url: str = ""       # exact product fact; never a Get deal routing input
+    product_identity_tried: bool = False  # bounded offline legacy-link backfill
     photo_asin: str = ""                  # title match: NEVER a price/product identity
     asin_source: str = ""
     amazon_asin_tried: bool = False

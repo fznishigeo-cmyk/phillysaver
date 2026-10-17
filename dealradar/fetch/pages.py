@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit
 from .. import util
 from ..models import RawPost
 from .base import SourceAdapter
-from .rss import MAX_ENTRIES, _permission_host
+from .rss import MAX_ENTRIES, _permission_host, product_links
 
 PAGE_ADAPTERS = {"bradsdeals", "dealsofamerica", "dealmoon_us", "morningsave"}
 
@@ -109,7 +109,8 @@ def parse_page(source, body: bytes, now: datetime) -> list[RawPost]:
             stamp = _first(card, tag="time")
             if stamp:
                 published = util.parse_feed_date(stamp.text().removeprefix("Posted at ").strip(), source.tz, now)
-        posts.append(RawPost(source.name, url, url, title, text, published, now))
+        links = product_links((a.attrs.get("href") for a in card.find(tag="a")), url)
+        posts.append(RawPost(source.name, url, url, title, text, published, now, links=links))
         seen.add(url)
         if len(posts) >= MAX_ENTRIES:
             break
@@ -174,7 +175,8 @@ def _parse_new_cards(source, root, now):
                 link = urljoin(source.url, buy.attrs["href"])
                 if urlsplit(link).scheme in {"http", "https"}:
                     text += "\nBuy: " + link  # preserve credit; never fetch it
-        posts.append(RawPost(source.name, url, url, title, text, None, now))
+        links = product_links((a.attrs.get("href") for a in card.find(tag="a")), url)
+        posts.append(RawPost(source.name, url, url, title, text, None, now, links=links))
         seen.add(url)
         if len(posts) >= MAX_ENTRIES:
             break
@@ -263,6 +265,7 @@ class PageAdapter(SourceAdapter):
                         links.append(link)
             if links:
                 enriched.append(replace(post, hash_text=post.text,
+                                        links=list(dict.fromkeys(post.links + links)),
                                         text=post.text + "\nBuy: " + "\n".join(links)))
         if posts and not enriched:
             raise RuntimeError("missing_deal_shopping_links")

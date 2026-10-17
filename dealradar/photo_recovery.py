@@ -11,10 +11,161 @@ from .config import error_summary, get_secret
 from .errors import DeadlineExceeded
 from .http_client import resolve_redirects
 from .keepa_budget import KeepaBudget, MIN_FOR_IMAGE_BACKFILL, response_payload
-from .product_images import _dice, _unwrap, name_words
+from .product_images import _dice, _unwrap, link_key, name_words
 from .verify import _current_price, _harvest_image, is_amazon_deal
 
 SEARCH_META = "photo_keepa_search"
+
+
+def product_identity(links, store):
+    """One exact retailer product, decoded offline; competing products veto.
+
+    PostPhotos.links holds product *keys*, not necessarily URLs. Only keys
+    that losslessly name a product URL can be expanded. Opaque redirectors,
+    blogs, listings and malformed URLs cannot supply an identity.
+    """
+    from .http_client import canonicalize_url, extract_asin, is_challenge_url, tracker_target
+    from .product_images import _names_no_product, _product_id
+    from .source_policy import sources_for_url
+
+    candidates = {}
+    for link in links:
+        if not isinstance(link, str) or not link:
+            continue
+        if re.fullmatch(r"amazon:[A-Z0-9]{10}", link, re.I):
+            link = "https://www.amazon.com/dp/" + link.split(":", 1)[1].upper()
+        elif re.fullmatch(r"walmart\.com:\d+", link):
+            link = "https://www.walmart.com/ip/" + link.split(":", 1)[1]
+        try:
+            for _ in range(5):
+                pid = _product_id(link)
+                if pid and not pid.startswith("path:"):
+                    break  # a product's own query can contain an unrelated URL
+                inner = tracker_target(link) or _unwrap(link)
+                if not inner or inner == link:
+                    break
+                link = inner
+            parts = urlsplit(link)
+            host = (parts.hostname or "").lower().removeprefix("www.")
+            if (parts.scheme != "https" or not host or parts.username or parts.password
+                    or "\\" in link or any(ord(c) <= 32 or ord(c) == 127 for c in link)
+                    or is_challenge_url(link)
+                    or (sources_for_url(link) and _product_id(link).startswith("path:"))
+                    or _names_no_product(link)):
+                continue
+            pid = _product_id(link)
+            if not pid or (pid.startswith("path:") and not re.match(
+                    r"^/(?:products?|p|pd|ip|item)/[^/]+", parts.path, re.I)):
+                continue
+            asin = extract_asin(link)
+            if asin:
+                url = "https://www.amazon.com/dp/" + asin
+            elif pid.startswith("walmart.com:"):
+                if not re.fullmatch(r"/ip/(?:[^/]+/)?\d+/?", parts.path):
+                    continue
+                url = "https://www.walmart.com/ip/" + pid.split(":", 1)[1]
+            else:
+                url = canonicalize_url(link)
+            candidates[link_key(url)] = url
+        except (ValueError, TypeError):
+            continue
+    if len(candidates) != 1:
+        return ""
+    url = next(iter(candidates.values()))
+    host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
+    merchant = re.sub(r"[^a-z0-9]", "", str(store or "").lower())
+    if extract_asin(url):
+        return url if is_amazon_deal({"store": store}) else ""
+    return url if merchant in {re.sub(r"[^a-z0-9]", "", host),
+                              re.sub(r"[^a-z0-9]", "", host.split(".")[0])} else ""
+
+
+def post_identity(extracted, post):
+    """A deal's own exact link, else a single-product post's one product."""
+    own = product_identity([extracted.product_url, extracted.link_as_posted], extracted.store)
+    if own:
+        return own
+    from .util import normalize_item
+    if extracted.link_shared or len({normalize_item(item) for item, _ in post.parsed}) > 1:
+        return ""
+    from .product_images import _names_no_product
+    own_url = extracted.product_url or ""
+    if own_url.lower().startswith(("http://", "https://")) and _names_no_product(own_url):
+        return ""  # a sale/store/search deal: the body's one product is an example
+    links = dedupe._URL_RE.findall(post.text or "") + post.links + sorted(post.photos.links)
+    links += list(post.photos.in_link) + post.resolved_links
+    links += [extracted.product_url, extracted.link_as_posted]
+    # A partly resolved post may hide a second product. resolve_posts keeps
+    # targets only after every short chain completed within its existing cap.
+    if not post.resolved_links and any(_short_amazon_link(u) for u in links):
+        return ""
+    return product_identity(links, extracted.store)
+
+
+def _short_amazon_link(link):
+    try:
+        for _ in range(5):
+            target = _unwrap(link)
+            if not target or target == link:
+                break
+            link = target
+        return (urlsplit(link).hostname or "").lower() in ("amzn.to", "a.co")
+    except ValueError:
+        return False
+
+
+def identity_changes(deal, url):
+    """Attach a fact without changing click links, prices or evidence."""
+    from .http_client import extract_asin
+
+    changes = {"product_identity_url": url}
+    asin = extract_asin(url)
+    if asin and not deal.get("asin"):
+        changes.update(asin=asin, asin_source="link", photo_asin="")
+        if deal.get("photo_asin"):
+            changes["image_url"] = ""
+    if not deal.get("product_identity_url"):
+        changes["flags"] = [f for f in deal.get("flags") or []
+                            if f not in ("image_backfill_tried", "product_image_tried")]
+    return changes
+
+
+def backfill_identities(db, deals, cfg, deadline):
+    """One bounded offline attempt per live legacy row, using stored facts only."""
+    tried = found = 0
+    for deal in deals:
+        if tried >= cfg.images_asin_backfill_per_run or (deadline is not None and time.monotonic() >= deadline):
+            break
+        if (deal.get("status") != "alive" or deal.get("asin") or deal.get("product_identity_url")
+                or deal.get("product_identity_tried") or deal.get("link_shared")):
+            continue
+        links = [deal.get(k) or "" for k in ("product_url", "canonical_url", "link_as_posted")]
+        sightings = db.sightings_for(deal["id"])
+        links += [s.get("source_url") or "" for s in sightings]
+        url = product_identity(links, deal.get("store"))
+        changes = identity_changes(deal, url) if url else {}
+        _save(db, deal, product_identity_tried=True, **changes)
+        tried += 1
+        found += bool(url)
+    return {"tried": tried, "found": found}
+
+
+def identity_summary(before, deals):
+    """Private counts only; still_missing measures photos, not just identity."""
+    from collections import Counter
+
+    live = [d for d in deals if d.get("status") == "alive"]
+
+    def borrowed(d):
+        own = {link_key(u) for u in (d.get("canonical_url"), d.get("link_as_posted")) if u}
+        return bool(d.get("product_identity_url")) and link_key(d["product_identity_url"]) not in own
+
+    recovered = [d for d in live if (d.get("asin") or d.get("product_identity_url")) and (
+        before.get(d["dedupe_key"]) is False or (d["dedupe_key"] not in before and borrowed(d)))]
+    by_source = Counter(next((s.get("source_name") for s in d.get("sightings") or []
+                              if s.get("source_name")), "unknown") for d in recovered)
+    return {"recovered_identity": len(recovered), "by_source": dict(sorted(by_source.items())),
+            "still_missing": sum(not d.get("image_url") for d in live)}
 
 
 def _save(db, deal, **changes):
@@ -74,7 +225,7 @@ def resolve_posts(pairs, fetcher, cfg, deadline):
         if post is None or post.via_email or id(post) in seen or not is_amazon_deal({"store": extracted.store}):
             continue
         seen.add(id(post))
-        links = dedupe._URL_RE.findall(post.text or "") + list(post.photos.links)
+        links = dedupe._URL_RE.findall(post.text or "") + post.links + list(post.photos.links)
         links += [extracted.product_url, extracted.link_as_posted]
         post.resolved_links = []
         deferred = set()

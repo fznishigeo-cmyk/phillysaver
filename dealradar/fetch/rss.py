@@ -18,14 +18,14 @@ import logging
 import re
 from collections import Counter
 from datetime import datetime
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from typing import Any
 
 import feedparser
 
 from .. import util
 from ..models import PostPhotos, RawPost, SourceConfig
-from ..product_images import _names_no_product, file_words, link_key, name_words, photo_key
+from ..product_images import _names_no_product, file_words, link_identity, link_key, name_words, photo_key
 from .base import SourceAdapter
 
 log = logging.getLogger("dealradar.rss")
@@ -181,6 +181,23 @@ def _pi_url_ok(url: str) -> bool:
             and not any(t in low for t in _IMG_JUNK)
             and not urlsplit(low).path.endswith(".svg")
             and not _PI_JUNK_WORD.search(url))
+
+
+def product_links(anchors, article_url):
+    """Product anchors already read, including destinations outside text excerpts.
+
+    URLs are transient facts, so collecting them never requires image rights.
+    Keep the posted form; unwrapping here only classifies same-site trackers.
+    """
+    links = []
+    for href in anchors:
+        try:
+            url = urljoin(article_url, href or "")
+            if _pi_anchor_kind(link_identity(url) or url, article_url) == "product" and url not in links:
+                links.append(url)
+        except ValueError:
+            continue
+    return links
 
 
 def _pi_image_url(attrs: dict[str, str]) -> str:
@@ -478,6 +495,8 @@ class RssAdapter(SourceAdapter):
                            if images else ""),
                 photos=(post_photos(body_html, url, title)
                         if images else PostPhotos()),
+                links=product_links((_pi_attrs(a.group(1)).get("href", "")
+                                     for a in _PI_OPEN_A.finditer(body_html)), url),
             )
             if source.allowed_html and url and not util.official_feed_only(url):
                 body_text = util.html_to_text(body_html)
@@ -517,13 +536,15 @@ class RssAdapter(SourceAdapter):
         if want_image and not image:
             image = _og_image(html) or _first_image(html)
         photos = post.photos
+        links = list(dict.fromkeys(post.links + product_links(
+            (_pi_attrs(a.group(1)).get("href", "") for a in _PI_OPEN_A.finditer(html)), post.url)))
         if images:
             photos = _merge_photos(post.photos, post_photos(html, post.url, post.title))
         article_text = util.html_to_text(html)[:ARTICLE_TEXT_CAP]
         if not article_text:
             # Nothing readable to add — but a picture found is still kept.
-            if (image and image != post.image_url) or photos != post.photos:
-                return dataclasses.replace(post, image_url=image, photos=photos)
+            if (image and image != post.image_url) or photos != post.photos or links != post.links:
+                return dataclasses.replace(post, image_url=image, photos=photos, links=links)
             return None
         return RawPost(
             source_name=post.source_name,
@@ -535,6 +556,7 @@ class RssAdapter(SourceAdapter):
             fetched_at=post.fetched_at,
             image_url=image,  # enrichment must not drop (or may add) the image
             photos=photos,
+            links=links,
             # Idempotency anchor stays the summary-level text: whether (or how)
             # enrichment succeeded must never change the content hash, or the
             # same unchanged entry would re-parse on the next run.

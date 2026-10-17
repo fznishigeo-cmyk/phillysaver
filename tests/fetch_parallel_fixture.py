@@ -61,8 +61,9 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
         posts, errors = fetch(sources, fetcher, db, *args, **kwargs)
         # Text stays in the existing input fixtures; compare every transient
         # field via a digest without copying post bodies to the recording.
+        # Task 253 added RawPost.links after this recording; digest the recorded fields.
         observed["posts"] = [hashlib.sha256(json.dumps(
-            dataclasses.asdict(p), sort_keys=True,
+            {k: v for k, v in dataclasses.asdict(p).items() if k != "links"}, sort_keys=True,
             default=lambda v: sorted(v) if isinstance(v, (set, frozenset)) else v.isoformat()
         ).encode()).hexdigest() for p in posts]
         observed["errors"] = list(errors.items())

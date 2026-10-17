@@ -217,7 +217,7 @@ def _new_payload(key: str, extracted: models.ExtractedDeal,
 
 
 def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
-                shared: bool = False) -> str:
+                shared: bool = False, cfg=None) -> str:
     """The photo a post gives this deal, or '' (product_images.pick_photo):
     the photo inside the deal's own product link, else the one the post
     names after the deal's item — against the names of EVERY deal the parse
@@ -238,6 +238,7 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
     category page (an amzn.to short link to a brand store): no photo
     inside the link as posted either, and no post image."""
     from .product_images import _names_no_product, pick_photo, single_product
+    from .source_policy import source_image_allowed
 
     shared = shared or extracted.link_shared
     url = extracted.product_url or ""
@@ -249,10 +250,11 @@ def _post_image(extracted: models.ExtractedDeal, post: models.RawPost,
     if photo is None:
         return ""  # its link and its name point at different photos
     if photo:
-        return photo
+        return photo if source_image_allowed(photo, [{"source_url": post.url}], cfg) else ""
     if shared or no_product or not single_product(post.photos):
         return ""
-    return post.image_url
+    return post.image_url if source_image_allowed(
+        post.image_url, [{"source_url": post.url}], cfg) else ""
 
 
 def _same_product(existing: dict[str, Any], extracted: models.ExtractedDeal) -> bool:
@@ -280,20 +282,27 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
     'revived', 'payload'}; 'revived' = a new sighting brought a dead deal
     back alive.
     """
-    asin = asin_from_links([extracted.product_url, extracted.link_as_posted])
-    if not asin and "amazon" in (extracted.store or "").lower() \
+    from .http_client import extract_asin
+    from .photo_recovery import identity_changes, post_identity
+
+    identity = post_identity(extracted, post)
+    asin = extract_asin(identity) if identity else asin_from_links(
+        [extracted.product_url, extracted.link_as_posted])
+    if not asin_from_links([extracted.product_url, extracted.link_as_posted]) \
+            and "amazon" in (extracted.store or "").lower() \
             and len({util.normalize_item(i) for i, _ in post.parsed}) <= 1:
-        # Deal blogs link the product in the body while the LLM's product_url
-        # is often a tracker/redirect: the one Amazon link in a single-deal
-        # post is the product. Without an ASIN the deal gets no Keepa price
-        # check and no photo (live: 6 photo-less Amazon cards for this).
-        asin = asin_from_links([extracted.product_url, extracted.link_as_posted]
-                               + _URL_RE.findall(post.text or "") + list(post.photos.links) + post.resolved_links)
+        # Preserve the pre-253 click URL and key only when the stricter
+        # identity agrees with the post's one Amazon product.
         from .publish.site import keeps_source_tracker
-        if asin and "amazon." not in (extracted.product_url or "").lower() \
+        legacy = asin_from_links([extracted.product_url, extracted.link_as_posted]
+                                 + _URL_RE.findall(post.text or "")
+                                 + list(post.photos.links) + post.resolved_links)
+        if legacy and legacy == extract_asin(identity or "") \
+                and "amazon." not in (extracted.product_url or "").lower() \
                 and not keeps_source_tracker(extracted.product_url or "", cfg):
             extracted = dataclasses.replace(
-                extracted, product_url=f"https://www.amazon.com/dp/{asin}")
+                extracted, product_url=f"https://www.amazon.com/dp/{legacy}")
+    photo_deal = dataclasses.replace(extracted, product_url=identity) if identity else extracted
     existing = find_existing(db, extracted.store, extracted.product_url,
                              extracted.item, cfg.fuzzy_threshold,
                              codes=extracted.codes)
@@ -308,7 +317,9 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
             util.iso(post_at) if extracted.online_only in ("true", "false") else "")
         payload["expires_published_at"] = util.iso(post_at) if extracted.expires_at else ""
         payload["price_published_at"] = util.iso(post_at)
-        payload["image_url"] = _post_image(extracted, post)
+        if identity:
+            payload.update(identity_changes(payload, identity))
+        payload["image_url"] = _post_image(photo_deal, post, cfg=cfg)
         deal_id = db.insert_deal(
             dedupe_key=key,
             store=extracted.store,
@@ -427,10 +438,6 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         payload.setdefault("category", "other")
         if not payload.get("canonical_url") and extracted.product_url:
             payload["canonical_url"] = extracted.product_url
-        if not payload.get("asin") and asin:
-            payload["asin"] = asin
-            if payload.get("photo_asin"):
-                payload.update(photo_asin="", asin_source="link", image_url="")
         # Once several products shared the row's link, no post names it.
         payload["link_shared"] = bool(existing.get("link_shared")) \
             or extracted.link_shared
@@ -439,10 +446,22 @@ def upsert_extracted(db, extracted: models.ExtractedDeal,
         # item match can merge a variant (review finding: the Series 9
         # photo landed on the Series 8 row, the 65-inch TV's on the 55-inch).
         same = _same_product(existing, extracted)
+        known_identity = payload.get("product_identity_url") or (
+            "https://www.amazon.com/dp/" + payload["asin"] if payload.get("asin") else "")
+        if same and identity and known_identity:
+            from .product_images import link_key
+            same = link_key(identity) == link_key(known_identity)
+        if same and not payload.get("asin") and asin:
+            payload["asin"] = asin
+            if payload.get("photo_asin"):
+                payload.update(photo_asin="", asin_source="link", image_url="")
+        if same and identity and not payload.get("product_identity_url") \
+                and (not payload.get("asin") or payload["asin"] == extract_asin(identity)):
+            payload.update(identity_changes(payload, identity))
         if not payload.get("link_as_posted") and extracted.link_as_posted and same:
             payload["link_as_posted"] = extracted.link_as_posted
         if not payload.get("image_url") and same:
-            image = _post_image(extracted, post, shared=payload["link_shared"])
+            image = _post_image(photo_deal, post, shared=payload["link_shared"], cfg=cfg)
             if image:
                 payload["image_url"] = image
         payload["last_seen_at"] = util.iso(now)

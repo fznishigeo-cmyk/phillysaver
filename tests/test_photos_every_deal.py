@@ -181,6 +181,7 @@ def test_post_wide_asin_requires_at_most_one_parsed_product(products, where):
     assert len(rows) == (1 if single else 2)
     assert all(row['asin'] == (A if single else '') for row in rows)
     assert all(row['canonical_url'] == (URL if single else '') for row in rows)
+    assert all(row.get('product_identity_url', '') == (URL if single else '') for row in rows)
     db.close()
 
 
@@ -473,6 +474,9 @@ def test_pipeline_rerun_and_summary(env, capsys, audit_mode):
         c=result['photo_coverage']
         assert c['live_public'] == c['with_photo']+c['without_photo']
         assert sum(c['by_cause'].values()) == c['without_photo']
+        assert result['photos']['still_missing'] == c['without_photo']
+        assert sum(result['photos']['by_source'].values()) == result['photos']['recovered_identity']
+    assert results[-1]['photos']['recovered_identity'] == 0
 
 
 def test_paid_empty_product_records_missing_photo_without_price_verdict(search):

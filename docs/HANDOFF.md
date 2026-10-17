@@ -427,6 +427,70 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   was deleted. Checker stays disabled; task 241's live page/data and a concrete
   indexed reviewer URL chosen at submission still precede listing. No whole
   suite, commit, push or deploy.
+- **Photo review fixes (Codex task 253b, 2026-10-16; reviewed, shipped):**
+  Restored pre-253 single-product Amazon body-ASIN dp click URLs and dedupe
+  keys when the stricter identity agrees, preserving source trackers. Sale,
+  store and search links cannot borrow an example product's identity/photo.
+  Known identities no longer suppress existing short-link and empty-canonical
+  Amazon post-link click repairs. Private recovered-identity counts exclude
+  new direct-product/Keepa rows. DealMoon's fixture now matches observed opaque
+  `d=` cards, with no inferred identity. Added regressions and restored the
+  two pre-253 canonical/key assertions. Required focused validation:
+  **349 passed, 0 failed** across `test_photo_identity.py`, `test_dedupe.py`,
+  `test_photos_every_deal.py`, `test_e2e_offline.py`, `test_short_links.py`,
+  `test_post_links.py`, `test_tracker_links.py` and `test_product_images.py`
+  (`-q -n 1 -p no:cacheprovider`, 2m25s). Owned `/tmp/task253b-focused`
+  basetemp deleted. Review follow-up: identity no longer skips the source-redirect
+  resolver either (click routing stays exactly pre-253; regression test added).
+- **Photo product facts (Codex task 253, 2026-10-16; shipped with 253b, ON):**
+  Exact Amazon/Walmart/retailer facts now have private `product_identity_url`,
+  separate from click routing. RSS/page readers retain transient product
+  anchors independently of image rights and capped model/article text. Upsert
+  reads those/body links, actual product keys in `PostPhotos.links`, in-link
+  photo keys and completed short-link targets; one
+  product only, with store/roundup/listing guards. Existing Amazon body-URL
+  ASIN fallback already worked: a public Get deal URL pointing at a post is
+  **not proof** that its stored canonical link lacks identity. Normalized photo
+  keys were not URLs, and non-Amazon body URLs had no independent stored field.
+  A one-time offline pass reads stored links and actual sighting rows, bounded
+  by the existing 60/run identity allowance. It cannot reconstruct discarded
+  post bodies. It changes no price, evidence, dedupe key, click or credit link.
+  Granted exact-product photos run first; recovered non-Amazon URLs use the
+  existing conditional og:image pass (40/run), while ASINs use capped Keepa.
+  Private `photos` reports recovered identities by source and missing photos.
+
+  Offline source fixtures cover Slickdeals official RSS `u2` (its existing
+  body-ASIN path already worked), Deals of America's title anchor outside
+  `more_details`, Hip2Save full-feed viglink `u` to Walmart and an enriched
+  article beyond the text cap. The observed DealMoon cards have href-less
+  brief anchors and opaque `d=` buy links, which recover no identity. Those
+  links and Brad's `/go/d/...` carry no recoverable product fact; they stay
+  unresolved without a new authorized observation. No new resolver, paid
+  search or source-image permission.
+
+  Estimate from the brief's counts, **eligibility ceilings, not measured
+  recovery**: Amazon 189/256 (73.8%) can use Keepa after an exact ASIN is found;
+  Walmart 16/256 (6.3%) and other stores 51/256 (19.9%) require an exact product
+  plus a permitted source image or successful existing og:image read. Hip2Save's
+  37/256 (14.5%) is a source-image ceiling overlapping those store buckets,
+  not another share to add. Three supplied source-shaped single-product fixture
+  cases recover identity; ambiguous roundups recover none. The live 256 rows
+  are unavailable here, so actual backfill yield and browser photo loading
+  remain unmeasured. At the quoted 2,427-card snapshot, 14 additional showing
+  photos would cross 90%; image URLs alone do not establish browser success.
+  Validation: **566 passed, 0 failed** across `test_photo_identity.py`,
+  `test_photos_every_deal.py`, `test_product_images.py`, `test_dedupe.py`,
+  `test_extractor.py`, `test_rss.py`, `test_pages.py`, `test_pipeline_sources.py`,
+  `test_tracker_links.py`, `test_short_links.py`, `test_post_links.py` and the
+  unchanged `test_e2e_offline.py`. Final identity/merge/photo guards:
+  **164 passed, 0 failed**, including all **50 identity checks** and both
+  existing offline rerun modes. Task 253b restores the pre-253 body-ASIN
+  canonical/key assertions that task 253 incorrectly changed. All runs used
+  `-q -n 1 -p no:cacheprovider`; owned
+  `/tmp/task253-*` basetemps/logs are deleted. Whole suite and workflow tests
+  were not run; `tests/test_workflows.py`, evidence verification, savings and
+  `site_check.min_photo_pct` are unchanged. No live calls, commit or push.
+  Review and live/browser coverage verification remain.
 - **Deal Check index (Codex task 240, 2026-10-16; merged, OFF):**
   Validated `checker:` builds deterministic, bounded SHA256 lookup shards after
   product pages, with shared URL rules/40-row fixture, dated public facts and
