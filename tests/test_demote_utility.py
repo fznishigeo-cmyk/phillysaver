@@ -153,9 +153,10 @@ def js_order(out, cases):
 @pytest.mark.parametrize("title,words,niche", [
     pytest.param("Clear Case for Apple iPhone SE (3rd Generation)", None, True,
                  id="iphone-se"),
-    pytest.param("Cover for iPhone 16 with filter and spare cartridge storage",
+    # Not a named-device accessory: those are niche by title since task 282's ordering.
+    pytest.param("Countertop caddy with filter and spare cartridge storage",
                  ["filter cartridge"], False, id="utility-gap"),
-    pytest.param("Cover for iPhone 16 with FILTER CARTRIDGE storage",
+    pytest.param("Countertop caddy with FILTER CARTRIDGE storage",
                  ["filter cartridge"], True, id="utility-contiguous"),
 ])
 def test_review_rendered_order(tmp_path, cfg, title, words, niche):

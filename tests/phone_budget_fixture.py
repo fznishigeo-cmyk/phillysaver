@@ -23,6 +23,7 @@ MODES = ("support", "open", "closed", "shipped")
 def fixture_config(mode):
     if mode == "shipped":
         cfg = pre_history_removal(load_config())
+        cfg.max_photoless_h = None  # recorded before task 283
         cfg.dark_polish = False  # recorded before task 254
         cfg.keepa_click_price_rule = "off"  # recorded before task 275
         cfg.static_photos = False  # recorded before task 274
@@ -30,6 +31,7 @@ def fixture_config(mode):
         cfg.amazon_history = "show"  # recorded before task 274
         cfg.amazon_reference = "history"  # recorded before task 276
         cfg.strip_comments = False  # recorded before task 278
+        cfg.search["amazon_results"] = "off"  # recorded before task 280; keep original byte pins
         pre_task_279(cfg)  # recorded before task 279
         cfg.front_page.pop("demote_words", None)  # recorded before task 267b
         cfg.open_box_scarcity = False  # recorded before task 273

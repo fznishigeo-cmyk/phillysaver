@@ -49,6 +49,13 @@ def _publisher_sites() -> dict[str, str]:
             for s in primary + backup}
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS appeal_scores (
+    dedupe_key TEXT NOT NULL,
+    final_price REAL NOT NULL,
+    score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5),
+    rated_at TEXT NOT NULL,
+    PRIMARY KEY(dedupe_key, final_price)
+);
 CREATE TABLE IF NOT EXISTS accuracy_samples (
     deal_key TEXT NOT NULL,
     run_key TEXT NOT NULL,

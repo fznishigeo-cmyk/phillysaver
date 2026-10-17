@@ -617,7 +617,7 @@ def test_shipped_click_price_stays_within_phone_byte_budgets(db, tmp_path, monke
     monkeypatch.setattr(site, "util_now", lambda: PHONE_NOW)
     site.render_site(db, cfg, PHONE_NOW, out_dir=tmp_path, deals=rows,
                      last_run={"run_key": "task275-phone"})
-    report = analyze(tmp_path, cfg, expected_offers=1400)
+    report = analyze(tmp_path, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
     assert report["ok"], report["metrics"]
 
 

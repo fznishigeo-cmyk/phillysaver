@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 from .config import get_secret, error_summary, load_config
 from . import amazon_reference, util
 from .db import DB
+from .errors import DeadlineExceeded
 from .http_client import PoliteFetcher
 from .conditions import USED_CONDITIONS, normalize_conditions
 from .keepa_budget import (MIN_FOR_DEAL_QUERY, MIN_FOR_RECHECK, KeepaBudget, describe_429,
@@ -539,14 +540,19 @@ def keepa_products(key: str, asins: list[str], stats: int,
                    live: bool = False,
                    buybox: bool = False, conditional_live: bool = False,
                    fetcher: PoliteFetcher | None = None,
-                   deadline: float | None = None) -> dict[str, dict[str, Any]] | None:
+                   deadline: float | None = None,
+                   follow_redirects: bool = True,
+                   record_shared_facts: bool = True,
+                   timeout_s: float | None = None) -> dict[str, dict[str, Any]] | None:
     """One Keepa /product call for up to KEEPA_BATCH ASINs (KEEPA_OFFERS_BATCH
     with ``offers``): ``{asin: product}`` (an ASIN Keepa does not know is
     simply absent), or None on a 429 (the token bucket is empty — it
     refills by the minute and costs nothing, so that is "no opinion", never
     a verdict). ``offers`` asks for that many live marketplace offers per
     product (pricier). Every response body, the 429 included, feeds the
-    shared token budget when given."""
+    shared token budget when given. ``record_shared_facts=False`` isolates
+    comparison reads from recheck latency/accuracy samples and category roots;
+    a deadline raised before send refunds its reservation."""
     asins = [a for a in asins if a][
         :KEEPA_BATCH if offers is None else KEEPA_OFFERS_BATCH]
     # history=0 drops the price-history arrays (unused; same token cost):
@@ -568,17 +574,32 @@ def keepa_products(key: str, asins: list[str], stats: int,
     if budget is not None:
         budget.reserve(reserved)
         budget.save(budget.db)
-    payload, resp = None, None
+    payload, resp, unsent = None, None, False
     started = time.monotonic()
     try:
         options = {"deadline": deadline} if deadline is not None else {}
+        if not follow_redirects:
+            options["follow_redirects"] = False
+        if not record_shared_facts:
+            options["conditional"] = False
+        if timeout_s is not None:
+            options["timeout_s"] = timeout_s
         resp = fetcher.api_get("https://api.keepa.com/product", params=params,
                                max_attempts=1, respect_robots=False, **options)
         payload = response_payload(resp)
+    except DeadlineExceeded as exc:
+        unsent = not record_shared_facts and not exc.request_sent
+        if unsent and budget is not None:
+            budget.reserve(-reserved)
+            budget.save(budget.db)
+        raise
     finally:
-        if budget is not None:
+        if budget is not None and not unsent:
             budget.usage.note(payload, estimate=reserved,
                               rate_limited=resp is not None and resp.status_code == 429)
+            if not record_shared_facts:
+                budget.note(payload)
+        if budget is not None and record_shared_facts:
             from .keepa_rechecks import CallHistory
             tokens = payload.get("tokensConsumed") if isinstance(payload, dict) else None
             if (not isinstance(tokens, (int, float)) or isinstance(tokens, bool)
@@ -588,7 +609,7 @@ def keepa_products(key: str, asins: list[str], stats: int,
             CallHistory(budget.db, util.now_utc()).record(
                 used=offers is not None, live=live, count=len(asins),
                 seconds=time.monotonic() - started, tokens=tokens, buybox=buybox)
-    if budget is not None:
+    if budget is not None and record_shared_facts:
         budget.note(payload)
     if resp.status_code == 429:
         log.warning("keepa product x%d: 429 Too Many Requests (%s); no "
@@ -610,7 +631,7 @@ def keepa_products(key: str, asins: list[str], stats: int,
             asin = asins[0]  # single-ASIN answers may omit the field
         if asin:
             out[asin] = p
-    if budget is not None:
+    if budget is not None and record_shared_facts:
         from .keepa_categories import remember_roots
         remember_roots(budget.db, [dict(p, asin=a) for a, p in out.items()])
         if budget.db is not None:

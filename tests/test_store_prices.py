@@ -34,6 +34,7 @@ def fixture(name):
 @pytest.fixture
 def cfg(monkeypatch):
     cfg = load_config()
+    cfg.max_photoless_h = None  # recorded before task 283
     cfg.feature_flags.update(bestbuy_live=True, ebay_live=True, keepa=False)
     for name in ("BESTBUY_API_KEY", "EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET"):
         monkeypatch.setenv(name, "synthetic-" + name)
@@ -538,7 +539,7 @@ def test_pipeline_checks_stored_deals_before_publish_and_rerun_is_idempotent(
     monkeypatch.setattr(util, "now_utc", lambda: NOW)
     config = tmp_path / "config.yaml"
     raw = dict(cfg.raw)
-    raw["publish"] = dict(raw["publish"], site_dir=str(tmp_path / "site"))
+    raw["publish"] = dict(raw["publish"], site_dir=str(tmp_path / "site"), photos={})  # recorded before task 283
     raw["parse"] = dict(raw["parse"], recategorize_other_per_run=0)
     config.write_text(yaml.safe_dump(raw))
     database = tmp_path / "offline.db"

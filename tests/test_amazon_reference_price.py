@@ -122,7 +122,7 @@ def test_current_shipping_publication_keeps_phone_budgets(tmp_path):
     cfg = load_config()
     cfg.phone_budget['enabled'] = True
     def inspect(database, out):
-        result = analyze(out, cfg, expected_offers=1400)
+        result = analyze(out, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
         assert result['ok'], result['metrics']
     publish_fixture(tmp_path, cfg, inspect=inspect)
 

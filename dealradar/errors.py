@@ -8,7 +8,11 @@ class DealradarError(Exception):
 
 
 class DeadlineExceeded(DealradarError):
-    """A per-source or per-run time budget was exhausted."""
+    """A time budget was exhausted; sent requests must retain paid reservations."""
+
+    def __init__(self, *args, request_sent: bool = False):
+        super().__init__(*args)
+        self.request_sent = request_sent
 
 
 class RobotsBlocked(DealradarError):

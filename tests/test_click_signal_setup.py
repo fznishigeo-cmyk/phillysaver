@@ -31,7 +31,7 @@ def setup_env(tmp_path):
     for relative in ("cloudflare/subscribe-worker/wrangler.toml", "scripts/click_signal_deploy.py",
                      "dealradar/__init__.py", "dealradar/config.py", "dealradar/models.py",
                      "dealradar/clicks.py", "dealradar/util.py", "dealradar/source_policy.py",
-                     "dealradar/appeal.py", "dealradar/conditions.py",
+                     "dealradar/appeal.py", "dealradar/appeal_score.py", "dealradar/errors.py", "dealradar/conditions.py",
                      "sources.yaml"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)

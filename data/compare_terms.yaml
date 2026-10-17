@@ -1,0 +1,810 @@
+# Curated everyday comparisons. Quantities always need verbatim title evidence.
+- slug: laundry-pods
+  name: Laundry detergent pods
+  keywords:
+  - laundry
+  - pods
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - pods
+  - pacs
+  exclude:
+  - sample
+  display_unit: pod
+- slug: laundry-liquid
+  name: Liquid laundry detergent
+  keywords:
+  - laundry
+  - detergent
+  - liquid
+  unit: load
+  unit_words:
+  - loads
+  - load
+  exclude:
+  - sample
+  display_unit: load
+- slug: dryer-sheets
+  name: Dryer sheets
+  keywords:
+  - dryer
+  - sheets
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - sheets
+  exclude:
+  - sample
+  display_unit: sheet
+- slug: dishwasher-pods
+  name: Dishwasher pods
+  keywords:
+  - dishwasher
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - pods
+  - pacs
+  - tablets
+  exclude:
+  - sample
+  display_unit: pod
+- slug: dish-soap
+  name: Dish soap
+  keywords:
+  - dish
+  - soap
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: paper-towels
+  name: Paper towels
+  keywords:
+  - paper
+  - towels
+  unit: count
+  unit_words:
+  - sheets
+  - sheet
+  exclude:
+  - sample
+  display_unit: sheet
+- slug: toilet-paper
+  name: Toilet paper
+  keywords:
+  - toilet
+  - paper
+  unit: count
+  unit_words:
+  - sheets
+  - sheet
+  exclude:
+  - sample
+  display_unit: sheet
+- slug: trash-bags
+  name: Trash bags
+  keywords:
+  - trash
+  - bags
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bags
+  exclude:
+  - sample
+  display_unit: bag
+- slug: facial-tissues
+  name: Facial tissues
+  keywords:
+  - facial
+  - tissues
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - tissues
+  exclude:
+  - sample
+  display_unit: tissue
+- slug: disinfecting-wipes
+  name: Disinfecting wipes
+  keywords:
+  - disinfecting
+  - wipes
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - wipes
+  exclude:
+  - sample
+  display_unit: wipe
+- slug: hand-soap
+  name: Hand soap
+  keywords:
+  - hand
+  - soap
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: aluminum-foil
+  name: Aluminum foil
+  keywords:
+  - aluminum
+  - foil
+  unit: ft
+  unit_words:
+  - ft
+  - feet
+  - foot
+  exclude:
+  - sample
+  display_unit: ft
+- slug: zip-bags
+  name: Zip storage bags
+  keywords:
+  - storage
+  - bags
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bags
+  exclude:
+  - sample
+  display_unit: bag
+- slug: aa-batteries
+  name: AA batteries
+  keywords:
+  - AA
+  - batteries
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - batteries
+  exclude:
+  - sample
+  display_unit: battery
+- slug: aaa-batteries
+  name: AAA batteries
+  keywords:
+  - AAA
+  - batteries
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - batteries
+  exclude:
+  - sample
+  display_unit: battery
+- slug: coffee-pods
+  name: Coffee pods
+  keywords:
+  - coffee
+  - pods
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - pods
+  - capsules
+  exclude:
+  - sample
+  display_unit: pod
+- slug: ground-coffee
+  name: Ground coffee
+  keywords:
+  - ground
+  - coffee
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: protein-powder
+  name: Protein powder
+  keywords:
+  - protein
+  - powder
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: protein-bars
+  name: Protein bars
+  keywords:
+  - protein
+  - bars
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bars
+  exclude:
+  - sample
+  display_unit: bar
+- slug: multivitamins
+  name: Multivitamins
+  keywords:
+  - multivitamin
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - tablets
+  - gummies
+  - capsules
+  exclude:
+  - sample
+  display_unit: tablet or gummy
+- slug: vitamin-d3
+  name: Vitamin D3
+  keywords:
+  - vitamin
+  - D3
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - tablets
+  - softgels
+  - capsules
+  exclude:
+  - sample
+  display_unit: tablet or softgel
+- slug: fish-oil
+  name: Fish oil
+  keywords:
+  - fish
+  - oil
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - softgels
+  - capsules
+  exclude:
+  - sample
+  display_unit: softgel
+- slug: toothpaste
+  name: Toothpaste
+  keywords:
+  - toothpaste
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: dental-floss
+  name: Dental floss
+  keywords:
+  - dental
+  - floss
+  unit: ft
+  unit_words:
+  - ft
+  - feet
+  - foot
+  exclude:
+  - sample
+  display_unit: ft
+- slug: mouthwash
+  name: Mouthwash
+  keywords:
+  - mouthwash
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: razor-blades
+  name: Razor blades
+  keywords:
+  - razor
+  - blades
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - blades
+  - cartridges
+  exclude:
+  - sample
+  display_unit: blade
+- slug: deodorant
+  name: Deodorant
+  keywords:
+  - deodorant
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: shampoo
+  name: Shampoo
+  keywords:
+  - shampoo
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: body-wash
+  name: Body wash
+  keywords:
+  - body
+  - wash
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: sunscreen
+  name: Sunscreen
+  keywords:
+  - sunscreen
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: cotton-swabs
+  name: Cotton swabs
+  keywords:
+  - cotton
+  - swabs
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - swabs
+  exclude:
+  - sample
+  display_unit: swab
+- slug: diapers
+  name: Diapers
+  keywords:
+  - diapers
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - diapers
+  exclude:
+  - sample
+  display_unit: diaper
+- slug: baby-wipes
+  name: Baby wipes
+  keywords:
+  - baby
+  - wipes
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - wipes
+  exclude:
+  - sample
+  display_unit: wipe
+- slug: dog-poop-bags
+  name: Dog poop bags
+  keywords:
+  - dog
+  - bags
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bags
+  exclude:
+  - sample
+  display_unit: bag
+- slug: cat-litter
+  name: Cat litter
+  keywords:
+  - cat
+  - litter
+  unit: lb
+  unit_words:
+  - lb
+  - lbs
+  - pound
+  - pounds
+  exclude:
+  - sample
+  display_unit: lb
+- slug: printer-paper
+  name: Printer paper
+  keywords:
+  - printer
+  - paper
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - sheets
+  exclude:
+  - sample
+  display_unit: sheet
+- slug: sticky-notes
+  name: Sticky notes
+  keywords:
+  - sticky
+  - notes
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - sheets
+  exclude:
+  - sample
+  display_unit: sheet
+- slug: usb-c-cables
+  name: USB-C cables
+  keywords:
+  - USB
+  - C
+  - cable
+  unit: ft
+  unit_words:
+  - ft
+  - feet
+  - foot
+  exclude:
+  - sample
+  display_unit: ft
+- slug: lightning-cables
+  name: Lightning cables
+  keywords:
+  - Lightning
+  - cable
+  unit: ft
+  unit_words:
+  - ft
+  - feet
+  - foot
+  exclude:
+  - sample
+  display_unit: ft
+- slug: hdmi-cables
+  name: HDMI cables
+  keywords:
+  - HDMI
+  - cable
+  unit: ft
+  unit_words:
+  - ft
+  - feet
+  - foot
+  exclude:
+  - sample
+  display_unit: ft
+- slug: power-strips
+  name: Power strips
+  keywords:
+  - power
+  - strip
+  unit: each
+  unit_words:
+  - count
+  - ct
+  - pack
+  - each
+  - strips
+  - strip
+  exclude:
+  - sample
+  display_unit: strip
+- slug: usb-c-wall-chargers
+  name: USB-C wall chargers
+  keywords:
+  - USB
+  - C
+  - charger
+  unit: each
+  unit_words:
+  - count
+  - ct
+  - pack
+  - each
+  - chargers
+  - charger
+  exclude:
+  - sample
+  display_unit: charger
+- slug: power-banks
+  name: Power banks
+  keywords:
+  - power
+  - bank
+  unit: each
+  unit_words:
+  - count
+  - ct
+  - pack
+  - each
+  - banks
+  - bank
+  exclude:
+  - sample
+  display_unit: bank
+- slug: microsd-cards
+  name: microSD cards
+  keywords:
+  - microSD
+  unit: each
+  unit_words:
+  - count
+  - ct
+  - pack
+  - each
+  - cards
+  - card
+  exclude:
+  - sample
+  display_unit: card
+- slug: led-light-bulbs
+  name: LED light bulbs
+  keywords:
+  - LED
+  - bulbs
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bulbs
+  exclude:
+  - sample
+  display_unit: bulb
+- slug: smart-plugs
+  name: Smart plugs
+  keywords:
+  - smart
+  - plug
+  unit: each
+  unit_words:
+  - count
+  - ct
+  - pack
+  - each
+  - plugs
+  - plug
+  exclude:
+  - sample
+  display_unit: plug
+- slug: water-filter-cartridges
+  name: Water filter pitcher cartridges
+  keywords:
+  - water
+  - filter
+  - pitcher
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - cartridges
+  - filters
+  exclude:
+  - sample
+  display_unit: cartridge
+- slug: paper-plates
+  name: Paper plates
+  keywords:
+  - paper
+  - plates
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - plates
+  exclude:
+  - sample
+  display_unit: plate
+- slug: granola-bars
+  name: Granola bars
+  keywords:
+  - granola
+  - bars
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bars
+  exclude:
+  - sample
+  display_unit: bar
+- slug: almonds
+  name: Almonds
+  keywords:
+  - almonds
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: electrolyte-packets
+  name: Electrolyte packets
+  keywords:
+  - electrolyte
+  - packets
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - packets
+  - sticks
+  exclude:
+  - sample
+  display_unit: packet
+- slug: tea-bags
+  name: Tea bags
+  keywords:
+  - tea
+  - bags
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bags
+  exclude:
+  - sample
+  display_unit: bag
+- slug: olive-oil
+  name: Olive oil
+  keywords:
+  - olive
+  - oil
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: peanut-butter
+  name: Peanut butter
+  keywords:
+  - peanut
+  - butter
+  unit: oz
+  unit_words:
+  - oz
+  - ounce
+  - ounces
+  exclude:
+  - sample
+  display_unit: oz
+- slug: bleach
+  name: Bleach
+  keywords:
+  - bleach
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: all-purpose-cleaner
+  name: All-purpose cleaner
+  keywords:
+  - all
+  - purpose
+  - cleaner
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: cleaning-erasers
+  name: Cleaning eraser sponges
+  keywords:
+  - eraser
+  - sponges
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - sponges
+  - erasers
+  exclude:
+  - sample
+  display_unit: sponge
+- slug: bandages
+  name: Bandages
+  keywords:
+  - bandages
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - bandages
+  exclude:
+  - sample
+  display_unit: bandage
+- slug: hand-sanitizer
+  name: Hand sanitizer
+  keywords:
+  - hand
+  - sanitizer
+  unit: fl_oz
+  unit_words:
+  - fl oz
+  - fl. oz
+  - fluid ounce
+  - fluid ounces
+  exclude:
+  - sample
+  display_unit: fl oz
+- slug: nitrile-gloves
+  name: Nitrile gloves
+  keywords:
+  - nitrile
+  - gloves
+  unit: count
+  unit_words:
+  - count
+  - ct
+  - gloves
+  exclude:
+  - sample
+  display_unit: glove

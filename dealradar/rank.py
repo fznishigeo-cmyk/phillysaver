@@ -142,6 +142,19 @@ def _age_hours(first_seen_at: str, now: datetime) -> float:
     return max(0.0, (now - dt).total_seconds() / 3600.0)
 
 
+def photoless_expired(deal: dict[str, Any], cfg, now: datetime) -> bool:
+    """Publish-only cutoff; keep stored deals eligible for photo recovery."""
+    from .source_policy import source_image_allowed
+
+    limit = cfg.max_photoless_h
+    if limit is None or deal.get("status", "alive") != "alive" \
+            or _age_hours(deal.get("first_seen_at") or "", now) < limit:
+        return False
+    image = deal.get("image_url") or ""
+    return not (image.startswith("https://")
+                and source_image_allowed(image, deal.get("sightings") or [], cfg))
+
+
 def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     """Ranking score for one deal row dict (higher is better)."""
     pct = float(deal.get("pct_at_checkout") or 0.0)
@@ -261,12 +274,14 @@ def pick_popularity_factor(deal, cfg, now, options=None):
         return 1.0
     popular = popular_affordable_factor(deal, cfg, now, options)
     _, _, title = appeal.signals(deal, cfg, now)
-    if title <= 1:
+    from .appeal_score import factor
+    rating = max(1.0, factor(deal, cfg))
+    if title <= 1 and rating <= 1:
         return popular
     everyday = cfg.front_page.get("everyday_price") or {}
     price = everyday_price_factor(deal, everyday) if everyday.get("enabled") else 1.0
-    cap = (appeal_options.get("want") or {}).get("factor", 1.2)
-    return appeal.capped_lift([popular, price, title], cap, demand=popular) / appeal.capped_lift([price, title], cap)
+    cap = appeal.lift_cap(appeal_options, deal, title)
+    return appeal.capped_lift([popular, price, title, rating], cap, demand=popular) / appeal.capped_lift([price, title, rating], cap)
 
 
 def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
@@ -362,14 +377,23 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     if everyday.get("enabled", False):
         price_factor = everyday_price_factor(deal, everyday)
     _, _, title_factor = title_appeal.signals(deal, cfg, now)
-    if title_factor > 1:
-        result *= title_appeal.capped_lift([popularity_factor, price_factor, title_factor],
-                                          (appeal.get("want") or {}).get("factor", 1.2),
+    from .appeal_score import factor
+    rating_factor = factor(deal, cfg)
+    if blocked:
+        rating_factor = min(1.0, rating_factor)
+    if title_factor > 1 or rating_factor > 1:
+        factors = [popularity_factor, price_factor, title_factor]
+        if rating_factor > 1:
+            factors.append(rating_factor)
+        result *= title_appeal.capped_lift(factors,
+                                          title_appeal.lift_cap(appeal, deal, title_factor),
                                           demand=popularity_factor)
     else:
         # Preserve the exact historical operation order/rounding with switches off.
         result *= popularity_factor
         result *= price_factor
+    if rating_factor < 1:
+        result *= rating_factor
     return result
 
 
@@ -399,14 +423,23 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
     ranked = sorted((pair for pair in scored if pair[1] is not None),
                     key=lambda pair: pair[1], reverse=True)
     pending = iter(ranked)
+    clothing_cap = int(picks.get("max_clothing_per_window") or 0)
+    mix_window = max(1, int(picks.get("mix_window", 6)))
+    mix_slots = int(picks.get("mix_slots", 24))
+    clothing_counts, deferred = Counter(), []
+    use_queue = popular_on or clothing_cap > 0
     boost_counts = Counter()
     boost_cap = math.floor(popular.get("max_share", .25) * PICK_WINDOW) if popular_on else 0
-    queue = [(-value, i, deal, pick_popularity_factor(deal, cfg, now, popular))
-             for i, (deal, value) in enumerate(ranked)] if popular_on else []
+    queue = [(-value, i, deal, pick_popularity_factor(deal, cfg, now, popular) if popular_on else 1.0)
+             for i, (deal, value) in enumerate(ranked)] if use_queue else []
     heapq.heapify(queue)
     while True:
         factor = 1.0
-        if popular_on:
+        if use_queue:
+            if deferred and (len(picked) >= mix_slots or clothing_counts[len(picked) // mix_window] < clothing_cap):
+                for entry in deferred:
+                    heapq.heappush(queue, entry)
+                deferred.clear()
             if not queue:
                 break
             negative, i, deal, factor = heapq.heappop(queue)
@@ -421,11 +454,22 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
                 break
         if deal.get("price_unconfirmed") or deal.get("price_aged"):
             continue
+        # Unappealing offers stay on the wall, outside the rotating pick windows.
+        if cfg is not None and cfg.appeal_score.get("enabled"):
+            from .appeal import blocked
+            if deal.get("_appeal_score") == 1 or blocked(deal, options.get("appeal") or {}):
+                continue
         from .click_price import excluded
         if cfg is not None and excluded(deal, cfg, now):
             continue
         if len(picked) >= picks["count"]:
             break
+        clothing = is_clothing(deal, picks) if clothing_cap > 0 else False
+        if clothing and len(picked) < mix_slots and clothing_counts[len(picked) // mix_window] >= clothing_cap:
+            # Re-offer overflow by score when the next window has room. All
+            # existing caps and checkout evidence are checked on insertion.
+            deferred.append((negative, i, deal, factor))
+            continue
         promo = _price_hidden_by_promo(deal)
         kept_by = []
         if enabled and promo:
@@ -439,7 +483,7 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
                     summary["skipped_window"] += 1
                 continue
         store = str(deal.get("store") or "").strip().lower()
-        brand = str(deal.get("brand") or "").strip().lower()
+        brand = str(deal.get("brand") or "").strip().lower() or title_brand(deal, picks)
         category = deal.get("category") or "other"
         twin = " ".join(re.findall(r"\w+", str(deal.get("item") or "").lower())[:3])
         if stores[store] >= picks["max_same_store"] \
@@ -458,6 +502,7 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
             boost_counts[len(picked) // PICK_WINDOW] += 1
             if boosted is not None:
                 boosted.add(deal["dedupe_key"])
+        clothing_counts[len(picked) // mix_window] += clothing
         picked.append(deal)
         stores[store] += 1
         brands[brand] += 1
@@ -468,6 +513,23 @@ def top_picks(scored: list[tuple[dict[str, Any], float]], options: dict,
     if summary is not None:
         summary["in_top_picks"] = len(promo_positions)
     return picked
+
+
+def title_brand(deal: dict[str, Any], picks: dict) -> str:
+    """A missing brand read from the title's first two words (operator
+    2026-10-17: one brand's team sweatshirts filled the first screen)."""
+    if not picks.get("brand_from_title"):
+        return ""
+    words = re.findall(r"[a-z0-9']+", str(deal.get("item") or "").lower())
+    return " ".join(words[:2]) if words and not words[0][0].isdigit() else ""
+
+
+def is_clothing(deal: dict[str, Any], picks: dict) -> bool:
+    """One classifier for greedy selection and the public rotation class."""
+    from .appeal import matches
+
+    return (deal.get("category") in picks.get("clothing_categories", [])
+            or matches(deal.get("item"), picks.get("clothing_words", [])))
 
 
 def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
@@ -656,7 +718,7 @@ def published_deals(db, cfg, now: datetime) -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
     for deal in db.all_deals(status="alive"):
-        if push_excluded(deal, cfg, now):
+        if push_excluded(deal, cfg, now) or photoless_expired(deal, cfg, now):
             continue
         ok, reason = is_publishable(deal, cfg)
         if not ok:

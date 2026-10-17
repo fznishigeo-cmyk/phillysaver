@@ -22,13 +22,13 @@ from urllib.parse import urlsplit
 
 from ..savings import display_pct, known_shipping, parse_stack_step
 from ..config import AppConfig, redact_secrets, support_link, validated_drop_clock
-from ..rank import appeal_summary, daily_spotlight, is_niche, pick_order, pick_score, top_picks
+from ..rank import appeal_summary, daily_spotlight, is_clothing, is_niche, photoless_expired, pick_order, pick_score, top_picks
 from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import amazon_reference, checkout_prices, popular_affordable
-from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
+from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, compare_pages, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
 from . import link_facts
@@ -37,6 +37,7 @@ from .link_facts import (LinkFacts, _link_destination, _needs_steps, _override_k
 from .tracking import apply_tracking
 from .template_slots import replace_slot, validate_slot
 from . import comments
+from . import search_results
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -142,6 +143,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = _SEARCH_AMAZON_BLOCK.sub(
             lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
+        html = search_results.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -755,6 +757,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     deals.sort(key=lambda d: bool(d.get("price_aged")))
     labeled = [dict(d, price_unconfirmed=True) for d in deals if price_labels.qualifies(d, cfg, now)]
     deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)] + labeled
+    visible = [d for d in deals if not photoless_expired(d, cfg, now)]
+    unpublished_photoless = len(deals) - len(visible)
+    deals = visible
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
@@ -817,9 +822,24 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
     original_candidates = [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates]
     pick_candidates = original_candidates
-    if drop_rotation.enabled(cfg):
+    if drop_rotation.active(cfg):
         spotlight_keys = {d["dedupe_key"] for d in spotlight}
         pick_candidates = [(d, value) for d, value in original_candidates if d["dedupe_key"] not in spotlight_keys]
+    if cfg.appeal_score.get("enabled", False):
+        from .. import appeal_score
+        from ..appeal import blocked
+        pick_candidates = [(d, value) for d, value in pick_candidates
+                           if not blocked(d, cfg.front_page.get("appeal") or {})]
+        # The model sees exactly the published prices, never hidden history,
+        # critic opinions, evidence text, popularity or internal numeric scores.
+        appeal_candidates = [(dict(public_candidates[d["dedupe_key"]]), value)
+                             for d, value in pick_candidates]
+        ratings = appeal_score.ratings(db, cfg, now, appeal_candidates, parser=ai_parser,
+                                      run_key=(last_run or {}).get("run_key", ""))
+        rated = [dict(d, _appeal_score=ratings[d["dedupe_key"]]) if d["dedupe_key"] in ratings else d
+                 for d, _ in pick_candidates]
+        pick_candidates = [(d, pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
+                                         require_confirmation=False, links=facts_for(d))) for d in rated]
     boosted = set()
     original_picks = top_picks(pick_candidates, cfg.front_page, now,
                                summary=checkout_summary, cfg=cfg, boosted=boosted)
@@ -827,6 +847,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
+        if cfg.front_page["top_picks"].get("max_clothing_per_window", 0) > 0 \
+                and is_clothing(originals[d["dedupe_key"]], cfg.front_page["top_picks"]):
+            d["cl"] = 1
     from .. import appeal as title_appeal
     want_on = (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled")
     lift_summary = title_appeal.summary(
@@ -844,7 +867,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         except Exception as e:
             logger.warning("%s", type(e).__name__)
             popular_summary = None
-    if drop_rotation.enabled(cfg):
+    if drop_rotation.active(cfg) and checkout_prices.enabled(cfg):
         for d in picked:
             if checkout_prices.kind(originals[d["dedupe_key"]]):
                 d["pick_checkout"] = True
@@ -997,6 +1020,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + "".join(product_pages.BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     if cfg.checker["enabled"]:
         site_version = hashlib.sha256((site_version + "deal-check-page").encode()).hexdigest()[:12]
+    if cfg.compare["publish"] == "on":
+        site_version = hashlib.sha256((site_version + "compare-prices").encode()).hexdigest()[:12]
     if cfg.amazon_history == "hide":
         site_version = hashlib.sha256((site_version + "amazon-history-hide").encode()).hexdigest()[:12]
     elif amazon_history.watches_hidden(cfg):
@@ -1034,6 +1059,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         site_version = hashlib.sha256(site_version.encode()
             + json.dumps(cfg.front_page["demote_words"]).encode()
             + "".join(_DEMOTE_WORDS_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    site_version = search_results.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
         version_home = home_html if saved_deals else _WATCH_BLOCK.sub("", home_html).replace("<!--saved--><!--/saved-->", "")
@@ -1254,6 +1280,19 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         checker_page.publish(out, cfg, now, site_url, meta["disclosure"])
         seo_paths.append("/check/")
 
+    try:
+        compare_paths = compare_pages.publish(out, db, cfg, now, site_url, meta["disclosure"], products,
+            deals=[{**originals[d["dedupe_key"]], **d, "pct_at_checkout": d.get("pct_at_checkout")}
+                   for d in deal_pages[1]
+                   if not d.get("price_unconfirmed") and d["dedupe_key"] in originals], deal_paths=paths)
+        compare_pages.footer_links(out, cfg)
+        if cfg.compare["publish"] == "on":  # preview pages stay out of the sitemap
+            seo_paths.extend(compare_paths)
+    except Exception as exc:
+        logger.warning("compare pages unavailable (%s)", type(exc).__name__)
+        if (out / "compare").is_dir():
+            shutil.rmtree(out / "compare")
+
     if support and (link or cfg.support_panel_delay_s):
         # Generated pages share the same footer join success as root pages.
         before, after = support_script(), support_script(link, monthly, cfg.support_panel_delay_s)
@@ -1268,6 +1307,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     traffic.publish(out, cfg, [d for d in deal_pages[1] if not d.get("price_unconfirmed")], paths, site_url)
     profiles.publish(out, cfg, site_url)
     inventory.publish(out, cfg)
+    search_results.publish(out, cfg)
     dark.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
@@ -1329,6 +1369,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     accuracy.publish(db, spotlight + audit_wall, now,
                      (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            "unpublished_photoless": unpublished_photoless,
             **({"amazon_reference": {"list_price": sum(d.get("regular_price_basis") == "List price" for d in teaser if not d.get("locked")),
                                       "price_drop": sum(bool(d.get("price_drop")) and is_amazon_deal(originals.get(d.get("dedupe_key"), d))
                                                         for d in teaser if not d.get("locked"))}}

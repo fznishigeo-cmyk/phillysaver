@@ -49,6 +49,7 @@ def sample_deals():
 
 def config(mode):
     cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.max_photoless_h = None  # recorded before task 283
     cfg.dark_polish = False  # recorded before task 254
     cfg.strip_comments = False  # recorded before task 278
     pre_task_279(cfg)  # recorded before task 279

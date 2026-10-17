@@ -190,6 +190,7 @@ deferred too ("10% cash back" is NOT a 10%-off code) and only set the flag.
 
 ## 10. Multi-pack units
 
+- `unit_price(price, quantity)` divides positive finite inputs and rounds to four decimal places; otherwise returns `None`. Comparison quantities require a verbatim title quote.
 - `regular_price_unit` and `final_price_unit` both set and **different** →
   `computable=False`, `exclude_reason='unit_mismatch'` — never compare a
   per-unit regular to a pack final.
@@ -245,6 +246,9 @@ surface (grid, alerts, social, structured data) still excludes it.
 6. Stated shipping joins the checkout price before the pct.
 7. Rebates only ever affect `pct_with_rebates`.
 8. Round pcts to 1 decimal last.
+
+Comparison pack quantities multiply only two positive, title-evidenced factors
+in `savings.pack_quantity`; the pack count must be a whole number.
 
 ## What is EXCLUDED from pct, and why
 

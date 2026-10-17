@@ -79,7 +79,7 @@ async function guardedRoute(route, {origin, offlineSite, pace, active, ignored, 
     if (!await pace(url.hostname, active)) return route.abort();
     // Browser redirects skip Playwright's route guard. Fetch one hop at a time
     // so the host policy, request limit and pacing apply to every destination.
-    const response = await route.fetch({url: url.href, maxRedirects: 0, timeout: 10000});
+    const response = await route.fetch({url: url.href, maxRedirects: 0, timeout: 20000});
     try {
       const location = response.headers().location;
       if (![301, 302, 303, 307, 308].includes(response.status()) || !location)
@@ -181,12 +181,14 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
     rotationEnabled: rules.rotationEnabled, cards: [], errors: []};
   const ignored = new Set();
   const origin = new URL(options.site).origin;
-  const deadline = Date.now() + 60000;
+  // Live 2026-10-17: category/deal pages with hundreds of cards needed > 10 s on
+  // scheduled runners; budgets sized so a healthy page never flags.
+  const deadline = Date.now() + 120000;
   let ownRequests = 0, closing = false, doc;
   const timer = setTimeout(() => {
-    scene.errors.push('health capture exceeded 60 seconds'); closing = true;
+    scene.errors.push('health capture exceeded 120 seconds'); closing = true;
     context.close().catch(() => {});
-  }, 60000);
+  }, 120000);
   try {
     await context.addInitScript(() => {
       try { localStorage.setItem('wp.join.promptUntil', String(Date.now() + 7 * 864e5));
@@ -248,7 +250,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
       // Lazy photos count only once scrolled into view and actually decoded.
       for (let i = 0; i < scene.cards.length; i++) {
         const remaining = deadline - Date.now();
-        if (remaining <= 0) {scene.errors.push('photo capture exceeded 60 seconds'); break;}
+        if (remaining <= 0) {scene.errors.push('photo capture exceeded 120 seconds'); break;}
         const card = page.locator(CARDS).nth(i);
         await card.scrollIntoViewIfNeeded({timeout: Math.min(3000, remaining)});
         const image = card.locator('img').first();
@@ -290,7 +292,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
           const url = new URL(href, options.site);
           if (!href || url.origin !== origin || !url.pathname.startsWith(name === 'deal' ? '/deal/' : '/deals/'))
             throw new Error('sample internal link unavailable');
-          const response = await sample.goto(url.href, {waitUntil: 'load', timeout: 10000});
+          const response = await sample.goto(url.href, {waitUntil: 'domcontentloaded', timeout: 30000});
           await collectText(sample.locator('main'), scene.text, name);
           if (name === 'deal') {
             scene.working.deal = await dealPageProbe(sample, response?.status(), scene.cards[0], rules);

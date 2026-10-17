@@ -329,7 +329,9 @@ async function walk(page, doc, device) {
       await page.waitForTimeout(300);
       if (await page.locator("#paywall.support").isVisible()) break;
     }
-    await page.locator("#paywall.support").waitFor({ state: "visible" });
+    // The panel opens after support.panel_delay_s (config, 120 s since
+    // 2026-10-17), so wait past it instead of the 10 s step default.
+    await page.locator("#paywall.support").waitFor({ state: "visible", timeout: 150000 });
     const box = await page.locator("#paywall.support").boundingBox();
     check(box && box.y < 844 && box.y + box.height > 0, "banner outside phone viewport");
     await page.screenshot({ path: "shots/phone-support.png", fullPage: false });

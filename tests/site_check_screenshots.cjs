@@ -26,7 +26,7 @@ const run = new (Object.getPrototypeOf(async function () {}).constructor)(
         } };
         assert.equal(selector, "#paywall.support");
         return { isVisible: async () => true,
-          waitFor: async options => assert.deepEqual(options, { state: "visible" }),
+          waitFor: async options => assert.deepEqual(options, { state: "visible", timeout: 150000 }),  // panel opens after support.panel_delay_s (120 s)
           boundingBox: async () => ({ y: 600, height: 200 }) };
       },
       goto: async (url, options) => {

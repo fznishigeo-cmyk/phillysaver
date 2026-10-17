@@ -209,6 +209,72 @@ def tracker_target(url: str) -> str:
 REDIRECT_HOP_TIMEOUT_S = 6.0
 
 
+_NETWORK_DEADLINE = threading.local()
+
+
+def _remaining_timeout(timeout):
+    context = getattr(_NETWORK_DEADLINE, "value", None)
+    if context is None:
+        return timeout
+    deadline, clock = context
+    remaining = deadline - clock()
+    if remaining <= 0:
+        raise DeadlineExceeded("deadline exceeded during network I/O")
+    return remaining if timeout is None else min(timeout, remaining)
+
+
+class _DeadlineNetworkStream:
+    """Bound each blocking I/O, including partial headers and buffered gzip."""
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def read(self, max_bytes, timeout=None):
+        return self._stream.read(max_bytes, timeout=_remaining_timeout(timeout))
+
+    def write(self, buffer, timeout=None):
+        return self._stream.write(buffer, timeout=_remaining_timeout(timeout))
+
+    def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+        return _DeadlineNetworkStream(self._stream.start_tls(
+            ssl_context, server_hostname=server_hostname, timeout=_remaining_timeout(timeout)))
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+class _DeadlineBackend:
+    def __init__(self, backend):
+        self._backend = backend
+
+    def connect_tcp(self, host, port, timeout=None, **kwargs):
+        return _DeadlineNetworkStream(self._backend.connect_tcp(
+            host, port, timeout=_remaining_timeout(timeout), **kwargs))
+
+    def connect_unix_socket(self, path, timeout=None, **kwargs):
+        return _DeadlineNetworkStream(self._backend.connect_unix_socket(
+            path, timeout=_remaining_timeout(timeout), **kwargs))
+
+    def __getattr__(self, name):
+        return getattr(self._backend, name)
+
+
+class _DeadlineStream(httpx.SyncByteStream):
+    """Check raw chunks too: a content decoder can buffer without yielding bytes."""
+
+    def __init__(self, stream, check):
+        self._stream, self._check = stream, check
+
+    def __iter__(self):
+        for chunk in self._stream:
+            self._check()
+            yield chunk
+        self._check()
+
+    def close(self):
+        self._stream.close()
+
+
 class PoliteFetcher:
     """Robots-respecting, rate-limited, retrying HTTP fetcher.
 
@@ -243,6 +309,14 @@ class PoliteFetcher:
             timeout=httpx.Timeout(cfg.request_timeout_s),
             headers={"User-Agent": cfg.resolved_user_agent()},
         )
+        # httpx timeouts limit inactivity, not total time. Its httpcore backend
+        # is the boundary that can cap every socket read before it blocks.
+        transports = [self._client._transport, *self._client._mounts.values()]
+        for transport in transports:
+            if isinstance(transport, httpx.HTTPTransport):
+                pool = transport._pool
+                if not isinstance(pool._network_backend, _DeadlineBackend):
+                    pool._network_backend = _DeadlineBackend(pool._network_backend)
         # host -> RobotFileParser, or True (allow all) / False (disallow all)
         self._robots: dict[str, urllib.robotparser.RobotFileParser | bool] = {}
         self._last_request_at: dict[str, float] = {}
@@ -329,7 +403,8 @@ class PoliteFetcher:
 
     def api_get(self, url: str, *, params=None, headers=None, deadline=None,
                 max_attempts=None, respect_robots: bool = True,
-                conditional: bool = True, follow_redirects: bool = True) -> httpx.Response:
+                conditional: bool = True, follow_redirects: bool = True,
+                timeout_s: float | None = None) -> httpx.Response:
         """An API response through the same robots, pacing and retry policy.
 
         ``respect_robots=False`` is only for an official API we hold a key or
@@ -350,7 +425,7 @@ class PoliteFetcher:
                 "GET", target, dict(headers or {}), deadline=deadline,
                 conditional=False, follow_redirects=follow_redirects, read_body=True,
                 max_attempts=max_attempts, keep_error_body=True,
-                respect_robots=respect_robots)
+                respect_robots=respect_robots, timeout_s=timeout_s)
             return self._api_response(req, result, resp_headers)
         cache_key = "api:" + hashlib.sha256(target.encode()).hexdigest()
         hdrs = dict(headers or {})
@@ -363,13 +438,13 @@ class PoliteFetcher:
             "GET", target, hdrs, deadline=deadline, conditional=True,
             follow_redirects=follow_redirects, read_body=True, validator_key=cache_key,
             max_attempts=max_attempts, keep_error_body=True,
-            respect_robots=respect_robots)
+            respect_robots=respect_robots, timeout_s=timeout_s)
         if result.status == 304 and cache_key not in self._api_bodies:
             result, resp_headers = self._request_with_retries(
                 "GET", target, dict(headers or {}), deadline=deadline,
                 conditional=True, follow_redirects=follow_redirects, read_body=True,
                 validator_key=cache_key, max_attempts=max_attempts,
-                keep_error_body=True, respect_robots=respect_robots)
+                keep_error_body=True, respect_robots=respect_robots, timeout_s=timeout_s)
         if result.status == 304 and cache_key in self._api_bodies:
             result = replace(result, status=200, body=self._api_bodies[cache_key])
         elif 200 <= result.status < 300 and result.body is not None:
@@ -656,7 +731,8 @@ class PoliteFetcher:
                     self._check_deadline(deadline)
                     resp, body = self._send(method, url, headers,
                                             read_body=read_body,
-                                            timeout_s=timeout_s, content=content)
+                                            timeout_s=timeout_s, content=content,
+                                            deadline=deadline)
             except httpx.HTTPError as exc:
                 error = error_summary(exc)
                 logger.warning("%s failed (attempt %d/%d): %s",
@@ -697,27 +773,48 @@ class PoliteFetcher:
         read_body: bool,
         timeout_s: float | None = None,
         content: bytes | None = None,
+        deadline: float | None = None,
     ) -> tuple[httpx.Response, bytes | None]:
         req_headers = dict(headers)
         user_agent = self._user_agent(req_headers)
         req_headers = {k: v for k, v in req_headers.items() if k.lower() != "user-agent"}
         req_headers["User-Agent"] = user_agent
+        self._check_deadline(deadline)
         extra = {"timeout": timeout_s} if timeout_s else {}
-        with self._client.stream(method, url, headers=req_headers,
-                                 content=content, follow_redirects=False, **extra) as resp:
-            body: bytes | None = None
-            if (read_body and method != "HEAD"
-                    and resp.status_code not in (204, 304)):
-                chunks: list[bytes] = []
-                total = 0
-                for chunk in resp.iter_bytes():
-                    chunks.append(chunk)
-                    total += len(chunk)
-                    if total >= MAX_BODY_BYTES:
-                        logger.info("response body capped at %d bytes", MAX_BODY_BYTES)
-                        break
-                body = b"".join(chunks)[:MAX_BODY_BYTES]
-            return resp, body
+        if deadline is not None:
+            extra["timeout"] = min(timeout_s or self.cfg.request_timeout_s, deadline - self._clock())
+        previous = getattr(_NETWORK_DEADLINE, "value", None)
+        _NETWORK_DEADLINE.value = (deadline, self._clock) if deadline is not None else None
+        try:
+            with self._client.stream(method, url, headers=req_headers,
+                                     content=content, follow_redirects=False, **extra) as resp:
+                self._check_deadline(deadline)
+                if deadline is not None:
+                    resp.stream = _DeadlineStream(resp.stream, lambda: self._check_deadline(deadline))
+                body: bytes | None = None
+                if (read_body and method != "HEAD"
+                        and resp.status_code not in (204, 304)):
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in resp.iter_bytes():
+                        self._check_deadline(deadline)
+                        chunks.append(chunk)
+                        total += len(chunk)
+                        if total >= MAX_BODY_BYTES:
+                            logger.info("response body capped at %d bytes", MAX_BODY_BYTES)
+                            break
+                    body = b"".join(chunks)[:MAX_BODY_BYTES]
+                self._check_deadline(deadline)
+                return resp, body
+        except DeadlineExceeded as exc:
+            exc.request_sent = True
+            raise
+        except httpx.HTTPError as exc:
+            if deadline is not None and self._clock() >= deadline:
+                raise DeadlineExceeded("deadline exceeded during request", request_sent=True) from exc
+            raise
+        finally:
+            _NETWORK_DEADLINE.value = previous
 
     def _user_agent(self, headers: Mapping[str, str]) -> str:
         ua = next((v for k, v in headers.items() if k.lower() == "user-agent"), "")

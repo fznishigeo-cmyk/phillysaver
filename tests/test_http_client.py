@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
+
+import httpcore
 import httpx
 import pytest
 
@@ -452,8 +455,9 @@ def test_conditional_get_stores_then_sends_validators(tmp_path):
 def test_deadline_raises_before_any_attempt(tmp_path):
     clock, router = FakeClock(), Router()
     fetcher, _, _ = make_fetcher(tmp_path, router, clock)
-    with pytest.raises(DeadlineExceeded):
+    with pytest.raises(DeadlineExceeded) as caught:
         fetcher.get("https://late.example/feed", deadline=clock())
+    assert caught.value.request_sent is False
     assert router.requests == []
     fetcher.close()
 
@@ -472,7 +476,151 @@ def test_deadline_raises_before_backoff_sleep_that_crosses_it(tmp_path):
     fetcher.close()
 
 
+@pytest.mark.parametrize('phase', ['headers', 'last-chunk', 'empty-end', 'transport-timeout'])
+def test_deadline_during_request_closes_stream_and_marks_sent(tmp_path, phase):
+    clock, router, closed = FakeClock(), Router(), []
+
+    class Body(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b'first'
+            clock.sleep(2)
+            if phase == 'last-chunk':
+                yield b'last'
+
+        def close(self):
+            closed.append(True)
+
+    def handle(request):
+        assert all(value == 2 for value in request.extensions['timeout'].values())
+        if phase in {'headers', 'transport-timeout'}:
+            clock.sleep(2)
+        if phase == 'transport-timeout':
+            raise httpx.ReadTimeout('incomplete response')
+        return httpx.Response(200, stream=Body())
+
+    url = 'https://api.example/product'
+    router.add('GET', url, handle)
+    fetcher, db, _ = make_fetcher(tmp_path, router, clock)
+    try:
+        with pytest.raises(DeadlineExceeded) as caught:
+            fetcher.api_get(url, deadline=clock() + 2, respect_robots=False,
+                            conditional=False, max_attempts=1, timeout_s=5)
+        assert caught.value.request_sent is True
+        assert router.count('GET', url) == 1 and clock() == 1002
+        assert closed == ([] if phase == 'transport-timeout' else [True])
+        assert fetcher._api_bodies == {} and db.get_validators(url) == ('', '')
+    finally:
+        fetcher.close()
+        db.close()
+
+
 # ------------------------------------------------------------------- body cap
+
+
+@pytest.mark.parametrize('phase', ['headers', 'identity', 'gzip'])
+@pytest.mark.parametrize('injected_client', [False, True])
+@pytest.mark.parametrize('scheme', ['http', 'https'])
+def test_absolute_deadline_bounds_each_blocking_network_read(tmp_path, phase, injected_client, scheme):
+    clock, reads, closed = FakeClock(), [], []
+
+    class NetworkStream:
+        def __init__(self):
+            body = gzip.compress(b' ' * 100) if phase == 'gzip' else b' ' * 100
+            header = (b'HTTP/1.1 200 OK\r\nContent-Length: ' + str(len(body)).encode()
+                      + (b'\r\nContent-Encoding: gzip' if phase == 'gzip' else b'') + b'\r\n\r\n')
+            self.chunks = ([header[:1]] * 10 if phase == 'headers'
+                           else [header] + [body[i:i+1] for i in range(len(body))])
+
+        def read(self, max_bytes, timeout=None):
+            delay = 0 if len(reads) == 0 and phase != 'headers' else 4.9
+            reads.append(timeout)
+            clock.sleep(min(delay, timeout))
+            if timeout < delay:
+                raise httpcore.ReadTimeout('remaining wall time expired')
+            return self.chunks.pop(0)
+
+        def write(self, buffer, timeout=None):
+            pass
+
+        def close(self):
+            closed.append(True)
+
+        def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            assert server_hostname == 'api.example' and timeout == 5
+            return self
+
+        def get_extra_info(self, name):
+            return None
+
+    class Backend:
+        def connect_tcp(self, *args, **kwargs):
+            return NetworkStream()
+
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = Backend()
+    client = httpx.Client(transport=transport) if injected_client else None
+    db = DB(tmp_path / 'state.db')
+    cfg = AppConfig()
+    fetcher = PoliteFetcher(db, cfg, transport=None if client else transport,
+                            http_client=client, clock=clock, sleep_fn=clock.sleep)
+    try:
+        with pytest.raises(DeadlineExceeded) as caught:
+            fetcher.api_get(f'{scheme}://api.example/product', deadline=clock() + 20,
+                            respect_robots=False, conditional=False, max_attempts=3, timeout_s=5)
+        assert caught.value.request_sent is True
+        assert clock() == 1020 and closed == [True]
+        assert reads[-1] == pytest.approx(.4)
+        assert fetcher._api_bodies == {} and db.conn.execute('SELECT COUNT(*) FROM http_cache').fetchone()[0] == 0
+    finally:
+        fetcher.close()
+        if client:
+            client.close()
+        db.close()
+
+
+def test_pooled_network_reads_use_current_request_deadline_and_default_timeout(tmp_path):
+    clock, reads, connections = FakeClock(), [], []
+
+    class NetworkStream:
+        def read(self, max_bytes, timeout=None):
+            reads.append(timeout)
+            clock.sleep(min(4.9, timeout))
+            if timeout < 4.9:
+                raise httpcore.ReadTimeout('remaining wall time expired')
+            return b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok'
+
+        def write(self, buffer, timeout=None):
+            pass
+
+        def close(self):
+            pass
+
+        def get_extra_info(self, name):
+            return False if name == 'is_readable' else None
+
+    class Backend:
+        def connect_tcp(self, *args, **kwargs):
+            connections.append(True)
+            return NetworkStream()
+
+    transport = httpx.HTTPTransport()
+    transport._pool._network_backend = Backend()
+    db = DB(tmp_path / 'state.db')
+    fetcher = PoliteFetcher(db, AppConfig(), transport=transport, clock=clock, sleep_fn=clock.sleep)
+    options = dict(respect_robots=False, conditional=False, max_attempts=1)
+    url = 'http://api.example/product'
+    try:
+        assert fetcher.api_get(url, deadline=clock() + 20, timeout_s=5, **options).content == b'ok'
+        clock.sleep(30)
+        assert fetcher.api_get(url, **options).content == b'ok'
+        with pytest.raises(DeadlineExceeded):
+            fetcher.api_get(url, deadline=clock() + 2, timeout_s=5, **options)
+        assert fetcher.api_get(url, timeout_s=8, **options).content == b'ok'
+        assert reads == [5, fetcher.cfg.request_timeout_s, 2, 8]
+        assert len(connections) == 2  # only the expired connection was discarded
+    finally:
+        fetcher.close()
+        db.close()
 
 
 def test_body_capped_at_5mb(tmp_path):

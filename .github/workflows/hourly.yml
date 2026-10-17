@@ -111,6 +111,7 @@ jobs:
 
       - name: Deploy site to Cloudflare Pages
         id: deploy
+        working-directory: . # wrangler bundles ./functions alongside site/
         # The site's only host (wowpriced.com and www point at this project;
         # GitHub Pages was retired 2026-10-11: its terms bar commercial
         # sites). A failed deploy turns the run red; state is already
@@ -134,6 +135,7 @@ jobs:
           chars=unexpected; [[ "$CLOUDFLARE_API_TOKEN" =~ ^[A-Za-z0-9_-]+$ ]] && chars=ok
           echo "Cloudflare token: ${#CLOUDFLARE_API_TOKEN} characters, ${kind} token, characters ${chars}"
           npx --yes wrangler@4 pages project create wowpriced --production-branch main >/dev/null 2>&1 || true
+          test -f ./functions/api/search.js
           deploy() { npx --yes wrangler@4 pages deploy site --project-name wowpriced --branch main --commit-dirty=true 2>&1 | tee cf-pages.log; }
           # Cloudflare sometimes answers "Unknown internal error" (3 runs on
           # 2026-10-12); uploads go by content hash, so one retry is cheap.

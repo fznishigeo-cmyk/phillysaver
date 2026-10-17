@@ -244,3 +244,22 @@ def test_a_gzip_api_answer_is_decoded_once(db, cfg):
         assert resp.status_code == 200 and resp.json() == {"products": [], "tokensLeft": 9}
     finally:
         f.close()
+
+
+@pytest.mark.parametrize('conditional', [False, True])
+def test_compare_timeout_reaches_transport_without_changing_default(db, cfg, conditional):
+    clock, seen = HostClock(), []
+    def handle(request):
+        seen.append(request.extensions['timeout'])
+        return httpx.Response(200, json={'products': []})
+    fetcher = PoliteFetcher(db, cfg, transport=httpx.MockTransport(handle),
+                           clock=clock, sleep_fn=clock.sleep)
+    try:
+        fetcher.api_get('https://api.keepa.com/product', respect_robots=False,
+                        conditional=conditional, timeout_s=5, max_attempts=1)
+        fetcher.api_get('https://api.keepa.com/product', respect_robots=False,
+                        conditional=conditional, max_attempts=1)
+    finally:
+        fetcher.close()
+    assert all(value == 5 for value in seen[0].values())
+    assert all(value == cfg.request_timeout_s for value in seen[1].values())

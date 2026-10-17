@@ -2717,6 +2717,17 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, rank.site_deals(db, cfg, now), fetcher, cfg, now,
             deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
             rate_limited=summary["price_recheck"].get("rate_limited", False)) if fast_lane else {}
+        if fast_lane and cfg.compare["refresh"]:
+            from . import compare
+            from .keepa_budget import KeepaBudget
+            try:
+                summary["compare"] = compare.refresh(
+                    db, cfg, now, fetcher, deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
+                    budget=KeepaBudget.load(db),
+                    rate_limited=(summary["price_recheck"].get("rate_limited", False)
+                                  or summary["photo_search"].get("rate_limited", False)))
+            except Exception as exc:
+                log.warning("compare refresh unavailable (%s)", type(exc).__name__)
         record_deaths()
         log.info("deaths by reason: %s", summary["deaths_by_reason"])
 
@@ -2813,13 +2824,14 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         accuracy.extra_samples(db, cfg, now, fetcher=fetcher,
                                deadline=deadline - _RESERVE_FOR_TAIL_S / 2, run_key=run_key,
                                rate_limited=(summary["price_recheck"].get("rate_limited", False)
-                                             or summary["photo_search"].get("rate_limited", False)))
+                                             or summary["photo_search"].get("rate_limited", False)
+                                             or summary.get("compare", {}).get("rate_limited", False)))
         # last_run lands in the public deals.json: no spend or model (the
         # operator's; run_stats keeps the spend).
         site_res = render_site(db, cfg, now, last_run={
             "run_key": run_key, "kind": kind,
             "items_fetched": len(posts), "posts_new": len(new_posts),
-        }, **({"ai_parser": parser} if cfg.ai_take["enabled"] else {}))
+        }, **({"ai_parser": parser} if cfg.ai_take["enabled"] or cfg.appeal_score.get("enabled") else {}))
         photo_deals = [
             db.get_deal(d["dedupe_key"]) or d for d in site_res["public_deals"]
             if not d.get("locked")]
@@ -2828,6 +2840,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("photos: %s", summary["photos"])
         log.info("photo_coverage: %s", summary["photo_coverage"])
         summary["published"] = site_res.get("published", 0)
+        summary["unpublished_photoless"] = site_res["unpublished_photoless"]
         summary["appeal"] = site_res.get("appeal", {})
         if "amazon_reference" in site_res:
             summary["amazon_reference"] = site_res["amazon_reference"]

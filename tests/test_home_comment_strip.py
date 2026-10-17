@@ -238,7 +238,7 @@ def test_enabled_shipped_phone_budget_with_headroom(tmp_path):
     for enabled in (False, True):
         cfg.strip_comments = enabled
         def inspect(db, out):
-            report = analyze(out, cfg, expected_offers=1400)
+            report = analyze(out, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
             measurements[enabled] = report["metrics"]
             if enabled:
                 assert report["ok"], report

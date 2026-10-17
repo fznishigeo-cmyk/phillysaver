@@ -48,6 +48,15 @@ audit:
   round_price_multiple: 50     # round reference without support: needs a critic
   reference_max_excess_pct: 10 # claimed regular above a stored Amazon reference: reject
 
+appeal_score:
+  enabled: true
+  model: "claude-haiku-5-5"
+  candidates: 80
+  ttl_h: 72
+  max_usd_per_run: 0.03
+  max_usd_per_day: 0.40
+  factors: {1: 0.6, 2: 0.8, 3: 1.0, 4: 1.1, 5: 1.2}
+
 parse:
   # Primary extraction model. Haiku handles the first read of every post at
   # roughly a third of Sonnet's price — the volume work. Sonnet stays where
@@ -150,6 +159,12 @@ intake:
   max_store_share: 0.50        # historical/structured store mix; unknown stores stay unknown
   max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
 
+search:
+  amazon_results: preview     # only ?preview=search until the operator approves
+  cache_hours: 6
+  tokens_per_day: 3000        # separate from pipeline recheck accounting
+  max_per_minute: 20
+
 site:
   static_photos: true          # task 274: photos on static cards and deal pages
   open_box_scarcity: true   # task 273: never infer a stock count
@@ -204,6 +219,8 @@ publish:
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
   photoless_last: true        # photos first within each wall group; search stays unchanged
+  photos:
+    max_photoless_h: 3        # hide live cards without an HTTPS photo after this many hours
   reuse_link_facts:
     enabled: false           # reuse pure routing facts only within one publish
   show_dead_hours: 24          # confirmed-gone cards linger inline for one day
@@ -227,7 +244,9 @@ publish:
     demote_words: [phone case, iphone case, galaxy case, pixel case, otterbox, spigen,
                   screen protector, tempered glass, replacement, replacement part,
                   toner, ink cartridge, filter cartridge, adapter plate, mounting bracket,
-                  fuse, gasket, o-ring, hose clamp]
+                  fuse, gasket, o-ring, hose clamp,
+                  christmas, xmas]   # operator 2026-10-17 ("why do i still see the christmas tree"):
+                                     # off-season until the gifts window; drop these two on Nov 1
     max_niche_top: 2
     niche_after: 8              # never a niche card on the first screen (cards 1-8)
     niche_last: true            # operator 2026-10-16 ("stop putting random car parts on the front
@@ -247,11 +266,13 @@ publish:
       sources: [meh, sidedeal, morningsave]
       max_cards: 1
     appeal:                    # landing pick_score only; false restores the old order
+      allure_first: 3           # first allure card may be card 3, then at most one in four
+      allure_every: 4
       enabled: true
       niche_factor: 0.25        # clearly model-specific accessories/parts stay on the wall
       category_factors: {home: 1.15, kitchen: 1.15, beauty: 1.15, fashion: 1.15,
                          toys_games: 1.05, kids_baby: 1.05, health: 1.05, grocery: 1.05,
-                         electronics: 1.05,   # operator 2026-10-17: gadgets entice; subtly, below women's picks
+                         electronics: 1.15,   # operator 2026-10-17: gadgets entice ("where are the tech gadgets"); was 1.05
                          auto: 0.85}
       want:
         enabled: true
@@ -264,9 +285,10 @@ publish:
                         sex, adult, erotic, intimate wellness,
                         dildo, masturbator, bondage, fetish, sex lube, sexual lubricant]
         groups:
-          basics: [bra, bras, bralette, underwear, panties, boxer, briefs, socks,
-                   leggings, pajamas, lingerie, bodysuit, bikini, swimsuit, slippers,
-                   sneakers, shoes, hat, beanie, hoodie, sweatshirt]
+          # Operator 2026-10-17: team sweatshirts/jackets filled the first screens;
+          # bras and panties are allure ("to catch women's attention").
+          basics: [underwear, boxer, briefs, socks, leggings, pajamas, slippers,
+                   sneakers, shoes, hat, beanie]
           carry: [owala, stanley, hydro flask, yeti, tumbler, water bottle]
           small wins: [light bulbs, led bulbs, usb c cable, charging cable,
                        charger, power bank, watch, earbuds, batteries]
@@ -274,23 +296,40 @@ publish:
                    moisturizer, sunscreen, shampoo, conditioner, hair dryer,
                    straightener, curling iron, nail, lip gloss]
           wear & carry: [sunglasses, purse, handbag, tote, backpack, jewelry,
-                         earrings, necklace, bracelet, jacket, coat, dress, jeans, pajama set]
+                         earrings, necklace, bracelet, dress, pajama set]
           home: [towels, sheets, pillow, blanket, throw, candle, storage bins,
                  organizer, vacuum, air purifier, humidifier, string lights]
           kitchen: [air fryer, knife set, cookware, pan, coffee, k cup, blender,
                     food storage, lunch box]
           kids: [diapers, wipes, toys, lego, crayons, kids shoes, school backpack,
                  baby bottle, sippy cup, stroller]
+          # Operator 2026-10-17: "items people always need" (her list of ~50).
           everyday: [paper towels, toilet paper, detergent, dish soap, trash bags,
-                     toothpaste, toothbrush, deodorant, razor, vitamins]
+                     toothpaste, toothbrush, deodorant, razor, vitamins,
+                     laundry detergent, detergent pods, tide pods, gain flings, laundry pods,
+                     laundry soap, stain remover, garbage bags, bath tissue, facial tissues,
+                     tissues, kleenex, dishwasher pods, dishwasher tablets, dishwasher detergent,
+                     floss, hand soap, hand wash, aluminum foil, tin foil, reynolds wrap,
+                     ziploc bags, sandwich bags, freezer bags, food storage bags, plastic wrap,
+                     cling wrap, parchment paper, body wash, shower gel, razors,
+                     disinfecting wipes, all purpose cleaner, sponges, toilet bowl cleaner,
+                     tampons, menstrual pads, maxi pads, panty liners, aa batteries,
+                     aaa batteries, ground coffee, coffee beans, coffee pods, olive oil,
+                     cooking oil, vegetable oil, avocado oil, spaghetti, pasta, penne, macaroni,
+                     white rice, jasmine rice, basmati rice, canned tuna, canned soup,
+                     canned beans, canned tomatoes, baby wipes, baby formula, infant formula,
+                     pull ups, training pants, fruit snacks, applesauce pouches, toddler snacks]
           pets & fitness: [dog treats, cat litter, dog toy, yoga mat, resistance bands, dumbbells]
           gadgets: [headphones, bluetooth speaker, smartwatch, smart watch, fitness tracker,
                     label maker, flashlight, wireless charger, charging station, phone stand,
                     ring light, mini projector, portable fan, smart plug, security camera,
                     doorbell camera, dash cam, fire tv stick, streaming stick, gaming controller,
                     led strip lights, electric toothbrush, massage gun, digital frame]
-          allure: [lingerie, babydoll, bralette, corset, satin, silk robe,
-                   sleepwear, nightgown, cologne, perfume, boxer briefs, swim trunks, date night]
+          allure: [lingerie, babydoll, bralette, bra, bras, panties, bodysuit, bikini, swimsuit,
+                   corset, satin, silk robe, sleepwear, nightgown, cologne, perfume, boxer briefs,
+                   swim trunks, date night]
+        group_factors:          # operator 2026-10-17: "bras panties, sexy items ... to catch women's attention"
+          allure: 1.35          # spacing still applies (first at card 3, then 1 in 4); adult items never lift
       season:                  # operator 2026-10-17: push holiday items ~2 weeks before each holiday
         - name: halloween
           from: "10-17"
@@ -339,7 +378,7 @@ publish:
                   lego, pajamas, slippers, blanket]
           factor: 1.15
     popular_affordable:        # task 255: private Amazon popularity + low checkout price
-      enabled: false           # flip after reviewing the 1-day shadow
+      enabled: true            # operator 2026-10-17: "gadgets that people will actually buy" (bestsellers ≥1000/month); shadow ran since Oct 16
       shadow: true             # encrypted-state comparison; private growth report only
       min_monthly_sold: 1000
       max_price: 50
@@ -372,9 +411,19 @@ publish:
       # stay on the wall (Used tab) but are never top picks.
       exclude_conditions: [used, open_box, refurbished]
       max_same_store: 40
-      max_same_brand: 3
+      max_same_brand: 2         # operator 2026-10-17: one brand's 80%-off sweatshirts filled the first screen; was 3
+      brand_from_title: true    # missing brand = the title's first two words (Amazon often leaves it blank)
       max_same_category: 24
       max_title_twins: 2
+      # Operator 2026-10-17 ("is all clothes where are the tech gadgets"): at most 2
+      # clothing cards in every 6 of the first 24 picks; the rest keep their order after.
+      max_clothing_per_window: 2
+      mix_window: 6
+      mix_slots: 24
+      clothing_categories: [fashion]
+      clothing_words: [sweatshirt, hoodie, crewneck, pullover, t-shirt, tee, shirt, jacket, coat, vest,
+                       sweater, cardigan, dress, skirt, jeans, pants, joggers, leggings, shorts, bra,
+                       sports bra, underwear, socks, pajamas, sneakers, shoes, boots, sandals, slippers]
       known_stores: [amazon, walmart, target, best buy, home depot, lowe's,
                      costco, kohl's, macy's, nike, adidas, woot, ebay, sephora,
                      ulta, gap, old navy, wayfair, dell, lenovo, samsung, apple,
@@ -1132,12 +1181,31 @@ first_party_clicks:
 # Hourly site check (scripts/site_check.js): photo floors that turn the run red,
 # so the failure watch catches missing photos before a visitor does (operator
 # 2026-10-15: "we need 99.99% of images showing up!"). Live 2026-10-15 21:11Z:
-# 93% showing, 0 broken, 24 of the top 24 cards with a photo. Raise
-# min_photo_pct as coverage improves.
+# 93% showing, 0 broken, 24 of the top 24 cards with a photo. Task 283 hides
+# older photo-less cards and raises the showing floor to 99%.
 site_check:
-  min_photo_pct: 90         # live deals whose photo shows
+  min_photo_pct: 99         # live deals whose photo shows
   max_broken: 10            # deals whose photo fails to load
   first_screen_photos: 24   # of the top 24 cards on the home page
+
+compare:                   # task 256: best value finder (Keepa only; filters never displayed)
+  refresh: true            # operator 2026-10-17: preview with real prices (caps below bound Keepa use)
+  publish: "preview"       # off | preview | on; preview = /compare/ pages, noindex, no menu link, not in the sitemap
+  terms_file: data/compare_terms.yaml
+  candidates_per_term: 20
+  refresh_hours: 12
+  finder_days: 7
+  min_rating: 40           # finder filter only; never displayed
+  min_reviews: 50          # finder filter only; never displayed
+  prime_only: true
+  tokens_per_day: 6000
+  tokens_per_run: 300
+  finder_reserve_tokens: 30  # upper bound reserved before dispatch; oversized receipts halt this UTC day
+  min_bucket_share: 0.8
+  max_seconds_per_run: 20
+  request_timeout_s: 5     # compare calls only; leave room for pacing and the next call
+  max_price_age_h: 24
+  max_terms: 120
 
 images:
   asin_backfill_per_run: 60   # offline identity repairs, plus existing Amazon link pass; once per deal

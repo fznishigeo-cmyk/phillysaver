@@ -20,6 +20,7 @@ from tests.history_pins import pre_history_removal, pre_task_279
 def baseline_config(mode):
     if mode == "shipped":
         cfg = load_config()
+        cfg.max_photoless_h = None  # recorded before task 283
         cfg.dark_polish = False  # recorded before task 254
         cfg.keepa_click_price_rule = "off"  # recorded before task 275
         cfg.static_photos = False  # recorded before task 274

@@ -24,6 +24,24 @@ from . import models
 logger = logging.getLogger("dealradar.savings")
 
 
+def unit_price(price, quantity) -> float | None:
+    """Cost per evidenced unit, rounded only after division."""
+    if any(type(n) not in {int, float} or not math.isfinite(n) or n <= 0
+           for n in (price, quantity)):
+        return None
+    result = price / quantity
+    return round(result, 4) if math.isfinite(result) else None
+
+
+def pack_quantity(quantity, packs) -> float | None:
+    """Total units only after the caller evidences both factors in the title."""
+    if any(type(n) not in {int, float} or not math.isfinite(n) or n <= 0
+           for n in (quantity, packs)) or int(packs) != packs:
+        return None
+    total = quantity * packs
+    return total if math.isfinite(total) else None
+
+
 def price_verdict(current: float | None, median: float | None,
                   lower_ratio: float = 0.95, higher_ratio: float = 1.05) -> str:
     """Compare a live price to our median; boundary prices are about usual."""

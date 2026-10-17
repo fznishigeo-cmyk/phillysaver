@@ -24,11 +24,12 @@ from scripts.publication_budget import analyze
 from tests.phone_budget_fixture import publish_fixture
 from tests.test_appeal import tree
 from tests.test_front_page import pick_deal, browser
+from tests.history_pins import pre_task_282
 
 NOW = datetime(2026, 11, 15, 12, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[1]
 SHIPPED = load_config()
-GROUPS = SHIPPED.front_page["appeal"]["want"]["groups"]
+GROUPS = pre_task_282(copy.deepcopy(SHIPPED)).front_page["appeal"]["want"]["groups"]  # recorded before task 284
 
 
 @pytest.fixture(autouse=True)
@@ -41,8 +42,9 @@ def offline(monkeypatch):
 
 
 def settings():
-    cfg = copy.deepcopy(SHIPPED)
+    cfg = pre_task_282(copy.deepcopy(SHIPPED))  # recorded before task 282
     cfg.front_page["popular_affordable"]["shadow"] = False
+    cfg.front_page["top_picks"].pop("max_clothing_per_window", None)  # recorded before the first-screen mix
     return cfg
 
 
@@ -680,9 +682,10 @@ def test_cli_omits_private_counts(monkeypatch, capsys):
 
 def test_phone_budgets_with_all_switches_enabled(tmp_path):
     cfg = settings()
+    cfg.max_photoless_h = SHIPPED.max_photoless_h  # all switches, including task 283's cutoff
     # Real task-206 1,400-offer input; never modify its recorded byte ceilings.
     publish_fixture(tmp_path, cfg)
-    result = analyze(tmp_path / "site", cfg, expected_offers=1400)
+    result = analyze(tmp_path / "site", cfg, expected_offers=1393)  # task 283: seven older photo-less offers
     for name, value in result["metrics"].items():
         if name in ("home_html", "home_js", "home_css", "deals_json"):
             print(f'int11 {name}: {value["gzip"]} <= {cfg.phone_budget[name + "_gzip_max_bytes"]} gzip bytes')
@@ -749,7 +752,7 @@ def test_gadgets_and_halloween_get_the_subtle_lift():
     assert "gadgets" in appeal.groups({"item": "Anker 10,000mAh Wireless Charger Stand"}, options)
     assert "gadgets" in appeal.groups({"item": "Phomemo D30 Bluetooth Label Maker"}, options)
     assert "gadgets" not in appeal.groups({"item": "Stainless Steel Mixing Bowls"}, options)
-    assert SHIPPED.front_page["appeal"]["category_factors"]["electronics"] < \
+    assert SHIPPED.front_page["appeal"]["category_factors"]["electronics"] == \
         SHIPPED.front_page["appeal"]["category_factors"]["beauty"]
     halloween = next(w for w in options["season"] if w["name"] == "halloween")
     assert (halloween["from"], halloween["to"]) == ("10-17", "10-31")
@@ -765,3 +768,58 @@ def test_kids_toys_lift_but_adult_toys_never():
     for title in ("Rose Toy for Women", "Couples Toy Gift", "Wand Massager Personal",
                   "Adult Toy Kit", "Vibrating Egg"):
         assert appeal.blocked({"item": title}, options), title
+
+
+def test_everyday_staples_from_the_operator_list_lift():
+    """Operator 2026-10-17: "items people always need: foil, soap ..."."""
+    options = SHIPPED.front_page["appeal"]
+    for title in ("Reynolds Wrap Aluminum Foil 200 sq ft", "Dial Liquid Hand Soap 3-Pack",
+                  "Glad ForceFlex Trash Bags 80 Count", "Cascade Platinum Dishwasher Pods 62 ct",
+                  "Ziploc Sandwich Bags 280 Count", "Huggies Pull Ups Training Pants"):
+        assert "everyday" in appeal.groups({"item": title}, options), title
+    assert "everyday" not in appeal.groups({"item": "Stainless Steel Mixing Bowls"}, options)
+
+
+def test_bras_and_panties_are_allure_and_team_sweatshirts_get_no_lift():
+    """Operator 2026-10-17: "where is the bras panties, sexy items?" and a first
+    screen of NBA sweatshirts; Christmas waits for the gifts window."""
+    from dealradar.rank import is_niche
+    options = SHIPPED.front_page["appeal"]
+    for title in ("Warner's Women's Easy Does It Wireless Bra", "Hanky Panky Lace Panties 3-Pack",
+                  "Women's Ribbed Bodysuit", "Cupshe Women's Bikini Set"):
+        assert appeal.is_allure({"item": title}, options), title
+    for title in ("Blue 84 Portland Trail Blazers NBA Officially Licensed Full Zip Sweatshirt",
+                  "Men's Flannel Hoodie", "32 Degrees Women's Lightweight Packable Shirt Jacket",
+                  "Amazon Essentials Men's Slim Fit Jeans"):
+        assert not appeal.groups({"item": title}, options), title
+    tree = {"item": "National Tree Company 7.5ft Pre-Lit Winchester Pine Slim Christmas Tree",
+            "category": "home"}
+    assert is_niche(tree, SHIPPED.front_page)
+    assert not is_niche({"item": "Halloween Pumpkin String Lights", "category": "home"}, SHIPPED.front_page)
+
+
+def test_allure_group_lifts_more_and_missing_knob_keeps_the_shared_lift():
+    """Operator 2026-10-17: sexy items catch attention; adult items never lift."""
+    cfg = copy.deepcopy(SHIPPED)
+    cfg.front_page["popular_affordable"]["enabled"] = False
+    cfg.appeal_score = {}
+    bra = deal(item="Warner's Women's Easy Does It Wireless Bra")
+    socks = deal(item="Cotton socks")
+    adult = deal(item="Couples vibrator gift set")
+    assert appeal.signals(bra, cfg, NOW)[2] == 1.35
+    assert appeal.signals(socks, cfg, NOW)[2] == 1.2
+    assert appeal.signals(adult, cfg, NOW)[2] == 1.0
+    assert rank.pick_score(bra, cfg, NOW) / unlifted(bra, cfg) == pytest.approx(1.35)
+    assert rank.pick_score(socks, cfg, NOW) / unlifted(socks, cfg) == pytest.approx(1.2)
+    off = copy.deepcopy(cfg)
+    off.front_page["appeal"]["want"].pop("group_factors")
+    assert appeal.signals(bra, off, NOW)[2] == 1.2
+    assert rank.pick_score(bra, off, NOW) / unlifted(bra, off) == pytest.approx(1.2)
+
+
+@pytest.mark.parametrize("value", [{"allure": 1.6}, {"allure": 0.9}, {"nope": 1.2}, {"allure": "1.3"}])
+def test_group_factors_are_validated(value):
+    options = copy.deepcopy(SHIPPED.front_page["appeal"])
+    options["want"]["group_factors"] = value
+    with pytest.raises(ValueError, match="group_factors"):
+        appeal.validate(options)

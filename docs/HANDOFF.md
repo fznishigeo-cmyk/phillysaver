@@ -88,6 +88,13 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **Public price history withdrawn (2026-10-17 ~04:30–04:35 UTC):** the operator
+  reports Amazon's email disallows historical price elements on Amazon listings,
+  and drops public price history for every store. This supersedes the public
+  history display approvals below. Hidden backend history may still filter/rank
+  products. The finder shows today's price and evidenced unit price only: no
+  historical lows/highs, averages, patterns, charts, counters or history links,
+  including JSON and alt text. Current-price confirmation clocks remain.
 - **"AI sells" (2026-10-16):** public copy may say "AI" (Deal Check subhead,
   the AI take label, how-it-works#ai). Keepa, Claude, Codex, LLM, Python and the
   other internals stay out of public copy (tests/test_public_copy.py).
@@ -229,6 +236,143 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Release C adversarial review fixes (2026-10-17; local, uncommitted, fixes complete):**
+  The existing local Release C config remains `compare.refresh: true`,
+  `compare.publish: "preview"`; no deployment or activation was performed.
+  Comparison sale badges consume the published deal projection while retaining
+  private confirmation/evidence gates. Regressions cover private 80% projected
+  to 50%, null and an entirely omitted public percentage; private percentages
+  cannot supply a badge. Clothing is a greedy insertion constraint: overflow
+  is deferred by score and re-offered at the next available window, with all
+  checkout, store, brand, category, twin and run checks applied on insertion.
+  The post-pass reorder is removed. Clothing top picks alone carry `cl: 1`;
+  the flag is absent when the clothing knob is off. Rotation and arrivals keep
+  clothing/non-clothing slots separate; preparation exchanges match class,
+  checkout kind and boost. Incompatible rotations retain validated server order.
+  Final Allure repair and its static Python mirror validate clothing, checkout
+  and first-eight runs within the existing 24-card membership / 1,024-state
+  bounds, using safe ordered deferral on exhaustion. Spotlight and Add-to-Cart
+  rules remain protected. The clothing path also supports rotation zero,
+  disabled/omitted checkout metadata and absent top-pick configuration.
+  Requested complete files (first-screen mix, drop rotation, front page,
+  comparison): **518 passed, 1 skipped in 358.84s (0:05:58)**.
+  Expanded toggle regressions: **24 passed in 39.16s**. Intermediate related
+  compatibility/phone run: **4 failed, 361 passed, 1 skipped in 722.31s
+  (0:12:02)**. All four failures were historical checkout-OFF tree pins whose
+  fixtures inherited preview publishing and four new mix keys. The historical
+  helper now removes all new mix keys; those four fixtures explicitly select
+  the original finder OFF configuration. No expected hash was changed.
+  All shipped phone checks in that run passed: click-price OFF/ON, comment
+  stripping OFF/ON with headroom, and the existing rotation budget fixture.
+  Final first-screen/whole-comparison/four original checkout-OFF pins/existing
+  gone-and-Allure static/emitted-JS verification:
+  **368 passed in 85.50s (0:01:25)**. This includes the latest absent-percentage
+  and omitted-checkout-metadata cases and the missing-top-picks browser path.
+  No failing targeted checks remain. Native Chromium was skipped by its local
+  launcher, so native phone QA remains pending; emitted-JS checks run offline.
+  Existing hashes and phone ceilings are unchanged. Clothing-OFF rotation
+  script bytes match the supplied version exactly; `git diff --check` passes.
+  All pytest runs use `-q -n 1 -p no:cacheprovider` with owned
+  `/tmp/taskCfix-*` basetemps removed in `finally` after each run; none remain.
+  No network, full suite, hash re-pin, commit or push. Review/deployment remain.
+- **Private impulse appeal (Codex task 282, 2026-10-17; uncommitted, ON):**
+  Price-bound 1–5 ratings use the configured Haiku model, best 80 eligible
+  candidates in batches of 20, a 72-hour private DB cache, durable run claims
+  and the shared spend ledger with $0.03/run and $0.40/day feature ceilings.
+  Only published title/store/prices/category reach the model; no reasons or
+  ratings reach public/member payloads or logs. Pick lifts share existing
+  headroom; score-1 offers stay on the wall outside rotating picks, whose later
+  windows can lead. The existing adult deny list also excludes those offers
+  from rating requests and picks, without changing its classification. Allure
+  ships first=3/every=4 across Python, emitted JS and rotation repair; absent
+  knobs emit exactly the previous 7/6 JavaScript. Historical fixtures retain
+  their existing hashes through explicit pre-282 settings. The historical mix
+  helper now also omits four inert metadata keys absent from its old captures;
+  no hashes were re-pinned. Legacy AI-take fakes explicitly select rating OFF;
+  a new combined-client test verifies both features share one parser/ledger
+  and cache without adding calls or rows on replay.
+  Initial 11-file scoped regression: **5 failed, 1130 passed, 3 skipped in
+  798.91s (0:13:18)**; four failures were the old single-purpose AI-take fake,
+  and one was its historical mix metadata. Further frozen checks identified
+  the same metadata omission; all are corrected. Final feature/AI-take and
+  both real-pipeline rating rerun modes: **247 passed, 1 skipped in 173.95s
+  (0:02:53)**. All 16 selected existing publication hashes plus the adult
+  first-screen regression: **17 passed in 27.55s**. Core coverage includes
+  batch/candidate limits, price/TTL cache invalidation, all spend ceilings,
+  malformed/error privacy, unchanged public numeric scores, four OFF byte/member
+  modes, rating-1 shaker exclusion, rating-4/5 gadget lifts, emitted JS and
+  rotation repair at 3/4 and legacy 7/6, plus existing phone ceilings.
+  `git diff --check` and Node syntax pass; absent-knob emitted Allure/rotation
+  JS also matches pre-edit HEAD byte for byte. Native Chromium launch returned
+  77, so phone/desktop light/dark smoke remains unverified. No implementation
+  work remains; review/deployment remain. No network, full suite, commit or push.
+  Every owned `/tmp/task282-*` basetemp was removed after its run; none remain.
+- **Photo-less public cutoff (Codex task 283, 2026-10-17; uncommitted, ON):**
+  `publish.photos.max_photoless_h: 3` hides live cards without an allowed HTTPS
+  photo at three hours; omitted is OFF. Publication and alert/digest gates leave
+  stored rows and recovery eligibility intact. Existing removed-page/posted
+  redirect and IndexNow paths handle disappearance and later photo return.
+  Private run summary adds count-only `unpublished_photoless`; site-check floor
+  ships 99%. Tests cover 2h59/3h00, source-image grants, gone retention, all
+  public files/social selection, manifest/sitemap/IndexNow removal and return,
+  unchanged deal rows and same-run output/state, plus both audit-mode reruns.
+  Initial feature run: **1 failed, 41 passed in 34.02s** (the canned categorizer
+  did not know the extra seed title; marked that seed already categorized).
+  Broader targeted run: **2 failed, 317 passed, 1 skipped in 564.15s (0:09:24)**.
+  Both failures were pre-existing shipped snapshot drift: the pre-task publisher
+  and cutoff-OFF emitted identical files. Historical helpers now omit four
+  newer clothing-mix metadata fields; original hashes are unchanged. A standalone
+  pre-fix snapshot reproduction was **1 failed in 4.57s**. Final task, all 12
+  historical byte cases, shipped phone budget and site-check guard:
+  **56 passed in 156.62s (0:02:36)**. All broader phone checks passed too;
+  seven older photo-less offers now leave 1,393 of the fixed 1,400 inputs public,
+  with every original byte ceiling retained. No failing targeted checks remain.
+  Every pytest run used `-q -n 1 -p no:cacheprovider` and an owned
+  `/tmp/task283-*` basetemp, removed in `finally` after its run; owned baseline
+  comparison scratch was removed too. No network, full suite, hash re-pins,
+  commit or push. Review/deployment remain; optional native Chromium QA skipped.
+- **Search any product (Codex task 280, 2026-10-17; uncommitted, PREVIEW):**
+  Pages `/api/search` and home-only `?preview=search` cards show current qualified
+  Buy Box/new prices with their own real reading clocks, both image formats and
+  tagged Amazon links. No history/rating/review/sales fields. Normal visitors
+  keep the fallback button; OFF restores original files without re-pinning hashes.
+  Debounced, abortable requests run once per normalized query; GA4 gets count only.
+  Config remains preview / 6-hour cache / 3,000 tokens daily / 20 misses per minute.
+  Conservative 110-token reservations persist before dispatch, including errors;
+  timeout covers headers/body; cache never extends a reading beyond 24 hours.
+  D1 `SEARCH_LIMITS` provides atomic daily/minute debits; KV `SEARCH_BUDGET`
+  mirrors/checks counters. Missing either fails closed. Operator reports both
+  dashboard bindings live (`wowpriced_search_limits`, `wowpriced_search_budget`).
+  Both deploy lanes bundle root `functions/`; pipeline Keepa keys stay in place.
+  **Adversarial review fixes:** unqualified Buy Box prices fall back only to fresh
+  current-new prices. A shared non-expiring D1 dispatch lease spans the upstream
+  call and adds a one-second completion cooldown; delayed KV/D1 storage and UTC
+  rollover cannot overlap calls. Lost execution/release fails closed; lease
+  recovery is documented in [Amazon search results](amazon-search-results.md).
+  Scheduled deploys never inspect/write Pages secrets. Explicit manual workflow
+  **install search secret** installs/rotates the repository key silently, with
+  missing-key and failed-write coverage. Equivalent case/spacing input preserves
+  pending requests and cached results. Preview activation survives browse URL
+  replacement. Chromium harness now expects the tab's restored unmatched query,
+  rather than waiting for local cards; routing already ignores query strings.
+  Each finding has offline regression coverage; function harness executes the
+  real SQLite statements (20 Node cases, including delayed storage/held leases
+  and oversized-receipt accounting before lease release).
+  Feature checks and the 1,400-offer shipped phone budgets:
+  **36 passed, 1 skipped in 64.88s (0:01:04)**. Chromium cannot launch locally;
+  emitted-JS preview/URL-replacement regressions pass without a browser.
+  Existing search behavior, all six selected offline pipeline reruns and three
+  recorded OFF modes pass. Compatibility run: **1 failed, 28 passed, 3 skipped in
+  137.69s (0:02:17)**. The only failure is the already recorded shipped offscreen
+  pin (`145e417e…` expected, `8b6e2890…` observed), matching the earlier pre-edit
+  HEAD comparison with zero differing files. No existing hash or fixture changed.
+  Final function check after holding the lease through oversized accounting:
+  **1 passed in 6.65s** (all 20 Node cases). All skips are native Chromium.
+  Node syntax and `git diff --check` pass.
+  All pytest runs use `-q -n 1 -p no:cacheprovider` and an owned
+  `/tmp/task280fix-*` basetemp, removed in `finally` immediately after each run.
+  No network, full suite, hash re-pin, commit or push. Real browser QA and reviewed
+  Pages deployment/API billing verification remain; operator approval before ON.
 - **int13 integration review fixes (2026-10-17; local, uncommitted, fixes complete):**
   Final adversarial review covers both ordering findings and the 11 named
   compatibility failures. Final repair now uses separate policy-filtered
@@ -1161,6 +1305,99 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   `-n 1 -p no:cacheprovider`. Chromium launch blocked (exit 77); parent browser
   QA/review remain. Own `/tmp/task259fix-*` scratch removed; no network, whole
   suite, hash re-pins, commit or push.
+- **Best value finder (Codex tasks 256/256b, 2026-10-17; 256 committed, review fixes uncommitted, OFF):**
+  `compare.refresh: false`, `compare.publish: "off"`; all 256b review findings
+  and the **On sale now — N% off** badge are implemented. The badge requires a
+  live, confirmed published deal with a written local page; it copies the
+  published checkout percentage and never changes the comparison order.
+  Latest `256-review-findings.md`, including the 15:35Z operator note: title
+  checks now remove the evidenced quantity and reject unresolved counts anywhere
+  else, without an item/container noun list. Missing pack metadata requires one
+  quantity expression; repeated quantities, cables/cases/cans, reverse counts,
+  sets, word packs and multipliers drop the row from ranking. Clean single
+  cables and attached capacity/wattage prefixes still work; plain uncounted
+  `each` items keep the brief's rule. Explicit pack multiplication in `savings.py`
+  remains available with pack metadata and verbatim evidence for both numbers.
+  The earlier blocking-read deadline and public-history fixes remain intact.
+  `compare.finder_reserve_tokens: 30` now gates BOTH quotas and the shared bucket
+  before every finder dispatch. Receipts reconcile both ledgers and the bucket;
+  absent receipts retain the full reservation, and unsent requests refund it.
+  An oversized finder receipt records its actual cost and a durable `halted_day`,
+  logs only `FinderReserveExceeded`, and stops all comparison work until the next
+  UTC day, across run keys/reloads/cap changes. Shared rechecks remain available.
+  The 11-cap/15-receipt regression configures an 11-token reservation to exercise
+  this stop; the default 30-token reservation blocks the initial 11-cap call.
+  This follow-up changes only compare.py, config YAML/loader, comparison tests
+  and this entry; no existing hash or publication-budget fixture is re-pinned.
+  Files: `data/compare_terms.yaml`, `compare.py`, `publish/compare_pages.py`,
+  config YAML/loader, savings/rules, pipeline/site/SEO, `verify.py` and the
+  HTTP API socket/stream deadlines and `errors.py` sent-request marker; tests in
+  compare, HTTP client, API politeness and offline e2e.
+  Failed terms back off and yield; finder receipts include total-result counts.
+  Observation-based scheduling defaults to 12 h (<24 h price expiry).
+  Browser clocks expire rows/banners and each sale badge's own confirmation
+  expiry (new/used limits, with a hidden-style override). Unchanged facts keep
+  sitemap/IndexNow versions stable. Both image formats work. Comparison reads avoid category,
+  planner-latency and accuracy samples. Unsent deadlines refund both ledgers;
+  sent deadline failures retain conservative debits and same-key replay safety.
+  requests preserve reserves and leave ≥80% of bucket capacity after cost.
+  A comparison-only 5 s inactivity timeout (capped by the global timeout) plus
+  host spacing gates dispatch. The shared HTTP transport now caps each blocking
+  read by the remaining absolute time, and bounds connect/write/TLS timeouts,
+  using request-local thread state. Checks after headers, raw/decoded chunks and
+  completion remain; expiry closes the response and stops paid work. Offline
+  HTTP/HTTPS regressions use 4.9 s reads against 20 s (ending at 20, not 24.5),
+  partial headers, identity/gzip bodies, injected clients and reused connections;
+  subsequent requests retain their own deadlines/default inactivity timeouts.
+  Four original OFF tree hashes match; no existing hash/fixture was re-pinned.
+  avg90 NEW remains private; no historical label/badge, /p/ history link or
+  history footer enters finder pages. ItemList URLs use current-row anchors.
+  Sale badges keep the published percentage only for nonhistorical discount
+  bases; average/median/history-based discounts cannot surface as sale badges.
+  Policy tests cover preview/on, both old Amazon-history settings, all-store
+  history policies, HTML attributes/alt text and inline JSON, before/after shared
+  publishing. Only the unchanged analytics browser History API identifiers and
+  its error comment are excluded from the keyword scan; they contain no facts.
+  Oct 16 measurements: 60 tokens/min = 86,400/day,
+  recent use 68–74k/day, 12–19k/day lost at the 3,600 cap; no recheck starvation.
+  At the 12 h cadence, reserving 30 finder tokens/week + 40 product tokens/day
+  per term is ≈44.3/day; 120 terms ≈5,314/day before receipt reconciliation,
+  bounded by 6,000/day and 300/run while receipts stay within the reservation.
+  Early observation refreshes share those caps. First live probe must confirm
+  finder page vs total-result billing (including the 30-token bound), unitCount
+  coverage and fresh/evidenced rows per term. Next Amazon call: permission for
+  “bought in past month” and comparison pages themselves under amz378_998.
+  Prior 256b targeted groups passed 241 + 389 + 7 + 98 checks. Adversarial
+  follow-up reproduced **15 failed, 1 passed in 5.16s** before fixes. The first
+  broader run had **1 failed, 331 passed in 39.65s** (new used-condition fixture
+  used the wrong field, corrected), then **336 passed in 28.94s**. Earlier offline
+  `-q -n 1 -p no:cacheprovider`: **389 passed in 98.77s (0:01:38)** (public copy,
+  product pages, SEO, photos and phone budgets); **431 passed in 300.39s (0:05:00)**
+  (feature/API/HTTP, gzip deadlines, shared rechecks and all requested reruns).
+  After tightening the modified-count boundary to preserve capacity prefixes,
+  the complete comparison module passed **234 passed in 19.33s**, including the
+  four original OFF hashes and the independent new/used badge browser clocks.
+  Prior review regressions reproduced **27 failed, 4 passed in 8.05s** before
+  fixes. Focused fixes passed **69 passed in 4.45s**; the expanded policy and
+  HTTP/HTTPS deadline/pooling checks passed **17 passed in 4.93s**. Final feature,
+  HTTP and API modules: **382 passed in 28.97s**. Final public-copy, product-page,
+  SEO, photo and phone-budget modules: **389 passed in 80.81s (0:01:20)**.
+  Shared unique-ASIN/value-per-token rechecks, source concurrency and all seven
+  selected offline e2e reruns: **119 passed in 255.78s (0:04:15)**.
+  The 15:35Z operator follow-up reproduced **36 failed, 2 passed in 11.61s**
+  before fixes; the initial focused group then passed **38 passed in 7.13s**.
+  Latest final feature/HTTP/API run: **437 passed in 70.41s (0:01:10)**,
+  including four unchanged OFF tree pins, reservation durability/reconciliation,
+  quota/bucket boundaries, day halt/reload/replay/reset and continued rechecks.
+  Latest public-copy/product-page/SEO/photo/phone-budget run:
+  **389 passed in 112.79s (0:01:52)**; both existing baseline files keep their
+  original digests. Latest shared unique-ASIN/value-per-token rechecks, source
+  concurrency and seven selected offline e2e reruns:
+  **119 passed in 290.94s (0:04:50)**. All latest runs used
+  `-q -n 1 -p no:cacheprovider` with owned `/tmp/task256fix-*` basetemps.
+  Own `/tmp/task256fix-*` scratch is deleted after each run; prior
+  `/tmp/task256b-*` scratch was already removed. `git diff --check` passes.
+  Review/live probe/activation remain; no network calls, full suite, commit or push.
 - **Device-local extension index (Codex task 244c, 2026-10-16; uncommitted, checker OFF):**
   Adds versioned, deterministic `/check/data/all.json` with lossless dictionary
   columns/front-coded JSON values; every alias/field matches the shards. The

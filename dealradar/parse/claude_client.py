@@ -322,9 +322,12 @@ class ClaudeParser:
             bound = self._cost_bound(kwargs)
             if self.spend_usd + self._reserved_usd + bound > self.run_cap_usd:
                 raise SpendCapReached("insufficient allowance for worst-case LLM call")
-            if kind == "ai_take" and (self.spend_by_kind.get(kind, {}).get("usd", 0) + bound
-                                      > self.cfg.ai_take["max_usd_per_run"]):
-                raise SpendCapReached("insufficient AI take allowance")
+            kind_limits = (self.cfg.appeal_score if kind == "appeal_score" else
+                           self.cfg.ai_take if kind == "ai_take" else None)
+            if kind_limits is not None and (self.spend_by_kind.get(kind, {}).get("usd", 0) + bound
+                                            > kind_limits["max_usd_per_run"]):
+                raise SpendCapReached("insufficient AI take allowance" if kind == "ai_take" else
+                                      "insufficient kind run allowance")
             if self._ledger is not None:
                 at = util.now_utc().astimezone(timezone.utc)
                 tomorrow = at + timedelta(days=1)
@@ -335,8 +338,8 @@ class ClaudeParser:
                     kind=kind, source_name=source_name,
                     daily_call_cap=(tier["second_opinion_calls_per_day"]
                                     if limited and model == self.cfg.second_opinion_model else None),
-                    **({"kind_run_cap": self.cfg.ai_take["max_usd_per_run"],
-                        "kind_day_cap": self.cfg.ai_take["max_usd_per_day"]} if kind == "ai_take" else {}))
+                    **({"kind_run_cap": kind_limits["max_usd_per_run"],
+                        "kind_day_cap": kind_limits["max_usd_per_day"]} if kind_limits is not None else {}))
                 if not admitted:
                     kwargs["model"] = tier["model"]
                     bound = self._cost_bound(kwargs)
@@ -425,8 +428,11 @@ class ClaudeParser:
                          released=isinstance(err, anthropic.APIStatusError)
                          and err.status_code in {400, 401, 403, 404, 413, 422, 429})
             if not retryable or attempt == 1 or not retry:
-                log.warning("Claude API call failed, skipping post: %s: %s",
-                            type(err).__name__, err)
+                if kind == "appeal_score":
+                    log.warning("Appeal API call failed (%s)", type(err).__name__)
+                else:
+                    log.warning("Claude API call failed, skipping post: %s: %s",
+                                type(err).__name__, err)
                 return None
             log.warning("Claude API call failed (%s: %s); retrying in 2 s",
                         type(err).__name__, err)

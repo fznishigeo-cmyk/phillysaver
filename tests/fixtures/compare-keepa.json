@@ -1,0 +1,277 @@
+{
+  "tokensConsumed": 6,
+  "tokensLeft": 3500,
+  "refillRate": 60,
+  "products": [
+    {
+      "asin": "B000000000",
+      "title": "Tide PODS Laundry Detergent 81 Count",
+      "imagesCSV": "product0.jpg,second.jpg",
+      "stats": {
+        "current": [
+          2187,
+          2187,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": {
+        "unitValue": 81,
+        "unitType": "count",
+        "eachUnitCount": 1
+      },
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8306640,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291
+    },
+    {
+      "asin": "B000000001",
+      "title": "Other Laundry Pods 42-Count",
+      "imagesCSV": "product1.jpg,second.jpg",
+      "stats": {
+        "current": [
+          1722,
+          1722,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": {
+        "unitValue": 42,
+        "unitType": "count",
+        "eachUnitCount": 1
+      },
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8306640,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291
+    },
+    {
+      "asin": "B000000002",
+      "title": "Laundry Pods Pack of 3, 20 Count Each",
+      "imagesCSV": "product2.jpg,second.jpg",
+      "stats": {
+        "current": [
+          1800,
+          1800,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": {
+        "unitValue": 60,
+        "unitType": "count",
+        "eachUnitCount": 1
+      },
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8306640,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291
+    },
+    {
+      "asin": "B000000003",
+      "title": "Laundry Pods model 1234",
+      "imagesCSV": "product3.jpg,second.jpg",
+      "stats": {
+        "current": [
+          400,
+          400,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": null,
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8306640,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291
+    },
+    {
+      "asin": "B000000004",
+      "title": "Stale Laundry Pods 81 Count",
+      "imagesCSV": "product4.jpg,second.jpg",
+      "stats": {
+        "current": [
+          81,
+          81,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": {
+        "unitValue": 81,
+        "unitType": "count",
+        "eachUnitCount": 1
+      },
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8305140,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291
+    },
+    {
+      "asin": "B000000005",
+      "title": "Coupon Laundry Pods 81 Count",
+      "imagesCSV": "product5.jpg,second.jpg",
+      "stats": {
+        "current": [
+          1600,
+          1600,
+          -1,
+          837291,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          -1,
+          47,
+          93457
+        ],
+        "avg90": [
+          2500,
+          2500
+        ]
+      },
+      "unitCount": {
+        "unitValue": 81,
+        "unitType": "count",
+        "eachUnitCount": 1
+      },
+      "numberOfItems": 1,
+      "packageQuantity": 1,
+      "size": "Standard",
+      "availabilityAmazon": 0,
+      "lastUpdate": 8306640,
+      "rating": 47,
+      "reviewCount": 93457,
+      "monthlySold": 76321,
+      "salesRank": 837291,
+      "coupon": [
+        0,
+        15
+      ]
+    }
+  ]
+}

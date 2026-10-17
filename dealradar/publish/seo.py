@@ -346,20 +346,21 @@ def home_order(rows: list[dict[str, Any]], front_page: dict, *,
 
     click_price: the visible wall's Add-to-Cart order (unknown offers last),
     applied before allure spacing, as the browser does."""
-    from ..appeal import is_allure, space_allure
+    from ..appeal import allure_spacing, is_allure, space_allure
     from ..click_price import HOME_FIRST, home_rows
 
     options = front_page.get("appeal") or {}
     if (options.get("want") or {}).get("enabled"):
         ordered = pick_order(rows, front_page)
         ordered = place_gone(space_allure(home_rows(ordered) if click_price else ordered, options))
-        out, last_allure, next_gone = [], -6, 8
+        first, every = allure_spacing(options)
+        out, last_allure, next_gone = [], -every, 8
         for row in ordered:
             if click_price and row.get("click_price_unknown") and len(out) < HOME_FIRST:
                 continue
             allure = row.get("allure") or is_allure(row, options)
             dead = row.get("status") == "dead"
-            if allure and (len(out) < 6 or len(out) - last_allure < 6):
+            if allure and (len(out) < first or len(out) - last_allure < every):
                 continue
             if dead and len(out) < next_gone:
                 continue
@@ -368,7 +369,8 @@ def home_order(rows: list[dict[str, Any]], front_page: dict, *,
             if dead:
                 next_gone = len(out) + 8
             out.append(row)
-        return out
+        from .drop_rotation import clothing_order
+        return clothing_order(out, front_page)
     ordered = (place_gone(pick_order(rows, front_page)) if front_page.get("top_picks")
                else pick_order(place_gone(rows), front_page))
     return home_rows(ordered) if click_price else ordered
@@ -1331,6 +1333,8 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
     key = getattr(cfg, "seo_indexnow_key", "") or ""
     if _KEY_RE.fullmatch(key):
         def _read(path: str) -> str:
+            if path.startswith('/compare/'):
+                return pages[path].fingerprint()
             content = wall if path == "/" else (out / (path.lstrip("/") + "index.html" if path.endswith("/") else
                                                       path.lstrip("/"))).read_text(encoding="utf-8")
             # Labeled card prices cannot cause pings of listings or neighbours.

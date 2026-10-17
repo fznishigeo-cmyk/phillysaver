@@ -18,7 +18,7 @@ from dealradar.util import iso
 from tests.test_checker_index import add, data, files, public
 from tests.test_product_price_pages import seed
 from tests.test_publish_site import NOW
-from tests.history_pins import pre_history_removal, pre_task_279
+from tests.history_pins import pre_history_removal, pre_task_279, pre_task_282
 
 
 class Messages:
@@ -51,7 +51,7 @@ def db(tmp_path):
 
 @pytest.fixture
 def cfg():
-    cfg = pre_history_removal(load_config())
+    cfg = pre_task_282(pre_history_removal(load_config()))  # recorded before task 282
     cfg.amazon_history = 'show'  # Exercise Amazon takes; recorded before task 274's hide policy.
     cfg.checker['stores']['amazon'] = 'history'
     cfg.amazon_reference = "history"  # recorded before task 276: history-specific takes
@@ -346,6 +346,30 @@ def test_one_batch_caches_and_changed_facts_withdraw_immediately(db, cfg, tmp_pa
     assert funded['ai_take']['requested'] == funded['ai_take']['verified'] == 1
     assert 'Current price is $11.00.' in page.read_text() and 'Current price is $10.00.' not in page.read_text()
     assert len(messages.calls) == 2
+
+
+def test_private_appeal_and_ai_take_share_the_parser_and_ledger(db, cfg, tmp_path):
+    from tests.test_impulse_appeal_score import Messages as RatingMessages
+
+    cfg.appeal_score = load_config().appeal_score
+    ratings, takes = RatingMessages(), Messages()
+
+    class CombinedMessages:
+        def create(self, **kwargs):
+            return (ratings if kwargs['system'].startswith('Would a deal-hunting woman') else takes).create(**kwargs)
+
+    p, _ = parser(cfg, CombinedMessages())
+    rows = [add(db, 'bestbuy', image_url='https://images.example/widget.jpg')]
+    result = render(db, cfg, rows, tmp_path / 'site', p)
+    assert result['ai_take']['verified'] == 1
+    assert len(ratings.calls) == len(takes.calls) == 1
+    assert {r[0] for r in db.conn.execute('SELECT kind FROM llm_calls')} == {'ai_take', 'appeal_score'}
+    assert db.spend_usd_for_run('ai-run') == pytest.approx(p.spend_usd)
+    assert p.spend_usd <= cfg.spend_cap_usd_per_run
+    before = files(tmp_path / 'site'), list(db.conn.iterdump())
+    render(db, cfg, rows, tmp_path / 'site', p)
+    assert len(ratings.calls) == len(takes.calls) == 1
+    assert (files(tmp_path / 'site'), list(db.conn.iterdump())) == before
 
 
 @pytest.mark.parametrize('reply', [[], {}, [{'key': '1', 'take': 'Good time to buy: $999.'}],

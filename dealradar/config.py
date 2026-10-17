@@ -22,6 +22,39 @@ CHECKER_STORES = {"amazon": "link_only", "walmart": "history", "ebay": "live_onl
                   "bestbuy": "history", "target": "history", "woot": "history", "other": "history"}
 
 
+def validated_compare(value) -> dict:
+    defaults = dict(refresh=False, publish="off", terms_file="data/compare_terms.yaml",
+                    candidates_per_term=20, refresh_hours=12, finder_days=7,
+                    min_rating=40, min_reviews=50, prime_only=True,
+                    tokens_per_day=6000, tokens_per_run=300, finder_reserve_tokens=30, min_bucket_share=0.8,
+                    max_seconds_per_run=20, request_timeout_s=5, max_price_age_h=24, max_terms=120)
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("compare must contain supported settings only")
+    settings = defaults | value
+    for key in ("refresh", "prime_only"):
+        if type(settings[key]) is not bool:
+            raise ValueError(f"compare.{key} must be boolean")
+    if not isinstance(settings["publish"], str) or settings["publish"] not in {"off", "preview", "on"}:
+        raise ValueError("compare.publish must be off, preview or on")
+    if not isinstance(settings["terms_file"], str) or not settings["terms_file"].strip():
+        raise ValueError("compare.terms_file must be a nonempty path")
+    for key, low, high in (("candidates_per_term", 1, 50), ("min_rating", 0, 50),
+                           ("min_reviews", 0, 1000000), ("tokens_per_day", 0, 86400),
+                           ("tokens_per_run", 0, 86400), ("finder_reserve_tokens", 1, 86400), ("max_terms", 1, 120)):
+        if type(settings[key]) is not int or not low <= settings[key] <= high:
+            raise ValueError(f"compare.{key} must be an integer in {low}..{high}")
+    for key, low, high in (("refresh_hours", 0.01, 8760), ("finder_days", 0.01, 365),
+                           ("max_seconds_per_run", 0.01, 20), ("request_timeout_s", 0.01, 20),
+                           ("max_price_age_h", 0.01, 24),
+                           ("min_bucket_share", 0, 1)):
+        if (type(settings[key]) not in {int, float} or not math.isfinite(settings[key])
+                or not low <= settings[key] <= high):
+            raise ValueError(f"compare.{key} must be a finite number in {low}..{high}")
+    if settings["refresh_hours"] >= settings["max_price_age_h"]:
+        raise ValueError("compare.refresh_hours must be less than compare.max_price_age_h")
+    return settings
+
+
 def validated_extension(value) -> dict:
     if not isinstance(value, dict) or set(value) - {"amazon_mode"}:
         raise ValueError("extension must contain amazon_mode only")
@@ -199,6 +232,7 @@ class AppConfig:
     raw: dict[str, Any] = field(default_factory=dict)
     accuracy_extra_samples_per_day: int = 0
     checker: dict = field(default_factory=lambda: validated_checker({}))
+    compare: dict = field(default_factory=lambda: validated_compare({}))
     extension: dict = field(default_factory=lambda: validated_extension({}))
 
     # -- identity / politeness --
@@ -219,6 +253,7 @@ class AppConfig:
 
     # -- parse --
     parse_model: str = ""               # "" = cheapest-model heuristic
+    appeal_score: dict = field(default_factory=dict)  # private landing ratings; absent = OFF
     max_posts_per_run: int = 400
     max_chars_per_post: int = 6000
     spend_cap_usd_per_run: float = 0.50
@@ -295,6 +330,7 @@ class AppConfig:
     front_page: dict = field(default_factory=dict)  # All top picks / fresh drops mix
     site_dir: str = "site"
     photoless_last: bool = False
+    max_photoless_h: float | None = None
     reuse_link_facts_enabled: bool = False
     images_asin_backfill_per_run: int = 60
     images_short_links_per_run: int = 10
@@ -312,6 +348,7 @@ class AppConfig:
     home_title: str = ""
     home_description: str = ""
     search_amazon: bool = False
+    search: dict = field(default_factory=lambda: validated_search(None))
     static_photos: bool = False
     open_box_scarcity: bool = False
     open_box_counts: bool = False
@@ -591,6 +628,29 @@ class AppConfig:
         return self.user_agent.replace("{contact_email}", self.contact_email)
 
 
+def validated_search(value) -> dict:
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise ValueError("search must be a mapping")
+    result = {"amazon_results": "off", "cache_hours": 6,
+              "tokens_per_day": 3000, "max_per_minute": 20}
+    result.update(value)
+    # YAML 1.1 reads unquoted on/off as booleans.
+    mode = result["amazon_results"]
+    if type(mode) is bool:
+        mode = "on" if mode else "off"
+    if mode not in ("off", "preview", "on"):
+        raise ValueError("search.amazon_results must be off, preview or on")
+    result["amazon_results"] = mode
+    for key in ("cache_hours", "tokens_per_day", "max_per_minute"):
+        if type(result[key]) is not int or result[key] < 0:
+            raise ValueError(f"search.{key} must be a non-negative integer")
+    if result["cache_hours"] > 24:
+        raise ValueError("search.cache_hours must be at most 24")
+    return {key: result[key] for key in ("amazon_results", "cache_hours", "tokens_per_day", "max_per_minute")}
+
+
 def validated_manifest_refresh(value) -> dict:
     defaults = {"enabled": False, "force_full_after_s": 300, "max_bytes": 1024,
                 "max_deals_bytes": 33554432, "max_future_s": 300}
@@ -709,6 +769,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    from .appeal_score import validate as validate_appeal_score
+    cfg.appeal_score = validate_appeal_score(raw.get("appeal_score", {}))
+    cfg.compare = validated_compare(raw.get("compare", {}))
     cfg.extension = validated_extension(raw.get("extension", {}))
     cfg.checker = validated_checker(raw.get("checker", {}), raw.get("amazon_history", "show"))
     product_settings = raw.get("product_pages", {})
@@ -853,6 +916,14 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.manifest_refresh = validated_manifest_refresh(g("publish", "manifest_refresh"))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
+    photos = g("publish", "photos", default={})
+    if not isinstance(photos, dict):
+        raise ValueError("publish.photos must be a mapping")
+    if "max_photoless_h" in photos:
+        value = photos["max_photoless_h"]
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 1:
+            raise ValueError("publish.photos.max_photoless_h must be a finite number >= 1")
+        cfg.max_photoless_h = float(value)
     reuse = g("publish", "reuse_link_facts", default={})
     if not isinstance(reuse, dict):
         raise ValueError("publish.reuse_link_facts must be a mapping")
@@ -894,6 +965,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.search_amazon = g("site", "search_amazon", default=False)
     if type(cfg.search_amazon) is not bool:
         raise ValueError("site.search_amazon must be a boolean")
+    cfg.search = validated_search(g("search", default=None))
     cfg.static_photos = g("site", "static_photos", default=False)
     if type(cfg.static_photos) is not bool:
         raise ValueError("site.static_photos must be a boolean")

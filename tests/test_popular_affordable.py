@@ -70,7 +70,7 @@ def settings(enabled=False):
 def test_shipped_switches_and_model_default(tmp_path):
     cfg = load_config()
     assert cfg.front_page["popular_affordable"] == {
-        "enabled": False, "shadow": True, "min_monthly_sold": 1000, "max_price": 50,
+        "enabled": True, "shadow": True, "min_monthly_sold": 1000, "max_price": 50,
         "pct_over_floor": 10, "max_age_h": 72, "weight": 1.25, "max_share": .25}
     assert not cfg.keepa_popular_affordable_page
     # Operator 2026-10-17: "$200 items at the top, nobody will buy that" -> on.
@@ -644,7 +644,7 @@ def test_shipped_pipeline_and_cli_never_output_shadow_data(tmp_path, monkeypatch
     step_summary = tmp_path / "step-summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     cfg = load_config(env["cfg"])
-    assert not cfg.front_page["popular_affordable"]["enabled"]
+    assert cfg.front_page["popular_affordable"]["enabled"]  # shipped on 2026-10-17
     assert cfg.front_page["popular_affordable"]["shadow"]
     assert cfg.front_page["everyday_price"]["enabled"]  # shipped on 2026-10-17
     assert not cfg.keepa_popular_affordable_page

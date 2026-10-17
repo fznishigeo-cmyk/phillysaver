@@ -33,9 +33,13 @@ def validate(options):
     if not isinstance(options, dict):
         raise ValueError("publish.front_page.appeal must be a mapping")
     path = "publish.front_page.appeal."
+    for key in ("allure_first", "allure_every"):
+        if key in options and (type(options[key]) is not int or options[key] < 1):
+            raise ValueError(path + key + " must be a positive integer")
     if "want" in options:
         want = options["want"]
-        if not isinstance(want, dict) or set(want) - {"enabled", "factor", "max_price", "groups", "exclude_words"}:
+        if not isinstance(want, dict) or set(want) - {"enabled", "factor", "max_price", "groups", "exclude_words",
+                                                      "group_factors"}:
             raise ValueError(path + "want must contain supported settings only")
         if type(want.get("enabled", False)) is not bool:
             raise ValueError(path + "want.enabled must be a boolean")
@@ -50,6 +54,11 @@ def validate(options):
             _words(words, path + "want.groups")
         if "exclude_words" in want:
             _words(want["exclude_words"], path + "want.exclude_words")
+        factors = want.get("group_factors", {})
+        if not isinstance(factors, dict) or any(
+                name not in groups or not _finite(value) or not 1 <= value <= 1.5
+                for name, value in factors.items()):
+            raise ValueError(path + "want.group_factors must map configured groups to factors in 1..1.5")
     if "season" in options:
         windows = options["season"]
         if not isinstance(windows, list):
@@ -152,7 +161,9 @@ def signals(deal, cfg, now):
         if not any(at is not None and 0 <= (now - at).total_seconds() <= maximum * 3600 for at in stamps):
             return empty
     found = groups(deal, options) if want.get("enabled") else []
-    factor = float(want.get("factor", 1.2)) if found else 1.0
+    # A group may lift more than the shared factor (operator 2026-10-17: allure).
+    lifts = want.get("group_factors") or {}
+    factor = max(float(lifts.get(name, want.get("factor", 1.2))) for name in found) if found else 1.0
     today = now.astimezone(ZoneInfo("America/New_York")).strftime("%m-%d")
     seasonal = []
     for window in options.get("season", []):
@@ -165,34 +176,56 @@ def signals(deal, cfg, now):
     return found, seasonal, factor
 
 
+def lift_cap(options, deal, title):
+    """The shared title-lift ceiling; only a configured group lift the deal
+    actually earned raises it (seasons keep sharing want's ceiling)."""
+    want = options.get("want") or {}
+    cap = want.get("factor", 1.2)
+    if title <= cap:
+        return cap
+    lifts = [value for name, value in (want.get("group_factors") or {}).items()
+             if matches(deal.get("item"), want.get("groups", {}).get(name, []))]
+    return max([cap] + [min(value, title) for value in lifts])
+
+
 def capped_lift(factors, cap, *, demand=1.0):
     """Share headroom with other soft lifts; stronger sales/click signals win."""
     return min(math.prod(factors), max(cap, demand))
 
 
+def allure_spacing(options):
+    """Zero-based first slot and minimum gap; absent knobs preserve 7/6."""
+    return options.get("allure_first", 7) - 1, options.get("allure_every", 6)
+
+
 def space_allure(rows, options):
-    """All only: six ordinary cards first, then at most one allure in six.
+    """All only: use the configured first allure slot and minimum gap.
 
     Sparse overflow remains searchable/on its category page, without unsafe
     placements on the ad landing page. Never mutate rows or their pick numbers.
     """
     if not (options.get("want") or {}).get("enabled"):
         return rows
-    out, pending, last, live = [], [], -6, 0
+    first, every = allure_spacing(options)
+    out, pending, last, live = [], [], -every, 0
     for row in rows:
         if row.get("status") == "dead":
             out.append(row)
             continue
         if row.get("allure") or is_allure(row, options):
             pending.append(row)
+            if first == 0 and live == 0:
+                out.append(pending.pop(0))
+                last = live
+                live += 1
             continue
         out.append(row)
         live += 1
-        if pending and live >= 6 and live - last >= 6:
+        if pending and live >= first and live - last >= every:
             out.append(pending.pop(0))
             last = live
             live += 1
-    if pending and live >= 6 and live - last >= 6:
+    if pending and live >= first and live - last >= every:
         out.append(pending[0])
     return out
 
@@ -209,7 +242,7 @@ def summary(rows, cfg, now):
         if factor > 1:
             demand = popular_affordable_factor(row, cfg, now) if popular.get("enabled") else 1.0
             price = everyday_price_factor(row, everyday) if everyday.get("enabled") else 1.0
-            if capped_lift([demand, price, factor], (options.get("want") or {}).get("factor", 1.2),
+            if capped_lift([demand, price, factor], lift_cap(options, row, factor),
                            demand=demand) <= demand * price:
                 continue
             if (options.get("want") or {}).get("factor", 1.2) > 1:
@@ -219,21 +252,21 @@ def summary(rows, cfg, now):
 
 
 ALLURE_JS = '''  function spaceAllure(rows) {
-    var pending = [], out = [], last = -6, live = 0;
+    var pending = [], out = [], last = -{{ALLURE_EVERY}}, live = 0;
     rows.forEach(function(d) {
       if (d.status === "dead") { out.push(d); return; }
-      if (d.allure) { pending.push(d); return; }
+      if (d.allure) { pending.push(d);{{ALLURE_HEAD}} return; }
       out.push(d);
       live++;
-      if (pending.length && live >= 6 && live - last >= 6) {
+      if (pending.length && live >= {{ALLURE_START}} && live - last >= {{ALLURE_EVERY}}) {
         out.push(pending.shift()); last = live; live++;
       }
     });
-    if (pending.length && live >= 6 && live - last >= 6) out.push(pending[0]);
-    var visible = [], lastAllure = -6, nextGone = 8;
+    if (pending.length && live >= {{ALLURE_START}} && live - last >= {{ALLURE_EVERY}}) out.push(pending[0]);
+    var visible = [], lastAllure = -{{ALLURE_EVERY}}, nextGone = 8;
     placeGone(out).forEach(function(d) {
       if (d.click_price_unknown && visible.length < 120) return;
-      if (d.allure && (visible.length < 6 || visible.length - lastAllure < 6)) return;
+      if (d.allure && (visible.length < {{ALLURE_START}} || visible.length - lastAllure < {{ALLURE_EVERY}})) return;
       if (d.status === "dead" && visible.length < nextGone) return;
       if (d.allure) lastAllure = visible.length;
       if (d.status === "dead") nextGone = visible.length + 8;
@@ -244,10 +277,21 @@ ALLURE_JS = '''  function spaceAllure(rows) {
 '''
 
 
+def spacing_template(text, options):
+    first, every = allure_spacing(options)
+    # Literal legacy expansions retain all recorded 7/6 publication bytes.
+    recent = f"out.slice(-{every - 1}).some(d => d.allure)" if every > 1 else "false"
+    last = f"last + {every}" if first >= every - 1 else f"(last < 0 ? 0 : last + {every})"
+    head = " if (!live) { out.push(pending.shift()); last = live; live++; }" if first == 0 else ""
+    for token, value in (("START", first), ("EVERY", every), ("RECENT", recent), ("LAST", last), ("HEAD", head)):
+        text = text.replace("{{ALLURE_" + token + "}}", str(value))
+    return text
+
+
 def template(html, options):
     if not (options.get("want") or {}).get("enabled"):
         return html
-    html = html.replace("  function storeHue(", ALLURE_JS + "\n  function storeHue(", 1)
+    html = html.replace("  function storeHue(", spacing_template(ALLURE_JS, options) + "\n  function storeHue(", 1)
     html = html.replace('return d.status === "alive" && Date.parse(d.spotlight.until)',
                         'return !(state.catTab < 2 && !searchText() && d.allure) && d.status === "alive" && Date.parse(d.spotlight.until)', 1)
     return html.replace("    browseRows = spotlight.concat(rows);",

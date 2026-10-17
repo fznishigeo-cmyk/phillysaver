@@ -443,7 +443,8 @@ def test_retained_ended_amazon_page_keeps_shipped_history_policy(db, tmp_path):
 def test_shipped_phone_budgets_unchanged(tmp_path):
     cfg = load_config()
     publish_fixture(tmp_path, cfg)
-    report = analyze(tmp_path / "site", cfg, expected_offers=1400)
+    # Task 283: seven of the 1,400 fixture offers lack photos at three hours.
+    report = analyze(tmp_path / "site", cfg, expected_offers=1393)
     for key in ("home_html", "home_js", "home_css", "deals_json"):
         measured = report["metrics"][key]["gzip"]
         limit = cfg.phone_budget[f"{key}_gzip_max_bytes"]

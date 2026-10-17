@@ -373,6 +373,16 @@ def head_snippet(cfg) -> str:
         if key in ids:
             blocks.append(block % {"id": js(key)})
     dispatch = _DISPATCH
+    from .search_results import enabled as search_results_enabled
+    if search_results_enabled(cfg):
+        dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
+    if (name === "search_amazon_results") {
+      var count = params && params.count;
+      if (!Number.isSafeInteger(count) || count < 0 || count > 10) return;
+      if (on.ga4) { try { window.gtag("event", name, {count: count, send_to: on.ga4}); } catch (e) {} }
+      return;
+    }
+    var ev = EVENTS[name];""")
     if cfg.search_amazon and cfg.affiliate_amazon_tag:
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (name === "search_amazon") {

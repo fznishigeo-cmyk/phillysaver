@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.history_pins import pre_task_282
+
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import site
@@ -35,6 +37,7 @@ def config(mode):
     cfg.front_page["used_tab_only"] = False  # recorded before task 274
     cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.front_page["appeal"]["want"]["enabled"] = False  # recorded before task 273
+    pre_task_282(cfg)  # recorded before tasks 282/283 (one scoring pass per row)
     cfg.front_page["appeal"]["season"] = []
     cfg.support_enabled = mode == "support"
     cfg.paywall_enabled = mode != "unpaywalled"

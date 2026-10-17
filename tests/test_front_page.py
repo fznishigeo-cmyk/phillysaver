@@ -23,6 +23,9 @@ def options():
     options.pop("demote_words", None)  # recorded before task 267b
     options["appeal"]["want"]["enabled"] = False  # recorded before task 273
     options["appeal"]["season"] = []
+    options["top_picks"]["max_same_brand"] = 3  # recorded before the first-screen mix
+    options["top_picks"].pop("brand_from_title", None)
+    options["top_picks"].pop("max_clothing_per_window", None)
     return options
 
 

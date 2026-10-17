@@ -444,6 +444,7 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     snapshots = []
     for mode in ('omitted', 'off'):
         config = pre_history_removal(load_config())
+        config.compare.update(refresh=False, publish="off")  # recorded before the finder preview
         config.dark_polish = False  # recorded before task 254
         config.strip_comments = False  # recorded before task 278
         pre_task_279(config)  # recorded before task 279

@@ -12,12 +12,14 @@ from dealradar.rank import appeal_summary, is_publishable, niche_reason, pick_or
 from tests.test_front_page import pick_deal
 from tests.test_publish_site import NOW
 from tests.test_seo import db
+from tests.history_pins import pre_task_279
 
 
 def legacy_config():
     cfg = load_config()
     cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.open_box_scarcity = False  # recorded before task 273
+    pre_task_279(cfg)  # recorded before task 279
     cfg.front_page["appeal"]["want"]["enabled"] = False
     cfg.front_page["appeal"]["season"] = []
     return cfg
@@ -100,7 +102,7 @@ def test_config_defaults_and_shipped_knobs(tmp_path):
     assert appeal["category_factors"] == {
         "home": 1.15, "kitchen": 1.15, "beauty": 1.15, "fashion": 1.15,
         "toys_games": 1.05, "kids_baby": 1.05, "health": 1.05, "grocery": 1.05,
-        "electronics": 1.05, "auto": .85}
+        "electronics": 1.15, "auto": .85}
 
 
 def test_only_pick_score_changes_and_all_factors_are_configurable():

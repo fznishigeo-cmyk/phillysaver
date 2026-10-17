@@ -52,7 +52,7 @@ def test_workflow_read_only_and_snapshot_always_saved():
     assert workflow['permissions'] == {'contents': 'read', 'actions': 'read'}
     assert workflow['concurrency'] == {'group': 'visitor-watch', 'cancel-in-progress': 'false'}
     job = workflow['jobs']['watch']
-    assert job['timeout-minutes'] == '6'
+    assert job['timeout-minutes'] == '12'
     steps = job['steps']
     install = next(step['run'] for step in steps if step.get('name') == 'Install Playwright Chromium')
     site_check = yaml.load((ROOT / '.github/workflows/site-check.yml').read_text(), Loader=yaml.BaseLoader)

@@ -69,7 +69,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   const {photoRules, checkPhotos} = require("../scripts/site_check_logic.cjs");
   const fs = require("node:fs"), path = require("node:path");
   const shipped = photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"));
-  assert.deepEqual(shipped, {minPhotoPct: 90, maxBroken: 10, firstScreen: 24});
+  assert.deepEqual(shipped, {minPhotoPct: 99, maxBroken: 10, firstScreen: 24});
   const rules = photoRules("other:\n  max_broken: 99\nsite_check:\n  # note\n  min_photo_pct: 92.5  # c\n" +
     "  max_broken: 3\n  first_screen_photos: 20\nseo:\n  min_photo_pct: 1\n");
   assert.deepEqual(rules, {minPhotoPct: 92.5, maxBroken: 3, firstScreen: 20});
@@ -83,8 +83,10 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
     assert.deepEqual(checkPhotos({...ok, ...change}, rules), {ok: false, reason});
   }
   assert.equal(checkPhotos({live: 10, showing: 0, broken: 9, firstScreen: 0}, rules).reason.split("; ").length, 3);
-  assert.deepEqual(checkPhotos({live: 10000, showing: 8997, broken: 0, firstScreen: 24}, shipped),
-    {ok: false, reason: "photos showing 89.97% < 90%"});
+  assert.deepEqual(checkPhotos({live: 10000, showing: 9897, broken: 0, firstScreen: 24}, shipped),
+    {ok: false, reason: "photos showing 98.97% < 99%"});
+  assert.deepEqual(checkPhotos({live: 10000, showing: 9900, broken: 0, firstScreen: 24}, shipped),
+    {ok: true, reason: ""});
   const script = fs.readFileSync(path.join(__dirname, "../scripts/site_check.js"), "utf8");
   assert.ok(script.includes("if (!photos.ok || !front.ok || [desktop, mobile].some("));
   assert.ok(script.includes('say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);'));

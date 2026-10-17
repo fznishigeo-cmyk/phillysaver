@@ -16,11 +16,12 @@ from tests.history_pins import pre_task_279_raw
 
 # run_stats columns added after the recording (task 234); fetch never sets them.
 LATER_COLUMNS = {"run_stats": {"posts_left", "deadline_hit"}}
+LATER_TABLES = {"appeal_scores"}  # task 282's private rating cache, empty here
 
 
 def db_rows(db):
     tables = [r[0] for r in db.conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name") if r[0] not in LATER_TABLES]
     rows = {}
     for table in tables:
         cursor = db.conn.execute(f'SELECT * FROM "{table}"')

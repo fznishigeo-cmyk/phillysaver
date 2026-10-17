@@ -192,6 +192,8 @@ def _offline_env(tmp_path, monkeypatch):
     cfg_path = tmp_path / "config.yaml"
     root_cfg = Path(__file__).resolve().parent.parent / "config.yaml"
     text = root_cfg.read_text().replace('site_dir: "site"', f'site_dir: "{site_dir}"')
+    # Legacy captures predate task 282; the rating-specific rerun opts in below.
+    text = text.replace("appeal_score:\n  enabled: true", "appeal_score:\n  enabled: false")
     # The offline fake Claude implements messages.parse (not create), so this
     # end-to-end run exercises the structured path; production keeps it off.
     text = text.replace("retries_on_invalid_json: 2",
@@ -574,6 +576,44 @@ def test_ai_take_rerun_is_idempotent(env, monkeypatch, audit_mode):
     db.close()
 
 
+@pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
+def test_appeal_score_rerun_is_idempotent(env, monkeypatch, audit_mode):
+    from tests.test_impulse_appeal_score import Messages
+
+    path = Path(env["cfg"])
+    raw = yaml.safe_load(path.read_text())
+    raw["appeal_score"]["enabled"] = True
+    raw["audit"]["mode"] = audit_mode
+    path.write_text(yaml.safe_dump(raw))
+    ratings = Messages()
+
+    class CombinedMessages(_FakeMessages):
+        def create(self, **kwargs):
+            if kwargs["system"].startswith("Would a deal-hunting woman"):
+                return ratings.create(**kwargs)
+            return super().create(**kwargs)
+
+    monkeypatch.setattr(_FakeClaudeClient, "messages", CombinedMessages())
+    first = _run(env)
+    assert first["spend_by_kind"]["appeal_score"]["calls"] == len(ratings.calls) == 1
+    assert first["spend_by_kind"]["appeal_score"]["usd"] > 0
+    db = DB(env["db"])
+    tables = [r[0] for r in db.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+    before = {table: db.conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables}
+    cached = [tuple(r) for r in db.conn.execute("SELECT * FROM appeal_scores ORDER BY dedupe_key")]
+    assert cached and all(row[2] == 4 for row in cached)
+    ledger = [tuple(r) for r in db.conn.execute("SELECT * FROM llm_calls ORDER BY call_key")]
+    db.close()
+    second = _run(env)
+    assert second["run_key"] == first["run_key"] and len(ratings.calls) == 1
+    db = DB(env["db"])
+    assert {table: db.conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] for table in tables} == before
+    assert [tuple(r) for r in db.conn.execute("SELECT * FROM appeal_scores ORDER BY dedupe_key")] == cached
+    assert [tuple(r) for r in db.conn.execute("SELECT * FROM llm_calls ORDER BY call_key")] == ledger
+    db.close()
+    assert b"appeal_score" not in (env["site"] / "deals.json").read_bytes()
+
+
 @pytest.mark.parametrize("signal,dead_items", [
     ("unrelated", set()), ("title", {"Chef Pro Knife Set", "Copper Pan Duo"}),
     ("evidence", {"Chef Pro Knife Set"}),
@@ -663,3 +703,23 @@ def test_deaths_summary_counts_api_expiry_and_confirmation_but_not_old_deaths(en
     assert first["deaths_by_reason"] == {
         "api_ended": 1, "stated_expiry": 1, "confirmed": 1}
     assert _run(env)["deaths_by_reason"] == {}
+
+
+def test_compare_failure_does_not_stop_fast_lane_rerun(env, monkeypatch, caplog):
+    from dealradar import compare
+    path = Path(env['cfg'])
+    # Keep every other paid feature at its shipped settings.
+    path.write_text(path.read_text().replace('  refresh: false           # paid step', '  refresh: true            # paid step'))
+    attempts = []
+    def broken(*args, **kwargs):
+        attempts.append(True)
+        raise ValueError('private exception payload')
+    monkeypatch.setattr(compare, 'refresh', broken)
+    for _ in range(2):
+        pipeline.run(fast_lane=True, db_path=env['db'], config_path=env['cfg'],
+            dry_run_telegram=True, transport=httpx.MockTransport(_handler),
+            sources_override=[], skip_validation=True, claude_client=_FakeClaudeClient())
+        assert (env['site'] / 'index.html').is_file()
+    assert attempts
+    assert 'compare refresh unavailable (ValueError)' in caplog.text
+    assert 'private exception payload' not in caplog.text

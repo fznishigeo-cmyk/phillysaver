@@ -16,6 +16,7 @@ from tests.test_checkout_price_deals import enable, offer, remember
 from tests.test_front_page import browser as run_home_logic
 from tests.test_price_accuracy_engine import NOW
 from tests.test_publish_site import make_deal
+from tests.history_pins import pre_first_screen_mix
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,7 +42,7 @@ def test_invalid_config(tmp_path, value):
 @pytest.fixture
 def rotation_site(tmp_path, monkeypatch):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     cfg.tracking = {}
     cfg.join_prompt = False
     cfg.manifest_refresh["enabled"] = False
@@ -106,7 +107,7 @@ def test_arrivals_survive_saved_startup_refresh_and_back(rotation_site):
 
 @pytest.mark.parametrize("strip_comments", [False, True])
 def test_shipped_ordering_after_rotation(tmp_path, monkeypatch, strip_comments):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     cfg.tracking = {}
     cfg.strip_comments = strip_comments
     monkeypatch.setattr(site, "util_now", lambda: NOW)
@@ -141,7 +142,7 @@ def test_shipped_ordering_after_rotation(tmp_path, monkeypatch, strip_comments):
     "spotlight-picked-first-promo")]
     + [("spotlight-off", 0)])
 def test_spotlight_untouched_while_ordinary_picks_rotate(rotation_site, tmp_path, case, windows):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     promos = set(range(4, 120, 5)) if case.endswith("fallback") else {24, 49}
     if case in {"spotlight-extra-first-promo", "spotlight-picked-first-promo"}:
         promos = set(range(0, 120, 5))
@@ -208,7 +209,7 @@ def test_server_prepares_diverse_rotating_windows(rotation_site, tmp_path, monke
 
 @pytest.mark.parametrize("varied", [False, True])
 def test_window_preparation_retains_inventory_checkout_positions_boosts_and_tail(varied):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     categories = [f"cat{i % 6}" for i in range(24)] + ["home"] * 24 + ["beauty"] * 24
     rows = [dict(offer(i, codes=["SAVE"] if i % 5 == 0 else [], stack_steps=[]),
                  category=categories[i] if i < 72 else "electronics",
@@ -276,7 +277,7 @@ def test_spotlight_payload_matches_off_render(rotation_site, price_only):
 
 
 def test_category_backtracking_keeps_server_accepted_rotation(rotation_site, tmp_path):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     rows = [dict(key=str(i), dedupe_key=str(i), item=f"Rotation product {i}",
                  store=f"store{i % 5}", brand=f"brand{i // 3}",
                  category="kitchen" if 24 <= i < 26 else "home" if 26 <= i < 48 else f"cat{i % 7}",
@@ -297,7 +298,7 @@ def test_category_backtracking_keeps_server_accepted_rotation(rotation_site, tmp
 
 @pytest.mark.parametrize("case", ["promo-pruning", "category-budget"])
 def test_impossible_promo_prefixes_prune_category_search(rotation_site, tmp_path, case):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     rng = random.Random(269)
     promos = set(range(0, 71, 5)) | set(range(76, 117, 5))
     rows = [dict(key=str(i), dedupe_key=str(i), item=f"Rotation product {i}",
@@ -324,11 +325,12 @@ def test_enabled_shipped_phone_budget(tmp_path):
     from scripts.publication_budget import analyze
     from tests.phone_budget_fixture import publish_fixture, reference_sizes
 
-    cfg = load_config()  # All shipped features ON; historical fixtures stay frozen.
+    cfg = pre_first_screen_mix(load_config())  # All shipped features ON; historical fixtures stay frozen.
+    cfg.max_photoless_h = load_config().max_photoless_h  # task 283's cutoff is a shipped feature too
     assert cfg.drop_rotation_windows == 3 and drop_rotation.enabled(cfg)
     cfg.phone_budget["enabled"] = True
     publish_fixture(tmp_path, cfg)
-    report = analyze(tmp_path / "site", cfg, expected_offers=1400)
+    report = analyze(tmp_path / "site", cfg, expected_offers=1393)  # task 283: seven older photo-less offers
     reference = reference_sizes(tmp_path / "site")
     for metric, values in report["metrics"].items():
         assert values["gzip"] == reference[metric]["gzip"]
@@ -340,7 +342,7 @@ def test_enabled_shipped_phone_budget(tmp_path):
 
 def test_exact_server_promo_flags_with_and_without_paid_label(tmp_path, monkeypatch):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     enable(cfg)
     rows = [offer(i) if i % 5 == 0 else offer(i, codes=[], stack_steps=[]) for i in range(12)]
     for d in rows:
@@ -366,7 +368,7 @@ def test_exact_server_promo_flags_with_and_without_paid_label(tmp_path, monkeypa
 
 def test_off_template_is_exact_and_checkout_disabled_unchanged():
     home = (site.TEMPLATES_DIR / "index.html").read_text()
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     cfg.drop_rotation_windows = 0
     assert drop_rotation.template(home, cfg) == home
     assert drop_rotation.final_order(home, cfg) == home
@@ -405,7 +407,7 @@ def test_toggle_restores_every_byte_and_reruns(rotation_site):
     {"controls": {"minpct": "80"}},
 ])
 def test_other_views_keep_their_order(tmp_path, view):
-    cfg = load_config()
+    cfg = pre_first_screen_mix(load_config())
     cfg.support_enabled = False
     cfg.engagement = {}
     rows = [dict(key=str(i), pick=i+1, category="home", store="Walmart",

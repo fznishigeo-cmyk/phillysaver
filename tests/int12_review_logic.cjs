@@ -8,8 +8,8 @@ function fragment(start, end) {
   assert(a >= 0 && b > a, start);
   return home.slice(a, b);
 }
-const controls = {q:{value:''}, storesel:{value:''}, minpct:{value:''}};
-const ctx = {Set, Map, state:{meta:payload.meta, deals:payload.deals, spotlight:payload.spotlight || [],
+const controls = {q:{value:'', addEventListener(){}}, storesel:{value:''}, minpct:{value:''}};
+const ctx = {Set, Map, URLSearchParams, location:{search:''}, state:{meta:payload.meta, deals:payload.deals, spotlight:payload.spotlight || [],
   catTab:3, sortKey:'top', sortDir:-1, seed:42, newKeys:{}},
   document:{getElementById:id=>controls[id] || null, addEventListener(){}},
   CATGROUPS:JSON.parse(home.match(/var CATGROUPS = (.*);/)[1]),
