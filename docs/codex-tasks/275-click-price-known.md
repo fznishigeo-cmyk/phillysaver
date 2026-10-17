@@ -21,10 +21,13 @@ would_hide 0 of 396 — the rule as built barely bites.
    plan summary shows the extra cost. Non-visible deals keep today's request.
 2. **Judge by the click price.** A public new Amazon deal is *confirmed* only
    when a fresh reading (same clocks as `buybox.fresh_reading`) shows a
-   qualified Buy Box total within 10% of `final_price` (`exceeds_price_tolerance`),
-   or — when Keepa reports no Buy Box at all — Amazon's own offer (slot 0)
-   within 10%. Codes/coupons/Subscribe & Save (`_price_hidden_by_promo`)
-   keep today's handling.
+   qualified Buy Box total within 10% of `final_price` (`exceeds_price_tolerance`).
+   **A missing Buy Box is Unknown even when Amazon's own offer (slot 0)
+   matches**: live probe 04:12Z, the adidas shorts B0CNSDZ47Y had
+   amazon $4.55 = new $4.55 = final $4.55 but buybox null, and the product
+   page did not show $4.55 (a size/colour-specific or suppressed offer).
+   Codes/coupons/Subscribe & Save (`_price_hidden_by_promo`) keep today's
+   handling (probe: 6 of 30 top picks above 10% were all promo prices).
    - Known and >10% above → hidden (today's on-mode path).
    - **Unknown** (no qualified Buy Box, no Amazon offer; only a marketplace
      NEW price) → never a top pick, never in the first 120 home cards, rows,
@@ -42,9 +45,9 @@ would_hide 0 of 396 — the rule as built barely bites.
    older reading never clears an existing gap (`buybox.remember` rules).
 
 ## Tests
-Unit: adidas-shaped fixture (slot 1 $4.55, no Buy Box, slot 0 none) is
+Unit: adidas fixture (slot 0 $4.55, slot 1 $4.55, Buy Box missing) is
 not a top pick and labeled; Buy Box $4.60 → confirmed; Buy Box $32 → hidden;
-Amazon offer only within 10% → confirmed; promo path unchanged; variation
+Amazon offer within 10% but Buy Box missing → unknown; promo path unchanged; variation
 child + unknown → unknown; shadow counts but changes no bytes; token planner
 never exceeds the grant with buybox=1 and drops lowest-visibility first;
 rerun idempotency (tests/test_e2e_offline.py style). OFF = today's bytes
