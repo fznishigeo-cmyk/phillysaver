@@ -11,6 +11,7 @@ import yaml
 from dealradar import http_client, pipeline
 from dealradar.models import SourceConfig
 from tests import test_e2e_offline as offline
+from tests.history_pins import pre_task_279_raw
 
 
 # run_stats columns added after the recording (task 234); fetch never sets them.
@@ -49,6 +50,7 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
     cfg["keepa"]["click_price_rule"] = "off"  # recorded before task 275
     cfg["publish"]["amazon_reference"] = "history"  # recorded before task 276
     cfg["site"]["strip_comments"] = False  # recorded before task 278
+    pre_task_279_raw(cfg)  # recorded before task 279
     cfg["publish"]["front_page"]["used_tab_only"] = False  # recorded before task 274
     cfg["site"]["open_box_scarcity"] = False  # recorded before task 273
     cfg["publish"]["front_page"]["appeal"]["want"]["enabled"] = False

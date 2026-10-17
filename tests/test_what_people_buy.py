@@ -232,7 +232,10 @@ def test_shipped_switches_on_missing_off(tmp_path):
     assert cfg.front_page["appeal"]["want"]["enabled"]
     assert cfg.front_page["appeal"]["want"]["factor"] == 1.2
     assert cfg.front_page["appeal"]["want"]["max_price"] == 50
-    assert len(cfg.front_page["appeal"]["season"]) == 2
+    # Operator 2026-10-17: holiday items ~2 weeks before each holiday.
+    assert [w["name"] for w in cfg.front_page["appeal"]["season"]] == [
+        "halloween", "valentines", "mothers day", "fathers day", "fourth of july",
+        "back to school", "thanksgiving", "gifts"]
     path = tmp_path / "empty.yaml"
     path.write_text("{}")
     assert not load_config(path).open_box_scarcity and not AppConfig().open_box_scarcity
@@ -737,3 +740,28 @@ require(HARNESS);
                             env={**os.environ, "TMPDIR": str(tmp_path)})
     assert result.returncode == expected, result.stdout + result.stderr
     assert ("Chromium cannot launch" in result.stdout) is (failure == "launch")
+
+
+def test_gadgets_and_halloween_get_the_subtle_lift():
+    """Operator 2026-10-17: cheap gadgets entice (subtly), and holiday items
+    go up ~2 weeks before the holiday (Halloween from Oct 17)."""
+    options = SHIPPED.front_page["appeal"]
+    assert "gadgets" in appeal.groups({"item": "Anker 10,000mAh Wireless Charger Stand"}, options)
+    assert "gadgets" in appeal.groups({"item": "Phomemo D30 Bluetooth Label Maker"}, options)
+    assert "gadgets" not in appeal.groups({"item": "Stainless Steel Mixing Bowls"}, options)
+    assert SHIPPED.front_page["appeal"]["category_factors"]["electronics"] < \
+        SHIPPED.front_page["appeal"]["category_factors"]["beauty"]
+    halloween = next(w for w in options["season"] if w["name"] == "halloween")
+    assert (halloween["from"], halloween["to"]) == ("10-17", "10-31")
+    assert appeal.matches("3-Pk Zesua Halloween Outdoor LED Ghost Decor", halloween["words"])
+    assert not appeal.matches("Kids Fleece Hoodie", halloween["words"])
+
+
+def test_kids_toys_lift_but_adult_toys_never():
+    """Operator 2026-10-17: what women buy for their kids goes up; adult never."""
+    options = SHIPPED.front_page["appeal"]
+    assert not appeal.blocked({"item": "Melissa & Doug Wooden Toy Car Set for Toddlers"}, options)
+    assert "kids" in appeal.groups({"item": "Toddler Toys Stacking Blocks"}, options)
+    for title in ("Rose Toy for Women", "Couples Toy Gift", "Wand Massager Personal",
+                  "Adult Toy Kit", "Vibrating Egg"):
+        assert appeal.blocked({"item": title}, options), title

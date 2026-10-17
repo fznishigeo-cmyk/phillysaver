@@ -309,6 +309,8 @@ class AppConfig:
     offscreen_cards: bool = False
     dark_polish: bool = False
     strip_comments: bool = False
+    home_title: str = ""
+    home_description: str = ""
     search_amazon: bool = False
     static_photos: bool = False
     open_box_scarcity: bool = False
@@ -881,6 +883,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.strip_comments = g("site", "strip_comments", default=False)
     if type(cfg.strip_comments) is not bool:
         raise ValueError("site.strip_comments must be a boolean")
+    for key in ("home_title", "home_description"):
+        value = g("site", key, default="") or ""
+        if not isinstance(value, str) or "\n" in value or len(value) > 200:
+            raise ValueError(f"site.{key} must be one line of text")
+        setattr(cfg, key, value.strip())
     cfg.search_amazon = g("site", "search_amazon", default=False)
     if type(cfg.search_amazon) is not bool:
         raise ValueError("site.search_amazon must be a boolean")

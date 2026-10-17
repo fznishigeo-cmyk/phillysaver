@@ -102,6 +102,19 @@ def _browse_script(price_presets: list[int], saved: bool = False) -> _BrowseScri
     return _BrowseScript(marked, without_saved, rendered)
 
 
+def home_search_text(html: str, cfg) -> str:
+    """What Google shows for the homepage: its <title> and meta description
+    (operator 2026-10-17). Unset keeps the template's text, so bytes hold."""
+    title = getattr(cfg, "home_title", "")
+    description = getattr(cfg, "home_description", "")
+    if title:
+        html = re.sub(r"<title>[^<]*</title>", lambda _: f"<title>{escape(title)}</title>", html, count=1)
+    if description:
+        html = re.sub(r'<meta name="description" content="[^"]*">',
+                      lambda _: f'<meta name="description" content="{escape(description)}">', html, count=1)
+    return html
+
+
 def _page_template(html: str, cfg, *, home: bool = False) -> str:
     """Existing feature passes, before the home browse slot is inserted."""
     from .. import click_price
@@ -1086,6 +1099,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if name == "index.html":
             html = html.replace("{{PRICE_OPTIONS}}", "".join(
                 f'<option value="{n}">Under ${n}</option>' for n in price_presets))
+            html = home_search_text(html, cfg)
         yearly = meta["yearly_price_usd"]
         for place in ("panel", "dialog"):
             choices = ""

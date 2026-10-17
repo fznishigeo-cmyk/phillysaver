@@ -14,7 +14,7 @@ from dealradar.db import DB
 from dealradar.publish import indexnow, site
 from dealradar.util import iso
 from tests.test_publish_site import make_deal
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 NOW = datetime(2026, 10, 16, 12, tzinfo=timezone.utc)
 MODES = ("support", "open", "closed", "shipped")
@@ -30,6 +30,7 @@ def fixture_config(mode):
         cfg.amazon_history = "show"  # recorded before task 274
         cfg.amazon_reference = "history"  # recorded before task 276
         cfg.strip_comments = False  # recorded before task 278
+        pre_task_279(cfg)  # recorded before task 279
         cfg.open_box_scarcity = False  # recorded before task 273
         if "appeal" in cfg.front_page:
             cfg.front_page["appeal"].get("want", {})["enabled"] = False

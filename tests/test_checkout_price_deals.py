@@ -17,7 +17,7 @@ from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 from tests.test_price_accuracy_engine import NOW, api, bucket, cfg, db, seed
 from tests.test_product_offer_pages import tree
 from tests.test_publish_site import make_deal
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -445,6 +445,7 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
         config = pre_history_removal(load_config())
         config.dark_polish = False  # recorded before task 254
         config.strip_comments = False  # recorded before task 278
+        pre_task_279(config)  # recorded before task 279
         config.search_amazon = False  # recorded before task 259
         config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
         config.join_prompt_delay_s = 15  # recorded before the 35 s delay

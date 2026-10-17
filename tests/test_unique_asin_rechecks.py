@@ -21,7 +21,7 @@ from tests.test_e2e_offline import env, test_rerun_is_idempotent as check_rerun
 from tests.test_price_accuracy_engine import NOW, cfg, db, product, seed
 from tests.test_value_per_token_rechecks import minutes
 from tests.test_wall_confirmation_coverage import remember
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 
 def digest(value):
@@ -92,6 +92,7 @@ def test_all_published_files_and_member_payload_match_before_editing(
     config = pre_history_removal(load_config())
     config.dark_polish = False  # recorded before task 254
     config.strip_comments = False  # recorded before task 278
+    pre_task_279(config)  # recorded before task 279
     config.search_amazon = False  # recorded before task 259
     config.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     config.join_prompt_delay_s = 15  # recorded before the 35 s delay

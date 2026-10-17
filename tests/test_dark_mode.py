@@ -22,7 +22,7 @@ from tests.test_offscreen_cards import offers
 from tests.test_product_entities import insert
 from tests.test_pwa import baseline_config, tree_hash
 from tests.test_support import NOW, render
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "dealradar/publish/templates"
 
@@ -255,6 +255,7 @@ def dark_trees(tmp_path):
     cfg.dark_polish = False
     cfg.seo_product_pages_enabled = True
     cfg.strip_comments = False  # comparison recorded before task 278
+    pre_task_279(cfg)  # recorded before task 279
     cfg.seo_hub_min_items = cfg.seo_store_page_min_deals = 1
     cfg.checker = validated_checker({"enabled": True, "stores": {"amazon": "history", "walmart": "history"}})
     stores = [("Amazon", f"https://www.amazon.com/dp/B{i:09d}") for i in range(12)]

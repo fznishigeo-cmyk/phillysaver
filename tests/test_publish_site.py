@@ -1756,6 +1756,30 @@ def test_tab_title_stays_short():
     assert "document.title" not in html
 
 
+def test_google_title_and_description_come_from_config(db, tmp_path):
+    """Operator, 2026-10-17: Google shows "wowpriced: The Best Deals, Coupons,
+    Promo Codes & Discounts" (like Slickdeals). Unset keeps the template text."""
+    from dealradar.publish.site import home_search_text
+    template = (Path(__file__).resolve().parents[1] / "dealradar/publish/templates/index.html").read_text()
+    assert home_search_text(template, AppConfig()) == template
+    shipped = load_config()
+    assert shipped.home_title == "wowpriced: The Best Deals, Coupons, Promo Codes & Discounts"
+    assert len(shipped.home_title) <= 60 and len(shipped.home_description) <= 160
+    cfg = AppConfig(ftc_disclosure=DISCLOSURE, site_dir=str(tmp_path / "site_default"),
+                    home_title=shipped.home_title, home_description=shipped.home_description)
+    out = tmp_path / "site"
+    render_site(db, cfg, NOW, out_dir=out)
+    html = (out / "index.html").read_text()
+    head = html.split("</head>", 1)[0]
+    assert head.count("<title>") == 1
+    assert "<title>wowpriced: The Best Deals, Coupons, Promo Codes &amp; Discounts</title>" in head
+    assert head.count('<meta name="description"') == 1
+    assert '<meta name="description" content="Verified deals, coupons and promo codes from Amazon' in head
+    # Share previews and the template default stay as they were.
+    assert '<meta property="og:title" content="wowpriced — verified deals, up to 90% off">' in html
+    assert "document.title" not in html
+
+
 def test_shown_counts_top_out_at_1000():
     """Operator, 2026-10-12: "1,000+ live deals" and keep it that way."""
     import subprocess

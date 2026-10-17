@@ -1,0 +1,89 @@
+name: visitor watch (read-only)
+
+# Our own homepage in real Chromium; never follows deal or search destinations.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: visitor-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install YAML parser
+        run: python -m pip install PyYAML==6.0.2
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-visitor-watch-playwright-1.48.2
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Fetch the immediately previous run snapshot
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            // Failed runs count too: consulting only successful runs would
+            // prevent a persistent problem from ever recovering its baseline.
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              ...context.repo, workflow_id: 'visitor-watch.yml',
+              branch: context.ref.replace('refs/heads/', ''), status: 'completed', per_page: 20
+            });
+            const previous = data.workflow_runs.filter(run =>
+              run.id !== context.runId && run.run_number < context.runNumber)
+              .sort((a, b) => b.run_number - a.run_number)[0];
+            if (!previous) {core.info('No previous run; starting a baseline.'); return;}
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
+              {...context.repo, run_id: previous.id, per_page: 100});
+            const artifact = artifacts.find(item => item.name === 'visitor-snapshot' && !item.expired);
+            // Do not fall back to an older run: that is not consecutive.
+            if (!artifact) {core.warning('Previous run has no snapshot; starting a baseline.'); return;}
+            const archive = await github.rest.actions.downloadArtifact({
+              ...context.repo, artifact_id: artifact.id, archive_format: 'zip'
+            });
+            fs.writeFileSync('previous-visitor-snapshot.zip', Buffer.from(archive.data));
+      - name: Unpack previous snapshot
+        run: |
+          if [ -f previous-visitor-snapshot.zip ]; then
+            mkdir -p previous-visitor-watch
+            if ! unzip -p previous-visitor-snapshot.zip snapshot.json > previous-visitor-watch/snapshot.json; then
+              rm -f previous-visitor-watch/snapshot.json
+              echo 'Previous snapshot unavailable; starting a baseline.'
+            fi
+          fi
+      - name: Watch the live site
+        run: node scripts/visitor_watch.js --previous previous-visitor-watch/snapshot.json
+      - name: Save visitor snapshot even when repeated flags fail
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visitor-snapshot
+          path: visitor-watch/snapshot.json
+          retention-days: 3
+          if-no-files-found: warn
+      - name: Save compact health for failure watch and recaps
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: visitor-health
+          path: visitor-watch/health.json
+          retention-days: 3
+          if-no-files-found: warn

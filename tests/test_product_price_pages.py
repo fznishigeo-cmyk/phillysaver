@@ -21,7 +21,7 @@ from tests.test_product_offer_pages import tree
 from tests.test_publish_site import NOW
 from tests.test_seo_deal_pages import _page, _path
 from tests.test_e2e_offline import env as pipeline_env, test_rerun_is_idempotent as check_pipeline_rerun
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 
 @pytest.fixture
@@ -100,6 +100,7 @@ def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, exp
     cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
     cfg.dark_polish = False  # recorded before task 254
     cfg.strip_comments = False  # recorded before task 278
+    pre_task_279(cfg)  # recorded before task 279
     cfg.search_amazon = False  # recorded before task 259
     cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay

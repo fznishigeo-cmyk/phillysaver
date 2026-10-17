@@ -8,6 +8,16 @@ user_agent: "dealradar/0.1 (+https://github.com/fznishigeo-cmyk/phillysaver; con
 timezone: "America/New_York"   # default tz for feeds with naive dates and for "ends today"
 
 quality:
+  visitor_watch:
+    # Read-only health monitor. Page-photo/All gates on: task 274 is live (7c882fc).
+    category_photos: true
+    deal_photos: true
+    exclude_used_on_all: true
+    # Exact photo hosts only, from publisher fixtures; no subdomain wildcards.
+    image_hosts: [m.media-amazon.com, images-na.ssl-images-amazon.com, images.amazon.com,
+                  i5.walmartimages.com, target.scene7.com, t.scene7.com, pisces.bbystatic.com,
+                  d2b8wt72ktn9a2.cloudfront.net, d3gqasl9vmjfy8.cloudfront.net,
+                  dks.scene7.com, static.nike.com, hip2save.com, i0.wp.com]
   phone_budget:
     enabled: false             # proposed offline/lab gates; review before activation
     lab_lcp_max_ms: 2500
@@ -146,6 +156,11 @@ site:
   open_box_counts: false   # operator: publish only "often only 1" for now
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
   strip_comments: true  # task 278: final home-only pass; missing/false preserves original bytes
+  # Operator 2026-10-17: what Google shows for the homepage (like Slickdeals'
+  # "Slickdeals: The Best Deals, Coupons, Promo Codes & Discounts"). Missing/empty
+  # keeps the template's title/description bytes.
+  home_title: "wowpriced: The Best Deals, Coupons, Promo Codes & Discounts"
+  home_description: "Verified deals, coupons and promo codes from Amazon, Walmart, Target, Woot and more. We check every price before we show it."
   search_amazon: true         # tagged search fallback; queries stay local until clicked
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
@@ -231,12 +246,17 @@ publish:
       niche_factor: 0.25        # clearly model-specific accessories/parts stay on the wall
       category_factors: {home: 1.15, kitchen: 1.15, beauty: 1.15, fashion: 1.15,
                          toys_games: 1.05, kids_baby: 1.05, health: 1.05, grocery: 1.05,
+                         electronics: 1.05,   # operator 2026-10-17: gadgets entice; subtly, below women's picks
                          auto: 0.85}
       want:
         enabled: true
         factor: 1.2
         max_price: 50
-        exclude_words: [toy, vibrator, sex, adult, erotic, intimate wellness,
+        # Adult phrasing only: plain "toy" blocked kids' toys and dog toys
+        # (operator 2026-10-17: push what women buy for their kids).
+        exclude_words: [sex toy, adult toy, rose toy, couples toy, pleasure toy, pleasure,
+                        clitoral, g spot, wand massager, personal massager, vibrator, vibrating egg,
+                        sex, adult, erotic, intimate wellness,
                         dildo, masturbator, bondage, fetish, sex lube, sexual lubricant]
         groups:
           basics: [bra, bras, bralette, underwear, panties, boxer, briefs, socks,
@@ -259,9 +279,48 @@ publish:
           everyday: [paper towels, toilet paper, detergent, dish soap, trash bags,
                      toothpaste, toothbrush, deodorant, razor, vitamins]
           pets & fitness: [dog treats, cat litter, dog toy, yoga mat, resistance bands, dumbbells]
+          gadgets: [headphones, bluetooth speaker, smartwatch, smart watch, fitness tracker,
+                    label maker, flashlight, wireless charger, charging station, phone stand,
+                    ring light, mini projector, portable fan, smart plug, security camera,
+                    doorbell camera, dash cam, fire tv stick, streaming stick, gaming controller,
+                    led strip lights, electric toothbrush, massage gun, digital frame]
           allure: [lingerie, babydoll, bralette, corset, satin, silk robe,
                    sleepwear, nightgown, cologne, perfume, boxer briefs, swim trunks, date night]
-      season:
+      season:                  # operator 2026-10-17: push holiday items ~2 weeks before each holiday
+        - name: halloween
+          from: "10-17"
+          to: "10-31"
+          words: [halloween, costume, pumpkin, candy, trick or treat, skeleton, ghost,
+                  witch, spooky, jack o lantern, cobweb]
+          factor: 1.15
+        - name: valentines
+          from: "01-31"
+          to: "02-14"
+          words: [valentine, valentines, chocolate, roses, teddy bear, heart necklace,
+                  jewelry, perfume, couples]
+          factor: 1.15
+        - name: mothers day            # 2nd Sunday of May (May 8-14)
+          from: "04-25"
+          to: "05-14"
+          words: [mother, mom, gift set, jewelry, perfume, spa, robe, flowers, necklace, bracelet]
+          factor: 1.15
+        - name: fathers day            # 3rd Sunday of June (June 15-21)
+          from: "06-04"
+          to: "06-21"
+          words: [father, dad, grill, tool set, wallet, cologne, golf]
+          factor: 1.15
+        - name: fourth of july
+          from: "06-20"
+          to: "07-04"
+          words: [4th of july, fourth of july, patriotic, american flag, cooler, pool float,
+                  beach towel, sunscreen]
+          factor: 1.15
+        - name: back to school
+          from: "07-25"
+          to: "09-05"
+          words: [school supplies, backpack, lunch box, notebook, pencils, crayons, binder,
+                  markers, kids shoes]
+          factor: 1.15
         - name: thanksgiving
           from: "11-10"
           to: "11-27"

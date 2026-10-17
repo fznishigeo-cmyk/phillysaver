@@ -19,6 +19,7 @@ from dealradar.models import Deal
 from dealradar.publish import site
 from dealradar.util import iso
 from tests.http_helpers import api_transport, mock_keepa_get
+from tests.history_pins import pre_task_279
 from tests.test_appeal import tree
 from tests.test_front_page import pick_deal
 from tests.test_keepa import SRC, FakeKeepa, _amazon_row
@@ -54,6 +55,7 @@ def product(**over):
 def settings(enabled=False):
     cfg = load_config()
     cfg.open_box_scarcity = False  # recorded before task 273
+    pre_task_279(cfg)  # recorded before task 279
     cfg.front_page["appeal"]["want"]["enabled"] = False
     cfg.front_page["appeal"]["season"] = []
     cfg.front_page["popular_affordable"]["enabled"] = enabled

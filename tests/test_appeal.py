@@ -98,7 +98,8 @@ def test_config_defaults_and_shipped_knobs(tmp_path):
     assert appeal["enabled"] and appeal["niche_factor"] == .25
     assert appeal["category_factors"] == {
         "home": 1.15, "kitchen": 1.15, "beauty": 1.15, "fashion": 1.15,
-        "toys_games": 1.05, "kids_baby": 1.05, "health": 1.05, "grocery": 1.05, "auto": .85}
+        "toys_games": 1.05, "kids_baby": 1.05, "health": 1.05, "grocery": 1.05,
+        "electronics": 1.05, "auto": .85}
 
 
 def test_only_pick_score_changes_and_all_factors_are_configurable():

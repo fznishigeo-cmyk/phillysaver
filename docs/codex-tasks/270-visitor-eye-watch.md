@@ -1,4 +1,4 @@
-# 270 — Visitor's-eye watch every 15 minutes (real Chromium, our own site)
+# 270 — Visitor's-eye watch every 10 minutes (real Chromium, our own site)
 
 ## Why
 Operator 2026-10-17 ~03:25Z: "why can't you use a headless browser on the site
@@ -10,8 +10,11 @@ at what the first screen shows over time. The repo is public, so Actions
 minutes are free. (CLAUDE.md's "no headless browsers" is about crawling
 SOURCES; this is our own site.)
 
+Operator decision 2026-10-17: run the watch every 10 minutes; this supersedes
+the original 15-minute cadence requested above.
+
 ## Task
-1. New workflow `.github/workflows/visitor-watch.yml`, cron `*/15 * * * *`
+1. New workflow `.github/workflows/visitor-watch.yml`, cron `*/10 * * * *`
    (offset from site-check), concurrency group (never overlap), timeout 6 min,
    read-only permissions plus `actions: read` to fetch the previous run's
    snapshot artifact. Reuse site-check's Playwright install/caching.

@@ -16,7 +16,7 @@ from dealradar.savings import compute_savings
 from tests.test_amazon_as_of import NOW, sample_deals
 from tests.test_claude_client import FakeParseResponse, FakeUsage
 from tests.test_extractor import make_post
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 
 def capture(out, monkeypatch, setting="omitted"):
@@ -26,6 +26,7 @@ def capture(out, monkeypatch, setting="omitted"):
     cfg.offscreen_cards = False  # recorded before task 237's phone-only CSS
     cfg.dark_polish = False  # recorded before task 254
     cfg.strip_comments = False  # recorded before task 278
+    pre_task_279(cfg)  # recorded before task 279
     cfg.search_amazon = False  # recorded before task 259
     cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay
@@ -94,6 +95,7 @@ def capture(out, monkeypatch, setting="omitted"):
             publication.offscreen_cards = False  # recorded before task 237
             publication.dark_polish = False  # recorded before task 254
             publication.strip_comments = False  # recorded before task 278
+            pre_task_279(publication)  # recorded before task 279
             publication.search_amazon = False  # recorded before task 259
             publication.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
             publication.join_prompt_delay_s = 15  # recorded before the 35 s delay

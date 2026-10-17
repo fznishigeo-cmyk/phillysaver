@@ -15,7 +15,7 @@ from dealradar.publish import members, newsletter, price_labels, site, social
 from dealradar.publish.seo_audit import read_pages
 from tests.test_price_accuracy_engine import NOW, seed
 from tests.test_publish_site import make_deal
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 
 @pytest.fixture
@@ -334,6 +334,7 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     cfg = pre_history_removal(load_config()) if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
     cfg.dark_polish = False  # recorded before task 254
     cfg.strip_comments = False  # recorded before task 278
+    pre_task_279(cfg)  # recorded before task 279
     cfg.search_amazon = False  # recorded before task 259
     cfg.front_page.get("everyday_price", {})["enabled"] = False  # recorded before 2026-10-17 tilt
     cfg.join_prompt_delay_s = 15  # recorded before the 35 s delay

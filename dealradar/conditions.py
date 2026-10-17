@@ -22,6 +22,13 @@ def normalize_conditions(conditions) -> list[str]:
                                "like_new", "second_hand", "secondhand", "previously_owned",
                                "pre_loved", "preloved")) or label in {"warehouse", "resale"}:
             label = "used"
+        # A grade first ("Excellent - Pre-Owned", "Grade A - Like New") is still
+        # used; an earlier label above keeps its old reading.
+        elif re.search(r"(?:^|_)open_?box(?:_|$)", label):
+            label = "open_box"
+        elif re.search(r"(?:^|_)(?:used|pre_?owned|like_new|second_?hand|previously_owned|pre_?loved)(?:_|$)",
+                       label):
+            label = "used"
         if label not in _CANONICAL:
             label = str(condition).strip()
         if label and label not in result:

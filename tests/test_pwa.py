@@ -14,7 +14,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import pwa, site
 from tests.test_publish_site import make_deal
 from tests.test_support import NOW, render
-from tests.history_pins import pre_history_removal
+from tests.history_pins import pre_history_removal, pre_task_279
 
 
 def baseline_config(mode):
@@ -26,6 +26,7 @@ def baseline_config(mode):
         cfg.front_page["used_tab_only"] = False  # recorded before task 274
         cfg.amazon_reference = "history"  # recorded before task 276
         cfg.strip_comments = False  # recorded before task 278
+        pre_task_279(cfg)  # recorded before task 279
         cfg.open_box_scarcity = False  # recorded before task 273
         if "appeal" in cfg.front_page:
             cfg.front_page["appeal"].get("want", {})["enabled"] = False

@@ -650,6 +650,9 @@ def test_old_historical_minimum_is_hidden_when_existing_sightings_supersede_it(a
     ('FACTORY REFURB', 'refurbished'), ('Renewed', 'refurbished'),
     ('Condition: Used - Very Good', 'used'), ('OpenBox (Excellent)', 'open_box'),
     ('Second Hand - Excellent', 'used'),
+    # Grade first (staples review 2026-10-17): still used, never a homepage pick.
+    ('Excellent - Pre-Owned', 'used'), ('Grade A - Like New', 'used'),
+    ('Good - Second Hand', 'used'), ('New - Open Box', 'open_box'),
 ])
 def test_condition_synonyms_share_the_same_exclusions(label, canonical, audit_cfg):
     from dealradar.parse.schema import LLMDeal

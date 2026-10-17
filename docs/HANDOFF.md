@@ -681,6 +681,110 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   remains failing. Native layout QA and full-context validation before any
   future count activation remain; counts stay OFF as the operator requested.
   No full suite, network, commit or push.
+- **Visitor's-eye health watch (Codex task 270, 2026-10-17; uncommitted):**
+  Read-only `visitor-watch.yml` stays on `*/10`, serialized, six-minute timeout.
+  It retrieves only the immediately preceding completed run (failures included),
+  saves the snapshot on repeated flags, and requires the same check/view to flag
+  twice before exit 1. Redirect validation/pacing, pending rotation deadlines,
+  actual intercepted search navigation and decoded dark screenshots retain their
+  earlier regressions. Task 267 utility groups and task 269 rotation remain
+  report-only until their missing config arrives. Amazon search fixtures now use
+  the rebased shipped feature; the explicitly disabled case still flags.
+  The health addendum now checks loaded photos through three screens on both
+  viewports, separately counts store tiles/broken photos, and samples the beauty
+  hub plus the first card's internal deal page. Screenshot/DOM checks cover
+  overflow, overlapping/stretched cards and 400px uniform bands (including bands
+  crossing screenshots), plus the unchanged dark glare measure. Working checks
+  exercise the second actual department (Beauty, using the published taxonomy),
+  a search word from live published inventory, deal-page HTTP/price/Get deal,
+  and every first-24 outbound URL.
+  Visible malformed values/history wording and gated used/open_box on the actual
+  All tab flag separately. Only text findings are retained, never page bodies.
+  First-screen internal HEADs are deduplicated across all four views, capped at
+  20, paced, and never follow redirects; Get deal/sponsored links are excluded.
+  Operator's 2026-10-17 13:46Z allowlist decision replaces the watcher host
+  blocklists. Browser GETs allow only our origin and images from exact
+  `quality.visitor_watch.image_hosts` entries, checked before fetching every
+  redirect hop. External non-images are refused even on configured image hosts;
+  missing/malformed host lists fail closed. Publisher/serializer photo fixtures
+  cover the configured CDN and licensed source-image hosts. Get deal checks use
+  HTTPS URL shape, reject our own domain, and require our tag on direct Amazon
+  destinations, without retailer/source/tracker host lists or credit matching.
+  Task 274 is absent here: its future category/deal photo and used-on-All gates
+  are explicit watcher settings
+  `quality.visitor_watch.{category_photos,deal_photos,exclude_used_on_all}`, all
+  false until those features ship. Related images cannot mask a missing main
+  deal photo. Every new check uses the existing two-consecutive-run rule.
+  Adversarial review fixes: snapshots record `.gone` status and exempt only
+  intentionally linkless ended cards; live/malformed links still flag. Inventory
+  search requires the applied-query acknowledgement and matching titles, with
+  ignored-input and unrelated-result regressions. Context-wide page listeners
+  capture sampled-page JavaScript/console/request/HTTP failures. The delayed-image
+  browser regression takes its baseline before starting the held image response.
+  Shared screenshot capture disables animations/caret, caps waits at 3 seconds
+  or the remaining deadline, and refuses expired captures; decode waits stay
+  bounded. Normal "the usual $50.00", struck-through "List Price $X" and "Price
+  drop" are clean wording; actual history claims still flag. Clean-build fixtures
+  retain regular prices. Text probes inspect rendered card/main text and exclude
+  hidden/transparent descendants and script/style source. The sampled deal needs
+  its own visible main Get deal button with a valid destination matching its home
+  card; six related-card buttons cannot mask a missing or incorrect main button.
+  Regressions cover the real serializer's approved routes, missing/wrong main
+  buttons, normal/history wording, hidden/script wording, ended cards, ignored
+  input and a sampled-page exception. Network regressions prove ShareASale
+  `/r.cfm`, bit.ly, walmrt.us, amzn.to and tagged Amazon product URLs are aborted
+  unsent on initial requests and redirects (including a configured CDN hop),
+  across resource types and offline fixtures. Additional cases cover unknown
+  photo hosts, spoofed/subdomain/trailing-dot hosts, credentials, ports and pacing.
+  Real serializer regressions cover credited Hip2Save/KCL/Money Saving Mom/
+  Passionate Penny Pincher posts, protected trackers, and direct MorningSave,
+  Meh, Woot and Target links with Sovrn disabled/enabled plus real Sovrn wrappers.
+  Duration regressions retain supply/warranty headlines. Durations now
+  require history/statistical context; 90-day supplies, warranties and price
+  guarantees stay clean while actual history claims still flag.
+  Latest review: search no longer assumes socks exist. It selects a word from
+  live, unlocked published items, preserves model tokens, and still requires an
+  applied-query acknowledgement plus matching result titles. Regressions cover
+  healthy no-socks inventory on consecutive runs, missing/unrelated results,
+  ignored input, accents, model-only items and query cleanup. Shared text
+  collection retains invalid values and history findings from both sampled
+  pages, labels their origin and preserves earlier findings. Regressions cover
+  each page independently, combined findings and repeated-run failures; offline
+  browser scenarios include each page, both pages and healthy no-socks runs.
+  The brief now matches the operator's standing `*/10` schedule; the workflow
+  cadence and assertion remain unchanged, with a new brief/workflow regression.
+  Final department review: the probe selects the department with the most live,
+  unlocked eligible published cards, skipping empty departments and price-only
+  spotlight rows. It verifies the active tab and complete matching key set,
+  including departments larger than the first page; correct unchanged cards
+  pass. Missing, unrelated, duplicate or inactive results and stalled loading
+  still flag. Two consecutive-run regressions cover empty departments skipped
+  and identical cards passing, with corresponding offline browser scenarios.
+  No production storefront/template bytes changed.
+  Summaries start `health: ok` / `health: N flags (names)`; the always-saved
+  `visitor-health` artifact contains compact `health.json` for failure watch and
+  recaps. Latest pre-fix regressions: **5 failed, 4 passed in 10.71s**, reproducing
+  the egress and MorningSave/Meh findings. Inventory fixture refinements:
+  **1 failed, 27 passed, 7 skipped in 21.88s**, then
+  **1 failed, 49 passed, 7 skipped in 108.60s (0:01:48)**; both failures were
+  assumptions that the serializer displays source images without current grants.
+  Those images were removed from the fixture and network allowlist; publisher
+  grants were unchanged. Latest review's first watcher run:
+  **29 passed, 12 skipped in 32.68s**. Prior targeted watcher, unchanged four-mode
+  OFF byte pins, 1,400-offer phone budgets, budget boundaries/OFF parsing and
+  workflow checks: **51 passed, 12 skipped in 244.08s (0:04:04)**, including all
+  **49 Node regressions** through the wrapper. The final department regressions
+  reproduced before the fix: **1 failed in 6.81s** (49 Node checks passed, both
+  new regressions failed); the fixed wrapper then reported **1 passed in 5.91s**.
+  Final targeted watcher, four unchanged OFF-byte pins, 1,400-offer phone budgets,
+  budget boundaries/OFF parsing and workflow checks:
+  **50 passed, 14 skipped in 237.93s (0:03:57)**, including **52 Node regressions**
+  through the wrapper. Chromium launches still return 77, so all fourteen browser
+  checks (including both consecutive-run department scenarios) remain unverified.
+  Syntax and `git diff --check` pass.
+  All pytest runs use `-n 1 -p no:cacheprovider` and owned
+  `/tmp/task270fix-*` scratch, deleted after each run. No hashes changed;
+  no full suite, network, commit or push. Review, browser QA and deployment remain.
 - **Dark polish (Codex task 254, 2026-10-17; uncommitted, ON):**
   `site.dark_polish: true` ships; code/missing-key defaults are false. New
   `publish/dark.py` injects the exact `templates/dark.css` and color-scheme meta
