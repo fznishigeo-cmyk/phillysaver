@@ -44,3 +44,30 @@ Offline only, `-n 1 -p no:cacheprovider`, own `/tmp/task267-*` basetemp
 network, no commit, no push. HANDOFF "In flight": one entry. Base includes
 255/255b and the 260 fix if present; if 260 is absent, implement the overflow
 helper so 260 can reuse it.
+
+## Addendum (operator 2026-10-17 ~03:45Z): "WHO THE HELL IS GOING TO BUY THIS — WHY IS THIS ON THE FRONT PAGE?"
+An OPEN BOX "Amerock Champagne Bronze Drawer Pull" $9.19 showed on the homepage.
+Picks exclude used/open-box/refurbished, but after the 120 picks the homepage
+wall (templates/index.html topOrder: `rest` sorted by first_seen_at, newest
+first) shows everything unfiltered. Fix as part of this task:
+4. Below the picks, the front-page view orders `rest` by the same landing
+   score (server-provided rank or a public, privacy-safe order field — never
+   the private popularity factor) with the impulse rules applied, not newest
+   first. Used / open-box / refurbished / renewed items and utility-group
+   matches go after all new impulse-eligible items on the All view (they stay
+   fully visible in the Used tab, category tabs and search). Keep the
+   phone budgets; keep Back restore exact (237).
+5. Extend the impulse utility groups with home hardware: drawer pull, cabinet
+   pull, knob (cabinet/drawer), hinge, drawer slide, door stop, wall plate,
+   switch plate, outlet cover, anchor, screw, bolt, bracket, shelf bracket,
+   furniture leg, caster wheel — with exclusions for decor items people do
+   impulse-buy (e.g. "wall art", "picture frame", "mirror", "lamp").
+Tests: the open-box drawer pull lands after every new impulse item on the All
+view; still visible in the Used tab and search.
+6. (operator ~03:50Z: "1/400 people have this phone — why would this be on the
+   home page?") Named-device accessories (rank.niche_reason: cases, screen
+   protectors, bands for one phone/watch/tablet model, camera-system and
+   vehicle-specific parts) join the same "after all impulse items" group on the
+   All view as used/open-box and utility items. Test: "OtterBox Samsung Galaxy
+   S24 FE React Series Case" and "OtterBox Profile Series Case for Samsung
+   Galaxy S25 Edge" land after every impulse item on the All view.
