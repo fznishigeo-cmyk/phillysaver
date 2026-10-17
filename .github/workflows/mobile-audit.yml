@@ -43,6 +43,23 @@ jobs:
           node scripts/mobile_audit.cjs "$URL" shots/mobile > audit.json
           { echo '## Mobile audit'; echo; echo '```json'; cat audit.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           cat audit.json
+      # The operator's 8:30am recap shows the live homepage on a phone (light
+      # and dark); artifacts are not reachable from the recap's machine, so
+      # copy those two shots to the private reports repo.
+      - name: Copy phone screenshots to the private reports repo
+        if: always()
+        env:
+          REPORTS_REPO_TOKEN: ${{ secrets.REPORTS_REPO_TOKEN }}
+        run: |
+          if [ -z "$REPORTS_REPO_TOKEN" ] || ! ls shots/mobile-iphone14*.png >/dev/null 2>&1; then echo "screenshots not copied"; exit 0; fi
+          day=$(TZ=America/New_York date +%F)
+          git clone -q --depth 1 "https://x-access-token:${REPORTS_REPO_TOKEN}@github.com/fznishigeo-cmyk/wowpriced-reports.git" reports
+          mkdir -p "reports/ops/shots/$day"
+          cp shots/mobile-iphone14.png shots/mobile-iphone14-dark.png "reports/ops/shots/$day/"
+          cd reports
+          git add ops/shots
+          git -c user.name="wowpriced bot" -c user.email="hello@wowpriced.com" commit -qm "Phone screenshots $day" || exit 0
+          git push -q || echo "push failed"
       - uses: actions/upload-artifact@v6
         with:
           name: mobile-audit
