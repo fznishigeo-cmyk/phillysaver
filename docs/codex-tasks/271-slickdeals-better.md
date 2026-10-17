@@ -14,8 +14,12 @@ the phone budgets (never raise a limit), each with its own switch in
 `publish.front_page.sections` (validated; missing = off).
 
 ## Task
-1. **New badge** (`new_badge`): cards first seen < 2 h show "New · 12 min ago"
-   (relative, computed in the browser from first_seen_at; no layout shift).
+1. **New badge** (`new_badge`), YouTube-style (operator 2026-10-17: "subtly
+   ... don't overdo it"): a small white "New" pill on the photo's bottom-left
+   corner (the % badge owns top-left) for live cards first seen < 3 h,
+   computed in the browser from first_seen_at; no relative time, no motion,
+   no layout shift; never on more than 1 in 3 of the first 24 cards (oldest
+   of the new lose it first); hidden once this visitor has clicked the card.
 2. **Rows between the first grids** (`rows`): after card 12 and after card 36
    on the All view, one horizontal, swipeable, keyboard-reachable row each:
    "Under $10" (new, price-confirmed, ≤ $10, impulse rules from 267 apply),
