@@ -44,6 +44,7 @@ const ctx = {state:{meta:payload.meta, catTab:0, sortKey:'top', sortDir:-1, seed
 vm.createContext(ctx);
 vm.runInContext(home.slice(home.indexOf('  function cmp('), home.indexOf('  function storeHue(')), ctx);
 vm.runInContext(home.slice(home.indexOf('  function frontPageView('), home.indexOf('  function render()')), ctx);
+vm.runInContext(home.slice(home.indexOf('  function activeSpotlight('), home.indexOf('  function paintSpotlightTime(')), ctx);
 console.log(JSON.stringify([42,43].map(seed=>{
   ctx.state.seed = seed;
   return Array.from(ctx.placeGone(ctx.ordered(payload.deals, true)), d=>d.dedupe_key);

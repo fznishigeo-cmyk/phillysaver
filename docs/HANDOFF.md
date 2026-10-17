@@ -229,6 +229,79 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **int13 integration review fixes (2026-10-17; local, uncommitted, fixes complete):**
+  Final adversarial review covers both ordering findings and the 11 named
+  compatibility failures. Final repair now uses separate policy-filtered
+  24-card windows, preserving membership, boost shares and the three-window
+  rotation boundary. Allure feasibility ends at the current window boundary;
+  the original 1,024-state budget remains. Failed/impossible repair returns
+  a validated ordered subset, enforcing checkout/Allure/gone/unknown spacing.
+  It stops at the first shortened window, so later windows cannot advance;
+  deferred cards remain in inventory, search and other views. Spotlights never
+  enter either path. Regressions reproduce the 24-pick/19-Allure sparse case,
+  the 120-pick/Allure-at-24-and-119 boundary case, boost shares, repeated drops,
+  and fallback boundary safety. The existing 107-arrangement regression now
+  checks window membership on successful repair and safe deferral when a
+  protected window cannot fit or the bounded search is exhausted, rather
+  than requiring unsafe cross-window swaps.
+  Fetch/critic captures pin their historical rotation/support switches; all
+  existing hashes remain unchanged. Score and Buy Box Node harnesses execute
+  the emitted spotlight dependency. Tracking privacy checks deliberately use
+  an initialization timestamp ending `23.450Z`: the prior whole-output price
+  scan mistook those seconds for a leaked price. Every outbound event still
+  requires the exact allowed payload; private strings/URLs stay absent.
+  Native restore setup clicks the current pagination button without the
+  observer/Playwright scroll race. A new offline regression covers auto/button
+  pagination, a queued action after button removal, and reload/Back anchors.
+  Previous integration fixes (stripped-marker harnesses, Buy Box promo facts,
+  spotlight row filling and saved-arrival startup) remain covered.
+  Final rotation/support-timing/offscreen/browse/privacy checks (including
+  all shipped phone budgets and four historical OFF-byte modes):
+  **126 passed, 3 skipped in 305.34s (0:05:05)**. All three skips are native
+  Chromium checks; emitted-JS regressions run offline. Final timestamp-collision
+  privacy regression: **3 passed in 3.03s**. Node syntax and scoped
+  `git diff --check` pass; the supplied review document retains its pre-existing
+  trailing whitespace.
+  An intermediate compatibility run exhausted disk (**2 failed, 6 passed,
+  4 errors in 68.04s (0:01:08)**); its owned scratch was removed and subsequent
+  runs delete each test's scratch as well as the basetemp after the run.
+  Corrected compatibility checks: **12 passed in 152.98s (0:02:32)**.
+  No network, full suite, hash re-pin, commit or push. All pytest runs use
+  `-q -n 1 -p no:cacheprovider` with an owned `/tmp/taskint13fix-*` basetemp,
+  removed in `finally` after each run. Native Chromium QA remains pending
+  where the local launcher is unavailable; no other review work remains.
+- **Utility-title niche demotion (Codex task 267b, 2026-10-17; uncommitted, ON):**
+  Ships the requested `publish.front_page.demote_words` list; missing/empty is
+  OFF. Configured whole-word phrases match contiguously. The operator's one
+  special rule demotes whole-word case/cases plus iphone, galaxy, pixel, samsung,
+  motorola, moto g or oneplus anywhere in the title while enabled, including SE.
+  It does not use the separate appeal detector or permit gaps in utility phrases.
+  One shared classifier extends the existing pick gate, niche cap and niche-last ordering,
+  including static cards, Best-today JSON-LD, home preconnects and saved browser
+  wall scope. Public/member deals carry `niche: true` only while enabled; emitted JS
+  uses it in the existing niche predicates. No new budgets or ordering pass;
+  gone, spotlight, allure spacing, price rules and critic remain unchanged.
+  Adversarial follow-up fixes both roots in that classifier: no numbered-phone
+  requirement and no unordered utility-word fallback. Rendered-order regressions
+  cover iPhone SE, separated utility words and a contiguous positive control in
+  server picks, static cards and emitted JS (top/fresh), plus 17 phone-word
+  boundary cases. The utility regression uses Cover for iPhone to isolate phrase
+  matching; the review's Case for iPhone also satisfies the phone-case rule.
+  Review reproduction: **2 failed, 1 passed in 16.45s**. First feature run:
+  **1 failed, 70 passed, 1 skipped in 64.60s (0:01:04)**; the new test incorrectly
+  required the eligible utility cover to rank first, despite existing appeal/mix
+  rules placing it fourth. Corrected the assertion to the first screen, preserving
+  those rules. Final targeted verification: **383 passed, 1 skipped in 390.54s
+  (0:06:30)**. Covers feature/ranking/appeal/popularity, all 12 selected recorded
+  OFF publication hashes, four OFF byte/member comparisons, enabled full-state
+  rerun stability, both 1,400-offer shipped click-price phone-budget modes and
+  both offline pipeline rerun modes. No failing targeted checks remain.
+  Historical fixtures explicitly select OFF; all 32 existing SHA-256 pins remain
+  unchanged. `git diff --check` and both Node harness syntax checks pass.
+  Native Chromium was attempted; launch returns 77, so phone/desktop light/dark
+  smoke remains unverified. All review-fix runs use `-q -n 1 -p no:cacheprovider`
+  and owned `/tmp/task267bfix-*` basetemps, automatically deleted after each run;
+  none remain. No network, full suite, commit or push. Review/deployment remain.
 - **int12 round-4 compatibility fixes (2026-10-17; local, uncommitted, fixes complete):**
   Reproduced the review's 144 failures in the 26 affected files on `8740ee5`:
   **144 failed, 1148 passed, 2 skipped in 288.12s (0:04:48)**.
@@ -785,6 +858,256 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   All pytest runs use `-n 1 -p no:cacheprovider` and owned
   `/tmp/task270fix-*` scratch, deleted after each run. No hashes changed;
   no full suite, network, commit or push. Review, browser QA and deployment remain.
+- **Per-drop top windows (Codex task 269, 2026-10-17; uncommitted, ON):**
+  `site.drop_rotation_windows: 3` cycles the strongest complete 24-card windows
+  on the checkout-price path; 0 preserves the old template/payload bytes.
+  `publish/drop_rotation.py` and `templates/drop-rotation.js` retain ordinary
+  window membership (including boost/price/store/brand shares), promote arrivals
+  only inside the first displayed window, and repair sliding checkout spacing on
+  the ordinary-pick list. **Operator decision (2026-10-17 12:50Z): rotation never
+  places, moves, inlines or reorders a spotlight.** Active spotlight keys are
+  excluded before rotation; the original banner rendering, pagination exemption,
+  filtering and deduplication remain exact. The server excludes active spotlight
+  keys before ordinary pick selection, so removing a duplicate banner cannot
+  compress checkout spacing or shift window shares, including the fallback order.
+  Server category preparation exchanges ordinary picks only; checkout/boost
+  matches preserve window shares, with store/price matches preferred. Server-derived
+  `pick_checkout` on picked deals also covers offers without paid labels; the
+  separate spotlight payload is unchanged and no private boost facts are published.
+  Guarded tab-local opaque arrival keys retain 20 drop/list
+  signatures across Saved startup, refresh and Back. The repair jointly searches
+  category/promo choices in the first eight, with greedy promo feasibility checks
+  and a shared 1,024-state limit; window membership and server-order fallback
+  remain intact. Browse, Saved, filters and other sorts retain their behavior.
+  If no legal repair exists or the search limit is reached, retain server order.
+  Recorded fixtures pin 0
+  ("recorded before task 269"); no hashes changed. Initial focused run:
+  **5 failed, 22 passed, 1 skipped in 86.98s (0:01:26)** (fixture assumptions fixed).
+  Expanded run: **1 failed, 233 passed, 3 skipped in 199.55s (0:03:19)**;
+  its randomized join case exposed the suffix repair and now passes directly.
+  Final targeted regressions: **492 passed, 1 skipped in 330.99s (0:05:30)**,
+  including publication, all selected byte pins and both audit rerun modes.
+  Final feature checks (including checkout-enabled search/category/sort parity):
+  **37 passed, 1 skipped in 70.40s (0:01:10)**. Those runs used
+  `-q -rs -n 1 -p no:cacheprovider`. Chromium launch returns 77 under sandbox
+  permissions; native phone drop/refresh/layout checks remain unverified.
+  Review fixes reproduce all three findings: **3 failed in 64.23s (0:01:04)**.
+  Intermediate checks: **1 failed, 68 passed, 1 skipped in 174.33s (0:02:54)**
+  (wide-spacing search timeout fixed by equivalent-state memoization), then
+  **1 failed, 2 passed in 58.42s** (an added fixture requested an impossible
+  rotation; corrected, with explicit no-solution fallback assertions retained).
+  Separate rotation-enabled 1,400-offer budget checks use shipped config,
+  including dark polish, and enforce every existing ceiling: JS **53,537** /
+  **53,767**, HTML **76,821** / **77,360**, CSS **14,823** / **14,913**,
+  deals JSON **98,897** / **103,976** gzip bytes. Frozen hashes are unchanged.
+  Final review-fix targeted verification: **314 passed, 1 skipped in 328.77s
+  (0:05:28)**, covering every rotation regression, front-page/checkout behavior,
+  browse/Saved, all selected frozen byte pins and both audit rerun modes.
+  Review-fix runs used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*`
+  basetemps were removed after every run. `git diff --check` passed; no existing
+  hash lines or fixture files changed. No network, full suite, commit or push;
+  native Chromium QA (launch unavailable, exit 77) and review remain.
+  Follow-up performance review: a category-independent greedy feasibility check
+  rejects promo prefixes that cannot meet every remaining window's quota before
+  category enumeration. Earliest legal promos leave maximum room for later
+  windows, so successful ordering choices and no-solution fallback are preserved.
+  A server-accepted ten-category fixture with promo counts **5/5/5/4/5** reproduces
+  **59,289** recursive calls at seed 2; all three seeds, with and without arrivals,
+  now take at most **149**, guarded by a **500-state** regression ceiling.
+  Reproduction: **1 failed in 4.91s**, then the stronger fixture **1 failed in
+  5.18s**. Intermediate: **1 failed, 2 passed in 64.04s (0:01:04)** (feasibility
+  pruning extended beyond the first eight); focused ordering: **15 passed in
+  17.46s**. Final compatibility/byte/budget verification: **310 passed, 1 skipped
+  in 356.50s (0:05:56)**, including every rotation regression, front-page/checkout,
+  Saved/browse, selected frozen byte pins and both audit-mode idempotency reruns.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: JS **53,741 / 53,767**,
+  HTML **77,027 / 77,360**, CSS **14,823 / 14,913**, deals JSON **98,896 / 103,976**.
+  No existing hash or fixture changes. All follow-up runs used `-n 1
+  -p no:cacheprovider`; owned `/tmp/task269fix-*` basetemps were deleted after
+  each run. No network, full suite, commit or push; native Chromium QA remains
+  unverified (unavailable/skip), as does review.
+  Post-rebase findings (75ad39f): reproduced the shipped budget failure at
+  **77,724 / 77,360** home HTML gzip bytes: **1 failed in 45.91s**. The new
+  hard-limit regression also failed before the fix: **1 failed in 3.36s**.
+  A shared **1,024-state** limit now bounds all category/promo branches and
+  deterministically falls back to the untouched server order on exhaustion.
+  The regression disables feasibility pruning to force exhaustive category
+  choices, checks the hard stop/fallback, then repeats to verify reset and
+  stable order; arrivals and the normal pruning regression remain covered.
+  The enabled template replaces the old rotator and removes its obsolete
+  comments/unreachable return. Task 269's JS has no shipped comments; one stable
+  candidate loop and recent promo positions replace duplicated traversal/bit
+  logic and failed-state bookkeeping. The OFF transform still returns its input
+  exactly. Intermediate: **2 failed, 40 passed, 1 skipped in 89.84s (0:01:29)**
+  (further JS trimming needed; hard-limit fixture allowed a valid early solution
+  with arrivals, so its fallback assertion now applies only on exhaustion).
+  Final focused checks: **42 passed, 1 skipped in 92.74s (0:01:32)**.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: HTML **77,086 / 77,360**,
+  JS **53,714 / 53,767**, CSS **14,846 / 14,913**, deals JSON **99,050 / 103,976**.
+  Final compatibility checks: **438 passed in 300.06s (0:05:00)**, covering
+  front-page/checkout/publication behavior, Browse/Saved, selected frozen byte
+  pins, template slots, unchanged phone ceilings and both audit-mode reruns.
+  All post-rebase runs used `-n 1 -p no:cacheprovider`; owned
+  `/tmp/task269fix-*` basetemps were removed after every run and sizing scratch
+  was deleted. Existing hashes and fixture files are unchanged; `git diff
+  --check` passed. No network, full suite, commit or push. Native Chromium
+  phone QA remains unverified (launch unavailable, exit 77); review remains.
+  Spotlight review: actual-renderer regressions reproduce the pinned first card
+  and checkout join violation: **2 failed in 4.58s**. Repair now includes spotlight
+  insertion/deduplication before rendering and preserves each picked window's
+  membership, banner markup and checkout flags, including price-only offers.
+  Added coverage for three-drop cycling, a single complete window, every rendered
+  checkout span, dense-window fallback, spotlight-only offers, other views/Saved
+  and the OFF path. The native phone fixture now has an active spotlight.
+  A standalone-banner fallback regression reproduced **1 failed in 4.10s**;
+  fallback retains that banner's original placement instead of appending it
+  next to the final checkout offer. Enabled output strips only full-line comments
+  in the changed function blocks, preserving source comments and OFF bytes.
+  Intermediate focused checks: **1 failed, 45 passed, 1 skipped in 93.02s
+  (0:01:33)** (HTML budget fixed), then **1 failed, 47 passed in 95.31s (0:01:35)**
+  (the active spotlight fixture needed a valid stored critic verdict).
+  Compatibility checks: **515 passed in 320.75s (0:05:20)**, covering publication,
+  checkout/front-page behavior, Browse/Saved, all selected frozen byte pins,
+  template slots, public copy, unchanged ceilings and both audit-mode reruns.
+  Final spotlight/feature checks: **54 passed, 1 skipped in 123.63s (0:02:03)**.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: HTML **77,069 / 77,360**,
+  JS **53,701 / 53,767**, CSS **14,846 / 14,913**, deals JSON **99,050 / 103,976**.
+  All spotlight runs used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*`
+  basetemps were deleted after every run. Existing hashes/fixture files are
+  unchanged; `git diff --check` passed. No network, full suite, commit or push.
+  Native Chromium phone QA remains unverified (unavailable, exit 77); review remains.
+  Latest adversarial findings: fallback now checks every candidate spotlight
+  insertion against sliding checkout caps (including a promo in the first pick);
+  accepted mixed/home-only/beauty-only inventories receive diverse server windows
+  and rotate across all three drops; inline `other`/`auto` price-only spotlights
+  bypass the niche partition and remain in the initial 60 cards with banner markup.
+  Actual-renderer/server regressions reproduced **4 failed in 9.05s**. First fix
+  check: **1 failed, 55 passed, 1 skipped in 130.76s (0:02:10)** (JS was 20 gzip
+  bytes over budget). Enabled ordering comment stripping now includes the complete
+  ordering block; every OFF byte and all existing hashes remain unchanged.
+  Final feature checks: **58 passed, 1 skipped in 120.92s (0:02:00)**, including
+  varied-price/store exchanges, inventory/tail retention, exact checkout positions
+  and private boost shares. Shipped 1,400-offer gzip bytes / unchanged ceilings:
+  HTML **76,867 / 77,360**, JS **53,501 / 53,767**, CSS **14,846 / 14,913**,
+  deals JSON **99,050 / 103,976**. Final compatibility/byte-pin checks:
+  **669 passed in 251.24s (0:04:11)**, covering publication, front-page/checkout,
+  Browse/Saved, template slots, public copy, all selected frozen byte pins, phone
+  ceilings and all six offline reruns across both audit modes. Every latest run
+  used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*` basetemps were deleted
+  after each run and logs removed. Existing hash lines and recorded fixtures are
+  unchanged; `git diff --check` passed. No network, full suite, commit or push.
+  Native Chromium phone QA remains unverified (unavailable, exit 77); review remains.
+  Second spotlight review (`269-review-findings.md`): confirmed placement now
+  controls banner suppression. Unplaceable standalone spotlights retain the
+  separate visible banner and the server's checkout-safe pick order. New
+  spotlight picks in the first displayed window enter its normal repair pool;
+  existing spotlight placement in other windows is unchanged. Regression coverage
+  includes a real published 24-pick payload with checkout slots 0/5/10/15/20 plus
+  a price-only checkout spotlight, and both checkout/plain spotlight arrivals,
+  exact ordering parity without spotlight metadata, remembered arrivals, Saved
+  return, uniqueness and window caps. Initial reproduction: **3 failed in 5.80s**
+  (including a stale fixture sighting, corrected); dense-banner reproduction:
+  **1 failed in 4.08s**. Intermediate: **2 failed, 59 passed, 1 skipped in 121.60s
+  (0:02:01)** (new comparison used mismatched render limits; corrected).
+  Final feature checks: **61 passed, 1 skipped in 122.93s (0:02:02)**.
+  Shipped 1,400-offer gzip bytes / unchanged ceilings: HTML **76,905 / 77,360**,
+  JS **53,538 / 53,767**, CSS **14,846 / 14,913**, deals JSON **99,052 / 103,976**.
+  Final compatibility/byte-pin checks: **380 passed in 286.33s (0:04:46)**,
+  covering front-page/checkout behavior, Browse/Saved, drop clock/pagination,
+  template slots, public copy, selected frozen byte pins/phone ceilings and all
+  six offline reruns across both audit modes. Every second-review run used
+  `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*` basetemps were removed
+  after every run. Existing hash lines and recorded fixture files are unchanged;
+  `git diff --check` passed. No network, full suite, commit or push. Native
+  Chromium phone QA remains unverified (unavailable, exit 77); review remains.
+  Operator simplification / third spotlight review (2026-10-17 12:50Z):
+  removed spotlight pools, insertion/fallback repair, inline rendering, niche
+  overrides and banner suppression. Spotlights use the original renderer/slot;
+  only ordinary picks rotate. Exclusion happens before server pick selection and
+  before browser rotation, preserving ordinary checkout spacing and window shares
+  even when a duplicate banner would compress positions. Spotlight JSON and all
+  card/render functions match OFF exactly. Rewritten regressions cover the default
+  60-card limit at seed 2, dense standalone checkout banners, niche price-only
+  banners, expanded pagination, arrivals, Saved and other views; every legal
+  multi-window case still cycles its first ordinary card across three seeds.
+  Initial red regressions: **3 failed in 8.77s**; server-selection boundary guards
+  at checkout widths 3/5: **2 failed in 10.67s**. Final feature checks:
+  **66 passed, 1 skipped in 138.73s (0:02:18)**. Shipped 1,400-offer gzip bytes /
+  unchanged ceilings: HTML **76,687 / 77,360**, JS **53,319 / 53,767**,
+  CSS **14,846 / 14,913**, deals JSON **99,050 / 103,976**. The ordinary search
+  still prunes the adversarial fixture to 149 states and retains its hard 1,024
+  state bound. Final compatibility/byte-pin checks: **581 passed in 303.92s
+  (0:05:03)**, covering front-page/checkout behavior, Browse/Saved, pagination,
+  drop clock, publication/template slots, public copy, unchanged phone ceilings,
+  all selected frozen byte pins and six offline reruns across both audit modes.
+  Every run used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*` basetemps
+  were deleted after every run. Existing hashes and recorded fixtures are
+  unchanged; `git diff --check` passed. No network, full suite, commit or push.
+  Native Chromium phone QA remains unverified (unavailable, exit 77); review remains.
+  Native spotlight follow-up (`269-review-findings.md`): the reported extra keys
+  identify ordinary fixture offers 30 and 60; the published spotlight is offer 24.
+  This checkout's unchanged publisher/renderer does **not** reproduce the extra
+  card offline. Added a Node regression using the emitted real card/Saved-button
+  markup and real `present`/`applyPublish` path across three drops, plus parsed
+  grid ownership and ordinary three-window cycling checks. Every publication
+  clones the same deals/spotlight; only publication timestamps/key change.
+  The original native cross-drop assertion remains; initial render must now
+  match the published spotlight keys exactly, and reload must preserve them,
+  with grid outerHTML diagnostics. No fixture spotlight inputs were changed.
+  Initial markup check: **1 passed in 7.79s**. Extended harness setup initially
+  missed its toast-age stub: **1 failed in 7.08s**; corrected before final checks.
+  Final feature checks: **67 passed, 1 skipped in 146.42s (0:02:26)**, including
+  the unchanged shipped phone ceilings. Final exact-markup/cycling, Browse/Saved,
+  template harness and four frozen OFF hash checks: **10 passed in 18.15s**.
+  Standalone native attempt: **1 skipped in 6.96s**, launch denied/unavailable
+  (77). Every run used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*`
+  scratch was removed after each run. No production change or hash re-pin;
+  `git diff --check` passed; no network, full suite, commit or push.
+  Native row-filler root fix: `deal-actions.js` treated `.spotlight-grid` as an
+  ordinary incomplete row and borrowed the next grid's first ordinary card after
+  rendering. `state.spotlight` was never polluted; the previous renderer-only
+  harness omitted this DOM mutation. The enabled home now excludes spotlight
+  grids from row filling, both as recipients and lenders, without adding filler
+  tiles to banners. Its transformed actions script is resolved before versioning;
+  shared pages and every OFF byte retain the original script. New emitted-JS
+  regressions reproduce **3 failed, 1 passed in 21.33s** at 1/2/3/5 columns, then
+  verify three drops and reloads, exact published spotlight state/DOM ownership,
+  multiple-banner lender protection, ordinary inventory/order, and unchanged
+  ordinary borrowing/padding. Initial focused fixes: **6 passed in 24.23s**.
+  Final feature checks: **71 passed, 1 skipped in 166.78s (0:02:46)**. Shipped
+  1,400-offer gzip bytes / unchanged ceilings: HTML **76,689 / 77,360**,
+  JS **53,322 / 53,767**, CSS **14,846 / 14,913**, deals JSON **99,051 / 103,976**.
+  The native phone cross-drop/reload assertions remain unchanged; Chromium launch
+  is still unavailable here (exit 77); standalone attempt: **1 skipped in 8.12s**.
+  Final compatibility checks: **428 passed in 264.66s (0:04:24)**, covering
+  front-page/checkout behavior, Browse/Saved, ordinary row filling, publication
+  and template slots, public copy, drop timing, all selected frozen OFF byte pins,
+  unchanged phone ceilings and six offline reruns across both audit modes.
+  Every run used `-n 1 -p no:cacheprovider`; owned `/tmp/task269fix-*` basetemps
+  were deleted after each run. Existing hashes and recorded fixtures are unchanged;
+  `git diff --check` passed. No network, full suite, commit or push. The reported
+  root defect is fixed and covered offline; native Chromium QA/review remain.
+- **Support panel timing/cost copy (Codex task 272, 2026-10-17; uncommitted):**
+  Shipped `support.panel_delay_s: 120` adds the elapsed-page-time gate to the
+  existing card-eight/ask/dismissal rules, with one timeout refresh and no polling.
+  Shipped `support.cost_phrase: "thousands of dollars"` supplies escaped support
+  copy and invalidates the support page version. Strict config validation;
+  defaults remain 0 / "hundreds of dollars", omitting inactive script/meta bytes.
+  Historical fixtures explicitly pin those defaults (recorded before task 272);
+  existing hashes/archives are unchanged. Offline fake-clock checks exercise both
+  delays, the unchanged Join/weekly/engagement rules and one ask per page view.
+  Brief discrepancy: this checkout ships `join.prompt_delay_s: 15`, not the
+  brief's stated 35. Preserved that existing setting; explicitly tested the
+  configured 35-second Join behavior alongside the 120-second support gate.
+  Initial focused run: `1 failed, 135 passed in 60.32s (0:01:00)`; the only failure
+  was the new test assuming the brief's 35-second shipped setting, corrected to 15.
+  Focused support/Join/post-Join/public-copy rerun: `137 passed in 65.82s (0:01:05)`.
+  Affected recorded-byte checks: `66 passed in 122.43s (0:02:02)`. Final expanded
+  Join/post-Join checks (both delays and both Stripe link choices): `6 passed in 7.83s`.
+  All runs used `-q -n 1 -p no:cacheprovider`; every owned `/tmp/task272-*`
+  basetemp was deleted immediately when its run ended. `git diff --check` passed;
+  existing recorded hash literals/archives are unchanged. Review remains;
+  no network, whole suite, commit or push.
 - **Dark polish (Codex task 254, 2026-10-17; uncommitted, ON):**
   `site.dark_polish: true` ships; code/missing-key defaults are false. New
   `publish/dark.py` injects the exact `templates/dark.css` and color-scheme meta

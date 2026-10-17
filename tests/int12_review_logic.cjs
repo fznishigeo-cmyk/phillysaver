@@ -19,6 +19,7 @@ const ctx = {Set, Map, state:{meta:payload.meta, deals:payload.deals, spotlight:
 vm.createContext(ctx);
 vm.runInContext(fragment('  function cmp(', '  function storeHue('), ctx);
 vm.runInContext(fragment('  function frontPageView(', '  function frontPageMix('), ctx);
+vm.runInContext(fragment('  function activeSpotlight(', '  function paintSpotlightTime('), ctx);
 vm.runInContext(fragment('  var TICKER_MAX', '  var tickerPending'), ctx);
 if (scenario === 'scores') {
   const scores = JSON.parse(fs.readFileSync(root + '/private-scores.json', 'utf8'));

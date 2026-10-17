@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const code = fs.readFileSync(process.argv[2], 'utf8');
 const home = fs.readFileSync(process.argv[3], 'utf8');
-function harness({blocked = false, stored = '', now = 1000, panelPresent = true, contentPresent = true, hash = '', observer = true} = {}) {
-  const handlers = {}, storage = new Map([['wp.support.dismissed', stored]]);
+function harness({blocked = false, stored = '', now = 1000, panelPresent = true, contentPresent = true, hash = '', observer = true, panelDelay = 0} = {}) {
+  const handlers = {}, storage = new Map([['wp.support.dismissed', stored]]), timers = [];
   let boundary = 200, count = 12, response = {status: 200, json: async () => ({ok:true})};
   let request, event, redirected, headerTop = 20, askTop = 900, askSelector = '', observed, intersect;
   const rect = top => ({top, bottom:top+40, left:0, right:100, width:100, height:40});
@@ -31,6 +31,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
     localStorage:{getItem(k) {if (blocked) throw Error('blocked'); return storage.get(k);},
       setItem(k,v) {if (blocked) throw Error('blocked'); storage.set(k,v);}},
     Date:{now: () => now}, requestAnimationFrame: f => f(),
+    setTimeout(cb, ms) {timers.push({cb, at: now + ms}); return timers.length;},
     fetch: async (url, opts) => {request = {url, ...opts}; if (!opts || opts.method !== 'POST') return {json:async()=>({meta:{api_url:'https://api.test/'}})}; if (response instanceof Error) throw response; return response;},
     window:{innerHeight:800, innerWidth:390, wpTrack: (name, params) => {event = {name, params};},
       addEventListener:(type, cb) => {handlers[type] = cb;}}
@@ -42,7 +43,7 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
     };
   }
   vm.runInNewContext(code, ctx);
-  if (contentPresent) ctx.window.wpSupport.refresh({api_url:'https://api.test/', support:{link:'https://buy.stripe.com/test_support'}});
+  if (contentPresent) ctx.window.wpSupport.refresh({api_url:'https://api.test/', support:{link:'https://buy.stripe.com/test_support', panel_delay_s:panelDelay}});
   const click = selector => handlers.click({target:{closest: s => s === selector}, preventDefault(){}});
   async function submit(res) {
     event = null; response = res;
@@ -55,9 +56,32 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
     boundary: n => boundary = n, count: n => count = n, request: () => request, event: () => event,
     redirected: () => redirected, opener,
     header: n => headerTop = n, ask: (n, selector) => {askSelector = selector; askTop = n;}, otherAsk,
-    observed: () => observed, intersect: () => intersect()};
+    observed: () => observed, intersect: () => intersect(), timers,
+    advance(ms) {now += ms; for (const t of timers.splice(0)) {if (t.at <= now) t.cb(); else timers.push(t);}}};
 }
 (async () => {
+  if (code.includes('panelWaiting')) {
+    let delayed = harness({panelDelay:120});
+    delayed.boundary(90); delayed.header(-40);
+    for (let i = 0; i < 10; i++) delayed.handlers.scroll();
+    assert.equal(delayed.panel.hidden, true);
+    assert.equal(delayed.bar.hidden, false);
+    assert.equal(delayed.timers.length, 1); // many refreshes still schedule one wake-up
+    assert.equal(delayed.timers[0].at, 121000);
+    delayed.advance(119999); assert.equal(delayed.panel.hidden, true);
+    delayed.advance(1); assert.equal(delayed.panel.hidden, false); // no scroll needed
+    assert.equal(delayed.bar.hidden, true);
+    assert.equal(delayed.timers.length, 0); // no polling
+    delayed.ctx.window.wpSupport.refresh(); assert.equal(delayed.timers.length, 0);
+    delayed.boundary(200); delayed.handlers.scroll(); assert.equal(delayed.panel.hidden, true);
+    delayed.boundary(90); delayed.handlers.scroll(); assert.equal(delayed.panel.hidden, false);
+    delayed.click('[data-support-close]'); delayed.advance(120000);
+    assert.equal(delayed.panel.hidden, true);
+    // Early scrolls before the metadata arrives also respect the published delay.
+    delayed = harness({contentPresent:false});
+    delayed.boundary(90); delayed.handlers.scroll(); assert.equal(delayed.panel.hidden, true);
+    assert.equal(delayed.timers.length, 1);
+  }
   let h = harness();
   assert.equal(h.panel.hidden, true); // before the eighth card
   assert.equal(h.bar.hidden, true); // header Join is visible
@@ -68,9 +92,9 @@ function harness({blocked = false, stored = '', now = 1000, panelPresent = true,
   h.header(-40); h.intersect();
   assert.equal(h.support.href, "https://buy.stripe.com/test_support");
   assert.equal(h.support.hidden, false);
-  h.ctx.window.wpSupport.refresh({api_url:"https://api.test", support:{link:"https://evil.test"}});
+  h.ctx.window.wpSupport.refresh({api_url:"https://api.test", support:{link:"https://evil.test", panel_delay_s:0}});
   assert.equal(h.support.hidden, true); assert.equal(h.note.hidden, true);
-  h.ctx.window.wpSupport.refresh({api_url:"https://api.test/", support:{link:"https://buy.stripe.com/test_support"}});
+  h.ctx.window.wpSupport.refresh({api_url:"https://api.test/", support:{link:"https://buy.stripe.com/test_support", panel_delay_s:0}});
   h.boundary(90); h.ctx.window.wpSupport.refresh();
   assert.equal(h.panel.hidden, false);
   assert.equal(h.bar.hidden, true);

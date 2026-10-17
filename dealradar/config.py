@@ -315,6 +315,7 @@ class AppConfig:
     static_photos: bool = False
     open_box_scarcity: bool = False
     open_box_counts: bool = False
+    drop_rotation_windows: int = 3
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -446,6 +447,8 @@ class AppConfig:
     support_enabled: bool = False     # absent block preserves membership pages
     support_payment_link: str = ""
     support_monthly_link: str = ""    # recurring Payment Link ($1 x quantity)
+    support_panel_delay_s: int = 0
+    support_cost_phrase: str = "hundreds of dollars"
     join_prompt: bool = True
     join_prompt_delay_s: int = 15
     join_apple: bool = False          # reserved until Apple sign-in is supported
@@ -900,11 +903,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.open_box_counts = g("site", "open_box_counts", default=False)
     if type(cfg.open_box_counts) is not bool:
         raise ValueError("site.open_box_counts must be a boolean")
+    cfg.drop_rotation_windows = g("site", "drop_rotation_windows", default=3)
+    if type(cfg.drop_rotation_windows) is not int or cfg.drop_rotation_windows < 0:
+        raise ValueError("site.drop_rotation_windows must be a non-negative integer")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(
             "site", "unconfirmed_label", "max_h_" + condition, default=48.0))))
     cfg.front_page = g("publish", "front_page", default={}) or {}
+    demote_words = cfg.front_page.get("demote_words", [])
+    if not isinstance(demote_words, list) or any(not isinstance(word, str) or not word.strip()
+                                              for word in demote_words):
+        raise ValueError("publish.front_page.demote_words must be a list of nonempty strings")
     if type(cfg.front_page.get("used_tab_only", False)) is not bool:
         raise ValueError("publish.front_page.used_tab_only must be a boolean")
     from .appeal import validate as validate_appeal
@@ -1156,6 +1166,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.support_enabled = bool(g("support", "enabled", default=False))
     cfg.support_payment_link = support_link(g("support", "payment_link", default=""))
     cfg.support_monthly_link = support_link(g("support", "monthly_link", default=""))
+    cfg.support_panel_delay_s = g("support", "panel_delay_s", default=0)
+    if type(cfg.support_panel_delay_s) is not int or cfg.support_panel_delay_s < 0:
+        raise ValueError("support.panel_delay_s must be an integer >= 0")
+    cfg.support_cost_phrase = g("support", "cost_phrase", default="hundreds of dollars")
+    if (not isinstance(cfg.support_cost_phrase, str) or not cfg.support_cost_phrase.strip()
+            or len(cfg.support_cost_phrase) > 120
+            or re.search(r"[<>\x00-\x1f\x7f-\x9f]", cfg.support_cost_phrase)):
+        raise ValueError("support.cost_phrase must be nonempty plain text up to 120 characters")
+    cfg.support_cost_phrase = cfg.support_cost_phrase.strip()
     cfg.join_prompt = bool(g("join", "prompt", default=True))
     cfg.join_prompt_delay_s = max(15, int(g("join", "prompt_delay_s", default=15)))
     cfg.join_apple = bool(g("join", "apple", default=False))

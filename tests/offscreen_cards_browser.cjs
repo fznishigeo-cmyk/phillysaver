@@ -55,7 +55,11 @@ const path = require('node:path');
       });
       const top = key => page.locator('#content .card[data-key="'+key+'"]').evaluate(el=>el.getBoundingClientRect().top);
       await page.goto('https://wowpriced.test/',{waitUntil:'load'});await ready();
-      while (await page.locator('#content .card').count()<120) await page.locator('#moremore').click();
+      // The observer can replace the button while Playwright scrolls to it.
+      // Pagination is setup here; restore accuracy is the behavior under test.
+      while (await page.locator('#content .card').count()<120) {
+        await page.evaluate(()=>document.getElementById('moremore')?.click());
+      }
       const card = page.locator('#content .card').nth(119);
       await card.scrollIntoViewIfNeeded();
       await card.evaluate(el=>scrollTo({top:scrollY+el.getBoundingClientRect().top,behavior:'instant'}));

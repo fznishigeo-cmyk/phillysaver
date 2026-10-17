@@ -16,11 +16,12 @@ from tests.test_tracking import HARNESS, SAMPLE, _script
 
 
 @pytest.mark.parametrize("monthly", ["", MONTHLY])
-def test_post_join_support_ask_behavior(tmp_path, monthly):
+@pytest.mark.parametrize("panel_delay_s", [0, 120])
+def test_post_join_support_ask_behavior(tmp_path, monthly, panel_delay_s):
     if not shutil.which("node"):
         pytest.skip("node unavailable")
     cfg = AppConfig(support_enabled=True, support_payment_link=LINK, support_monthly_link=monthly,
-                    paywall_api_url="https://api.test")
+                    paywall_api_url="https://api.test", support_panel_delay_s=panel_delay_s)
     out, *_ = render(tmp_path, cfg, sample_deals())
     scripts = set()
     for path in out.rglob("*.html"):

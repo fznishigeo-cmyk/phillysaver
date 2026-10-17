@@ -287,10 +287,14 @@ def test_off_all_published_bytes_match_pre_edit(db, tmp_path, mode):
     if mode == 'shipped':
         cfg.checker['stores']['amazon'] = 'history'  # recorded before task 274
     cfg.amazon_reference = "history"  # recorded before task 276
+    cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.open_box_scarcity = False  # recorded before task 273
     if "appeal" in cfg.front_page:
         cfg.front_page["appeal"].get("want", {})["enabled"] = False
         cfg.front_page["appeal"]["season"] = []
+    cfg.drop_rotation_windows = 0  # recorded before task 269
+    cfg.support_panel_delay_s = 0  # recorded before task 272
+    cfg.support_cost_phrase = "hundreds of dollars"  # recorded before task 272
     if mode != 'shipped':
         cfg.support_enabled = mode == 'support'
         cfg.paywall_open_access = mode == 'open'

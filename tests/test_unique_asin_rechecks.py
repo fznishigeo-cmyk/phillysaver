@@ -104,10 +104,14 @@ def test_all_published_files_and_member_payload_match_before_editing(
     config.front_page["used_tab_only"] = False  # recorded before task 274
     config.amazon_reference = "history"  # recorded before task 276
     config.amazon_history = "show"  # recorded before task 274
+    config.front_page.pop("demote_words", None)  # recorded before task 267b
     config.open_box_scarcity = False  # recorded before task 273
     if "appeal" in config.front_page:
         config.front_page["appeal"].get("want", {})["enabled"] = False
         config.front_page["appeal"]["season"] = []
+    config.drop_rotation_windows = 0  # recorded before task 269
+    config.support_panel_delay_s = 0  # recorded before task 272
+    config.support_cost_phrase = "hundreds of dollars"  # recorded before task 272
     config.keepa_unique_asin_rechecks_enabled = enabled
     config.support_enabled = mode == "support"
     config.paywall_open_access = mode == "open"

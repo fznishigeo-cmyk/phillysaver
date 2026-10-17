@@ -33,6 +33,7 @@ def config(mode):
     cfg = load_config()
     cfg.keepa_click_price_rule = "off"  # link fixtures recorded before task 275
     cfg.front_page["used_tab_only"] = False  # recorded before task 274
+    cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.front_page["appeal"]["want"]["enabled"] = False  # recorded before task 273
     cfg.front_page["appeal"]["season"] = []
     cfg.support_enabled = mode == "support"

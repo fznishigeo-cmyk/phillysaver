@@ -54,6 +54,7 @@ def product(**over):
 
 def settings(enabled=False):
     cfg = load_config()
+    cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.open_box_scarcity = False  # recorded before task 273
     pre_task_279(cfg)  # recorded before task 279
     cfg.front_page["appeal"]["want"]["enabled"] = False

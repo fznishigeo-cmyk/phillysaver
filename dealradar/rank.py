@@ -36,6 +36,26 @@ VERIFIED_DEATHS = frozenset({"confirmed", "api_ended"})
 PICK_WINDOW = 24
 
 
+def is_niche(deal: dict[str, Any], options: dict) -> bool:
+    """Shared category/title classification for the existing niche ordering."""
+    if (deal.get("category") or "other") in options.get("niche_categories", []):
+        return True
+    words = options.get("demote_words") or []
+    if not words:
+        return False
+    title = str(deal.get("item") or "")
+
+    def contains(phrase):
+        return re.search(r"(?<!\w)" + r"\s+".join(re.escape(w) for w in phrase.split())
+                         + r"(?!\w)", title, re.I) is not None
+
+    if any(contains(phrase) for phrase in words):
+        return True
+    # Phone cases alone allow model/series words between the phone and case.
+    return re.search(r"\bcases?\b", title, re.I) is not None and re.search(
+        r"\b(?:iphone|galaxy|pixel|samsung|motorola|moto\s+g|oneplus)\b", title, re.I) is not None
+
+
 def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]]:
     """Pick a varied first 24; retain every remaining card in input order.
 
@@ -47,7 +67,6 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
     if not options or "max_niche_top" not in options:
         return rows
     broad = set(options.get("broad_categories", []))
-    niche = set(options.get("niche_categories", []))
     niche_cap = 0 if options.get("niche_last") else int(options["max_niche_top"])  # car parts sink
     # The first screen is everyday deals only: niche never before this slot.
     niche_after = int(options.get("niche_after", 0))
@@ -57,7 +76,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
     niche_count, last, run = 0, "", 0
     missing_photo = False
     anchors = [d for d in rows[:24] if d.get("status") == "dead"]
-    reserved_niche = sum((d.get("category") or "other") in niche
+    reserved_niche = sum(is_niche(d, options)
                          or (d.get("category") or "other") not in broad for d in anchors)
     reserved_stores: dict[str, int] = {}
     for d in anchors:
@@ -68,7 +87,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
             chosen = slot
             cat = rows[slot].get("category") or "other"
             store = str(rows[slot].get("store") or "").strip().lower()
-            reserved_niche -= cat in niche or cat not in broad
+            reserved_niche -= is_niche(rows[slot], options) or cat not in broad
             reserved_stores[store] -= 1
         else:
             available = [i for i, d in enumerate(rows)
@@ -86,8 +105,8 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
                     d = rows[i]
                     cat = d.get("category") or "other"
                     store = str(d.get("store") or "").strip().lower()
-                    is_niche = cat in niche or cat not in broad
-                    if relaxation < 3 and is_niche and (slot < niche_after or niche_count + reserved_niche >= niche_cap):
+                    niche = is_niche(d, options) or cat not in broad
+                    if relaxation < 3 and niche and (slot < niche_after or niche_count + reserved_niche >= niche_cap):
                         continue
                     if relaxation < 2 and stores.get(store, 0) + reserved_stores.get(store, 0) >= store_cap:
                         continue
@@ -106,7 +125,7 @@ def front_page_mix(rows: list[dict[str, Any]], options: dict) -> list[dict[str, 
         d = rows[chosen]
         cat = d.get("category") or "other"
         store = str(d.get("store") or "").strip().lower()
-        niche_count += cat in niche or cat not in broad
+        niche_count += is_niche(d, options) or cat not in broad
         stores[store] = stores.get(store, 0) + 1
         run = run + 1 if cat == last else 1
         last = cat
@@ -289,7 +308,7 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     if not options or deal.get("status", "alive") != "alive" or deal.get("locked") \
             or not str(deal.get("image_url") or "").startswith("https://") \
             or deal.get("price_is_range") or "range" in (deal.get("flags") or []) \
-            or category == "other" or category in cfg.front_page.get("niche_categories", []) \
+            or category == "other" or is_niche(deal, cfg.front_page) \
             or conditions & {"targeted", "new_customer", "in_store_only", "ymmv", "clearance_aisle"} \
             or conditions & excluded:
         return None
@@ -455,10 +474,8 @@ def pick_order(rows: list[dict[str, Any]], options: dict) -> list[dict[str, Any]
     """Published pick order followed by the existing order of the rest; with
     niche_last, niche categories (car parts, office supplies) come after the
     rest of the wall."""
-    niche = set(options.get("niche_categories", [])) if options.get("niche_last") else set()
-
     def sunk(d):
-        return (d.get("category") or "other") in niche
+        return bool(options.get("niche_last")) and is_niche(d, options)
     if not options.get("top_picks"):
         return sorted(front_page_mix(rows, options),
                       key=lambda d: (bool(d.get("price_unconfirmed") or d.get("price_aged")), sunk(d)))

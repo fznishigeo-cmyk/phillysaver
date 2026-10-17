@@ -318,10 +318,14 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     cfg.static_photos = False  # recorded before task 274
     cfg.front_page["used_tab_only"] = False  # recorded before task 274
     cfg.amazon_reference = "history"  # recorded before task 276
+    cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.open_box_scarcity = False  # recorded before task 273
     if "appeal" in cfg.front_page:
         cfg.front_page["appeal"].get("want", {})["enabled"] = False
         cfg.front_page["appeal"]["season"] = []
+    cfg.drop_rotation_windows = 0  # recorded before task 269
+    cfg.support_panel_delay_s = 0  # recorded before task 272
+    cfg.support_cost_phrase = "hundreds of dollars"  # recorded before task 272
     if mode == "shipped":
         cfg.amazon_history = "show"  # predates task 121b
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering

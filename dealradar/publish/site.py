@@ -22,13 +22,13 @@ from urllib.parse import urlsplit
 
 from ..savings import display_pct, known_shipping, parse_stack_step
 from ..config import AppConfig, redact_secrets, support_link, validated_drop_clock
-from ..rank import appeal_summary, daily_spotlight, pick_order, pick_score, top_picks
+from ..rank import appeal_summary, daily_spotlight, is_niche, pick_order, pick_score, top_picks
 from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
                        price_confirmation_recent, price_unconfirmed)
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import amazon_reference, checkout_prices, popular_affordable
-from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
+from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
 from . import link_facts
@@ -62,6 +62,7 @@ def util_now():
 
 _PHOTOLESS_BLOCK = re.compile(r"/\*photoless\*/(.*?)/\*/photoless\*/", re.S)
 _USED_TAB_ONLY_BLOCK = re.compile(r"/\*used-tab-only\*/(.*?)/\*/used-tab-only\*/", re.S)
+_DEMOTE_WORDS_BLOCK = re.compile(r"/\*demote-words\*/(.*?)/\*/demote-words\*/", re.S)
 
 
 _WATCH_BLOCK = re.compile(r"<!--watch-->(.*?)<!--/watch-->", re.S)
@@ -124,6 +125,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
     html = checkout_prices.template(html, checkout_prices.enabled(cfg))
     html = _PHOTOLESS_BLOCK.sub(lambda m: m[1] if cfg.photoless_last else "", html)
     html = _USED_TAB_ONLY_BLOCK.sub(lambda m: m[1] if cfg.front_page.get("used_tab_only") else "", html)
+    html = _DEMOTE_WORDS_BLOCK.sub(lambda m: m[1] if cfg.front_page.get("demote_words") else "", html)
     html = amazon_as_of.template(html, cfg.amazon_as_of_enabled)
     html = amazon_history.template(html, cfg)
     html = amazon_reference.template(html, cfg)
@@ -143,6 +145,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
+        html = drop_rotation.final_order(html, cfg)
         html = open_box.template(html, cfg.open_box_scarcity, counts=cfg.open_box_counts)
         html = manifest_refresh.template(html, cfg)
         if cfg.offscreen_cards:
@@ -163,6 +166,7 @@ def site_template_version(price_presets: list[int] | None = None,
     html = checkout_prices.template(html, False)
     html = _PHOTOLESS_BLOCK.sub("", html)
     html = _USED_TAB_ONLY_BLOCK.sub("", html)
+    html = _DEMOTE_WORDS_BLOCK.sub("", html)
     html = amazon_as_of.template(html, False)
     html = amazon_history.BLOCK.sub("", html)
     html = product_pages.template(html, False)
@@ -301,7 +305,7 @@ _CONDITION_HOW = {
 _VARIANT_RE = re.compile(r"<!--(paywall|open|support)-->(.*?)<!--/\1-->", re.S)
 _STANDARD_RE = re.compile(r"<!--standard-->(.*?)<!--/standard-->", re.S)
 SUPPORT_BODY = (
-    "wowpriced is free for everyone. Checking prices around the clock costs us hundreds of dollars a "
+    "wowpriced is free for everyone. Checking prices around the clock costs us {cost_phrase} a "
     "month in price data and servers. If you find it useful, you can make an optional "
     "payment to support our work."
 )
@@ -326,11 +330,15 @@ JOIN_FORM = (
 
 
 _SUPPORT_ASK_BLOCK = re.compile(r"^ *// support-ask\n(.*?)^ *// /support-ask\n", re.M | re.S)
+_SUPPORT_DELAY_BLOCK = re.compile(r"^ *// support-delay\n(.*?)^ *// /support-delay\n", re.M | re.S)
 
 
-def support_script(link: str = "", monthly: str = "") -> str:
-    """Omit the optional ask entirely without a support link, preserving bytes."""
+def support_script(link: str = "", monthly: str = "", panel_delay_s: int = 0) -> str:
+    """Omit inactive timing/ask code to preserve the historical page bytes."""
     script = (TEMPLATES_DIR / "support.js").read_text(encoding="utf-8")
+    script = _SUPPORT_DELAY_BLOCK.sub(lambda m: m.group(1) if panel_delay_s else "", script)
+    script = script.replace("{{SUPPORT_PANEL_DELAY_S}}", str(panel_delay_s)).replace(
+        "{{SUPPORT_PANEL_WAIT}}", "panelWaiting || " if panel_delay_s else "")
     script = _SUPPORT_ASK_BLOCK.sub(lambda m: m.group(1) if link else "", script)
     if not link:
         return script
@@ -623,6 +631,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         public["select_sizes"] = True
     if deal.get("price_aged"):
         public["price_aged"] = deal["price_aged"]
+    if cfg and cfg.front_page.get("demote_words") and is_niche(deal, cfg.front_page):
+        public["niche"] = True
     label = checkout_prices.label(deal, cfg, now)
     if label:
         public["checkout_price"] = label
@@ -676,6 +686,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     home_template = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     slot = dict(template_name="index.html", slot_name="BROWSE_SCRIPT")
     validate_slot(home_template, "{{BROWSE_SCRIPT}}", **slot)
+    home_template = drop_rotation.template(home_template, cfg)
     support = bool(getattr(cfg, "support_enabled", False))
     open_access = is_open(cfg)
     saved_deals = support and bool(cfg.engagement.get("saved_deals", False))
@@ -805,8 +816,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Rank original facts: public rows omit sightings and raw checkout steps.
     public_candidates = {d["dedupe_key"]: d for d, _ in confirmed_candidates}
     original_candidates = [(originals[d["dedupe_key"]], value) for d, value in confirmed_candidates]
-    original_picks = top_picks(original_candidates, cfg.front_page, now,
-                               summary=checkout_summary, cfg=cfg)
+    pick_candidates = original_candidates
+    if drop_rotation.enabled(cfg):
+        spotlight_keys = {d["dedupe_key"] for d in spotlight}
+        pick_candidates = [(d, value) for d, value in original_candidates if d["dedupe_key"] not in spotlight_keys]
+    boosted = set()
+    original_picks = top_picks(pick_candidates, cfg.front_page, now,
+                               summary=checkout_summary, cfg=cfg, boosted=boosted)
+    original_picks = drop_rotation.prepare_picks(original_picks, cfg, boosted)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
     for n, d in enumerate(picked, 1):
         d["pick"] = n
@@ -827,6 +844,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         except Exception as e:
             logger.warning("%s", type(e).__name__)
             popular_summary = None
+    if drop_rotation.enabled(cfg):
+        for d in picked:
+            if checkout_prices.kind(originals[d["dedupe_key"]]):
+                d["pick_checkout"] = True
     if checkout_prices.enabled(cfg):
         for d in teaser + spotlight_only:
             if d.get("locked") or d.get("status") != "alive":
@@ -849,7 +870,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         click_wall.sort(key=lambda d: (bool(d.get("locked")), d.get("pick", float("inf")),
             -(at.timestamp() if (at := parse_iso(d.get("first_seen_at") or "")) else 0)))
         if cfg.front_page.get("niche_last"):
-            click_wall.sort(key=lambda d: (d.get("category") or "other") in cfg.front_page.get("niche_categories", []))
+            click_wall.sort(key=lambda d: is_niche(d, cfg.front_page))
         if cfg.photoless_last:
             click_wall.sort(key=lambda d: (bool(d.get("locked")), not bool(d.get("image_url"))))
         click_wall.sort(key=lambda d: bool(d.get("price_unconfirmed") or d.get("price_aged")))
@@ -911,13 +932,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         home = checkout_prices.template(home, False)
         home = _PHOTOLESS_BLOCK.sub("", home)
         home = _USED_TAB_ONLY_BLOCK.sub("", home)
+        home = _DEMOTE_WORDS_BLOCK.sub("", home)
         home = amazon_as_of.template(home, False)
         home = amazon_history.BLOCK.sub("", home)
         home = product_pages.template(home, False)
         # Optional watch markup must not change the disabled page's version.
         home = _WATCH_BLOCK.sub("", home).replace("<!--saved--><!--/saved-->", "")
         data = (home.encode()
-                + support_script(link, monthly).encode()
+                + support_script(link, monthly, cfg.support_panel_delay_s).encode()
                 + (TEMPLATES_DIR / "join-card.html").read_bytes()
                 + (TEMPLATES_DIR / "join-card.css").read_bytes()
                 + (TEMPLATES_DIR / "footer-signup.html").read_bytes()
@@ -926,6 +948,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 + (TEMPLATES_DIR / "site-footer.css").read_bytes()
                 + (TEMPLATES_DIR / "deal-actions.js").read_bytes()
                 + str(cfg.join_prompt).encode() + link.encode() + monthly.encode() + browse.marked.encode())
+        if cfg.support_cost_phrase != "hundreds of dollars":
+            data += b"\0support.cost_phrase=" + cfg.support_cost_phrase.encode()
         site_version = hashlib.sha256(data).hexdigest()[:12] + "-support"
     engagement = {name: bool(cfg.engagement.get(name, False)) for name in (
         "new_since_visit", "weekly_finds", "visit_streak", "surprise_me", "hot_meter")}
@@ -1006,6 +1030,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.front_page.get("used_tab_only"):
         site_version = hashlib.sha256(site_version.encode()
             + "".join(_USED_TAB_ONLY_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
+    if cfg.front_page.get("demote_words"):
+        site_version = hashlib.sha256(site_version.encode()
+            + json.dumps(cfg.front_page["demote_words"]).encode()
+            + "".join(_DEMOTE_WORDS_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     site_version = comments.site_version(site_version, cfg)
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
         version_home = home_html if saved_deals else _WATCH_BLOCK.sub("", home_html).replace("<!--saved--><!--/saved-->", "")
@@ -1051,14 +1079,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Every deal in full for everyone: the page's sign-up copy drops
         # "unlock" (nothing is locked).
         "open_access": open_access,
-        "support": {"enabled": support, "link": link, "monthly_link": monthly},
+        # Omit zero so recorded pre-delay payloads keep their exact bytes.
+        "support": {"enabled": support, "link": link, "monthly_link": monthly,
+                    **({"panel_delay_s": cfg.support_panel_delay_s} if support and cfg.support_panel_delay_s else {})},
         "join": {"prompt": support and cfg.join_prompt,
                  "prompt_delay_s": max(15, cfg.join_prompt_delay_s), "apple": cfg.join_apple},
         "engagement": engagement,
         **({"saved_deals_limit": saved_limit} if saved_deals else {}),
         # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
-        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price"}
+        "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words"}
                        and (k != "used_tab_only" or v)
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
@@ -1131,8 +1161,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         if name == "disclosure.html":
             html = html.replace("{{AFFILIATE_PROGRAMS}}", affiliate_programs(cfg))
         if support:
-            html = html.replace("{{SUPPORT_SCRIPT}}", support_script(link, monthly))
-            html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY)
+            html = html.replace("{{SUPPORT_SCRIPT}}", support_script(link, monthly, cfg.support_panel_delay_s))
+            html = html.replace("{{SUPPORT_BODY}}", SUPPORT_BODY.format(cost_phrase=escape(cfg.support_cost_phrase)))
             html = html.replace("{{SUPPORT_ACTION}}", (
                 f'<a class="pwbtn btn" data-support href="{escape(link, quote=True)}" '
                 'target="_blank" rel="noopener">' + ("Support once" if monthly else "Support our work")
@@ -1224,9 +1254,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         checker_page.publish(out, cfg, now, site_url, meta["disclosure"])
         seo_paths.append("/check/")
 
-    if support and link:
+    if support and (link or cfg.support_panel_delay_s):
         # Generated pages share the same footer join success as root pages.
-        before, after = support_script(), support_script(link, monthly)
+        before, after = support_script(), support_script(link, monthly, cfg.support_panel_delay_s)
         for path in out.rglob("*.html"):
             html = path.read_text(encoding="utf-8")
             updated = html.replace("<script>" + before + "</script>", "<script>" + after + "</script>")

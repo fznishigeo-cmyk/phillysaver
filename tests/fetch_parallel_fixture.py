@@ -51,7 +51,11 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
     cfg["publish"]["amazon_reference"] = "history"  # recorded before task 276
     cfg["site"]["strip_comments"] = False  # recorded before task 278
     pre_task_279_raw(cfg)  # recorded before task 279
+    cfg["site"]["drop_rotation_windows"] = 0  # recorded before task 269
+    cfg["support"]["panel_delay_s"] = 0  # recorded before task 272
+    cfg["support"]["cost_phrase"] = "hundreds of dollars"  # recorded before task 272
     cfg["publish"]["front_page"]["used_tab_only"] = False  # recorded before task 274
+    cfg["publish"]["front_page"].pop("demote_words", None)  # recorded before task 267b
     cfg["site"]["open_box_scarcity"] = False  # recorded before task 273
     cfg["publish"]["front_page"]["appeal"]["want"]["enabled"] = False
     cfg["publish"]["front_page"]["appeal"]["season"] = []

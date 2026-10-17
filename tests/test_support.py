@@ -147,10 +147,12 @@ def test_variant_choice():
     assert site.copy_variant(template, False) == "commonlocked"
 
 
-def test_support_browser_logic_offline(tmp_path):
+@pytest.mark.parametrize("panel_delay_s", [0, 120])
+def test_support_browser_logic_offline(tmp_path, panel_delay_s):
     if not shutil.which("node"):
         pytest.skip("node unavailable")
-    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True, paywall_api_url="https://api.test"))
+    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True, paywall_api_url="https://api.test",
+                                           support_panel_delay_s=panel_delay_s))
     html = (out / "index.html").read_text()
     scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
     for i, code in enumerate(scripts):

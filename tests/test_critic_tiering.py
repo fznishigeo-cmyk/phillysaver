@@ -330,6 +330,10 @@ def test_switch_off_matches_prechange_spend_verdicts_and_every_site_byte(env):
     config["publish"]["amazon_reference"] = "history"  # recorded before task 276
     config["site"]["strip_comments"] = False  # recorded before task 278
     pre_task_279_raw(config)  # recorded before task 279
+    config["site"]["drop_rotation_windows"] = 0  # recorded before task 269
+    config["support"]["panel_delay_s"] = 0  # recorded before task 272
+    config["support"]["cost_phrase"] = "hundreds of dollars"  # recorded before task 272
+    config["publish"]["front_page"].pop("demote_words", None)  # recorded before task 267b
     config["site"]["open_box_scarcity"] = False  # recorded before task 273
     config["publish"]["front_page"]["appeal"]["want"]["enabled"] = False
     config["publish"]["front_page"]["appeal"]["season"] = []

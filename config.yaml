@@ -154,6 +154,7 @@ site:
   static_photos: true          # task 274: photos on static cards and deal pages
   open_box_scarcity: true   # task 273: never infer a stock count
   open_box_counts: false   # operator: publish only "often only 1" for now
+  drop_rotation_windows: 3  # task 269: cycle the strongest 24-card windows at each drop; 0 restores server order
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
   strip_comments: true  # task 278: final home-only pass; missing/false preserves original bytes
   # Operator 2026-10-17: what Google shows for the homepage (like Slickdeals'
@@ -223,6 +224,10 @@ publish:
     used_tab_only: true         # used/open-box only in their tab and after new search matches
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]
+    demote_words: [phone case, iphone case, galaxy case, pixel case, otterbox, spigen,
+                  screen protector, tempered glass, replacement, replacement part,
+                  toner, ink cartridge, filter cartridge, adapter plate, mounting bracket,
+                  fuse, gasket, o-ring, hose clamp]
     max_niche_top: 2
     niche_after: 8              # never a niche card on the first screen (cards 1-8)
     niche_last: true            # operator 2026-10-16 ("stop putting random car parts on the front
@@ -779,6 +784,8 @@ join:
 
 support:
   enabled: true        # free site: Join free + Support; trial/membership UI hidden
+  panel_delay_s: 120   # support panel also waits this long after page load; 0 = no delay
+  cost_phrase: "thousands of dollars"
   monthly_link: "https://buy.stripe.com/7sY9AUflT5Xm2TR1rReIw03"     # monthly, $1 x the quantity the visitor picks (Stripe minimum 5 since 2026-10-13); empty hides it
   payment_link: "https://buy.stripe.com/8x2fZia1zadCfGD8UjeIw02"     # one-time, pay-what-you-want Stripe Payment Link; empty hides Support
 

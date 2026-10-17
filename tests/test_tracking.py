@@ -261,6 +261,10 @@ for (const [name, sc] of Object.entries(scenarios)) {
       setItem(k, v) { if (sc.blocked || sc.readonly) throw new Error("readonly"); store[k] = v; },
       removeItem(k) { if (sc.blocked || sc.readonly) throw new Error("readonly"); delete store[k]; }
     },
+    Date: sc.now ? class extends Date {
+      constructor(...args) { super(...(args.length ? args : [sc.now])); }
+      static now() { return Date.parse(sc.now); }
+    } : Date,
     URLSearchParams, location: {search: sc.search || "", pathname: "/nested/page/", hash: "#keep", origin: "https://wowpriced.com"},
     history: {state: {keep: true}, replaceState(state, title, url) { this.url = url; }},
     document: { createElement: () => ({}), head: { appendChild: (s) => srcs.push(s.src) } },
@@ -519,6 +523,9 @@ def test_filter_and_back_events_are_ga4_only_with_bounded_method(tmp_path, ids):
     scenarios = {"open": {"calls": calls + invalid}, "gpc": {"gpc": True, "calls": calls},
                  "out": {"storage": {"wp.adsOptOut": "1"}, "calls": calls},
                  "denied": {"blocked": True, "calls": calls}, "baseline": {}}
+    # Reproduce the initialization timestamp/private-price collision on purpose.
+    for scenario in scenarios.values():
+        scenario["now"] = "2026-10-17T12:00:23.450Z"
     (tmp_path / "scenarios.json").write_text(json.dumps(scenarios))
     result = subprocess.run(["node", "harness.cjs", "snippet.js", "scenarios.json"], cwd=tmp_path,
                             capture_output=True, text=True, check=True)
@@ -532,7 +539,14 @@ def test_filter_and_back_events_are_ga4_only_with_bounded_method(tmp_path, ids):
             assert all(out[name][tag] == out["baseline"][tag] for tag in ("fbq", "ttq", "pintrk", "uetq"))
         else:
             assert all(out[name][tag] is None for tag in ("fbq", "ttq", "pintrk", "uetq"))
-    assert "PRIVATE" not in result.stdout and "23.45" not in result.stdout and "private.test" not in result.stdout
+    assert "PRIVATE" not in result.stdout and "private.test" not in result.stdout
+    if "ga4_measurement_id" in ids:
+        assert "23.450Z" in json.dumps(out["baseline"]["dataLayer"])
+    # GA initialization includes a Date, whose ISO seconds can equal a private
+    # price by coincidence. Privacy assertions apply to the emitted events.
+    events = [event for scenario in out.values() for event in (scenario["dataLayer"] or [])
+              if event[0] == "event"]
+    assert "23.45" not in json.dumps(events)
 
 
 class MaskedMarkup(HTMLParser):

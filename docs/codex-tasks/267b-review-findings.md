@@ -1,0 +1,8 @@
+- **Should-fix — iPhone SE cases still lead the homepage.** With shipped config, “Clear Case for Apple iPhone SE (3rd Generation)” receives `pick: 1` and appears first in server and emitted-JS ordering, ahead of 40 ordinary offers. The fallback requires a detector whose iPhone pattern requires digits. Evidence: [rank.py:56](/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt267b/dealradar/rank.py:56). **Minimal fix:** cover SE in the new phone-phrase matcher; add a rendered-order regression.
+
+- **Should-fix — Utility phrases become unordered word matches.** With `demote_words: ["filter cartridge"]`, “Case for iPhone 16 with filter and spare cartridge storage” incorrectly becomes niche despite lacking the configured phrase. Evidence: [rank.py:57](/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt267b/dealradar/rank.py:57). **Minimal fix:** restrict gap matching to phone-case expressions; preserve contiguous utility phrases and test this negative.
+
+Verification: 172 passed; Chromium launch skipped. OFF matched HEAD across 87 files and member payload. Review scratch deleted; no edits, commits, or pushes.
+
+NOT
+--- Operator note: keep it simple. Configured demote_words are contiguous whole-word phrases only (no gaps). Phone cases are the one special rule: a title is a phone case when it contains the whole word "case" (or "cases") AND a phone brand/model word (iphone, galaxy, pixel, samsung, motorola, moto g, oneplus) anywhere — that covers "Clear Case for Apple iPhone SE (3rd Generation)". Briefcase/pillowcase/"case of 24" must stay unaffected (no phone word). Add rendered-order regressions for both findings.

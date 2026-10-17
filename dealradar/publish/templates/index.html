@@ -1624,7 +1624,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
   function nicheLast(rows) {
     var options = (state.meta || {}).front_page || {}, niche = options.niche_categories || [];
     if (!options.niche_last || !frontPageView()) return rows;
-    function sunk(d) { return niche.indexOf(d.category || "other") !== -1; }
+    function sunk(d) { return /*demote-words*/d.niche === true || /*/demote-words*/niche.indexOf(d.category || "other") !== -1; }
     return rows.filter(function (d) { return !sunk(d); }).concat(rows.filter(sunk));
   }
 /*used-tab-only*/  function usedOrOpenBox(d) {
@@ -2008,7 +2008,7 @@ p:not(.brand) a:not(.getdeal):not(.btn):not(.pwbtn),.credit a,.how a,footer a:no
     var picked = [], used = new Set(), stores = new Map(), nicheCount = 0, last = "", run = 0, missingPhoto = false;
     function category(d) { return d.category || "other"; }
     function store(d) { return String(d.store || "").trim().toLowerCase(); }
-    function isNiche(d) { return niche.indexOf(category(d)) !== -1 || broad.indexOf(category(d)) === -1; }
+    function isNiche(d) { return /*demote-words*/d.niche === true || /*/demote-words*/niche.indexOf(category(d)) !== -1 || broad.indexOf(category(d)) === -1; }
     var reservedNiche = 0, reservedStores = new Map();
     rows.slice(0, 24).filter(function (d) { return d.status === "dead"; }).forEach(function (d) {
       reservedNiche += isNiche(d) ? 1 : 0;

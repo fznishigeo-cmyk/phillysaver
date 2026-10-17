@@ -10,10 +10,12 @@ from dealradar.config import AppConfig, load_config
 from tests.test_support import render
 
 
-def test_join_prompt_behavior(tmp_path):
+@pytest.mark.parametrize("panel_delay_s", [0, 120])
+def test_join_prompt_behavior(tmp_path, panel_delay_s):
     if not shutil.which("node"):
         pytest.skip("node unavailable")
-    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True, paywall_api_url="https://api.test"))
+    out, _, _, _ = render(tmp_path, AppConfig(support_enabled=True, paywall_api_url="https://api.test",
+                                           support_panel_delay_s=panel_delay_s))
     scripts = re.findall(r"<script>(.*?)</script>", (out / "index.html").read_text(), re.S)
     script = tmp_path / "support.js"
     script.write_text(next(s for s in scripts if "window.wpSupport =" in s))

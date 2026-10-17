@@ -27,13 +27,14 @@ const results = cases.map(c => {
     searchText:()=>controls.q.value.trim(),
     renderSearchCount(){},
     openAccess:()=>false, canJoin:()=>false,
+    renderSavedControls(){}, savedOn:()=>false, engagementLineHtml:()=>'', openBand:()=>'',
     cardHtml:d=>`<i data-key="${d.key}"></i>`
   };
   vm.createContext(ctx);
   vm.runInContext(fragment('  function cmp(', '  function storeHue('), ctx);
   vm.runInContext(fragment('  function gridHtml(', '  function showMore('), ctx);
   let observed = 0;
-  ctx.window = {IntersectionObserver:true};
+  ctx.window = {IntersectionObserver:true, wpSupport:{refresh(){}}};
   ctx.IntersectionObserver = class {observe(){observed++;} disconnect(){}};
   ctx.armMore({});
   const base = ctx.ordered(c.rows, true);

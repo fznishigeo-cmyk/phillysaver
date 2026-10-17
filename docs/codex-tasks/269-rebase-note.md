@@ -1,0 +1,2 @@
+
+--- Also (operator 2026-10-17 ~06:10Z): this worktree was rebased onto 75ad39f (live: price history off for every store — amazon_history hide, store_policy live_only, seo.product_pages off; keepa.buybox_rule on; search_amazon on; 35 s pop-up). Conflicts were union-merged. Run your targeted tests: fix any failure the rebase caused (recorded fixtures pin the old values with tests/history_pins.py pre_history_removal / pre_history_removal_raw, or the existing "recorded before" lines) — never re-pin a hash; shipped-expectation tests follow the live config.

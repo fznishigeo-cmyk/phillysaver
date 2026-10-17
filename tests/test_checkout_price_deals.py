@@ -333,6 +333,7 @@ def test_window_twelve_codes_fills_slots_and_preserves_caps(cfg, window, maximum
 ])
 def test_label_each_kind_in_json_static_live_card_and_detail(db, cfg, tmp_path, changes, kind, suffix):
     enable(cfg)
+    cfg.drop_rotation_windows = 0  # recorded before task 269: legacy server-order harness
     d = remember(offer(**changes), cfg, price=50.25)
     cfg.support_enabled = True
     out = tmp_path / 'site'
@@ -456,10 +457,14 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
         config.static_photos = False  # recorded before task 274
         config.front_page["used_tab_only"] = False  # recorded before task 274
         config.amazon_reference = "history"  # recorded before task 276
+        config.front_page.pop("demote_words", None)  # recorded before task 267b
         config.open_box_scarcity = False  # recorded before task 273
         if "appeal" in config.front_page:
             config.front_page["appeal"].get("want", {})["enabled"] = False
             config.front_page["appeal"]["season"] = []
+        config.drop_rotation_windows = 0  # recorded before task 269
+        config.support_panel_delay_s = 0  # recorded before task 272
+        config.support_cost_phrase = "hundreds of dollars"  # recorded before task 272
         config.amazon_history = 'show'  # predates task 121b
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         config.photoless_last = False  # predates photos-first

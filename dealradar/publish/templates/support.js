@@ -6,6 +6,9 @@
   var BAR = "wp.joinbar.dismissed", barDismissed = false;
   var panel = document.getElementById("paywall");
   var prompt = document.getElementById("join-prompt"), started = Date.now();
+  // support-delay
+  var panelTimer = null;
+  // /support-delay
   var SHOWN = "wp.join.promptUntil", JOINED = "wp.join.joined";
   var engaged = false, shown = false, joined = false, timer = null, previousFocus;
   var googleLoading = false, googleBusy = false, emailBusy = false, successTimer = null;
@@ -331,7 +334,15 @@
     var otherAsk = Array.from(document.querySelectorAll(
       '#content .trialband, #content .joinform, footer a[href="/join"], footer [data-support], footer [data-support-monthly], #footer-signup'
     )).some(function (el) { return inView(el, edge); });
-    panel.hidden = shown || dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
+    // support-delay
+    var delay = (meta.support || {}).panel_delay_s;
+    var remaining = (delay === undefined ? {{SUPPORT_PANEL_DELAY_S}} : Math.max(0, Number(delay) || 0)) * 1000 - (Date.now() - started);
+    var panelWaiting = remaining > 0;
+    if (panelWaiting && panelTimer === null) {
+      panelTimer = setTimeout(function () { panelTimer = null; refresh(); }, remaining);
+    }
+    // /support-delay
+    panel.hidden = {{SUPPORT_PANEL_WAIT}}shown || dismissed || otherAsk || cards.length <= 8 || cards[7].getBoundingClientRect().bottom > edge;
     var bar = document.getElementById("subbar"), barClose = document.getElementById("subbarclose");
     if (bar) bar.hidden = barDismissed || shown || !panel.hidden || otherAsk || inView(document.getElementById("subscribe"));
     if (bar && barClose) barClose.hidden = bar.hidden;

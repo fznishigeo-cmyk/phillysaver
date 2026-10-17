@@ -75,7 +75,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
     return el;
   };
   document.head = {appendChild:s=>scripts.push(s)};
-  const meta = {api_url:api, google_client_id:google ? 'configured-client' : '', join:{prompt:enabled,prompt_delay_s:delay}, support};
+  const meta = {api_url:api, google_client_id:google ? 'configured-client' : '', join:{prompt:enabled,prompt_delay_s:delay}, support:{panel_delay_s:0, ...support}};
   const ctx = {document, location:{pathname,hash:'',replace(url){redirected=url;}}, Date:{now:()=>now},
     localStorage:{getItem(k) {if (blocked === 'read') throw Error('blocked'); return storage.get(k) || null;},
       setItem(k,v) {if (blocked === 'write') throw Error('quota'); storage.set(k,v);}},
@@ -105,6 +105,20 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
     }, googleOptions:()=>googleOptions, google:()=>googleCallback({credential:'google-id-token'})};
 }
 (async()=>{
+  if (code.includes('panelWaiting')) {
+    const h = harness({delay:35, support:{panel_delay_s:120}});
+    h.boundary(90); h.refresh(); h.engage();
+    h.advance(34999); assert.equal(h.prompt.hidden,true); assert.equal(h.panel.hidden,true);
+    h.advance(1); assert.equal(h.prompt.hidden,false); assert.equal(h.panel.hidden,true);
+    assert.equal(h.storage.get('wp.join.promptUntil'),String(36000+WEEK));
+    h.key('Escape'); h.advance(85000); h.refresh();
+    assert.equal(h.prompt.hidden,true); assert.equal(h.panel.hidden,true); // one ask per view
+    for (const options of [{enabled:false}, {stored:{'wp.join.promptUntil':String(1000+WEEK)}}]) {
+      const waiting = harness({...options, delay:35, support:{panel_delay_s:120}});
+      waiting.boundary(90); waiting.engage(); waiting.advance(120000);
+      assert.equal(waiting.prompt.hidden,true); assert.equal(waiting.panel.hidden,false);
+    }
+  }
   let h = harness();
   h.engage(); h.advance(14999); assert.equal(h.prompt.hidden,true);
   h.advance(1); assert.equal(h.prompt.hidden,false); assert.equal(h.document.activeElement,h.input);
@@ -304,7 +318,8 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   assert.equal(h.prompt.hidden,true); assert.equal(h.footerSuccess.hidden,false);
   if (code.includes('function showSupportAsk')) {
     const link='https://buy.stripe.com/test_support', monthly='https://buy.stripe.com/test_monthly';
-    const support={enabled:true,link,monthly_link:code.includes('Support monthly</a>') ? monthly : ''};
+    const support={enabled:true,link,monthly_link:code.includes('Support monthly</a>') ? monthly : '',
+      panel_delay_s:code.includes('panelWaiting') ? 120 : 0};
     const ask=h=>[...h.success.children,...h.footerSuccess.children].find(n=>n.className==='supportask'&&!n.hidden);
     const actions=h=>h.events.filter(e=>e.name.startsWith('support_ask_'));
     async function join(h,path,method='email') {

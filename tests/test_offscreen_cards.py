@@ -93,3 +93,12 @@ def test_local_browser_restore(tmp_path, monkeypatch, enabled):
         pytest.skip(result.stdout.strip())
     assert result.returncode == 0, result.stdout + result.stderr
     print(result.stdout)
+
+
+def test_pagination_and_restore_when_auto_loading_removes_button(tmp_path, monkeypatch):
+    monkeypatch.setattr(site, "util_now", lambda: NOW)
+    out, *_ = render(tmp_path, baseline_config("open"), [])
+    result = subprocess.run(["node", str(Path(__file__).with_name("browse_logic.cjs")),
+                             str(out / "index.html"), str(out / "deals.json"), "pagination-restore"],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr

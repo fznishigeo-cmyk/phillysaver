@@ -16,6 +16,7 @@ from tests.test_seo import db
 
 def legacy_config():
     cfg = load_config()
+    cfg.front_page.pop("demote_words", None)  # recorded before task 267b
     cfg.open_box_scarcity = False  # recorded before task 273
     cfg.front_page["appeal"]["want"]["enabled"] = False
     cfg.front_page["appeal"]["season"] = []
