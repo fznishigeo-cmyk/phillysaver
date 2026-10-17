@@ -28,7 +28,7 @@ from ..verify import (confirmation_coverage, is_amazon_deal, price_confirmed_at,
 from ..source_policy import source_image_allowed
 from ..util import iso, parse_iso
 from .. import checkout_prices
-from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
+from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, dark, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
 from . import link_facts
@@ -850,6 +850,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = manifest_refresh.site_version(site_version, cfg)
     if cfg.offscreen_cards:
         site_version = hashlib.sha256((site_version + OFFSCREEN_CARDS_STYLE).encode()).hexdigest()[:12]
+    if cfg.dark_polish:
+        site_version = hashlib.sha256((site_version + dark.CSS).encode()).hexdigest()[:12]
     meta = {
         "site_version": site_version,
         "generated_at": iso(now),
@@ -1073,6 +1075,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     traffic.publish(out, cfg, [d for d in deal_pages[1] if not d.get("price_unconfirmed")], paths, site_url)
     profiles.publish(out, cfg, site_url)
     inventory.publish(out, cfg)
+    dark.publish(out, cfg)
 
     # Last: the operator's analytics and ad tags (config.yaml tracking:) go
     # into every page written above or by another pass, nested ones included.

@@ -141,6 +141,7 @@ intake:
   max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
 
 site:
+  dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
     enabled: true

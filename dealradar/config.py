@@ -306,6 +306,7 @@ class AppConfig:
     amazon_watches: str = ""  # "" follows amazon_history; on | off
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
+    dark_polish: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -863,6 +864,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.offscreen_cards = g("site", "offscreen_cards", default=False)
     if type(cfg.offscreen_cards) is not bool:
         raise ValueError("site.offscreen_cards must be a boolean")
+    cfg.dark_polish = g("site", "dark_polish", default=False)
+    if type(cfg.dark_polish) is not bool:
+        raise ValueError("site.dark_polish must be a boolean")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

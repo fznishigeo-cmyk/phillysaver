@@ -266,6 +266,7 @@ def test_facts_copy_code_numbers_and_shipped_answer(db, cfg):
 @pytest.mark.parametrize('mode', ['membership', 'open', 'support', 'shipped'])
 def test_off_all_published_bytes_match_pre_edit(db, tmp_path, mode):
     cfg = load_config() if mode == 'shipped' else AppConfig(custom_domain='wowpriced.com', seo_product_pages_enabled=True)
+    cfg.dark_polish = False  # recorded before task 254
     if mode != 'shipped':
         cfg.support_enabled = mode == 'support'
         cfg.paywall_open_access = mode == 'open'

@@ -23,6 +23,7 @@ def capture(out, monkeypatch, setting="omitted"):
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = load_config()
     cfg.offscreen_cards = False  # recorded before task 237's phone-only CSS
+    cfg.dark_polish = False  # recorded before task 254
     cfg.amazon_history = "hide"  # recorded before amz378_998
     if setting != "omitted":
         cfg.bounded_prefilter["enabled"] = setting
@@ -75,6 +76,7 @@ def capture(out, monkeypatch, setting="omitted"):
         for mode in ("membership", "open", "support", "shipped"):
             publication = load_config()  # Retain 119/121 and every other shipped switch.
             publication.offscreen_cards = False  # recorded before task 237
+            publication.dark_polish = False  # recorded before task 254
             publication.amazon_history = "hide"  # recorded before amz378_998
             if mode != "shipped":
                 publication.support_enabled = mode == "support"

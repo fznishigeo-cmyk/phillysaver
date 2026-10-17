@@ -132,6 +132,7 @@ def test_invalid_config_fails_even_when_disabled(tmp_path, value):
 def test_disabled_every_published_byte_matches_untouched_head(db, tmp_path, mode):
     # Frozen from untouched d28b551eebd4, at NOW, using this same seed/config.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.dark_polish = False  # recorded before task 254
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"

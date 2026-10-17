@@ -26,6 +26,7 @@ FIX = Path(__file__).with_name("fixtures")
 
 def baseline_config(mode, checking):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.dark_polish = False  # recorded before task 254
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"

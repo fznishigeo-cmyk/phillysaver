@@ -58,6 +58,7 @@ def render(db, out, cfg=None):
 def test_disabled_matches_every_current_head_byte(db, tmp_path, mode):
     # Captured before task 241 edits, untouched 7c202391bee4 (Amazon show).
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.dark_polish = False  # recorded before task 254
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"

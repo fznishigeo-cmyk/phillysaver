@@ -316,6 +316,7 @@ def test_off_matches_all_prechange_published_bytes(db, tmp_path, monkeypatch, mo
     from tests.test_publish_site import NOW as snapshot_time
 
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
+    cfg.dark_polish = False  # recorded before task 254
     cfg.unconfirmed_label_enabled = False
     if mode == "shipped":
         cfg.amazon_history = "show"  # predates task 121b

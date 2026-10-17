@@ -21,7 +21,9 @@ MODES = ("support", "open", "closed", "shipped")
 
 def fixture_config(mode):
     if mode == "shipped":
-        return load_config()
+        cfg = load_config()
+        cfg.dark_polish = False  # recorded before task 254
+        return cfg
     return AppConfig(custom_domain="wowpriced.com", support_enabled=mode == "support",
                      support_payment_link="https://buy.stripe.com/test_task206",
                      paywall_enabled=True, paywall_open_access=mode == "open",

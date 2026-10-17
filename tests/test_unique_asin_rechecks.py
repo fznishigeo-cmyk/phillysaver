@@ -89,6 +89,7 @@ def test_all_published_files_and_member_payload_match_before_editing(
     # enabled switches retained: 177 files plus the complete member payload.
     monkeypatch.setattr(site, "util_now", lambda: OUTPUT_NOW)
     config = load_config()
+    config.dark_polish = False  # recorded before task 254
     config.keepa_unique_asin_rechecks_enabled = enabled
     config.support_enabled = mode == "support"
     config.paywall_open_access = mode == "open"

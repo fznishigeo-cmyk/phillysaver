@@ -47,6 +47,7 @@ def bestbuy(db, **facts):
 
 def byte_case(db, mode, include_walmart):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.dark_polish = False  # recorded before task 254
     if mode != "shipped":
         cfg.support_enabled = mode == "support"
         cfg.paywall_open_access = mode == "open"

@@ -38,6 +38,7 @@ def snapshot(tmp_path, monkeypatch, parallel=1):
     cfg["fetch"]["parallel_sources"] = parallel
     cfg["parse"]["critic_tiering"]["enabled"] = False
     cfg["site"]["offscreen_cards"] = False  # recorded before task 237
+    cfg["site"]["dark_polish"] = False  # recorded before task 254
     cfg["amazon_history"] = "hide"  # recorded before amz378_998
     cfg["checker"]["stores"]["amazon"] = "link_only"  # retain that recording's compatible policy
     cfg_path.write_text(yaml.safe_dump(cfg))

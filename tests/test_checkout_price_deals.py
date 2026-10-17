@@ -441,6 +441,7 @@ def test_off_matches_untouched_head_every_published_byte(tmp_path, monkeypatch, 
     snapshots = []
     for mode in ('omitted', 'off'):
         config = load_config()
+        config.dark_polish = False  # recorded before task 254
         config.amazon_history = 'show'  # predates task 121b
         config.amazon_as_of_enabled = False  # predates the Amazon as-of switch
         config.photoless_last = False  # predates photos-first

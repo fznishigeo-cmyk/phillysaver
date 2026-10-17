@@ -304,6 +304,7 @@ def test_both_off_match_untouched_head_with_real_product_links_and_history(db, t
     # sufficient history, so the always-on shadow actually has work to do.
     # Task 120 refreshes shared home styles, clock metadata and support copy.
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com", paywall_enabled=True)
+    cfg.dark_polish = False  # recorded before task 254
     if mode == "shipped":
         cfg.amazon_history = "show"  # predates task 121b
         cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # this byte pin predates tiering

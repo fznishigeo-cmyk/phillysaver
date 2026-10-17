@@ -19,6 +19,7 @@ from tests.test_support import NOW, render
 def baseline_config(mode):
     if mode == "shipped":
         cfg = load_config()
+        cfg.dark_polish = False  # recorded before task 254
         cfg.amazon_history = "show"  # predates task 121b
         cfg.non_amazon_freshness_enabled = False  # pin predates task 102's age gate
         cfg.traffic_feed_details, cfg.traffic_feed_max_items = True, 50  # predates the RSS trim

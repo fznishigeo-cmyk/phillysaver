@@ -220,7 +220,9 @@ def test_static_reader_is_small_even_with_many_deals_and_checks(db, cfg, tmp_pat
     result, parsed = render(db, cfg, tmp_path, rows)
     html = _page(tmp_path, parsed.path).read_bytes()
     # Permanent event links in the footer/related navigation add under 256 bytes.
-    assert len(html) < 40_000 + (256 if cfg.seo_event_pages_enabled else 0)
+    from dealradar.publish import dark
+    dark_bytes = len((dark.META + dark.STYLE).encode()) if cfg.dark_polish else 0  # task 254's dark-only block
+    assert len(html) < 40_000 + (256 if cfg.seo_event_pages_enabled else 0) + dark_bytes
     assert 'Showing the 20 most recent deals' in parsed.scope.text()
     assert parsed.first(cls='product-facts') and parsed.first(cls='price-verdict')
     assert b'wp.sup.' not in html and b'fetch("/deals.json' not in html

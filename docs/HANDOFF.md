@@ -226,6 +226,31 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Dark polish (Codex task 254, 2026-10-17; uncommitted, ON):**
+  `site.dark_polish: true` ships; code/missing-key defaults are false. New
+  `publish/dark.py` injects the exact `templates/dark.css` and color-scheme meta
+  after inventory, before tracking; config.py/config.yaml and only the named
+  site.py import/version/pass lines changed. New `tests/test_dark_mode.py` and
+  `tests/dark_mode_browser.cjs` cover additive bytes, dark tokens/contrast,
+  idempotency, budgets and offline phone rendering. Recorded fixtures explicitly
+  pin dark OFF in `tests/phone_budget_fixture.py`, `test_pwa.py`,
+  `test_amazon_as_of.py`, `test_android_app.py`, `test_checker_index.py`,
+  `test_checker_page.py`, `test_product_price_pages.py`, `test_product_shadow.py`,
+  `test_store_policy_pages.py` and `test_unconfirmed_label.py`; no hashes changed.
+  Gzip bytes OFF → ON: CSS **14,289 → 14,823** (limit 14,913), HTML
+  **75,186 → 75,748** (limit 77,360). Initial new checks: `2 failed, 17 passed
+  in 182.09s (0:03:02)`; both placement assertions corrected. Final targeted
+  `-q -rs -n 1 -p no:cacheprovider`: **1051 passed, 6 skipped in 986.56s
+  (0:16:26)**, including all listed regressions and both audit rerun modes.
+  All six skips were browser launch failures. New Chromium check returned 77:
+  browser assertions/PNG captures remain unverified; retain
+  `/tmp/task254-shots/` (OFF/ON sites in `fixtures/` for the parent rerun).
+  The required pass order leaves tracking/click blocks after dark CSS in the head;
+  placement checks account for those blocks and require every other byte unchanged.
+  Manual checks remain: iPhone Safari dark, Chrome Android dark theme, Samsung
+  Internet dark mode. Ask the marketing contact for browser/app, a screenshot
+  and inversion settings. Owned `/tmp/task254-*` basetemps/logs removed;
+  screenshots/rerun fixtures retained. No network calls, full suite, commit or push.
 - **Device-local extension index (Codex task 244c, 2026-10-16; uncommitted, checker OFF):**
   Adds versioned, deterministic `/check/data/all.json` with lossless dictionary
   columns/front-coded JSON values; every alias/field matches the shards. The

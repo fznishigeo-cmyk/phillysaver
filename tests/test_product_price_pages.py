@@ -96,6 +96,7 @@ def test_config_ships_off_and_all_knobs_load(tmp_path):
 @pytest.mark.usefixtures("pre_extension_privacy")
 def test_off_every_published_byte_matches_untouched_head(db, tmp_path, mode, expected):
     cfg = load_config() if mode == "shipped" else AppConfig(custom_domain="wowpriced.com")
+    cfg.dark_polish = False  # recorded before task 254
     cfg.amazon_history = "show"  # predates task 121b
     cfg.front_page.get("checkout_price_deals", {})["enabled"] = False  # predates task 121b
     cfg.photoless_last = False  # predates photos-first
