@@ -229,7 +229,7 @@ test('upstream 429 honors Retry-After (60 s without one) and later searches debi
   for (const [headers, wait, q] of [[{'Retry-After':'120'}, 120000, 'mug'], [{}, 60000, 'tea']]) {
     globalThis.fetch = async (url, options) => {calls.push([url, options]); return new Response(KEY, {status:429, headers});};
     now += 120000; calls = [];
-    assert.deepEqual(await body(await run('first')), {items:[], reason:'keepa_error'});
+    assert.deepEqual(await body(await run('first')), {items:[], reason:'keepa_error', detail:'http_429'});
     const debited = database.prepare('SELECT tokens FROM search_budget').get().tokens;
     now += wait - 1000;
     assert.equal((await body(await run('second'))).reason, 'rate_limited');
@@ -287,12 +287,17 @@ test('UTC rollover resets both limits, retries and errors keep conservative debi
 test('upstream HTTP, JSON, error bodies and thrown secret URLs are reduced to safe reasons', async () => {
   const replies = [() => new Response(KEY, {status:500}), () => new Response(KEY),
     () => Response.json({error:KEY}), () => {throw new Error('https://api.keepa.com/?key=' + KEY);}];
+  const details = ['http_500', 'fetch_SyntaxError', 'body_error', 'fetch_Error'];
   for (let i = 0; i < replies.length; i++) {
     now += 2000; globalThis.fetch = replies[i];
     const result = await body(await run('failure-' + i));
-    assert.deepEqual(result, {items:[], reason:'keepa_error'}); assert(!JSON.stringify(result).includes(KEY));
+    assert.deepEqual(result, {items:[], reason:'keepa_error', detail:details[i]}); assert(!JSON.stringify(result).includes(KEY));
   }
-  assert.equal(JSON.parse([...values.values()][0]).tokens, 440);
+  now += 2000; globalThis.fetch = () => Response.json({error:{type:'INVALID_PARAMETER', message:KEY}});
+  assert.deepEqual(await body(await run('typed')), {items:[], reason:'keepa_error', detail:'body_error_INVALID_PARAMETER'});
+  now += 2000; globalThis.fetch = () => Response.json({error:{type:'bad <type> ' + KEY}});
+  assert.deepEqual(await body(await run('untyped')), {items:[], reason:'keepa_error', detail:'body_error'});
+  assert.equal(JSON.parse([...values.values()][0]).tokens, 660);
 });
 test('4s timeout covers a hung body and retains its reservation', async () => {
   let signal; globalThis.fetch = async (url, options) => {

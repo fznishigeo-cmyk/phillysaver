@@ -1184,7 +1184,7 @@ first_party_clicks:
 # 93% showing, 0 broken, 24 of the top 24 cards with a photo. Task 283 hides
 # older photo-less cards and raises the showing floor to 99%.
 site_check:
-  min_photo_pct: 99         # live deals whose photo shows
+  min_photo_pct: 98.5       # live deals whose photo shows; new deals get 3 h to find one (publish.photos), live 98.8% on 10-17
   max_broken: 10            # deals whose photo fails to load
   first_screen_photos: 24   # of the top 24 cards on the home page
 

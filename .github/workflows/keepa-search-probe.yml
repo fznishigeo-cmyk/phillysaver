@@ -1,0 +1,70 @@
+name: Keepa search probe (manual, read-only)
+
+# Sends the same Keepa product search the /api/search Pages Function sends
+# (plus one variant without stats/history) and prints the HTTP status, Keepa's
+# error object, token fields and the first products' current-price fields.
+# Costs a few Keepa tokens per run. Never prints the key.
+on:
+  workflow_dispatch:
+    inputs:
+      term:
+        description: "Search words"
+        required: false
+        default: "cupping"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask Keepa
+        env:
+          KEEPA_KEY: ${{ secrets.KEEPA_KEY }}
+          TERM_INPUT: ${{ inputs.term }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+          key = os.environ.get("KEEPA_KEY", "").strip()
+          if not key:
+              print("KEEPA_KEY is empty or missing"); raise SystemExit(1)
+          term = " ".join((os.environ.get("TERM_INPUT") or "cupping").lower().split())[:60]
+          def redact(value):
+              return json.dumps(value)[:400].replace(key, "***")
+          variants = {
+              "function": dict(domain="1", type="product", term=term, page="0", stats="1", history="0"),
+              "plain": dict(domain="1", type="product", term=term),
+          }
+          for name, params in variants.items():
+              url = "https://api.keepa.com/search?" + urllib.parse.urlencode(dict(key=key, **params))
+              req = urllib.request.Request(url, headers={
+                  "User-Agent": "dealradar/0.1 (+https://wowpriced.com; contact: hello@wowpriced.com)"})
+              try:
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      status, body = r.status, r.read()
+              except urllib.error.HTTPError as e:
+                  status, body = e.code, e.read()
+              except Exception as e:
+                  print(f"{name}: request failed: {type(e).__name__}"); continue
+              try:
+                  data = json.loads(body)
+              except ValueError:
+                  print(f"{name}: HTTP {status}, not JSON ({len(body)} bytes)"); continue
+              print(f"{name}: HTTP {status}; keys {sorted(data)[:20]}")
+              for field in ("tokensLeft", "refillIn", "refillRate", "tokensConsumed", "processingTimeInMs"):
+                  if field in data:
+                      print(f"  {field}: {data[field]}")
+              if "error" in data:
+                  print("  error: " + redact(data["error"]))
+              products = data.get("products")
+              print(f"  products: {len(products) if isinstance(products, list) else type(products).__name__}")
+              for p in (products or [])[:3]:
+                  stats = p.get("stats") or {}
+                  current = stats.get("current") if isinstance(stats, dict) else None
+                  cur = (current[1] if isinstance(current, list) and len(current) > 1 else None,
+                         current[18] if isinstance(current, list) and len(current) > 18 else None)
+                  print(f"  {p.get('asin')}: {str(p.get('title'))[:60]!r}; stats {'yes' if stats else 'no'}; "
+                        f"current new/buybox {cur}; lastUpdate {p.get('lastUpdate')}")
+          PY

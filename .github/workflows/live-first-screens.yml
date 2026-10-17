@@ -1,0 +1,24 @@
+name: live first screens (read-only, manual)
+
+# Opens wowpriced.com in Chromium like a visitor (phone and desktop) and prints
+# the first 24 cards, clothing per six, the empty-search experience, the logo
+# after a search, and what /api/search answers. Read-only; analytics blocked.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Look at the live homepage
+        run: node scripts/live_first_screens.js

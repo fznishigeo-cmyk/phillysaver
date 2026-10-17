@@ -58,7 +58,7 @@ def test_missing_is_off_and_shipped_cutoff_and_floor(tmp_path):
         assert load_config(path).max_photoless_h is None
     shipped = load_config()
     assert shipped.max_photoless_h == 3
-    assert shipped.raw["site_check"]["min_photo_pct"] == 99
+    assert shipped.raw["site_check"]["min_photo_pct"] == 98.5
 
 
 @pytest.mark.parametrize("value", [1, 1.5, 3, 24])

@@ -104,6 +104,19 @@ export function currentItems(products, now = Date.now()) {
   return items;
 }
 
+// A fixed-vocabulary detail (status code, Keepa error type, error class name)
+// so the operator can tell failures apart; never upstream text or the key.
+function failure(detail) {
+  const error = new Error("keepa_error");
+  error.detail = detail;
+  return error;
+}
+
+function detailOf(error) {
+  if (typeof error.detail === "string") return error.detail;
+  return /^[A-Za-z]{1,30}$/.test(error.name || "") ? "fetch_" + error.name : "fetch";
+}
+
 async function keepa(q, key) {
   const controller = new AbortController();
   let timer;
@@ -117,13 +130,17 @@ async function keepa(q, key) {
           headers:{"User-Agent":"dealradar/0.1 (+https://wowpriced.com; contact: hello@wowpriced.com)"}});
         if (response.status === 429) {
           // Honor Keepa's own cooldown (seconds, max 1 h); 60 s when it gives none.
-          const error = new Error("keepa_error"), after = Number(response.headers.get("Retry-After"));
+          const error = failure("http_429"), after = Number(response.headers.get("Retry-After"));
           error.cooldown = 1000 * (after >= 1 ? Math.min(after, 3600) : 60);
           throw error;
         }
-        if (!response.ok) throw new Error("keepa_error");
+        if (!response.ok) throw failure("http_" + response.status);
         const data = await response.json();
-        if (!data || data.error || !Array.isArray(data.products)) throw new Error("keepa_error");
+        if (!data || data.error || !Array.isArray(data.products)) {
+          const type = data && data.error && data.error.type;
+          throw failure(!data ? "empty" : !data.error ? "no_products" :
+            "body_error" + (typeof type === "string" && /^[A-Za-z_]{1,40}$/.test(type) ? "_" + type : ""));
+        }
         return data;
       })(),
       new Promise((resolve, reject) => { timer = setTimeout(() => {
@@ -176,7 +193,8 @@ export async function onRequest(context) {
       try { data = await keepa(q, env.KEEPA_KEY); }
       catch (error) {
         cooldown = error.cooldown || cooldown;
-        return json({items:[], reason:error.message === "timeout" ? "timeout" : "keepa_error"});
+        if (error.message === "timeout") return json({items:[], reason:"timeout"});
+        return json({items:[], reason:"keepa_error", detail:detailOf(error)});
       }
       // Never refund a reservation using an absent/untrusted receipt. An oversized
       // receipt halts further searches for this UTC day, leaving pipeline work alone.
