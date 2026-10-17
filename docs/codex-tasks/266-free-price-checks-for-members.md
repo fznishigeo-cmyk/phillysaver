@@ -51,3 +51,26 @@ Offline only (fake Keepa/HTTP), `-n 1 -p no:cacheprovider`, own
 `/tmp/task266-*` basetemp (delete after each run), targeted tests only, never
 the full suite. No network, no commit, no push. HANDOFF "In flight": one
 entry.
+
+## Addendum (operator 2026-10-17 ~03:20Z): a dedicated, findable tool page
+"Make a separate page for the price checker similar to camelcamelcamel so
+people can search and land on it — we get visitors by offering a free tool."
+6. Page `/price-checker/` (built on the /check/ Deal Check page from task
+   241/241q; /check/ keeps working and points to it with a canonical link):
+   title "Free Amazon Price Tracker & Price History Checker | wowpriced",
+   meta description, H1 "Check any Amazon price — free", one large "Paste an
+   Amazon link or ASIN" box, the live result card (step 4), a short "How it
+   works" (3 steps) and an FAQ (5–6 Q&As, FAQPage JSON-LD, honest wording —
+   prices "as of" with the Amazon disclaimer; never claim AI does the lookup),
+   and links to popular /p/ price-history pages and today's deals. Phone-first,
+   dark mode, phone budgets unchanged.
+7. Every result links to the product's `/p/` price-history page when one
+   exists. Products checked by visitors that have no /p/ page are queued
+   (ASIN only, counts private) so the next publish can create one, within the
+   existing /p/ cap (6,000) and its keep/prune rules — no page for a product
+   with fewer than the existing minimum checks.
+8. Sitemap + IndexNow include /price-checker/ only when `free_checks.enabled`
+   (OFF = today's bytes). Header and footer link "Price checker" only when on.
+Tests: page OFF bytes identical; ON: title/meta/FAQ JSON-LD valid, canonical
+from /check/, links, no Keepa key or private data in bytes, browser test of
+paste → result (fake endpoint) at 390×844 and 1280×800.
