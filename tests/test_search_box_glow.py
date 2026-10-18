@@ -7,6 +7,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import search_box_glow
+from tests.history_pins import pre_same_product_spacing
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_more import config as more_config, offline
@@ -22,6 +23,7 @@ def config(mode):
     cfg = load_config() if mode.startswith('current') else more_config(mode)
     cfg.drop_shuffle = False
     cfg.card_tidy = False
+    pre_same_product_spacing(cfg)
     if mode.startswith('current'):
         cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     if mode.endswith('inline'):

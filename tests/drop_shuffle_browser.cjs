@@ -23,6 +23,8 @@ rows = [make_deal(dedupe_key=f"task300-{i}", item=f"Product{i} kitchen set", bra
     store=["Walmart", "Target", "Best Buy", "Woot", "eBay"][i % 5], codes=[], conditions=[],
     image_url="https://images.example.invalid/card.png", first_seen_at=NOW.isoformat(),
     price_rechecked_at=NOW.isoformat()) for i in range(144)]
+for i, color in enumerate(["Black", "White", "Blue", "Red"]):
+    rows[i].update(item=f"Acme countertop storage container set ({color})", store="Walmart", category="kitchen", brand="Acme")
 render(Path(sys.argv[1]), cfg, rows)
 `, scratch], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -37,6 +39,13 @@ render(Path(sys.argv[1]), cfg, rows)
   let browser;
   try {
     const {root, doc} = buildFixture(scratch);
+    const family = new Set(doc.deals.filter(d => d.item.startsWith('Acme countertop')).map(d => d.key));
+    assert.equal(family.size,4,'every variant remains in search inventory');
+    function checkSpacing(keys) {
+      const positions=keys.flatMap((key,i)=>family.has(key)?[i]:[]);
+      assert(positions.filter(i=>i<48).length<=2);
+      for(let i=1;i<positions.length;i++) assert(positions[i]-positions[i-1]>8);
+    }
     if (process.argv[2] === '--build-only') {console.log('Drop browser fixture passed');return;}
     const {chromium} = require('playwright');
     browser = await chromium.launch({headless:true, executablePath:process.argv[2] || '/opt/pw-browsers/chromium'});
@@ -69,6 +78,7 @@ render(Path(sys.argv[1]), cfg, rows)
       const geometry=()=>page.locator(cards).evaluateAll(nodes=>nodes.slice(0,15).map(el=>{
         const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}));
       let previous=await order();
+      checkSpacing(previous);
       const originalGeometry=await geometry();
       await page.evaluate(()=>{
         window.dropCLS=0;
@@ -83,6 +93,7 @@ render(Path(sys.argv[1]), cfg, rows)
         await page.waitForFunction(()=>document.getElementById('countdown').textContent!=='0:00');
         await page.waitForTimeout(800);
         const current=await order();
+        checkSpacing(current);
         assert.notDeepEqual(current.slice(0,15),previous.slice(0,15));
         assert.deepEqual(await geometry(),originalGeometry,'same card-slot geometry after a clock-only drop');
         assert.equal(await page.evaluate(()=>scrollY),0);
@@ -92,6 +103,7 @@ render(Path(sys.argv[1]), cfg, rows)
         await page.waitForTimeout(800);
         assert.deepEqual(await order(),current,'exact reload in the current mark');
         await page.locator('#cattabs .cattab').nth(1).click();
+        checkSpacing(await order());
         await page.goBack();
         await page.waitForTimeout(800);
         assert.deepEqual(await order(),current,'Back retains the current selection');

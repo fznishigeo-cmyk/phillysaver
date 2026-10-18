@@ -190,6 +190,7 @@ search_boost:
 # matching-deals "Search all of Amazon" link is a button. Missing/false = previous bytes.
 search_circle: true
 search_box_glow: true  # task 301: rainbow search border, shining Analyze and early Amazon button
+same_product_spacing: true  # task 302: eight cards between families; at most two in the first 48
 card_tidy: true  # operator 2026-10-18: folded checkout steps, clear cart chip, AI Analyze, price-drop Amazon button
 
 site:

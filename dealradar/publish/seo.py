@@ -384,7 +384,7 @@ def home_order(rows: list[dict[str, Any]], front_page: dict, *,
 def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
                 deal_paths: dict[str, str] | None = None, now: datetime | None = None,
                 front_page: dict | None = None, spotlight: list[dict[str, Any]] | None = None,
-                *, static_photos: bool = False, credit_links: bool = True) -> str:
+                *, static_photos: bool = False, credit_links: bool = True, same_product_spacing: bool = False) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
     spotlight = spotlight or []
     if (front_page or {}).get("used_tab_only"):
@@ -396,6 +396,11 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
     appeal_options = (front_page or {}).get("appeal") or {}
     if (appeal_options.get("want") or {}).get("enabled"):
         spotlight = [d for d in spotlight if not d.get("allure")]
+    if same_product_spacing:
+        from .same_product_spacing import rules, space_rows
+        policy = rules(front_page or {}, 8 if credit_links else 10)
+        spotlight = space_rows(spotlight, rules=policy)
+        free = space_rows(free, spotlight, policy)
     more = max(0, len(free) - _STATIC_WALL_MAX)
     free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked") and not d.get("click_price_unknown")
@@ -1082,7 +1087,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         products = {key: dict(p, live=dict(p["live"], _click_key=p["live"]["key"])) if p["live"] else p
                     for key, p in products.items()}
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight,
-                       static_photos=cfg.static_photos, credit_links=cfg.credit_links)
+                       static_photos=cfg.static_photos, credit_links=cfg.credit_links,
+                       same_product_spacing=cfg.same_product_spacing)
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(

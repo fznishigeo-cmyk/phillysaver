@@ -21,6 +21,7 @@ from tests.test_support import NOW, render
 
 def config(mode):
     cfg = load_config() if mode.startswith("current") else search_config(mode)
+    cfg.same_product_spacing = False  # the harness slices render(); spacing has its own tests (task 302)
     cfg.search_more = {"enabled": mode != "more-off", "pages": 3, "min_query_chars": 2}
     if mode == "boost-off":
         cfg.search_boost["enabled"] = False

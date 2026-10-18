@@ -8,6 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import site
+from tests.history_pins import pre_same_product_spacing
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_amazon import run_node
@@ -21,6 +22,7 @@ def config(mode="support"):
     cfg.search_more = {"enabled": False}
     cfg.search_box_glow = False
     cfg.card_tidy = False
+    pre_same_product_spacing(cfg)
     cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     cfg.support_enabled = mode == "support"
     cfg.paywall_open_access = mode != "membership"

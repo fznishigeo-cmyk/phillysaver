@@ -236,6 +236,43 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Same-product family spacing (Codex task 302, 2026-10-18; uncommitted, ON):**
+  Strict top-level `same_product_spacing` defaults false; config.yaml ships true.
+  Store + first five meaningful title words identify families, stripping variant
+  sizes/colors/pack counts. Final first-paint and browser ordering aim for eight
+  intervening cards and at most two family listings in the first 48, including
+  spotlight boundaries, Trending, All deals, categories, sorts and clock drops.
+  Highest-ordered siblings stay first; repeated families cannot trade places in
+  the clock shuffle. Existing gone/clothing/checkout/Allure safeguards remain.
+  Review 302b retains every card even when spacing is impossible: scan at most
+  60 pending rows, use the first if none fits, and space only the first 240
+  positions (including spotlights). The remaining tail keeps its order. Python
+  and JS normalize only the reachable 299-row window, reduced by prefix length.
+  No source, price, evidence, budget or state changes.
+  Three pre-edit publication hashes cover OFF/missing/back-OFF; historical
+  `pre_same_product_spacing` chains from `pre_task_295`, with raw-config rollback
+  and no re-pins. Python/Node parity, full-publication inventory and boundary
+  regressions added. Final focused run: **23 passed in 156s**, including all
+  task-302 tests, both emitted-drop modes, the native fixture build (no launch)
+  and the unchanged phone budget/headroom test. Earlier feature/drop/search
+  checks: **52 passed**; four older publication hashes also passed. The first
+  inventory fixture lacked fresh Amazon timestamps; corrected. The initial
+  91-byte extra-headroom miss was resolved by simplifying emitted ordering code,
+  not changing a ceiling: shipped home **76,354 gzip bytes**, limit **77,360**
+  (1,006 bytes spare). All pytest runs used `-p no:cacheprovider
+  --basetemp=/tmp/b302`; owned scratch removed. Syntax/diff checks pass.
+  **302b review fixes:** 30-family/10-other inventory, bounded lookahead, prefix
+  and position-240 tail cases now match in Python/JS. A five-run Node benchmark
+  keeps all 4,000 rows (300 ten-member families + 1,000 singles), median
+  **4.83 ms**, below 50 ms. Initial review run: 54 passed; extra phone headroom
+  missed by 72 bytes. Simplified bounded JS resolved it without changing limits
+  or pins. Final targeted run: **25 passed in 133.84s**, including OFF bytes,
+  emitted drop logic, native fixture build and phone headroom. Review runs used
+  `-p no:cacheprovider --basetemp=/tmp/b302b`; owned scratch removed.
+  Native check (not launched here): `node tests/drop_shuffle_browser.cjs /path/to/chromium`
+  now includes four same-family variants, spacing at first render/All deals/drops,
+  phone/desktop, motion modes, reload/Back and layout checks. Full suite and
+  native review remain for the senior engineer; no network, commit or push.
 - **Search token settlement + robot isolation (Codex task 298, 2026-10-18; uncommitted):**
   All five live-site Playwright scripts intercept `/api/search` before navigation;
   empty fixtures preserve inventory/empty-state checks, and first-screens asserts

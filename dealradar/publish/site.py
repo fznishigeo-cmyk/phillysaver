@@ -40,6 +40,7 @@ from . import comments
 from . import search_results
 from . import search_boost
 from . import search_box_glow
+from . import same_product_spacing
 from . import card_tidy
 from . import search_circle
 from . import search_analyze
@@ -742,6 +743,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     home_html = replace_slot(home_html, "{{BROWSE_SCRIPT}}", browse.rendered, **slot)
     home_html = search_analyze.browse_template(home_html, cfg)
     home_html = drop_shuffle.template(home_html, cfg)
+    home_html = same_product_spacing.template(home_html, cfg)
 
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
@@ -1108,6 +1110,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_analyze_lazy.site_version(site_version, cfg)
     site_version = search_box_glow.site_version(site_version, cfg)
     site_version = card_tidy.site_version(site_version, cfg)
+    site_version = same_product_spacing.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
