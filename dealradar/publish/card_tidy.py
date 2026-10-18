@@ -27,6 +27,8 @@ CSS = ('.how-more{display:inline-flex;align-items:center;min-height:44px;padding
        '@media(prefers-reduced-motion:reduce){#analyze-search{transition:none}'
        '#analyze-search:hover,#analyze-search:focus-visible,#analyze-search:active{animation:none}}'
        '#content:has(#search-more) .gridfill{display:none}'
+       # No Amazon cards (yet): no empty "More from Amazon" heading.
+       '#search-more:has(> .grid:empty) > h2{display:none}'
        '.join-why{display:none}@media(min-width:1500px){.join-why{display:inline}}'
        # Operator 2026-10-18: phones say "Analyze" too (not "Go"); the clear button and text make room.
        '@media(max-width:600px){.searchfield .analyze-long{display:inline}.searchfield .analyze-short{display:none}'
@@ -57,14 +59,14 @@ TOGGLE = ('  document.getElementById("content").addEventListener("click", functi
           '  });\n')
 TOP = ('" target="_blank" rel="sponsored nofollow noopener">See all &quot;\' +\n'
        '      esc(q) + \'&quot; on Amazon\\u00a0→</a>')
-TOP_NEW = ('" target="_blank" rel="sponsored nofollow noopener">Search all of Amazon for &quot;\' +\n'
-           '      esc(q) + \'&quot; price drops\\u00a0→</a>')
+TOP_NEW = ('" target="_blank" rel="sponsored nofollow noopener">Analyze &quot;\' +\n'
+           '      esc(q) + \'&quot; on Amazon\\u00a0→</a>')
 
 # Analyze's top Amazon button (task 301): a reason to click through us, not just "Search Amazon".
 ANALYZE_TOP = ('(task.reason ? "Search Amazon" : \'See all &quot;\' + esc(task.asin || searchAmazonQuery() || "products") + '
                '\'&quot; on Amazon →\')')
-ANALYZE_TOP_NEW = ('(task.reason ? "See today\'s Amazon price drops →" : \'Search all of Amazon for &quot;\' + '
-                   'esc(task.asin || searchAmazonQuery() || "products") + \'&quot; price drops →\')')
+ANALYZE_TOP_NEW = ('(task.reason ? "See today\'s Amazon price drops →" : \'Analyze &quot;\' + '
+                   'esc(task.asin || searchAmazonQuery() || "products") + \'&quot; on Amazon →\')')
 
 # Analyze's related deals: only cards with a product photo (operator 2026-10-18: "images not showing up").
 RELATED = ('(task.related.length ? \'<div class="analyze-related"><h2>Related verified deals</h2><div class="grid">\' +\n'

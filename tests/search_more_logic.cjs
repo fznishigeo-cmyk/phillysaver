@@ -158,7 +158,7 @@ async function main() {
   assert.equal((s.markup().match(/<article /g) || []).length, 4);
   for (const n of [101, 102, 106, 107]) assert.equal(s.markup().split('/dp/' + asin(n)).length - 1, 1);
   assert(s.elements['search-more'].children['.search-more-load'].hidden);
-  assert(s.elements['search-amazon-result'].innerHTML.match(/(See all &quot;mouse&quot; on Amazon|Search all of Amazon for &quot;mouse&quot; price drops)\u00a0→/));
+  assert(s.elements['search-amazon-result'].innerHTML.match(/(See all &quot;mouse&quot; on Amazon|Analyze &quot;mouse&quot; on Amazon)\u00a0→/));
   assert(s.elements['search-amazon-result'].innerHTML.includes('class="getdeal"'));
   assert(s.elements['search-more'].innerHTML.includes('More on Amazon →'));
   assert(!s.elements['search-more'].innerHTML.includes('class="getdeal" data-search-amazon'));
@@ -173,7 +173,7 @@ async function main() {
   assert(!JSON.stringify(s.events).includes('mouse'));
 
   const many = setup(); many.ctx.state.deals = Array.from({length:65}, (_, n) => deal(n)); await many.query('mouse');
-  assert(many.elements['search-amazon-result'].innerHTML.match(/See all &quot;mouse&quot;|Search all of Amazon for &quot;mouse&quot;/), 'button is present before pagination completes');
+  assert(many.elements['search-amazon-result'].innerHTML.match(/See all &quot;mouse&quot;|Analyze &quot;mouse&quot;/), 'button is present before pagination completes');
   assert(!many.elements['search-more'], 'our remaining deals come before Amazon');
   many.ctx.showMore(); await turn(); assert(many.elements['search-more']); await many.advance(1000); assert.equal(many.calls.length, 0);
 
@@ -194,7 +194,7 @@ async function main() {
     await t.respond(t.calls[0], {items:[t.item(101)]}); t.intersect(); await t.advance(1100);
     await t.respond(t.calls[1], {items:[], reason});
     for (let n = 0; n < 3; n++) {t.intersect(); await t.advance(10000); t.ctx.render(); await turn();}
-    assert.equal(t.calls.length, 2, reason); assert(t.elements['search-amazon-result'].innerHTML.match(/See all|Search all of Amazon/));
+    assert.equal(t.calls.length, 2, reason); assert(t.elements['search-amazon-result'].innerHTML.match(/See all|Analyze &quot;/));
     assert(t.elements['search-more'].innerHTML.includes('More on Amazon'));
     assert(!t.elements['search-more'].innerHTML.includes(reason));
     assert.equal((t.markup().match(/<article /g) || []).length, 1, 'keep earlier cards after a later-page failure');
@@ -372,7 +372,7 @@ async function main() {
   await spelling.respond(spelling.calls[previous + 1], {items:[], reason:'rate_limited'});
   spelling.ctx.render(); await spelling.advance(1300); spelling.intersect(); await spelling.advance(1300);
   assert.equal(spelling.calls.length, previous + 2);
-  assert(spelling.elements['search-amazon-result'].innerHTML.match(/See all|Search all of Amazon/));
+  assert(spelling.elements['search-amazon-result'].innerHTML.match(/See all|Analyze &quot;/));
   assert(spelling.elements['search-more'].innerHTML.includes('More on Amazon'));
   assert(!JSON.stringify(spelling.events).match(/hair|cofee|coffee|wireless/));
 

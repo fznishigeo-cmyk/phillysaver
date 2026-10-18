@@ -135,7 +135,7 @@ async function main() {
       assert.equal(calls.length, 0, 'no API request before scrolling to the end of local results');
       const more = page.locator('#search-more');
       const topButton = page.locator('#search-amazon-result [data-search-amazon]');
-      assert(['See all "mouse" on Amazon\u00a0→', 'Search all of Amazon for "mouse" price drops\u00a0→'].includes(await topButton.textContent()));
+      assert(['See all "mouse" on Amazon\u00a0→', 'Analyze "mouse" on Amazon\u00a0→'].includes(await topButton.textContent()));
       assert((await topButton.getAttribute('href')).includes('tag=example-20'));
       assert.equal(await topButton.getAttribute('rel'), 'sponsored nofollow noopener');
       assert.equal(await topButton.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');

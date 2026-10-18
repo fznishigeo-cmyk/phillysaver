@@ -41,8 +41,8 @@ def test_shipped_on_and_emitted(tmp_path):
     page = (out / 'index.html').read_text()
     analyze = (out / 'search-analyze.js').read_text()
     assert card_tidy.CSS in page and 'More details' in page and 'price drops in cart' in page
-    assert 'price drops\\u00a0→' in page and 'See all &quot;\' +\n      esc(q)' not in page
-    for phrase in ('busy. Please', 'unavailable right now', 'took too long', 'reached their limit'):
+    assert 'Analyze &quot;\' +\n      esc(q) + \'&quot; on Amazon\\u00a0→' in page and 'See all &quot;\' +\n      esc(q)' not in page
+    for phrase in ('busy. Please', 'unavailable right now', 'took too long', 'reached their limit', 'not shown in our results'):
         assert phrase not in analyze
     assert 'task.related.filter(function (d) { return d.image_url; })' in analyze and "See today's Amazon price drops →" in analyze
     assert "Get today's best Amazon price drops." in analyze and 'Analyze</span>' in page
