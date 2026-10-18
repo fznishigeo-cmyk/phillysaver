@@ -183,11 +183,13 @@ def browser_rows(concentrated=False):
 
 @pytest.mark.parametrize('concentrated', [False, True])
 @pytest.mark.parametrize('windows,checkout', [(3, True), (0, True), (3, False), (0, False)])
-def test_real_emitted_rotation_and_arrivals_keep_clothing_slots(tmp_path, concentrated, windows, checkout):
+@pytest.mark.parametrize('shuffle', [False, True])
+def test_real_emitted_rotation_and_arrivals_keep_clothing_slots(tmp_path, concentrated, windows, checkout, shuffle):
     from dealradar.db import DB
     from tests.test_front_page import browser
 
     cfg = copy.deepcopy(SHIPPED)
+    cfg.drop_shuffle = shuffle
     cfg.tracking = {}
     cfg.strip_comments = True
     cfg.drop_rotation_windows = windows
@@ -210,24 +212,33 @@ def test_real_emitted_rotation_and_arrivals_keep_clothing_slots(tmp_path, concen
     for case, result in zip(cases, results):
         by_key = {d['key']: d for d in case['rows']}
         ordered = [by_key[k] for k in result['ordered']]
-        if windows == 0:
+        if not shuffle and windows == 0:
             assert result['ordered'] == [d['key'] for d in rows]
-        elif case['state']['seed'] == 1 and not any(d['pick_checkout'] for d in case['rows']):
+        elif not shuffle and case['state']['seed'] == 1 and not any(d['pick_checkout'] for d in case['rows']):
             assert set(result['ordered'][:24]) == {d['key'] for d in rows[24:48]}
         assert set(result['ordered']) == set(by_key)
-        assert result['rendered'] == result['ordered']
+        if not shuffle:
+            assert result['rendered'] == result['ordered']
+        else:
+            assert set(result['rendered']) == set(by_key)
+            ordered = [by_key[k] for k in result['rendered']]
         assert [bool(d.get('cl')) for d in ordered] == [bool(d.get('cl')) for d in rows]
         assert_final_caps(ordered, cfg.front_page)
+    if shuffle:
+        heads = [result['rendered'][:15] for result in results[:5]]
+        assert all(a != b for a, b in zip(heads, heads[1:])), 'every successive mark changes the first 15'
 
 
 @pytest.mark.parametrize('sparse', [False, True])
 @pytest.mark.parametrize('windows,checkout', [(3, True), (0, True), (3, False), (0, False)])
-def test_final_static_and_emitted_allure_repair_preserve_mix_and_checkout(tmp_path, sparse, windows, checkout):
+@pytest.mark.parametrize('shuffle', [False, True])
+def test_final_static_and_emitted_allure_repair_preserve_mix_and_checkout(tmp_path, sparse, windows, checkout, shuffle):
     from dealradar.db import DB
     from dealradar.publish import seo
     from tests.test_front_page import browser
 
     cfg = copy.deepcopy(SHIPPED)
+    cfg.drop_shuffle = shuffle
     cfg.tracking = {}
     cfg.drop_rotation_windows = windows
     cfg.front_page['checkout_price_deals']['enabled'] = checkout

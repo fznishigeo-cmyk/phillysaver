@@ -1,3 +1,4 @@
+const {routeRobotSearch} = require('./robot_search.cjs');
 // Mobile audit of the live site (read-only): sideways overflow, tap targets
 // under 44px, inputs under 16px (iOS zooms on focus), text under 12px, header
 // height, deals visible before scrolling, console errors. Writes screenshots
@@ -17,6 +18,7 @@ async function guardPage(page, base) {
     }
     return route.continue();
   });
+  await routeRobotSearch(page);
   return aborted;
 }
 
@@ -172,7 +174,7 @@ async function runAudit() {
   const browser = await chromium.launch(exe ? { executablePath: exe } : {});
   const report = {};
   for (const [name, dev] of [['iphone14', devices['iPhone 14']], ['pixel7', devices['Pixel 7']], ['small360', {viewport:{width:360,height:740}, deviceScaleFactor:2, isMobile:true, hasTouch:true, userAgent:devices['Pixel 7'].userAgent}], ['iphone14-dark', {...devices['iPhone 14'], colorScheme:'dark'}]]) {
-    const ctx = await browser.newContext({ ...dev });
+    const ctx = await browser.newContext({ ...dev, serviceWorkers: 'block' });
     const page = await ctx.newPage();
     const aborted = await guardPage(page, base);
     const errors = [];

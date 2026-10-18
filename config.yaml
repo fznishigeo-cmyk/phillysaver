@@ -189,6 +189,7 @@ search_boost:
 # Operator 2026-10-17 (Verizon video): the Amazon buttons' border circles them, and the
 # matching-deals "Search all of Amazon" link is a button. Missing/false = previous bytes.
 search_circle: true
+search_box_glow: true  # task 301: rainbow search border, shining Analyze and early Amazon button
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
@@ -196,7 +197,8 @@ site:
   static_photos: true          # task 274: photos on static cards and deal pages
   open_box_scarcity: true   # task 273: never infer a stock count
   open_box_counts: false   # operator: publish only "often only 1" for now
-  drop_rotation_windows: 3  # task 269: cycle the strongest 24-card windows at each drop; 0 restores server order
+  drop_rotation_windows: 3  # task 269: legacy 24-card rotation when drop_shuffle is off; 0 keeps server order
+  drop_shuffle: true  # task 300: change Trending at every clock mark, even without a new publish; missing/false restores legacy drops
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
   strip_comments: true  # task 278: final home-only pass; missing/false preserves original bytes
   # Operator 2026-10-17: what Google shows for the homepage (like Slickdeals'

@@ -4,6 +4,9 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS search_budget (
   day TEXT PRIMARY KEY, tokens INTEGER NOT NULL, minute INTEGER NOT NULL,
   count INTEGER NOT NULL, last INTEGER NOT NULL
 )`;
+const RESERVATIONS_SCHEMA = `CREATE TABLE IF NOT EXISTS search_reservations (
+  day TEXT NOT NULL, started INTEGER NOT NULL, PRIMARY KEY (day, started)
+)`;
 const DISPATCH_SCHEMA = `CREATE TABLE IF NOT EXISTS search_dispatch (
   id INTEGER PRIMARY KEY CHECK (id = 1), held INTEGER NOT NULL, ready INTEGER NOT NULL
 )`;
@@ -64,18 +67,39 @@ async function reserve(kv, limits, cfg, now) {
       (stored && now - stored.last < 1000) || cfg.max_per_minute === 0) return "rate_limited";
   // KV is eventually consistent: it cannot be the authority for a money cap.
   // D1 executes this conditional debit atomically, across regions/isolates.
-  // Every attempt remains charged, including cache/write errors and timeouts.
+  // Attempts stay charged until a trusted receipt settles their reservation.
   const results = await limits.batch([
-    limits.prepare(SCHEMA),
+    limits.prepare(SCHEMA), limits.prepare(RESERVATIONS_SCHEMA),
     limits.prepare(DEBIT).bind(day, RESERVATION, minute, now, cfg.tokens_per_day, RESERVATION,
       cfg.max_per_minute, now, cfg.tokens_per_day, cfg.max_per_minute),
+    limits.prepare(`INSERT OR IGNORE INTO search_reservations (day, started)
+      SELECT day, last FROM search_budget WHERE day = ? AND last = ? AND changes() = 1`).bind(day, now),
+    limits.prepare("DELETE FROM search_reservations WHERE day < ?").bind(
+      new Date(now - 2 * 86400000).toISOString().slice(0, 10)),
     limits.prepare("DELETE FROM search_budget WHERE day < ?").bind(
       new Date(now - 2 * 86400000).toISOString().slice(0, 10))
   ]);
-  const next = results[1]?.results?.[0];
+  const next = results[2]?.results?.[0];
   if (!next) return "limit_reached";
   await kv.put(key, JSON.stringify(next), {expirationTtl:172800});
   return "";
+}
+
+// Update the existing day and consume its reservation in one transaction. A
+// repeated settlement (even after a lost response/KV write) cannot refund twice.
+export async function settle(kv, limits, started, consumed) {
+  if (!Number.isSafeInteger(consumed) || consumed < 0 || consumed > RESERVATION) return;
+  const day = new Date(started).toISOString().slice(0, 10);
+  const results = await limits.batch([
+    limits.prepare(`UPDATE search_budget SET tokens = tokens - ?
+      WHERE day = ? AND tokens >= ? AND tokens < ?
+        AND EXISTS (SELECT 1 FROM search_reservations WHERE day = ? AND started = ?)
+      RETURNING day, tokens, minute, count, last`)
+      .bind(RESERVATION - consumed, day, RESERVATION, Number.MAX_SAFE_INTEGER, day, started),
+    limits.prepare("DELETE FROM search_reservations WHERE day = ? AND started = ?").bind(day, started)
+  ]);
+  const next = results[0]?.results?.[0];
+  if (next) await kv.put("search:v1:" + day, JSON.stringify(next), {expirationTtl:172800});
 }
 
 function stamp(minutes, now) {
@@ -231,6 +255,7 @@ export async function onRequest(context) {
           {expirationTtl:172800});
         return json({items:[], reason:"budget_exhausted"});
       }
+      await settle(env.SEARCH_BUDGET, env.SEARCH_LIMITS, started, data.tokensConsumed);
     } finally {
       // Release only our own lease: a holder delayed past it cannot free a later one.
       await env.SEARCH_LIMITS.prepare("UPDATE search_dispatch SET held = 0, ready = ? WHERE id = 1 AND ready = ?")

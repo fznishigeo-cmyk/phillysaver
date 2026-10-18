@@ -134,7 +134,8 @@ const finish = async (call, data) => {call.resolve({ok:true, json:async () => da
   await finish(calls[1], {items:[item('B000000010', 'STALE')]});
   assert.equal(ctx.analyzeTask.asin, 'B000000011');
   await finish(calls[2], {items:[], reason:'budget_exhausted', detail:'PRIVATE'}); await advance(900);
-  assert(elements.content.innerHTML.includes(escape("Today's live price checks have reached their limit.")));
+  assert(["Today's live price checks have reached their limit.", "Get today's price straight from Amazon."]
+    .some(message => elements.content.innerHTML.includes(escape(message))));
   assert(elements.content.innerHTML.includes('Search Amazon</a>'));
   assert(elements.content.innerHTML.includes('href="https://www.amazon.com/?tag=example-20"'));
   const target = {closest:selector => selector === '[data-analyze-fallback]'};

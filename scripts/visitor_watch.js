@@ -1,3 +1,4 @@
+const {routeRobotSearch, searchResponse} = require('./robot_search.cjs');
 // Our own public site only. Never follows a deal link or sends a form.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -74,6 +75,7 @@ async function guardedRoute(route, {origin, offlineSite, pace, active, ignored, 
       ignored.add(request.url()); ignored.add(url.href);
       return route.abort();
     }
+    if (url.pathname.startsWith('/api/search')) return route.fulfill(searchResponse(url.href));
     if (offlineSite) return route.fulfill(offlineRoute(offlineSite, origin, request));
     if (url.origin === origin && countOwnRequest() > 60) throw new Error('same-origin request limit (60)');
     if (!await pace(url.hostname, active)) return route.abort();
@@ -203,6 +205,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
         await route.abort().catch(() => {});
       }
     });
+    await routeRobotSearch(context);
     watchContextErrors(context, origin, scene.errors, ignored, () => !closing);
     const page = await context.newPage();
     page.setDefaultTimeout(8000);

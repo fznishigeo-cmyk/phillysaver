@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 
 const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8');
-const {onRequest, normalizeQuery, currentItems} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const {onRequest, normalizeQuery, currentItems, settle} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const realFetch = globalThis.fetch, realCaches = globalThis.caches, realNow = Date.now;
 const NOW = Date.parse('2026-10-17T18:00:00Z'), KEY = 'PRIVATE-test-key';
 let now, calls, config, values, kv, cache, context, database;
@@ -79,7 +79,7 @@ test('first-page facts have an exact public allowlist, current Buy Box price and
   assert.equal(calls[0][0].searchParams.get('term'), 'cupping set');
   const output = JSON.stringify(result); assert(!output.includes(KEY));
   for (const word of ['history', 'avg90', 'rating', 'reviewCount', 'sales']) assert(!output.includes(word));
-  assert.equal(JSON.parse([...values.values()][0]).tokens, 110);
+  assert.equal(JSON.parse([...values.values()][0]).tokens, 20);
 });
 test('new current fallback skips absent/invalid/stale prices and never falls back to averages', () => {
   const p = product(); p.stats.current[18] = -1;
@@ -164,7 +164,7 @@ test('atomic daily cap covers independent isolates and stale KV reads', async ()
     request:new Request('https://wowpriced.test/api/search?q=' + q)})));
   const results = await Promise.all(responses.map(body));
   assert.equal(results.filter(r => r.items.length).length, 1); assert.equal(calls.length, 1);
-  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 20);
 });
 test('atomic minute cap and host spacing survive empty KV mirrors', async () => {
   config.max_per_minute = 2; kv.get = async () => null;
@@ -365,7 +365,7 @@ test('asin success is one current item, cached by ASIN/policy without secrets or
   productTransport();
   const first = await body(await runAsin());
   assert.deepEqual(first, {items:currentItems([product()], now)});
-  assert.equal(JSON.parse([...values.values()][0]).tokens, 110);
+  assert.equal(JSON.parse([...values.values()][0]).tokens, 1);
   assert.equal(calls[0][0].searchParams.get('asin'), 'B000000000');
   context.env.SEARCH_BUDGET = null;
   assert.deepEqual(await body(await runAsin()), first);
@@ -414,7 +414,7 @@ test('asin obeys KV daily/minute ceilings and the same atomic cap as q with stal
   now += 1000;
   assert.equal((await body(await run('cupping'))).reason, 'limit_reached');
   assert.equal((await body(await runAsin('B000000001'))).reason, 'limit_reached');
-  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 1);
   assert.equal(calls.length, 1);
 });
 test('asin atomic minute window and cooldown cannot be bypassed with fresh ASINs', async () => {
@@ -532,13 +532,13 @@ function pagedTransport() {
     return Response.json({products:[product(page)], tokensConsumed:20});
   };
 }
-test('page sequence reaches Keepa; each page reserves 110 and has a separate normalized cache key', async () => {
+test('page sequence reaches Keepa; each page settles to 20 and has a separate normalized cache key', async () => {
   pagedTransport();
   for (const page of [0, 1, 2]) {
     const result = await body(await runPage(page));
     assert.equal(result.items[0].asin, product(page).asin);
     const tokens = database.prepare('SELECT tokens FROM search_budget').get().tokens;
-    assert.equal(tokens, 110 * (page + 1));
+    assert.equal(tokens, 20 * (page + 1));
     assert.deepEqual(await body(await runPage(page, ' MOUSE ')), result);
     assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, tokens);
     now += 1100;
@@ -600,7 +600,7 @@ test('later pages obey missing bindings, KV daily/minute caps and malformed coun
   assert.equal(calls.length, 0);
 });
 test('atomic daily/minute caps and completion cooldown count mixed pages with stale KV', async () => {
-  pagedTransport(); kv.get = async () => null; config.tokens_per_day = 220; config.max_per_minute = 1;
+  pagedTransport(); kv.get = async () => null; config.tokens_per_day = 130; config.max_per_minute = 1;
   assert.equal((await body(await runPage(0))).items.length, 1);
   assert.equal((await body(await runPage(1))).reason, 'rate_limited');
   now += 1100;
@@ -610,7 +610,7 @@ test('atomic daily/minute caps and completion cooldown count mixed pages with st
   now += 60000;
   assert.equal((await body(await runPage(2))).reason, 'limit_reached');
   assert.equal(calls.length, 2);
-  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 220);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 40);
 });
 test('held page lease blocks other pages and ASINs without another debit', async () => {
   pagedTransport(); let finish;
@@ -665,4 +665,67 @@ test('later-page oversized receipts halt the day and hung bodies keep reservatio
   assert.deepEqual(await body(await runPage(2)), {items:[], reason:'timeout'});
   assert(signal.aborted);
   assert.equal(JSON.parse(values.get('search:v1:2026-10-18')).tokens, 110);
+});
+
+for (const consumed of [0, 1, 20, 110]) test(`trusted receipt ${consumed} settles the same row and mirror once`, async () => {
+  globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:consumed});
+  await run();
+  const expected = {day:'2026-10-17', tokens:consumed, minute:Math.floor(NOW / 60000), count:1, last:NOW};
+  assert.deepEqual({...database.prepare('SELECT * FROM search_budget').get()}, expected);
+  assert.deepEqual(JSON.parse(values.get('search:v1:2026-10-17')), expected);
+  await Promise.all([settle(kv, context.env.SEARCH_LIMITS, NOW, consumed), settle(kv, context.env.SEARCH_LIMITS, NOW, 0)]);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, consumed);
+});
+for (const receipt of [undefined, null, '20', true, -1, 1.5, {}, [], Infinity, NaN])
+  test(`untrusted receipt ${JSON.stringify(receipt)} never refunds`, async () => {
+    globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:receipt});
+    await run();
+    assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  });
+test('failed mirror write after settlement and repeated settlement never refund again', async () => {
+  const put = kv.put; let writes = 0;
+  kv.put = async (...args) => {if (++writes === 2) throw new Error('mirror unavailable'); await put(...args);};
+  assert.equal((await body(await run())).reason, 'budget_unavailable');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 20);
+  await settle(kv, context.env.SEARCH_LIMITS, NOW, 20);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 20);
+});
+test('settlement rolls back the refund if consuming the reservation fails', async () => {
+  globalThis.fetch = async () => Response.json({products:[product()]}); await run();
+  database.exec("CREATE TRIGGER refuse_settle BEFORE DELETE ON search_reservations BEGIN SELECT RAISE(ABORT, 'test'); END");
+  await assert.rejects(settle(kv, context.env.SEARCH_LIMITS, NOW, 20));
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  database.exec('DROP TRIGGER refuse_settle');
+  await settle(kv, context.env.SEARCH_LIMITS, NOW, 20);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 20);
+});
+test('late concurrent settlements preserve other debits and an oversized halt', async () => {
+  kv.get = async () => null;
+  globalThis.fetch = async () => Response.json({products:[product()]});
+  await run('first'); now += 1000; await run('second');
+  await Promise.all([settle(kv, context.env.SEARCH_LIMITS, NOW, 20),
+    settle(kv, context.env.SEARCH_LIMITS, NOW + 1000, 1), settle(kv, context.env.SEARCH_LIMITS, NOW, 20)]);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 21);
+  now += 1000; await run('third');
+  now += 1000;
+  globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:111});
+  await run('halt');
+  await settle(kv, context.env.SEARCH_LIMITS, NOW + 2000, 0);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, Number.MAX_SAFE_INTEGER);
+});
+test('settlement after midnight belongs to the reservation day', async () => {
+  now = Date.parse('2026-10-17T23:59:59Z'); const started = now;
+  globalThis.fetch = async () => {now += 2000; return Response.json({products:[product()], tokensConsumed:20});};
+  await run();
+  assert.equal(database.prepare('SELECT tokens FROM search_budget WHERE day = ?').get('2026-10-17').tokens, 20);
+  assert.equal(database.prepare('SELECT count(*) AS n FROM search_budget').get().n, 1);
+  await settle(kv, context.env.SEARCH_LIMITS, started, 20);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 20);
+});
+test('refunded capacity permits more requests while retaining the full next reservation', async () => {
+  config.tokens_per_day = 150; kv.get = async () => null;
+  for (const q of ['one', 'two', 'three']) {await run(q); now += 1100;}
+  assert.equal(calls.length, 3);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 60);
+  assert.equal((await body(await run('four'))).reason, 'limit_reached');
 });

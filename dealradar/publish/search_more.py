@@ -14,6 +14,16 @@ STYLE = SCRIPT.with_suffix(".css")
 WORDS = SCRIPT.with_name("search-shopping-words.txt")
 ASSET = "search-more.js"
 
+TOP_STYLE = ("#search-amazon-result [data-search-amazon]{display:inline-flex;align-items:center;justify-content:center;"
+             "min-height:62px;padding:14px 34px;border-radius:999px;border:3px solid transparent;"
+             "background:linear-gradient(var(--card),var(--card)) padding-box," + search_circle.SPIN + ";"
+             "color:var(--fg)!important;font-size:19px;font-weight:900;text-decoration:none;white-space:normal;"
+             "box-shadow:0 10px 28px rgba(255,140,0,.28);animation:wpspin 3s linear infinite}"
+             "@property --wpspin{syntax:\"<angle>\";inherits:false;initial-value:0deg}"
+             "@keyframes wpspin{to{--wpspin:360deg}}"
+             "@media(max-width:600px){#search-amazon-result [data-search-amazon]{display:flex;width:100%;padding:14px 20px}}"
+             "@media(prefers-reduced-motion:reduce){#search-amazon-result [data-search-amazon]{animation:none;transition:none}}")
+
 
 # Operator 2026-10-17: "the urge to click it becomes irresistible" - heavier text, a golden shine
 # sweeping across, a twinkling sparkle and a lift on hover; reduced motion keeps them still.
@@ -46,6 +56,9 @@ def template(html, cfg):
         nonlocal html
         html = replace_slot(html, old, new, template_name="index.html", slot_name="search-more")
 
+    swap('amazon.innerHTML = q && count ? searchAmazonHtml(false) : "";',
+         'amazon.innerHTML = q && count ? searchMoreTopHtml() : "";')
+    swap('<p id="search-amazon-result"', '<p class="search-amazon-top" id="search-amazon-result"')
     start = html.index("  function amazonResultsPaint(q, items) {")
     end = html.index("  function queueAmazonResults(", start)
     swap(html[start:end], '')
@@ -109,7 +122,7 @@ def template(html, cfg):
          '<p id="search-spelling" data-clarity-mask="true" role="status" hidden></p>\n      <p id="searchcount"')
     script = LOADER.read_text().replace("{{SEARCH_MORE_VERSION}}", site_version("", cfg))
     swap("  function renderSearchCount(rows) {", script + "  function renderSearchCount(rows) {")
-    return html
+    return html.replace("</style>", TOP_STYLE + "</style>", 1)
 
 
 def asset(cfg):

@@ -97,8 +97,8 @@ def test_emitted_logic_and_syntax(tmp_path, mode, strip, analyze, boost):
     page = (out / "index.html").read_text()
     bundle = (out / "search-more.js").read_text()
     assert json.loads((out / "search-config.json").read_text()) == {**cfg.search, "search_more": cfg.search_more}
-    assert 'conic-gradient(from var(--wpspin)' in bundle
-    assert 'search-more [data-search-amazon]{animation:none' in bundle
+    assert '.search-more [data-search-amazon]{font-size:14px;text-decoration:underline}' in bundle
+    assert 'class="search-amazon-top" id="search-amazon-result"' in page
     for i, code in enumerate([*re.findall(r"<script>(.*?)</script>", page, re.S), bundle]):
         script = tmp_path / f"script-{i}.js"
         script.write_text(code)

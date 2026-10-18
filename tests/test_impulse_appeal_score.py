@@ -47,6 +47,7 @@ def settings():
     cfg.tracking = {}
     cfg.spend_pacing = False
     cfg.front_page["popular_affordable"].update(enabled=False, shadow=False)
+    cfg.drop_shuffle = False  # Python and native order must agree; task 300's reshuffle: test_drop_shuffle
     return cfg
 
 

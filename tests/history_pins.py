@@ -196,6 +196,7 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.get("site", {}).pop("drop_shuffle", None)  # recorded before task 300
     config.get("pwa", {}).pop("install_button", None)
     config.get("site", {}).pop("credit_links", None)
     config.get("site", {}).pop("trending_auto_cards", None)
@@ -203,6 +204,7 @@ def pre_task_290_install_raw(config):
     words = config.get("publish", {}).get("front_page", {}).get("demote_words")
     if isinstance(words, list):
         config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
+    config.pop("search_box_glow", None)
     config.pop("search_more", None)
     config["search_analyze"] = dict(config.get("search_analyze") or {}, lazy=False)
     config.get("search", {}).pop("tokens_per_day", None)  # default 3000, as recorded
@@ -229,8 +231,16 @@ def pre_task_293(cfg):
 
 def pre_task_295(cfg):
     """Before deferred Analyze; preserve every existing publication hash."""
+    pre_task_300(cfg)
+    pre_task_301(cfg)
     pre_search_5000(cfg)
     cfg.search_analyze = dict(cfg.search_analyze, lazy=False)
+    return cfg
+
+
+def pre_task_300(cfg):
+    """Before clock-driven Trending picks; never re-pin recorded publications."""
+    cfg.drop_shuffle = False
     return cfg
 
 
@@ -255,3 +265,7 @@ def pre_task_294(cfg):
 # Launch night 2026-10-17: team merchandise demoted like niche items (cards 9+, at most 2 on top).
 PRE_294_DEMOTE = {"officially licensed", "nba", "nhl", "nfl", "mlb", "wnba", "ncaa"}
 
+def pre_task_301(cfg):
+    """Before the rainbow search field and early Amazon exit; keep recorded hashes."""
+    cfg.search_box_glow = False
+    return cfg

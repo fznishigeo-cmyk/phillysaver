@@ -39,10 +39,12 @@ from .template_slots import replace_slot, validate_slot
 from . import comments
 from . import search_results
 from . import search_boost
+from . import search_box_glow
 from . import search_circle
 from . import search_analyze
 from . import search_analyze_lazy
 from . import search_more
+from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -170,6 +172,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = search_circle.template(html, cfg)
         html = search_analyze.template(html, cfg)
         html = search_more.template(html, cfg)
+        html = search_box_glow.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -736,6 +739,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     validate_slot(active_home, "{{BROWSE_SCRIPT}}", **slot)
     home_html = replace_slot(home_html, "{{BROWSE_SCRIPT}}", browse.rendered, **slot)
     home_html = search_analyze.browse_template(home_html, cfg)
+    home_html = drop_shuffle.template(home_html, cfg)
 
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
@@ -1098,7 +1102,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_analyze.site_version(site_version, cfg)
     site_version = credits.site_version(site_version, cfg)
     site_version = search_more.site_version(site_version, cfg)
+    site_version = drop_shuffle.site_version(site_version, cfg)
     site_version = search_analyze_lazy.site_version(site_version, cfg)
+    site_version = search_box_glow.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]

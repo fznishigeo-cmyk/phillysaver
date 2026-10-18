@@ -16,10 +16,15 @@ test('audit intercepts requests before navigation using the site-check block pat
   const audit = fs.readFileSync(require.resolve('../scripts/mobile_audit.cjs'), 'utf8');
   assert.equal(site.match(/const BLOCK = (.*);/)[1], audit.match(/const BLOCK = (.*);/)[1]);
   assert(audit.indexOf('await guardPage(page, base)') < audit.indexOf('await page.goto('));
-  let handler;
+  let handler, searchHandler;
   const aborted = await require('../scripts/mobile_audit.cjs').guardPage({route: async (pattern, fn) => {
+    if (pattern === '**/api/search*') {searchHandler = fn; return;}
     assert.equal(pattern, '**/*'); handler = fn;
   }}, 'https://wowpriced.com/');
+  let fixture;
+  await searchHandler({request: () => ({url: () => 'https://wowpriced.com/api/search?q=tea&page=2'}),
+    fulfill: response => {fixture = JSON.parse(response.body);}});
+  assert.deepEqual(fixture, {items: [], reason: 'robot'});
   for (const host of ['www.googletagmanager.com', 'www.google-analytics.com', 'region1.google-analytics.com',
     'www.googleadservices.com', 'stats.g.doubleclick.net', 'pagead2.googlesyndication.com',
     'connect.facebook.net', 'www.facebook.com/tr', 'analytics.tiktok.com', 's.pinimg.com/ct',

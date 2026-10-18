@@ -20,6 +20,7 @@ def test_browser_visible_unknown_and_static_wall_both_get_buybox(
     cfg.keepa_volatility["enabled"] = planner
     cfg.keepa_recheck_top_n = cfg.keepa_buybox_top_n = 0
     cfg.keepa_recheck_top_live = False
+    cfg.drop_shuffle = False  # server-order harness; task 300's clock reshuffle is browser-tested
     rows = []
     for i in range(422):
         seen = NOW - timedelta(minutes=120 if same_arrival and i >= 120 else 500 - i)

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const model = fs.readFileSync(path.join(__dirname, 'browse_logic.cjs'), 'utf8').split('(async()=>{')[0];
+const model = fs.readFileSync(path.join(__dirname, 'browse_logic.cjs'), 'utf8').split('(async()=>{')[0].split('module.exports =')[0];
 const {harness, row, fragment, fillGridRows} = new Function('require', 'process', model +
   ';return {harness,row,fragment,fillGridRows};')(require, process);
 const plain = fs.readFileSync(process.argv[2], 'utf8');

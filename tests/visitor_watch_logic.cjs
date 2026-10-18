@@ -993,3 +993,19 @@ test('first-screen links exclude Get deal/sponsored, hidden and offscreen anchor
     if (value === undefined) delete global[key]; else global[key] = value;
   }}
 });
+
+
+test('search and related pages are fulfilled locally, including redirect targets', async () => {
+  for (const offlineSite of [undefined, path.resolve(__dirname)]) {
+    for (const query of ['q=tea', 'q=tea&page=2', 'asin=B000000298']) {
+      const direct = redirectFixture({}, {first: 'https://wowpriced.test/api/search?' + query, type: 'fetch', offlineSite});
+      await direct.run();
+      assert(direct.fulfilled && !direct.aborted);
+      assert.deepEqual(direct.requested, []); assert.deepEqual(direct.paced, []);
+    }
+  }
+  const redirected = redirectFixture({'https://wowpriced.test/start': {status: 302, location: '/api/search?q=tea'}});
+  await redirected.run();
+  assert(redirected.fulfilled && !redirected.aborted);
+  assert.deepEqual(redirected.requested, ['https://wowpriced.test/start']);
+});

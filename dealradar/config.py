@@ -355,6 +355,7 @@ class AppConfig:
     search_amazon: bool = False
     search: dict = field(default_factory=lambda: validated_search(None))
     search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
+    search_box_glow: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     search_more: dict = field(default_factory=lambda: validated_search_more(None))
@@ -362,6 +363,7 @@ class AppConfig:
     open_box_scarcity: bool = False
     open_box_counts: bool = False
     drop_rotation_windows: int = 3
+    drop_shuffle: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
     unconfirmed_label_max_h_used: float = 48.0
@@ -1049,6 +1051,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("site.search_amazon must be a boolean")
     cfg.search = validated_search(g("search", default=None))
     cfg.search_boost = validated_search_boost(g("search_boost", default=None))
+    cfg.search_box_glow = g("search_box_glow", default=False)
+    if type(cfg.search_box_glow) is not bool:
+        raise ValueError("search_box_glow must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")
@@ -1066,6 +1071,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_rotation_windows = g("site", "drop_rotation_windows", default=3)
     if type(cfg.drop_rotation_windows) is not int or cfg.drop_rotation_windows < 0:
         raise ValueError("site.drop_rotation_windows must be a non-negative integer")
+    cfg.drop_shuffle = g("site", "drop_shuffle", default=False)
+    if type(cfg.drop_shuffle) is not bool:
+        raise ValueError("site.drop_shuffle must be a boolean")
     cfg.unconfirmed_label_enabled = bool(g("site", "unconfirmed_label", "enabled", default=False))
     for condition in ("new", "used"):
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(

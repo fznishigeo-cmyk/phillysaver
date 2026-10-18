@@ -34,10 +34,10 @@ function setup(observer = true) {
         this._html = text;
         if (id !== 'content') return;
         this.lastChild = {};
-        for (const name of ['search-more', 'amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
+        for (const name of ['search-more', 'search-result-top', 'amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
           if (elements[name]) elements[name].remove();
         }
-        for (const name of ['amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
+        for (const name of ['search-result-top', 'amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
           if (text.includes('id="' + name + '"')) elements[name] = node(name);
         }
         if (elements['search-recovery-title']) elements['search-recovery-title'].textContent =
@@ -50,7 +50,13 @@ function setup(observer = true) {
       appendChild() {this.lastChild = {};}, insertBefore() {}, focus() {},
       remove() {this.connected = false; if (this.children) Object.values(this.children).forEach(child => child.remove()); delete elements[id];},
       insertAdjacentHTML(position, markup) {
+        if (position === 'afterbegin') {
+          this._html = markup + this._html;
+          if (markup.includes('id="search-result-top"')) elements['search-result-top'] = node('search-result-top');
+          return;
+        }
         assert.equal(position, 'beforeend');
+        if (id === 'search-more') {this._html += markup; return;}
         const box = elements['search-more'] = node('search-more'); box._html = markup;
         const button = node('load-button'), sentinel = node('load-sentinel');
         sentinel.children = {button}; box.children = {'.grid':node('amazon-grid'), '.search-more-load':sentinel};
@@ -94,7 +100,7 @@ function setup(observer = true) {
     moreObserver:null, paintTicker(){}, savedOn:() => false, engagementLineHtml:() => '', activeSpotlight:() => [],
     ordered:rows => rows, updatePaywall(){}, openNudge:() => false, frontPageView:() => false,
     placeGone:rows => rows, confirmedFirst:rows => rows, clickPriceHomeRows:rows => rows, searchNewFirst:rows => rows,
-    spaceAllure:rows => rows, spaceRotatedPromos:rows => rows,
+    spaceAllure:rows => rows, spaceRotatedPromos:rows => rows, shuffleDropPicks:rows => rows, dropPickIndex:() => 0,
     openAccess:() => false, canJoin:() => false, openBand:() => '', panel:{}, PAGE_CARDS:60, AUTO_CARDS:240,
     showMore() {ctx.state.shown += 60; ctx.render();},
     fetch:(url, options) => new Promise((resolve, reject) => calls.push({url, options, resolve, reject})),
@@ -152,7 +158,12 @@ async function main() {
   assert.equal((s.markup().match(/<article /g) || []).length, 4);
   for (const n of [101, 102, 106, 107]) assert.equal(s.markup().split('/dp/' + asin(n)).length - 1, 1);
   assert(s.elements['search-more'].children['.search-more-load'].hidden);
-  assert(s.elements['search-more'].innerHTML.includes('See all &quot;mouse&quot; on Amazon →'));
+  assert(s.elements['search-amazon-result'].innerHTML.includes('See all &quot;mouse&quot; on Amazon\u00a0→'));
+  assert(s.elements['search-amazon-result'].innerHTML.includes('class="getdeal"'));
+  assert(s.elements['search-more'].innerHTML.includes('More on Amazon →'));
+  assert(!s.elements['search-more'].innerHTML.includes('class="getdeal" data-search-amazon'));
+  assert(!s.elements['search-more'].innerHTML.includes('class="search-amazon-top"'));
+  assert(html.indexOf('id="search-amazon-result"') < html.indexOf('id="content"'), 'the large button precedes matching deal cards');
   assert(s.elements['search-more'].innerHTML.includes('href="https://www.amazon.com/?tag=example-20"'));
   assert(!s.elements['search-more'].innerHTML.includes('k=mouse'), 'automatic outbound tracking cannot collect query');
   s.click('[data-search-amazon]'); assert.equal(s.opened.at(-1)[0], 'https://www.amazon.com/s?k=mouse&tag=example-20');
@@ -162,6 +173,7 @@ async function main() {
   assert(!JSON.stringify(s.events).includes('mouse'));
 
   const many = setup(); many.ctx.state.deals = Array.from({length:65}, (_, n) => deal(n)); await many.query('mouse');
+  assert(many.elements['search-amazon-result'].innerHTML.includes('See all &quot;mouse&quot;'), 'button is present before pagination completes');
   assert(!many.elements['search-more'], 'our remaining deals come before Amazon');
   many.ctx.showMore(); await turn(); assert(many.elements['search-more']); await many.advance(1000); assert.equal(many.calls.length, 0);
 
@@ -182,7 +194,8 @@ async function main() {
     await t.respond(t.calls[0], {items:[t.item(101)]}); t.intersect(); await t.advance(1100);
     await t.respond(t.calls[1], {items:[], reason});
     for (let n = 0; n < 3; n++) {t.intersect(); await t.advance(10000); t.ctx.render(); await turn();}
-    assert.equal(t.calls.length, 2, reason); assert(t.elements['search-more'].innerHTML.includes('See all'));
+    assert.equal(t.calls.length, 2, reason); assert(t.elements['search-amazon-result'].innerHTML.includes('See all'));
+    assert(t.elements['search-more'].innerHTML.includes('More on Amazon'));
     assert(!t.elements['search-more'].innerHTML.includes(reason));
     assert.equal((t.markup().match(/<article /g) || []).length, 1, 'keep earlier cards after a later-page failure');
     assert(!t.markup().includes(reason), 'no error text in the grid');
@@ -359,7 +372,8 @@ async function main() {
   await spelling.respond(spelling.calls[previous + 1], {items:[], reason:'rate_limited'});
   spelling.ctx.render(); await spelling.advance(1300); spelling.intersect(); await spelling.advance(1300);
   assert.equal(spelling.calls.length, previous + 2);
-  assert(spelling.elements['search-more'].innerHTML.includes('See all'));
+  assert(spelling.elements['search-amazon-result'].innerHTML.includes('See all'));
+  assert(spelling.elements['search-more'].innerHTML.includes('More on Amazon'));
   assert(!JSON.stringify(spelling.events).match(/hair|cofee|coffee|wireless/));
 
   const literal = setup(); literal.ctx.state.deals = [deal(1, 'Hair tie organizer')];

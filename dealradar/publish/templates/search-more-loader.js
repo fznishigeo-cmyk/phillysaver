@@ -1,4 +1,10 @@
   var searchMoreUI, searchMoreLoading;
+  function searchMoreTopHtml() {
+    var q = searchAmazonQuery();
+    return q ? '<a class="getdeal" data-search-amazon data-clarity-mask="true" href="https://www.amazon.com/?tag=' +
+      encodeURIComponent(amazonResultsSettings.tag) + '" target="_blank" rel="sponsored nofollow noopener">See all &quot;' +
+      esc(q) + '&quot; on Amazon\u00a0→</a><small>Amazon links may earn us a commission.</small>' : '';
+  }
   function searchMoreTitle(hasCards) {
     var q = searchAmazonQuery();
     return q ? (hasCards ? 'Live Amazon prices for "' + q + '"' : 'See every "' + q + '" price on Amazon')

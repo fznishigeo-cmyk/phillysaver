@@ -109,6 +109,10 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     ['  function resetWall()', '  var sortsel ='],
     ['  var sortsel =', '  var TIMEOUT =']
   ]) vm.runInContext(fragment(a,b,template),ctx);
+  if (template.includes('function dropPickIndex()')) {
+    ctx.DROP_MIN=15;
+    vm.runInContext(fragment('  var clock =', '  setInterval(tick, 1000);',template),ctx);
+  }
   if (realCards) {
     Object.assign(ctx, {TIER_LABEL:{corroborated:'2+ sources'}, isMember:()=>false,
       auth:{checking:false},unknownMembership:()=>false,newSinceVisit:()=>false,hotHtml:()=>'',
@@ -212,7 +216,8 @@ function fillGridRows(markup, cols) {
   }
   return grids;
 }
-(async()=>{
+module.exports = {harness, row, fragment};
+if (require.main === module) (async()=>{
   if(process.argv[4]==='home-links') {
     const selectors={'h1.brand a':'logo','.tklabel':'ticker','#drop':'timer'};
     const hasSaved=home.includes('snapshot.savedView');

@@ -236,6 +236,86 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Search token settlement + robot isolation (Codex task 298, 2026-10-18; uncommitted):**
+  All five live-site Playwright scripts intercept `/api/search` before navigation;
+  empty fixtures preserve inventory/empty-state checks, and first-screens asserts
+  a synthetic product/photo. Service workers are blocked. Its only explicit live
+  API probe is fixed `q=cupping`, using the existing six-hour cache. Visitor watch
+  also catches redirected search requests. D1 atomically creates a pending
+  reservation with each 110-token debit, then consumes it while refunding trusted
+  integer receipts in the original day's row; retries cannot refund twice.
+  Missing/untrusted receipts keep the debit, and oversized-receipt halts survive
+  late settlements. Minute/host gates and other requests' debits stay intact.
+  [Capacity report](research/search-tokens.md): at the test fixture's 20 tokens,
+  5,000/day permits **45 → 245** uncached pages (3,000/day: **27 → 145**), retaining
+  room for the next full reservation. Final targeted pytest: **6 passed in 20.25s**
+  (function, all robot routes, visitor/mobile logic, site-check logic/screenshots).
+  Earlier targeted run: **4 passed**. Both used `-n 1 -p no:cacheprovider`; owned
+  `/tmp/task298-*` basetemps removed. Offline only; no commit or push. Review,
+  full-suite validation and live browser verification remain before deployment.
+- **Clock-driven Trending + Amazon above matches (Codex task 300, 2026-10-18; uncommitted, ON):**
+  `site.drop_shuffle` is a strict boolean, missing/false keeps legacy drop bytes.
+  The frozen timer waited for a new publication; unchanged/failed fetches reset
+  the countdown without presenting anything, and unequal clothing counts could
+  reject the old whole-window rotation. A final ordering pass now selects a
+  deterministic, distinct first-15 permutation per clock mark from eligible
+  ranked picks in the first 120 slots. It keeps 24-card membership and exact
+  clothing/checkout/Allure slots, so store/brand/boost shares, category runs,
+  photos, niche/team demotion, gone spacing and spotlight exclusion survive.
+  No unsafe cards are promoted to manufacture variety in a depleted pool.
+  UTC cadence marks prevent a late publication from shifting the timer or
+  rolling its seed backward. Drops redraw even when fetching fails or times out;
+  Trending reload/Back uses
+  the current mark, independent of stale saved seeds or arrival-only storage.
+  Clock-only changes use no FLIP motion and preserve a scrolled reader's anchor.
+  Matching searches show the tagged circling Amazon button above local cards,
+  including before pagination/module loading finishes; related Amazon cards stay
+  below with a small text link. Existing empty-search/Analyze behavior remains.
+  Three pre-edit drop rollback publication hashes were recorded (search_more
+  disabled to isolate the separate search change); `pre_task_300` chains from
+  `pre_task_295`, including older raw fixtures. No existing hash was re-pinned.
+  Final focused runs: **54 passed** (both ordering modes and mix rules),
+  **53 passed** (drop/search/pins), **40 passed** (late publishes/lazy Analyze).
+  The final drop/native-fixture/phone-budget run had **13 passed**, including
+  unchanged ceilings and the extra 1 KB headroom; its two new scroll probes
+  overshot a safely shortened wall. Corrected to a rendered card, with an
+  explicit full-first-15 assertion: **2 passed**. Initial failures from stale
+  bottom-button assertions, missing clock helpers in the old mix harness and
+  accumulated test fixtures exhausting /tmp are resolved. The initial scoped
+  run also passed all 75 existing non-Chromium rotation checks. All runs used
+  `-n 1 -p no:cacheprovider`; every owned `/tmp/task300-*` directory was removed
+  after its run. Node syntax and diff checks pass; no existing hash changed.
+  Chromium is deliberately not launched.
+  Native checks: `node tests/drop_shuffle_browser.cjs /path/to/chromium` and
+  `node tests/search_more_browser.cjs /path/to/chromium` (all requests fulfilled
+  from local fixtures; owned temporary directories removed). Review and native
+  layout/motion QA remain. Offline, this worktree only; no commit or push.
+- **Search attention + early Amazon button (Codex task 301, 2026-10-18; uncommitted, ON):**
+  Strict `search_box_glow` defaults false and ships true. The unchanged search
+  input geometry gets a positioned 3px rainbow border, one turn every 6s,
+  paused on focus/entered text; reduced motion leaves a static rainbow.
+  Analyze/Go reuses the golden shine/twinkle with positioned decoration.
+  Analyze results put one circling, tagged Amazon button immediately after
+  the first heading and before verified cards; errors retain their generic
+  label. Related-search results put it above the cards even with 70+ local
+  matches, reuse Analyze's button, and keep a small text link at the bottom.
+  Task 300's placement was absent; edits stay in the Analyze/related paths.
+  Existing privacy-safe click handlers, pagination and affiliate rules remain.
+  Six pre-edit publication hashes verify OFF/missing/back-OFF; `pre_task_295`
+  chains `pre_task_301`, including older raw-config fixtures, without re-pins.
+  Final task-specific checks: **19 passed**; phone-budget/lazy-Analyze/circle
+  regressions: **31 passed**. Shipped home is **73,739 gzip bytes** against
+  the unchanged **77,360-byte** ceiling; the extra 1KB headroom check passes.
+  Final inline/lazy/local/error placement recheck: **5 passed**; no remaining
+  targeted failures. Syntax and diff checks pass.
+  Initial harness/config mismatches were corrected. A broader run hit a full
+  temporary filesystem; only owned scratch was removed, then tests were
+  rerun with per-test cleanup. Every run uses `-n 1 -p no:cacheprovider` and
+  an owned `/tmp/task301-*` basetemp deleted afterward. No network, full suite,
+  Chromium launch, commit or push. Native screenshots/geometry remain pending:
+  [commands and capture script](research/search-box/README.md) check 390/1440
+  light/dark, normal/reduced motion, exact OFF/ON headerH/firstCardTop and
+  field/button bounds, local/ASIN/error results, tagged clicks and overflow.
 - **Write less state (Codex task 296c, 2026-10-18; uncommitted, ON):**
   Strict retention switches intern accuracy receipt keys/timestamps and pack
   click exposure into exact hourly slots per deal/day. Mixed-state reports,

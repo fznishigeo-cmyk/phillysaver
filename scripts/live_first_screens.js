@@ -1,3 +1,4 @@
+const {routeRobotSearch, FIXTURE_TITLE} = require('./robot_search.cjs');
 // Read-only look at the live homepage the way a visitor sees it: the first 24
 // cards on a phone and on desktop (title, price, store), clothing per six,
 // the empty-search experience, the logo after a search, and /api/search.
@@ -31,8 +32,9 @@ function report(label, cards) {
   try {
     for (const [label, options] of [["phone", { viewport: { width: 390, height: 844 }, isMobile: true }],
                                     ["desktop", { viewport: { width: 1440, height: 900 } }]]) {
-      const page = await browser.newPage(options);
+      const page = await browser.newPage({...options, serviceWorkers: "block"});
       await page.route("**/*", route => BLOCK.test(route.request().url()) ? route.abort() : route.continue());
+      await routeRobotSearch(page);
       await page.goto(SITE + "/", { waitUntil: "domcontentloaded", timeout: 45000 });
       report(label, await firstCards(page));
       if (label === "desktop") {
@@ -64,6 +66,7 @@ function report(label, cards) {
           button: !!document.querySelector(".search-amazon a"),
           cards: document.querySelectorAll("#content .card[data-key]").length,
         }));
+        if (empty.amazon) throw new Error("empty robot search rendered Amazon cards");
         console.log(`\nsearch "hijab": Amazon results ${empty.amazon ? "shown" : "not shown"}; Search Amazon button ${empty.button ? "yes" : "no"}; deal cards ${empty.cards}`);
         await page.click("h1.brand a");
         await page.waitForTimeout(2500);
@@ -80,24 +83,32 @@ function report(label, cards) {
     for (const [name, engine] of engines) {
       for (const [label, options] of [["phone", { viewport: { width: 390, height: 844 }, ...(name === "chromium" ? { isMobile: true } : {}) }],
                                       ["desktop", { viewport: { width: 1440, height: 900 } }]]) {
-        const context = await engine.newContext(options), opened = [];
+        const context = await engine.newContext({...options, serviceWorkers: "block"}), opened = [];
         await context.route("**/*", route => {
           const url = route.request().url();
           if (/^https:\/\/(www\.)?amazon\.com\//.test(url)) { opened.push(url); return route.abort(); }
           return BLOCK.test(url) ? route.abort() : route.continue();
         });
+        await routeRobotSearch(context, true);
         const page = await context.newPage();
         await page.goto(SITE + "/", { waitUntil: "domcontentloaded", timeout: 45000 });
         await firstCards(page);
         await page.fill("#q", "cupping set");
         let cards = 0;
         try { await page.locator("#amazon-results article").first().waitFor({ state: "visible", timeout: 12000 }); cards = await page.locator("#amazon-results article").count(); } catch (e) { /* reported below */ }
+        await page.waitForFunction(() => {
+          const photos = [...document.querySelectorAll("#amazon-results article img")];
+          return photos.length === 1 && photos.every(img => img.complete && img.naturalWidth > 0);
+        }, null, {timeout: 12000});
         const state = await page.evaluate(() => ({
           heading: (document.getElementById("search-recovery-title") || {}).textContent || "",
           button: ((document.querySelector(".search-amazon-top .getdeal") || document.querySelector(".search-amazon a")) || {}).textContent || "",
           photos: [...document.querySelectorAll("#amazon-results article img")].filter(img => img.complete && img.naturalWidth > 0).length,
           overflow: document.documentElement.scrollWidth > innerWidth,
         }));
+        if (cards !== 1 || !(await page.locator("#amazon-results").innerText()).includes(FIXTURE_TITLE))
+          throw new Error("robot search fixture card missing");
+        if (state.photos !== 1) throw new Error("robot search fixture photo missing");
         const button = page.locator(".search-amazon-top .getdeal, .search-amazon a").first();
         if (await button.count()) { await button.click().catch(() => {}); await page.waitForTimeout(1500); }
         const tagged = opened.some(url => url.includes("tag=wowpriced-20"));
@@ -107,7 +118,8 @@ function report(label, cards) {
       }
       if (engine !== browser) await engine.close();
     }
-    for (const q of ["cupping", "hijab"]) {
+    // One fixed page-zero query; the deployed search cache retains it for 6 h.
+    for (const q of ["cupping"]) {
       const res = await fetch(`${SITE}/api/search?q=${encodeURIComponent(q)}`, { headers: { "User-Agent": "wowpriced-live-check/1.0 (+https://wowpriced.com; hello@wowpriced.com)" } });
       const body = await res.text();
       let summary = body.slice(0, 200);

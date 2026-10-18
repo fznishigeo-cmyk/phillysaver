@@ -55,7 +55,7 @@ async function waitFor(page, condition, action, diagnostics) {
 
 async function main() {
   const {chromium} = require('playwright');
-  const scratch = fs.mkdtempSync('/tmp/task297-search-more-browser-');
+  const scratch = fs.mkdtempSync('/tmp/task300-search-more-browser-');
   let browser;
   try {
     const roots = {};
@@ -134,6 +134,15 @@ async function main() {
       await page.waitForTimeout(800);
       assert.equal(calls.length, 0, 'no API request before scrolling to the end of local results');
       const more = page.locator('#search-more');
+      const topButton = page.locator('#search-amazon-result [data-search-amazon]');
+      assert.equal(await topButton.textContent(), 'See all "mouse" on Amazon\u00a0→');
+      assert((await topButton.getAttribute('href')).includes('tag=example-20'));
+      assert.equal(await topButton.getAttribute('rel'), 'sponsored nofollow noopener');
+      assert.equal(await topButton.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
+      assert(await topButton.evaluate(el => el.getBoundingClientRect().bottom <= document.querySelector('#content .card').getBoundingClientRect().top));
+      assert.equal(await page.locator('[data-search-amazon].getdeal').count(), 1, 'one large Amazon button');
+      assert.equal(await more.locator('[data-search-amazon]').textContent(), 'More on Amazon →');
+      assert.equal(await more.locator('[data-search-amazon]').evaluate(el => getComputedStyle(el).fontSize), '14px');
       for (let n = 0; n < 3; n++) {
         await wait('mouse: scroll to Amazon page ' + n, () =>
           page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());

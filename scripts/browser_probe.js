@@ -1,3 +1,4 @@
+const {routeRobotSearch} = require('./robot_search.cjs');
 // browser_probe.js: open the live site the way a visitor does, scroll down,
 // and record for a while what moves: layout shifts (with the elements that
 // moved), scroll position, page height and which nodes change. Read-only;
@@ -11,8 +12,9 @@ const BLOCK = /googletagmanager|google-analytics|facebook\.net|facebook\.com\/tr
 (async () => {
   const browser = await chromium.launch();
   for (const vp of [{ name: "desktop", width: 1440, height: 900 }, { name: "phone", width: 390, height: 844, mobile: true }]) {
-    const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height }, isMobile: !!vp.mobile });
+    const page = await browser.newPage({ serviceWorkers: "block", viewport: { width: vp.width, height: vp.height }, isMobile: !!vp.mobile });
     await page.route(BLOCK, (r) => r.abort());
+    await routeRobotSearch(page);
     await page.addInitScript(() => {
       window.__shifts = [];
       new PerformanceObserver((list) => {

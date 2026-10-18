@@ -334,6 +334,7 @@ def test_window_twelve_codes_fills_slots_and_preserves_caps(cfg, window, maximum
 def test_label_each_kind_in_json_static_live_card_and_detail(db, cfg, tmp_path, changes, kind, suffix):
     enable(cfg)
     cfg.drop_rotation_windows = 0  # recorded before task 269: legacy server-order harness
+    cfg.drop_shuffle = False  # same harness, before task 300's clock reshuffle
     d = remember(offer(**changes), cfg, price=50.25)
     cfg.support_enabled = True
     out = tmp_path / 'site'

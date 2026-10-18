@@ -1,3 +1,4 @@
+const {routeRobotSearch} = require('./robot_search.cjs');
 // site_check.js: the hourly look at the live site a visitor gets (operator,
 // 2026-10-12: "go to wowpriced.com and check the images yourself"). Reads
 // deals.json, loads every live deal's photo in Chromium the way a visitor's
@@ -77,6 +78,7 @@ async function guardPage(page) {
       await route.continue();
     } catch (e) { lastAbort = String(e.message || e); await route.abort(); }
   });
+  await routeRobotSearch(page);
 }
 function check(ok, reason) { if (!ok) throw new Error(reason); }
 
@@ -367,7 +369,7 @@ async function walk(page, doc, device) {
   const withPhoto = alive.filter((d) => d.image_url);
 
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1440, height: 900 } });
   await guardPage(page);
   const desktop = await walk(page, doc, "desktop");
   const { shown, errors } = desktop;
@@ -393,7 +395,7 @@ async function walk(page, doc, device) {
     await Promise.all(Array.from({ length: conc }, worker));
     return bad;
   }, [urls, PHOTO_TIMEOUT_MS, CONCURRENCY]));
-  const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true });
+  const phone = await browser.newPage({ serviceWorkers: "block", viewport: { width: 390, height: 844 }, isMobile: true });
   await guardPage(phone);
   const mobile = await walk(phone, doc, "phone");
   await browser.close();

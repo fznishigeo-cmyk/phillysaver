@@ -13,7 +13,9 @@ const results = cases.map(c => {
   const controls = Object.fromEntries(['q', 'storesel', 'minpct'].map(id =>
     [id, {value: c.controls?.[id] || ''}]));
   const content = {innerHTML:'', querySelector:()=>null, appendChild(){}};
-  class FixedDate extends Date { static now() {return Date.parse('2026-10-09T14:00:00Z');} }
+  class FixedDate extends Date { static now() {
+    return home.includes('function dropPickIndex()') ? (c.state?.seed ?? 42) * 900000 : Date.parse('2026-10-09T14:00:00Z');
+  } }
   const ctx = {
     Date:FixedDate, loadedOnce:true, state:{meta:{front_page:c.options, floors:{min_pct:70}},
       catTab:0, sortKey:defaultSort, sortDir:-1, seed:42, newKeys:{}, deals:c.rows, shown:10000, ...c.state},
@@ -31,6 +33,10 @@ const results = cases.map(c => {
     cardHtml:d=>`<i data-key="${d.key}"></i>`
   };
   vm.createContext(ctx);
+  if (home.includes('function dropPickIndex()')) {
+    ctx.DROP_MIN=15;
+    vm.runInContext(fragment('  function publishTime(', '  function mmss('),ctx);
+  }
   vm.runInContext(fragment('  function cmp(', '  function storeHue('), ctx);
   vm.runInContext(fragment('  function gridHtml(', '  function showMore('), ctx);
   let observed = 0;

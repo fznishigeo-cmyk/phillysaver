@@ -50,9 +50,8 @@
     content.insertAdjacentHTML("beforeend", '<section id="search-more" class="search-more" data-clarity-mask="true" aria-labelledby="search-more-title">' +
       '<h2 id="search-more-title">More from Amazon for &quot;' + esc(q) + '&quot;</h2><div class="grid"></div>' +
       '<div class="search-more-load"><button type="button" class="pwbtn alt">Load more Amazon products</button></div>' +
-      '<div class="search-amazon-top"><a class="getdeal" data-search-amazon href="https://www.amazon.com/?tag=' +
-      encodeURIComponent(amazonResultsSettings.tag) + '" target="_blank" rel="sponsored nofollow noopener">See all &quot;' +
-      esc(q) + '&quot; on Amazon →</a><small>Amazon links may earn us a commission.</small></div></section>');
+      '<p><a data-search-amazon href="https://www.amazon.com/?tag=' +
+      encodeURIComponent(amazonResultsSettings.tag) + '" target="_blank" rel="sponsored nofollow noopener">More on Amazon →</a></p></section>');
     searchMorePaint(q);
   }
   function searchMorePaint(q) {
