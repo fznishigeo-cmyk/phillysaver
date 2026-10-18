@@ -82,7 +82,9 @@ def cmd_prune(args: argparse.Namespace) -> int:
     try:
         now = util.now_utc()
         run_key = None
-        if cfg.incremental_cache_enabled:
+        from .state_retention import options as state_retention_options
+        retention = state_retention_options(cfg)
+        if cfg.incremental_cache_enabled or retention is not None:
             run_key = "prune:" + util.iso(now)
             db.start_run(run_key, "prune", now)
         db.prune(now, posts_seen_days=cfg.posts_seen_days,
@@ -92,6 +94,7 @@ def cmd_prune(args: argparse.Namespace) -> int:
                  indexnow_batch_versions_days=cfg.indexnow_batch_versions_days,
                  appeal_scores_days=cfg.appeal_scores_days,
                  appeal_scores_ttl_h=cfg.appeal_score.get("ttl_h", 72),
+                 state_retention=retention,
                  incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
                  cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
                  cache_budget_s=cfg.incremental_cache_budget_s)

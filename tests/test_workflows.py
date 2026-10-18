@@ -173,7 +173,7 @@ def test_hourly_shape() -> None:
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     assert doc["permissions"] == {"contents": "write"}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 20
+    assert job["timeout-minutes"] == 30
 
     steps = job["steps"]
     uses = [s.get("uses", "") for s in steps]
@@ -280,7 +280,7 @@ def test_fast_shape() -> None:
     # Same concurrency group as hourly so the two never overlap.
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 12
+    assert job["timeout-minutes"] == 15
     checkout = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@"))
     assert checkout["with"]["fetch-depth"] == 1
 

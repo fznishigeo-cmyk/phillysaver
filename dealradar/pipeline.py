@@ -21,7 +21,7 @@ from itertools import chain, zip_longest
 from typing import Any
 from urllib.parse import urljoin, urlsplit
 
-from . import efficiency, rank, util
+from . import efficiency, rank, state_retention, util
 from .config import AppConfig, get_secret, load_config, load_sources
 from .db import DB
 from .errors import DeadlineExceeded, ParserNotConfigured, SpendCapReached
@@ -2391,6 +2391,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     kind = "fast" if fast_lane else "hourly"
 
     db = DB(db_path)
+    db.compact_deal_payloads = cfg.compact_deal_payloads
+    db.source_audit_posts_days = cfg.source_audit_posts_days
     db.accuracy_run_key = run_key
     repeated_fast_run = fast_lane and db.conn.execute(
         "SELECT 1 FROM run_stats WHERE run_key=? AND finished_at IS NOT NULL", (run_key,)).fetchone()
@@ -3003,6 +3005,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                  indexnow_batch_versions_days=cfg.indexnow_batch_versions_days,
                  appeal_scores_days=cfg.appeal_scores_days,
                  appeal_scores_ttl_h=cfg.appeal_score.get("ttl_h", 72),
+                 state_retention=state_retention.options(cfg),
                  incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
                  cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
                  cache_budget_s=cfg.incremental_cache_budget_s, fast_lane=fast_lane,

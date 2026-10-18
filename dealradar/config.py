@@ -634,6 +634,13 @@ class AppConfig:
     outgoing_days: int = 60
     indexnow_batch_versions_days: int | None = None
     appeal_scores_days: int | None = None
+    accuracy_samples_days: int | None = None
+    deal_click_shown_days: int | None = None
+    source_audit_posts_days: int | None = None
+    keepa_recheck_history_samples: int | None = None
+    compact_deal_payloads: bool = False
+    state_maintenance_max_rows: int = 4096
+    state_maintenance_budget_s: float = 1.0
     state_warn_enc_mb: float | None = None
     state_max_enc_mb: float | None = None
     feature_flags: dict[str, bool] = field(default_factory=dict)
@@ -1508,11 +1515,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     validate_incremental_cache_limits(cfg.incremental_cache_max_examined_per_run,
                                       cfg.incremental_cache_budget_s)
     cfg.outgoing_days = int(g("retention", "outgoing_days", default=cfg.outgoing_days))
-    for name in ("indexnow_batch_versions_days", "appeal_scores_days"):
+    for name in ("indexnow_batch_versions_days", "appeal_scores_days",
+                 "accuracy_samples_days", "deal_click_shown_days", "source_audit_posts_days",
+                 "keepa_recheck_history_samples"):
         value = g("retention", name, default=None)
         if value is not None and (type(value) is not int or not 1 <= value <= 3650):
             raise ValueError(f"retention.{name} must be an integer in 1..3650 or null")
         setattr(cfg, name, value)
+    cfg.compact_deal_payloads = g("retention", "compact_deal_payloads", default=False)
+    if type(cfg.compact_deal_payloads) is not bool:
+        raise ValueError("retention.compact_deal_payloads must be a boolean")
+    cfg.state_maintenance_max_rows = g("retention", "state_maintenance_max_rows", default=4096)
+    cfg.state_maintenance_budget_s = g("retention", "state_maintenance_budget_s", default=1.0)
+    from .state_retention import validate_limits as validate_state_maintenance
+    validate_state_maintenance(cfg.state_maintenance_max_rows, cfg.state_maintenance_budget_s)
     from .state_size import validate_limits
     cfg.state_warn_enc_mb, cfg.state_max_enc_mb = validate_limits(g("state", default={}))
     cfg.feature_flags = g("feature_flags", default={}) or {}

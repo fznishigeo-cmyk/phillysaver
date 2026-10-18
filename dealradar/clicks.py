@@ -166,6 +166,8 @@ def observe_publication(db, cfg, now, rows, *, run_key=None):
                         "DO UPDATE SET v=excluded.v", (json.dumps(snapshot),))
         cutoff = int(stamp // 3600) - opt["retention_days"] * 24
         for table in ("deal_clicks", "deal_click_shown", "deal_click_coverage", "deal_click_runs"):
+            if table == "deal_click_shown" and cfg.deal_click_shown_days is not None:
+                continue  # bounded cooperative cleanup in DB.prune
             db.conn.execute(f"DELETE FROM {table} WHERE hour < ?", (cutoff,))
 
 

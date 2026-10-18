@@ -14,8 +14,8 @@ from tests import test_e2e_offline as offline
 from tests.history_pins import pre_task_279_raw
 
 
-# run_stats columns added after the recording (task 234); fetch never sets them.
-LATER_COLUMNS = {"run_stats": {"posts_left", "deadline_hit"}}
+# run_stats columns added after the recording (tasks 234/296b); fetch never sets them.
+LATER_COLUMNS = {"run_stats": {"posts_left", "deadline_hit", "state_maintenance"}}
 LATER_TABLES = {"appeal_scores"}  # task 282's private rating cache, empty here
 
 

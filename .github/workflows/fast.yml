@@ -27,7 +27,9 @@ jobs:
     env:
       DEALRADAR_DURABLE_STATE: "1"
       DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
-    timeout-minutes: 12
+    # Runs take 8.5-10 min (2026-10-18, with the state size report); 12 left no
+    # room for a slow checkout.
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v5

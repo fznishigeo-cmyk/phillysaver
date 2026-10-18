@@ -1162,6 +1162,13 @@ retention:
   # encrypted state.db that is pushed to the data branch every run.
   post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
+  accuracy_samples_days: 9  # Seven completed local days + timezone/DST/report margin (minimum 9).
+  deal_click_shown_days: 8   # Seven-day learner + margin; a longer configured lookback always wins.
+  source_audit_posts_days: 9  # Seven-day reports; keep pending discoveries and recent parse completions.
+  keepa_recheck_history_samples: 12  # Per deal; never below recheck_adaptive.history_samples.
+  compact_deal_payloads: true  # Rehydrate duplicate SQL fields/sightings; preserve every fact.
+  state_maintenance_max_rows: 4096  # Per table/run, including fresh rows; transactional chunks of 64.
+  state_maintenance_budget_s: 1.0  # Shared cooperative allowance, within the existing tail deadline.
   # Settled/released/uncertain calls and their per-day reservations: enough
   # for 7-day reports and an audit margin; caps need today and tomorrow only.
   # Pending calls and today's/tomorrow's ledger rows always survive.

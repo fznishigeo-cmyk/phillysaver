@@ -257,6 +257,49 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Native commands/captures: [search-more research](research/search-more/README.md)
   and [Analyze research](research/analyze-search/README.md). Chromium is not
   launched here; no network, full suite, commit or push. Review/native QA remain.
+- **State growers (Codex task 296b, 2026-10-18; uncommitted):**
+  Reader audit and limits in [state-size research](research/state-size.md):
+  accuracy 9d, click exposure 8d (longer learner lookback wins), source audit 9d
+  after both discovery/parse completion (pending discoveries stay), Keepa 12
+  samples/retained deal (configured reader count wins). Dead deals retain the
+  standing 14d policy; live inventory and 30d post parse receipts stay.
+  Duplicate deal SQL fields/sightings compact with exact-match checks and full
+  read/read-only reconstruction. Already-known posts cannot recreate expired
+  discovery counters. Shared cooperative maintenance uses 64-row transactions,
+  4,096 examined/table/run and 1s within the existing tail deadline, durable
+  counters/cursors and fair resumption. Fast VACUUM defers; hourly/manual policy
+  stays. Missing knobs preserve legacy windows/writers. No evidence/cap changes.
+  Initial targeted runs: **37 passed**, **341 passed**, including both pipeline
+  rerun modes and retained reader/revival/money checks. All use `-n 1 -p
+  no:cacheprovider`; own `/tmp/task296b-*` basetemps removed after each run.
+  Final targeted checks: **144 passed in 73.21s**, covering new maintenance,
+  incremental-cache compatibility, evidence, protected money/facts, full
+  publication/Node parity, unchanged frozen fetch snapshots and both pipeline
+  rerun modes. No failing targeted checks remain; diff checks pass.
+  Adversarial review proved an interleaved-run sweep replay bug: after another
+  connection finished its sweep, a resumed run could join a new sweep and
+  examine rows again. Cursors and run counters now share the initiating run's
+  identifier, so that run finishes without disturbing a successor's cursor.
+  Two reproductions failed before the fix; expanded coverage exercises all
+  three swept tables, both raw category repairs, social stock facts and disabling
+  future compact writes. First review regression run: **330 passed** (including
+  publication, social/Pinterest, growth reports, evidence and both pipeline
+  rerun modes). Final retention-reader run: **412 passed in 314.63s**, including
+  the ten new cases, accuracy/click windows, history schedulers, source audit,
+  dedupe/revival and incremental-cache compatibility. No further fact-loss defect
+  found. Review changes are unstaged; no commit/push. All review pytest runs use
+  `-n 1 -p no:cacheprovider` and owned
+  `/tmp/task296br-*` basetemps, deleted after each run.
+  **70 MB target unresolved:** a sustained-rate/whole-state-compression proxy
+  estimates 141.20 MB for the four dated tables alone; live inventory has no
+  finite bound. The 296 IndexNow-heavy synthetic projection is superseded by
+  the new production mix. Compaction-only 2,000-offer/40,000-sighting fixture
+  preserved every fact but saved only 0.169 MB encrypted (4.756 → 4.587 MB).
+  Do not claim this guarantees continued production saves. Actual row ages,
+  post-maintenance compressed sizes and drain rate remain for operator review;
+  sustained growth needs a further lossless storage/aggregation change.
+  Review and the production-size target remain; no network, full suite, commit
+  or push.
 - **Lazy Analyze (Codex task 295, 2026-10-18; uncommitted, ON):**
   Strict `search_analyze.lazy` defaults false and ships true. A final publishing
   pass moves the composed Analyze logic and CSS into a versioned, interaction-only

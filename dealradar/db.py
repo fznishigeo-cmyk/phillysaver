@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS deal_click_shown (
     position INTEGER NOT NULL,
     PRIMARY KEY(deal_key, hour)
 );
+CREATE INDEX IF NOT EXISTS idx_click_shown_hour ON deal_click_shown(hour);
 CREATE TABLE IF NOT EXISTS deal_click_coverage (
     hour INTEGER PRIMARY KEY,
     capped INTEGER NOT NULL
@@ -450,6 +451,8 @@ UNCERTAIN_BILLING_MARGIN = timedelta(minutes=15)
 class DB:
     def __init__(self, path: str | Path = "state.db", *, read_only: bool = False) -> None:
         self.path = str(path)
+        self.compact_deal_payloads = False
+        self.source_audit_posts_days = None
         if read_only:
             self.conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
             self.conn.row_factory = sqlite3.Row
@@ -481,6 +484,8 @@ class DB:
         for name in ("cache_examined", "cache_deleted", "cache_completed", "posts_left", "deadline_hit"):
             if name not in columns:
                 self.conn.execute(f"ALTER TABLE run_stats ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
+        if "state_maintenance" not in columns:
+            self.conn.execute("ALTER TABLE run_stats ADD COLUMN state_maintenance TEXT NOT NULL DEFAULT '{}'")
         # Uncertain calls, and calls a run never settled (cut off at its parse
         # deadline), kept tomorrow's reservation however early they ended or
         # started; release those (idempotent; near-midnight calls keep theirs).
@@ -519,10 +524,16 @@ class DB:
         """Count discoveries, including deferred posts; never store their text."""
         if self.meta_get("source_audit_since") is None:
             self.meta_set("source_audit_since", iso(now))
-        self.conn.executemany(
+        sql = (
             "INSERT OR IGNORE INTO source_audit_posts"
-            "(source_name, content_hash, first_seen_at) VALUES (?,?,?)",
-            [(p.source_name, p.content_hash, iso(now)) for p in posts])
+            "(source_name, content_hash, first_seen_at) SELECT ?,?,?")
+        # A processed post whose shorter audit window ended is not a new
+        # discovery. Its existing posts_seen receipt still prevents re-parsing.
+        if self.source_audit_posts_days is not None:
+            sql += " WHERE NOT EXISTS (SELECT 1 FROM posts_seen WHERE content_hash=?)"
+        self.conn.executemany(sql, [
+            (p.source_name, p.content_hash, iso(now)) +
+            ((p.content_hash,) if self.source_audit_posts_days is not None else ()) for p in posts])
         self.conn.commit()
 
     def audit_parsed(self, post: RawPost, counts: dict[str, int], now: datetime) -> None:
@@ -592,6 +603,8 @@ class DB:
 
     def _deal_row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         d = json.loads(row["payload"])
+        if d.pop("_sightings_in_table", False):
+            d["sightings"] = self.sightings_for(row["id"])
         d["conditions"] = normalize_conditions(d.get("conditions"))
         d.update({
             "id": row["id"],
@@ -613,6 +626,24 @@ class DB:
         })
         return d
 
+    def _deal_payload(self, payload: dict[str, Any], deal_id: int | None = None) -> str:
+        saved = {k: v for k, v in payload.items() if k != "product_id"}
+        if self.compact_deal_payloads:
+            # Only remove fields reconstructed verbatim from authoritative SQL
+            # columns. Legacy/synthetic sightings without matching rows survive.
+            for key in ("id", "dedupe_key", "store", "item", "normalized_item", "canonical_url",
+                        "final_price", "pct_at_checkout", "abs_savings", "online_only",
+                        "verify_tier", "status", "expires_at", "first_seen_at", "last_seen_at"):
+                saved.pop(key, None)
+            if "sightings" in saved and deal_id is not None:
+                if saved["sightings"] == self.sightings_for(deal_id):
+                    del saved["sightings"]
+                    saved["_sightings_in_table"] = True
+                else:
+                    saved.pop("_sightings_in_table", None)
+            return json.dumps(saved, separators=(",", ":"))
+        return json.dumps(saved)
+
     def insert_deal(self, *, dedupe_key: str, store: str, item: str,
                     normalized_item: str, canonical_url: str, payload: dict[str, Any],
                     final_price: float | None, pct_at_checkout: float | None,
@@ -624,7 +655,7 @@ class DB:
             " expires_at, first_seen_at, last_seen_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (dedupe_key, store, item, normalized_item, canonical_url,
-             json.dumps({k: v for k, v in payload.items() if k != "product_id"}),
+             self._deal_payload(payload),
              final_price, pct_at_checkout, abs_savings,
              online_only, expires_at, iso(now), iso(now)),
         )
@@ -653,7 +684,9 @@ class DB:
                 vals.append(v)
         if payload is not None:
             sets.append("payload=?")
-            vals.append(json.dumps({k: v for k, v in payload.items() if k != "product_id"}))
+            row = (self.conn.execute("SELECT id FROM deals WHERE dedupe_key=?", (dedupe_key,)).fetchone()
+                   if self.compact_deal_payloads else None)
+            vals.append(self._deal_payload(payload, row[0] if row else None))
         if last_seen_at is not None:
             sets.append("last_seen_at=?")
             vals.append(iso(last_seen_at))
@@ -1415,11 +1448,15 @@ class DB:
               http_cache_days: int = 30, outgoing_days: int = 60,
               indexnow_batch_versions_days: int | None = None,
               appeal_scores_days: int | None = None, appeal_scores_ttl_h: float = 72,
+              state_retention: dict | None = None,
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
               fast_lane: bool = False, deadline: float | None = None) -> dict[str, Any] | None:
         if incremental_cache_enabled and run_key is None:
             raise ValueError("incremental cache maintenance requires a run key")
+        if state_retention is not None and (run_key is None or not self.conn.execute(
+                "SELECT 1 FROM run_stats WHERE run_key=?", (run_key,)).fetchone()):
+            raise ValueError("state maintenance requires an existing run")
         for days in (indexnow_batch_versions_days, appeal_scores_days):
             if days is not None and (type(days) is not int or not 1 <= days <= 3650):
                 raise ValueError("optional state retention must be an integer in 1..3650 or None")
@@ -1436,20 +1473,21 @@ class DB:
             self.conn.execute("DELETE FROM appeal_scores WHERE rated_at < ?",
                               (iso(now - max(timedelta(days=appeal_scores_days),
                                              timedelta(hours=appeal_scores_ttl_h))),))
-        for table in ("accuracy_samples", "accuracy_extra_runs", "accuracy_extra_reads"):
+        for table in (("accuracy_samples",) if state_retention is None else ()) + (
+                "accuracy_extra_runs", "accuracy_extra_reads"):
             self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
                               (iso(now - timedelta(days=35)),))
         # Own checks serve the existing 90-day history window. Post observations
         # retain their lifetime facts; frequent API checks must not grow forever.
         self.conn.execute("DELETE FROM price_history WHERE content_hash GLOB 'check:*' AND observed_at < ?",
                           (iso(now - timedelta(days=90)),))
-        self.conn.execute(
-            "DELETE FROM posts_seen WHERE first_seen_at < ?",
-            (iso(now - timedelta(days=posts_seen_days)),),
-        )
-        self.conn.execute(
-            "DELETE FROM source_audit_posts WHERE first_seen_at < ?",
-            (iso(now - timedelta(days=posts_seen_days)),))
+        if state_retention is None:
+            self.conn.execute(
+                "DELETE FROM posts_seen WHERE first_seen_at < ?",
+                (iso(now - timedelta(days=posts_seen_days)),))
+            self.conn.execute(
+                "DELETE FROM source_audit_posts WHERE first_seen_at < ?",
+                (iso(now - timedelta(days=posts_seen_days)),))
         self.conn.execute(
             "DELETE FROM post_parses WHERE parsed_at < ?",
             (iso(now - timedelta(days=post_parses_days)),))
@@ -1458,11 +1496,11 @@ class DB:
         # "used - like new" offers stay up until someone buys them, so a
         # deal leaves the wall only when it is genuinely over (its expiry
         # passed, its post says so, or a live price check found it gone).
-        self.conn.execute(
-            "DELETE FROM deals WHERE status = 'dead' AND"
-            " COALESCE(NULLIF(json_extract(payload, '$.died_at'), ''), last_seen_at) < ?",
-            (iso(now - timedelta(days=deals_days)),),
-        )
+        if state_retention is None:
+            self.conn.execute(
+                "DELETE FROM deals WHERE status = 'dead' AND"
+                " COALESCE(NULLIF(json_extract(payload, '$.died_at'), ''), last_seen_at) < ?",
+                (iso(now - timedelta(days=deals_days)),))
         # Both call timestamps and every per-day reservation must be old.
         # Even a zero/negative retention cannot erase today's or tomorrow's
         # cap; reserved calls and their reservations are never removed.
@@ -1487,8 +1525,9 @@ class DB:
         # one row per page, with a bounded history inside that row.
         self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take:*' AND CASE WHEN json_valid(v)"
                           " THEN k != 'ai_take:' || COALESCE(json_extract(v,'$.key'),'') ELSE 1 END")
-        self.conn.execute("DELETE FROM keepa_recheck_history WHERE deal_key NOT IN"
-                          " (SELECT dedupe_key FROM deals)")
+        if state_retention is None:
+            self.conn.execute("DELETE FROM keepa_recheck_history WHERE deal_key NOT IN"
+                              " (SELECT dedupe_key FROM deals)")
         self.conn.execute("DELETE FROM keepa_recheck_yield WHERE day < ?",
                           (iso(now - timedelta(days=run_stats_days))[:10],))
         yield_cutoff = iso(now - timedelta(days=run_stats_days))
@@ -1518,6 +1557,12 @@ class DB:
         self.conn.commit()
 
         maintenance = None
+        if state_retention is not None:
+            from .state_retention import maintain
+            state_result = maintain(self, now, run_key=run_key, options=state_retention,
+                                    posts_seen_days=posts_seen_days, deals_days=deals_days,
+                                    deadline=deadline)
+            log.info("state maintenance: %s", state_result)
         if incremental_cache_enabled:
             maintenance = self.prune_http_cache(
                 now, run_key=run_key, days=http_cache_days,
@@ -1527,7 +1572,7 @@ class DB:
 
         pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
         free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
-        if free * 10 > pages and not (incremental_cache_enabled and fast_lane):
+        if free * 10 > pages and not ((incremental_cache_enabled or state_retention is not None) and fast_lane):
             try:
                 busy, _, _ = self.conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
                 if busy:
