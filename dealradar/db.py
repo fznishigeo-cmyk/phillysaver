@@ -1477,6 +1477,14 @@ class DB:
                 "accuracy_extra_runs", "accuracy_extra_reads"):
             self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
                               (iso(now - timedelta(days=35)),))
+        if state_retention is None:
+            from .accuracy import compact_exists
+            if compact_exists(self):
+                self.conn.execute("DELETE FROM accuracy_samples_compact WHERE checked_at < ?",
+                                  (int((now - timedelta(days=35)).timestamp()),))
+                for table, column in (("accuracy_sample_keys", "key_id"), ("accuracy_sample_runs", "run_id")):
+                    self.conn.execute(f"DELETE FROM {table} WHERE NOT EXISTS"
+                                      f" (SELECT 1 FROM accuracy_samples_compact WHERE {column}={table}.id)")
         # Own checks serve the existing 90-day history window. Post observations
         # retain their lifetime facts; frequent API checks must not grow forever.
         self.conn.execute("DELETE FROM price_history WHERE content_hash GLOB 'check:*' AND observed_at < ?",

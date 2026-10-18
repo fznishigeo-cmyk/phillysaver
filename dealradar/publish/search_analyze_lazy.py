@@ -50,11 +50,13 @@ def publish(out, cfg):
              "searchInventory filtered track esc cardHtml dealKey searchWords updateSearch amazonResultsSeen "
              "amazonResultsCancel wpAndroidLimited amazonResultsPaint searchSpellingState searchMoreCall").split()
     script = re.sub(r"\b(" + "|".join(names) + r")\b", lambda m: "host." + m[0], script)
+    # First-paint rules (search box, button, hint) stay inline: without them the
+    # button and hint render unstyled below the search box until the module loads.
     style = search_analyze.STYLE.read_text()
+    critical, deferred = split_style(style)
     script = ('export default function (host) {\n' + script +
-              '  var style = document.createElement("style");\n  style.textContent = ' + json.dumps(style) + ';\n'
+              '  var style = document.createElement("style");\n  style.textContent = ' + json.dumps(deferred) + ';\n'
               '  document.head.appendChild(style);\n'
-              '  document.querySelector(".analyze-short").hidden = false;\n'
               '  if (document.activeElement === analyzeBox) analyzeHint.hidden = false;\n'
               '  return {input:analyzeInput, text:analyzeSearchText, current:analyzeCurrent,\n'
               '    render:analyzeRender, submit:analyzeSubmit, cancel:analyzeCancel};\n}\n')
@@ -66,8 +68,7 @@ def publish(out, cfg):
              if search_more.enabled(cfg) else 'amazonResultsPaint')
     loader = loader.replace("{{ANALYZE_EXTRA}}", extra)
     swap(source, loader)
-    swap(style, '')
-    swap('<span class="analyze-short">', '<span class="analyze-short" hidden>')
+    swap(style, critical)
     swap('if (typeof analyzeInput === "function" && analyzeInput(',
          'if (!analyzeFailed && typeof analyzeInput === "function" && analyzeInput(')
     swap('    amazon.hidden = !amazon.innerHTML;',
@@ -77,3 +78,27 @@ def publish(out, cfg):
          '    amazon.hidden = !amazon.innerHTML;')
     asset.write_text(script, encoding="utf-8")
     path.write_text(html, encoding="utf-8")
+
+
+DEFERRED_CSS = (".search-analysis", ".analyze-progress", ".analyze-error", ".analyze-steps", ".analyze-related",
+                "@keyframes analyze-")
+
+
+def split_style(css):
+    """(first-paint rules, rules only the analysis panel needs), one rule or @media block per line."""
+    critical, deferred = [], []
+    for line in css.splitlines():
+        if line.startswith("@media") and not line.startswith("@media(prefers-reduced-motion"):
+            head, body = line.split("{", 1)
+            rules = [r + "}" for r in body[:-1].split("}") if r]
+            keep = [r for r in rules if not r.startswith(DEFERRED_CSS)]
+            later = [r for r in rules if r.startswith(DEFERRED_CSS)]
+            if keep:
+                critical.append(head + "{" + "".join(keep) + "}")
+            if later:
+                deferred.append(head + "{" + "".join(later) + "}")
+        elif line.startswith(DEFERRED_CSS) or "analyze-steps" in line:
+            deferred.append(line)
+        elif line:
+            critical.append(line)
+    return "\n".join(critical) + "\n", "\n".join(deferred) + "\n"

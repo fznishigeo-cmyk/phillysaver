@@ -1167,6 +1167,8 @@ retention:
   source_audit_posts_days: 9  # Seven-day reports; keep pending discoveries and recent parse completions.
   keepa_recheck_history_samples: 12  # Per deal; never below recheck_adaptive.history_samples.
   compact_deal_payloads: true  # Rehydrate duplicate SQL fields/sightings; preserve every fact.
+  compact_accuracy_samples: true  # Intern replay keys, store UTC seconds; identical private reports.
+  compact_click_exposure: true  # One daily row with exact hourly seconds; identical learner features.
   state_maintenance_max_rows: 4096  # Per table/run, including fresh rows; transactional chunks of 64.
   state_maintenance_budget_s: 1.0  # Shared cooperative allowance, within the existing tail deadline.
   # Settled/released/uncertain calls and their per-day reservations: enough

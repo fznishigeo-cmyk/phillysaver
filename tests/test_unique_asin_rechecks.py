@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from contextlib import closing
-from datetime import timedelta
+from datetime import datetime, timedelta
 import hashlib
 import json
 
@@ -454,7 +454,12 @@ def test_shared_paid_observation_keeps_per_offer_accuracy_idempotent(db, cfg, mo
     assert len(calls) == 2
     # Existing accuracy sampling is per published offer, once per observation,
     # independent of the number of consumers or repeated cached transports.
-    samples = list(db.conn.execute("SELECT * FROM accuracy_samples"))
+    if accuracy.compact_exists(db):  # task 296c: interned keys, UTC seconds
+        samples = [{"deal_key": k, "observed_at": util.iso(datetime.fromtimestamp(o, NOW.tzinfo))}
+                   for k, o in db.conn.execute("SELECT k.deal_key, s.observed_at FROM accuracy_samples_compact s"
+                                               " JOIN accuracy_sample_keys k ON k.id=s.key_id")]
+    else:
+        samples = list(db.conn.execute("SELECT * FROM accuracy_samples"))
     assert len(samples) == 2 and {s["deal_key"] for s in samples} == {r["dedupe_key"] for r in rows}
     assert all(s["observed_at"] == util.iso(NOW) for s in samples)
 

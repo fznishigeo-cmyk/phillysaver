@@ -24,6 +24,59 @@ BUCKETS = ("top30", "top120", "rest")
 log = logging.getLogger("dealradar.accuracy")
 
 
+def compact_exists(db):
+    return db.conn.execute("SELECT 1 FROM sqlite_master WHERE name='accuracy_samples_compact'").fetchone() is not None
+
+
+def _compact_schema(db):
+    if compact_exists(db):
+        return
+    # Lazy creation preserves old database bytes when the knob is omitted.
+    for sql in (
+        "CREATE TABLE IF NOT EXISTS accuracy_sample_keys (id INTEGER PRIMARY KEY,"
+        " deal_key TEXT NOT NULL, source TEXT NOT NULL, UNIQUE(deal_key,source))",
+        "CREATE TABLE IF NOT EXISTS accuracy_sample_runs (id INTEGER PRIMARY KEY, run_key TEXT NOT NULL UNIQUE)",
+        "CREATE TABLE IF NOT EXISTS accuracy_samples_compact (key_id INTEGER NOT NULL,"
+        " run_id INTEGER NOT NULL, checked_at INTEGER NOT NULL, observed_at INTEGER NOT NULL,"
+        " bucket TEXT NOT NULL, outcome TEXT NOT NULL, PRIMARY KEY(run_id,key_id), UNIQUE(key_id,observed_at))",
+        "CREATE INDEX IF NOT EXISTS idx_accuracy_compact_checked ON accuracy_samples_compact(checked_at)",
+    ):
+        db.conn.execute(sql)
+    # Schema is committed by the caller, along with its first sample.
+
+
+def store_compact(db, deal_key, run_key, checked_at, observed_at, bucket, source, outcome):
+    """Caller owns the transaction, including when migrating a legacy row."""
+    _compact_schema(db)
+    db.conn.execute("INSERT OR IGNORE INTO accuracy_sample_keys(deal_key,source) VALUES (?,?)", (deal_key, source))
+    db.conn.execute("INSERT OR IGNORE INTO accuracy_sample_runs(run_key) VALUES (?)", (run_key,))
+    db.conn.execute(
+        "INSERT OR IGNORE INTO accuracy_samples_compact SELECT k.id,r.id,?,?,?,?"
+        " FROM accuracy_sample_keys k,accuracy_sample_runs r WHERE k.deal_key=? AND k.source=? AND r.run_key=?",
+        (math.floor(checked_at.timestamp()), math.floor(observed_at.timestamp()), bucket, outcome, deal_key, source, run_key))
+
+
+def _recorded_compact(db, deal_key, source, run_key, observed):
+    if not compact_exists(db):
+        return False
+    return db.conn.execute(
+        "SELECT 1 FROM accuracy_samples_compact s JOIN accuracy_sample_keys k ON k.id=s.key_id"
+        " WHERE k.deal_key=? AND k.source=? AND (s.observed_at=? OR s.run_id="
+        " (SELECT id FROM accuracy_sample_runs WHERE run_key=?)) LIMIT 1",
+        (deal_key, source, math.floor(observed.timestamp()), run_key)).fetchone() is not None
+
+
+def recent_keys(db, since):
+    keys = {r[0] for r in db.conn.execute(
+        "SELECT deal_key FROM accuracy_samples WHERE checked_at>=? UNION "
+        "SELECT deal_key FROM accuracy_extra_reads WHERE checked_at>=?", (iso(since),) * 2)}
+    if compact_exists(db):
+        keys.update(r[0] for r in db.conn.execute(
+            "SELECT k.deal_key FROM accuracy_samples_compact s JOIN accuracy_sample_keys k ON k.id=s.key_id"
+            " WHERE s.checked_at>=?", (math.floor(since.timestamp()),)))
+    return keys
+
+
 def _quiet(fn):
     """A private audit never breaks fetching or publishing; it logs and skips."""
     @functools.wraps(fn)
@@ -87,11 +140,22 @@ def record(db, cfg, deal_key, now, *, source, price=None, unavailable=False, obs
     else:
         outcome = accuracy_price_outcome(price, shown["final"], source=source,
                                          min_pct=cfg.keepa_reprice_min_pct)
-    db.conn.execute(
-        "INSERT OR IGNORE INTO accuracy_samples"
-        " (deal_key,run_key,checked_at,observed_at,bucket,store,source,outcome) VALUES (?,?,?,?,?,?,?,?)",
-        (deal_key, run_key, iso(now), iso(observed), shown["bucket"], shown["store"], source, outcome))
-    db.conn.commit()
+    with db.conn:
+        if (cfg.compact_accuracy_samples or compact_exists(db)) and not db.conn.in_transaction:
+            db.conn.execute("BEGIN IMMEDIATE")
+        if _recorded_compact(db, deal_key, source, run_key, observed):
+            return
+        if cfg.compact_accuracy_samples:
+            if db.conn.execute("SELECT 1 FROM accuracy_samples WHERE deal_key=? AND source=?"
+                               " AND (run_key=? OR observed_at=?) LIMIT 1",
+                               (deal_key, source, run_key, iso(observed))).fetchone():
+                return
+            store_compact(db, deal_key, run_key, now, observed, shown["bucket"], source, outcome)
+        else:
+            db.conn.execute(
+                "INSERT OR IGNORE INTO accuracy_samples"
+                " (deal_key,run_key,checked_at,observed_at,bucket,store,source,outcome) VALUES (?,?,?,?,?,?,?,?)",
+                (deal_key, run_key, iso(now), iso(observed), shown["bucket"], shown["store"], source, outcome))
 
 
 @_quiet
@@ -165,10 +229,7 @@ def extra_samples(db, cfg, now, *, fetcher=None, deadline=None, run_key=None, ra
     day = now.astimezone(timezone.utc).date().isoformat()
     left = max(0, limit - db.conn.execute(
         "SELECT COUNT(*) FROM accuracy_extra_reads WHERE day=?", (day,)).fetchone()[0])
-    recent = {r[0] for r in db.conn.execute(
-        "SELECT deal_key FROM accuracy_samples WHERE checked_at>=? UNION "
-        "SELECT deal_key FROM accuracy_extra_reads WHERE checked_at>=?",
-        (iso(now - timedelta(hours=6)),) * 2)}
+    recent = recent_keys(db, now - timedelta(hours=6))
     candidates = []
     for key, shown in published(db).items():
         if not shown["asin"] or key in recent or shown["created_run"] == run_key:
@@ -241,6 +302,11 @@ def report_data(db, cfg, now):
     rows = [dict(r) for r in db.conn.execute(
         "SELECT checked_at,bucket,outcome FROM accuracy_samples WHERE checked_at>=? AND checked_at<?",
         (iso(start), iso(end)))] if exists else []
+    if compact_exists(db):
+        rows.extend({"checked_at": iso(datetime.fromtimestamp(r[0], timezone.utc)),
+                     "bucket": r[1], "outcome": r[2]} for r in db.conn.execute(
+            "SELECT checked_at,bucket,outcome FROM accuracy_samples_compact WHERE checked_at>=? AND checked_at<?",
+            (int(start.timestamp()), int(end.timestamp()))))
     for row in rows:
         row["day"] = parse_iso(row["checked_at"]).astimezone(tz).date()
     daily = []

@@ -236,6 +236,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Write less state (Codex task 296c, 2026-10-18; uncommitted, ON):**
+  Strict retention switches intern accuracy receipt keys/timestamps and pack
+  click exposure into exact hourly slots per deal/day. Mixed-state reports,
+  six-hour sampling guards, learner features and switch-back reads remain
+  equivalent; no evidence, cap, request or public-output changes. Existing
+  bounded maintenance migrates old rows atomically, expires compact records
+  and clears unused receipt dictionaries. Missing/false preserves old writer
+  bytes. Production-shaped measurement and R2 design (no storage code) are in
+  [state-size research](research/state-size.md). Initial fixtures found and
+  fixed a migration-bookkeeping replay issue; legacy accuracy assertions now
+  run against both formats. Final targeted checks: **224 passed in 86.54s**,
+  including 296b retention/compaction, both pipeline rerun modes and unchanged
+  publication/Node output. All runs used `-n 1 -p no:cacheprovider`; owned
+  `/tmp/task296c-*` basetemps/models were removed. Syntax/diff checks pass.
+  Production-shaped 3,300-deal/2,000-hourly-recheck/120-runs-per-day model:
+  encrypted growth **4,094,976 → 1,478,944 bytes/day** (mean **34,125 → 12,325
+  bytes/run**); 296b hourly deal payload writes **7,737,056 → 732,500 bytes**.
+  **Below-70-MB target remains unmet:** saturated model **95.61 → 83.94 MB**
+  encrypted, **93.94 MB** after allowing 10 MB for other state. Unchanged
+  post/audit receipts at the full observed-rate × window alone measure
+  **60.63 MB encrypted**. Further lossless receipt compaction or measured
+  lower arrival rates are needed; do not claim production saves are assured.
+  Offline only, no commit or push; size target and production rollout remain.
 - **Honest empty searches (Codex task 297, 2026-10-18; uncommitted, ON):**
   The `search_more` ON path starts with `See every <query> price on Amazon`
   above the existing circling button; only rendered current-price cards restore

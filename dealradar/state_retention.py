@@ -7,7 +7,7 @@ import math
 import time
 from datetime import timedelta
 
-from .util import iso
+from .util import iso, parse_iso
 
 CHUNK_ROWS = 64
 HEADROOM_S = .01
@@ -23,7 +23,7 @@ def validate_limits(rows, seconds):
 
 def options(cfg):
     """Omitted knobs preserve bulk legacy expiry; reader windows are floors."""
-    if not (cfg.compact_deal_payloads or any(v is not None for v in (
+    if not (cfg.compact_deal_payloads or cfg.compact_accuracy_samples or cfg.compact_click_exposure or any(v is not None for v in (
             cfg.accuracy_samples_days, cfg.deal_click_shown_days, cfg.keepa_recheck_history_samples,
             cfg.source_audit_posts_days))):
         return None
@@ -33,10 +33,13 @@ def options(cfg):
         "accuracy_days": 35 if cfg.accuracy_samples_days is None else max(9, cfg.accuracy_samples_days),
         "click_hours": (None if cfg.deal_click_shown_days is None else
                         max(168, cfg.deal_click_shown_days * 24, settings(cfg)["lookback_hours"])),
+        "click_legacy_hours": settings(cfg)["retention_days"] * 24,
         "history_samples": (None if cfg.keepa_recheck_history_samples is None else
                             max(2, cfg.keepa_recheck_history_samples,
                                 int(cfg.keepa_recheck_adaptive.get("history_samples", 12)))),
         "compact_deals": cfg.compact_deal_payloads,
+        "compact_accuracy": cfg.compact_accuracy_samples,
+        "compact_clicks": cfg.compact_click_exposure,
         "audit_days": None if cfg.source_audit_posts_days is None else max(9, cfg.source_audit_posts_days),
         "max_rows": cfg.state_maintenance_max_rows,
         "budget_s": cfg.state_maintenance_budget_s,
@@ -63,8 +66,20 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
     audit_cutoff = iso(now - timedelta(days=options["audit_days"] or posts_seen_days))
     deals_cutoff = iso(now - timedelta(days=deals_days))
     tables = ["accuracy_samples", "deals", "keepa_recheck_history", "posts_seen", "source_audit_posts"]
-    if options["click_hours"] is not None:
+    if options["click_hours"] is not None or options["compact_clicks"]:
         tables.insert(1, "deal_click_shown")
+    from . import accuracy, clicks
+    if options["compact_accuracy"] or accuracy.compact_exists(db):
+        tables += ["accuracy_samples_compact", "accuracy_sample_keys", "accuracy_sample_runs"]
+    if options["compact_clicks"] or clicks.compact_exists(db):
+        tables.append("deal_click_days")
+    click_hours = options["click_hours"] or options["click_legacy_hours"]
+    click_cutoff = int(now.timestamp() // 3600) - click_hours
+    sweeps = {"deals", "keepa_recheck_history", "source_audit_posts", "accuracy_sample_keys", "accuracy_sample_runs"}
+    if options["compact_accuracy"]:
+        sweeps.add("accuracy_samples")
+    if options["compact_clicks"]:
+        sweeps.add("deal_click_shown")
     next_table = db.meta_get("state_maintenance_next_table")
     if next_table in tables:
         index = tables.index(next_table)
@@ -93,9 +108,13 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
                     if counts["completed"] or limit <= 0:
                         continue
                     check_time()
+                    if table == "accuracy_samples_compact":
+                        accuracy._compact_schema(db)
+                    elif table == "deal_click_days":
+                        clicks.compact_schema(db)
                     sweep_key = "state_sweep:" + table
                     cursor = None
-                    if table in ("deals", "keepa_recheck_history", "source_audit_posts"):
+                    if table in sweeps:
                         cursor = json.loads(db.meta_get(sweep_key) or "null")
                         if "sweep_run" in counts and (cursor is None or
                                 cursor.get("run") != counts["sweep_run"]):
@@ -114,7 +133,9 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
                     else:
                         column, cutoff = {
                             "accuracy_samples": ("checked_at", accuracy_cutoff),
-                            "deal_click_shown": ("hour", int(now.timestamp() // 3600) - (options["click_hours"] or 0)),
+                            "accuracy_samples_compact": ("checked_at", int(parse_iso(accuracy_cutoff).timestamp())),
+                            "deal_click_shown": ("hour", click_cutoff),
+                            "deal_click_days": ("day", click_cutoff // 24),
                             "posts_seen": ("first_seen_at", posts_cutoff),
                         }[table]
                         rows = db.conn.execute(
@@ -123,7 +144,25 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
                     check_time()
                     for row in rows:
                         delete, replacement = False, None
-                        if table == "deals":
+                        if table == "accuracy_samples" and options["compact_accuracy"]:
+                            if row["checked_at"] >= accuracy_cutoff:
+                                accuracy.store_compact(db, row["deal_key"], row["run_key"],
+                                    parse_iso(row["checked_at"]), parse_iso(row["observed_at"]),
+                                    row["bucket"], row["source"], row["outcome"])
+                                counts["updated"] += 1
+                            delete = True
+                        elif table == "deal_click_shown" and options["compact_clicks"]:
+                            if row["hour"] >= click_cutoff:
+                                clicks.compact_schema(db)
+                                clicks.add_exposure(db, row["deal_key"], row["hour"], row["seconds"])
+                                counts["updated"] += 1
+                            delete = True
+                        elif table in ("accuracy_sample_keys", "accuracy_sample_runs"):
+                            column = "key_id" if table == "accuracy_sample_keys" else "run_id"
+                            delete = not db.conn.execute(
+                                f"SELECT 1 FROM accuracy_samples_compact WHERE {column}=? LIMIT 1",
+                                (row["id"],)).fetchone()
+                        elif table == "deals":
                             payload = json.loads(row["payload"])
                             delete = (row["status"] == "dead" and
                                       (payload.get("died_at") or row["last_seen_at"]) < deals_cutoff)

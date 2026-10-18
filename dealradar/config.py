@@ -639,6 +639,8 @@ class AppConfig:
     source_audit_posts_days: int | None = None
     keepa_recheck_history_samples: int | None = None
     compact_deal_payloads: bool = False
+    compact_accuracy_samples: bool = False
+    compact_click_exposure: bool = False
     state_maintenance_max_rows: int = 4096
     state_maintenance_budget_s: float = 1.0
     state_warn_enc_mb: float | None = None
@@ -1522,9 +1524,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         if value is not None and (type(value) is not int or not 1 <= value <= 3650):
             raise ValueError(f"retention.{name} must be an integer in 1..3650 or null")
         setattr(cfg, name, value)
-    cfg.compact_deal_payloads = g("retention", "compact_deal_payloads", default=False)
-    if type(cfg.compact_deal_payloads) is not bool:
-        raise ValueError("retention.compact_deal_payloads must be a boolean")
+    for name in ("compact_deal_payloads", "compact_accuracy_samples", "compact_click_exposure"):
+        value = g("retention", name, default=False)
+        if type(value) is not bool:
+            raise ValueError(f"retention.{name} must be a boolean")
+        setattr(cfg, name, value)
     cfg.state_maintenance_max_rows = g("retention", "state_maintenance_max_rows", default=4096)
     cfg.state_maintenance_budget_s = g("retention", "state_maintenance_budget_s", default=1.0)
     from .state_retention import validate_limits as validate_state_maintenance

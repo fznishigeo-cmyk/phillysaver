@@ -1,6 +1,6 @@
 """117: private, independent price samples and one growth scoreboard; offline."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -11,7 +11,13 @@ from dealradar.db import DB
 from dealradar.growth import report
 from dealradar.keepa_budget import KeepaBudget
 from dealradar.publish import site
-from tests.test_price_accuracy_engine import NOW, cfg, db, product, seed
+from tests.test_price_accuracy_engine import NOW, cfg as engine_cfg, db, product, seed
+
+
+@pytest.fixture(params=[False, True], ids=["legacy", "compact"])
+def cfg(engine_cfg, request):
+    engine_cfg.compact_accuracy_samples = request.param
+    return engine_cfg
 
 
 def visible(db, rows, *, run="previous", at=NOW - timedelta(hours=2)):
@@ -20,7 +26,16 @@ def visible(db, rows, *, run="previous", at=NOW - timedelta(hours=2)):
 
 
 def samples(db):
-    return [dict(r) for r in db.conn.execute("SELECT * FROM accuracy_samples ORDER BY deal_key")]
+    rows = [dict(r) for r in db.conn.execute("SELECT * FROM accuracy_samples ORDER BY deal_key")]
+    if accuracy.compact_exists(db):
+        for r in db.conn.execute("SELECT k.deal_key,r.run_key,s.checked_at,s.observed_at,s.bucket,k.source,s.outcome"
+                                 " FROM accuracy_samples_compact s JOIN accuracy_sample_keys k ON k.id=s.key_id"
+                                 " JOIN accuracy_sample_runs r ON r.id=s.run_id"):
+            row = dict(r)
+            for name in ("checked_at", "observed_at"):
+                row[name] = util.iso(datetime.fromtimestamp(row[name], timezone.utc))
+            rows.append(row)
+    return sorted(rows, key=lambda r: r["deal_key"])
 
 
 @pytest.mark.parametrize("matches,n,expected", [
@@ -67,8 +82,8 @@ def test_snapshot_price_survives_same_run_correction(db, cfg, live, outcome):
     db.update_deal(row["dedupe_key"], final_price=live)
     accuracy.record(db, cfg, row["dedupe_key"], NOW, source="keepa", price=live)
     assert samples(db)[0]["outcome"] == outcome
-    assert set(samples(db)[0]) == {"deal_key", "run_key", "checked_at", "observed_at",
-                                  "bucket", "store", "source", "outcome"}
+    expected = {"deal_key", "run_key", "checked_at", "observed_at", "bucket", "source", "outcome"}
+    assert set(samples(db)[0]) == (expected if cfg.compact_accuracy_samples else expected | {"store"})
 
 
 @pytest.mark.parametrize("changes", [{"codes": ["SAVE"]}, {"stack_steps": ["Clip the coupon"]},

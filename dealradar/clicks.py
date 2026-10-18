@@ -9,7 +9,10 @@ import json
 import logging
 import math
 import re
+import struct
 from datetime import timedelta
+from heapq import merge
+from itertools import groupby
 from urllib.parse import urlsplit
 
 from .config import get_secret
@@ -17,6 +20,50 @@ from .util import parse_iso
 
 log = logging.getLogger(__name__)
 KEY = re.compile(r"[0-9a-f]{16}")
+HOURS = struct.Struct("<24d")
+
+
+def compact_exists(db):
+    return db.conn.execute("SELECT 1 FROM sqlite_master WHERE name='deal_click_days'").fetchone() is not None
+
+
+def compact_schema(db):
+    db.conn.execute("CREATE TABLE IF NOT EXISTS deal_click_days (deal_key TEXT NOT NULL,"
+                    " day INTEGER NOT NULL, seconds BLOB NOT NULL, PRIMARY KEY(deal_key,day))")
+    db.conn.execute("CREATE INDEX IF NOT EXISTS idx_click_days_day ON deal_click_days(day)")
+
+
+def add_exposure(db, key, hour, seconds):
+    """24 binary64 slots preserve fractional seconds and hourly coverage exactly.
+
+    Position is unused by every reader; features uses the current wall order.
+    Caller creates the schema and owns the transaction.
+    """
+    day, slot = divmod(hour, 24)
+    row = db.conn.execute("SELECT seconds FROM deal_click_days WHERE deal_key=? AND day=?", (key, day)).fetchone()
+    values = list(HOURS.unpack(row[0])) if row else [-1.] * 24
+    values[slot] = min(3600, max(0, values[slot]) + seconds)
+    db.conn.execute("INSERT INTO deal_click_days VALUES (?,?,?) ON CONFLICT(deal_key,day)"
+                    " DO UPDATE SET seconds=excluded.seconds", (key, day, HOURS.pack(*values)))
+
+
+def exposure(db, start, end):
+    """Merge both encodings, including partial days during rollout/rollback."""
+    hourly = db.conn.execute("SELECT deal_key,hour,seconds FROM deal_click_shown"
+                             " WHERE hour>=? AND hour<? ORDER BY deal_key,hour", (start, end))
+    def daily():
+        if not compact_exists(db):
+            return
+        for key, day, packed in db.conn.execute(
+                "SELECT deal_key,day,seconds FROM deal_click_days WHERE day>=? AND day<=? ORDER BY deal_key,day",
+                (start // 24, (end - 1) // 24)):
+            for slot, seconds in enumerate(HOURS.unpack(packed)):
+                hour = day * 24 + slot
+                if seconds >= 0 and start <= hour < end:
+                    yield key, hour, seconds
+    identity = lambda row: (row[0], row[1])
+    for (key, hour), rows in groupby(merge(hourly, daily(), key=identity), key=identity):
+        yield key, hour, min(3600, sum(row[2] for row in rows))
 
 
 def settings(cfg):
@@ -146,6 +193,10 @@ def observe_publication(db, cfg, now, rows, *, run_key=None):
     if stamp <= start and previous:
         return
     with db.conn:
+        if cfg.compact_click_exposure:
+            if not db.conn.in_transaction:
+                db.conn.execute("BEGIN IMMEDIATE")
+            compact_schema(db)
         if run_key:
             db.conn.execute("INSERT INTO deal_click_runs(run_key,hour,published) VALUES (?,?,1) "
                 "ON CONFLICT(run_key) DO UPDATE SET published=1", (run_key, int(stamp // 3600)))
@@ -155,10 +206,13 @@ def observe_publication(db, cfg, now, rows, *, run_key=None):
                 while left < stamp:
                     hour = int(left // 3600)
                     right = min(stamp, (hour + 1) * 3600)
-                    db.conn.execute("INSERT INTO deal_click_shown VALUES (?,?,?,?) "
-                        "ON CONFLICT(deal_key,hour) DO UPDATE SET "
-                        "seconds=MIN(3600,seconds+excluded.seconds), position=excluded.position",
-                        (key, hour, right - left, position))
+                    if cfg.compact_click_exposure:
+                        add_exposure(db, key, hour, right - left)
+                    else:
+                        db.conn.execute("INSERT INTO deal_click_shown VALUES (?,?,?,?) "
+                            "ON CONFLICT(deal_key,hour) DO UPDATE SET "
+                            "seconds=MIN(3600,seconds+excluded.seconds), position=excluded.position",
+                            (key, hour, right - left, position))
                     left = right
         snapshot = {"at": stamp, "run_key": run_key,
                     "keys": [(d["key"], i) for i, d in enumerate(rows, 1)]}
@@ -169,6 +223,8 @@ def observe_publication(db, cfg, now, rows, *, run_key=None):
             if table == "deal_click_shown" and cfg.deal_click_shown_days is not None:
                 continue  # bounded cooperative cleanup in DB.prune
             db.conn.execute(f"DELETE FROM {table} WHERE hour < ?", (cutoff,))
+        if cfg.deal_click_shown_days is None and compact_exists(db):
+            db.conn.execute("DELETE FROM deal_click_days WHERE day < ?", (cutoff // 24,))
 
 
 def features(db, cfg, now, published):
@@ -189,11 +245,24 @@ def features(db, cfg, now, published):
                                "WHERE hour>=? AND hour<?", (start, end)).fetchone()
     counts = dict(db.conn.execute("SELECT deal_key,SUM(count) FROM deal_clicks "
                                   "WHERE hour>=? AND hour<? GROUP BY deal_key", (start, end)))
-    shown = {r[0]: (r[1] / 3600, r[2]) for r in db.conn.execute(
-        "SELECT s.deal_key,SUM(s.seconds),SUM(COALESCE(c.count,0)) FROM deal_click_shown s "
-        "JOIN deal_click_coverage h ON h.hour=s.hour LEFT JOIN deal_clicks c "
-        "ON c.hour=s.hour AND c.deal_key=s.deal_key WHERE s.hour>=? AND s.hour<? "
-        "GROUP BY s.deal_key", (start, end))}
+    if compact_exists(db):
+        covered = {r[0] for r in db.conn.execute(
+            "SELECT hour FROM deal_click_coverage WHERE hour>=? AND hour<?", (start, end))}
+        by_hour = {(r[0], r[1]): r[2] for r in db.conn.execute(
+            "SELECT deal_key,hour,count FROM deal_clicks WHERE hour>=? AND hour<?", (start, end))}
+        totals = {}
+        for key, hour, seconds in exposure(db, start, end):
+            if hour in covered:
+                value = totals.setdefault(key, [0., 0])
+                value[0] += seconds
+                value[1] += by_hour.get((key, hour), 0)
+        shown = {key: (value[0] / 3600, value[1]) for key, value in totals.items()}
+    else:
+        shown = {r[0]: (r[1] / 3600, r[2]) for r in db.conn.execute(
+            "SELECT s.deal_key,SUM(s.seconds),SUM(COALESCE(c.count,0)) FROM deal_click_shown s "
+            "JOIN deal_click_coverage h ON h.hour=s.hour LEFT JOIN deal_clicks c "
+            "ON c.hour=s.hour AND c.deal_key=s.deal_key WHERE s.hour>=? AND s.hour<? "
+            "GROUP BY s.deal_key", (start, end))}
     def age(value):
         at = parse_iso(value or "")
         return max(0, (now - at).total_seconds() / 3600) if at and at <= now else None

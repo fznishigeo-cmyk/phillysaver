@@ -1,4 +1,230 @@
-# State size and retention — tasks 296 / 296b
+# State size and retention — tasks 296 / 296b / 296c
+
+## 296c: lossless compact writes (2026-10-18)
+
+`retention.compact_accuracy_samples` and `retention.compact_click_exposure`
+are strict booleans, default **false**, shipped **true**. No public output,
+evidence checks, money caps, requests, ranking or retention windows change.
+Tables are created lazily, so a missing/false knob on an old database keeps
+the old schema and writer bytes. Readers recognize both encodings regardless
+of the switch; turning either switch off does not hide previous observations.
+
+### Accuracy receipts
+
+The audit found no raw payload in `accuracy_samples`: its cost was repeated
+deal URLs, run keys and timestamp strings in the table and its three indexes.
+The report needs checked time, bucket and outcome. The optional sampler needs
+deal keys checked within six hours. Replay and cached-reading suppression need
+**both** `(run,deal,source)` and `(deal,observed time,source)` uniqueness.
+
+`accuracy_sample_keys` interns `(deal_key,source)`; `accuracy_sample_runs`
+interns run keys. `accuracy_samples_compact` stores their integer IDs, checked
+and observed UTC seconds, bucket and outcome, with the same two uniqueness
+constraints and an indexed checked clock. `util.iso` already truncates to
+seconds, so no clock precision is lost. Store is omitted because neither
+reader uses it; source remains in the identity required for deduplication.
+No hashing, sampling or change to the denominator is involved. Keeping these
+compact receipts, rather than just daily totals, preserves replay and the
+six-hour exclusion without inventing another approximate dedupe mechanism.
+
+Both writers check receipts in the other encoding before accepting a sample.
+Reports merge both formats and still select seven **completed local days**,
+including DST and timezone edges. Extra sampling reads recent keys from both.
+Read-only report connections need no migration or schema write.
+
+### Click exposure
+
+The learner joins exposure to individually covered/capped hours and click
+counts over a configurable 1–720-hour window. A daily sum or a top-screen-only
+sample would change its features. `deal_click_days` instead has one row per
+deal and UTC day: a 192-byte little-endian array of **24 binary64 seconds
+values**. Each slot retains the old per-hour arithmetic and 3,600-second cap;
+`-1` means absent (a stored zero remains distinguishable). Historical position
+is omitted because features uses the current publication order.
+
+Publication gaps, disappearing offers, fractional seconds, hour/day boundaries
+and run guards behave as before. The reader combines legacy and packed hourly
+seconds, counts clicks once per covered deal/hour, and excludes the current
+unfinished hour. That also supports a switch back to the legacy writer halfway
+through an hour. Neither empty coverage nor opt-outs become zero-click evidence.
+
+### Migration, retention and rollback
+
+The existing cooperative maintenance migrates legacy rows in the same 64-row
+transactions and 4,096-examined/table/run, one-second shared budget as 296b.
+Insert into the compact encoding, deletion of the legacy row, cursor and
+allowance commit together; an interrupted chunk rolls back schema creation too.
+Migration uses a bounded rowid sweep, expiring already-old rows instead of
+copying them. Compact accuracy expiry uses its timestamp index; bounded key/run
+sweeps delete only dictionary entries with no remaining samples. Packed click
+expiry uses the day index and retains the entire boundary day (at most 23 extra
+hours), so no needed partial-day slot is removed. Future observations survive.
+Fast runs still defer VACUUM; hourly runs retain the existing 10%-free policy.
+
+The switches control writing and migration, not reading. With the new code,
+switching them off is safe, including for a mixed database. An **old code
+rollback** must first export compact accuracy receipts and hourly slots to the
+legacy tables or restore the last pre-migration snapshot; old code cannot read
+these new tables. No immediate production reclamation is claimed: migration
+and retention must drain, then hourly VACUUM must reclaim free pages. The
+production size log remains the rollout check.
+
+### Reproducible write measurement and remaining size gap
+
+Run `.venv/bin/python -m scripts.state_write_experiment` offline. It creates
+and removes its own `/tmp/task296c-model-*` directory, uses the real schema and
+writers, and calls the existing gzip `-n -6` / OpenSSL encryption helper with
+a public fixture password. No production database, secret, network or Git
+write is involved. The fixture contains:
+
+- 3,300 live deals, 20 normalized sightings and permanent post-price facts per
+  deal (66,000 each), and varied current prices/outcomes.
+- 2,000 accuracy readings and deal payload updates per hourly run; four fast
+  publications/hour, at :01/:16/:31/:46, plus the hourly publication: **120
+  runs/day**, all exposing the same live inventory. Different observed seconds,
+  rotating recheck cohorts, unique run keys and hourly exposure boundaries
+  exercise the receipt indexes. Each mode records exactly 48,000 samples/day.
+- A saturated nine-day accuracy window (432,000 samples), eight exposure days
+  plus a partial boundary day, and 12 Keepa facts per retained deal.
+- Unchanged post/audit receipts calibrated to **the full 296b observed raw
+  growth × retention windows**, including indexes: 159,449,088 bytes / 448,000
+  `posts_seen` rows and 37,367,808 bytes / 122,000 completed audit rows before
+  VACUUM. Deterministic SHA256 content hashes model incompressible receipts,
+  with URLs, source names and timestamps, never post bodies.
+
+The before column uses legacy accuracy/exposure writers and uncompressed deal
+payloads; after enables both new knobs plus 296b's existing deal compaction.
+The upsert test separately proves the 296b reduction through real dedupe
+upserts, with identical expanded facts. This is a comparison of the legacy
+writers with all three compact writers, not a production trace or physical
+disk-I/O benchmark. Snapshot deltas are **net retained state growth**; every
+save still uploads the entire encrypted file.
+
+| Measurement | Before, bytes | After, bytes |
+| --- | ---: | ---: |
+| Deal payload bytes submitted for 2,000 hourly updates | 7,737,056 | 732,500 |
+| Mean payload bytes/update | 3,868.528 | 366.250 |
+| First modeled day: SQLite growth | 25,559,040 | 6,033,408 |
+| First modeled day: encrypted growth | 4,094,976 | 1,478,944 |
+| Mean SQLite growth/run, 120 runs/day | 212,992 | 50,278.4 |
+| Mean encrypted growth/run, 120 runs/day | 34,124.8 | 12,324.53 |
+| Saturated SQLite snapshot after VACUUM | 459,243,520 | 281,026,560 |
+| Saturated gzip snapshot | 95,611,124 | 83,935,470 |
+| Saturated encrypted snapshot | 95,611,152 | 83,935,488 |
+| Encrypted estimate including 10 MB allowance for other state | 105,611,152 | **93,935,488** |
+
+Net encrypted growth falls **63.88%**, and hourly deal payload writes fall
+**90.53%**. First-use allocations are not representative: the first hourly
+run creates dictionaries/day rows and grows encrypted state 179,072 → 207,568
+bytes; the first fast run crosses into a new daily block and grows it
+101,456 → 96,144 bytes. Amortize across the modeled day, not just one cold run.
+The first-day encrypted snapshots are 11,275,616 → 8,236,880 bytes, including
+the initial protected inventory (7,180,640 → 6,757,936 bytes).
+
+**The brief's below-70-MB requirement remains unmet under its sustained-rate
+stress scenario.** The measured compact model is **83.94 MB before** the
+explicit 10 MB allowance, or **93.94 MB including it**. A separate real-schema
+component measurement, with the same post/audit cohorts and VACUUM/encryption,
+finds **60,625,264 encrypted bytes for those two unchanged tables alone**
+(`posts_seen` alone: 47,863,120). Thus even zero bytes for accuracy/exposure
+would leave little room below 70 MB for protected inventory/history and all
+other state. The former whole-state compression proxy underestimated these
+hash-heavy receipts; a lower asserted total would not be evidence-backed.
+
+For the modeled day the current two-writer change reduces growth immediately,
+but it does **not** establish that production can continue saving indefinitely.
+The 20-minute production burst is not a measured long-term arrival rate, and
+live inventory/permanent facts have no finite bound. Resolving the remaining
+target requires either a separate lossless post/audit receipt compaction task,
+or measured production arrival rates demonstrating that this burst does not
+persist. Those writers and retention windows are unchanged by 296c; do not
+deploy on the assumption that 70 MB has been achieved. Keep checking the
+actual encrypted-size log and bounded migration progress.
+
+### 296c targeted validation
+
+Final targeted run: **224 passed in 86.54 s**, including both accuracy writer
+formats through Keepa/Woot/store callers and optional sampler limits, exact
+report/report-line parity over DST/timezones, mixed exposure formats and
+partial coverage, zero/fractional slots, 168/720-hour cutoff boundaries,
+same-run replay, interrupted migration rollback, missing/false writer bytes,
+296b retention/compaction, protected facts/money, unchanged publication/Node
+output, and both `test_e2e_offline::test_rerun_is_idempotent` modes. Selectors:
+`test_state_write_less`, `test_accuracy_scoreboard`, `test_click_signal`,
+`test_state_growers`, `test_lighter_state`, the rerun test above,
+`test_state_size::test_unbounded_readers_evidence_and_money_are_untouched` and
+`test_state_retention_publication::test_retained_publication_and_node_controller`.
+Earlier focused runs: 68 passed / 1 migration-bookkeeping assertion failed
+(fixed); 154 passed / 21 legacy-table assertions failed (test projection
+updated, now parameterized over both formats); then 124 passed. Every run used
+`-q -n 1 -p no:cacheprovider` and an owned `/tmp/task296c-*` basetemp removed
+afterward. Python syntax and diff checks pass. No full suite, browser, network,
+commit or push. Production migration throughput and size remain unmeasured.
+
+## R2 option
+
+Design only: no storage scripts, workflows, Cloudflare resources or secrets
+are changed by 296c. Keep `state.db` local during the job and keep the existing
+gzip/AES/PBKDF2 `state_crypt.sh` envelope and `STATE_DB_KEY`.
+
+- **Operator setup:** create a private Standard-storage R2 bucket, for example
+  `wowpriced-state`, in the existing Cloudflare account. Disable public access
+  and public custom domains. Create an R2 S3 credential with **Object Read &
+  Write**, restricted to this bucket. Bucket creation/lifecycle administration
+  stays with the operator; the runner needs object GET/HEAD/PUT/LIST/DELETE,
+  not account-wide administration. Save `R2_ACCESS_KEY_ID`,
+  `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and `R2_ENDPOINT` as GitHub repository
+  secrets; retain `STATE_DB_KEY` and the existing account ID. The S3 endpoint is
+  `https://<account-id>.r2.cloudflarestorage.com`, region `auto`. Existing Pages
+  API credentials are not automatically R2 object credentials.
+- **Restore:** a default-off storage-backend knob selects git or R2. Fetch a
+  small private `latest.json` manifest and its immutable snapshot object into
+  temporary files. Check encrypted byte length and SHA256 from the manifest,
+  decrypt, validate the SQLite header and `PRAGMA quick_check`, then atomically
+  replace local state. Remember the manifest ETag/generation. Missing object,
+  authentication/network/decryption failure or invalid state must fail the job,
+  never start empty or silently restore an older git copy. Bootstrap requires
+  an explicit operator-controlled first seed.
+- **Save:** close/checkpoint SQLite (or use its backup API for a consistent
+  snapshot); reuse deterministic gzip, encryption, diagnostics and byte guard.
+  Keep git's thresholds until cutover; an R2-specific warning/stop threshold
+  can then be chosen from measured restore/runtime limits, with operator review,
+  instead of inheriting Git's 100 MB object limit.
+  Compare a plaintext snapshot digest to avoid encryption-salt-only rewrites.
+  Upload under an immutable run/generation key, verify length/checksum by
+  reading it back, then conditionally replace `latest.json` against the ETag
+  restored by this job. A stale writer fails; it must not overwrite a newer
+  generation using today's git retry's last-writer-wins behavior. Confirm the
+  chosen R2 client/endpoint supports the required conditional write before
+  implementation; otherwise serialize publication through a small coordinator
+  with atomic compare-and-swap. Retries reuse the uploaded snapshot. All state
+  writers (fast, hourly, ads guard, Pinterest connect) must share the existing
+  `dealradar` concurrency group; read-only probes/reports use the same restore
+  helper. Keep `sources_report.md` on git separately. Review every restore/save
+  workflow caller and disable the data-squash job after cutover.
+- **Retention and cost:** explicitly keep the latest 24 successful snapshots
+  plus seven daily checkpoints; garbage-collect only unreferenced generations
+  after publication succeeds. At 70 MB each this is about **2.17 GB** (plus
+  manifest/temporary upload slack), not a snapshot forever on every run.
+  Planning assumptions, **not reverified online because this task is offline**:
+  Standard R2's free allowance is 10 GB-month storage, 1 million Class A and
+  10 million Class B requests/month, with no internet egress fee. At 120 runs/day
+  and even three saves/run, snapshot+manifest PUTs are about 21,600/month;
+  restores and verification reads are similarly far below the request limits.
+  With those allowances unused elsewhere in the account, modeled R2 cost is
+  **$0/month**. Recheck current terms and shared-account usage before enabling:
+  [R2 pricing](https://developers.cloudflare.com/r2/pricing/),
+  [R2 credentials](https://developers.cloudflare.com/r2/api/tokens/),
+  [S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/).
+- **Cutover/rollback:** pause writers, seed R2 from the latest validated git
+  snapshot, round-trip decrypt and compare SQLite bytes, then enable R2 and
+  resume. Keep the final git state and deployment SHA as a checkpoint. To roll
+  back later, pause writers again, export the **latest validated R2 state** to
+  `data:state.db.enc` using the existing size guard, round-trip verify, switch
+  back to git, and resume. Restoring the old pre-cutover git state would lose
+  spend/replay receipts and is not an acceptable ordinary rollback. If state
+  exceeds git's guard, reduce it safely and validate first; do not bypass the
+  guard. Retain R2 checkpoints until rollback has been verified.
 
 ## 296b: actual growers and reader-safe limits (2026-10-18)
 
