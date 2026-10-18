@@ -163,4 +163,5 @@ def test_shipped_site_never_names_the_price_supplier(tmp_path):
     out, doc, *_ = render(tmp_path, load_config(), offers())
     assert "keepa" not in (out / "index.html").read_text().lower()
     assert "keepa" not in (out / search_more.ASSET).read_text().lower()
+    assert "keepa" not in (out / "search-analyze.js").read_text().lower()
     assert "keepa" not in json.dumps(doc).lower()

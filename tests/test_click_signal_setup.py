@@ -32,6 +32,7 @@ def setup_env(tmp_path):
                      "dealradar/__init__.py", "dealradar/config.py", "dealradar/models.py",
                      "dealradar/clicks.py", "dealradar/util.py", "dealradar/source_policy.py",
                      "dealradar/appeal.py", "dealradar/appeal_score.py", "dealradar/errors.py", "dealradar/conditions.py",
+                     "dealradar/state_size.py",
                      "sources.yaml"):
         target = tmp_path / relative
         target.parent.mkdir(parents=True, exist_ok=True)

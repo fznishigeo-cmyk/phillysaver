@@ -41,6 +41,7 @@ from . import search_results
 from . import search_boost
 from . import search_circle
 from . import search_analyze
+from . import search_analyze_lazy
 from . import search_more
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -1097,6 +1098,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_analyze.site_version(site_version, cfg)
     site_version = credits.site_version(site_version, cfg)
     site_version = search_more.site_version(site_version, cfg)
+    site_version = search_analyze_lazy.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
@@ -1363,6 +1365,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Write the price-free offline page after every global script pass.
         pwa.publish(out, cfg)
     # All template markers and injected scripts have had their final consumer.
+    search_analyze_lazy.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function buildFixture(scratch) {
+function buildFixture(scratch, lazy = true) {
   const build = spawnSync('.venv/bin/python', ['-c', `
 import sys
 from pathlib import Path
@@ -21,6 +21,7 @@ cfg.non_amazon_freshness_enabled = False
 cfg.keepa_click_price_rule = "off"
 cfg.affiliate_amazon_tag = "example-20"
 cfg.search_more = {"enabled": True, "pages": 3, "min_query_chars": 2}
+cfg.search_analyze["lazy"] = sys.argv[2] == "true"
 # make_deal's default clock is outside the Amazon confirmation window.
 deals = [make_deal(dedupe_key=f"task293-{i}", item=f"Wireless mouse {i}",
     store="Amazon", brand="Example", canonical_url=f"https://www.amazon.com/dp/B0{i:08d}",
@@ -29,7 +30,7 @@ deals = [make_deal(dedupe_key=f"task293-{i}", item=f"Wireless mouse {i}",
 deals.append(make_deal(dedupe_key="hair-tie", item="Hair tie organizer", codes=[], conditions=[],
     image_url="https://m.media-amazon.com/images/I/tie.jpg"))
 render(Path(sys.argv[1]), cfg, deals)
-`, scratch], {encoding:'utf8'});
+`, scratch, String(lazy)], {encoding:'utf8'});
   assert.equal(build.status, 0, build.stderr);
   const root = path.join(scratch, 'site');
   const published = JSON.parse(fs.readFileSync(path.join(root, 'deals.json'), 'utf8')).deals;
@@ -54,16 +55,28 @@ async function waitFor(page, condition, action, diagnostics) {
 
 async function main() {
   const {chromium} = require('playwright');
-  const scratch = fs.mkdtempSync('/tmp/task293g-browser-');
+  const scratch = fs.mkdtempSync('/tmp/task295-search-more-browser-');
   let browser;
   try {
-    const root = buildFixture(scratch), shots = process.argv[3] && path.resolve(process.argv[3]);
+    const roots = {};
+    for (const lazy of [false, true]) {
+      const folder = path.join(scratch, String(lazy)); fs.mkdirSync(folder);
+      roots[lazy] = buildFixture(folder, lazy);
+    }
+    const shots = process.argv[3] && path.resolve(process.argv[3]);
     if (shots) fs.mkdirSync(shots, {recursive:true});
-    browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
-    for (const width of [390, 1440]) for (const theme of ['light', 'dark']) {
+    try {browser = await chromium.launch({headless:true, executablePath:process.argv[2]});}
+    catch (error) {
+      if (!/Operation not permitted|Executable doesn't exist|Failed to launch|sandbox|Target .* closed/.test(error.message)) throw error;
+      console.log('Chromium unavailable: native launch failed; no screenshots captured'); process.exitCode = 77; return;
+    }
+    for (const lazy of [false, true]) for (const width of [390, 1440]) for (const theme of ['light', 'dark']) {
+      const root = roots[lazy], mode = lazy ? 'lazy' : 'inline';
       const context = await browser.newContext({viewport:{width, height:844}, colorScheme:theme, serviceWorkers:'block',
         reducedMotion:width === 390 ? 'reduce' : 'no-preference'});
-      const calls = [], errors = [], unexpected = [];
+      const calls = [], errors = [], unexpected = [], imports = [];
+      let releaseAnalyze;
+      const analyzeReady = new Promise(resolve => {releaseAnalyze = resolve;});
       let limited = false;
       const item = (n, title = 'Wireless mouse from Amazon') => ({asin:'B0' + String(n).padStart(8, '0'), title,
         price_cents:1299, list_price_cents:1999, image:'https://m.media-amazon.com/images/I/mouse.jpg',
@@ -92,6 +105,10 @@ async function main() {
           else data = {items:[item(1), item(100 + page), item(100 + page), item(200 + page, 'Anal lubricant')]};
           return route.fulfill({contentType:'application/json', body:JSON.stringify(data)});
         }
+        if (url.pathname === '/search-analyze.js') {
+          imports.push(url.search);
+          await analyzeReady;
+        }
         const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname);
         return route.fulfill(fs.existsSync(file) && fs.statSync(file).isFile() ? {path:file} : {status:204, body:''});
       });
@@ -103,14 +120,16 @@ async function main() {
       const page = await context.newPage();
       page.on('pageerror', error => errors.push(error.message));
       page.on('console', message => {if (message.type() === 'error') errors.push(message.text());});
-      const wait = (condition, action) => waitFor(page, width + ' ' + theme + ': ' + condition, action,
+      const wait = (condition, action) => waitFor(page, mode + ' ' + width + ' ' + theme + ': ' + condition, action,
         {calls, errors, unexpected});
       await wait('home navigation', () => page.goto('https://wowpriced.test/'));
       await wait('at least 20 initial local cards in #content', () =>
         page.waitForFunction(() => document.querySelectorAll('#content .card').length >= 20));
+      assert.equal(imports.length, 0, 'no Analyze asset at first paint');
       const q = page.locator('#q');
       await q.fill('mouse');
       await wait('mouse: related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
+      releaseAnalyze();
       await page.waitForTimeout(800);
       assert.equal(calls.length, 0, 'no API request before scrolling to the end of local results');
       const more = page.locator('#search-more');
@@ -136,7 +155,7 @@ async function main() {
       await page.evaluate(() => {window.open = (...args) => {window.openedAmazon = args;};});
       await final.click();
       assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=mouse&tag=example-20');
-      if (shots) await page.screenshot({path:path.join(shots, width + '-' + theme + '-pages.png'), fullPage:true});
+      if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-pages.png'), fullPage:true});
 
       // A typo with no local or Amazon match uses a title bigram and can be undone.
       await q.fill('hair tire');
@@ -169,7 +188,7 @@ async function main() {
       assert.equal(calls.filter(q => q === '?q=coffee&page=0').length, 1);
       assert.equal(await page.locator('#amazon-results .flag').innerText(), '-35%');
       assert.equal(await page.locator('#amazon-results s').textContent(), 'List Price $19.99');
-      if (shots) await page.screenshot({path:path.join(shots, width + '-' + theme + '-spelling.png'), fullPage:true});
+      if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-spelling.png'), fullPage:true});
 
       await q.fill('https://www.amazon.com/dp/B000000901');
       await q.press('Enter');
@@ -178,7 +197,8 @@ async function main() {
       assert.equal(await page.locator('.analyze-lead .flag').innerText(), '-35%');
       assert.equal(await page.locator('.analyze-lead s').textContent(), 'List Price $19.99');
       assert.equal(calls.filter(q => q === '?asin=B000000901').length, 1);
-      if (shots) await page.screenshot({path:path.join(shots, width + '-' + theme + '-analyze.png'), fullPage:true});
+      assert.equal(imports.length, lazy ? 1 : 0);
+      if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-analyze.png'), fullPage:true});
 
       limited = true; await q.fill('wireless');
       await wait('wireless: related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
@@ -192,7 +212,7 @@ async function main() {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       assert.equal(await page.evaluate(() => JSON.stringify(window.searchMoreEvents).includes('hair')), false);
       assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);
-      console.log('Search more Chromium ' + width + ' ' + theme + ': passed');
+      console.log('Search more Chromium ' + mode + ' ' + width + ' ' + theme + ': passed');
       await context.close();
     }
   } finally {

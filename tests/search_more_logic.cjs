@@ -5,14 +5,19 @@ const path = require('node:path');
 const vm = require('node:vm');
 const html = fs.readFileSync(process.argv[2], 'utf8');
 const between = (start, end) => html.slice(html.indexOf(start), html.indexOf(end, html.indexOf(start)));
-const moduleSource = fs.readFileSync(path.join(path.dirname(process.argv[2]), 'search-more.js'), 'utf8');
-const code = 'var searchMoreModule = ' + moduleSource.replace('export default ', '') + ';\n' +
+const modulePath = path.join(path.dirname(process.argv[2]), 'search-more.js');
+const moduleSource = fs.existsSync(modulePath) ? fs.readFileSync(modulePath, 'utf8') : 'export default function () {}';
+const analyzePath = path.join(path.dirname(process.argv[2]), 'search-analyze.js');
+const analyzeSource = fs.existsSync(analyzePath) ? fs.readFileSync(analyzePath, 'utf8') : '';
+const code = (analyzeSource ? 'var searchAnalyzeModule = ' + analyzeSource.replace('export default ', '') + ';\n' : '') +
+  'var searchMoreModule = ' + moduleSource.replace('export default ', '') + ';\n' +
   (between('  function searchText()', '  function renderTabs(') +
   between('  function filtered(', '  function searchRecoveryOptions(') +
   between('  function searchRecoveryHtml()', '  function recoverSearch(') +
   between('  function render() {', '  function showMore()') +
   between('  var searchTimer, appliedSearch', '  document.getElementById("storesel").addEventListener'))
-    .replace(/import\("\/search-more\.js\?v=[a-f0-9]+"\)/, 'loadSearchMore()');
+    .replace(/import\("\/search-more\.js\?v=[a-f0-9]+"\)/, 'loadSearchMore()')
+    .replace(/import\("\/search-analyze\.js\?v=[a-f0-9]+"\)/, 'loadSearchAnalyze()');
 const turn = () => new Promise(resolve => setImmediate(resolve));
 const escape = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const asin = n => 'B0' + String(n).padStart(8, '0');
@@ -21,7 +26,7 @@ const deal = (n, title = 'Wireless mouse', extra = {}) => ({key:String(n), dedup
 
 function setup(observer = true) {
   let now = Date.parse('2026-10-18T00:00:00Z'), serial = 0;
-  const calls = [], events = [], opened = [], timers = new Map(), observers = [], listeners = {}, elements = {}, modules = [];
+  const calls = [], events = [], opened = [], timers = new Map(), observers = [], listeners = {}, elements = {}, modules = [], analyzeModules = [];
   function node(id) {
     return {id, _html:'', value:'', hidden:false, connected:true, handlers:{}, attributes:{},
       get innerHTML() {return this._html;},
@@ -64,6 +69,7 @@ function setup(observer = true) {
     Date:class extends Date {static now() {return now;}}, location:{search:''},
     document:{getElementById:id => elements[id], body:{contains:node => node.connected},
       createElement:node, head:{appendChild(){}},
+      querySelector:selector => selector === '.analyze-short' ? (elements.short ||= node('short')) : null,
       addEventListener:(name, fn) => (listeners[name] ||= []).push(fn),
       querySelectorAll(selector) {
         assert.equal(selector, '#content .card a[href]');
@@ -85,10 +91,12 @@ function setup(observer = true) {
     moreObserver:null, paintTicker(){}, savedOn:() => false, engagementLineHtml:() => '', activeSpotlight:() => [],
     ordered:rows => rows, updatePaywall(){}, openNudge:() => false, frontPageView:() => false,
     placeGone:rows => rows, confirmedFirst:rows => rows, clickPriceHomeRows:rows => rows, searchNewFirst:rows => rows,
+    spaceAllure:rows => rows, spaceRotatedPromos:rows => rows,
     openAccess:() => false, canJoin:() => false, openBand:() => '', panel:{}, PAGE_CARDS:60, AUTO_CARDS:240,
     showMore() {ctx.state.shown += 60; ctx.render();},
     fetch:(url, options) => new Promise((resolve, reject) => calls.push({url, options, resolve, reject})),
-    loadSearchMore:() => {modules.push('search-more.js'); return Promise.resolve({default:ctx.searchMoreModule});}};
+    loadSearchMore:() => {modules.push('search-more.js'); return Promise.resolve({default:ctx.searchMoreModule});},
+    loadSearchAnalyze:() => {analyzeModules.push('search-analyze.js'); return Promise.resolve({default:ctx.searchAnalyzeModule});}};
   if (observer) ctx.IntersectionObserver = ctx.window.IntersectionObserver = Observer;
   vm.createContext(ctx); vm.runInContext(code, ctx);
   const emit = (name, type, event = {}) => {
@@ -99,7 +107,7 @@ function setup(observer = true) {
     for (const [id, value] of [...timers].filter(([, value]) => value.at <= now)) {timers.delete(id); value.fn();}
     await turn(); await turn();
   };
-  return {ctx, calls, events, opened, elements, observers, advance, emit, modules,
+  return {ctx, calls, events, opened, elements, observers, advance, emit, modules, analyzeModules,
     async query(q) {elements.q.value = q; emit('q', 'input'); ctx.updateSearch(); await turn();},
     item(n, title = 'Wireless mouse', extra = {}) {return {asin:asin(n), title, price_cents:1299,
       as_of:new Date(now - 60000).toISOString(), image:'https://m.media-amazon.com/images/I/photo.jpg', ...extra};},
@@ -116,7 +124,7 @@ function setup(observer = true) {
   };
 }
 
-(async () => {
+async function main() {
   const s = setup(); s.ctx.state.deals = [deal(1), deal(2)]; s.ctx.render(); await turn();
   assert.equal(s.modules.length, 0, 'the home page does not load optional search code');
   await s.query('mouse'); assert.equal(s.modules.length, 1);
@@ -348,4 +356,6 @@ function setup(observer = true) {
     assert.equal(adopt.calls.length, 2, 'Analyze adopts the pending corrected request');
   }
   console.log('Search more logic passed: lazy pages 0..2, guards, dedupe, tagged button, spelling, List Price and Analyze');
-})().catch(error => {console.error(error); process.exitCode = 1;});
+}
+module.exports = {setup, deal, turn};
+if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

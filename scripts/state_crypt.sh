@@ -7,9 +7,14 @@
 
 STATE_CIPHER=(-aes-256-cbc -pbkdf2 -iter 200000 -md sha256)
 
-state_encrypt() (  # <state.db> <state.db.enc>
+state_encrypt() (  # <state.db> <state.db.enc> [gzip-output]
   set -o pipefail
-  gzip -n -6 -c -- "$1" | openssl enc -e "${STATE_CIPHER[@]}" -salt -pass env:STATE_DB_KEY -out "$2"
+  if [[ -n "${3:-}" ]]; then
+    gzip -n -6 -c -- "$1" > "$3" &&
+    openssl enc -e "${STATE_CIPHER[@]}" -salt -pass env:STATE_DB_KEY -in "$3" -out "$2"
+  else
+    gzip -n -6 -c -- "$1" | openssl enc -e "${STATE_CIPHER[@]}" -salt -pass env:STATE_DB_KEY -out "$2"
+  fi
 )
 
 state_decrypt() {  # <state.db.enc> <state.db> [require-gzip]

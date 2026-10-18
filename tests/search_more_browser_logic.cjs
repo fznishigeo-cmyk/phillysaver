@@ -6,6 +6,8 @@ const {buildFixture, waitFor} = require('./search_more_browser.cjs');
 
 (async () => {
   const root = buildFixture(process.argv[2]);
+  assert(fs.existsSync(path.join(root, 'search-analyze.js')));
+  assert(!fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes('function analyzeLookup'));
   const deals = JSON.parse(fs.readFileSync(path.join(root, 'deals.json'), 'utf8')).deals;
   assert.equal(deals.length, 25);
   assert.equal(new Set(deals.filter(d => d.store === 'Amazon').map(d => d.url)).size, 24);

@@ -204,6 +204,7 @@ def pre_task_290_install_raw(config):
     if isinstance(words, list):
         config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
     config.pop("search_more", None)
+    config["search_analyze"] = dict(config.get("search_analyze") or {}, lazy=False)
     config.get("site", {}).pop("brand_pages", None)
     return config
 
@@ -218,9 +219,16 @@ def pre_task_291(cfg):
 
 def pre_task_293(cfg):
     """Before related Amazon pages and spelling; preserve recorded release bytes."""
+    pre_task_295(cfg)
     cfg.search_more = {"enabled": False}
     # Shipped in the same release: brand pages (task 289) switched on after the operator's preview.
     cfg.brand_pages = False
+    return cfg
+
+
+def pre_task_295(cfg):
+    """Before deferred Analyze; preserve every existing publication hash."""
+    cfg.search_analyze = dict(cfg.search_analyze, lazy=False)
     return cfg
 
 

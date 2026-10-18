@@ -1413,11 +1413,29 @@ class DB:
               deals_days: int = 14, post_parses_days: int = 2,
               llm_calls_days: int = 35, run_stats_days: int = 60,
               http_cache_days: int = 30, outgoing_days: int = 60,
+              indexnow_batch_versions_days: int | None = None,
+              appeal_scores_days: int | None = None, appeal_scores_ttl_h: float = 72,
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
               fast_lane: bool = False, deadline: float | None = None) -> dict[str, Any] | None:
         if incremental_cache_enabled and run_key is None:
             raise ValueError("incremental cache maintenance requires a run key")
+        for days in (indexnow_batch_versions_days, appeal_scores_days):
+            if days is not None and (type(days) is not int or not 1 <= days <= 3650):
+                raise ValueError("optional state retention must be an integer in 1..3650 or None")
+        if indexnow_batch_versions_days is not None:
+            # Completed batches only need their permanent endpoint/run/status
+            # anchor. Sending batches still need every version to finish safely.
+            self.conn.execute(
+                "UPDATE indexnow_batches SET versions='{}' WHERE status IN ('received','failed')"
+                " AND started_at < ? AND versions!='{}'",
+                (iso(now - timedelta(days=indexnow_batch_versions_days)),))
+        if appeal_scores_days is not None:
+            # The reader's configured TTL wins over a shorter retention request.
+            # Run claims and the spend ledger are separate and remain untouched.
+            self.conn.execute("DELETE FROM appeal_scores WHERE rated_at < ?",
+                              (iso(now - max(timedelta(days=appeal_scores_days),
+                                             timedelta(hours=appeal_scores_ttl_h))),))
         for table in ("accuracy_samples", "accuracy_extra_runs", "accuracy_extra_reads"):
             self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
                               (iso(now - timedelta(days=35)),))

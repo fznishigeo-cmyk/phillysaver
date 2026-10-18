@@ -167,6 +167,7 @@ search:
 
 search_analyze:
   enabled: true              # task 291: paste Amazon links; OFF restores previous bytes
+  lazy: true                 # task 295: load Analyze only when the search is used
 
 search_more:
   enabled: true              # task 293: related Amazon pages and one spelling correction
@@ -1150,6 +1151,10 @@ growth:
       - camelcamelcamel walmart
   monthly_price_usd: 9.99                    # MRR fallback; annual prices count as amount / 12
 
+state:
+  warn_enc_mb: 70            # Decimal MB (1,000,000 bytes); warning above this size.
+  max_enc_mb: 90             # Fail before any push at or above this size.
+
 retention:
   posts_seen_days: 30
   # Cross-source parse reuse (task 059): the same post text shows up in
@@ -1169,6 +1174,10 @@ retention:
     max_examined_per_run: 256  # includes fresh rows; chunks of at most 64
     budget_s: 0.25            # cooperative SQL slices, before the existing tail reserve
   outgoing_days: 60          # failed (rejected) attempts only; sent records and pending guards never expire
+  # Only terminal batch payloads expire; run/status receipts never expire.
+  # Missing/null keeps the previous unlimited payload retention.
+  indexnow_batch_versions_days: 7
+  appeal_scores_days: 7      # Never shorter than appeal_score.ttl_h; run claims stay.
 
 non_amazon_freshness:
   enabled: true

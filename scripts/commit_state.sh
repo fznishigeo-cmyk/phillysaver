@@ -45,7 +45,14 @@ cleanup() {
   rm -rf "$WORKTREE"
   git -C "$REPO_DIR" worktree prune >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+SNAPSHOT="$(mktemp -d)"
+trap 'cleanup; rm -rf "$SNAPSHOT"' EXIT
+
+# Measure exactly the bytes we would push, including on unchanged runs. Keep
+# this snapshot for raced-push retries; report once, before any remote access.
+state_encrypt "$REPO_DIR/state.db" "$SNAPSHOT/state.db.enc" "$SNAPSHOT/state.db.gz"
+python3 "$SCRIPT_DIR/../dealradar/state_size.py" "$REPO_DIR/state.db" \
+  "$SNAPSHOT/state.db.gz" "$SNAPSHOT/state.db.enc" "$REPO_DIR/config.yaml"
 
 # Clear any stale worktree left behind by an earlier interrupted run.
 cleanup
@@ -89,6 +96,8 @@ report_is_fresh() {
 same_state() {
   # Compare decompressed SQLite bytes, since encryption salts every write.
   # Legacy uncompressed snapshots migrate once, even with unchanged state.
+  # A differently packed remote copy must not bypass the measured size guard.
+  [[ "$(wc -c < "$WORKTREE/state.db.enc")" -eq "$(wc -c < "$SNAPSHOT/state.db.enc")" ]] || return 1
   local plain rc
   plain="$(mktemp)"
   state_decrypt "$WORKTREE/state.db.enc" "$plain" require-gzip 2>/dev/null && cmp -s "$plain" "$REPO_DIR/state.db"
@@ -99,7 +108,7 @@ same_state() {
 
 stage_state() {
   if ! { [[ -f "$WORKTREE/state.db.enc" ]] && same_state; }; then
-    state_encrypt "$REPO_DIR/state.db" "$WORKTREE/state.db.enc"
+    cp "$SNAPSHOT/state.db.enc" "$WORKTREE/state.db.enc"
   fi
   git -C "$WORKTREE" add state.db.enc
   git -C "$WORKTREE" rm --quiet --ignore-unmatch state.db

@@ -17,6 +17,9 @@ stay failures. Pending corrected requests are cancelled by undo.
 Native Chromium verification of 293G is pending the operator's external rerun;
 the sandbox still rejects Chromium launch. The original undo assertion remains,
 with additional blur-position, settled-query, edit and keyboard-undo checks.
+Task 295 also runs every native scenario with Analyze inline and lazy. Its module
+response is held until related search has mounted, exercising both module load
+orders and the shared cancellation hook; the initial page cannot request Analyze.
 The offline emitted-code harness also follows the remainder of the native
 sequence in one module: a second spelling correction, List Price, ASIN Analyze
 and rate-limit stopping. The browser script
@@ -41,6 +44,6 @@ node tests/search_more_browser.cjs /opt/pw-browsers/chromium docs/research/searc
 ```
 
 The executable path is the first argument; the optional second argument saves
-page/spelling/Analyze screenshots. The script removes its own `/tmp/task293g-browser-*`
+page/spelling/Analyze screenshots, prefixed `inline-` or `lazy-`. The script removes its own `/tmp/task295-search-more-browser-*`
 directory in `finally`, including failed runs. Screenshots are retained only in
 the requested destination. It never contacts a live service.

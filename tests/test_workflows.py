@@ -539,7 +539,7 @@ def test_commit_state_script_static() -> None:
     assert "dealradar-bot" in text and "actions@users.noreply.github.com" in text
     assert "[skip ci]" in text
     assert re.search(r"for delay in 2 4 8 16", text), "backoff schedule 2 4 8 16"
-    assert "trap cleanup EXIT" in text
+    assert "trap 'cleanup; rm -rf \"$SNAPSHOT\"' EXIT" in text
     subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
 

@@ -632,6 +632,10 @@ class AppConfig:
     incremental_cache_max_examined_per_run: int = 256
     incremental_cache_budget_s: float = 0.25
     outgoing_days: int = 60
+    indexnow_batch_versions_days: int | None = None
+    appeal_scores_days: int | None = None
+    state_warn_enc_mb: float | None = None
+    state_max_enc_mb: float | None = None
     feature_flags: dict[str, bool] = field(default_factory=dict)
     phone_budget: dict = field(default_factory=lambda: phone_budget_defaults())
 
@@ -680,12 +684,13 @@ def validated_search_more(value) -> dict:
 def validated_search_analyze(value) -> dict:
     if value is None:
         value = {}
-    if not isinstance(value, dict) or set(value) - {"enabled"}:
-        raise ValueError("search_analyze must contain enabled only")
-    enabled = value.get("enabled", False)
-    if type(enabled) is not bool:
-        raise ValueError("search_analyze.enabled must be a boolean")
-    return {"enabled": enabled}
+    if not isinstance(value, dict) or set(value) - {"enabled", "lazy"}:
+        raise ValueError("search_analyze must contain enabled and lazy only")
+    result = {"enabled": False, "lazy": False} | value
+    for key in result:
+        if type(result[key]) is not bool:
+            raise ValueError(f"search_analyze.{key} must be a boolean")
+    return result
 
 
 def validated_search_boost(value) -> dict:
@@ -1503,6 +1508,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     validate_incremental_cache_limits(cfg.incremental_cache_max_examined_per_run,
                                       cfg.incremental_cache_budget_s)
     cfg.outgoing_days = int(g("retention", "outgoing_days", default=cfg.outgoing_days))
+    for name in ("indexnow_batch_versions_days", "appeal_scores_days"):
+        value = g("retention", name, default=None)
+        if value is not None and (type(value) is not int or not 1 <= value <= 3650):
+            raise ValueError(f"retention.{name} must be an integer in 1..3650 or null")
+        setattr(cfg, name, value)
+    from .state_size import validate_limits
+    cfg.state_warn_enc_mb, cfg.state_max_enc_mb = validate_limits(g("state", default={}))
     cfg.feature_flags = g("feature_flags", default={}) or {}
     from .source_policy import grant_active
     primary, backup = load_sources()

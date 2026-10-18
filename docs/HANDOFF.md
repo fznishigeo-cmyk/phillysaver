@@ -236,6 +236,57 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Lazy Analyze (Codex task 295, 2026-10-18; uncommitted, ON):**
+  Strict `search_analyze.lazy` defaults false and ships true. A final publishing
+  pass moves the composed Analyze logic and CSS into a versioned, interaction-only
+  module, preserving search_more's spelling/shared cards/cancellation/error/hint
+  swaps. The loader masks links before loading, replays the current submit once,
+  adopts pending text lookups and leaves plain search plus a tagged Amazon button
+  usable after import failure. Missing/false/back-false retain seven pre-edit
+  publication hashes; `pre_task_295` chains from older fixture helpers without
+  re-pinning. Removed the headroom test's Analyze-OFF override; shipped config
+  passes the unchanged 77,360-byte ceiling and its extra 1 KB headroom assertion.
+  Initial targeted check: **23 passed, 2 failed in 81.78s** (shipped-layout Node
+  harness lacked a wall-ordering stub); corrected. Follow-up emitted logic,
+  shipped headroom and native fixture checks: **8 passed in 132.93s**.
+  Final search/legacy-pins/privacy/feature/rerun checks: **129 passed in 326.68s**.
+  Final Analyze native-fixture harness and shipped phone headroom: **2 passed in
+  106.66s**. Shipped home is **73,312 gzip bytes**, 4,048 below the unchanged
+  77,360 ceiling; JS/CSS/data ceilings also pass. Node syntax and diff checks pass.
+  Native 390/1440 light/dark inline/lazy Analyze and search_more QA remains for the operator; commands in
+  [Analyze research](research/analyze-search/README.md). No Chromium launch,
+  network, full suite, commit or push. Every pytest run used `-q -n 1 -p
+  no:cacheprovider`; owned `/tmp/task295-*` fixtures were deleted after each run.
+- **State size guard and retention (Codex task 296, 2026-10-18; uncommitted):**
+  `commit_state.sh` reports top-eight table/index bytes (dbstat, page-count fallback)
+  and actual gzip/encrypted sizes once per invocation, including no-ops; it warns
+  above 70 MB and refuses at/above 90 MB before remote access. Retries reuse the
+  measured snapshot; differently sized old encodings cannot bypass the guard.
+  New retention knobs ship seven days: completed IndexNow version maps become
+  `{}` while permanent run/status receipts and sending maps remain; expired appeal
+  scores are removed only beyond both retention and the configured reader TTL.
+  Missing/null knobs preserve prior behavior. Evidence, all-time history/sightings,
+  social dedupe, AI-take caches and spend protections remain. Synthetic real-schema
+  state measured 253.82 MB raw / 58.90 MB encrypted → 34.60 MB encrypted; conservative
+  estimate buys 5.4 days at unchanged growth, conditional on the modeled table mix.
+  Offline targeted runs: **101 passed**, **113 passed**, **76 passed**, all with
+  `-n 1 -p no:cacheprovider`; owned basetemps removed after each run. Includes rerun
+  idempotency, retained-reader fixtures, money caps, encrypted restore/save, size
+  boundaries/fallback, identical publication bytes and the emitted Deal Check Node
+  harness. Shell/Python syntax and diff checks pass. Browser regression written;
+  Chromium deliberately not launched here. Native command, measurement script and
+  remaining production-size confirmation: [state-size research](research/state-size.md).
+  Adversarial review found one save blocker: empty/comment-only/YAML-null configs
+  accepted by `load_config` were rejected by the size guard. Matched its `None`
+  normalization; three encrypted-save regressions failed before and pass after.
+  Final size/retention regressions plus temporary local Git race and gzip/OpenSSL
+  failure probes: **47 passed**. No further defect found in snapshot reuse,
+  unchanged-state comparison, gzip determinism or retained-reader/run anchors.
+  Broader state/workflow/appeal/IndexNow/offline-e2e run: **241 passed, 1 skipped,
+  7 failed** solely because existing Stripe fixtures cannot open localhost sockets
+  in this sandbox. All review pytest runs used `-n 1 -p no:cacheprovider`; owned
+  `/tmp/task296r-*` basetemps and temporary probes removed.
+  Native browser QA/deployment remain; no network, full suite, commit or push.
 - **Plain source credits (Codex task 294, 2026-10-18; uncommitted, ON):**
   Strict `site.credit_links` defaults true and ships false: muted plain attribution
   on home/spotlight/static cards, category/store/price/best/event pages, deal/product

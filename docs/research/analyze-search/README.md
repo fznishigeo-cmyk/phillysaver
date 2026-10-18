@@ -4,25 +4,25 @@ Native visual verification is **pending**. On 2026-10-18, both installed
 Chromium executables failed at launch with `Operation not permitted` from the
 sandbox (socket operations). No screenshots were generated or substituted.
 
-`tests/search_analyze_browser.cjs` serves every request from local fixtures or
-mock responses. It checks paste/Analyze and Enter, ASIN-only requests, the result
-card and related deals, tagged links, reduced motion, console errors, horizontal
-overflow and button bounds at 390 and 1440 pixels in both system themes.
+`tests/search_analyze_browser.cjs` builds both inline and lazy fixtures and serves
+every request from local files or mock responses. It checks paste/Analyze and
+Enter, ASIN-only requests, the result card and related deals, tagged links,
+reduced motion, console errors, horizontal overflow and button bounds at 390
+and 1440 pixels in both system themes. Lazy checks hold the module response
+across paste/input/repeated submit, require exactly one lookup, then fail the
+module on a fresh page and verify plain search and the tagged Amazon fallback.
+No module request is allowed before the first search interaction.
 
 On a host that permits native Chromium, run from the repo root:
 
 ```sh
-.venv/bin/python - <<'PY'
-import subprocess, sys, tempfile
-with tempfile.TemporaryDirectory(prefix='task291-browser-', dir='/tmp') as scratch:
-    result = subprocess.run([
-        sys.executable, '-m', 'pytest', '-q', '-n', '1', '-p', 'no:cacheprovider',
-        '--basetemp', scratch,
-        'tests/test_search_analyze.py::test_real_chromium_light_dark_phone_desktop',
-    ])
-raise SystemExit(result.returncode)
-PY
+node tests/search_analyze_browser.cjs /opt/pw-browsers/chromium docs/research/analyze-search
+node tests/search_more_browser.cjs /opt/pw-browsers/chromium docs/research/search-more
 ```
 
-Successful captures will be saved here as `390-light.png`, `390-dark.png`,
-`1440-light.png`, and `1440-dark.png`. A skipped test does not verify the visuals.
+Replace the executable path if needed; screenshot directories are optional.
+Analyze captures go under `inline/` and `lazy/`. Both commands remove their own
+`/tmp/task295-*-browser-*` fixtures in `finally`. Only native Chromium launch
+failure returns 77; missing dependencies, fixture or assertion failures fail.
+A skipped test does not verify the visuals. Task 295 runs the emitted Node
+logic and both browser fixture harnesses in the sandbox, without launching Chromium.

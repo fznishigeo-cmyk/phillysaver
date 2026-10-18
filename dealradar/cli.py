@@ -89,6 +89,9 @@ def cmd_prune(args: argparse.Namespace) -> int:
                  deals_days=cfg.deals_days, post_parses_days=cfg.post_parses_days,
                  llm_calls_days=cfg.llm_calls_days, run_stats_days=cfg.run_stats_days,
                  http_cache_days=cfg.http_cache_days, outgoing_days=cfg.outgoing_days,
+                 indexnow_batch_versions_days=cfg.indexnow_batch_versions_days,
+                 appeal_scores_days=cfg.appeal_scores_days,
+                 appeal_scores_ttl_h=cfg.appeal_score.get("ttl_h", 72),
                  incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
                  cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
                  cache_budget_s=cfg.incremental_cache_budget_s)

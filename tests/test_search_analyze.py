@@ -35,10 +35,10 @@ def offline(monkeypatch):
 def test_config_defaults_and_shipped_on(tmp_path, value):
     path = tmp_path / "config.yaml"
     path.write_text(json.dumps({"search_analyze": value}))
-    assert load_config(path).search_analyze == {"enabled": bool(value and value.get("enabled"))}
+    assert load_config(path).search_analyze == {"enabled": bool(value and value.get("enabled")), "lazy": False}
     path.write_text("{}")
-    assert load_config(path).search_analyze == AppConfig().search_analyze == {"enabled": False}
-    assert load_config().search_analyze == {"enabled": True}
+    assert load_config(path).search_analyze == AppConfig().search_analyze == {"enabled": False, "lazy": False}
+    assert load_config().search_analyze == {"enabled": True, "lazy": True}
 
 
 @pytest.mark.parametrize("value", [False, True, [], "on", 1, {"other": True},
@@ -145,12 +145,14 @@ def test_enabled_pipeline_rerun_is_idempotent(env, capsys, audit_mode):
     assert "analyzeSubmit" in (env["site"] / "index.html").read_text()
 
 
-def test_real_chromium_light_dark_phone_desktop(tmp_path):
+@pytest.mark.parametrize("lazy", [False, True])
+def test_real_chromium_light_dark_phone_desktop(tmp_path, lazy):
     cfg = analyze_config(strip=True)
+    cfg.search_analyze["lazy"] = lazy
     cfg.static_photos = True
     out, *_ = render(tmp_path, cfg, [make_deal(item="Steel kitchen kettle", codes=[])])
     result = run_node("search_analyze_browser.cjs", out, "/opt/pw-browsers/chromium",
-                      Path("docs/research/analyze-search").resolve())
+                      Path("docs/research/analyze-search").resolve() / ("lazy" if lazy else "inline"))
     if result.returncode == 77:
         pytest.skip(result.stdout.strip())
     assert result.returncode == 0, result.stdout + result.stderr
