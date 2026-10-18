@@ -262,6 +262,65 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Node syntax and `git diff --check` pass. Offline only, `-n 1 -p no:cacheprovider`;
   every owned `/tmp/task294-*` basetemp/probe directory was removed after its run.
   No network, full suite, commit or push. Review/deployment remain.
+- **Related Amazon pages + spelling (Codex task 293, 2026-10-18; uncommitted, ON):**
+  `search_more` ships enabled, three pages, two-character minimum; missing/false
+  restores the supplied release byte for byte. After all matching local cards,
+  an intersection loads Amazon pages 0–2, deduplicated against visible ASINs and
+  one another. Adult exclusions, current-price clocks, tagged/sponsored links
+  and the circling final Amazon button remain. Rate/budget failures stop paging
+  quietly. Page bounds/cache keys use the existing reservation, minute/day caps,
+  lease, completion cooldown and Retry-After path; ASIN lookups stay unchanged.
+  Only successful empty local/Amazon searches can try one spelling correction,
+  using live-title vocabulary/bigrams and 878 gzip bytes of bundled shopping
+  words. Digit-bearing identifiers stay intact; a link restores the original.
+  Corrected lookups (including corrected local matches' first Amazon page) wait
+  for the cooldown. Analyze adopts an already-running corrected request.
+  GA4 receives only page integers or the corrected boolean, never query text.
+  The local search module and shared Amazon card renderer load on first search;
+  the initial home page retains the existing phone ceilings. Five pre-edit
+  publication hashes cover OFF/missing/back-OFF; `pre_task_293` preserves older
+  fixtures without changing any expected hash. Existing unpushed release retained.
+  Final search/install/history-pin/analytics/public-template regressions:
+  **174 passed in 146.19s (0:02:26)**. Final emitted-module/correction timing:
+  **4 passed in 5.59s**. Shipped phone budget: **1 passed in 47.28s**.
+  Function harness: **43 passed, 0 failed**; Node syntax and diff checks pass.
+  All pytest runs used `-q -n 1 -p no:cacheprovider`, targeted selections only;
+  each owned `/tmp/task293-*` directory was removed after its run.
+  Follow-up 293F: the operator's Chromium timeout was a fixture failure. Its 24
+  Amazon mice had no price confirmation and were 60 hours old at publish time;
+  the 48-hour guard hid them, leaving one card while the script waited for 20.
+  Fixtures now carry publish-time confirmations and assert all 24 mice survived
+  before launching Chromium. Named waits report viewport/theme, condition, card
+  counts, query/page text, API calls and captured errors; page-count waits tolerate
+  automatic later-page arrivals while final count/request assertions stay exact.
+  The Function adds optional `list_price_cents` only from safe-integer current
+  LISTPRICE greater than the selected price, shared by text, ASIN and paged
+  answers; old cached items remain usable. The ON-only shared card builder shows
+  accessible List Price strikes and matching percentage badges at rounded 5%+
+  across ordinary results, Analyze and related pages. No historical comparison.
+  Follow-up targeted checks: **39 passed in 76.98s (0:01:16)**, including Function
+  cases, card markup with/without photos, threshold/malformed values, Analyze,
+  fixture/timeout regressions and all five unchanged OFF/missing/back-OFF pins.
+  Own `/tmp/task293f-*` scratch was removed after each run. Native 390/1440
+  light/dark QA (now also capturing List Price on Analyze) remains for the
+  operator: script and command in [search-more research](research/search-more/README.md).
+  No native screenshots, network calls, full suite, commit or push; review/deployment remain.
+  Follow-up 293G: the operator's next Chromium run passed paging/List Price and
+  failed at spelling undo. The ON-only CSS now reserves the hint's space when
+  input blur hides it, preventing the undo link from moving during a click.
+  Undo restores exact input text (including case/spacing) and keeps correction
+  suppressed until a real text edit. Successful empty answers can then correct
+  again from cache without another request; failures cannot. Offline regressions
+  cover unchanged-input events, rerenders, edit/undo, stale corrected replies,
+  and the remaining native coffee → ASIN Analyze → rate-limit sequence in the
+  same mounted module. The original browser assertion stays; added checks cover
+  blur geometry, settled undo and keyboard undo after editing. Native rerun
+  remains with the operator: this sandbox still denies Chromium launch.
+  Final targeted checks: **12 passed in 94.55s**, including all five unchanged
+  OFF/missing/back-OFF pins; emitted logic/syntax: **4 passed in 9.05s** across
+  Analyze/boost/access/comment modes. Node syntax and diff checks pass. All
+  pytest runs used `-q -n 1 -p no:cacheprovider`; owned `/tmp/task293g-*` scratch
+  was deleted after every run. No network, full suite, commit or push.
 - **Header Install app (Codex task 290, 2026-10-18; uncommitted, ON):**
   Strict `pwa.install_button` defaults OFF and ships ON. Header prompt / compact
   phone App button, iPhone/iPad Safari dialog, seven-day dismissal and GA4-only
@@ -329,6 +388,44 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   and owned `/tmp/task291-*` basetemps removed in `finally` after each run;
   none remain. All four skips were native browser checks.
   No network, full suite, commit or push; existing release edits are retained.
+- **Brand pages (Codex tasks 289 / 289F, 2026-10-18; uncommitted, OFF):**
+  `site.brand_pages: false` keeps the supplied four-mode OFF pins unchanged.
+  ON adds a shared bold gradient hero, public top-pick photo collage, icon
+  cards around the existing text, a Why wowpriced band and publication counts.
+  Careers adds values and numbered daily steps; Join keeps its existing form.
+  289F tightens the layout to 1100px, with pill actions, 16–20px rounded cards,
+  layered shadows and an 8px spacing grid. About adds four factual
+  "What makes us different" one-liners and Work with us / Contact us pills.
+  Cards fade/rise 8px once on entry and buttons lift on hover; reduced motion
+  disables both, and content stays visible without scripting/observer support.
+  Shared signup uses 25 seconds OR half-scroll, daily memory, the existing
+  dismissal/join keys and close/focus behavior; /join never auto-prompts.
+  Brand-page signup uses embedded public metadata and email only, with no new
+  provider request. **Operator 2026-10-17 8:31pm: keep existing Join wording
+  everywhere.** Removed round-one "first issue soon" substitutions and custom
+  popup headlines; brand prompts use the homepage's existing "Save up to 90% OFF"
+  headline and email wording for either newsletter setting. Header/footer copy,
+  section order, SEO and JSON-LD stay. Collage prices/discounts come only from
+  public fields, with condition/price-step notes and existing Amazon timestamps;
+  sparse publishes show fewer cards, never filler.
+  Chromium harness line-62 failure traced to queued refresh frames and a running
+  fake clock, not a different storage key. Harness now pauses before navigation,
+  uses `runFor` through the timeout and its next frame, and waits for native scroll
+  delivery. Independent cases clear `wp.join.promptUntil` and `wp.join.joined`;
+  reload/cross-page checks retain daily memory and existing subscribers stay quiet.
+  Offline queued-frame regression covers a second independent non-Join page.
+  Targeted 289F verification: **116 passed in 100.23s (0:01:40)**, covering all
+  four missing/OFF/toggle-back pins, preserved copy/SEO/public prices, shared signup
+  and support behavior, motion fallbacks, static text contrast and rerun state/output.
+  Includes the 1,400-offer shipped phone fixture (1,393 public) and brand-page
+  HTML/JS/CSS against unchanged ceilings. No failing targeted checks remain.
+  Native Chromium is unavailable here and was deliberately excluded this round;
+  the operator will run `tests/brand_pages_browser.cjs`. Screenshot refresh,
+  native visual/phone QA and preview remain before enabling. Paths and offline
+  fixture limits: `docs/research/brand-pages/README.md`.
+  `git diff --check` and Node syntax pass. The targeted run used
+  `-q -n 1 -p no:cacheprovider`; its owned `/tmp/task289f-*` basetemp was deleted.
+  No network, full suite, hash re-pin, commit or push.
 - **Home links start fresh (Codex task 286, 2026-10-17; uncommitted, ON):**
   Strict `site.home_link_resets` defaults OFF and ships ON. Plain logo,
   Live deals and timer clicks reuse the Amazon-selection reset, clear every

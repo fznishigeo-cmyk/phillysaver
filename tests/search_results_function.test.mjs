@@ -93,6 +93,24 @@ test('new current fallback skips absent/invalid/stale prices and never falls bac
   p.stats.current[1] = 1234; p.lastUpdate = minute(now) - 1441; assert.deepEqual(currentItems([p], now), []);
   p.lastUpdate = minute(now) + 1; assert.deepEqual(currentItems([p], now), []);
 });
+test('List Price copies only a safe current LISTPRICE greater than the selected price', () => {
+  const p = product();
+  for (const list of [undefined, null, -1, 0, 1398, 1399, 1999.5, '1999', true, NaN, Infinity,
+    Number.MAX_SAFE_INTEGER + 1]) {
+    p.stats.current[4] = list;
+    assert(!Object.hasOwn(currentItems([p], now)[0], 'list_price_cents'), String(list));
+  }
+  p.stats.current[4] = 1999;
+  assert.equal(currentItems([p], now)[0].list_price_cents, 1999);
+  p.stats.current[4] = 1300;
+  assert(!Object.hasOwn(currentItems([p], now)[0], 'list_price_cents'), 'compare against the Buy Box price');
+  delete p.stats.lastBuyBoxUpdate;
+  assert.equal(currentItems([p], now)[0].price_cents, 1234);
+  assert.equal(currentItems([p], now)[0].list_price_cents, 1300, 'compare against the fallback when selected');
+  delete p.stats.current[4];
+  p.listPrice = 9999; p.stats.avg90[4] = 9999;
+  assert(!Object.hasOwn(currentItems([p], now)[0], 'list_price_cents'), 'no inferred or historical List Price');
+});
 test('unqualified Buy Box never publishes its price or borrows its clock', () => {
   const p = product(); p.stats.buyBoxIsUnqualified = true; p.stats.current[18] = 999;
   p.lastUpdate = minute(now) - 60;
@@ -229,7 +247,7 @@ test('upstream 429 honors Retry-After (60 s without one) and later searches debi
   for (const [headers, wait, q] of [[{'Retry-After':'120'}, 120000, 'mug'], [{}, 60000, 'tea']]) {
     globalThis.fetch = async (url, options) => {calls.push([url, options]); return new Response(KEY, {status:429, headers});};
     now += 120000; calls = [];
-    assert.deepEqual(await body(await run('first')), {items:[], reason:'keepa_error', detail:'http_429'});
+    assert.deepEqual(await body(await run('first')), {items:[], reason:'price_error', detail:'http_429'});
     const debited = database.prepare('SELECT tokens FROM search_budget').get().tokens;
     now += wait - 1000;
     assert.equal((await body(await run('second'))).reason, 'rate_limited');
@@ -291,12 +309,12 @@ test('upstream HTTP, JSON, error bodies and thrown secret URLs are reduced to sa
   for (let i = 0; i < replies.length; i++) {
     now += 2000; globalThis.fetch = replies[i];
     const result = await body(await run('failure-' + i));
-    assert.deepEqual(result, {items:[], reason:'keepa_error', detail:details[i]}); assert(!JSON.stringify(result).includes(KEY));
+    assert.deepEqual(result, {items:[], reason:'price_error', detail:details[i]}); assert(!JSON.stringify(result).includes(KEY));
   }
   now += 2000; globalThis.fetch = () => Response.json({error:{type:'INVALID_PARAMETER', message:KEY}});
-  assert.deepEqual(await body(await run('typed')), {items:[], reason:'keepa_error', detail:'body_error_INVALID_PARAMETER'});
+  assert.deepEqual(await body(await run('typed')), {items:[], reason:'price_error', detail:'body_error_INVALID_PARAMETER'});
   now += 2000; globalThis.fetch = () => Response.json({error:{type:'bad <type> ' + KEY}});
-  assert.deepEqual(await body(await run('untyped')), {items:[], reason:'keepa_error', detail:'body_error'});
+  assert.deepEqual(await body(await run('untyped')), {items:[], reason:'price_error', detail:'body_error'});
   assert.equal(JSON.parse([...values.values()][0]).tokens, 660);
 });
 test('4s timeout covers a hung body and retains its reservation', async () => {
@@ -326,7 +344,7 @@ test('a redirect is never followed and counts as a Keepa error', async () => {
     calls.push([url, options]); assert.equal(options.redirect, 'manual');
     return new Response(null, {status:302, headers:{Location:'https://elsewhere.example/'}});
   };
-  assert.deepEqual(await body(await run('moved')), {items:[], reason:'keepa_error', detail:'http_302'});
+  assert.deepEqual(await body(await run('moved')), {items:[], reason:'price_error', detail:'http_302'});
 });
 
 // ASIN requests take the same accounting/dispatch path, including mixed q/asin traffic.
@@ -438,7 +456,7 @@ test('asin 429 Retry-After blocks both lookup types without additional debits', 
   globalThis.fetch = async (url, options) => {
     calls.push([url, options]); return new Response(null, {status:429, headers:{'Retry-After':'90'}});
   };
-  assert.deepEqual(await body(await runAsin()), {items:[], reason:'keepa_error', detail:'http_429'});
+  assert.deepEqual(await body(await runAsin()), {items:[], reason:'price_error', detail:'http_429'});
   now += 89000;
   assert.equal((await body(await runAsin())).reason, 'rate_limited');
   assert.equal((await body(await run('words'))).reason, 'rate_limited');
@@ -452,7 +470,7 @@ test('asin errors, gzip and oversized receipts retain the same privacy and budge
   assert.equal((await body(await runAsin())).items.length, 1);
   now += 1000;
   globalThis.fetch = async () => {throw new Error('https://api.keepa.com/product?key=' + KEY);};
-  assert.deepEqual(await body(await runAsin('B000000001')), {items:[], reason:'keepa_error', detail:'fetch_Error'});
+  assert.deepEqual(await body(await runAsin('B000000001')), {items:[], reason:'price_error', detail:'fetch_Error'});
   now += 1000;
   globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:111});
   assert.equal((await body(await runAsin('B000000002'))).reason, 'budget_exhausted');
@@ -467,4 +485,184 @@ test('asin hung response body times out without a refund', async () => {
   assert.deepEqual(await body(await runAsin()), {items:[], reason:'timeout'});
   assert(signal.aborted);
   assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+});
+
+// Page changes share the same money/host gates as text and ASIN requests.
+const runPage = (page, query = 'mouse') => onRequest({...context,
+  request:new Request('https://wowpriced.test/api/search?q=' + encodeURIComponent(query) + '&page=' + page)});
+test('text, ASIN and every page return optional List Price and accept older cached items', async () => {
+  config.search_more = {enabled:true, pages:3, min_query_chars:2};
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]);
+    const p = product(); p.stats.current[4] = 1999;
+    return Response.json({products:[p], tokensConsumed:20});
+  };
+  for (const request of [() => run('kettle'), () => runAsin(), ...[0, 1, 2].map(page => () => runPage(page))]) {
+    const first = await body(await request());
+    assert.equal(first.items[0].list_price_cents, 1999);
+    assert.deepEqual(Object.keys(first.items[0]), ['asin', 'title', 'image', 'price_cents', 'as_of', 'list_price_cents']);
+    assert.deepEqual(await body(await request()), first);
+    now += 1100;
+  }
+  assert.equal(calls.length, 5);
+  // Simulate the same cache keys populated before List Price was optional.
+  for (const [key, response] of cache) {
+    const old = await response.clone().json();
+    old.items.forEach(item => {delete item.list_price_cents;});
+    cache.set(key, Response.json(old));
+  }
+  context.env.SEARCH_BUDGET = null;
+  for (const request of [() => run('kettle'), () => runAsin(), ...[0, 1, 2].map(page => () => runPage(page))]) {
+    const old = await body(await request());
+    assert.equal(old.items[0].price_cents, 1399);
+    assert(!Object.hasOwn(old.items[0], 'list_price_cents'));
+  }
+  assert.equal(calls.length, 5, 'optional field never forces a cache refill');
+});
+function pagedTransport() {
+  config.search_more = {enabled:true, pages:3, min_query_chars:2};
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]);
+    const page = Number(url.searchParams.get('page'));
+    assert([0, 1, 2].includes(page));
+    assert.equal(url.origin + url.pathname, 'https://api.keepa.com/search');
+    assert.deepEqual(Object.fromEntries(url.searchParams), {key:KEY, domain:'1', stats:'1', history:'0',
+      type:'product', term:url.searchParams.get('term'), page:String(page)});
+    assert.equal(options.redirect, 'manual');
+    return Response.json({products:[product(page)], tokensConsumed:20});
+  };
+}
+test('page sequence reaches Keepa; each page reserves 110 and has a separate normalized cache key', async () => {
+  pagedTransport();
+  for (const page of [0, 1, 2]) {
+    const result = await body(await runPage(page));
+    assert.equal(result.items[0].asin, product(page).asin);
+    const tokens = database.prepare('SELECT tokens FROM search_budget').get().tokens;
+    assert.equal(tokens, 110 * (page + 1));
+    assert.deepEqual(await body(await runPage(page, ' MOUSE ')), result);
+    assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, tokens);
+    now += 1100;
+  }
+  assert.deepEqual(calls.map(([url]) => url.searchParams.get('page')), ['0', '1', '2']);
+  assert.equal(cache.size, 3);
+  assert([...cache.keys()].every(url => !url.includes(KEY) && new URL(url).searchParams.has('page')));
+  assert.deepEqual(await body(await run('mouse')), await body(await runPage(0)), 'omitted page means page zero');
+  assert.equal(calls.length, 3);
+  config.search_more.pages = 2;
+  assert.equal((await runPage(2)).status, 400, 'lowering pages overrides an already cached page');
+  config.search_more.enabled = false;
+  assert.equal((await runPage(1)).status, 400);
+});
+test('invalid/duplicate/ASIN page values fail before assets, cache or spending', async () => {
+  context.env.ASSETS.fetch = () => {throw new Error('must not read assets');};
+  for (const page of ['', '-1', '1.0', '01', '+1', '1e0', 'NaN', 'Infinity', '9007199254740992', '1&page=2']) {
+    const response = await runPage(page);
+    assert.equal(response.status, 400, page);
+    assert.equal((await body(response)).reason, 'invalid_page');
+  }
+  for (const page of [0, 1]) {
+    const response = await onRequest({...context,
+      request:new Request('https://wowpriced.test/api/search?asin=B000000000&page=' + page)});
+    assert.equal(response.status, 400);
+  }
+  assert.equal(calls.length, 0); assert.equal(values.size, 0);
+});
+test('absent or OFF paging allows only zero; bad page policy fails closed', async () => {
+  for (const more of [undefined, false, {enabled:false, pages:3, min_query_chars:2}]) {
+    config.search_more = more;
+    assert.equal((await runPage(1)).status, 400);
+  }
+  config.search_more = {enabled:true, pages:3, min_query_chars:2};
+  for (const page of [3, 10, 999]) assert.equal((await runPage(page)).status, 400);
+  for (const more of [true, [], {enabled:'true', pages:3, min_query_chars:2},
+    {enabled:true, pages:11, min_query_chars:2}, {enabled:true, pages:3, min_query_chars:1}]) {
+    config.search_more = more;
+    assert.equal((await body(await runPage(0))).reason, 'disabled');
+  }
+  assert.equal(calls.length, 0); assert.equal(values.size, 0);
+});
+test('later pages obey missing bindings, KV daily/minute caps and malformed counters', async () => {
+  pagedTransport();
+  for (const page of [1, 2]) {
+    config.tokens_per_day = 109;
+    assert.equal((await body(await runPage(page))).reason, 'budget_exhausted');
+    config.tokens_per_day = 3000; config.max_per_minute = 0;
+    assert.equal((await body(await runPage(page))).reason, 'rate_limited');
+    config.max_per_minute = 20;
+    const original = context.env;
+    for (const change of [{KEEPA_KEY:''}, {SEARCH_BUDGET:null}, {SEARCH_LIMITS:null},
+      {SEARCH_BUDGET:{get:async () => ({tokens:'110'}), put(){}}}]) {
+      context.env = {...original, ...change};
+      assert.equal((await body(await runPage(page))).items.length, 0);
+    }
+    context.env = original;
+  }
+  assert.equal(calls.length, 0);
+});
+test('atomic daily/minute caps and completion cooldown count mixed pages with stale KV', async () => {
+  pagedTransport(); kv.get = async () => null; config.tokens_per_day = 220; config.max_per_minute = 1;
+  assert.equal((await body(await runPage(0))).items.length, 1);
+  assert.equal((await body(await runPage(1))).reason, 'rate_limited');
+  now += 1100;
+  assert.equal((await body(await runPage(1))).reason, 'limit_reached');
+  now += 60000;
+  assert.equal((await body(await runPage(1))).items.length, 1);
+  now += 60000;
+  assert.equal((await body(await runPage(2))).reason, 'limit_reached');
+  assert.equal(calls.length, 2);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 220);
+});
+test('held page lease blocks other pages and ASINs without another debit', async () => {
+  pagedTransport(); let finish;
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); return new Promise(resolve => {finish = resolve;});
+  };
+  const first = runPage(1);
+  while (!finish) await new Promise(resolve => setImmediate(resolve));
+  now += 2000;
+  assert.equal((await body(await runPage(2))).reason, 'rate_limited');
+  assert.equal((await body(await runAsin())).reason, 'rate_limited');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  finish(Response.json({products:[product(1)]})); await first;
+  assert.equal((await body(await runPage(2))).reason, 'rate_limited');
+  now += 1100; pagedTransport();
+  assert.equal((await body(await runPage(2))).items.length, 1);
+  assert.equal(calls.length, 2);
+});
+test('a later page waiting into another minute/day is charged but never dispatched', async () => {
+  pagedTransport(); now = Date.parse('2026-10-17T23:59:59.500Z');
+  const put = kv.put;
+  kv.put = async (...args) => {await put(...args); now += 1000;};
+  assert.equal((await body(await runPage(2))).reason, 'rate_limited');
+  assert.equal(calls.length, 0);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+});
+test('later-page Retry-After cooldown applies to all pages without spending', async () => {
+  pagedTransport();
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); return new Response(null, {status:429, headers:{'Retry-After':'90'}});
+  };
+  assert.deepEqual(await body(await runPage(1)), {items:[], reason:'price_error', detail:'http_429'});
+  now += 89000;
+  assert.equal((await body(await runPage(2))).reason, 'rate_limited');
+  assert.equal((await body(await runPage(0))).reason, 'rate_limited');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  now += 1000; pagedTransport();
+  assert.equal((await body(await runPage(2))).items.length, 1);
+});
+test('later-page oversized receipts halt the day and hung bodies keep reservations', async () => {
+  pagedTransport();
+  globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:111});
+  assert.equal((await body(await runPage(1))).reason, 'budget_exhausted');
+  now += 1100;
+  assert.equal((await body(await runPage(2))).reason, 'budget_exhausted');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, Number.MAX_SAFE_INTEGER);
+  now += 86400000;
+  let signal;
+  globalThis.fetch = async (_, options) => {
+    signal = options.signal; return {ok:true, arrayBuffer:() => new Promise(() => {})};
+  };
+  assert.deepEqual(await body(await runPage(2)), {items:[], reason:'timeout'});
+  assert(signal.aborted);
+  assert.equal(JSON.parse(values.get('search:v1:2026-10-18')).tokens, 110);
 });

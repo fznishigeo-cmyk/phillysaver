@@ -379,6 +379,22 @@ def head_snippet(cfg) -> str:
                                     '    home_reset: { ga4Only: true, methods: ["logo", "ticker", "timer"] },')
     from .search_results import enabled as search_results_enabled
     from .search_analyze import enabled as search_analyze_enabled
+    from .search_more import enabled as search_more_enabled
+    if search_more_enabled(cfg):
+        dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
+    if (name === "search_more_page" || name === "search_spelling") {
+      var safe = {send_to: on.ga4};
+      if (name === "search_more_page") {
+        if (!params || !Number.isSafeInteger(params.page) || params.page < 0 || params.page >= SEARCH_MORE_PAGES) return;
+        safe.page = params.page;
+      } else {
+        if (!params || typeof params.corrected !== "boolean") return;
+        safe.corrected = params.corrected;
+      }
+      if (on.ga4) { try { window.gtag("event", name, safe); } catch (e) {} }
+      return;
+    }
+    var ev = EVENTS[name];""".replace("SEARCH_MORE_PAGES", str(cfg.search_more.get("pages", 3))))
     if search_analyze_enabled(cfg):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (["search_analyze", "paste_amazon_link", "analyze_result"].indexOf(name) !== -1) {

@@ -203,6 +203,8 @@ def pre_task_290_install_raw(config):
     words = config.get("publish", {}).get("front_page", {}).get("demote_words")
     if isinstance(words, list):
         config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
+    config.pop("search_more", None)
+    config.get("site", {}).pop("brand_pages", None)
     return config
 
 def pre_task_291(cfg):
@@ -214,8 +216,17 @@ def pre_task_291(cfg):
     return cfg
 
 
+def pre_task_293(cfg):
+    """Before related Amazon pages and spelling; preserve recorded release bytes."""
+    cfg.search_more = {"enabled": False}
+    # Shipped in the same release: brand pages (task 289) switched on after the operator's preview.
+    cfg.brand_pages = False
+    return cfg
+
+
 def pre_task_294(cfg):
     """Before plain source credits, the one-in-ten gone-card limit and the team-merch demote; no re-pins."""
+    pre_task_293(cfg)
     cfg.credit_links = True
     cfg.trending_auto_cards = None
     cfg.click_price_home_fill = False

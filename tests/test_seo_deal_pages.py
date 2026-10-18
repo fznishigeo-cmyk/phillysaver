@@ -13,7 +13,7 @@ from html import unescape
 import pytest
 
 from dealradar.config import load_config
-from dealradar.publish import search_results, seo
+from dealradar.publish import search_more, search_results, seo
 from dealradar.publish.site import render_site
 from tests.test_publish_site import NOW, make_deal
 from tests.test_seo import ROOT, cfg, db, _deals, _render, _receive
@@ -230,6 +230,7 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     products = (3 if cfg.amazon_reference == "history" else 2) if cfg.seo_product_pages_enabled else 0
     events = len(cfg.seo_event_pages_events) if cfg.seo_event_pages_enabled else 0
     search = 1 if search_results.enabled(cfg) else 0  # search-config.json (task 280)
+    search += 1 if search_more.enabled(cfg) else 0  # search-more.js (task 293)
     assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search
 
 

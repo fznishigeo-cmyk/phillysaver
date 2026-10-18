@@ -168,6 +168,11 @@ search:
 search_analyze:
   enabled: true              # task 291: paste Amazon links; OFF restores previous bytes
 
+search_more:
+  enabled: true              # task 293: related Amazon pages and one spelling correction
+  pages: 3
+  min_query_chars: 2
+
 # Operator 2026-10-17: a search we have no deal for leads with a big full-width
 # "Compare all prices on Amazon" button, cards full width below; adult products
 # never show as cards (the button still works); a phone's busy final word
@@ -186,6 +191,7 @@ search_circle: true
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
+  brand_pages: true           # task 289: operator approved the preview 2026-10-17 ("yes they look great")
   static_photos: true          # task 274: photos on static cards and deal pages
   open_box_scarcity: true   # task 273: never infer a stock count
   open_box_counts: false   # operator: publish only "often only 1" for now

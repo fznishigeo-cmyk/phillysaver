@@ -210,6 +210,21 @@
     try {
       if (localStorage.getItem(JOINED) || Number(localStorage.getItem(SHOWN)) > Date.now()) return;
     } catch (e) { return; } // no durable frequency limit: no automatic prompt
+    // brand-pages
+    var remaining = 25000 - (Date.now() - started);
+    var distance = document.documentElement.scrollHeight - window.innerHeight;
+    if (remaining > 0 && !(distance > 0 && window.scrollY >= distance / 2)) {
+      if (timer === null) timer = setTimeout(function () { timer = null; refresh(); }, remaining);
+      return;
+    }
+    try {
+      var until = String(Date.now() + 24 * 60 * 60 * 1000);
+      localStorage.setItem(SHOWN, until);
+      if (localStorage.getItem(SHOWN) !== until) return;
+    } catch (e) { return; }
+    openPrompt();
+    return;
+    // /brand-pages
     var delay = Math.max(15, Number(meta.join.prompt_delay_s) || 15) * 1000;
     var remaining = delay - (Date.now() - started);
     if (remaining > 0) {
@@ -225,6 +240,9 @@
     openPrompt();
   }
   function loadGoogle() {
+    // brand-pages
+    return; // These pages use the existing email form without loading a provider.
+    // /brand-pages
     var box = document.getElementById("join-google");
     if (!box || googleLoading || !meta.google_client_id || !meta.api_url) return;
     googleLoading = true;
@@ -511,6 +529,10 @@
   fromHash();
   if (footer) footer.hidden = joined;
   if (!document.getElementById("content")) {
+    // brand-pages
+    refresh({{BRAND_META}});
+    return;
+    // /brand-pages
     fetch("/deals.json?t=" + Date.now(), {cache: "no-store"})
       .then(function (r) { return r.json(); }).then(function (d) { refresh(d.meta || {}); }).catch(function () {});
   }

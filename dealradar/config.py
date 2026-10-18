@@ -347,6 +347,7 @@ class AppConfig:
     trending_auto_cards: int | None = None
     click_price_home_fill: bool = False
     credit_links: bool = True
+    brand_pages: bool = False
     dark_polish: bool = False
     strip_comments: bool = False
     home_title: str = ""
@@ -356,6 +357,7 @@ class AppConfig:
     search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
+    search_more: dict = field(default_factory=lambda: validated_search_more(None))
     static_photos: bool = False
     open_box_scarcity: bool = False
     open_box_counts: bool = False
@@ -658,6 +660,21 @@ def validated_search(value) -> dict:
     if result["cache_hours"] > 24:
         raise ValueError("search.cache_hours must be at most 24")
     return {key: result[key] for key in ("amazon_results", "cache_hours", "tokens_per_day", "max_per_minute")}
+
+
+def validated_search_more(value) -> dict:
+    if value is None or value is False:
+        value = {}
+    defaults = {"enabled": False, "pages": 3, "min_query_chars": 2}
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("search_more must contain enabled, pages and min_query_chars only")
+    result = defaults | value
+    if type(result["enabled"]) is not bool:
+        raise ValueError("search_more.enabled must be a boolean")
+    for key, low, high in (("pages", 1, 10), ("min_query_chars", 2, 60)):
+        if type(result[key]) is not int or not low <= result[key] <= high:
+            raise ValueError(f"search_more.{key} must be an integer in {low}..{high}")
+    return result
 
 
 def validated_search_analyze(value) -> dict:
@@ -999,6 +1016,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.credit_links = g("site", "credit_links", default=True)
     if type(cfg.credit_links) is not bool:
         raise ValueError("site.credit_links must be a boolean")
+    cfg.brand_pages = g("site", "brand_pages", default=False)
+    if type(cfg.brand_pages) is not bool:
+        raise ValueError("site.brand_pages must be a boolean")
     cfg.dark_polish = g("site", "dark_polish", default=False)
     if type(cfg.dark_polish) is not bool:
         raise ValueError("site.dark_polish must be a boolean")
@@ -1019,6 +1039,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")
     cfg.search_analyze = validated_search_analyze(g("search_analyze", default=None))
+    cfg.search_more = validated_search_more(g("search_more", default=None))
     cfg.static_photos = g("site", "static_photos", default=False)
     if type(cfg.static_photos) is not bool:
         raise ValueError("site.static_photos must be a boolean")

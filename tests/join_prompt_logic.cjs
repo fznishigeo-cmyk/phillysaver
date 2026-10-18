@@ -7,14 +7,14 @@ const WEEK = 7 * 24 * 60 * 60 * 1000;
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled = true,
                   delay = 15, google = false, api = 'https://api.test', width = 1000, card = true,
-                  support = {}, footerOnJoin = false} = {}) {
-  const handlers = {}, events = [], requests = [], scripts = [], timers = [];
+                  support = {}, footerOnJoin = false, brand = false, source = code, queuedFrames = false} = {}) {
+  const handlers = {}, events = [], requests = [], scripts = [], timers = [], frames = [];
   let nextTimer = 0;
   const storage = new Map(Object.entries(stored));
   let boundary = 200, googleCallback, googleOptions, redirected;
   let authResult = {status:200, body:{me:{email:'verified@example.com', email_verified:true}, token:'unused'}};
   let subResult = {status:200, body:{ok:true}};
-  const document = {hidden:false, addEventListener(type, cb) {handlers[type] = cb;}};
+  const document = {hidden:false, documentElement:{scrollHeight:2400}, addEventListener(type, cb) {handlers[type] = cb;}};
   const rect = () => ({top:10, bottom:50, width:100, height:40, left:0, right:100});
   function node(id, hidden = false) {
     return {id, hidden, isConnected:true, disabled:false, parentNode:{clientWidth:400}, children:[],
@@ -58,7 +58,7 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   prompt.querySelector = () => dialog;
   prompt.contains = dialog.contains = el => [...focusable, ...askControls(), dialog, successTitle].includes(el);
   document.activeElement = opener;
-  document.getElementById = id => id === 'content' ? {} : nodes[id];
+  document.getElementById = id => id === 'content' ? (brand ? null : {}) : nodes[id];
   document.querySelector = () => ({getBoundingClientRect:()=>({bottom:100})});
   document.querySelectorAll = s => s.startsWith('#content .card')
     ? Array.from({length:12},()=>({getBoundingClientRect:()=>({bottom:boundary})})) : [];
@@ -79,13 +79,13 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
   const ctx = {document, location:{pathname,hash:'',replace(url){redirected=url;}}, Date:{now:()=>now},
     localStorage:{getItem(k) {if (blocked === 'read') throw Error('blocked'); return storage.get(k) || null;},
       setItem(k,v) {if (blocked === 'write') throw Error('quota'); storage.set(k,v);}},
-    setTimeout(cb,ms) {const id=++nextTimer; timers.push({id,cb,at:now+ms}); return id;}, clearTimeout(id) {const t=timers.find(t=>t.id===id); if(t) t.cancelled=true;}, requestAnimationFrame:cb=>cb(),
+    setTimeout(cb,ms) {const id=++nextTimer; timers.push({id,cb,at:now+ms}); return id;}, clearTimeout(id) {const t=timers.find(t=>t.id===id); if(t) t.cancelled=true;}, requestAnimationFrame:cb=>queuedFrames ? frames.push(cb) : cb(),
     fetch:async(url,options)=>{requests.push({url,...options}); const r = await (url.endsWith('/api/google') ? authResult : subResult);
       if (r instanceof Error) throw r; return {status:r.status, json:async()=>r.body};},
     window:{innerHeight:800,innerWidth:width,scrollY:0,wpTrack:(name,params)=>events.push({name,params}),
       addEventListener(type,cb) {handlers[type] = cb;}}};
-  vm.runInNewContext(code,ctx);
-  ctx.window.wpSupport.refresh(meta);
+  vm.runInNewContext(source,ctx);
+  if (!brand) ctx.window.wpSupport.refresh(meta);
   function click(target, modifiers={}) {let prevented=false; handlers.click({target, ...modifiers, preventDefault(){prevented=true;}}); return prevented;}
   function advance(ms) {now += ms; for (const t of timers.splice(0)) {if (t.cancelled) continue; if (t.at <= now) t.cb(); else timers.push(t);}}
   function engage() {click({closest:s=>s === '#cattabs a, #controls select, #controls input'});}
@@ -94,7 +94,8 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
     provider, providerMessage, meta, handlers, advance, engage, click, key, one, back, success, successTitle, deals, subscribe, dialog,
     googleOr, description, label, footer, footerSuccess, footerTitle, footerForm, footerInput, footerSubmit, footerMessage,
     redirected:()=>redirected, type(value) {input.value=value; handlers.input({target:input});},
-    refresh:()=>ctx.window.wpSupport.refresh(meta), boundary:n=>boundary=n,
+    refresh:()=>ctx.window.wpSupport.refresh(brand ? undefined : meta), boundary:n=>boundary=n,
+    frame() {for (const cb of frames.splice(0)) cb();},
     scroll(n) {ctx.window.scrollY=n; handlers.scroll();},
     submitEmail() {handlers.submit({target:form,preventDefault(){}});},
     submitFooter() {handlers.submit({target:footerForm,preventDefault(){}});},
@@ -104,7 +105,8 @@ function harness({pathname = '/', now = 1000, stored = {}, blocked = '', enabled
       scripts[0].onload();
     }, googleOptions:()=>googleOptions, google:()=>googleCallback({credential:'google-id-token'})};
 }
-(async()=>{
+module.exports = {harness, flush};
+if (require.main === module) (async()=>{
   if (code.includes('panelWaiting')) {
     const h = harness({delay:35, support:{panel_delay_s:120}});
     h.boundary(90); h.refresh(); h.engage();

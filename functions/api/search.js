@@ -1,5 +1,5 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
-const RESERVATION = 110; // search (10) + up to 100 first-page product tokens
+const RESERVATION = 110; // each search page (10) + up to 100 product tokens
 const SCHEMA = `CREATE TABLE IF NOT EXISTS search_budget (
   day TEXT PRIMARY KEY, tokens INTEGER NOT NULL, minute INTEGER NOT NULL,
   count INTEGER NOT NULL, last INTEGER NOT NULL
@@ -45,6 +45,10 @@ async function settings(context) {
   if (!["preview", "on"].includes(cfg.amazon_results) ||
       ![cfg.cache_hours, cfg.tokens_per_day, cfg.max_per_minute].every(Number.isSafeInteger) ||
       cfg.cache_hours < 0 || cfg.cache_hours > 24 || cfg.tokens_per_day < 0 || cfg.max_per_minute < 0) return null;
+  const more = cfg.search_more;
+  if (more != null && more !== false && (typeof more !== "object" || Array.isArray(more) ||
+      typeof more.enabled !== "boolean" || !Number.isSafeInteger(more.pages) || more.pages < 1 || more.pages > 10 ||
+      !Number.isSafeInteger(more.min_query_chars) || more.min_query_chars < 2 || more.min_query_chars > 60)) return null;
   return cfg;
 }
 
@@ -97,7 +101,9 @@ export function currentItems(products, now = Date.now()) {
     const filename = names.find(name => typeof name === "string" &&
       /^[A-Za-z0-9+_.%-]+\.(?:jpg|jpeg|png|webp)$/i.test(name)) || "";
     const image = filename ? "https://m.media-amazon.com/images/I/" + filename : "";
-    items.push({asin:p.asin, title:p.title.trim().slice(0, 500), image, price_cents:price, as_of:asOf});
+    const item = {asin:p.asin, title:p.title.trim().slice(0, 500), image, price_cents:price, as_of:asOf};
+    if (Number.isSafeInteger(current[4]) && current[4] > price) item.list_price_cents = current[4];
+    items.push(item);
     seen.add(p.asin);
     if (items.length === 10) break;
   }
@@ -107,7 +113,7 @@ export function currentItems(products, now = Date.now()) {
 // A fixed-vocabulary detail (status code, Keepa error type, error class name)
 // so the operator can tell failures apart; never upstream text or the key.
 function failure(detail) {
-  const error = new Error("keepa_error");
+  const error = new Error("price_error");
   error.detail = detail;
   return error;
 }
@@ -127,7 +133,7 @@ async function jsonBody(response) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function keepa(q, asin, key) {
+async function keepa(q, asin, page, key) {
   const controller = new AbortController();
   let timer;
   try {
@@ -135,7 +141,7 @@ async function keepa(q, asin, key) {
       (async () => {
         const url = new URL("https://api.keepa.com/" + (asin ? "product" : "search"));
         Object.entries({key, domain:"1", stats:"1", history:"0",
-          ...(asin ? {asin} : {type:"product", term:q, page:"0"})})
+          ...(asin ? {asin} : {type:"product", term:q, page:String(page)})})
           .forEach(([k, v]) => url.searchParams.set(k, v));
         // Workers reject redirect:"error"; "manual" returns any 3xx unfollowed (not ok → failure).
         const response = await fetch(url, {signal:controller.signal, redirect:"manual",
@@ -170,13 +176,17 @@ export async function onRequest(context) {
   const asin = params.get("asin") || "";
   if (params.has("asin") ? !/^[A-Z0-9]{10}$/.test(asin) || params.getAll("asin").length !== 1 || params.has("q")
       : !q || params.getAll("q").length !== 1) return json({items:[], reason:"invalid_query"}, 400);
+  const rawPage = params.get("page"), page = rawPage === null ? 0 : Number(rawPage);
+  if (params.has("page") && (asin || params.getAll("page").length !== 1 || !/^(?:0|[1-9][0-9]*)$/.test(rawPage) ||
+      !Number.isSafeInteger(page))) return json({items:[], reason:"invalid_page"}, 400);
   try {
     const cfg = await settings(context);
     if (!cfg) return json({items:[], reason:"disabled"});
+    if (page >= (cfg.search_more?.enabled ? cfg.search_more.pages : 1)) return json({items:[], reason:"invalid_page"}, 400);
     const cache = globalThis.caches && caches.default;
     // Limits are part of the key: switching OFF or changing policy cannot reuse
     // a result under older settings. Keys never include the API secret.
-    const cacheKey = new Request(new URL("/api/search?" + (asin ? "asin=" + asin : "q=" + encodeURIComponent(q)) +
+    const cacheKey = new Request(new URL("/api/search?" + (asin ? "asin=" + asin : "q=" + encodeURIComponent(q) + "&page=" + page) +
       "&policy=" + encodeURIComponent(JSON.stringify(cfg)), request.url));
     const cached = cache && cfg.cache_hours && await cache.match(cacheKey);
     if (cached) return json(await cached.json());
@@ -204,11 +214,11 @@ export async function onRequest(context) {
       // A reservation covers its own minute (so its own UTC day) only: one that
       // waited into the next window is spent, never dispatched against it.
       if (Math.floor(Date.now() / 60000) !== Math.floor(started / 60000)) return json({items:[], reason:"rate_limited"});
-      try { data = await keepa(q, asin, env.KEEPA_KEY); }
+      try { data = await keepa(q, asin, page, env.KEEPA_KEY); }
       catch (error) {
         cooldown = error.cooldown || cooldown;
         if (error.message === "timeout") return json({items:[], reason:"timeout"});
-        return json({items:[], reason:"keepa_error", detail:detailOf(error)});
+        return json({items:[], reason:"price_error", detail:detailOf(error)});
       }
       // Never refund a reservation using an absent/untrusted receipt. An oversized
       // receipt halts further searches for this UTC day, leaving pipeline work alone.
