@@ -205,6 +205,7 @@ def pre_task_290_install_raw(config):
         config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
     config.pop("search_more", None)
     config["search_analyze"] = dict(config.get("search_analyze") or {}, lazy=False)
+    config.get("search", {}).pop("tokens_per_day", None)  # default 3000, as recorded
     config.get("site", {}).pop("brand_pages", None)
     return config
 
@@ -228,7 +229,14 @@ def pre_task_293(cfg):
 
 def pre_task_295(cfg):
     """Before deferred Analyze; preserve every existing publication hash."""
+    pre_search_5000(cfg)
     cfg.search_analyze = dict(cfg.search_analyze, lazy=False)
+    return cfg
+
+
+def pre_search_5000(cfg):
+    """Recorded with 3,000 search tokens a day (raised to 5,000 on 2026-10-18); no re-pins."""
+    cfg.search = dict(cfg.search, tokens_per_day=3000)
     return cfg
 
 

@@ -162,7 +162,7 @@ intake:
 search:
   amazon_results: on          # operator approved 2026-10-17 7:55pm after testing ?preview=search
   cache_hours: 6
-  tokens_per_day: 3000        # separate from pipeline recheck accounting
+  tokens_per_day: 5000        # separate from pipeline recheck accounting; Nishi 2026-10-18 "raise it" (3,000 ran out at 1:45am)
   max_per_minute: 20
 
 search_analyze:
