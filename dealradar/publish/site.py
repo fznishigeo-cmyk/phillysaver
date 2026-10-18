@@ -31,7 +31,7 @@ from .. import amazon_reference, checkout_prices, popular_affordable
 from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, compare_pages, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
 from .credits import _deal_source_hosts, _display_names, link_policy
-from . import link_facts
+from . import credits, link_facts
 from .link_facts import (LinkFacts, _link_destination, _needs_steps, _override_key,
                          _simple_code_deal, earning_link, is_competitor_tracker_host)
 from .tracking import apply_tracking
@@ -39,6 +39,8 @@ from .template_slots import replace_slot, validate_slot
 from . import comments
 from . import search_results
 from . import search_boost
+from . import search_circle
+from . import search_analyze
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -144,6 +146,17 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         from ..non_amazon_freshness import STYLE as AGED_STYLE
         html = html.replace("</style>", AGED_STYLE + "</style>", 1)
     if home:
+        if cfg.click_price_home_fill and cfg.keepa_click_price_rule == "on":
+            # Operator 2026-10-17 ("it just stops"): with fewer than 120 Add-to-Cart-confirmed deals the
+            # homepage tabs showed only those (~28); confirmed deals still lead, the rest follow.
+            html = replace_slot(html,
+                "    return known.length >= 120 ? known.concat(rows.filter(function (d) { return d.click_price_unknown; })) : known;",
+                "    return known.concat(rows.filter(function (d) { return d.click_price_unknown; }));",
+                template_name="index.html", slot_name="click-price-home-fill")
+        if cfg.trending_auto_cards is not None:
+            # Operator 2026-10-17: Trending keeps loading as visitors scroll; missing = 300 (old bytes).
+            html = replace_slot(html, "  var AUTO_CARDS = 300;", f"  var AUTO_CARDS = {cfg.trending_auto_cards};",
+                                template_name="index.html", slot_name="trending-auto-cards")
         if cfg.home_link_resets:
             for selector in ('class="tklabel"', 'id="drop" class="drop"'):
                 html = html.replace(selector, selector + ' style="cursor:pointer" title="Back to all deals"', 1)
@@ -152,10 +165,13 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
         html = search_results.template(html, cfg)
         html = search_boost.template(html, cfg)
+        html = search_circle.template(html, cfg)
+        html = search_analyze.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
         html = drop_rotation.final_order(html, cfg)
+        html = credits.home_template(html, cfg)
         html = open_box.template(html, cfg.open_box_scarcity, counts=cfg.open_box_counts)
         html = manifest_refresh.template(html, cfg)
         if cfg.offscreen_cards:
@@ -711,6 +727,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                          lambda m: m.group(1) if cfg.engagement else "", active_home, flags=re.S)
     validate_slot(active_home, "{{BROWSE_SCRIPT}}", **slot)
     home_html = replace_slot(home_html, "{{BROWSE_SCRIPT}}", browse.rendered, **slot)
+    home_html = search_analyze.browse_template(home_html, cfg)
 
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
@@ -1069,6 +1086,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + "".join(_DEMOTE_WORDS_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     site_version = search_results.site_version(site_version, cfg)
     site_version = search_boost.site_version(site_version, cfg)
+    site_version = search_circle.site_version(site_version, cfg)
+    site_version = search_analyze.site_version(site_version, cfg)
+    site_version = credits.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
         version_home = home_html if saved_deals else _WATCH_BLOCK.sub("", home_html).replace("<!--saved--><!--/saved-->", "")
@@ -1329,6 +1349,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Write the price-free offline page after every global script pass.
         pwa.publish(out, cfg)
     # All template markers and injected scripts have had their final consumer.
+    credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)

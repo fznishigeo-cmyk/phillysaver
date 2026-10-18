@@ -75,7 +75,8 @@ def publish(out, cfg, now, live, originals, paths, template, site_url):
             content += f'<p>{escape(intro)}</p>'
         content += (f'<h2>Early {escape(event["name"])} deals</h2>' if today < start else
                     '<h2>Deals right now</h2>')
-        content += ('<div class="grid">' + cards_html(rows, paths, now, static_photos=cfg.static_photos) + '</div>' if rows else
+        content += ('<div class="grid">' + cards_html(rows, paths, now, static_photos=cfg.static_photos,
+                                                   credit_links=cfg.credit_links) + '</div>' if rows else
                     '<p class="muted">No qualifying deals right now. Browse <a href="/">the live wall</a> for current picks.</p>')
         html = _landing_page(template, heading + ' | wowpriced', heading, dek, path, site_url,
                              content, intro=dek, extra_head=_item_list(rows, paths, site_url),

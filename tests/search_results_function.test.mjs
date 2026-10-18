@@ -328,3 +328,143 @@ test('a redirect is never followed and counts as a Keepa error', async () => {
   };
   assert.deepEqual(await body(await run('moved')), {items:[], reason:'keepa_error', detail:'http_302'});
 });
+
+// ASIN requests take the same accounting/dispatch path, including mixed q/asin traffic.
+const runAsin = (asin = 'B000000000') => onRequest({...context,
+  request:new Request('https://wowpriced.test/api/search?asin=' + encodeURIComponent(asin))});
+function productTransport() {
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]);
+    assert.equal(url.origin + url.pathname, 'https://api.keepa.com/product');
+    assert.deepEqual(Object.fromEntries(url.searchParams), {key:KEY, domain:'1', stats:'1', history:'0',
+      asin:url.searchParams.get('asin')});
+    assert.equal(options.redirect, 'manual');
+    assert(options.headers['User-Agent'].includes('contact: hello@wowpriced.com'));
+    return Response.json({products:[{...product(), asin:url.searchParams.get('asin')}, product(99)], tokensConsumed:1});
+  };
+}
+test('asin success is one current item, cached by ASIN/policy without secrets or unrelated products', async () => {
+  productTransport();
+  const first = await body(await runAsin());
+  assert.deepEqual(first, {items:currentItems([product()], now)});
+  assert.equal(JSON.parse([...values.values()][0]).tokens, 110);
+  assert.equal(calls[0][0].searchParams.get('asin'), 'B000000000');
+  context.env.SEARCH_BUDGET = null;
+  assert.deepEqual(await body(await runAsin()), first);
+  assert.equal(calls.length, 1);
+  assert([...cache.keys()].every(key => key.includes('asin=B000000000') && !key.includes(KEY) && !key.includes('q=')));
+  assert(!JSON.stringify(first).includes(KEY));
+  config.amazon_results = 'off'; assert.equal((await body(await runAsin())).reason, 'disabled');
+});
+test('malformed/mixed/duplicate ASIN input fails before assets, accounting or Keepa', async () => {
+  context.env.ASSETS.fetch = () => {throw new Error('must not read assets');};
+  for (const asin of ['', 'B00000000', 'B0000000000', 'b000000000', 'https://amazon.com/dp/B000000000',
+    'B00000000!', ' B000000000', 'B000000000\n']) {
+    const response = await runAsin(asin);
+    assert.equal(response.status, 400); assert.deepEqual(await body(response), {items:[], reason:'invalid_query'});
+  }
+  for (const query of ['asin=B000000000&asin=B000000001', 'asin=B000000000&q=cup', 'asin=&q=cup']) {
+    assert.equal((await onRequest({...context, request:new Request('https://wowpriced.test/api/search?' + query)})).status, 400);
+  }
+  assert.equal(calls.length, 0); assert.equal(values.size, 0);
+});
+test('asin fails closed for missing bindings and malformed budget/config', async () => {
+  productTransport();
+  const original = context.env;
+  for (const change of [{KEEPA_KEY:''}, {SEARCH_BUDGET:null}, {SEARCH_LIMITS:null}, {SEARCH_LIMITS:{}},
+    {SEARCH_BUDGET:{get:async () => ({tokens:'110'}), put(){}}},
+    {SEARCH_BUDGET:{get:async () => {throw new Error(KEY);}, put(){}}}]) {
+    context.env = {...original, ...change};
+    const result = await body(await runAsin());
+    assert.equal(result.items.length, 0); assert(!JSON.stringify(result).includes(KEY));
+  }
+  context.env = original;
+  config.cache_hours = 25; assert.equal((await body(await runAsin())).reason, 'disabled');
+  assert.equal(calls.length, 0);
+});
+test('asin obeys KV daily/minute ceilings and the same atomic cap as q with stale KV', async () => {
+  productTransport();
+  config.tokens_per_day = 109;
+  assert.equal((await body(await runAsin())).reason, 'budget_exhausted');
+  config.tokens_per_day = 3000; config.max_per_minute = 0;
+  assert.equal((await body(await runAsin())).reason, 'rate_limited');
+  config.max_per_minute = 20;
+  values.set('search:v1:2026-10-17', JSON.stringify({tokens:110, count:20, minute:Math.floor(now / 60000), last:now - 2000}));
+  assert.equal((await body(await runAsin())).reason, 'rate_limited'); assert.equal(calls.length, 0);
+  kv.get = async () => null; config.tokens_per_day = 110;
+  assert.equal((await body(await runAsin())).items.length, 1);
+  now += 1000;
+  assert.equal((await body(await run('cupping'))).reason, 'limit_reached');
+  assert.equal((await body(await runAsin('B000000001'))).reason, 'limit_reached');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  assert.equal(calls.length, 1);
+});
+test('asin atomic minute window and cooldown cannot be bypassed with fresh ASINs', async () => {
+  productTransport(); kv.get = async () => null; config.max_per_minute = 1;
+  await runAsin();
+  assert.equal((await body(await runAsin('B000000001'))).reason, 'rate_limited');
+  now += 1000;
+  assert.equal((await body(await runAsin('B000000001'))).reason, 'limit_reached');
+  now += 60000;
+  assert.equal((await body(await runAsin('B000000001'))).items.length, 1);
+  assert.equal(calls.length, 2);
+});
+test('asin holds the shared lease through the body and completion cooldown', async () => {
+  let finish;
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); return new Promise(resolve => {finish = resolve;});
+  };
+  const first = runAsin();
+  while (!finish) await new Promise(resolve => setImmediate(resolve));
+  now += 2000;
+  const tokens = database.prepare('SELECT tokens FROM search_budget').get().tokens;
+  assert.equal((await body(await run('words'))).reason, 'rate_limited');
+  assert.equal((await body(await runAsin('B000000001'))).reason, 'rate_limited');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, tokens);
+  finish(Response.json({products:[product()]})); assert.equal((await body(await first)).items.length, 1);
+  assert.equal((await body(await runAsin('B000000001'))).reason, 'rate_limited');
+  now += 1000; productTransport();
+  assert.equal((await body(await runAsin('B000000001'))).items.length, 1);
+});
+test('asin reservation crossing a minute never dispatches, including UTC rollover', async () => {
+  productTransport();
+  const put = kv.put;
+  kv.put = async (...args) => {await put(...args); now += 60000;};
+  assert.equal((await body(await runAsin())).reason, 'rate_limited');
+  assert.equal(calls.length, 0);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+});
+test('asin 429 Retry-After blocks both lookup types without additional debits', async () => {
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); return new Response(null, {status:429, headers:{'Retry-After':'90'}});
+  };
+  assert.deepEqual(await body(await runAsin()), {items:[], reason:'keepa_error', detail:'http_429'});
+  now += 89000;
+  assert.equal((await body(await runAsin())).reason, 'rate_limited');
+  assert.equal((await body(await run('words'))).reason, 'rate_limited');
+  assert.equal(calls.length, 1); assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+  now += 1000; productTransport();
+  assert.equal((await body(await runAsin())).items.length, 1);
+});
+test('asin errors, gzip and oversized receipts retain the same privacy and budget guards', async () => {
+  const zlib = await import('node:zlib');
+  globalThis.fetch = async () => new Response(zlib.gzipSync(JSON.stringify({products:[product()]})));
+  assert.equal((await body(await runAsin())).items.length, 1);
+  now += 1000;
+  globalThis.fetch = async () => {throw new Error('https://api.keepa.com/product?key=' + KEY);};
+  assert.deepEqual(await body(await runAsin('B000000001')), {items:[], reason:'keepa_error', detail:'fetch_Error'});
+  now += 1000;
+  globalThis.fetch = async () => Response.json({products:[product()], tokensConsumed:111});
+  assert.equal((await body(await runAsin('B000000002'))).reason, 'budget_exhausted');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, Number.MAX_SAFE_INTEGER);
+  assert([...cache.values()].every(response => !response.url.includes(KEY)));
+});
+test('asin hung response body times out without a refund', async () => {
+  let signal;
+  globalThis.fetch = async (_, options) => {
+    signal = options.signal; return {ok:true, arrayBuffer:() => new Promise(() => {})};
+  };
+  assert.deepEqual(await body(await runAsin()), {items:[], reason:'timeout'});
+  assert(signal.aborted);
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110);
+});

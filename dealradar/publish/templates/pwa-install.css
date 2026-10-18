@@ -1,0 +1,31 @@
+.pwa-header-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+#pwa-header-slot{display:block;width:140px;flex-shrink:0;min-height:52px}
+#pwa-header-install{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;min-height:52px;padding:10px 12px;border:2px solid var(--fg);border-radius:999px;background:transparent;color:var(--fg);font:inherit;font-size:14px;font-weight:700;white-space:nowrap;cursor:pointer}
+#pwa-header-install[hidden]{display:none!important}
+#pwa-header-install:hover{background:var(--chip)}
+#pwa-header-install:focus-visible,#pwa-help-close:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
+#pwa-header-install svg,#pwa-help svg{width:20px;height:20px;flex-shrink:0}
+.pwa-label-compact{display:none}
+#pwa-help{position:fixed;inset:0;width:min(440px,calc(100% - 32px));max-height:calc(100% - 32px);max-width:none;margin:auto;padding:0;border:1px solid var(--line);border-radius:18px;background:var(--card);color:var(--fg);box-shadow:0 16px 56px #0005;overflow:auto}
+#pwa-help::backdrop{background:#0008}
+.pwa-sheet{position:relative;padding:28px 24px}
+#pwa-help h2{padding-right:36px;font-size:20px;line-height:1.3;margin:0 0 16px}
+#pwa-help p{font-size:16px;line-height:1.6;margin:0}
+#pwa-help svg{display:inline-block;vertical-align:middle}
+#pwa-help-close{position:absolute;top:8px;right:8px;min-width:44px;min-height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--fg);font:inherit;font-size:28px;cursor:pointer}
+@media(max-width:899px){
+  .hrow:has(.pwa-header-actions){grid-template-columns:minmax(0,1fr) auto}
+  .pwa-header-actions{grid-column:2;grid-row:1;gap:6px}
+  #pwa-header-slot{width:64px;min-height:44px}
+  #pwa-header-install{min-height:44px;padding:8px 6px;gap:4px;font-size:13px}
+  #pwa-header-install svg{width:16px;height:16px}
+  .pwa-label-full{display:none}.pwa-label-compact{display:inline}
+  .hrow:has(.pwa-header-actions)>.drop{grid-column:2;grid-row:3;justify-self:end}
+  .hrow:has(.pwa-header-actions)>.tag{grid-column:1;grid-row:3;min-width:0}
+  .hrow:has(.pwa-header-actions)>.search{grid-row:2}
+  .hrow:has(.pwa-header-actions)>.acct{grid-row:4}
+  .pwa-header-actions:has(.trialcta){grid-column:1 / -1;grid-row:2;justify-content:flex-end}
+  .hrow:has(.pwa-header-actions .trialcta)>.search{grid-row:3}
+  .hrow:has(.pwa-header-actions .trialcta)>.tag,.hrow:has(.pwa-header-actions .trialcta)>.drop{grid-row:4}
+  .hrow:has(.pwa-header-actions .trialcta)>.acct{grid-row:5}
+}

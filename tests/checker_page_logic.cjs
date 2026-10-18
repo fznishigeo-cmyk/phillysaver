@@ -74,7 +74,13 @@ const {webcrypto} = require('node:crypto');
   assert(h.result.textContent.includes('checked just now'));
   assert(h.result.textContent.includes('via Slickdeals'));
   const credit=h.result.nodes().find(n=>n.tag==='a'&&n.textContent==='Slickdeals');
-  assert.equal(credit.href,'https://slickdeals.net/f/1');assert.equal(credit.rel,'noopener');
+  if (process.argv[4]==='plain-credits') {
+    assert.equal(credit,undefined);
+    const via=h.result.children.find(n=>n.textContent.startsWith('via '));
+    assert(via && !via.nodes().some(n=>n.tag==='a'));
+  } else {
+    assert.equal(credit.href,'https://slickdeals.net/f/1');assert.equal(credit.rel,'noopener');
+  }
   assert(h.result.nodes().some(n=>n.tag==='time'&&n.dateTime&&n.title));
   assert(h.result.nodes().some(n=>n.tag==='a'&&n.textContent==='Price history'));
   assert.equal(new URL(h.c.share,'https://wowpriced.com').searchParams.get('u'),'https://www.bestbuy.com/site/widget/1234567.p');
@@ -164,9 +170,12 @@ const {webcrypto} = require('node:crypto');
     {name:'<b>literal</b>',url:'javascript:alert(1)'},{name:'Plain',url:'/relative'},
     {name:'Safe',url:'https://example.com/credit'}]}})});
   await run('https://www.bestbuy.com/site/widget/1234567.p');
-  assert(h.result.textContent.includes('via <b>literal</b>, Plain, Safe'));
+  assert(h.result.textContent.includes(process.argv[4]==='plain-credits'
+    ? 'via <b>literal</b>, via Plain, via Safe' : 'via <b>literal</b>, Plain, Safe'));
   assert(!h.result.nodes().some(n=>n.tag==='a'&&['<b>literal</b>','Plain'].includes(n.textContent)));
-  assert.equal(h.result.nodes().find(n=>n.tag==='a'&&n.textContent==='Safe').rel,'noopener');
+  const safe=h.result.nodes().find(n=>n.tag==='a'&&n.textContent==='Safe');
+  if(process.argv[4]==='plain-credits') assert.equal(safe,undefined);
+  else assert.equal(safe.rel,'noopener');
   for(const [minutes,expected] of [[1,'1 minute ago'],[65,'1 hour ago'],[125,'2 hours ago'],[1500,'1 day ago'],[3000,'2 days ago']]) {
     h.c.fetch=async()=>({ok:true,json:async()=>({'bestbuy:1234567':{...sample,at:new Date(now-minutes*60000).toISOString()}})});
     await run('https://www.bestbuy.com/site/widget/1234567.p');assert(h.result.textContent.includes('checked '+expected));

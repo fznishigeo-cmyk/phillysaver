@@ -454,6 +454,7 @@ def test_summary_contains_only_counts_and_five_compact_examples(db, cfg):
 
 
 def test_home_order_and_search_in_emitted_javascript(db, cfg, tmp_path, monkeypatch):
+    cfg.click_price_home_fill = False  # the original rule; site.click_price_home_fill: tests/test_trending_auto_cards.py
     row = adidas(db, cfg)
     save(db, row, record(row))
     monkeypatch.setattr(site, "util_now", lambda: NOW)

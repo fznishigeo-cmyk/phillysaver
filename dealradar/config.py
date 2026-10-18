@@ -344,6 +344,9 @@ class AppConfig:
     store_policy: dict = field(default_factory=lambda: validated_store_policy({}))
     offscreen_cards: bool = False
     home_link_resets: bool = False
+    trending_auto_cards: int | None = None
+    click_price_home_fill: bool = False
+    credit_links: bool = True
     dark_polish: bool = False
     strip_comments: bool = False
     home_title: str = ""
@@ -351,6 +354,8 @@ class AppConfig:
     search_amazon: bool = False
     search: dict = field(default_factory=lambda: validated_search(None))
     search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
+    search_circle: bool = False
+    search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     static_photos: bool = False
     open_box_scarcity: bool = False
     open_box_counts: bool = False
@@ -497,6 +502,8 @@ class AppConfig:
     engagement_saved_deals_limit: int = 100  # includes browser-only price watches
     # -- home-screen app: absent block preserves the existing site bytes --
     pwa_enabled: bool = False
+    pwa_install_button: bool = False
+    pwa_install_phone_delay_s: int = 180
     pwa_name: str = "wowpriced"
     pwa_short_name: str = "wowpriced"
     pwa_android: dict = field(default_factory=lambda: validated_android({}))
@@ -651,6 +658,17 @@ def validated_search(value) -> dict:
     if result["cache_hours"] > 24:
         raise ValueError("search.cache_hours must be at most 24")
     return {key: result[key] for key in ("amazon_results", "cache_hours", "tokens_per_day", "max_per_minute")}
+
+
+def validated_search_analyze(value) -> dict:
+    if value is None:
+        value = {}
+    if not isinstance(value, dict) or set(value) - {"enabled"}:
+        raise ValueError("search_analyze must contain enabled only")
+    enabled = value.get("enabled", False)
+    if type(enabled) is not bool:
+        raise ValueError("search_analyze.enabled must be a boolean")
+    return {"enabled": enabled}
 
 
 def validated_search_boost(value) -> dict:
@@ -969,8 +987,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if type(cfg.offscreen_cards) is not bool:
         raise ValueError("site.offscreen_cards must be a boolean")
     cfg.home_link_resets = g("site", "home_link_resets", default=False)
+    cfg.trending_auto_cards = g("site", "trending_auto_cards", default=None)
+    if cfg.trending_auto_cards is not None and (type(cfg.trending_auto_cards) is not int
+                                                or not 60 <= cfg.trending_auto_cards <= 5000):
+        raise ValueError("site.trending_auto_cards must be an integer from 60 to 5000")
+    cfg.click_price_home_fill = g("site", "click_price_home_fill", default=False)
+    if type(cfg.click_price_home_fill) is not bool:
+        raise ValueError("site.click_price_home_fill must be a boolean")
     if type(cfg.home_link_resets) is not bool:
         raise ValueError("site.home_link_resets must be a boolean")
+    cfg.credit_links = g("site", "credit_links", default=True)
+    if type(cfg.credit_links) is not bool:
+        raise ValueError("site.credit_links must be a boolean")
     cfg.dark_polish = g("site", "dark_polish", default=False)
     if type(cfg.dark_polish) is not bool:
         raise ValueError("site.dark_polish must be a boolean")
@@ -987,6 +1015,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("site.search_amazon must be a boolean")
     cfg.search = validated_search(g("search", default=None))
     cfg.search_boost = validated_search_boost(g("search_boost", default=None))
+    cfg.search_circle = g("search_circle", default=False)
+    if type(cfg.search_circle) is not bool:
+        raise ValueError("search_circle must be a boolean")
+    cfg.search_analyze = validated_search_analyze(g("search_analyze", default=None))
     cfg.static_photos = g("site", "static_photos", default=False)
     if type(cfg.static_photos) is not bool:
         raise ValueError("site.static_photos must be a boolean")
@@ -1276,6 +1308,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.engagement_saved_deals_limit = max(1, min(200, int(g(
         "engagement", "saved_deals_limit", default=cfg.engagement_saved_deals_limit))))
     cfg.pwa_enabled = bool(g("pwa", "enabled", default=cfg.pwa_enabled))
+    cfg.pwa_install_button = g("pwa", "install_button", default=False)
+    if type(cfg.pwa_install_button) is not bool:
+        raise ValueError("pwa.install_button must be a boolean")
+    cfg.pwa_install_phone_delay_s = g("pwa", "install_phone_delay_s", default=180)
+    if type(cfg.pwa_install_phone_delay_s) is not int or not 0 <= cfg.pwa_install_phone_delay_s <= 3600:
+        raise ValueError("pwa.install_phone_delay_s must be an integer from 0 to 3600")
     cfg.pwa_name = str(g("pwa", "name", default=cfg.pwa_name) or cfg.pwa_name).strip() or cfg.pwa_name
     cfg.pwa_short_name = str(g("pwa", "short_name", default=cfg.pwa_short_name) or cfg.pwa_short_name).strip() or cfg.pwa_short_name
     cfg.pwa_android = validated_android(g("pwa", "android", default={}))

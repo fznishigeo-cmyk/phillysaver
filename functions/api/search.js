@@ -127,14 +127,15 @@ async function jsonBody(response) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function keepa(q, key) {
+async function keepa(q, asin, key) {
   const controller = new AbortController();
   let timer;
   try {
     return await Promise.race([
       (async () => {
-        const url = new URL("https://api.keepa.com/search");
-        Object.entries({key, domain:"1", type:"product", term:q, page:"0", stats:"1", history:"0"})
+        const url = new URL("https://api.keepa.com/" + (asin ? "product" : "search"));
+        Object.entries({key, domain:"1", stats:"1", history:"0",
+          ...(asin ? {asin} : {type:"product", term:q, page:"0"})})
           .forEach(([k, v]) => url.searchParams.set(k, v));
         // Workers reject redirect:"error"; "manual" returns any 3xx unfollowed (not ok → failure).
         const response = await fetch(url, {signal:controller.signal, redirect:"manual",
@@ -166,14 +167,16 @@ export async function onRequest(context) {
   if (request.method !== "GET") return json({items:[], reason:"method_not_allowed"}, 405);
   const params = new URL(request.url).searchParams;
   const q = normalizeQuery(params.get("q"));
-  if (!q || params.getAll("q").length !== 1) return json({items:[], reason:"invalid_query"}, 400);
+  const asin = params.get("asin") || "";
+  if (params.has("asin") ? !/^[A-Z0-9]{10}$/.test(asin) || params.getAll("asin").length !== 1 || params.has("q")
+      : !q || params.getAll("q").length !== 1) return json({items:[], reason:"invalid_query"}, 400);
   try {
     const cfg = await settings(context);
     if (!cfg) return json({items:[], reason:"disabled"});
     const cache = globalThis.caches && caches.default;
     // Limits are part of the key: switching OFF or changing policy cannot reuse
     // a result under older settings. Keys never include the API secret.
-    const cacheKey = new Request(new URL("/api/search?q=" + encodeURIComponent(q) +
+    const cacheKey = new Request(new URL("/api/search?" + (asin ? "asin=" + asin : "q=" + encodeURIComponent(q)) +
       "&policy=" + encodeURIComponent(JSON.stringify(cfg)), request.url));
     const cached = cache && cfg.cache_hours && await cache.match(cacheKey);
     if (cached) return json(await cached.json());
@@ -201,7 +204,7 @@ export async function onRequest(context) {
       // A reservation covers its own minute (so its own UTC day) only: one that
       // waited into the next window is spent, never dispatched against it.
       if (Math.floor(Date.now() / 60000) !== Math.floor(started / 60000)) return json({items:[], reason:"rate_limited"});
-      try { data = await keepa(q, env.KEEPA_KEY); }
+      try { data = await keepa(q, asin, env.KEEPA_KEY); }
       catch (error) {
         cooldown = error.cooldown || cooldown;
         if (error.message === "timeout") return json({items:[], reason:"timeout"});
@@ -223,7 +226,7 @@ export async function onRequest(context) {
       await env.SEARCH_LIMITS.prepare("UPDATE search_dispatch SET held = 0, ready = ? WHERE id = 1 AND ready = ?")
         .bind(Date.now() + cooldown, lease).run();
     }
-    const body = {items:currentItems(data.products)};
+    const body = {items:currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products)};
     const ttl = Math.floor(Math.min(cfg.cache_hours * 3600, ...body.items.map(
       item => (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000)));
     if (cache && ttl > 0) {

@@ -165,6 +165,9 @@ search:
   tokens_per_day: 3000        # separate from pipeline recheck accounting
   max_per_minute: 20
 
+search_analyze:
+  enabled: true              # task 291: paste Amazon links; OFF restores previous bytes
+
 # Operator 2026-10-17: a search we have no deal for leads with a big full-width
 # "Compare all prices on Amazon" button, cards full width below; adult products
 # never show as cards (the button still works); a phone's busy final word
@@ -177,7 +180,12 @@ search_boost:
                   penis, masturbator, masturbation, strap on, nipple clamps, lube, lubricant,
                   lubricants, condom, condoms, kegel balls, love egg, pleasure toy, couples toy, rose toy]
 
+# Operator 2026-10-17 (Verizon video): the Amazon buttons' border circles them, and the
+# matching-deals "Search all of Amazon" link is a button. Missing/false = previous bytes.
+search_circle: true
+
 site:
+  credit_links: false         # plain source attribution; true/missing restores the previous site
   static_photos: true          # task 274: photos on static cards and deal pages
   open_box_scarcity: true   # task 273: never infer a stock count
   open_box_counts: false   # operator: publish only "often only 1" for now
@@ -191,6 +199,8 @@ site:
   home_description: "Verified deals, coupons and promo codes from Amazon, Walmart, Target, Woot and more. We check every price before we show it."
   search_amazon: true         # tagged search fallback; queries stay local until clicked
   home_link_resets: true      # logo, Live deals and timer return to all deals; Back keeps the previous view
+  trending_auto_cards: 1200   # operator 2026-10-17: Trending keeps loading while they scroll (was 300, then a Show more button)
+  click_price_home_fill: true  # operator 2026-10-17 "it just stops": confirmed Add-to-Cart prices lead, other verified deals follow (was: hidden below 120 confirmed)
   offscreen_cards: true        # phones only; Chromium Back/reload restore exact at 390 and 1280 wide (2026-10-16)
   unconfirmed_label:
     enabled: true
@@ -259,7 +269,8 @@ publish:
                   toner, ink cartridge, filter cartridge, adapter plate, mounting bracket,
                   fuse, gasket, o-ring, hose clamp,
                   christmas, xmas,   # operator 2026-10-17 ("why do i still see the christmas tree"):
-                  tupperware]        # operator 2026-10-17: "crap tupperware deal" (4 plastic shakers for $19.97)
+                  tupperware,        # operator 2026-10-17: "crap tupperware deal" (4 plastic shakers for $19.97)
+                  officially licensed, nba, nhl, nfl, mlb, wnba, ncaa]   # 10-17 launch: 5 team sweatshirts in the first 24
                                      # off-season until the gifts window; drop these two on Nov 1
     max_niche_top: 2
     niche_after: 8              # never a niche card on the first screen (cards 1-8)
@@ -836,6 +847,8 @@ engagement:
 
 pwa:
   enabled: true
+  install_button: true
+  install_phone_delay_s: 180  # operator 2026-10-17: phones show "App" after ~3 min on the site (summed across visits)
   name: "wowpriced"
   short_name: "wowpriced"
   android:
@@ -1075,7 +1088,7 @@ growth:
   # Pinned Graph API version (v24.0, released 2025-10; Meta keeps a version
   # about two years). Bump it when Meta announces its deprecation.
   meta_graph_version: "v24.0"
-  meta_ad_account_id: ""                     # digits, with or without "act_"
+  meta_ad_account_id: "361435338032901"      # Nishi 2026-10-17 (Ads Manager act=); digits, with or without "act_"
   meta_page_id: "1382622794936174"           # Facebook Page ID (followers): Wowpriced
   instagram_user_id: "17841412621006331"     # Instagram professional account ID (followers): @wowpriced
   # Google Ads (secrets GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET,

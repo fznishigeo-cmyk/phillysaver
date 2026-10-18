@@ -471,6 +471,9 @@ def publish(out, cfg, now, pages, template, site_url, disclosure, deal_paths, *,
             credits = ', '.join(
                 f'<a href="{escape(seo._http(c.get("url")))}" rel="noopener">{escape(c["name"])}</a>'
                 if seo._http(c.get("url")) else escape(c["name"]) for c in offer["credits"])
+            if not cfg.credit_links:
+                credits = '<span class="credit" style="color:var(--muted)">' + ', '.join(
+                    'via ' + escape(c["name"]) for c in offer["credits"]) + '</span>'
             status = page["statuses"][key]
             date = parse_iso(offer["date"])
             content += (f'<li><time datetime="{escape(offer["date"])}">{seo._date(date)}</time> (UTC)'

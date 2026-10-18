@@ -36,6 +36,26 @@ function report(label, cards) {
       await page.goto(SITE + "/", { waitUntil: "domcontentloaded", timeout: 45000 });
       report(label, await firstCards(page));
       if (label === "desktop") {
+        // Keep scrolling: Trending must keep loading cards (operator 2026-10-17 "it just stops").
+        const counts = [];
+        for (let i = 0; i < 12; i++) {
+          counts.push(await page.$$eval(CARDS, cards => cards.length));
+          await page.mouse.wheel(0, 30000); await page.waitForTimeout(900);
+        }
+        const more = await page.evaluate(() => [...document.querySelectorAll("button")].some(b => /show more deals/i.test(b.textContent) && b.offsetParent !== null));
+        const facts = await page.evaluate(async () => {
+          const j = await fetch("/deals.json?t=" + Date.now(), {cache: "no-store"}).then(r => r.json()).catch(e => ({error: String(e)}));
+          const deals = Array.isArray(j.deals) ? j.deals : [];
+          const count = (f) => deals.filter(f).length;
+          return {keys: Object.keys(j).slice(0, 12), deals: deals.length, teaser: Array.isArray(j.teaser) ? j.teaser.length : null,
+                  dead: count(d => d.status === "dead"), noPhoto: count(d => !d.image), openBox: count(d => (d.conditions || []).some(c => /used|open_box/.test(c))),
+                  clickUnknown: count(d => d.click_price_unknown), locked: count(d => d.locked), tab: (document.querySelector('[aria-selected="true"], .tab.on, .active') || {}).textContent || "",
+                  q: (document.getElementById("q") || {}).value || "", searchcount: (document.getElementById("searchcount") || {}).textContent || "",
+                  grids: [...document.querySelectorAll("#content .grid")].map(g => g.querySelectorAll(".card").length)};
+        });
+        console.log(`deals.json and page: ${JSON.stringify(facts)}`);
+        console.log(`\nscrolling Trending: cards ${counts.join(" -> ")}; Show more deals button ${more ? "visible" : "not visible"}`);
+        await page.evaluate(() => window.scrollTo(0, 0));
         // Empty search, then the logo: a visitor must land back on the fresh homepage.
         await page.fill("#q", "hijab");
         await page.waitForTimeout(2500);

@@ -57,7 +57,7 @@ Short links need the full product address. eBay results cover live deals only, b
 
 def publish(out, cfg, now, site_url, disclosure):
     from .. import amazon_reference
-    from . import seo
+    from . import credits, seo
     from .site import copy_variant, site_footer
 
     template = (seo.TEMPLATES_DIR / "hub.html").read_text(encoding="utf-8")
@@ -85,6 +85,7 @@ def publish(out, cfg, now, site_url, disclosure):
                          separators=(",", ":"))
     script = (seo.TEMPLATES_DIR / "checker.js").read_text(encoding="utf-8")
     script = android_app.checker_script(script, cfg)
+    script = credits.checker_template(script, cfg)
     content = (CONTENT + '<script id="check-rules" type="application/json">' + rules + '</script>'
                + '<script id="check-options" type="application/json">' + options + '</script>'
                + '<script>' + script + '</script>')

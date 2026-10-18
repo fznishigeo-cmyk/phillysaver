@@ -206,6 +206,8 @@ def test_static_reader_is_small_even_with_many_deals_and_checks(db, cfg, tmp_pat
         cfg.amazon_reference = "history"  # reader fixture recorded before task 276
         cfg.amazon_history = "show"  # predates task 121b; exercise the full Amazon reader
         cfg.seo_product_pages_enabled = cfg.paywall_open_access = True
+        cfg.pwa_install_button = False  # reader budget recorded before task 290
+        cfg.search_analyze = {"enabled": False}  # reader budget recorded before task 291
     rows = seed(db, 1, checks=100)
     pages, _, _ = prepare(db, cfg, rows)
     page = next(iter(pages.values()))

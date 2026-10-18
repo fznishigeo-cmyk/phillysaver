@@ -372,11 +372,29 @@ def head_snippet(cfg) -> str:
                        ("clarity_project_id", _CLARITY)):
         if key in ids:
             blocks.append(block % {"id": js(key)})
-    dispatch = _DISPATCH
+    from . import credits
+    dispatch = credits.tracking_template(_DISPATCH, cfg)
     if cfg.home_link_resets:
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    home_reset: { ga4Only: true, methods: ["logo", "ticker", "timer"] },')
     from .search_results import enabled as search_results_enabled
+    from .search_analyze import enabled as search_analyze_enabled
+    if search_analyze_enabled(cfg):
+        dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
+    if (["search_analyze", "paste_amazon_link", "analyze_result"].indexOf(name) !== -1) {
+      var safe = {send_to: on.ga4};
+      if (name === "analyze_result") {
+        if (!params || !Number.isSafeInteger(params.count) || params.count < 0 || params.count > 16 ||
+            typeof params.live !== "boolean" || typeof params.matched !== "boolean") return;
+        safe.count = params.count; safe.live = params.live; safe.matched = params.matched;
+      } else {
+        if (!params || typeof params.link !== "boolean") return;
+        safe.link = params.link;
+      }
+      if (on.ga4) { try { window.gtag("event", name, safe); } catch (e) {} }
+      return;
+    }
+    var ev = EVENTS[name];""")
     if search_results_enabled(cfg):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (name === "search_amazon_results") {
@@ -414,6 +432,11 @@ def head_snippet(cfg) -> str:
                                     '    install_offer_shown: { ga4Only: true },\n'
                                     '    install_accepted: { ga4Only: true },\n'
                                     '    standalone_session: { ga4Only: true },')
+        if cfg.pwa_install_button:
+            dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                        '    install_click: { ga4Only: true },\n'
+                                        '    install_dismissed: { ga4Only: true },\n'
+                                        '    installed: { ga4Only: true },')
     if getattr(cfg, "support_enabled", False) and getattr(cfg, "engagement", {}).get("saved_deals", False):
         dispatch = dispatch.replace("    var ev = EVENTS[name];", _SAVED_DISPATCH + "    var ev = EVENTS[name];")
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n" + _WATCH_EVENTS)

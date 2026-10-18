@@ -1,0 +1,53 @@
+{
+  "chromium": "141.0.7390.37",
+  "installability": [
+    {
+      "width": 390,
+      "colorScheme": "light",
+      "installabilityErrors": [
+        {
+          "errorId": "in-incognito",
+          "errorArguments": []
+        }
+      ]
+    },
+    {
+      "width": 390,
+      "colorScheme": "dark",
+      "installabilityErrors": [
+        {
+          "errorId": "in-incognito",
+          "errorArguments": []
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "colorScheme": "light",
+      "installabilityErrors": [
+        {
+          "errorId": "in-incognito",
+          "errorArguments": []
+        }
+      ]
+    },
+    {
+      "width": 1440,
+      "colorScheme": "dark",
+      "installabilityErrors": [
+        {
+          "errorId": "in-incognito",
+          "errorArguments": []
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    "home-390x844-light.png",
+    "home-390x844-dark.png",
+    "home-1440x900-light.png",
+    "home-1440x900-dark.png",
+    "ios-sheet-390x844-light.png",
+    "ios-sheet-390x844-dark.png"
+  ]
+}

@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-17)
+# Handoff — state of wowpriced.com (updated 2026-10-18)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -236,6 +236,99 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Plain source credits (Codex task 294, 2026-10-18; uncommitted, ON):**
+  Strict `site.credit_links` defaults true and ships false: muted plain attribution
+  on home/spotlight/static cards, category/store/price/best/event pages, deal/product
+  pages and Deal Check. Get deal destinations and public/member credit data stay
+  unchanged; RSS/email/Telegram/social generation is untouched. Comparison pages
+  have no source credit links and remain byte-identical. The previous gone-card cap
+  was one in eight; plain mode enforces one in ten after final ordering, before
+  pagination, preserving live order. True/missing/back-true match four pre-edit
+  full-publication hashes and existing history pins, without any hash re-pins.
+  The supplied search_boost/search_circle/Analyze/Install release is retained.
+  Emitted Node checks cover plain credits/escaping, Get deal, sorting/search,
+  pagination, row filling, Deal Check and the remaining tracking events. Product
+  reader credits explicitly use the muted color despite their reduced stylesheet.
+  Initial fixture/assertion fixes: **4 failed, 25 passed in 40.46s**;
+  **6 failed, 1 passed in 15.35s**; **4 failed, 2 passed in 18.75s**; all corrected.
+  Broad targeted release/legacy/feature/rerun run: **1 failed, 137 passed in
+  242.54s (0:04:02)**. Its sole failure was the extra 1 KB phone headroom guard,
+  already missed by the supplied release (77,105 gzip bytes; ceiling 77,360).
+  Plain mode removes unused credit-link CSS/click tracking and compacts CSS
+  whitespace while preserving literals, URLs, comments and escapes. Home is now
+  **76,184 gzip bytes**, with 1,176 bytes headroom; all original ceilings remain.
+  Final affected-feature, frozen-byte, phone-headroom and both real pipeline
+  rerun modes: **48 passed in 222.05s (0:03:42)**. No failing targeted checks remain.
+  Node syntax and `git diff --check` pass. Offline only, `-n 1 -p no:cacheprovider`;
+  every owned `/tmp/task294-*` basetemp/probe directory was removed after its run.
+  No network, full suite, commit or push. Review/deployment remain.
+- **Header Install app (Codex task 290, 2026-10-18; uncommitted, ON):**
+  Strict `pwa.install_button` defaults OFF and ships ON. Header prompt / compact
+  phone App button, iPhone/iPad Safari dialog, seven-day dismissal and GA4-only
+  install events share the existing footer install controls. Original PWA source,
+  manifest, icons and request behavior stay unchanged. Six pre-edit publication
+  captures pin every file with OFF/missing; historical helpers preserve existing
+  hashes. Reserved button space prevents prompt-driven search movement; the native
+  Safari dialog uses `showModal()` plus explicit Tab/Shift+Tab containment for
+  its sole close button, with X/Escape/backdrop close and opener focus return.
+  Node checks cover prompt races, footer use, iPhone/iPad, standalone, social
+  browsers/Android, dismissal expiry, blocked storage and deduplicated events.
+  Initial feature run: **25 passed in 26.67s**. Final targeted feature/PWA/tracking,
+  recorded Home/Android bytes, shipped phone budgets, both offline pipeline reruns
+  and public-template checks: **153 passed, 1 skipped in 210.71s (0:03:30)**.
+  No failing targeted checks; existing byte hashes and phone ceilings unchanged.
+  Header normal/hover text contrast is 7.10–16.22:1 across light/dark themes.
+  Follow-up 290f: the operator's external Chromium run found empty manifest
+  errors and only `in-incognito` (the harness ignores exactly that ID). Four
+  home-page captures/layout checks passed; the iPhone Tab check exposed focus
+  leaving the sheet. The added Tab/Shift+Tab containment fixes that path without
+  changing OFF output. Node tests now track the active element; browser checks
+  repeat both Tab directions, verify native modal state, wait for native Escape
+  closure, keep inside clicks open and verify header/footer focus return.
+  Chromium still cannot launch inside this sandbox; the updated native dialog
+  rerun, two sheet captures and completed report remain pending. Details and
+  screenshot paths: [install-button research](research/install-button/README.md).
+  Follow-up install-button checks (including all six OFF/missing tree pins and
+  rerun/analytics cases) plus shipped phone headroom: **26 passed, 1 skipped in
+  149.01s (0:02:29)**; the skip is the sandbox Chromium launch. The strengthened
+  Node harness also passes directly against the source script.
+  Node syntax and `git diff --check` pass. All pytest runs use
+  `-q -n 1 -p no:cacheprovider`; every owned `/tmp/task290-*` and `/tmp/task290f-*`
+  basetemp was removed after its run. No network, full suite, hash re-pin, commit
+  or push.
+  Review/native browser QA/deployment remain.
+- **Analyze header search (Codex task 291, 2026-10-18; uncommitted, ON):**
+  Strict `search_analyze.enabled` ships ON, layered over the supplied unpushed
+  search_boost release. Analyze/phone Go and Enter accept product names or full
+  US Amazon links; short/unsupported links get fixed guidance. URLs stay out of
+  requests, persisted browse state and analytics; only the extracted ASIN reaches
+  the product lookup. Existing live deals lead with their own cards/links;
+  otherwise one current Amazon-price card leads related live deals. Adult
+  exclusions apply in both paths, including when search_boost itself is OFF.
+  Honest promise-driven steps remain visible for at least 900 ms; local matches
+  explicitly say they use our verified deal. Reduced motion stops the spinner.
+  An already-running text lookup is reused, retries remain bounded, and later
+  publications/expired clocks cannot revive old results. GA4 accepts only counts
+  and booleans for the three new events. `/api/search?asin=` uses the same
+  110-token D1/KV reservation, minute gate, lease, cooldown, Retry-After, gzip and
+  fixed-error path as text search; ASIN/policy cache keys contain no secret.
+  Five pre-edit complete publication hashes verify OFF/missing/back-OFF; current
+  historical fixtures use `pre_task_291`, with no hash re-pins. Targeted feature,
+  existing searches, 34 Function Node cases, original byte pins, shipped phone
+  budgets and both pipeline rerun modes: **107 passed, 4 skipped in 373.41s
+  (0:06:13)**. Earlier focused checks: **9 passed in 61.81s (0:01:01)**; the first
+  **4 failed, 22 passed in 17.58s** were an escaped-apostrophe harness assertion,
+  corrected without weakening the product check. Final emitted-code checks for
+  private mixed input, fixed-vocabulary errors, arrivals during lookup, both
+  boost modes, phone budgets and public-copy templates: **8 passed in 49.21s**.
+  Native Chromium and its headless executable were both denied by sandbox
+  permissions; no screenshots were captured. The offline 390/1440 light/dark
+  harness and capture instructions are in `tests/search_analyze_browser.cjs` and
+  `docs/research/analyze-search/README.md`; native visual QA/review remain.
+  All pytest runs use `-q -n 1 -p no:cacheprovider`, targeted selections only,
+  and owned `/tmp/task291-*` basetemps removed in `finally` after each run;
+  none remain. All four skips were native browser checks.
+  No network, full suite, commit or push; existing release edits are retained.
 - **Home links start fresh (Codex task 286, 2026-10-17; uncommitted, ON):**
   Strict `site.home_link_resets` defaults OFF and ships ON. Plain logo,
   Live deals and timer clicks reuse the Amazon-selection reset, clear every

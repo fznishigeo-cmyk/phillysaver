@@ -1,6 +1,6 @@
 """Web install metadata and the separately enabled Android app integration."""
 
-from . import _pwa_web, android_app
+from . import _pwa_web, android_app, pwa_install
 from ._pwa_web import ICONS, ICON_SIZES, TEMPLATES, colors, manifest_bytes
 
 
@@ -9,6 +9,7 @@ def site_version(version, cfg):
     # byte-identical while Android is off, including the manifest and icons.
     if cfg.pwa_enabled:
         version = _pwa_web.site_version(version, cfg)
+    version = pwa_install.site_version(version, cfg)
     return android_app.site_version(version, cfg)
 
 
@@ -20,4 +21,5 @@ def publish(out, cfg):
         if clean != text:
             headers.write_text(clean)
     _pwa_web.publish(out, cfg)
+    pwa_install.publish(out, cfg)
     android_app.publish(out, cfg)

@@ -124,6 +124,8 @@ def pre_task_283_raw(config):
 
 def pre_task_282(cfg):
     """Recorded before private ratings and configurable allure spacing; no re-pins."""
+    pre_task_290_install(cfg)
+    pre_task_291(cfg)
     pre_task_284(cfg)  # recorded before task 284
     pre_task_283(cfg)  # recorded before task 283
     cfg.home_link_resets = False  # recorded before task 286
@@ -137,6 +139,8 @@ def pre_task_282(cfg):
 
 
 def pre_task_282_raw(config):
+    pre_task_290_install_raw(config)
+    config.pop("search_analyze", None)  # recorded before task 291
     _pre_task_284(config.get("publish", {}).get("front_page"))  # recorded before task 284
     pre_task_283_raw(config)  # recorded before task 283
     config.get("site", {}).pop("home_link_resets", None)  # recorded before task 286
@@ -159,6 +163,7 @@ PRE_288_ALLURE = ["lingerie", "babydoll", "bralette", "bra", "bras", "panties", 
 
 
 def pre_task_288(cfg):
+    pre_task_290_install(cfg)
     front_page = cfg.front_page
     if isinstance(front_page.get("demote_words"), list):
         front_page["demote_words"] = [w for w in front_page["demote_words"] if w != "tupperware"]
@@ -177,6 +182,49 @@ def pre_task_288(cfg):
 
 def pre_task_290(cfg):
     """Before 2026-10-17 8pm: Amazon results were preview-only and search_boost absent."""
+    pre_task_291(cfg)
     cfg.search = dict(cfg.search, amazon_results="preview")
     cfg.search_boost = {"enabled": False, "exclude_words": []}
     return cfg
+
+
+def pre_task_290_install(cfg):
+    """Recorded before the header install control (task 290); keep every existing byte pin."""
+    cfg.pwa_install_button = False
+    pre_task_294(cfg)
+    return cfg
+
+
+def pre_task_290_install_raw(config):
+    config.get("pwa", {}).pop("install_button", None)
+    config.get("site", {}).pop("credit_links", None)
+    config.get("site", {}).pop("trending_auto_cards", None)
+    config.get("site", {}).pop("click_price_home_fill", None)
+    words = config.get("publish", {}).get("front_page", {}).get("demote_words")
+    if isinstance(words, list):
+        config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
+    return config
+
+def pre_task_291(cfg):
+    """Before Analyze/pasted links; keep current-config captures without re-pins."""
+    # Captured on the 4140a49 release: also before the circling border and the install control.
+    cfg.search_circle = False
+    pre_task_290_install(cfg)
+    cfg.search_analyze = {"enabled": False}
+    return cfg
+
+
+def pre_task_294(cfg):
+    """Before plain source credits, the one-in-ten gone-card limit and the team-merch demote; no re-pins."""
+    cfg.credit_links = True
+    cfg.trending_auto_cards = None
+    cfg.click_price_home_fill = False
+    words = cfg.front_page.get("demote_words")
+    if isinstance(words, list):
+        cfg.front_page["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
+    return cfg
+
+
+# Launch night 2026-10-17: team merchandise demoted like niche items (cards 9+, at most 2 on top).
+PRE_294_DEMOTE = {"officially licensed", "nba", "nhl", "nfl", "mlb", "wnba", "ncaa"}
+
