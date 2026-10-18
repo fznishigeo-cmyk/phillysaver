@@ -356,6 +356,7 @@ class AppConfig:
     search: dict = field(default_factory=lambda: validated_search(None))
     search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
     search_box_glow: bool = False
+    card_tidy: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     search_more: dict = field(default_factory=lambda: validated_search_more(None))
@@ -1054,6 +1055,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.search_box_glow = g("search_box_glow", default=False)
     if type(cfg.search_box_glow) is not bool:
         raise ValueError("search_box_glow must be a boolean")
+    cfg.card_tidy = g("card_tidy", default=False)
+    if type(cfg.card_tidy) is not bool:
+        raise ValueError("card_tidy must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

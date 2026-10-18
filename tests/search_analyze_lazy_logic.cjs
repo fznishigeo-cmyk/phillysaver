@@ -4,7 +4,8 @@ const {setup, deal, turn} = require('./search_more_logic.cjs');
 
 function held() {
   const s = setup();
-  s.ctx.state.deals = [deal(1, 'Wireless mouse'), deal(2, 'Travel steel kettle')];
+  s.ctx.state.deals = [deal(1, 'Wireless mouse'), deal(2, 'Travel steel kettle')]
+    .map(d => Object.assign(d, {image_url:'https://m.media-amazon.com/images/I/x.jpg'}));  // related cards need a photo (card_tidy)
   let resolve, reject;
   s.ctx.loadSearchAnalyze = () => {
     s.analyzeModules.push('search-analyze.js');

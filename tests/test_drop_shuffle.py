@@ -20,6 +20,8 @@ def config(mode="support"):
     # Isolate the drop rollback from task 300's separate search_more change and task 301's glow.
     cfg.search_more = {"enabled": False}
     cfg.search_box_glow = False
+    cfg.card_tidy = False
+    cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     cfg.support_enabled = mode == "support"
     cfg.paywall_open_access = mode != "membership"
     cfg.strip_comments = mode != "unstripped"

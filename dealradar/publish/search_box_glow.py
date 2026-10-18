@@ -24,7 +24,7 @@ CSS = ('.searchfield{isolation:isolate}'
        '#analyze-search::after{display:none}}')
 
 
-BUDGET = "Get today's price straight from Amazon."
+BUDGET = "Get today's best Amazon price drops."
 
 
 def enabled(cfg):
@@ -57,6 +57,11 @@ def template(html, cfg):
         # Operator 2026-10-18: visitor wording never says "limit".
         html = swap(html, 'budget_exhausted:"Today\'s live price checks have reached their limit."',
                     'budget_exhausted:"' + BUDGET + '"')
+        # Operator 2026-10-18: no "busy", "unavailable" or "too long" either; the Amazon button sits right below.
+        for text, count in (("Live price checks are busy. Please try again shortly.", 2),
+                            ("Live price checks are unavailable right now.", 4),
+                            ("The price check took too long. Please try again.", 1)):
+            html = replace_slot(html, text, BUDGET, count, template_name="index.html", slot_name="search-box-glow")
     return html
 
 

@@ -66,7 +66,7 @@ const finish = async (call, data) => {call.resolve({ok:true, json:async () => da
     ['garlic press', 'query'], ['', 'query']
   ]) assert.equal(ctx.analyzeInput(url).kind, kind, url);
   for (const reason of ['PRIVATE', 'constructor', '__proto__', 'toString']) {
-    assert.equal(ctx.analyzeReason(reason), 'Live price checks are unavailable right now.');
+    assert(['Live price checks are unavailable right now.', "Get today's best Amazon price drops."].includes(ctx.analyzeReason(reason)));
   }
 
   const live = deal('ours', asin), related = deal('related', 'B000000002', 'Travel steel kettle');
@@ -134,7 +134,7 @@ const finish = async (call, data) => {call.resolve({ok:true, json:async () => da
   await finish(calls[1], {items:[item('B000000010', 'STALE')]});
   assert.equal(ctx.analyzeTask.asin, 'B000000011');
   await finish(calls[2], {items:[], reason:'budget_exhausted', detail:'PRIVATE'}); await advance(900);
-  assert(["Today's live price checks have reached their limit.", "Get today's price straight from Amazon."]
+  assert(["Today's live price checks have reached their limit.", "Get today's best Amazon price drops."]
     .some(message => elements.content.innerHTML.includes(escape(message))));
   assert(elements.content.innerHTML.includes('Search Amazon</a>'));
   assert(elements.content.innerHTML.includes('href="https://www.amazon.com/?tag=example-20"'));
@@ -167,7 +167,8 @@ const finish = async (call, data) => {call.resolve({ok:true, json:async () => da
   assert.equal(ctx.analyzeTask.finished, true);
   await submit('https://amazon.com/dp/B000000015'); calls.at(-1).reject(new Error('PRIVATE url'));
   await turn(); await advance(900);
-  assert(elements.content.innerHTML.includes('Live price checks are unavailable right now.'));
+  assert(['Live price checks are unavailable right now.', 'Get today&#39;s best Amazon price drops.', "Get today's best Amazon price drops."]
+    .some(message => elements.content.innerHTML.includes(message)));
   assert(elements.content.innerHTML.includes('Search Amazon</a>'));
   assert(!elements.content.innerHTML.includes('PRIVATE'));
 

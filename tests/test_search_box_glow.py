@@ -21,6 +21,9 @@ MOVED = ['current', 'current-inline']
 def config(mode):
     cfg = load_config() if mode.startswith('current') else more_config(mode)
     cfg.drop_shuffle = False
+    cfg.card_tidy = False
+    if mode.startswith('current'):
+        cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     if mode.endswith('inline'):
         cfg.search_analyze['lazy'] = False
     if mode.endswith('more-off'):
