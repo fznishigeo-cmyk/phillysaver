@@ -22,7 +22,7 @@ node tests/search_more_browser.cjs /opt/pw-browsers/chromium docs/research/searc
 
 Replace the executable path if needed; screenshot directories are optional.
 Analyze captures go under `inline/` and `lazy/`. Both commands remove their own
-`/tmp/task295-*-browser-*` fixtures in `finally`. Only native Chromium launch
+temporary browser fixtures in `finally`. Only native Chromium launch
 failure returns 77; missing dependencies, fixture or assertion failures fail.
 A skipped test does not verify the visuals. Task 295 runs the emitted Node
 logic and both browser fixture harnesses in the sandbox, without launching Chromium.

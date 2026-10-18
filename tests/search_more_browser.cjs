@@ -55,7 +55,7 @@ async function waitFor(page, condition, action, diagnostics) {
 
 async function main() {
   const {chromium} = require('playwright');
-  const scratch = fs.mkdtempSync('/tmp/task295-search-more-browser-');
+  const scratch = fs.mkdtempSync('/tmp/task297-search-more-browser-');
   let browser;
   try {
     const roots = {};
@@ -77,7 +77,7 @@ async function main() {
       const calls = [], errors = [], unexpected = [], imports = [];
       let releaseAnalyze;
       const analyzeReady = new Promise(resolve => {releaseAnalyze = resolve;});
-      let limited = false;
+      let stopReason = '';
       const item = (n, title = 'Wireless mouse from Amazon') => ({asin:'B0' + String(n).padStart(8, '0'), title,
         price_cents:1299, list_price_cents:1999, image:'https://m.media-amazon.com/images/I/mouse.jpg',
         as_of:new Date(Date.now() - 60000).toISOString()});
@@ -99,9 +99,10 @@ async function main() {
           const q = url.searchParams.get('q'), page = Number(url.searchParams.get('page'));
           assert([0, 1, 2].includes(page));
           let data;
-          if (q === 'hair tire' || q === 'cofee') data = {items:[]};
+          if (q === 'cupping set') data = {items:[], reason:'budget_exhausted'};
+          else if (q === 'hair tire' || q === 'cofee') data = {items:[]};
           else if (q === 'coffee') data = {items:[item(900, 'Coffee maker')]};
-          else if (limited && page === 1) data = {items:[], reason:'rate_limited'};
+          else if (stopReason && page === 1) data = {items:[], reason:stopReason};
           else data = {items:[item(1), item(100 + page), item(100 + page), item(200 + page, 'Anal lubricant')]};
           return route.fulfill({contentType:'application/json', body:JSON.stringify(data)});
         }
@@ -157,6 +158,24 @@ async function main() {
       assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=mouse&tag=example-20');
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-pages.png'), fullPage:true});
 
+      await q.fill('cupping set');
+      await wait('cupping set: budget_exhausted response handled', () => page.waitForFunction(() =>
+        window.searchMoreEvents.some(([event, data]) => event === 'search_amazon_results' && data.count === 0)));
+      assert.equal(await page.locator('#search-recovery-title').textContent(), 'See every "cupping set" price on Amazon');
+      assert.equal(await page.locator('#amazon-results').innerHTML(), '');
+      assert.equal(await page.locator('#content .grid, #content .card').count(), 0);
+      assert(!(await page.locator('#content').innerText()).includes('Live Amazon prices'));
+      const fallback = page.locator('.search-recovery [data-search-amazon]');
+      assert(await fallback.isVisible());
+      assert.equal(await fallback.textContent(), 'Compare all "cupping set" prices on Amazon\u00a0→');
+      assert.equal(await fallback.getAttribute('rel'), 'sponsored noopener');
+      assert.equal(await fallback.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
+      await fallback.click();
+      assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=cupping%20set&tag=example-20');
+      assert.deepEqual(calls.filter(q => q.startsWith('?q=cupping%20set')), ['?q=cupping%20set&page=0']);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-empty.png'), fullPage:true});
+
       // A typo with no local or Amazon match uses a title bigram and can be undone.
       await q.fill('hair tire');
       await wait('spelling: hair tire corrected to hair tie', () =>
@@ -186,6 +205,7 @@ async function main() {
         page.waitForFunction(() => document.querySelector('#q').value === 'coffee'));
       await wait('coffee: current Amazon card visible', () => page.locator('#amazon-results article').waitFor({state:'visible'}));
       assert.equal(calls.filter(q => q === '?q=coffee&page=0').length, 1);
+      assert.equal(await page.locator('#search-recovery-title').textContent(), 'Live Amazon prices for "coffee"');
       assert.equal(await page.locator('#amazon-results .flag').innerText(), '-35%');
       assert.equal(await page.locator('#amazon-results s').textContent(), 'List Price $19.99');
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-spelling.png'), fullPage:true});
@@ -200,15 +220,20 @@ async function main() {
       assert.equal(imports.length, lazy ? 1 : 0);
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-analyze.png'), fullPage:true});
 
-      limited = true; await q.fill('wireless');
-      await wait('wireless: related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
-      await wait('wireless: scroll to first Amazon page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
-      await wait('wireless: first Amazon card visible', () => page.locator('#search-more article').waitFor({state:'visible'}));
-      await wait('wireless: scroll to rate-limited page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
-      await wait('wireless: stop paging after rate_limited', () => page.locator('#search-more .search-more-load').waitFor({state:'hidden'}));
-      await page.waitForTimeout(1300);
-      assert.deepEqual(calls.filter(q => q.startsWith('?q=wireless')), ['?q=wireless&page=0', '?q=wireless&page=1']);
-      assert(await page.locator('#search-more [data-search-amazon]').isVisible());
+      for (const [query, reason] of [['wireless', 'rate_limited'], ['wireless mouse', 'budget_exhausted']]) {
+        stopReason = reason; await q.fill(query);
+        await wait(query + ': related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
+        await wait(query + ': scroll to first Amazon page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
+        await wait(query + ': first Amazon card visible', () => page.locator('#search-more article').waitFor({state:'visible'}));
+        await wait(query + ': scroll to limited page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
+        await wait(query + ': stop paging after ' + reason, () => page.locator('#search-more .search-more-load').waitFor({state:'hidden'}));
+        await page.waitForTimeout(1300);
+        const prefix = '?q=' + encodeURIComponent(query) + '&page=';
+        assert.deepEqual(calls.filter(q => q.startsWith(prefix)), [prefix + '0', prefix + '1']);
+        assert.equal(await page.locator('#search-more article').count(), 1);
+        assert(!(await page.locator('#search-more .grid').innerText()).includes(reason));
+        assert(await page.locator('#search-more [data-search-amazon]').isVisible());
+      }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       assert.equal(await page.evaluate(() => JSON.stringify(window.searchMoreEvents).includes('hair')), false);
       assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);

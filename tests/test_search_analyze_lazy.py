@@ -42,8 +42,12 @@ BASELINE = json.loads(Path("tests/fixtures/search_analyze_lazy_off.json").read_t
 
 
 @pytest.mark.parametrize("mode", BASELINE)
-def test_off_missing_and_back_off_preserve_recorded_bytes(tmp_path, mode):
+def test_off_missing_and_back_off_preserve_inline_bytes(tmp_path, mode):
     cfg = config(mode)
+    # Task 297 deliberately changes search_more ON, including inline Analyze.
+    # Keep the recorded OFF pin; compare ON against the current inline output
+    # across lazy toggles without re-pinning any historical hashes.
+    expected = None if cfg.search_more["enabled"] else BASELINE[mode]
     for lazy in (False, None, True, False):
         if lazy is None:
             cfg.search_analyze.pop("lazy", None)
@@ -51,12 +55,14 @@ def test_off_missing_and_back_off_preserve_recorded_bytes(tmp_path, mode):
             cfg.search_analyze["lazy"] = lazy
         out, *_ = render(tmp_path, cfg, offers())
         if lazy:
-            assert tree_hash(out) != BASELINE[mode]
+            assert tree_hash(out) != expected
             before = tree_hash(out)
             render(tmp_path, cfg, offers())
             assert tree_hash(out) == before
         else:
-            assert tree_hash(out) == BASELINE[mode]
+            if expected is None:
+                expected = tree_hash(out)
+            assert tree_hash(out) == expected
             assert not (out / "search-analyze.js").exists()
 
 

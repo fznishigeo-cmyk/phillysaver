@@ -49,6 +49,13 @@ def template(html, cfg):
     start = html.index("  function amazonResultsPaint(q, items) {")
     end = html.index("  function queueAmazonResults(", start)
     swap(html[start:end], '')
+    start = html.index('<h2 id="search-recovery-title">')
+    end = html.index('</h2>', start) + len('</h2>')
+    swap(html[start:end], '<h2 id="search-recovery-title">\' + esc(searchMoreTitle(false)) + \'</h2>')
+    swap('    if (box) box.innerHTML = "";',
+         '    if (box) box.innerHTML = "";\n'
+         '    var title = document.getElementById("search-recovery-title");\n'
+         '    if (title) title.textContent = searchMoreTitle(false);')
     swap('fetch("/api/search?q=" + encodeURIComponent(q),',
          'fetch("/api/search?q=" + encodeURIComponent(q) + "&page=0",')
     swap("          amazonResultsPaint(q, items);",
@@ -130,13 +137,15 @@ def asset(cfg):
     cards = "  function amazonResultsCards(items, seen) {\n    return " + builder + "  }\n"
     paint = (paint[:paint.index("    var cards = ")] +
              '    var cards = amazonResultsCards(items, searchMoreAsins("#amazon-results"));\n' +
+             '    var title = document.getElementById("search-recovery-title");\n'
+             '    if (title) title.textContent = searchMoreTitle(cards.length);\n' +
              "    box.innerHTML =" + paint.split("    box.innerHTML =", 1)[1])
     paint = paint.replace("amazonResultsQuery !== q", "getResultsQuery() !== q")
     script = SCRIPT.read_text().replace("{{SEARCH_MORE}}", json.dumps(validated_search_more(cfg.search_more)))
     script = script.replace("{{SEARCH_MORE_EXCLUDE}}", json.dumps(
         search_boost.adult_pattern(cfg.search_boost["exclude_words"])).replace("<", "\\u003c"))
     script = script.replace("{{SHOPPING_WORDS}}", json.dumps(" ".join(WORDS.read_text().split())))
-    return ('export default function ({searchAmazonQuery, amazonResultsEnabled, amazonResultsSettings,\n'
+    return ('export default function ({searchAmazonQuery, searchMoreTitle, amazonResultsEnabled, amazonResultsSettings,\n'
             '  getResultsQuery, queueAmazonResults, track, searchInventory, searchWords, oneSearchEdit,\n'
             '  filtered, esc, amazonResultsCancel, updateSearch, analyzeCancel}) {\n' + cards + paint + script +
             '  var style = document.createElement("style");\n  style.textContent = ' + json.dumps(STYLE.read_text()) + ';\n'

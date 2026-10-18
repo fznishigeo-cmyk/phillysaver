@@ -34,12 +34,15 @@ function setup(observer = true) {
         this._html = text;
         if (id !== 'content') return;
         this.lastChild = {};
-        for (const name of ['search-more', 'amazon-results', 'moremore', 'totop']) {
+        for (const name of ['search-more', 'amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
           if (elements[name]) elements[name].remove();
         }
-        for (const name of ['amazon-results', 'moremore', 'totop']) {
+        for (const name of ['amazon-results', 'search-recovery-title', 'moremore', 'totop']) {
           if (text.includes('id="' + name + '"')) elements[name] = node(name);
         }
+        if (elements['search-recovery-title']) elements['search-recovery-title'].textContent =
+          text.match(/<h2 id="search-recovery-title">([^<]*)<\/h2>/)[1]
+            .replace(/&(amp|lt|gt|quot|#39);/g, (_, key) => ({amp:'&', lt:'<', gt:'>', quot:'"', '#39':"'"}[key]));
       },
       addEventListener(type, fn) {(this.handlers[type] ||= []).push(fn);},
       setAttribute(name, value) {this.attributes[name] = value;},
@@ -174,13 +177,16 @@ async function main() {
   assert.equal(unavailable.calls.length, 0);
   assert(unavailable.elements['search-amazon-result'].innerHTML.includes('data-search-amazon'));
 
-  for (const reason of ['rate_limited', 'budget_exhausted', 'limit_reached', 'timeout']) {
+  for (const reason of ['rate_limited', 'budget_exhausted', 'budget_unavailable', 'limit_reached', 'timeout', 'price_error', 'disabled']) {
     const t = setup(); t.ctx.state.deals = [deal(1)]; await t.query('mouse'); t.intersect(); await t.advance(0);
     await t.respond(t.calls[0], {items:[t.item(101)]}); t.intersect(); await t.advance(1100);
     await t.respond(t.calls[1], {items:[], reason});
     for (let n = 0; n < 3; n++) {t.intersect(); await t.advance(10000); t.ctx.render(); await turn();}
     assert.equal(t.calls.length, 2, reason); assert(t.elements['search-more'].innerHTML.includes('See all'));
     assert(!t.elements['search-more'].innerHTML.includes(reason));
+    assert.equal((t.markup().match(/<article /g) || []).length, 1, 'keep earlier cards after a later-page failure');
+    assert(!t.markup().includes(reason), 'no error text in the grid');
+    assert(t.elements['search-more'].children['.search-more-load'].hidden);
   }
   const changed = setup(); changed.ctx.state.deals = [deal(1), deal(2, 'Steel kettle')];
   await changed.query('mouse'); changed.intersect(); await changed.advance(0);
@@ -206,6 +212,65 @@ async function main() {
     assert(!restricted.elements['search-more']);
   }
   assert.equal(restricted.calls.length, 0);
+
+  function emptyRecovery(t, q = 'cupping set') {
+    assert.equal(t.elements['search-recovery-title'].textContent, 'See every "' + q + '" price on Amazon');
+    assert.equal(t.elements['amazon-results'].innerHTML, '', 'no empty grid or Amazon heading');
+    const content = t.elements.content.innerHTML;
+    assert(!content.includes('Live Amazon prices') && !content.includes('class="grid"'));
+    const boosted = typeof t.ctx.amazonResultsRetries === 'number';
+    assert(content.includes(boosted ? 'Compare all &quot;' + q + '&quot; prices on Amazon' : 'Search Amazon for &quot;' + q + '&quot;'));
+    assert(content.includes('rel="sponsored noopener"'), 'the primary button keeps its existing rel');
+    t.click('[data-search-amazon]');
+    assert.equal(t.opened.at(-1)[0], 'https://www.amazon.com/s?k=' + encodeURIComponent(q) + '&tag=example-20');
+  }
+  for (const reason of ['budget_exhausted', 'budget_unavailable', 'rate_limited', 'timeout', 'price_error', 'disabled', '', 'network', 'http']) {
+    const t = setup(); await t.query('cupping set'); emptyRecovery(t); await t.advance(600);
+    const attempts = ['rate_limited', 'timeout'].includes(reason) && typeof t.ctx.amazonResultsRetries === 'number' ? 3 : 1;
+    for (let n = 0; n < attempts; n++) {
+      assert.equal(t.calls.length, n + 1, reason);
+      if (reason === 'network') {t.calls[n].reject(new Error('offline')); await turn();}
+      else if (reason === 'http') {t.calls[n].resolve({ok:false}); await turn(); await turn();}
+      else await t.respond(t.calls[n], reason ? {items:[], reason} : {items:[]});
+      emptyRecovery(t);
+      await t.advance(1500);
+    }
+    await t.query('x'); await t.query('cupping set'); await t.advance(2000);
+    emptyRecovery(t);
+    assert.equal(t.calls.length, attempts, 'cached empty responses do not spend again: ' + reason);
+  }
+  for (const mode of ['off', 'preview']) {
+    const t = setup(); t.ctx.amazonResultsSettings.mode = mode;
+    await t.query('cupping set'); await t.advance(5000);
+    emptyRecovery(t); assert.equal(t.calls.length, 0, 'disabled client needs no response to show the fallback');
+  }
+  const missingModule = setup(); missingModule.ctx.loadSearchMore = () => Promise.reject(new Error('offline'));
+  await missingModule.query('cupping set'); await missingModule.advance(5000);
+  emptyRecovery(missingModule); assert.equal(missingModule.calls.length, 0);
+
+  const filteredEmpty = setup(); await filteredEmpty.query('cupping set'); await filteredEmpty.advance(600);
+  await filteredEmpty.respond(filteredEmpty.calls[0], {items:[filteredEmpty.item(101, 'Anal lubricant'),
+    filteredEmpty.item(102, 'Old price', {as_of:'2020-01-01T00:00:00Z'}), filteredEmpty.item(103, 'No price', {price_cents:0})]});
+  emptyRecovery(filteredEmpty);
+
+  for (const retry of [false, true]) {
+    const t = setup(); await t.query('cupping set'); await t.advance(600); emptyRecovery(t);
+    if (retry) {
+      if (typeof t.ctx.amazonResultsRetries !== 'number') continue;
+      await t.respond(t.calls[0], {items:[], reason:'rate_limited'}); emptyRecovery(t); await t.advance(1500);
+    }
+    await t.respond(t.calls.at(-1), {items:[t.item(101, 'Cupping set')]});
+    assert.equal(t.elements['search-recovery-title'].textContent, 'Live Amazon prices for "cupping set"');
+    const cards = t.elements['amazon-results'].innerHTML, count = t.calls.length;
+    assert(cards.includes('<article class="card">'));
+    await t.query('x'); await t.query('cupping set'); emptyRecovery(t); await t.advance(600);
+    assert.equal(t.elements['search-recovery-title'].textContent, 'Live Amazon prices for "cupping set"');
+    assert.equal(t.elements['amazon-results'].innerHTML, cards, 'cached cards restore the heading');
+    assert.equal(t.calls.length, count);
+    t.ctx.amazonResultsCancel(); emptyRecovery(t);
+    await t.advance(86400000); t.ctx.render(); await turn(); await t.advance(600);
+    emptyRecovery(t); assert.equal(t.calls.length, count, 'expired cached prices cannot leave a live heading');
+  }
 
   // The shared renderer covers ordinary results, related pages and Analyze.
   for (const [list, price, pct] of [[1999, 1299, 35], [10000, 9500, 5], [10000, 9551, 0],
@@ -355,7 +420,7 @@ async function main() {
     assert.equal(adopt.ctx.analyzeTask.items[0].asin, asin(102));
     assert.equal(adopt.calls.length, 2, 'Analyze adopts the pending corrected request');
   }
-  console.log('Search more logic passed: lazy pages 0..2, guards, dedupe, tagged button, spelling, List Price and Analyze');
+  console.log('Search more logic passed: lazy pages 0..2, empty reasons, later cards, guards, dedupe, tagged button, spelling, List Price and Analyze');
 }
 module.exports = {setup, deal, turn};
 if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

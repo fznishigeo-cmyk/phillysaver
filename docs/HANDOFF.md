@@ -236,6 +236,27 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Honest empty searches (Codex task 297, 2026-10-18; uncommitted, ON):**
+  The `search_more` ON path starts with `See every <query> price on Amazon`
+  above the existing circling button; only rendered current-price cards restore
+  the live-price heading. Empty/error/disabled results and expired cached cards
+  leave no grid. Button labels, affiliate destinations and rel attributes stay
+  unchanged; later related-page failures keep earlier cards and the final button.
+  Node regressions cover every requested empty reason, bounded retries, cached
+  cards and module/network failures. Native browser cases add budget exhaustion
+  and quiet later-page caps across inline/lazy Analyze and phone/desktop themes.
+  The five recorded search_more OFF/missing/back-OFF pins and supplier-name
+  guard pass. Six historical lazy-Analyze captures included search_more ON:
+  their toggle regression now compares current inline bytes, retaining the
+  recorded more-OFF pin and every stored hash without re-pinning. Initial
+  targeted checks: **4 passed**, then **102 passed, 6 historical ON snapshot
+  failures**. Final corrected toggle checks plus shipped phone budget: **8 passed
+  in 104.75s**. No remaining targeted failures; all recorded hashes are untouched.
+  All pytest runs use `-n 1 -p no:cacheprovider` with owned `/tmp/task297-*`
+  basetemps removed after each run. Function Node harness and syntax checks pass.
+  Native commands/captures: [search-more research](research/search-more/README.md)
+  and [Analyze research](research/analyze-search/README.md). Chromium is not
+  launched here; no network, full suite, commit or push. Review/native QA remain.
 - **Lazy Analyze (Codex task 295, 2026-10-18; uncommitted, ON):**
   Strict `search_analyze.lazy` defaults false and ships true. A final publishing
   pass moves the composed Analyze logic and CSS into a versioned, interaction-only

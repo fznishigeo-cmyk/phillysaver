@@ -1,4 +1,14 @@
-# Related Amazon pages, spelling and List Price (tasks 293 / 293F)
+# Related Amazon pages, spelling, List Price and empty searches
+
+Task 297 keeps the existing Amazon button and shows `See every <query> price
+on Amazon` until current-price cards actually render. Empty responses, budget
+limits and request failures leave no live-price heading or empty grid; later
+cards restore the heading. Native checks now include a `budget_exhausted`
+no-match search, the unchanged button/affiliate click, and a later-page budget
+cap that keeps earlier cards and the final button without grid error text.
+These checks run in every inline/lazy, phone/desktop, light/dark combination;
+native execution remains pending. Optional `*-empty.png` captures show the
+fallback. The Node harness exercises all empty reasons, retries and cached cards.
 
 The operator's first Chromium run timed out waiting for 20 initial cards. The
 harness published only one: its 24 Amazon fixtures inherited October 9 timestamps
@@ -44,6 +54,6 @@ node tests/search_more_browser.cjs /opt/pw-browsers/chromium docs/research/searc
 ```
 
 The executable path is the first argument; the optional second argument saves
-page/spelling/Analyze screenshots, prefixed `inline-` or `lazy-`. The script removes its own `/tmp/task295-search-more-browser-*`
+page/spelling/Analyze/empty screenshots, prefixed `inline-` or `lazy-`. The script removes its own `/tmp/task297-search-more-browser-*`
 directory in `finally`, including failed runs. Screenshots are retained only in
 the requested destination. It never contacts a live service.
