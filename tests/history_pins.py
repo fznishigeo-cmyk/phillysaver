@@ -173,3 +173,10 @@ def pre_task_288(cfg):
     if cfg.appeal_score:
         cfg.appeal_score = dict(cfg.appeal_score, candidates=80)
     return cfg
+
+
+def pre_task_290(cfg):
+    """Before 2026-10-17 8pm: Amazon results were preview-only and search_boost absent."""
+    cfg.search = dict(cfg.search, amazon_results="preview")
+    cfg.search_boost = {"enabled": False, "exclude_words": []}
+    return cfg

@@ -139,6 +139,9 @@ test('search checks placeholder, visible label, actual click URL/query/tag and t
     {clickedHref: 'https://amazon.com/s?k=zzqx+cupping+test&tag=wowpriced-20&tag=wowpriced-20'}])
     assert(check('search', scene({search: {...good.search, ...change}})).flag, JSON.stringify(change));
   assert(!check('search', scene({search: {...good.search, placeholder: 'Search deals', label: 'Search Amazon for \"zzqx cupping test\"'}})).flag);
+  // search_boost (operator 2026-10-17): the big button's label.
+  assert(!check('search', scene({search: {...good.search, label: 'Compare all \"zzqx cupping test\" prices on Amazon \u2192'}})).flag);
+  assert(check('search', scene({search: {...good.search, label: 'Compare deals'}})).flag);
   assert(check('search', scene({search: undefined})).flag);
   assert(check('search', good, null, {...rules, amazonTag: ''}).flag);
 });

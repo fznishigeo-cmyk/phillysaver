@@ -2,7 +2,7 @@
 // cards on a phone and on desktop (title, price, store), clothing per six,
 // the empty-search experience, the logo after a search, and /api/search.
 // Analytics and ad tags are blocked; nothing is clicked except our own logo.
-const { chromium } = require("playwright");
+const { chromium, webkit } = require("playwright");
 
 const SITE = process.env.SITE_URL || "https://wowpriced.com";
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
@@ -51,6 +51,41 @@ function report(label, cards) {
         console.log(`after logo click: search box "${after.q}", cards ${after.cards} ${after.q ? "(BUG: search kept)" : "(fresh homepage)"}`);
       }
       await page.close();
+    }
+    // Search with no deal match, in Chromium and in WebKit (Safari's engine): Amazon cards,
+    // the big button, and the affiliate tag on the page the button opens (that request is
+    // aborted: the check never loads Amazon).
+    const engines = [["chromium", browser]];
+    try { engines.push(["webkit (Safari)", await webkit.launch()]); } catch (error) { console.log(`\nwebkit unavailable: ${error.message.split("\n")[0]}`); }
+    for (const [name, engine] of engines) {
+      for (const [label, options] of [["phone", { viewport: { width: 390, height: 844 }, ...(name === "chromium" ? { isMobile: true } : {}) }],
+                                      ["desktop", { viewport: { width: 1440, height: 900 } }]]) {
+        const context = await engine.newContext(options), opened = [];
+        await context.route("**/*", route => {
+          const url = route.request().url();
+          if (/^https:\/\/(www\.)?amazon\.com\//.test(url)) { opened.push(url); return route.abort(); }
+          return BLOCK.test(url) ? route.abort() : route.continue();
+        });
+        const page = await context.newPage();
+        await page.goto(SITE + "/", { waitUntil: "domcontentloaded", timeout: 45000 });
+        await firstCards(page);
+        await page.fill("#q", "cupping set");
+        let cards = 0;
+        try { await page.locator("#amazon-results article").first().waitFor({ state: "visible", timeout: 12000 }); cards = await page.locator("#amazon-results article").count(); } catch (e) { /* reported below */ }
+        const state = await page.evaluate(() => ({
+          heading: (document.getElementById("search-recovery-title") || {}).textContent || "",
+          button: ((document.querySelector(".search-amazon-top .getdeal") || document.querySelector(".search-amazon a")) || {}).textContent || "",
+          photos: [...document.querySelectorAll("#amazon-results article img")].filter(img => img.complete && img.naturalWidth > 0).length,
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        }));
+        const button = page.locator(".search-amazon-top .getdeal, .search-amazon a").first();
+        if (await button.count()) { await button.click().catch(() => {}); await page.waitForTimeout(1500); }
+        const tagged = opened.some(url => url.includes("tag=wowpriced-20"));
+        console.log(`\n[${name} ${label}] search "cupping set": Amazon cards ${cards}, photos loaded ${state.photos}; heading "${state.heading}"; button "${state.button.trim()}"; ` +
+          `opens Amazon ${opened.length ? (tagged ? "WITH tag=wowpriced-20" : "WITHOUT our tag (BUG)") : "(no click captured)"}; ${state.overflow ? "SIDEWAYS SCROLL (BUG)" : "no sideways scroll"}`);
+        await context.close();
+      }
+      if (engine !== browser) await engine.close();
     }
     for (const q of ["cupping", "hijab"]) {
       const res = await fetch(`${SITE}/api/search?q=${encodeURIComponent(q)}`, { headers: { "User-Agent": "wowpriced-live-check/1.0 (+https://wowpriced.com; hello@wowpriced.com)" } });

@@ -19,6 +19,6 @@ jobs:
         with:
           node-version: '20'
       - name: Install Playwright Chromium
-        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium webkit
       - name: Look at the live homepage
         run: node scripts/live_first_screens.js

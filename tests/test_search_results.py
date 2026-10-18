@@ -39,7 +39,7 @@ def test_config_switch_and_shipped_defaults(tmp_path, mode):
     expected = ("on" if mode else "off") if type(mode) is bool else mode
     assert load_config(path).search["amazon_results"] == expected
     assert AppConfig().search["amazon_results"] == "off"
-    assert load_config().search == {"amazon_results": "preview", "cache_hours": 6,
+    assert load_config().search == {"amazon_results": "on", "cache_hours": 6,
                                     "tokens_per_day": 3000, "max_per_minute": 20}
 
 

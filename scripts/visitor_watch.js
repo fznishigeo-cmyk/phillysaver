@@ -95,8 +95,8 @@ async function searchProbe(page, ignored = new Set()) {
   await page.locator('#q').fill(QUERY);
   // Give the site's search debounce and empty-state renderer time to finish.
   await page.waitForTimeout(700);
-  const button = page.getByRole('link', {name: /^Search Amazon(?:\s+for\b.*)?$/i})
-    .or(page.getByRole('button', {name: /^Search Amazon(?:\s+for\b.*)?$/i})).first();
+  const button = page.getByRole('link', {name: /^\W*(?:Search Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i})
+    .or(page.getByRole('button', {name: /^\W*(?:Search Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i})).first();
   result.visible = await button.isVisible();
   if (!result.visible) return result;
   result.label = (await button.innerText()).trim();

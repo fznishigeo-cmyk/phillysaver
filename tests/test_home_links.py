@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from tests.history_pins import pre_task_288
+from tests.history_pins import pre_task_288, pre_task_290
 
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
@@ -55,7 +55,7 @@ def test_non_boolean_rejected(tmp_path, value):
     ("current", "a21f1be1f0bd043582131b4c487cebacb4511fd9b8cee92e95c324c7464f7690"),
 ])
 def test_off_and_missing_preserve_recorded_bytes(tmp_path, mode, expected):
-    cfg = pre_task_288(load_config()) if mode == "current" else baseline_config(mode)  # recorded before task 288
+    cfg = pre_task_290(pre_task_288(load_config())) if mode == "current" else baseline_config(mode)  # recorded before task 288
     cfg.home_link_resets = False
     out, *_ = render(tmp_path, cfg, offers())
     assert tree_hash(out) == expected

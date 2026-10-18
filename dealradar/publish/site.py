@@ -38,6 +38,7 @@ from .tracking import apply_tracking
 from .template_slots import replace_slot, validate_slot
 from . import comments
 from . import search_results
+from . import search_boost
 
 logger = logging.getLogger("dealradar.publish.site")
 
@@ -150,6 +151,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
             lambda m: m[1] if cfg.search_amazon and cfg.affiliate_amazon_tag else "", html)
         html = html.replace("{{SEARCH_AMAZON_TAG}}", json.dumps(cfg.affiliate_amazon_tag).replace("<", "\\u003c"))
         html = search_results.template(html, cfg)
+        html = search_boost.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -1066,6 +1068,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             + json.dumps(cfg.front_page["demote_words"]).encode()
             + "".join(_DEMOTE_WORDS_BLOCK.findall(home_template)).encode()).hexdigest()[:12]
     site_version = search_results.site_version(site_version, cfg)
+    site_version = search_boost.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
         version_home = home_html if saved_deals else _WATCH_BLOCK.sub("", home_html).replace("<!--saved--><!--/saved-->", "")

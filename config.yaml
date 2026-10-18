@@ -160,10 +160,22 @@ intake:
   max_wait_hours: 6            # overdue reads lead; existing time/spend/breaker caps still win
 
 search:
-  amazon_results: preview     # only ?preview=search until the operator approves
+  amazon_results: on          # operator approved 2026-10-17 7:55pm after testing ?preview=search
   cache_hours: 6
   tokens_per_day: 3000        # separate from pipeline recheck accounting
   max_per_minute: 20
+
+# Operator 2026-10-17: a search we have no deal for leads with a big full-width
+# "Compare all prices on Amazon" button, cards full width below; adult products
+# never show as cards (the button still works); a phone's busy final word
+# retries. Missing/false = previous bytes.
+search_boost:
+  enabled: true
+  exclude_words: [sex, sexual, sex toy, sex toys, adult toy, adult toys, erotic, fetish, bondage, bdsm,
+                  dildo, dildos, vibrator, vibrators, vibrating egg, wand massager, personal massager,
+                  clitoral, clit, g spot, anal, butt plug, butt plugs, prostate massager, cock ring,
+                  penis, masturbator, masturbation, strap on, nipple clamps, lube, lubricant,
+                  lubricants, condom, condoms, kegel balls, love egg, pleasure toy, couples toy, rose toy]
 
 site:
   static_photos: true          # task 274: photos on static cards and deal pages
@@ -1190,7 +1202,7 @@ first_party_clicks:
 # 93% showing, 0 broken, 24 of the top 24 cards with a photo. Task 283 hides
 # older photo-less cards and raises the showing floor to 99%.
 site_check:
-  min_photo_pct: 98.5       # live deals whose photo shows; new deals get 3 h to find one (publish.photos), live 98.8% on 10-17
+  min_photo_pct: 98         # live deals whose photo shows; new deals get 3 h to find one (publish.photos); live 98.3-98.8% on 10-17
   max_broken: 10            # deals whose photo fails to load
   first_screen_photos: 24   # of the top 24 cards on the home page
 

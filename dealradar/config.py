@@ -350,6 +350,7 @@ class AppConfig:
     home_description: str = ""
     search_amazon: bool = False
     search: dict = field(default_factory=lambda: validated_search(None))
+    search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
     static_photos: bool = False
     open_box_scarcity: bool = False
     open_box_counts: bool = False
@@ -650,6 +651,21 @@ def validated_search(value) -> dict:
     if result["cache_hours"] > 24:
         raise ValueError("search.cache_hours must be at most 24")
     return {key: result[key] for key in ("amazon_results", "cache_hours", "tokens_per_day", "max_per_minute")}
+
+
+def validated_search_boost(value) -> dict:
+    """Operator 2026-10-17: big Amazon button, adult cards hidden, phone retry."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict) or set(value) - {"enabled", "exclude_words"}:
+        raise ValueError("search_boost must contain enabled and exclude_words only")
+    enabled, words = value.get("enabled", False), value.get("exclude_words", [])
+    if type(enabled) is not bool:
+        raise ValueError("search_boost.enabled must be a boolean")
+    if not isinstance(words, list) or not all(isinstance(w, str) and re.fullmatch(r"[a-z0-9]+(?:[ -][a-z0-9]+)*", w.strip().lower())
+                                              for w in words):
+        raise ValueError("search_boost.exclude_words must be a list of plain words")
+    return {"enabled": enabled, "exclude_words": [w.strip().lower() for w in words]}
 
 
 def validated_manifest_refresh(value) -> dict:
@@ -970,6 +986,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     if type(cfg.search_amazon) is not bool:
         raise ValueError("site.search_amazon must be a boolean")
     cfg.search = validated_search(g("search", default=None))
+    cfg.search_boost = validated_search_boost(g("search_boost", default=None))
     cfg.static_photos = g("site", "static_photos", default=False)
     if type(cfg.static_photos) is not bool:
         raise ValueError("site.static_photos must be a boolean")

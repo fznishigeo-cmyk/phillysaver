@@ -81,7 +81,7 @@ function utilityMatch(title, groups) {
 function searchProblems(search, tag) {
   const problems = [];
   if (!/search/i.test(search?.placeholder || '')) problems.push('search placeholder missing');
-  if (!search?.visible || !/^Search Amazon(?:\s+for\b.*)?$/i.test(search.label || '')) problems.push('Search Amazon button missing');
+  if (!search?.visible || !/^\W*(?:Search Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i.test(search.label || '')) problems.push('Search Amazon button missing');
   if (search?.target !== '_blank') problems.push('target is not _blank');
   try {
     const url = new URL(search.clickedHref);
