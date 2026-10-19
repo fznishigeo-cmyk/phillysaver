@@ -13,7 +13,7 @@ const fs = require("fs");
 const path = require("path");
 const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
-        frontPageFlagLine, frontPageFlags, eventLinks } = require("./site_check_logic.cjs");
+        frontPageFlagLine, frontPageFlags, eventLinks, toolLinks } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
@@ -145,8 +145,9 @@ async function walk(page, doc, device) {
     check(!/keepa/i.test(html + JSON.stringify(doc)), "private Amazon source in published data");
     check(!/srcwall|srcsel/.test(html), "source wall or filter still present");
     const events = checkFooter(html, doc.meta || {});
-    check(JSON.stringify(events) === JSON.stringify(eventLinks(
-      fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"))), "footer event links changed");
+    const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
+    check(JSON.stringify(events) === JSON.stringify([...eventLinks(config), ...toolLinks(config)]),
+      "footer event links changed");
     await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
       null, { timeout: STEP_TIMEOUT_MS });
     await page.waitForTimeout(1000);

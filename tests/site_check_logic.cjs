@@ -196,6 +196,19 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.deepEqual(eventLinks("seo:\n  hub_min_items: 10\n"), []);
 }
 
+// Public tool pages append their two links after the event pages; preview adds none.
+{
+  const fs = require("node:fs"), path = require("node:path");
+  const {toolLinks} = require("../scripts/site_check_logic.cjs");
+  const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
+  assert.deepEqual(toolLinks(config), [["/amazon-deal-checker/", "Amazon Deal Checker"],
+    ["/amazon-discount-finder/", "Amazon Discount Finder"]]);
+  assert.deepEqual(toolLinks(config.replace(/^tool_pages: \{enabled: true, public: true\}/m,
+    "tool_pages: {enabled: true, public: false}")), []);
+  assert.deepEqual(toolLinks("tool_pages: {enabled: false, public: true}\n"), []);
+  assert.deepEqual(toolLinks("seo:\n  hub_min_items: 10\n"), []);
+}
+
 // Execute the real Home step: use the browser's cache-busted GET, never the
 // earlier report fetch, HEAD requests, failed responses or another origin.
 (async () => {

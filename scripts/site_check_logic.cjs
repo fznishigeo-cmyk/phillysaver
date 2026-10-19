@@ -118,6 +118,14 @@ function eventLinks(config) {
   return enabled ? links : [];
 }
 
+// Public tool pages (task 328) append their links after the event pages.
+function toolLinks(config) {
+  const m = config.match(/^tool_pages:[ \t]*\{([^}]*)\}/m);
+  const on = (key) => m && new RegExp(`\\b${key}:[ \\t]*true\\b`).test(m[1]);
+  return on("enabled") && on("public") ? [["/amazon-deal-checker/", "Amazon Deal Checker"],
+    ["/amazon-discount-finder/", "Amazon Discount Finder"]] : [];
+}
+
 // Runs inside Chromium: take identity and ordering together, before the walk
 // changes filters. textContent/getAttribute already decode HTML entities.
 function frontPageSnapshot() {
@@ -180,4 +188,4 @@ function frontPageFlags(cards, rules) {
 
 module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
                   photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
-                  frontPageFlagLine, frontPageFlags, eventLinks};
+                  frontPageFlagLine, frontPageFlags, eventLinks, toolLinks};
