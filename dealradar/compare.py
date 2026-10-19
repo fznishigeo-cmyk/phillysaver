@@ -229,6 +229,7 @@ def selection(term, options):
 
 def refresh(db, cfg, now, fetcher, deadline, run_key, *, budget, rate_limited=False):
     """Last paid step: durable reservations, receipts, near-full-bucket gates."""
+    budget.visitor_reserve = cfg.keepa_visitor_reserve_tokens
     options = cfg.compare
     summary = dict(finders=0, products=0, tokens=0, estimated_tokens=0,
                    receipts=[], finder_costs=[], finder_results=[], rate_limited=rate_limited)
@@ -283,8 +284,8 @@ def refresh(db, cfg, now, fetcher, deadline, run_key, *, budget, rate_limited=Fa
                 and run["tokens"] + cost <= options["tokens_per_run"]
                 and ledger["tokens"] + cost <= options["tokens_per_day"]
                 and available is not None and capacity is not None and math.isfinite(available)
-                and available >= max(cfg.keepa_reserve_tokens, cfg.keepa_recheck_surplus_reserve) + cost
-                and available - cost >= options["min_bucket_share"] * capacity)
+                and budget.allows(max(cfg.keepa_reserve_tokens, cfg.keepa_recheck_surplus_reserve,
+                                      options["min_bucket_share"] * capacity) + cost))
 
     def reserve(cost):
         run["tokens"] += cost

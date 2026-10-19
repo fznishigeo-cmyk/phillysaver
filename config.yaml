@@ -691,6 +691,7 @@ keepa:
   amazon_pages_per_pull: 12       # current NEW price >= min_pct below its 90-day average
   warehouse_pages_per_pull: 12
   reserve_tokens: 300              # never start an extra page below this
+  visitor_reserve_tokens: 150      # extra floor across ALL pipeline calls for live searches
   # Legacy visibility cadences (used when volatility.enabled is false).
   recheck_fresh_h: 12               # deals first seen in the last recheck_fresh_window_h
   recheck_fresh_window_h: 24

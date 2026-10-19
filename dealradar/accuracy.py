@@ -244,7 +244,7 @@ def extra_samples(db, cfg, now, *, fetcher=None, deadline=None, run_key=None, ra
             continue
         candidates.append(deal)
     random.shuffle(candidates)
-    budget = KeepaBudget.load(db)
+    budget = KeepaBudget.load(db, cfg)
     reserve = max(MIN_FOR_DEAL_QUERY, cfg.keepa_reserve_tokens, cfg.keepa_recheck_surplus_reserve)
     attempted_asins = set()
     db.conn.commit()
@@ -256,7 +256,7 @@ def extra_samples(db, cfg, now, *, fetcher=None, deadline=None, run_key=None, ra
         used = published(db)[deal["dedupe_key"]]["used"]
         cost = USED_RECHECK_TOKENS + 1 if used else 4
         available = budget.available(now)
-        if available is None or available < reserve + cost:
+        if available is None or not budget.allows(reserve + cost, now):
             break
         if not db.conn.execute("INSERT OR IGNORE INTO accuracy_extra_reads VALUES (?,?,?,?)",
                                (day, deal["dedupe_key"], iso(now), run_key)).rowcount:

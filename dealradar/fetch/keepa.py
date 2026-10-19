@@ -615,7 +615,7 @@ class KeepaDealsAdapter(SourceAdapter):
         # keepa_last_fetch_at alone so the next lane tick retries as soon
         # as the bucket refills. Every further page (DEEP's first included)
         # must leave cfg.keepa_reserve_tokens untouched.
-        budget = KeepaBudget.load(db)
+        budget = KeepaBudget.load(db, cfg)
         confirmations = _FeedConfirmations(db, now, cfg)
         self.feed_confirmed = confirmations.confirmed
         amazon: list[RawPost] = []
@@ -773,6 +773,7 @@ class KeepaDealsAdapter(SourceAdapter):
         One page per lane in rotation. Short lists, full post allowances,
         deadlines and reserves can leave tokens for the recheck fallback.
         """
+        pull.budget.visitor_reserve = cfg.keepa_visitor_reserve_tokens
         start_pages, start_tokens = pull.pages, self.token_usage.accounted
         start_estimated = self.token_usage.estimated
         lanes = {id(p[5]): p[5] for p in passes}
@@ -836,14 +837,17 @@ class KeepaDealsAdapter(SourceAdapter):
             if not batch:
                 continue
             avail = pull.budget.available(pull.now)
-            if avail is None or avail - 1 < pull.reserve or not self._time_left(pull, "categories"):
+            if (avail is None or not self._time_left(pull, "categories")
+                    or not pull.budget.allows(pull.reserve + 1, pull.now)):
                 return
             _check_deadline(pull.deadline)
             tried.update(batch)
             try:
                 body = self._get(pull, CATEGORY_URL, {
                     "key": pull.key, "domain": DOMAIN_US,
-                    "category": ",".join(batch), "parents": 0}, "categories")
+                    "category": ",".join(batch), "parents": 0}, "categories",
+                    # Keep the floor even if the category response loses its reading.
+                    estimate=1 if pull.budget.visitor_reserve else 0)
             except _TokensShort:
                 raise
             except (RuntimeError, httpx.HTTPError):
@@ -887,7 +891,7 @@ class KeepaDealsAdapter(SourceAdapter):
                     return
                 # Focus pages always preserve the standing product reserve.
                 avail = pull.budget.available(pull.now)
-                if avail is None or avail - DEAL_PAGE_COST < max(300, pull.reserve):
+                if avail is None or not pull.budget.allows(max(300, pull.reserve) + DEAL_PAGE_COST, pull.now):
                     continue
                 pull.focus_tried.add(marker)
                 rows = self._query_rows(pull, {**selection, "includeCategories": [cid], "page": page}, "focus")
@@ -913,7 +917,7 @@ class KeepaDealsAdapter(SourceAdapter):
                 or not self._may_fetch(pull, "popular", extra=True):
             return False
         available = pull.budget.available(pull.now)
-        if available is None or available - DEAL_PAGE_COST < max(300, pull.reserve):
+        if available is None or not pull.budget.allows(max(300, pull.reserve) + DEAL_PAGE_COST, pull.now):
             return False
         try:
             rows = self._query_rows(pull, {**selection, "currentRange": [0, round(maximum * 100)],
@@ -1019,7 +1023,7 @@ class KeepaDealsAdapter(SourceAdapter):
             return False
         if extra:
             avail = pull.budget.available(pull.now)
-            if avail is not None and avail - DEAL_PAGE_COST < pull.reserve:
+            if not pull.budget.allows(pull.reserve + DEAL_PAGE_COST, pull.now):
                 log.info("keepa %s: ~%.0f tokens left; paging stops to keep "
                          "the %.0f-token reserve for product calls", label,
                          avail, pull.reserve)
@@ -1073,7 +1077,7 @@ class KeepaDealsAdapter(SourceAdapter):
         if not budget.allows(MIN_FOR_DEAL_QUERY, now):
             log.info("keepa %s: ~%.0f tokens left (< %.0f needed); skipping "
                      "the query until the bucket refills", label,
-                     budget.available(now), MIN_FOR_DEAL_QUERY)
+                     budget.available(now), MIN_FOR_DEAL_QUERY + budget.visitor_reserve)
             raise _TokensShort
         pull.pages += 1
         payload = self._get(pull, DEALS_URL, {
@@ -1104,7 +1108,7 @@ class KeepaDealsAdapter(SourceAdapter):
         if not self._time_left(pull, "sweep"):
             return False
         avail = pull.budget.available(pull.now)
-        if avail is None or avail - cost < keep:
+        if avail is None or not pull.budget.allows(keep + cost, pull.now):
             log.info("keepa sweep: ~%s tokens; the %s (~%.0f) must leave "
                      "%.0f for rechecks and the deal pages; skipped",
                      "?" if avail is None else f"{avail:.0f}", what, cost,

@@ -1307,8 +1307,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     schedule = Schedule(history, picks, wall)
     stats["run_gap"] = run_gap_forecast(db, cfg, now)
     gap = stats["run_gap"]["minutes"]
-    budget = KeepaBudget.load(db)
-    available = budget.available(now)
+    budget = KeepaBudget.load(db, cfg)
+    available = budget.spendable(now)
     surplus_reserve = max(MIN_FOR_DEAL_QUERY, cfg.keepa_recheck_surplus_reserve)
     surplus = (min(budget.overflow(gap, now) or 0, max(0, available - surplus_reserve))
                if cfg.keepa_recheck_surplus and available is not None else 0)
@@ -1459,7 +1459,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         plan.prepare_clicks()
     # Token budget carried over from the last Keepa response of any run;
     # each batch below updates it, and it is persisted at the end.
-    stats["tokens"] = {"bucket_start": available, "bucket_end": None,
+    stats["tokens"] = {"bucket_start": budget.available(now), "bucket_end": None,
                        "capacity": budget.capacity(), "requested": 0,
                        "unused_per_hour_estimate": None, "overflow_estimate": None,
                        "surplus_granted": surplus,
@@ -1759,12 +1759,26 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 request_candidates = [rows[0] for rows in by_policy.values()]
                 request_consumers = {(rows[0][0]["dedupe_key"], rows[0][1][3].startswith("surplus_")): [d for d, _ in rows]
                                      for rows in by_policy.values()}
-            selected, _ = plan.batches(request_candidates, deadlines,
-                available=budget.available(now), used_left=max(0, (used_limit or 0) - used_spent),
+            batch_options = dict(used_left=max(0, (used_limit or 0) - used_spent),
                 seconds=max(0, deadline - time.monotonic()) if deadline is not None else float("inf"),
                 overflow=budget.overflow(gap, now), recovery_left={
                     False: max(0, cfg.keepa_hidden_new_tokens_per_run - recovery_spent["new"]),
                     True: max(0, cfg.keepa_hidden_used_scans_per_run - recovery_spent["used"])})
+            selected, _ = plan.batches(request_candidates, deadlines,
+                available=budget.spendable(now), **(batch_options | {
+                    "recovery_left": dict(batch_options["recovery_left"])}))
+            if budget.visitor_reserve:
+                # The planner can exclude work before any request gate runs.
+                # Count the omitted batches, using identical time/quota limits.
+                unreserved, _ = plan.batches(request_candidates, deadlines,
+                    available=budget.available(now), **batch_options)
+                selected_requests = {(d["dedupe_key"], options[3].startswith("surplus_"))
+                                     for rows, *options in selected for d in rows}
+                for rows, *options in unreserved:
+                    omitted = sum((d["dedupe_key"], options[3].startswith("surplus_"))
+                                  not in selected_requests for d in rows)
+                    if omitted:
+                        budget.defer_for_visitors((omitted + options[2] - 1) // options[2])
             if request_consumers:
                 selected = [([d for representative in rows for d in request_consumers[
                                 representative["dedupe_key"], options[3].startswith("surplus_")]],
@@ -1794,7 +1808,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         for label, rows in lanes:
             modes = {}
             requested = set()
-            left = min(budget.overflow(gap, now) or 0, max(0, (budget.available(now) or 0) - reserve))
+            left = min(budget.overflow(gap, now) or 0, max(0, (budget.spendable(now) or 0) - reserve))
             for deal in rows:
                 used = is_used_deal(deal)
                 live = bool(cfg.keepa_recheck_top_live and (deal["dedupe_key"] in picks or label == "buybox_top_new"))
@@ -1868,7 +1882,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         i = 0
         while i < len(group):
             remaining_count = sum(len(consumers.get(d["dedupe_key"], [d])) for d in group[i:])
-            avail = budget.available(now)
+            avail = budget.spendable(now)
             # The click-price rule keeps the premium and shortens the batch.
             # An unknown bucket cannot authorize an extra charge.
             if box_request and (avail is None or avail - reserve < min(per_call, len(group) - i) * per_deal):
@@ -1900,7 +1914,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 if used:
                     stats["used_skipped_budget"] += remaining_count
                 break
-            avail = budget.available(now)
+            avail = budget.spendable(now)
             # An unknown bucket must first be learned from a new-price call
             # (normally the feed already supplied it). Never invent a used cap.
             if used_limit is None and avail is not None:
@@ -2079,8 +2093,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["tokens"]["unused_per_hour_estimate"] = (
         round(overflow * 60 / gap, 2) if overflow is not None else None)
     measurements()
-    log.info("price recheck plan/done: %s", ", ".join(
-        f"{name}={planned}/{stats['done'][name]}" for name, planned in stats["planned"].items()))
+    plan_line = ", ".join(
+        f"{name}={planned}/{stats['done'][name]}" for name, planned in stats["planned"].items())
+    if budget.visitor_reserve:
+        stats["visitor_reserve_deferred_calls"] = getattr(db, "keepa_visitor_deferred_calls", 0)
+        plan_line += f", visitor_reserve_deferred_calls={stats['visitor_reserve_deferred_calls']}"
+    log.info("price recheck plan/done: %s", plan_line)
     if stats["tokens_short"]:
         log.info("price recheck: %d deal(s) held back, Keepa tokens ~%.0f",
                  stats["tokens_short"], budget.available(now) or 0.0)
@@ -2726,7 +2744,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             try:
                 summary["compare"] = compare.refresh(
                     db, cfg, now, fetcher, deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
-                    budget=KeepaBudget.load(db),
+                    budget=KeepaBudget.load(db, cfg),
                     rate_limited=(summary["price_recheck"].get("rate_limited", False)
                                   or summary["photo_search"].get("rate_limited", False)))
             except Exception as exc:
@@ -2866,6 +2884,12 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from .publish.price_labels import META as label_report_meta
         db.meta_set(label_report_meta, json.dumps(summary["unconfirmed_label"], sort_keys=True))
         summary["price_recheck"]["confirmed_age"] = site_res["confirmed_age"]
+        if cfg.keepa_visitor_reserve_tokens:
+            summary["price_recheck"]["visitor_reserve_deferred_calls"] = getattr(
+                db, "keepa_visitor_deferred_calls", 0)
+            log.info("Keepa budget: visitor_reserve=%.0f, visitor_reserve_deferred_calls=%d",
+                     cfg.keepa_visitor_reserve_tokens,
+                     summary["price_recheck"]["visitor_reserve_deferred_calls"])
         if "token_plan" in summary["price_recheck"]:
             summary["token_plan"] = summary["price_recheck"]["token_plan"]
         summary["seo_audit"] = site_res.get("seo_audit", {})

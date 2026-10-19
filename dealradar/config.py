@@ -557,6 +557,7 @@ class AppConfig:
     keepa_focus_pages_per_category: int = 1
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
+    keepa_visitor_reserve_tokens: float = 0.0  # extra floor for every pipeline lane
     keepa_tokens_per_minute: float = 20.0
     keepa_volatility: dict[str, Any] = field(default_factory=dict)
     keepa_focus_categories: list[str] = field(default_factory=lambda: [
@@ -1509,6 +1510,11 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "warehouse_pages_per_pull", default=cfg.keepa_warehouse_pages_per_pull)))
     cfg.keepa_reserve_tokens = max(0.0, float(g(
         "keepa", "reserve_tokens", default=cfg.keepa_reserve_tokens)))
+    visitor_reserve = g("keepa", "visitor_reserve_tokens", default=cfg.keepa_visitor_reserve_tokens)
+    if (type(visitor_reserve) not in {int, float} or not math.isfinite(visitor_reserve)
+            or visitor_reserve < 0):
+        raise ValueError("keepa.visitor_reserve_tokens must be finite and nonnegative")
+    cfg.keepa_visitor_reserve_tokens = float(visitor_reserve)
     cfg.keepa_focus_categories = list(g(
         "keepa", "focus_categories", default=cfg.keepa_focus_categories) or [])
     cfg.keepa_amazon_max_new_posts_per_pull = max(0, int(g(

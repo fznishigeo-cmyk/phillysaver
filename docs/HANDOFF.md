@@ -244,6 +244,29 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Visitor Keepa reserve on release 8ceabdf (Codex task 323, completing 311, 2026-10-19; uncommitted):**
+  Resolved all six content conflicts while preserving task 319's Amazon-used
+  switch, recheck cadence, rotating two-page focus discovery and intake caps.
+  Strict `keepa.visitor_reserve_tokens` defaults 0 and ships 150; every pipeline
+  Keepa budget gate and batch size preserves the extra floor, including task
+  319 focus/overflow discovery, finder/sweeps, categories, photos, verification,
+  accuracy and comparison reads. Existing priorities, money caps and raw bucket
+  receipts remain. Run/recheck summaries report `visitor_reserve_deferred_calls`.
+  Historical `pre_task_319` helpers also pin the visitor reserve to 0, isolating
+  legacy click-price/Buy Box/demotion/quality/price-accuracy fixtures without
+  changing their assertions or recorded hashes. Added task-319 focus rotation
+  and boundary, shared overflow-budget and full-run discovery-summary coverage.
+  Requested 33-file selection (including every Keepa-budget reference file):
+  **1,649 passed, 1 Chromium skip in 497.73s**. Final reserve/overflow/task-319
+  follow-up: **112 passed in 28.98s**, including new full-run summary coverage.
+  Runs used `-q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed`,
+  with basetemps `/tmp/b323`, `/tmp/b323-reserve` and `/tmp/b323-final`; all
+  three directories removed afterward. Diff/marker checks pass. Reviewer
+  owns the full suite.
+  Git metadata is read-only (`/home/user/phillysaver/.git/worktrees/wt323`), so
+  the resolved contents cannot be staged here and index entries remain unmerged.
+  No full suite, live API calls, commit or push.
+
 - **Live deal-page check + retired Amazon used URLs (Codex task 322, 2026-10-19; uncommitted):**
   Reproduced with shipped config and Amazon used, Woot used, new and ended
   offers: there is no first sitemap deal page (`deal_pages_indexable: false`).
@@ -757,17 +780,6 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Phone gzip budget retains its 1,000-byte headroom; no pins changed. Owned
   `/tmp/b312` removed. Review remains; no full suite, commit or push.
 
-- **Visitor Keepa reserve (Codex task 311, 2026-10-18; uncommitted):**
-  Strict `keepa.visitor_reserve_tokens` defaults 0 and ships 150. All pipeline
-  budget gates and batch sizing keep this extra floor, including discovery,
-  rechecks/photos, verification, finder/sweeps, category lookups, accuracy and
-  comparison reads. Existing lane priority and money caps remain. Raw bucket
-  receipts stay unchanged; run/recheck summaries add `visitor_reserve_deferred_calls`
-  (refused request gates plus batches omitted by the planner). Legacy token
-  fixtures explicitly use 0; no recorded hashes changed. Final targeted run:
-  **794 passed in 223.54s**, including all Keepa tests and offline idempotency,
-  with the requested `-n 4`/no-cache/retention flags. `/tmp/b311` removed.
-  Review/deployment remain. No full suite, commit or push.
 - **Same-product family spacing (Codex task 302, 2026-10-18; uncommitted, ON):**
   Strict top-level `same_product_spacing` defaults false; config.yaml ships true.
   Store + first five meaningful title words identify families, stripping variant

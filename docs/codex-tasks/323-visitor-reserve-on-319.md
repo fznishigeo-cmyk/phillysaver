@@ -1,0 +1,12 @@
+# Task 323 — finish task 311 (Keepa visitor reserve) on top of the live release 8ceabdf
+
+Read CLAUDE.md first. This tree is the live release 8ceabdf (tasks 317–322 shipped, incl. 319: Amazon used off + new recheck cadence + freed tokens to new-condition discovery). The original brief is docs/codex-tasks/311-visitor-search-reserve.md — same goal, same rules. Its earlier implementation (written against an older tree) has been applied here with `git apply --3way`; six files have merge conflicts:
+dealradar/fetch/keepa.py, docs/HANDOFF.md, tests/test_keepa.py, tests/test_price_accuracy_engine.py, tests/test_value_per_token_rechecks.py, tests/test_volatility_tiers.py.
+
+## Do
+1. Resolve every conflict keeping BOTH sides' intent: 319's behaviour (amazon_used knob, cadence, discovery lane, its tests) stays exactly as shipped; 311 adds the visitor reserve floor (config.yaml 150, AppConfig default 0 = previous behaviour) to every pipeline Keepa spend that consults keepa_budget.py — including any new 319 discovery/finder spends. Remove all conflict markers.
+2. On the earlier attempt the full suite had ~43 failures (click_price, buybox, demote, quality_trio, price_accuracy tests) because those tests' fixtures ran with a nearly-empty token bucket and the new 150 floor deferred their calls. Fix these by isolating the old tests with reserve 0 (a `pre_task_323`-style helper or explicit cfg override in the fixture) — never weaken a test's intent, never re-pin recorded hashes — and add focused tests for the reserve (0 = identical decisions; 150 = a call leaving <150 is deferred; priority order unchanged; reserve deferrals reported in the run summary).
+3. Live context: hourly #247 shows `token_plan needed_per_minute 8.82, granted 60`, bucket 3,301/3,600 — the reserve costs almost nothing today; it protects visitors on busy runs.
+
+## Tests
+Run: `.venv/bin/pytest -q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b323 tests/test_keepa*.py tests/test_e2e_offline.py tests/test_click_price*.py tests/test_buybox*.py tests/test_price_accuracy*.py tests/test_volatility_tiers.py tests/test_value_per_token_rechecks.py tests/test_amazon_used.py tests/test_quality_trio*.py tests/test_demote*.py` (globs that match nothing: drop them), plus `grep -rln "keepa_budget\|KeepaBudget" tests/` files. Delete /tmp/b323 afterwards (disk is tight). Do NOT run the full suite (I do). No commit or push. Note in docs/HANDOFF.md. Reply <= 6 lines.

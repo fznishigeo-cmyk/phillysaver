@@ -670,7 +670,7 @@ class TestKeepaPaging:
 
         budget = FakeBudget()
         monkeypatch.setattr(keepa_mod.KeepaBudget, "load",
-                            classmethod(lambda cls, db: budget))
+                            classmethod(lambda cls, db, cfg=None: budget))
         started: list[tuple[tuple[str, int], float]] = []
         fake = FakeKeepa(amazon=[_junk_row(i, "B0AAA") for i in range(900)],
                          fresh=[_junk_row(i, "B0FFF") for i in range(900)],

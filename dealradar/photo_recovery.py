@@ -336,7 +336,7 @@ def search_photos(db, deals, fetcher, cfg, now, deadline, run_key, *, rate_limit
     if run["rate_limited"]:
         stats["rate_limited"] = True
         return stats
-    budget = KeepaBudget.load(db)
+    budget = KeepaBudget.load(db, cfg)
     reserve = max(MIN_FOR_IMAGE_BACKFILL, cfg.keepa_reserve_tokens,
                   cfg.keepa_recheck_surplus_reserve)
     finder_cost = _finder_cost(50)
@@ -352,7 +352,8 @@ def search_photos(db, deals, fetcher, cfg, now, deadline, run_key, *, rate_limit
                     or len(name_words(deal.get("item") or "")) < 2):
                 continue
             available = budget.available()
-            if available is None or not math.isfinite(available) or available < reserve + finder_cost + 50:
+            if (available is None or not math.isfinite(available)
+                    or not budget.allows(reserve + finder_cost + 50)):
                 break  # unknown balance cannot authorize optional spending
             ledger["count"] += 1
             run["count"] += 1

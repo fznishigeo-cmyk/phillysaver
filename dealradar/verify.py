@@ -88,7 +88,7 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
             if keepa_calls.get("n", 0) >= KEEPA_CHECKS_PER_PASS:
                 return "unverified"  # the rest wait for the next pass
             keepa_calls["n"] = keepa_calls.get("n", 0) + 1
-        budget = KeepaBudget.load(db)
+        budget = KeepaBudget.load(db, cfg)
         if not budget.allows(MIN_FOR_RECHECK, now):
             return "unverified"  # retried on a later re-tiering
         answered: dict[str, bool] = {}
@@ -572,6 +572,8 @@ def keepa_products(key: str, asins: list[str], stats: int,
     # answered next pass, so it is not retried here.
     reserved = len(asins) * ((USED_RECHECK_TOKENS if offers else 1) + int(live) + 2 * buybox)
     if budget is not None:
+        if budget.visitor_reserve and not budget.allows(reserved):
+            return None
         budget.reserve(reserved)
         budget.save(budget.db)
     payload, resp, unsent = None, None, False
@@ -849,6 +851,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     if not key:
         return out
     budget = budget if budget is not None else KeepaBudget()
+    budget.visitor_reserve = cfg.keepa_visitor_reserve_tokens
     unique = getattr(cfg, "keepa_unique_asin_rechecks_enabled", False)
     new: list[tuple[str, list[dict[str, Any]]]] = []
     used: list[tuple[str, list[dict[str, Any]]]] = []
@@ -883,7 +886,7 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
         start = 0
         while start < len(wanted):
             cost = (USED_RECHECK_TOKENS if offers else 1) + int(live) + 2 * buybox
-            avail = budget.available()
+            avail = budget.spendable()
             if not budget.allows(max(MIN_FOR_RECHECK, MIN_FOR_DEAL_QUERY + cost)):
                 break
             size = per_call if avail is None else min(
@@ -952,6 +955,10 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
     final = deal.get("final_price")
     if not asin or final is None:
         return None
+    if budget is not None:
+        budget.visitor_reserve = cfg.keepa_visitor_reserve_tokens
+        if budget.visitor_reserve and not budget.allows(MIN_FOR_RECHECK):
+            return None
     try:
         product = _keepa_product(get_secret("KEEPA_KEY"), asin, 1, budget, fetcher=fetcher)
         if product is None:
@@ -992,6 +999,10 @@ def keepa_check(deal: dict[str, Any], cfg,
     final = deal.get("final_price")
     if not asin or final is None:
         return None
+    if budget is not None:
+        budget.visitor_reserve = cfg.keepa_visitor_reserve_tokens
+        if budget.visitor_reserve and not budget.allows(MIN_FOR_RECHECK):
+            return None
     try:
         product = _keepa_product(key, asin, 90, budget, fetcher=fetcher)
         if product is None:

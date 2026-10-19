@@ -344,7 +344,8 @@ def pre_task_320(cfg):
 def pre_task_319_raw(config):
     config["amazon_used"] = {"enabled": True}
     keepa = config.setdefault("keepa", {})
-    keepa.update(genuine_drops_only=False, focus_pages_per_category=1,
+    # These token-allocation fixtures also predate task 323's visitor floor.
+    keepa.update(visitor_reserve_tokens=0, genuine_drops_only=False, focus_pages_per_category=1,
                  amazon_pages_per_pull=6, amazon_max_new_posts_per_pull=10,
                  focus_categories=["Beauty & Personal Care", "Health & Household"],
                  buybox_interval_min=60, recheck_top_h=.75, recheck_wall_h=1.5,

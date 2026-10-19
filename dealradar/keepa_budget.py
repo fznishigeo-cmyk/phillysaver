@@ -125,23 +125,26 @@ class KeepaBudget:
     seen_at: datetime | None = None
     db: Any = field(default=None, repr=False, compare=False)  # roots from already-paid products
     usage: TokenUsage = field(default_factory=TokenUsage, repr=False, compare=False)
+    visitor_reserve: float = 0
+    visitor_deferred_calls: int = 0
 
     @classmethod
-    def load(cls, db) -> KeepaBudget:
+    def load(cls, db, cfg=None) -> KeepaBudget:
         """Reading persisted by the previous run; empty (no gating) when
         missing or unreadable."""
+        reserve = cfg.keepa_visitor_reserve_tokens if cfg is not None else 0
         raw = db.meta_get(META_KEY) if db is not None else None
         if not raw:
-            return cls(db=db)
+            return cls(db=db, visitor_reserve=reserve)
         try:
             d = json.loads(raw)
         except ValueError:
-            return cls(db=db)
+            return cls(db=db, visitor_reserve=reserve)
         if not isinstance(d, dict):
-            return cls(db=db)
+            return cls(db=db, visitor_reserve=reserve)
         return cls(tokens_left=_num(d.get("tokens_left")),
                    refill_rate=_num(d.get("refill_rate")),
-                   seen_at=util.parse_iso(d.get("seen_at")), db=db)
+                   seen_at=util.parse_iso(d.get("seen_at")), db=db, visitor_reserve=reserve)
 
     def save(self, db) -> None:
         if db is None or self.seen_at is None:
@@ -204,9 +207,29 @@ class KeepaBudget:
         return max(0.0, available + self.refill_rate * minutes - cap)
 
     def allows(self, need: float, now: datetime | None = None) -> bool:
-        """True when the estimate clears ``need`` — or is unknown."""
+        """Leave the visitor floor on top of the lane's existing requirement.
+
+        Count only checks the visitor floor alone refused. The DB connection
+        shares this run-local diagnostic across independently loaded budgets;
+        it is deliberately not persisted in the token reading.
+        """
         avail = self.available(now)
-        return avail is None or avail >= need
+        if avail is None or avail >= need + self.visitor_reserve:
+            return True
+        if avail >= need:
+            self.defer_for_visitors()
+        return False
+
+    def defer_for_visitors(self, calls: int = 1) -> None:
+        self.visitor_deferred_calls += calls
+        if self.db is not None:
+            self.db.keepa_visitor_deferred_calls = getattr(
+                self.db, "keepa_visitor_deferred_calls", 0) + calls
+
+    def spendable(self, now: datetime | None = None) -> float | None:
+        """Balance for batch sizing; receipts and refill still use the full bucket."""
+        avail = self.available(now)
+        return None if avail is None else avail - self.visitor_reserve
 
 
 def describe_429(payload: Any) -> str:
