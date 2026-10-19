@@ -50,6 +50,7 @@ from . import tool_pages
 from . import search_polish_1019
 from . import phone_tagline_count
 from . import timer_pill_ring
+from . import phone_timer_raise
 from . import search_circle
 from . import search_analyze
 from . import analyze_top_sellers
@@ -191,6 +192,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = header_polish.template(html, cfg)
         html = phone_tagline_count.template(html, cfg)
         html = timer_pill_ring.template(html, cfg)
+        html = phone_timer_raise.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})

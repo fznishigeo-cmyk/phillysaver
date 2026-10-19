@@ -244,6 +244,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Phone timer alignment (Codex task 330, 2026-10-19; uncommitted):** Strict
+  `phone_timer_raise` defaults false/ships true with the operator's quote.
+  At <=640px the tagline's 19.5px line sits atop its legacy 40px box:
+  CSS-derived timer/text offset **+10.25 -> +0.25px** with relative `top:-10px`;
+  header-bottom gap **0 -> 10px**, leaving **8px** above the 2px orange line.
+  Grid tracks, type, ring and shared CSS remain unchanged; OFF matches all
+  **78 pre-edit published files**. Browser checks measure visible text at
+  360/390/412/430 in both themes, preserve 182/388 audit guards and compare
+  900/1280 geometry; syntax passes, native Chromium remains with the operator.
+  Merged 328/329 release pins isolate the parallel feature; no hashes changed.
+  Targeted runs: **213 distinct passes, 1 Chromium skip**, including all **63**
+  follow-up checks after fixing the three cross-feature release-pin failures.
+  Phone gzip retains its 1,000-byte reserve. `/tmp/b330`, `/tmp/b330-recheck`
+  and owned inspection scratch removed; no full suite, commit or push.
 - **Tool-page suite compatibility (Codex task 328c, 2026-10-19; uncommitted):**
   Both tool footers now carry the five standard trust links, adding How we
   verify and Contact while preserving the clean layout and 44px targets.

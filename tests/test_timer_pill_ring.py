@@ -42,6 +42,7 @@ def test_defaults_and_history(tmp_path):
 
 @pytest.mark.parametrize('mode', PINS)
 def test_original_release_off_missing_rerun_and_back_off_bytes(tmp_path, mode):
+    # Task 328 ran in parallel; these pins predate its four preview files too.
     cfg = pre_tool_pages(pre_timer_pill_ring(load_config()))
     if mode == 'inline':
         cfg.strip_comments = False

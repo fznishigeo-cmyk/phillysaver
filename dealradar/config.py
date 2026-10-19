@@ -366,6 +366,7 @@ class AppConfig:
     search_polish_1019: bool = False
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
+    phone_timer_raise: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1111,6 +1112,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")
+    cfg.phone_timer_raise = g("phone_timer_raise", default=False)
+    if type(cfg.phone_timer_raise) is not bool:
+        raise ValueError("phone_timer_raise must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

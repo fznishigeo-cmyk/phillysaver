@@ -6,7 +6,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 
-function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true, timerRing = true) {
+function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true, timerRing = true, timerRaise = true) {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
 import json, sys
@@ -22,6 +22,7 @@ cfg.all_discounts_button = sys.argv[3] == "true"
 cfg.search_polish_1019 = cfg.all_discounts_button
 cfg.phone_tagline_count = sys.argv[4] == "true"
 cfg.timer_pill_ring = sys.argv[5] == "true"
+cfg.phone_timer_raise = sys.argv[6] == "true"
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -35,7 +36,7 @@ pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal
 assert pages, "fixture must include a current deal page"
 pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
 (Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
-`, scratch, String(polish), String(discounts), String(phoneTagline), String(timerRing)], {encoding:'utf8'});
+`, scratch, String(polish), String(discounts), String(phoneTagline), String(timerRing), String(timerRaise)], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return path.join(scratch, 'site');
 }
@@ -189,6 +190,86 @@ async function assertPhoneTagline(browser, roots, fixture, inspect) {
       await context.close();
     }
   }
+}
+
+async function assertPhoneTimerRaise(browser, roots, fixture, inspect) {
+  const metrics = [];
+  for (const width of [360, 390, 412, 430, 900, 1280]) for (const theme of ['light', 'dark']) {
+    let baseline;
+    for (const mode of ['raiseOff', 'on']) {
+      const name = `timer-raise-${width}-${theme}-${mode}`;
+      const context = await browser.newContext({viewport:{width, height:width === 360 ? 740 : 844},
+        colorScheme:theme, isMobile:width < 900, hasTouch:width < 900, reducedMotion:'reduce', serviceWorkers:'block'});
+      try {
+        const errors = [], unexpected = [];
+        await routeOffline(context, roots[mode], unexpected);
+        await context.addInitScript(() => {
+          localStorage.setItem('wp.install.engagedMs', '180000');
+          addEventListener('beforeinstallprompt', e => {
+            if (e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); }
+          });
+        });
+        const page = await context.newPage();
+        page.on('pageerror', error => errors.push(error.message));
+        await page.clock.install({time:new Date(Date.parse(fixture.now) + 120000)});
+        await page.goto('https://wowpriced.test/');
+        await page.waitForFunction(() => document.querySelector('#content .card') &&
+          /24 (?:live|verified) deals/i.test(document.querySelector('#tagline').innerText));
+        await offerInstall(page);
+        await page.clock.pauseAt(new Date(Date.parse(fixture.now) + 123000));
+        await page.locator('.tag-short').evaluate(el => {el.textContent = '1,000+ verified deals';});
+        const g = await page.evaluate(geometry);
+        const state = await page.evaluate(() => {
+          const pill = document.querySelector('#drop'), css = getComputedStyle(pill);
+          // The 40px tagline container is already centred. Measure its visible
+          // text, otherwise a check would miss the operator's reported defect.
+          const range = document.createRange();
+          range.selectNodeContents(document.querySelector('.tag-short'));
+          const text = range.getBoundingClientRect();
+          const header = document.querySelector('header');
+          return {taglineCentreY:text.y + text.height / 2,
+            borderHeight:parseFloat(getComputedStyle(header, '::after').height),
+            text:document.querySelector('#tagline').innerText,
+            style:{padding:css.padding, border:css.border, radius:css.borderRadius,
+              font:css.font, color:css.color, background:css.backgroundColor,
+              ring:getComputedStyle(pill, '::before').backgroundImage}};
+        });
+        const pill = g.row.find(item => item.selector === '#drop');
+        const offset = pill.cy - state.taglineCentreY, clearance = g.header.bottom - pill.bottom;
+        if (mode === 'raiseOff') baseline = {g, state, offset, clearance};
+        else if (width >= 900) {
+          assert.deepEqual(g, baseline.g, name + ': all desktop/tablet geometry unchanged');
+          assert.deepEqual(state, baseline.state, name + ': desktop/tablet text and timer style unchanged');
+        } else {
+          assert(Math.abs(offset) <= 1, name + ': timer/text centre offset ' + offset);
+          assert(clearance >= 4, name + ': header bottom clearance ' + clearance);
+          assert(clearance - state.borderHeight >= 4, name + ': clears the orange line itself');
+          assert(pill.y >= g.field.bottom, name + ': no overlap with search row');
+          assert(g.scrollWidth <= width && pill.x >= 0 && pill.right <= width, name + ': no overflow');
+          assert.equal(g.header.height, baseline.g.header.height, name + ': header height unchanged vs OFF');
+          assert.equal(g.firstCardTop, baseline.g.firstCardTop, name + ': first card unchanged vs OFF');
+          assert.deepEqual(state, baseline.state, name + ': tagline and all timer styling unchanged');
+          const {row, ...rest} = g, {row:oldRow, ...oldRest} = baseline.g;
+          assert.deepEqual(rest, oldRest, name + ': all other measured geometry unchanged');
+          for (let i = 0; i < row.length; i++) {
+            const expected = row[i].selector === '#drop' ? {...oldRow[i],
+              y:oldRow[i].y - 10, bottom:oldRow[i].bottom - 10, cy:oldRow[i].cy - 10} : oldRow[i];
+            assert.deepEqual(row[i], expected, name + ': only timer position changes');
+          }
+          const audit = await page.evaluate(`(() => { ${inspect}\nreturn inspectPage(hitAreaMath()); })()`);
+          assert.equal(audit.headerH, 182, name + ': mobile-audit headerH');
+          assert.equal(audit.firstCardTop, 388, name + ': mobile-audit firstCardTop');
+          assert.deepEqual(audit.overflow, [], name + ': mobile-audit overflow');
+          metrics.push({name, beforeOffset:baseline.offset, afterOffset:offset,
+            beforeClearance:baseline.clearance, afterClearance:clearance,
+            borderClearance:clearance - state.borderHeight, headerH:audit.headerH, firstCardTop:audit.firstCardTop});
+        }
+        assert.deepEqual(errors, [], name + ': page errors');
+        assert.deepEqual(unexpected, [], name + ': unexpected requests');
+      } finally { await context.close(); }
+    }
+  }
+  return metrics;
 }
 
 async function routeOffline(context, root, unexpected) {
@@ -348,9 +429,11 @@ async function main() {
   try {
     const roots = {off:buildFixture(path.join(scratch, 'off'), true, false), on:buildFixture(path.join(scratch, 'on')),
       taglineOff:buildFixture(path.join(scratch, 'tagline-off'), true, true, false),
-      ringOff:buildFixture(path.join(scratch, 'ring-off'), true, true, true, false)};
+      ringOff:buildFixture(path.join(scratch, 'ring-off'), true, true, true, false),
+      raiseOff:buildFixture(path.join(scratch, 'raise-off'), true, true, true, true, false)};
     const fixture = JSON.parse(fs.readFileSync(path.join(scratch, 'on/fixture.json'), 'utf8'));
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
+    const timerRaiseMetrics = await assertPhoneTimerRaise(browser, roots, fixture, inspect);
     await assertTimerPillRing(browser, roots, fixture, shots);
     await assertPhoneTagline(browser, roots, fixture, inspect);
     const metrics = [];
@@ -467,6 +550,7 @@ async function main() {
       }
     }
     fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
+    fs.writeFileSync(path.join(shots, 'timer-raise-metrics.json'), JSON.stringify(timerRaiseMetrics, null, 2) + '\n');
     console.log('PASS: twin ovals, wrapped desktop tabs, phone load/reveal audit, shared pages and light/dark');
   } finally {
     if (browser) await browser.close();

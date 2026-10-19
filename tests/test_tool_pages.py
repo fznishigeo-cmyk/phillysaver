@@ -19,6 +19,7 @@ from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
 from tests.test_support import NOW, render
 from tests.test_tracking import HARNESS, _script
+from tests.history_pins import pre_timer_pill_ring
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +41,7 @@ def test_defaults_and_shipped_preview(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text("{}")
     assert load_config(path).tool_pages == AppConfig().tool_pages == {"enabled": False, "public": False}
-    assert load_config().tool_pages == {"enabled": True, "public": False}
+    assert load_config().tool_pages == {"enabled": True, "public": True}
     for value in ({}, {"enabled": True}, {"enabled": True, "public": True}):
         path.write_text(json.dumps({"tool_pages": value}))
         assert load_config(path).tool_pages == {"enabled": False, "public": False, **value}
@@ -62,14 +63,14 @@ def test_strict_config(tmp_path, value):
     ("membership", "a3b46b13701e706d53cd8dbb737de77c039b31d67cc1bbc42af5c250397f907b"),
 ])
 def test_off_matches_release_and_preview_preserves_every_old_file(tmp_path, mode, expected):
-    cfg = config()
+    # Recorded before the parallel timer-ring feature and phone timer raise.
+    cfg = pre_timer_pill_ring(config())
     if mode == "inline":
         cfg.search_analyze["lazy"] = False
         cfg.strip_comments = False
     if mode == "membership":
         cfg.support_enabled = False
     cfg.tool_pages = {"enabled": False, "public": False}
-    cfg.timer_pill_ring = False  # sibling task 329 shipped after these pins
     out, *_ = render(tmp_path, cfg)
     assert tree_hash(out) == expected
     before = files(out)

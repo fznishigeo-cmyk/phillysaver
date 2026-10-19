@@ -200,6 +200,7 @@ def pre_task_290_install(cfg):
 def pre_task_290_install_raw(config):
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
+    config.pop("phone_timer_raise", None)
     config.pop("discounts_from_link", None)
     config.pop("phone_tagline_count", None)
     config.pop("search_polish_1019", None)
@@ -368,7 +369,14 @@ def pre_tool_pages(cfg):
 
 def pre_timer_pill_ring(cfg):
     """Before task 329's compact timer outline; never re-pin older hashes."""
+    pre_phone_timer_raise(cfg)
     cfg.timer_pill_ring = False
+    return cfg
+
+
+def pre_phone_timer_raise(cfg):
+    """Before task 330's phone timer alignment; preserve every recorded hash."""
+    cfg.phone_timer_raise = False
     return cfg
 
 
