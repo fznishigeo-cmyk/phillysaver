@@ -12,6 +12,7 @@ import httpx
 import pytest
 
 from dealradar import dedupe, non_amazon_freshness as fresh, rank, savings, util, verify
+from tests.history_pins import pre_drop_fresh
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.http_client import PoliteFetcher
@@ -299,6 +300,7 @@ def test_dead_marker_ends_source_only_deal(db, cfg, marker):
 
 @pytest.mark.parametrize("amazon_label", [True, False])
 def test_publish_label_sort_hide_and_promotion_exclusions(db, cfg, monkeypatch, amazon_label):
+    pre_drop_fresh(cfg)  # Exercise the original full-wall clock/label contract.
     cfg.unconfirmed_label_enabled = amazon_label
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     rows = [seed(db, cfg, key=k, hours=h)[0] for k, h in (("aged", 30), ("old", 60), ("fresh", 1))]

@@ -220,9 +220,12 @@ def test_first_observed_facts_are_lastmod_and_new_page_indexnow_once(db, cfg, tm
 
 def test_1600_deal_publish_file_count(db, tmp_path):
     cfg = load_config(ROOT / "config.yaml")
-    deals = [make_deal(dedupe_key=f"large{i}", item=f"Deal {i}", codes=[])
+    deals = [make_deal(dedupe_key=f"large{i}", item=f"Deal {i}", codes=[],
+                       image_url="https://images.example.invalid/large.jpg")
              for i in range(1600)]
-    render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
+    result = render_site(db, cfg, NOW, out_dir=tmp_path / "site", deals=deals)
+    assert len(result["public_deals"]) == 1600
+    assert len(list((tmp_path / "site" / "deal").glob("*/index.html"))) == 1600
     # Existing files plus 26 overflow pages for each of category/store/three budgets,
     # plus the click-signal script once the shipped switch is on (2026-10-14).
     clicks = 1 if cfg.raw.get("first_party_clicks", {}).get("enabled") else 0
@@ -232,7 +235,9 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     search = 1 if search_results.enabled(cfg) else 0  # search-config.json (task 280)
     search += 1 if search_more.enabled(cfg) else 0  # search-more.js (task 293)
     search += 1 if search_analyze_lazy.enabled(cfg) else 0  # search-analyze.js (task 295)
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search
+    # U3 adds only three shared assets, never another file per deal.
+    shared = int(cfg.page_polish) + int(cfg.drop_fresh and cfg.drop_shuffle) + int(cfg.header_polish)
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search + shared
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():

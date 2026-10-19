@@ -192,6 +192,8 @@ search_circle: true
 search_box_glow: true  # task 301: rainbow search border, shining Analyze and early Amazon button
 same_product_spacing: true  # task 302: eight cards between families; at most two in the first 48
 card_tidy: true  # operator 2026-10-18: folded checkout steps, clear cart chip, AI Analyze, price-drop Amazon button
+page_polish: true  # task 304: event search and the brand-style Support page
+header_polish: true  # task 305: aligned desktop search/actions and a single category row
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
@@ -200,6 +202,7 @@ site:
   open_box_scarcity: true   # task 273: never infer a stock count
   open_box_counts: false   # operator: publish only "often only 1" for now
   drop_rotation_windows: 3  # task 269: legacy 24-card rotation when drop_shuffle is off; 0 keeps server order
+  drop_fresh: true  # task 303c: balanced ninety-card drops; missing/false preserves previous bytes
   drop_shuffle: true  # task 300: change Trending at every clock mark, even without a new publish; missing/false restores legacy drops
   dark_polish: true   # task 254: dark-mode-only CSS + color-scheme meta; light bytes unchanged
   strip_comments: true  # task 278: final home-only pass; missing/false preserves original bytes
@@ -254,7 +257,7 @@ publish:
                                # alerted). Equal to min_pct = the tier is off.
   photoless_last: true        # photos first within each wall group; search stays unchanged
   photos:
-    max_photoless_h: 3        # hide live cards without an HTTPS photo after this many hours
+    max_photoless_h: 1        # hide live cards without an HTTPS photo after this many hours (Nishi 2026-10-18: rows of photo-less new deals; was 3)
   reuse_link_facts:
     enabled: false           # reuse pure routing facts only within one publish
   show_dead_hours: 24          # confirmed-gone cards linger inline for one day
@@ -271,7 +274,8 @@ publish:
     max_bytes: 1024            # decoded manifest stream ceiling, before JSON parsing
     max_deals_bytes: 33554432   # reject implausible manifest sizes
     max_future_s: 300          # bounded clock skew for publication timestamps
-  front_page:                 # All top picks; fresh drops retains the top-24 mix.
+  front_page:                 # Top picks and the clock-driven fresh page.
+    fresh_page_size: 90
     used_tab_only: true         # used/open-box only in their tab and after new search matches
     broad_categories: [home, kitchen, beauty, fashion, health, grocery, kids_baby, toys_games, electronics, computers, gaming, pets, outdoors, sports]
     niche_categories: [auto, office, books_media, other]

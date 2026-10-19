@@ -16,6 +16,7 @@ from dealradar.config import AppConfig, load_config, validated_search
 from dealradar.publish import site
 from dealradar.publish.tracking import head_snippet
 from scripts.publication_budget import analyze
+from tests.phone_budget_fixture import visible_offer_count
 from tests.phone_budget_fixture import publish_fixture
 from tests.test_publish_site import make_deal
 from tests.test_search_amazon import run_node
@@ -179,7 +180,7 @@ def test_shipped_preview_phone_budget(tmp_path):
     cfg = load_config()
     cfg.phone_budget["enabled"] = True
     def inspect(db, out):
-        result = analyze(out, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+        result = analyze(out, cfg, expected_offers=visible_offer_count(cfg))
         assert result["ok"], result["metrics"]
     publish_fixture(tmp_path, cfg, inspect=inspect)
 

@@ -13,6 +13,7 @@ from dealradar.fetch.keepa import KeepaDealsAdapter, _FeedConfirmations
 from dealradar.parse.schema import LLMDeal, to_extracted
 from dealradar.parse.extractor import verify_evidence
 from dealradar.publish import seo, site
+from tests.history_pins import pre_drop_fresh
 from tests.test_free_confirmations import row
 from tests.test_price_accuracy_engine import ASIN, NOW, api, bucket, cfg, db, product, seed
 
@@ -184,6 +185,8 @@ def test_hidden_comparisons_keep_their_backend_pick_score(db, cfg, tmp_path, mon
 def test_suppressed_discounts_have_no_false_ticker_or_department_claim(
         db, cfg, tmp_path, monkeypatch, mode, strip):
     from tests.test_front_page import browser
+
+    pre_drop_fresh(cfg)  # This harness executes the pre-drop department/ticker functions.
 
     cfg.amazon_reference, cfg.amazon_history = mode, "hide"
     cfg.strip_comments, cfg.support_enabled, cfg.engagement = strip, False, {}

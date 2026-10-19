@@ -184,7 +184,7 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
 
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
               now: datetime | None = None, *, photo: bool = False,
-              static_photos: bool = False, credit_links: bool = True) -> str:
+              static_photos: bool = False, credit_links: bool = True, fresh_config=None) -> str:
     """One free or dead wall card; never a locked stub. static_photos draws
     HTTPS photos, with photo reserving eager loading. With the switch off,
     photo retains the home page's original first-four image markup."""
@@ -247,7 +247,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
              if url and not dead else e(d.get("item")))
     tier = d.get("badge") or "unverified"
     meta = f'<span class="chip storechip">{e(store)}</span>'
-    if d.get("select_sizes"):
+    if d.get("select_sizes") and fresh_config is None:
         meta += '<span class="chip">select sizes</span>'
     # Right after the store, so the one-line phone row never clips it.
     checked = parse_iso(d.get("checked_at") or "")
@@ -259,14 +259,27 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         hidden = f'<span class="sr-only"> ({e(as_of)}) </span>' if as_of else ""
         meta += (f'<span class="chip price-checked" data-checked-at="{e(iso(checked))}"{title_attr}>'
                  f'<span class="pcl">price checked </span>{hidden}{age} ago</span>')
+    if d.get("select_sizes") and fresh_config is not None:
+        meta += '<span class="chip">select sizes</span>'
     countdown = spotlight_time(spotlight.get("ends_at", ""), now or datetime.now(timezone.utc))
     if countdown:
         meta += (f'<span class="chip spotlight-time" data-ends-at="{e(spotlight["ends_at"])}">'
                  f'{countdown}</span>')
     if tier in _TIER_LABEL:
         meta += f'<span class="badge tier-{e(tier)}">{_TIER_LABEL[tier]}</span>'
+    if fresh_config is not None:
+        from .drop_fresh import hot_html
+        meta += hot_html(d, fresh_config)
     for c in [c for c in conds if c not in ("used", "open_box")][:2]:
-        meta += f'<span class="chip">{e(c).replace("_", " ")}</span>'
+        label = ("price drops in cart" if fresh_config is not None and fresh_config.card_tidy and c == "in_cart"
+                 else e(c).replace("_", " "))
+        meta += f'<span class="chip">{label}</span>'
+    if fresh_config is not None and not spotlight and not (checked and checked <= now):
+        hours = d.get("age_hours")
+        if hours is not None:
+            age = ("just in" if hours < 1 else f"{math.floor(hours + .5)}h ago" if hours < 24
+                   else f"{math.floor(hours / 24 + .5)}d ago")
+            meta += f'<span class="chip">{age}</span>'
     credits = ", ".join(
         f'via <a href="{e(_http(c.get("url")))}" rel="noopener">{e(c.get("name"))}</a>'
         if credit_links and _http(c.get("url")) else f"via {e(c.get('name'))}"
@@ -298,7 +311,7 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
 
 def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = None,
                now: datetime | None = None, *, static_photos: bool = False,
-               eager_photos: int = 4, credit_links: bool = True) -> str:
+               eager_photos: int = 4, credit_links: bool = True, fresh_config=None) -> str:
     """A static grid: reserve eager loading for the page's first four photos."""
     if not credit_links:
         rows = place_gone(rows, every=10)
@@ -306,7 +319,7 @@ def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = N
     eager = {id(d) for d in eligible[:eager_photos]}
     return "".join(card_html(d, deal_paths, now, static_photos=static_photos,
                              photo=static_photos and id(d) in eager,
-                             credit_links=credit_links) for d in rows)
+                             credit_links=credit_links, fresh_config=fresh_config) for d in rows)
 
 
 def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
@@ -384,9 +397,11 @@ def home_order(rows: list[dict[str, Any]], front_page: dict, *,
 def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
                 deal_paths: dict[str, str] | None = None, now: datetime | None = None,
                 front_page: dict | None = None, spotlight: list[dict[str, Any]] | None = None,
-                *, static_photos: bool = False, credit_links: bool = True, same_product_spacing: bool = False) -> str:
+                *, static_photos: bool = False, credit_links: bool = True, same_product_spacing: bool = False, fresh_config=None,
+                fresh_mark: int | None = None) -> str:
     """Public cards inline, with the JS spacing rules and a static card cap."""
     spotlight = spotlight or []
+    fresh_rows = teaser + spotlight if fresh_config is not None else []
     if (front_page or {}).get("used_tab_only"):
         teaser = [d for d in teaser if not in_group(d, "USED")]
         spotlight = [d for d in spotlight if not in_group(d, "USED")]
@@ -401,8 +416,16 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         policy = rules(front_page or {}, 8 if credit_links else 10)
         spotlight = space_rows(spotlight, rules=policy)
         free = space_rows(free, spotlight, policy)
-    more = max(0, len(free) - _STATIC_WALL_MAX)
-    free = free[:_STATIC_WALL_MAX]
+    if fresh_config is not None:
+        from .drop_fresh import rotation, page
+        from .same_product_spacing import rules
+        pool = rotation(fresh_rows, front_page or {})
+        mark = fresh_mark if fresh_mark is not None else int(now.timestamp()) // (fresh_config.drop_minutes * 60)
+        free = page(pool, mark, front_page or {}, rules(front_page or {}))
+        spotlight = []
+    more = max(0, len(free) - _STATIC_WALL_MAX) if fresh_config is None else 0
+    if fresh_config is None:
+        free = free[:_STATIC_WALL_MAX]
     stubs = [d for d in teaser if d.get("locked") and not d.get("click_price_unknown")
              and d.get("key") not in spotlight_keys]
     html = ('<noscript><p class="meta">JavaScript is off: these are the '
@@ -420,17 +443,25 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         if static_photos:
             eager = max(0, 4 - sum(str(d.get("image_url") or "").startswith("https://") for d in spotlight))
             cards = cards_html(free, deal_paths, now, static_photos=True, eager_photos=eager,
-                               credit_links=credit_links)
+                               credit_links=credit_links, fresh_config=fresh_config)
         else:
             photos = {id(d) for d in [d for d in free if d.get("image_url")][:4]}
             cards = "".join(card_html(d, deal_paths, now, photo=id(d) in photos,
-                                      credit_links=credit_links) for d in free)
+                                      credit_links=credit_links, fresh_config=fresh_config) for d in free)
         html += '<div class="grid">' + cards + "</div>"
     if more:
         n = ("1,000+" if more >= 1000 else f"{more // 100 * 100:,}+"  # never the exact count
              if more >= 100 else str(more))
         html += (f'<p class="meta">{n} more deal{"" if more == 1 else "s"} on the live '
                  "wall and in the categories above.</p>")
+    if fresh_config is not None:
+        total = sum(d.get("status") != "dead" for d in teaser)
+        size = (front_page or {}).get("fresh_page_size", 60)
+        drops = (len(pool) + size - 1) // size
+        html += (f'<div class="more fresh-more"><button type="button" id="fresh-all" class="pwbtn">'
+                 f'See all {total:,}+ deals</button><p class="meta">Full rotation: {drops} drops '
+                 f'(about {drops * fresh_config.drop_minutes} minutes)</p></div>')
+        stubs = []
     if stubs:
         by_store: dict[str, list[dict[str, Any]]] = {}
         for s in stubs:
@@ -1086,9 +1117,12 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
         teaser, spotlight, deal_rows = marked(teaser), marked(spotlight), marked(deal_rows)
         products = {key: dict(p, live=dict(p["live"], _click_key=p["live"]["key"])) if p["live"] else p
                     for key, p in products.items()}
+    from . import drop_fresh
     wall = static_wall(teaser, open_access, paths, now, cfg.front_page, spotlight,
                        static_photos=cfg.static_photos, credit_links=cfg.credit_links,
-                       same_product_spacing=cfg.same_product_spacing)
+                       same_product_spacing=cfg.same_product_spacing,
+                       fresh_config=cfg if drop_fresh.enabled(cfg) else None,
+                       fresh_mark=int((parse_iso(meta.get("published_at")) or now).timestamp()) // (cfg.drop_minutes * 60))
     index = (out / "index.html").read_text(encoding="utf-8")
     groups = json.dumps([list(g) for g in CATGROUPS]).replace("<", "\\u003c")
     (out / "index.html").write_text(

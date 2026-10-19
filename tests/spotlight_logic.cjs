@@ -49,6 +49,12 @@ for (const [a,b] of [
   ['  function tick()', '  setInterval(tick'],
   ['  function refreshStores()', '  // ---- browse filters and return state ----']
 ]) vm.runInContext(fragment(a,b), ctx);
+// Reuse the emitted renderer for the site-check identity regression fixture.
+if (process.argv[4] === '--render-home') {
+  ctx.render();
+  fs.writeFileSync(1, html);
+  process.exit(0);
+}
 const spot = doc.spotlight[0], unknown = spot.pct_at_checkout == null;
 const keys = () => [...html.matchAll(/data-key="([^"]+)"/g)].map(m=>m[1]);
 ctx.populateStores();

@@ -428,9 +428,14 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     if pruned_post:
         db = DB(env["db"])
         cfg = load_config(env["cfg"])
-        expired = _insert(db, dedupe_key="old-posted", item="Old kitchen deal", category="kitchen")
+        # A previously posted page must qualify for publication before pruning,
+        # including the shipped one-hour photo cutoff for this two-hour-old deal.
+        expired = _insert(db, dedupe_key="old-posted", item="Old kitchen deal", category="kitchen",
+                          image_url="https://images.example/old-kitchen.jpg")
         _post(db, expired)
         _render(db, cfg, env["site"], now=NOW, deals=[expired])
+        assert (env["site"] / _path(expired).strip("/") / "index.html").is_file()
+        assert _path(expired) in json.loads(db.meta_get(META))
         _prune(db, [expired], now=NOW)
         db.close()
     first = _run(env)

@@ -190,6 +190,7 @@ def test_real_emitted_rotation_and_arrivals_keep_clothing_slots(tmp_path, concen
 
     cfg = copy.deepcopy(SHIPPED)
     cfg.drop_shuffle = shuffle
+    cfg.drop_fresh = False  # These assertions cover the legacy full-wall rotation.
     cfg.tracking = {}
     cfg.strip_comments = True
     cfg.drop_rotation_windows = windows
@@ -239,6 +240,7 @@ def test_final_static_and_emitted_allure_repair_preserve_mix_and_checkout(tmp_pa
 
     cfg = copy.deepcopy(SHIPPED)
     cfg.drop_shuffle = shuffle
+    cfg.drop_fresh = False  # Fresh-page mix and static parity have their own tests.
     cfg.tracking = {}
     cfg.drop_rotation_windows = windows
     cfg.front_page['checkout_price_deals']['enabled'] = checkout
@@ -272,6 +274,7 @@ def test_public_rotation_class_is_only_on_clothing_picks_and_absent_when_off(tmp
     from tests.test_publish_site import NOW, make_deal
 
     cfg = copy.deepcopy(SHIPPED)
+    cfg.drop_fresh = False  # Fresh rotation also labels eligible rows below the picks.
     cfg.tracking = {}
     cfg.keepa_click_price_rule = 'off'
     cfg.front_page['popular_affordable']['enabled'] = False

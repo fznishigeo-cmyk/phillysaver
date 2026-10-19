@@ -57,7 +57,7 @@ def test_missing_is_off_and_shipped_cutoff_and_floor(tmp_path):
         path.write_text(yaml.safe_dump(raw))
         assert load_config(path).max_photoless_h is None
     shipped = load_config()
-    assert shipped.max_photoless_h == 3
+    assert shipped.max_photoless_h == 1
     assert shipped.raw["site_check"]["min_photo_pct"] == 98
 
 
@@ -203,5 +203,5 @@ def test_pipeline_summary_counts_only_unpublished_deals(env):
 
 @pytest.mark.parametrize("audit_mode", ["shadow", "enforce"])
 def test_enabled_pipeline_rerun_is_idempotent(env, capsys, audit_mode):
-    assert load_config(env["cfg"]).max_photoless_h == 3
+    assert load_config(env["cfg"]).max_photoless_h == 1
     check_rerun(env, capsys, audit_mode)

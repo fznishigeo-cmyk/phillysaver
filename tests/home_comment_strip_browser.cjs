@@ -45,7 +45,9 @@ const ORIGIN = 'https://wowpriced.test';
           await page.addInitScript(() => {delete window.IntersectionObserver;});
           await page.clock.setFixedTime(new Date('2026-10-16T12:00:00Z'));
           await page.goto(ORIGIN + '/', {waitUntil: 'networkidle'});
-          await page.waitForFunction(() => document.querySelectorAll('#content .card').length === 60);
+          const fresh = fs.existsSync(path.join(root, 'drop-fresh.js'));
+          const count = fresh ? JSON.parse(fs.readFileSync(path.join(root, 'deals.json'))).meta.front_page.fresh_page_size : 60;
+          await page.waitForFunction(count => document.querySelectorAll('#content .card').length === count, count);
           const snapshot = async () => page.evaluate(() => ({
             cards: [...document.querySelectorAll('#content .card')].map(card => ({
               title: card.querySelector('.title').textContent,
@@ -55,13 +57,19 @@ const ORIGIN = 'https://wowpriced.test';
           }));
           const states = [await snapshot()];
           assert(states[0].cards.every(card => /^https:\/\//.test(card.href)), 'Get deal hrefs');
+          if (fresh) {
+            assert.equal(await page.locator('#moremore').count(), 0, 'Trending ends after one fresh page');
+            await page.locator('#fresh-all').click();
+            await page.waitForFunction(() => document.querySelectorAll('#content .card').length === 60);
+            states.push(await snapshot());
+          }
           await page.locator('#moremore').click();
           await page.waitForFunction(() => document.querySelectorAll('#content .card').length === 120);
           states.push(await snapshot());
           await page.locator('#q').fill('Kitchen kettle');
           await page.waitForFunction(() => document.getElementById('searchcount').textContent.includes('90 deals'));
           states.push(await snapshot());
-          assert(states[2].cards.every(card => card.title.includes('Kitchen kettle')));
+          assert(states.at(-1).cards.every(card => card.title.includes('Kitchen kettle')));
           await page.locator('#q').fill('');
           await page.waitForFunction(() => document.getElementById('searchcount').textContent === '');
           await page.locator('#cattabs .cattab').filter({hasText: 'Beauty'}).click();
@@ -69,7 +77,7 @@ const ORIGIN = 'https://wowpriced.test';
             .every(title => title.textContent.includes('Beauty serum')) && document.querySelector('#content .card'));
           states.push(await snapshot());
           await page.locator('#cattabs .cattab[data-i="0"]').click();
-          await page.waitForFunction(() => document.querySelectorAll('#content .card').length === 60);
+          await page.waitForFunction(count => document.querySelectorAll('#content .card').length === count, count);
           states.push(await snapshot());
           assert.deepEqual(errors, [], 'console/page errors');
           assert.deepEqual(escaped, [], 'network outside fixtures');

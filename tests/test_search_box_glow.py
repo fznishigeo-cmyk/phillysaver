@@ -7,7 +7,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import search_box_glow
-from tests.history_pins import pre_same_product_spacing
+from tests.history_pins import pre_header_polish, pre_same_product_spacing
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_more import config as more_config, offline
@@ -24,6 +24,7 @@ def config(mode):
     cfg.drop_shuffle = False
     cfg.card_tidy = False
     pre_same_product_spacing(cfg)
+    pre_header_polish(cfg)
     if mode.startswith('current'):
         cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     if mode.endswith('inline'):
@@ -98,5 +99,5 @@ def test_native_fixture_without_launching_chromium(tmp_path):
         "const {buildFixture} = require('./tests/search_box_glow_browser.cjs'); "
         "buildFixture(process.argv[1], true, true);", str(tmp_path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'wpspin 6s linear infinite' in (tmp_path / 'site/index.html').read_text()
+    assert 'wpspin 6s linear infinite' in (tmp_path / 'site/page-polish.css').read_text()
     assert 'id="search-result-top"' in (tmp_path / 'site/search-analyze.js').read_text()

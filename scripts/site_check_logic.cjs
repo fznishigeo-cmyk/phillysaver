@@ -118,9 +118,57 @@ function eventLinks(config) {
   return enabled ? links : [];
 }
 
+// Runs inside Chromium: take identity and ordering together, before the walk
+// changes filters. textContent/getAttribute already decode HTML entities.
+function frontPageSnapshot() {
+  const cards = Array.from(document.querySelectorAll("#content .card[data-key]"));
+  return {
+    cards: cards.length, top: 0,
+    clock: (document.getElementById("countdown") || {}).textContent || "",
+    tagline: (document.getElementById("tagline") || {}).textContent || "",
+    frontCards: cards.slice(0, 48).map((c) => {
+      const labels = c.matches("[data-category]") ? c : c.querySelector("[data-category]");
+      return {key: c.getAttribute("data-key"),
+        item: (c.querySelector(".title")?.textContent || "").trim(),
+        store: (c.querySelector(".storechip")?.textContent || "").trim(),
+        category: labels?.getAttribute("data-category") || ""};
+    }),
+  };
+}
+
+function identifyFrontCards(cards, publishes) {
+  const byKey = new Map();
+  for (const doc of publishes) {
+    for (const d of [...(doc?.deals || []), ...(doc?.spotlight || [])]) {
+      const key = String(d.key || d.dedupe_key || "");
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(d);
+    }
+  }
+  return cards.map((c) => {
+    // Never replace the visible title with a separately fetched publication.
+    // If multiple fetched versions disagree, fail closed unless DOM labels
+    // supply the category. Include gone cards: the wall deliberately shows them.
+    const matches = (byKey.get(c.key) || []).filter((d) => !d.locked &&
+      String(d.item || "").trim() === c.item && String(d.store || "").trim() === c.store);
+    const categories = new Set(matches.map((d) => d.category || "other"));
+    const category = c.category || (categories.size === 1 ? [...categories][0] : "");
+    return {...c, category, unidentified: !c.item || !c.store || !category};
+  });
+}
+
+function frontPageFlagLine(f) {
+  return f.unidentified ? `unidentified card #${f.pos} key=${f.key}`
+    : `#${f.pos} ${f.why}: ${f.store} | ${f.item}`;
+}
+
 function frontPageFlags(cards, rules) {
   const flags = [];
   cards.forEach((d, i) => {
+    if (d.unidentified || !d.item || !d.store) {
+      flags.push({pos: i + 1, unidentified: true, key: String(d.key || "")});
+      return;
+    }
     const why = [];
     if (rules.niche.includes(d.category || "other")) why.push(`niche category ${d.category || "other"}`);
     if (VEHICLE_PART.test(String(d.item || ""))) why.push("car part");
@@ -131,4 +179,5 @@ function frontPageFlags(cards, rules) {
 }
 
 module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
-                  photoRules, checkPhotos, frontRules, frontPageFlags, eventLinks};
+                  photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
+                  frontPageFlagLine, frontPageFlags, eventLinks};

@@ -1,0 +1,9 @@
+AssertionError [ERR_ASSERTION]: 360-light-on: headerH 208
+    at main (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wtU3/tests/header_polish_browser.cjs:166:15) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}

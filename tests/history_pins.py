@@ -196,6 +196,7 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.get("site", {}).pop("drop_fresh", None)
     config.get("site", {}).pop("drop_shuffle", None)  # recorded before task 300
     config.get("pwa", {}).pop("install_button", None)
     config.get("site", {}).pop("credit_links", None)
@@ -206,7 +207,9 @@ def pre_task_290_install_raw(config):
         config["publish"]["front_page"]["demote_words"] = [w for w in words if w not in PRE_294_DEMOTE]
     config.pop("search_box_glow", None)
     config.pop("card_tidy", None)
+    config.pop("page_polish", None)
     config.pop("same_product_spacing", None)
+    config.pop("header_polish", None)
     config.pop("search_more", None)
     config["search_analyze"] = dict(config.get("search_analyze") or {}, lazy=False)
     config.get("search", {}).pop("tokens_per_day", None)  # default 3000, as recorded
@@ -236,7 +239,10 @@ def pre_task_295(cfg):
     pre_task_300(cfg)
     pre_task_301(cfg)
     pre_card_tidy(cfg)
+    pre_page_polish(cfg)
     pre_same_product_spacing(cfg)
+    pre_drop_fresh(cfg)
+    pre_header_polish(cfg)
     pre_search_5000(cfg)
     cfg.search_analyze = dict(cfg.search_analyze, lazy=False)
     return cfg
@@ -281,7 +287,26 @@ def pre_card_tidy(cfg):
     return cfg
 
 
+def pre_page_polish(cfg):
+    """Before event search and Support styling (task 304); never re-pin hashes."""
+    cfg.page_polish = False
+    return cfg
+
+
 def pre_same_product_spacing(cfg):
     """Before family spacing (task 302); preserve every recorded publication hash."""
+    pre_page_polish(cfg)
     cfg.same_product_spacing = False
+    return cfg
+
+
+def pre_drop_fresh(cfg):
+    """Before fresh selections and the clock moment (task 303); never re-pin."""
+    cfg.drop_fresh = False
+    return cfg
+
+
+def pre_header_polish(cfg):
+    """Before the aligned header (task 305); preserve every recorded hash."""
+    cfg.header_polish = False
     return cfg

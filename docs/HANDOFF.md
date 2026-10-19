@@ -236,6 +236,398 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Flush Analyze pill (Codex task 314, 2026-10-18; uncommitted):**
+  Supersedes the earlier white-space request: card_tidy removes the transparent
+  4/5px border and padding-box clip, uses a 2px field inset and matching 10px
+  right corners. Phones retain Analyze and a >=44px target; input padding now
+  clears the existing clear button too. Gradient, sparkle, charge animation and
+  reduced-motion rules remain. CSS shrinks **1,534 -> 1,528 bytes**.
+  Shared native assertions cover flush painted edges, corners, tap size, label,
+  text/clear separation and overflow in search/header/event fixtures; search
+  adds 360px and hover/focus/active stability and motion checks.
+  Requested five-file run: **109 passed, 1 Chromium skip in 193.69s**, including
+  OFF/missing/back-OFF comparisons and the unchanged 1,000-byte phone headroom
+  guard. Used `-n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed`
+  with `/tmp/b314`, removed afterward. JS syntax and diff checks pass.
+  Operator still runs search_box_glow_browser, header_polish_browser and
+  page_polish_browser; no native Chromium result claimed. No recorded hashes
+  changed, full suite, commit or push; prior staged work preserved.
+
+- **Header visit-count removal (Codex task 315, 2026-10-18; uncommitted):**
+  With card_tidy ON, its publish swaps empty the engagement header suffix and
+  keep legacy `#sincevisit` hidden/empty. The live dot/count and per-card NEW
+  badges remain; OFF templates, recorded hashes and Analyze CSS are untouched.
+  New emitted-JS tests cover both flag values with engagement enabled/disabled,
+  repeated renders, a fake 1,893-new count, and fresh/old/dead/spotlight badges.
+  Requested four-file run: **70 passed, 1 Chromium skip, 2 harness failures**
+  (missing `freshUI` stub). After correcting that test-only stub, the entire
+  new engagement file passed **4/4 in 6.06s**: **72 distinct tests pass**, with
+  the native comment-strip check still skipped. OFF-byte rollback and the
+  unchanged phone gzip budget/1,000-byte reserve passed in the requested run.
+  Both runs used `-n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed`
+  and `/tmp/b315`; temporary output removed. JS syntax/diff checks pass.
+  Native browser verification remains for the reviewer; no full suite,
+  commit or push. Existing staged work is preserved.
+- **Shared-page header action parity (Codex task 313b, 2026-10-18; uncommitted):**
+  Native header checks compare each deal/event page's header Join and install
+  counts against that page's header_polish OFF render at 390/1440 in both
+  themes; the no-sideways-scroll check remains. Product code is untouched.
+  Requested `tests/test_header_polish.py` run: **16 passed in 67.26s**, with
+  `-p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b313b`.
+  JS syntax check passes; temporary output removed. Native Chromium rerun
+  remains for the reviewer. No commit or push.
+- **Header rollback isolation after task 310 (Codex task 313, 2026-10-18; uncommitted):**
+  Header tests compare each shipped/inline/membership config's own OFF render:
+  task 310 changed the enabled card_tidy output in the recorded base, which
+  disabling card_tidy cannot restore. OFF, missing and back-OFF must match;
+  ON must differ, with its stylesheet present only when enabled. Recorded
+  hashes and product code are untouched. Requested header/card-tidy/comment-strip
+  run: **60 passed, 1 Chromium skip in 139.65s**, using `-n 4`,
+  `-p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b313`.
+  Temporary output removed. Native comment-strip verification remains for
+  the reviewer; no commit or push.
+- **Search-active header alignment (Codex task 308b, 2026-10-18; uncommitted):**
+  Desktop header cells now align at the top; each row-1 control is centred on
+  the search field's 56px band using its own height. In-flow Amazon/search
+  helpers can grow without shifting those controls. Spelling stays in flow,
+  preserving its separation from the Amazon CTA and its position on blur.
+  Header browser coverage now checks corrected search, blur stability and
+  clickable undo at every desktop width in both themes. After restart, the
+  first run found four CSS-budget failures; folding alignment into the
+  existing control rules and using equivalent grid shorthand fixed them.
+  Final requested 20-file pytest run: **580 passed, 5 Chromium skips in
+  368.23s**, with `-n 4 -p no:cacheprovider`,
+  `-o tmp_path_retention_policy=failed`, basetemp `/tmp/b308b-final`.
+  Home gzip **76,034 / 77,360 bytes** leaves **1,326 bytes** of headroom;
+  CSS **14,913 / 14,913**, JS **50,479 / 53,767**, JSON **92,294 / 103,976**.
+  JS syntax and diff checks pass; own `/tmp/b308b-*` artifacts removed.
+  Chromium remains blocked; operator will run
+  header_polish, search_more, search_box_glow and drop_shuffle browser tests.
+  No full suite, commit or push; prior staged integration work is preserved.
+- **Integrated Chromium repairs (Codex task 308, 2026-10-18; uncommitted):**
+  At 900–1199px the header now gives search a flexible track with a 320px
+  minimum, retaining the compact install/timer controls and existing phone CSS.
+  Spelling correction stays in normal flow: the desktop Amazon CTA previously
+  covered its undo link, causing the long click retry before the join popup
+  appeared. Page-polish home now postpones automatic signup while a query or
+  search focus is active; manual Join and existing delay/frequency rules remain.
+  Fresh Trending reserves two title lines in critical CSS for both static and
+  hydrated cards (the reported 18.22px jump was one title line). No geometry
+  rule arrives in the lazy module. Glow's fixture now supplies `electronics`:
+  its uncategorized mice were all niche `other`, excluded from fresh Trending;
+  all eight must now pass real rotation eligibility before the browser starts.
+  Added emitted-controller fake-clock coverage, a native >35s search check,
+  and delayed-drop-import first-paint geometry/CLS checks at all three widths
+  and both motion settings; existing assertions and recorded hashes remain.
+  Requested 20-file run: **580 passed, 5 Chromium skips in 469.86s**, using
+  `.venv/bin/pytest -q -n 4 -p no:cacheprovider --basetemp=/tmp/b308`.
+  All four inline/lazy × glow OFF/ON fixtures separately build eight eligible
+  static cards. Final shipped phone fixture: **1,300 offers; home 76,038 /
+  77,360 gzip bytes**, leaving **1,322 bytes**, above the required 1,000-byte
+  reserve. JS **50,478 / 53,767**, CSS **14,902 / 14,913**, JSON **92,293 /
+  103,976** also pass unchanged ceilings. Final header/phone-budget recheck:
+  **17 passed in 119.22s** (`-n 4`, `/tmp/b308-final`). Changed browser scripts
+  pass `node --check`; `git diff --check` is clean.
+  Chromium launch is blocked by sandbox
+  `setsockopt: Operation not permitted` (SIGTRAP), so no native pass or measured
+  CLS is claimed. Reviewer must run `header_polish_browser.cjs`,
+  `drop_shuffle_browser.cjs`, `search_box_glow_browser.cjs` and
+  `search_more_browser.cjs` with `/opt/pw-browsers/chromium` and
+  `NODE_PATH=/opt/node-tools/node_modules`; drop covers 360/390/1280 and both
+  motions automatically. No full suite, commit or push; existing staged work
+  is preserved.
+- **302/303c/304/305 integration (Codex task 307, 2026-10-18; uncommitted):**
+  Header rollback tests disable the independent drop/page flags through their
+  `pre_*` helpers and retain all three recorded hashes. Header layout checks
+  cover both inline and shared search CSS, seasonal links below the header,
+  unique drop controls, unchanged scripts/other pages, and idempotent re-runs.
+  The fresh-drop failure reproduced as a cold-selection timing miss, not a
+  relocated-nav failure. Selection now scans for the stable priority winner
+  instead of sorting at every slot, and avoids per-row balancing callbacks;
+  all rank/mix rules and the 50 ms limit stay unchanged. Exact Python/JS parity
+  now also covers twenty varied-inventory marks.
+  Native drop fixtures now exercise seasonal navigation at 360/390/1280 widths,
+  serve the shared/header CSS with the correct MIME type, and check visible
+  toast bounds. Event-search/Analyze browser checks wait for the fresh module
+  and verify the query survives with no drop controls/confetti. Existing native
+  header checks cover desktop/phone geometry and light/dark themes.
+  Final requested **20 files: 579 passed, 5 Chromium skips in 418.25s**, using
+  `.venv/bin/pytest -q -n 4 -p no:cacheprovider --basetemp=/tmp/b307`.
+  Both emitted cold/cached selection cases pass the unchanged 50 ms assertion;
+  the first wider run isolated the remaining failure to a 60.91 ms cold pass
+  before optimization. No recorded hashes, budgets or assertions were loosened.
+  Shipped phone fixture: **1,300 offers; home 75,976 / 77,360 gzip bytes**,
+  **1,384 bytes headroom**, retaining the required 1,000-byte reserve. JS
+  **50,439 / 53,767**, CSS **14,889 / 14,913**, JSON **92,294 / 103,976**;
+  all existing ceilings pass. Native fixture builds and JS syntax checks pass;
+  real Chromium remains for the reviewer.
+  Reviewer Chromium commands: `node tests/header_polish_browser.cjs /path/to/chromium`,
+  `node tests/drop_shuffle_browser.cjs /path/to/chromium`, and
+  `node tests/page_polish_browser.cjs /path/to/chromium`. With Chromium available,
+  rerun `tests/test_brand_pages.py::test_real_chromium_screenshots`,
+  `tests/test_drop_rotation.py::test_phone_drop_browser`,
+  `tests/test_home_comment_strip.py::test_chromium_home_on_matches_off`, and
+  `tests/test_search_analyze.py::test_real_chromium_light_dark_phone_desktop`
+  (inline/lazy); these account for the five native skips. Retain task 306's
+  search/Back checklist below. No full suite, live requests, commit or push.
+  Existing staged integration work and screenshots are preserved.
+- **302/303c/304 integration (Codex task 306, 2026-10-18; uncommitted):**
+  Preserves the reviewed family-spacing implementation, balanced 90-card drops,
+  lazy confetti, one-hour photo cutoff, event search and Support terms. Legacy
+  full-wall/search harnesses explicitly disable fresh drops; the browse mock
+  now maintains `location.href`. New all-on emitted logic verifies event queries
+  survive a later drop-module mount without restoring Trending or replaying the
+  query. Native comment-strip parity now checks 90 Trending cards, See all,
+  ordinary pagination and return to Trending. Budget fixtures derive the visible
+  offer count from the shipped photo cutoff; ceilings and 1,000-byte headroom
+  remain unchanged. Task-303/304 rollback tests compare this config's own OFF
+  render because their recorded base predates 302's reviewed identifier/regex
+  changes; every recorded hash file is untouched, and older pins still run.
+  The lazy selector resolves callbacks once per rotation and computes winner
+  mix signatures once per row; ordering and the 50 ms assertion are unchanged.
+  The requested **18 files: 546 passed, 5 Chromium skips in 506.51s** (`-n 2`).
+  Both emitted 4,000-row timing cases pass the unchanged 50 ms limit. The earlier
+  four-worker run had 545 passes and one 53.5 ms cold-selection miss under load;
+  reducing worker contention made the complete run green, without changing a
+  timing assertion. Focused rollback/query/idempotency checks also passed (11),
+  as did the isolated fresh-loader/mix/confetti checks (2).
+  Shipped phone fixture: **1,300 offers; home 76,005 / 77,360 gzip bytes**
+  (**1,355 bytes spare**), JS **50,438**, CSS **14,412**, JSON **92,294**;
+  every existing ceiling and the 1,000-byte reserve passes. Six shared browse
+  consumers passed **143 tests, with 3 Chromium skips**. Offline e2e found two
+  pruned-page fixture failures: the two-hour-old photo-less fixture no longer
+  published before pruning. It now has an offline photo and asserts both the
+  initial page and remembered redirect exist; all rerun/no-duplicate/no-alert
+  assertions remain. The full e2e and posted-redirect files passed **70 tests in
+  45.19s**. Final combined coverage: **759 passed, 8 Chromium skips across 26
+  files**; no remaining test failures. All runs used `-p no:cacheprovider` and
+  owned `/tmp/task306-*` basetemps, removed afterward. No hash was re-pinned.
+  Native review remains: `node tests/drop_shuffle_browser.cjs /path/to/chromium`,
+  `node tests/page_polish_browser.cjs /path/to/chromium`,
+  `node tests/search_box_glow_browser.cjs /path/to/chromium`,
+  `node tests/search_analyze_browser.cjs /path/to/chromium` and
+  `node tests/search_more_browser.cjs /path/to/chromium`. Also rerun
+  `tests/test_home_comment_strip.py::test_chromium_home_on_matches_off`
+  (builds fixtures for `home_comment_strip_browser.cjs`),
+  `tests/test_brand_pages.py::test_real_chromium_screenshots` and
+  `tests/test_drop_rotation.py::test_phone_drop_browser`, plus the skipped
+  `tests/test_home_links.py::test_home_links_in_real_chromium` and
+  `tests/test_offscreen_cards.py::test_local_browser_restore`, with working Chromium.
+  No full suite, live requests, commit or push. Git metadata is read-only in this
+  sandbox, so branch creation was refused; edits remain in the provided detached
+  worktree. Existing staged changes and screenshots are preserved.
+- **Balanced 90-card drops + lazy confetti (Codex task 303c, 2026-10-18; uncommitted, ON):**
+  Supersedes 303b's sixty-card/zero-overlap behavior below. Config ships 90;
+  strict size validation remains 24..120 (missing size still defaults 60).
+  Existing ranked, eligible, family-deduplicated rotation supplies fresh cards.
+  Up to 22 matching late slots can carry the strongest previous-mark winners;
+  the first 15 remain fresh, at least 68/90 are new, and returning winners move
+  at least 12 positions. Matching mix signatures preserves women/impulse shares,
+  clothing/checkout caps, category runs and Allure spacing. Lookahead excludes
+  winners that would collide with the next rotation page. Small pools degrade
+  within eligible inventory. Python static first paint and JS remain identical.
+  `/drop-fresh.js?v=<content hash>` now contains selection, drop controls/styles
+  and self-contained confetti, imported after a paint opportunity on home only.
+  A small loader retains the static wall while loading and falls back to ordinary
+  rendering on failure; OFF/missing removes the asset and keeps historical bytes.
+  Confetti has two depth layers, nine colors, a 300-particle cap, DPR-aware fixed
+  canvas below modals, and a hard ten-second cleanup. Hidden tabs, reduced motion
+  and other views skip/cancel it. It never fires on initial load or replays when
+  accepting the scrolled-down pill. Only fresh cards receive badges/entrances.
+  Updated Node checks cover the real factory/loader, 20 marks, winners, mix,
+  4,000-row timing and fake-canvas/rAF cleanup; native phone/desktop checks cover
+  90 keys, canvas lifetime, reduced motion, geometry and the scrolled pill.
+  The phone headroom test now derives its expected offer count from the existing
+  photo cutoff (1,300), with all byte ceilings and the 1,000-byte reserve intact.
+  Final focused run: **41 passed in 255.06s**, including OFF/missing/back-OFF
+  hashes, strict config, Python/JS parity, real lazy-loader/factory and confetti
+  tests, native fixture build, the unchanged phone headroom guard, parsing and
+  idempotent publication. Home **76,354 / 77,360 gzip bytes** leaves **1,006 bytes**;
+  JS **50,217**, CSS **14,421**, JSON **92,296** also pass their existing ceilings.
+  An earlier wider run had 78 passes; its cold-timing and 32-byte headroom misses
+  were corrected by precomputing selection priorities, testing the actual factory
+  closure and sharing the inline view predicate with the lazy asset. No limits or
+  hashes were loosened. All pytest calls used `-p no:cacheprovider --basetemp=/tmp/b303`.
+  Chromium is intentionally left for the reviewer:
+  `node tests/drop_shuffle_browser.cjs /path/to/chromium`.
+  No full suite, network/LLM calls, commit or push. Existing unrelated work and
+  screenshots preserved.
+- **Sixty fresh Trending cards (Codex task 303b, 2026-10-18; uncommitted, ON):**
+  Replaces partial 303's 30-card/300-pick selection. Strict `site.drop_fresh`
+  still defaults false; `publish.front_page.fresh_page_size` defaults 60 and
+  accepts integers 24..120. Trending/top shows one page plus See all, opening
+  the existing All deals tab; its infinite-scroll control is absent. Other
+  tabs, sorts and search retain their ordering/pagination (ON/OFF comparison).
+  The complete eligible inventory is ranked using existing picks/scores and
+  earning ties, deduplicated with task 302's family key, then balanced across
+  women-oriented and mix groups. Consecutive circular slices have zero adjacent
+  overlap with >=120 families, no return before wrapping, and maximal replacement
+  for smaller pools (90 yields 30 new). A public full-inventory rotation duration
+  is shown. Python and browser selections agree, including static first paint
+  using the actual publication mark when a pipeline crosses a mark before publish.
+  Women/category/allure/kids and a small title heuristic, impulse prices, clothing,
+  checkout, Allure and category spacing are covered; insufficient inventory can
+  relax impossible mix constraints, never eligibility/adult exclusion. Clothing
+  and checkout flags now cover eligible unranked rows as well. No inventory is
+  removed from All deals/search. Historical price rules and evidence stay intact.
+  At a mark, scrollY <200 swaps with <=550ms staggering, badges and a four-second
+  toast; a scrolled wall stays untouched with a fixed pill until tapped. Badges
+  expire at the next mark; reduced motion skips animation; reload does not replay
+  the moment. The superseded Trending-only window repair is omitted on the ON
+  page; OFF/missing/back-OFF retain the three recorded hashes, with no re-pins.
+  Final focused feature/drop/spacing run: **67 passed in 69.65s**. A separate
+  shipped phone-budget regression passed (**48.32s**): home **77,101 / 77,360**,
+  JS **52,347 / 53,767**, CSS **14,599 / 14,913**, JSON **92,293 / 103,976** gzip
+  bytes. Node covers 1,200 eligible +400 excluded rows over 20 marks, varied mix,
+  family deduplication, non-divisible/small pools, animations/pill, other views,
+  and <50ms per mark on 4,000 eligible rows (including uncached construction).
+  The existing extra-headroom test is NOT green: its fixed 1,393-offer assertion
+  predates the already-present one-hour photo cutoff (1,300 with fresh OFF or ON).
+  The new budget check derives that expected visibility from the existing cutoff;
+  it does not change a ceiling or hash. Current HTML has only 259 bytes of margin,
+  so it also falls short of the older test's extra 1KB headroom goal. Follow-up
+  fixture maintenance and further size reduction remain before a fully green suite.
+  Native fixture build with late-publication static parity: **1 passed in 13.83s**.
+  Chromium deliberately not launched; reviewer command:
+  `node tests/drop_shuffle_browser.cjs /path/to/chromium` (phone/desktop,
+  normal/reduced motion, all 60 keys, badge/toast expiry, held scroll/pill, All
+  deals, reload/Back, geometry/CLS; requests served locally). Initial stress-test
+  layout and cold-performance failures were corrected; a missing test directory
+  and a nonmatching synthetic search token were corrected too. Required checks
+  used targeted pytest with no cache; main basetemp `/tmp/b303`, exploratory
+  `/tmp/b303-*` scratch removed at completion. No full suite, live requests,
+  LLM calls, commit or push. Existing unrelated work and screenshots preserved.
+- **Event search + Support polish (Codex task 304, 2026-10-18; uncommitted, ON):**
+  Strict top-level `page_polish` defaults false; config.yaml ships true. Black
+  Friday/Cyber Monday headers get the shared rainbow field and purple Analyze
+  button. Enter sends `/?q=`, Analyze sends `/?analyze=`; the homepage consumes
+  at most 200 Unicode characters through its existing handlers after inventory
+  loads, clears only these URL parameters with replaceState, and assigns the
+  input value without HTML interpolation. Event pages make no search API calls.
+  Support reuses brand-page hero/collage/icon styling and a matching Join block;
+  Stripe anchors, amounts, renewal and for-profit/legal text remain verbatim.
+  Shared search CSS is render-blocking and versioned, preserving first paint
+  and the existing home payload reserve. Independent home styling switches
+  still apply; OFF removes the asset and reproduces the three pre-edit hashes.
+  `pre_page_polish` chains through the historical helpers; no hash re-pins.
+  Initial feature run: **16 passed**. An added payload check found insufficient
+  1 KB headroom with inline CSS; the shared stylesheet addresses that finding.
+  Final targeted run: **49 passed in 145.42s** (`test_page_polish.py`,
+  `test_card_tidy.py`, `test_search_box_glow.py`, with `-p no:cacheprovider
+  --basetemp=/tmp/b304`). Home: **76,037 gzip bytes**, **1,323 bytes** below
+  the unchanged 77,360-byte ceiling; the extra 1 KB reserve passes. Inline/lazy
+  emitted scripts and both new Node harnesses pass syntax checks; diff checks
+  pass. Owned temporary output removed. Native review remains:
+  `node tests/page_polish_browser.cjs /path/to/chromium` (offline fixtures,
+  inline/lazy Analyze, 360/390/1440 light/dark, both event routes, Enter/button,
+  overflow/tap targets and Support screenshots in `docs/research/page-polish`).
+  Chromium not launched; no full suite, network, commit or push.
+
+- **Aligned header (Codex task 305, 2026-10-18; uncommitted, ON):**
+  Strict `header_polish` defaults false and ships true. Desktop uses a centred
+  search/action row, a 56px timer, compact controls below 1200px, and scrolling
+  text categories with an active underline, edge fade and adjacent status.
+  The rainbow border and purple Analyze styles remain; the desktop helper is
+  hidden and search announcements retain their accessible status region.
+  Phones retain the logo/actions, full-width search, helper and timer layout;
+  category pills keep the body palette below the bar, with 44px header targets.
+  A 945-byte gzip versioned stylesheet loads before first paint and counts toward the
+  unchanged CSS budget. Removed obsolete flex/direct-child rules; rollback
+  removes the stylesheet. Shared deal/event output is unchanged apart from
+  the site version; seasonal chips remain outside the two-row header.
+  Three pre-edit publication hashes cover OFF/missing/back-OFF. Historical
+  `pre_header_polish` chains from `pre_task_295`, with raw-config rollback;
+  no existing pin or budget ceiling changed. Initial checks exposed insufficient
+  HTML headroom and a stale shared-page fixture; both were corrected.
+  Targeted regression run: **48 passed, 2 deselected in 224.98s**. Final checks:
+  **57 passed in 369.80s**, including all task-305 cases, historical drop/search
+  pins, lazy/inline Analyze, card styling, shared pages, reruns and native fixture
+  construction. Shipped home: **76,347 gzip bytes**, **1,013 bytes headroom**;
+  CSS **14,876**, JS **52,476**, all within the unchanged ceilings. Node syntax
+  and diff checks pass. All pytest runs used `-p no:cacheprovider
+  --basetemp=/tmp/b305`; the owned basetemp was removed afterward.
+  Native Chromium is deliberately not launched: the operator runs the
+  [offline harness](research/header/README.md) for 900–2560 desktop, 390/360
+  phone audits, light/dark, category/search interactions and shared pages.
+  Screenshots/metrics go to `docs/research/header/`; native visual QA remains.
+  No full suite, commit or push. Branch creation was refused by the read-only
+  shared Git metadata; work remains in the supplied detached checkout.
+
+- **Front-page audit identity (Codex task 309, 2026-10-18; uncommitted):**
+  The old join indexed only unlocked, alive `deals.json.deals`: it missed
+  deliberately displayed confirmed-gone cards and price-only offers held in
+  `deals.json.spotlight`. A real `render_site` publication plus its emitted
+  browser renderer reproduces a gone robot vacuum at #10 and a price-only
+  spotlight at #1, both previously empty joins. Every fixture card exists in
+  the combined published payload; no product payload bug or product edit.
+  Static HTML cards have no `data-key`; keyed cards come from the browser's
+  `deals`/`spotlight` lists. Top picks/clock shuffle reorder these lists;
+  Woot/eBay use the same rows, with no separate staples/bestseller feed.
+  The 48-card static cap/browser pagination does not cap the JSON inventory.
+  Serialized keys are opaque IDs; `dealKey` uses key then dedupe_key and DOM
+  attributes decode HTML escaping. No renderer key mismatch was found.
+  The audit now snapshots DOM title/store/category and captures the Home
+  page's actual same-origin JSON GET responses (no extra requests), including
+  dead/spotlight rows. It cross-checks key/title/store; ambiguous fetched
+  categories fail closed unless the DOM supplies one. This also avoids the
+  earlier independent report fetch racing a deploy. Unknowns print their own
+  `unidentified card #N key=<key>` line; positions 1–24 turn red, 25–48 report
+  only. Real niche/car-part failures retain the same boundary.
+  Targeted pytest with `-p no:cacheprovider --basetemp=/tmp/b309`: **4 passed**
+  (renderer regression, site-check guard, two existing spotlight cases).
+  Node logic/Home-response/screenshot harnesses: **2 passed**. Includes stale
+  publications, entity decoding, DOM labels, unknown positions and genuine
+  niche/car-part cases. Syntax/diff checks pass. Exact historical run keys
+  were not available; live Chromium verification remains for review.
+  No live requests, full suite, commit or push.
+
+- **Seamless grids + product-safe Amazon labels (Codex task 310, 2026-10-18; uncommitted):**
+  With `card_tidy` ON, publishing omits filler creation and its unused CSS from
+  home, tabs, search/Analyze and every page carrying the shared deal actions.
+  Grid borrowing remains unchanged. Analyze uses the product's own first five
+  title words (at most 40 characters, escaped), or "See this product on Amazon";
+  text queries and the price-drops fallback retain their wording. Bare ASINs
+  are parsed/masked in both inline Analyze and its loader, including before
+  loading or after import failure. OFF/missing/back-OFF compare against the
+  build's own OFF render; no recorded hashes changed.
+  Added emitted Node/Python coverage for local/live titles, absent/unsafe titles,
+  escaping, length limits, ASIN/link inputs, loader masking, global filler
+  coverage and preserved card borrowing. Final requested targeted tests plus
+  publish/SEO/event regressions: **356 passed, 3 Chromium skips in 202.91s**
+  (`-n 4 -p no:cacheprovider --basetemp=/tmp/b310`). Home is **76,107 gzip bytes**,
+  leaving **1,253 bytes** below the unchanged 77,360-byte ceiling. Initial
+  failures (stale page fixtures and CSS-only suppression missing the extra
+  headroom by 38 bytes) are resolved. Node syntax/diff checks pass; owned
+  `/tmp/b310` scratch removed. No remaining targeted failures.
+  Native review remains: `node tests/search_analyze_browser.cjs /path/to/chromium`,
+  `node tests/search_more_browser.cjs /path/to/chromium`, and the search-box
+  [Chromium capture commands](research/search-box/README.md). Check the shipped
+  card_tidy ON build on phone/desktop: home/tabs, search, Analyze and deal/event
+  scrolling, ASIN/link titles and generic fallback. No full suite, commit or push.
+
+- **Honest Analyze headings (Codex task 312, 2026-10-18; uncommitted):**
+  Behind `card_tidy`, inline/lazy Analyze uses the card's verification tier and
+  unconfirmed markers for "Your deal" versus "Your verified deal". Related
+  headings claim verification only when every displayed photo card qualifies;
+  progress/comparison copy no longer assumes the inventory is verified.
+  OFF/missing/back-OFF bytes and recorded hashes are preserved. Added Python/Node
+  coverage across lazy/glow/tidy modes, real serialized tiers, mixed related
+  cards and later publications. Requested targeted run: 103 passed, 3 browser
+  skips; four new fixture failures fixed, then all 8 heading cases passed.
+  Phone gzip budget retains its 1,000-byte headroom; no pins changed. Owned
+  `/tmp/b312` removed. Review remains; no full suite, commit or push.
+
+- **Visitor Keepa reserve (Codex task 311, 2026-10-18; uncommitted):**
+  Strict `keepa.visitor_reserve_tokens` defaults 0 and ships 150. All pipeline
+  budget gates and batch sizing keep this extra floor, including discovery,
+  rechecks/photos, verification, finder/sweeps, category lookups, accuracy and
+  comparison reads. Existing lane priority and money caps remain. Raw bucket
+  receipts stay unchanged; run/recheck summaries add `visitor_reserve_deferred_calls`
+  (refused request gates plus batches omitted by the planner). Legacy token
+  fixtures explicitly use 0; no recorded hashes changed. Final targeted run:
+  **794 passed in 223.54s**, including all Keepa tests and offline idempotency,
+  with the requested `-n 4`/no-cache/retention flags. `/tmp/b311` removed.
+  Review/deployment remain. No full suite, commit or push.
 - **Same-product family spacing (Codex task 302, 2026-10-18; uncommitted, ON):**
   Strict top-level `same_product_spacing` defaults false; config.yaml ships true.
   Store + first five meaningful title words identify families, stripping variant

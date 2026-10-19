@@ -1,0 +1,6 @@
+# Task 313b — header_polish_browser: shared-page Join assertion is wrong for deal pages
+
+My Chromium run of tests/header_polish_browser.cjs now passes every desktop/phone header check (row centring, search, spelling, tabs) but fails at line ~197 `assert.equal(await page.locator('#subscribe').count(), 1)` on `/deal/<slug>/` at 1440 light. Deal pages are rendered from dealradar/publish/templates/hub.html, whose header has never contained `#subscribe` (true before header_polish too — it is not a regression; the event page, rendered from index.html, does have it). The intent of that block is "header_polish leaves other page writers' headers unchanged". Fix the test to assert that intent precisely: for each shared page, the header's actions (#subscribe count, #pwa-header-install count) equal what the same page has with header_polish OFF (build both, or compare with the page's known template: event page = 1 Join button, deal page = 0), plus the existing no-sideways-scroll check. Do not touch product code. Run tests/test_header_polish.py (`.venv/bin/pytest -q -p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b313b tests/test_header_polish.py`), delete /tmp/b313b. No commit or push. Reply <= 2 lines.
+
+
+RESTART NOTE: your previous run stopped (model capacity). Continue from any partial work already in this tree.

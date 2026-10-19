@@ -20,7 +20,14 @@ const mixed = [row('new'), row('used',{conditions:['Used - Like New']}), row('bo
   row('locked',{locked:true,final_price:null,needs_steps:undefined}), row('other',{store:'Walmart',category:'kitchen',final_price:25})];
 
 function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='', historyState=null, blocked=false, saved=false,
-                  rotationStartup=false, realCards=false, template=home}={}) {
+                  rotationStartup=false, realCards=false, pageQuery=false, template=home}={}) {
+  let freshAsset;
+  if (template.includes("import('/drop-fresh.js?v=")) {
+    freshAsset = fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]), 'drop-fresh.js'),'utf8');
+    const a=template.indexOf('  requestAnimationFrame(function () { setTimeout(function () {',template.indexOf('  var freshUI ='));
+    const b=template.indexOf('  function refreshDropPicks(',a);
+    template=template.slice(0,a)+template.slice(b);
+  }
   const elements={}, listeners={}, timers=new Map(), frames=new Map(), observers=new Set(), events=[], entries=[{url:'/'+search,state:historyState}];
   let serial=0, historyIndex=0, renders=0, refreshes=0, nextRows=null, pendingRefresh=null, scrolls=[];
   let cards=[], clock=NOW, wallShift=0, cardHeight=220, frameCount=0;
@@ -59,8 +66,8 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     for (const observer of observers) observer.callback();
   }});
   const initialURL=new URL('/'+search,'https://wowpriced.com');
-  const location={search:initialURL.search,hash:initialURL.hash,pathname:'/'};
-  const updateLocation = url => {const u=new URL(url,'https://wowpriced.com'); location.search=u.search;location.hash=u.hash;};
+  const location={href:initialURL.href,search:initialURL.search,hash:initialURL.hash,pathname:'/'};
+  const updateLocation = url => {const u=new URL(url,'https://wowpriced.com'); location.href=u.href;location.search=u.search;location.hash=u.hash;};
   const history={state:historyState,scrollRestoration:'auto',
     replaceState(state, _, url) {this.state=state;entries[historyIndex]={state,url};updateLocation(url);},
     pushState(state, _, url) {this.state=state;entries.splice(++historyIndex);entries.push({state,url});updateLocation(url);}};
@@ -69,9 +76,9 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     CATGROUPS:JSON.parse(template.match(/var CATGROUPS = (.*);/)[1]), loadedOnce:true,manifestEpoch:0,moreObserver:null,panel:el('paywall'),
     state:{deals:rows,spotlight,meta:{floors:{min_pct:70,site_show_from_pct:50},front_page:doc.meta.front_page || {}},
       shown:60,seed:42,catTab:0,sortKey:'top',sortDir:-1,newKeys:{}},
-    document:{hidden:false,body:{contains:()=>true},activeElement:null,
+    document:{hidden:false,head:{appendChild(){}},body:{contains:()=>true},activeElement:null,
       querySelector:selector=>el(selector),
-      getElementById:id=>['moremore','totop'].includes(id) && !el('content').innerHTML.includes('id="'+id+'"') ? null : el(id),createElement:()=>({}),
+      getElementById:id=>['moremore','totop'].includes(id) && !el('content').innerHTML.includes('id="'+id+'"') ? null : el(id),createElement:()=>({getContext:()=>null}),
       addEventListener(type,fn){listen('document:'+type,fn);}},
     window:{innerWidth:390,innerHeight:844,scrollY:0,wpSupport:{refresh(){}},wpTrack:(name,params)=>events.push({name,params}),
       scrollTo(options){this.scrollY=options.top;scrolls.push(options);},
@@ -102,6 +109,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     rememberFocus:()=>null,restoreFocus(){},openBand:()=>''
   };
   vm.createContext(ctx);
+  if (pageQuery) vm.runInContext(fragment('  var pagePolishQuery =', '  function loadData() {',template),ctx);
   for (const [a,b] of [
     ['  function esc(s)', '  function dataKey('],
     ['  function storeKey(', '  function storeHue('],
@@ -109,6 +117,17 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
     ['  function resetWall()', '  var sortsel ='],
     ['  var sortsel =', '  var TIMEOUT =']
   ]) vm.runInContext(fragment(a,b,template),ctx);
+  if (freshAsset) {
+    // Evaluate the actual factory with its closure and host API. Expose internal
+    // selection helpers only to the logic assertions, without changing the asset.
+    const source=freshAsset.replace('export default function (host)', 'function mountFresh(host)')
+      .replace('return {freshView,', 'return {freshRotation, freshBasePage, freshWomen, freshCheap, freshFamily, freshCycleText, '+
+        'get freshDropKeys() { return freshDropKeys; }, get freshCache() { return freshCache; }, set freshCache(v) { freshCache=v; }, freshView,');
+    vm.runInContext(source,ctx);
+    ctx.freshUI=ctx.mountFresh(ctx);
+    for(const key of Object.keys(ctx.freshUI)) if(key!=='freshView')
+      Object.defineProperty(ctx,key,{configurable:true,get:()=>ctx.freshUI[key],set:v=>{ctx.freshUI[key]=v;}});
+  }
   if (template.includes('function dropPickIndex()')) {
     ctx.DROP_MIN=15;
     vm.runInContext(fragment('  var clock =', '  setInterval(tick, 1000);',template),ctx);

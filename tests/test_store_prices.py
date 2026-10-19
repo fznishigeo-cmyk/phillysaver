@@ -12,6 +12,7 @@ import pytest
 import yaml
 
 from dealradar import dedupe, rank, savings, store_prices as live, util, verify
+from tests.history_pins import pre_drop_fresh
 from dealradar.config import AppConfig, load_config, redact_secrets
 from dealradar.db import DB
 from dealradar.http_client import PoliteFetcher
@@ -427,6 +428,7 @@ def test_post_expiry_queues_api_but_never_counts_as_first_reading(db, cfg, store
 
 @pytest.mark.parametrize("store", ["bestbuy", "ebay"])
 def test_public_checked_clock_pages_and_affiliate_links(db, cfg, tmp_path, store):
+    pre_drop_fresh(cfg)  # Exercise the original full-wall clock/label contract.
     before = seed(db, cfg, store)
     API(db, cfg).run(db, cfg)
     site.render_site(db, cfg, NOW + timedelta(minutes=25), out_dir=tmp_path)

@@ -42,10 +42,13 @@ from . import search_boost
 from . import search_box_glow
 from . import same_product_spacing
 from . import card_tidy
+from . import page_polish
+from . import header_polish
 from . import search_circle
 from . import search_analyze
 from . import search_analyze_lazy
 from . import search_more
+from . import drop_fresh
 from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -176,6 +179,8 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = search_more.template(html, cfg)
         html = search_box_glow.template(html, cfg)
         html = card_tidy.template(html, cfg)
+        html = page_polish.home(html, cfg)
+        html = header_polish.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -684,6 +689,15 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         public["open_box_scarcity"] = True
         if stock and getattr(cfg, "open_box_counts", False):
             public["open_box_stock"] = stock
+    if cfg and drop_fresh.enabled(cfg):
+        if is_clothing(deal, cfg.front_page.get("top_picks") or {}):
+            public["cl"] = 1
+        if checkout_prices.enabled(cfg) and checkout_prices.kind(deal):
+            public["pick_checkout"] = True
+        from ..appeal import matches
+        excluded = (cfg.front_page.get("appeal", {}).get("want") or {}).get("exclude_words", [])
+        if matches(deal.get("item"), excluded + cfg.search_boost.get("exclude_words", [])):
+            public["fresh_blocked"] = True
     return public
 
 
@@ -744,6 +758,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     home_html = search_analyze.browse_template(home_html, cfg)
     home_html = drop_shuffle.template(home_html, cfg)
     home_html = same_product_spacing.template(home_html, cfg)
+    home_html = drop_fresh.template(home_html, cfg)
 
     if deals is None:
         from dealradar import rank  # lazy: avoid hard import cycle at module load
@@ -882,7 +897,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         pick_candidates = [(d, pick_score(dict(d, earns=earns[d["dedupe_key"]]), cfg, now,
                                          require_confirmation=False, links=facts_for(d))) for d in rated]
     boosted = set()
-    original_picks = top_picks(pick_candidates, cfg.front_page, now,
+    original_picks = top_picks(pick_candidates, drop_fresh.pick_options(cfg), now,
                                summary=checkout_summary, cfg=cfg, boosted=boosted)
     original_picks = drop_rotation.prepare_picks(original_picks, cfg, boosted)
     picked = [public_candidates[d["dedupe_key"]] for d in original_picks]
@@ -1110,7 +1125,10 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_analyze_lazy.site_version(site_version, cfg)
     site_version = search_box_glow.site_version(site_version, cfg)
     site_version = card_tidy.site_version(site_version, cfg)
+    site_version = page_polish.site_version(site_version, cfg)
     site_version = same_product_spacing.site_version(site_version, cfg)
+    site_version = drop_fresh.site_version(site_version, cfg)
+    site_version = header_polish.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
@@ -1168,6 +1186,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         # Ranking boosts are applied in Python; omit their knobs so disabling restores
         # the previous payload bytes as well as the previous scores/order.
         "front_page": {k: v for k, v in cfg.front_page.items() if k not in {"appeal", "popular_affordable", "everyday_price", "demote_words"}
+                       and (k != "fresh_page_size" or drop_fresh.enabled(cfg))
                        and (k != "used_tab_only" or v)
                        and (k != "checkout_price_deals" or checkout_prices.enabled(cfg))},
         "trial_days": int(getattr(cfg, "paywall_trial_days", 7)),
@@ -1205,6 +1224,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         else:
             shutil.copyfile(TEMPLATES_DIR / name, out / name)
             html = _page_template((out / name).read_text(encoding="utf-8"), cfg)
+        if name == "subscribe.html":
+            html = page_polish.support(html, cfg)
         if name == "index.html":
             html = html.replace("{{PRICE_OPTIONS}}", "".join(
                 f'<option value="{n}">Under ${n}</option>' for n in price_presets))
@@ -1362,6 +1383,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     inventory.publish(out, cfg)
     search_results.publish(out, cfg)
     search_more.publish(out, cfg)
+    page_polish.publish(out, cfg)
     if cfg.brand_pages:
         from . import brand_pages
         brand_pages.publish(out, cfg, public_doc)
@@ -1378,6 +1400,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         pwa.publish(out, cfg)
     # All template markers and injected scripts have had their final consumer.
     search_analyze_lazy.publish(out, cfg)
+    drop_fresh.publish(out, cfg)
+    header_polish.publish(out, cfg)
+    card_tidy.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)

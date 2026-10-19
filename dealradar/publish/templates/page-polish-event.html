@@ -1,0 +1,23 @@
+<form id="event-search" class="hrow" role="search" action="/" method="get">
+  <label class="sr-only" for="q">Search any product or paste an Amazon link</label>
+  <div class="searchfield">
+    <input id="q" name="q" type="search" maxlength="200" placeholder="Search any product or paste an Amazon link" autocomplete="off">
+    <button id="analyze-search" type="submit">Analyze</button>
+  </div>
+</form>
+<script>
+(function () {
+  var form = document.getElementById("event-search"), input = document.getElementById("q");
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var query = Array.from(input.value).slice(0, 200).join("").trim();
+    if (!query) { input.focus(); return; }
+    var params = new URLSearchParams();
+    params.set(event.submitter ? "analyze" : "q", query);
+    location.assign("/?" + params.toString());
+  });
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); form.requestSubmit(); }
+  });
+})();
+</script>

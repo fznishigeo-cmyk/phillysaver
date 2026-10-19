@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from dealradar import buybox, click_price, dedupe, rank, savings, util, verify
+from tests.history_pins import pre_drop_fresh
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.keepa_budget import KeepaBudget
@@ -454,6 +455,7 @@ def test_summary_contains_only_counts_and_five_compact_examples(db, cfg):
 
 
 def test_home_order_and_search_in_emitted_javascript(db, cfg, tmp_path, monkeypatch):
+    pre_drop_fresh(cfg)  # The original click-price home policy, before fresh Trending.
     cfg.click_price_home_fill = False  # the original rule; site.click_price_home_fill: tests/test_trending_auto_cards.py
     row = adidas(db, cfg)
     save(db, row, record(row))
@@ -606,6 +608,7 @@ def test_shadow_paid_pass_counts_without_changing_requests_prices_or_bytes(cfg, 
 @pytest.mark.parametrize("mode", ["off", "on"])
 def test_shipped_click_price_stays_within_phone_byte_budgets(db, tmp_path, monkeypatch, mode):
     from scripts.publication_budget import analyze
+    from tests.phone_budget_fixture import visible_offer_count
     from tests.phone_budget_fixture import NOW as PHONE_NOW, fixture_offers
 
     cfg = load_config()
@@ -618,7 +621,7 @@ def test_shipped_click_price_stays_within_phone_byte_budgets(db, tmp_path, monke
     monkeypatch.setattr(site, "util_now", lambda: PHONE_NOW)
     site.render_site(db, cfg, PHONE_NOW, out_dir=tmp_path, deals=rows,
                      last_run={"run_key": "task275-phone"})
-    report = analyze(tmp_path, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+    report = analyze(tmp_path, cfg, expected_offers=visible_offer_count(cfg))
     assert report["ok"], report["metrics"]
 
 

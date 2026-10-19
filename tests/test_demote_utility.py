@@ -14,6 +14,7 @@ from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.publish import seo, site
 from dealradar.rank import front_page_mix, is_niche, pick_order, pick_score
+from tests.history_pins import pre_drop_fresh, pre_same_product_spacing
 from tests.test_front_page import pick_deal
 from tests.test_publish_site import NOW, make_deal
 
@@ -32,7 +33,8 @@ def offline(monkeypatch):
 
 @pytest.fixture
 def cfg():
-    cfg = load_config()
+    # Exercise niche demotion on the original full wall, before U3 rotation/spacing.
+    cfg = pre_same_product_spacing(pre_drop_fresh(load_config()))
     cfg.custom_domain = "wowpriced.test"
     cfg.tracking = {}
     cfg.paywall_google_client_id = ""

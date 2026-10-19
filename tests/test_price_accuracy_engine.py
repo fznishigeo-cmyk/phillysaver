@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from dealradar import dedupe, pipeline, rank, savings, util, verify
+from tests.history_pins import pre_drop_fresh
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.keepa import KeepaDealsAdapter, reprice_post
@@ -364,6 +365,7 @@ def test_keepa_lane_is_a_confirmation_but_an_old_or_different_price_is_not(db, c
 
 
 def test_card_and_deal_page_timestamps_and_node_logic(db, cfg, tmp_path):
+    pre_drop_fresh(cfg)  # Exercise the original full-wall clock/label contract.
     if not shutil.which("node"):
         pytest.skip("node unavailable")
     checked = NOW - timedelta(minutes=25)

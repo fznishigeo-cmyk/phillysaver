@@ -21,13 +21,46 @@ cfg.max_photoless_h = None
 cfg.non_amazon_freshness_enabled = False
 cfg.keepa_click_price_rule = "off"
 cfg.affiliate_amazon_tag = "example-20"
-deals = [make_deal(dedupe_key=f"task301-{i}", item=f"Wireless mouse {i}", store="Amazon", codes=[], conditions=[],
+deals = [make_deal(dedupe_key=f"task301-{i}", item=f"Wireless mouse {i}", store="Amazon", category="electronics", codes=[], conditions=[],
     canonical_url=f"https://www.amazon.com/dp/B0{i:08d}", asin=f"B0{i:08d}", price_rechecked_at=NOW.isoformat(),
     image_url="https://m.media-amazon.com/images/I/mouse.jpg") for i in range(1, 9)]
-render(Path(sys.argv[1]), cfg, deals)
+out, doc, *_ = render(Path(sys.argv[1]), cfg, deals)
+from dealradar.publish.drop_fresh import rotation
+assert len(rotation(doc['deals'], cfg.front_page)) == 8, 'all eight mice must be eligible for fresh Trending'
 `, scratch, String(glow), String(lazy)], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stderr);
   return path.join(scratch, 'site');
+}
+async function assertAnalyzeGeometry(page) {
+  const g = await page.locator('.searchfield').evaluate(field => {
+    const button = field.querySelector('#analyze-search'), input = field.querySelector('#q');
+    const clear = field.querySelector('#clearsearch');
+    const f = field.getBoundingClientRect(), b = button.getBoundingClientRect(), q = input.getBoundingClientRect();
+    const css = getComputedStyle(button), ring = getComputedStyle(field, '::before');
+    return {gaps:[b.top - f.top, f.bottom - b.bottom, f.right - b.right],
+      edge:parseFloat(ring.borderTopWidth) || 0,
+      borders:[css.borderTopWidth, css.borderBottomWidth, css.borderRightWidth, css.borderLeftWidth],
+      radii:[css.borderTopRightRadius, css.borderBottomRightRadius],
+      width:b.width, height:b.height, label:button.innerText,
+      textRight:q.right - parseFloat(getComputedStyle(input).paddingRight), buttonLeft:b.left,
+      clear:clear && !clear.hidden ? {left:clear.getBoundingClientRect().left, right:clear.getBoundingClientRect().right} : null,
+      overflow:document.documentElement.scrollWidth > innerWidth};
+  });
+  assert.deepEqual(g.borders, ['0px', '0px', '0px', '0px'], 'no transparent border ring');
+  // The rainbow occupies the outer 3px; the button meets or slightly overlaps its inner edge.
+  for (const gap of g.gaps) {
+    assert(gap >= 0 && gap <= 3, 'button stays inside the field and flush with its edge');
+    if (g.edge) assert(gap - g.edge <= 2, 'at most a hairline of field background');
+  }
+  assert.deepEqual(g.radii, ['10px', '10px'], 'right corners follow the 12px field');
+  assert(g.width >= 44 && g.height >= 44, '44px tap target');
+  assert.equal(g.label, 'Analyze', 'full label on phones too');
+  assert(g.textRight <= g.buttonLeft, 'input text clears the pill');
+  if (g.clear) {
+    assert(g.clear.right <= g.buttonLeft, 'clear button clears the pill');
+    assert(g.textRight <= g.clear.left, 'input text clears the clear button');
+  }
+  assert.equal(g.overflow, false, 'no sideways overflow');
 }
 async function main() {
   const {chromium} = require('playwright');
@@ -41,7 +74,7 @@ async function main() {
       roots[`${lazy}-${glow}`] = buildFixture(path.join(scratch, `${lazy}-${glow}`), glow, lazy);
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
     const metrics = [];
-    for (const lazy of [false, true]) for (const width of [390, 1440]) for (const theme of ['light', 'dark'])
+    for (const lazy of [false, true]) for (const width of [360, 390, 1440]) for (const theme of ['light', 'dark'])
       for (const motion of ['no-preference', 'reduce']) {
         let before;
         const name = `${lazy ? 'lazy' : 'inline'}-${width}-${theme}-${motion}`;
@@ -67,6 +100,7 @@ async function main() {
           page.on('pageerror', error => errors.push(error.message));
           await page.goto('https://wowpriced.test/');
           await page.locator('#content .card').first().waitFor();
+          await assertAnalyzeGeometry(page);
           const geometry = await page.evaluate(() => {
             const rect = selector => {const r = document.querySelector(selector).getBoundingClientRect();
               return {x:r.x, y:r.y, width:r.width, height:r.height};};
@@ -91,9 +125,23 @@ async function main() {
               const first = await angle(); await page.waitForTimeout(150); assert.notEqual(await angle(), first);
             }
             await page.screenshot({path:path.join(shots, name + '-idle.png')});
+            const button = page.locator('#analyze-search'), bounds = await button.boundingBox();
+            await button.hover();
+            await button.focus();
+            await page.mouse.down();
+            try {
+              assert.deepEqual(await button.boundingBox(), bounds, 'hover/focus/active do not shift the pill');
+              assert.equal(await button.evaluate(el => getComputedStyle(el).animationName),
+                motion === 'reduce' ? 'none' : 'wpcharge');
+              await assertAnalyzeGeometry(page);
+            } finally {
+              await page.mouse.move(0, 0);
+              await page.mouse.up();
+            }
             await page.locator('#q').focus();
             if (motion !== 'reduce') assert.equal((await style()).state, 'paused');
             await page.locator('#q').fill('mouse'); await page.locator('#q').blur();
+            await assertAnalyzeGeometry(page);
             if (motion !== 'reduce') assert.equal((await style()).state, 'paused');
             await page.locator('#search-amazon-result a.getdeal').waitFor();
             const checkTop = async analyze => {
@@ -133,5 +181,5 @@ async function main() {
     console.log('Search box native checks passed: geometry, motion, early buttons, themes and screenshots');
   } finally {if (browser) await browser.close(); fs.rmSync(scratch, {recursive:true, force:true});}
 }
-module.exports = {buildFixture};
+module.exports = {buildFixture, assertAnalyzeGeometry};
 if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

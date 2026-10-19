@@ -20,6 +20,7 @@ from tests.test_seo import ROOT, cfg, db
 @pytest.fixture
 def options():
     options = load_config(ROOT / "config.yaml").front_page
+    options.pop("fresh_page_size", None)  # predates task 303
     options.pop("demote_words", None)  # recorded before task 267b
     options["appeal"]["want"]["enabled"] = False  # recorded before task 273
     options["appeal"]["season"] = []

@@ -12,6 +12,7 @@ from unittest.mock import patch
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import indexnow, site
+from dealradar.rank import photoless_expired
 from dealradar.util import iso
 from tests.test_publish_site import make_deal
 from tests.history_pins import pre_history_removal, pre_task_279
@@ -85,6 +86,11 @@ def fixture_offers():
             sightings=[{"source_name": "Fixture partner", "source_url": f"https://partner.example.invalid/deal/{i}",
                         "seen_at": seen, "final_price": final}]))
     return rows
+
+
+def visible_offer_count(cfg):
+    """Expected task-206 inventory after the configured publication photo cutoff."""
+    return sum(not photoless_expired(row, cfg, NOW) for row in fixture_offers())
 
 
 def sizes(data):

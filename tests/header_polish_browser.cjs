@@ -1,0 +1,235 @@
+// Native Chromium; every navigation, API and image request is fulfilled offline.
+// node tests/header_polish_browser.cjs /path/to/chromium [docs/research/header]
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const {assertAnalyzeGeometry} = require('./search_box_glow_browser.cjs');
+
+function buildFixture(scratch, polish = true) {
+  fs.mkdirSync(scratch, {recursive:true});
+  const result = spawnSync('.venv/bin/python', ['-c', `
+import json, sys
+from pathlib import Path
+from dealradar.config import load_config
+from dealradar.publish import site
+from tests.test_support import NOW, render
+from tests.test_publish_site import make_deal
+site.util_now = lambda: NOW
+cfg = load_config()
+cfg.header_polish = sys.argv[2] == "true"
+cfg.tracking = {}
+cfg.affiliate_amazon_tag = "example-20"
+deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
+    codes=[], conditions=["new"], first_seen_at=NOW.isoformat(), last_seen_at=NOW.isoformat(),
+    canonical_url=f"https://www.amazon.com/dp/B0{i:08d}", asin=f"B0{i:08d}", price_rechecked_at=NOW.isoformat(),
+    click_price_check=dict(asin=f"B0{i:08d}", final=10, buybox=10, at=NOW.isoformat()),
+    image_url="https://m.media-amazon.com/images/I/kettle.jpg") for i in range(1, 25)]
+out, public, full, _ = render(Path(sys.argv[1]), cfg, deals)
+assert len(full["deals"]) == 24, "all fixture offers must survive publication"
+pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal").rglob("index.html"))][:1]
+assert pages, "fixture must include a current deal page"
+pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
+(Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
+`, scratch, String(polish)], {encoding:'utf8'});
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return path.join(scratch, 'site');
+}
+
+function geometry() {
+  const rect = el => {
+    const r = el.getBoundingClientRect();
+    return {x:r.x, y:r.y, width:r.width, height:r.height, right:r.right, bottom:r.bottom, cy:r.y + r.height / 2};
+  };
+  const field = document.querySelector('.searchfield'), button = document.querySelector('#analyze-search');
+  const ring = getComputedStyle(field, '::before'), pill = getComputedStyle(button);
+  const nav = document.querySelector('#cattabs');
+  const joinText = document.createRange();
+  joinText.selectNodeContents(document.querySelector('#subscribe').firstChild);
+  return {
+    header:rect(document.querySelector('header')), field:rect(field), nav:rect(nav),
+    row:['.brand', '#drop', '#pwa-header-install', '#subscribe'].map(selector => ({selector,
+      ...rect(document.querySelector(selector))})),
+    tabs:[...nav.children].map(rect), status:rect(document.querySelector('#tagline')),
+    scrollWidth:document.documentElement.scrollWidth,
+    style:{rainbow:ring.backgroundImage, ringWidth:ring.borderTopWidth, duration:ring.animationDuration,
+      pill:pill.backgroundImage, color:pill.color, border:pill.borderTopWidth, radius:pill.borderRadius,
+      padding:pill.padding, height:rect(button).height, top:rect(button).y - rect(field).y},
+    why:getComputedStyle(document.querySelector('.join-why')).display,
+    whyRect:rect(document.querySelector('.join-why')), joinText:rect(joinText),
+    fade:getComputedStyle(nav).maskImage, overflow:getComputedStyle(nav).overflowX,
+  };
+}
+
+function assertDesktop(g, width, label) {
+  assert(g.field.width > 200 && g.field.width <= 720, label + ': usable flexible search');
+  if (width < 1200) assert(g.field.width >= 320, label + ': compact desktop reserves a usable search track');
+  for (const item of g.row) {
+    assert(Math.abs(item.cy - g.field.cy) <= 2, label + ': centred ' + item.selector);
+    assert(item.x >= 0 && item.right <= width, label + ': bounded ' + item.selector);
+  }
+  const ordered = [g.row[0], g.field, ...g.row.slice(1)];
+  for (let i = 1; i < ordered.length; i++) {
+    const gap = ordered[i].x - ordered[i - 1].right;
+    assert(gap >= 15.9 && gap <= 24.1, `${label}: row gap ${gap}`);
+  }
+  assert.equal(g.row[1].height, g.field.height, label + ': timer matches search height');
+  assert(g.nav.y >= g.field.bottom && g.nav.bottom <= g.header.bottom, label + ': second row inside header');
+  assert(g.status.y >= g.nav.y && g.status.bottom <= g.nav.bottom + 1, label + ': status on nav row');
+  assert(g.status.x >= g.nav.right, label + ': status does not overlap categories');
+  assert(g.fade.includes('linear-gradient') && g.overflow === 'auto', label + ': scroll/fade cue');
+  if (width >= 1500) {
+    assert.notEqual(g.why, 'none', label + ': wide Join label');
+    assert(g.whyRect.width > 0, label + ': wide Join label has width');
+    assert(Math.abs(g.whyRect.y - g.joinText.y) <= 2, label + ': wide Join label on same line');
+  } else {
+    assert.equal(g.why, 'none', label + ': wide Join label');
+  }
+}
+
+async function offerInstall(page) {
+  await page.evaluate(() => {
+    const event = new Event('beforeinstallprompt', {cancelable:true});
+    event.prompt = () => Promise.resolve();
+    event.userChoice = Promise.resolve({outcome:'dismissed'});
+    dispatchEvent(event);
+  });
+  await page.locator('#pwa-header-install').waitFor({state:'visible'});
+}
+
+async function main() {
+  const {chromium} = require('playwright');
+  const scratch = fs.mkdtempSync('/tmp/task305-browser-');
+  const shots = path.resolve(process.argv[3] || 'docs/research/header');
+  fs.mkdirSync(shots, {recursive:true});
+  // Use the actual mobile-audit inspection and hit-area probes, without its live runner.
+  const auditSource = fs.readFileSync('scripts/mobile_audit.cjs', 'utf8');
+  const inspect = auditSource.slice(auditSource.indexOf('function hitAreaMath()'), auditSource.indexOf('async function runAudit()'));
+  let browser;
+  try {
+    const roots = {off:buildFixture(path.join(scratch, 'off'), false), on:buildFixture(path.join(scratch, 'on'))};
+    const fixture = JSON.parse(fs.readFileSync(path.join(scratch, 'on/fixture.json'), 'utf8'));
+    browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
+    const metrics = [];
+    for (const width of [900, 1024, 1199, 1280, 1440, 1500, 1920, 2560, 899, 390, 360]) {
+      for (const theme of ['light', 'dark']) {
+        let original;
+        const originalActions = new Map();
+        for (const mode of ['off', 'on']) {
+          const name = `${width}-${theme}-${mode}`;
+          const context = await browser.newContext({viewport:{width, height:width === 360 ? 740 : width < 900 ? 844 : 900}, colorScheme:theme,
+            isMobile:width < 900, hasTouch:width < 900, reducedMotion:'reduce', serviceWorkers:'block'});
+          const errors = [], unexpected = [];
+          await context.route('**/*', route => {
+            const url = new URL(route.request().url());
+            if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',
+              body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#b9c6cd"/></svg>'});
+            if (url.origin !== 'https://wowpriced.test') {
+              unexpected.push(url.origin); return route.fulfill({status:204, body:''});
+            }
+            if (url.pathname === '/api/search') return route.fulfill({json:{items:[]}});
+            const root = roots[mode];
+            const file = path.resolve(root, '.' + url.pathname, url.pathname.endsWith('/') ? 'index.html' : '');
+            if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) {
+              unexpected.push(url.pathname); return route.fulfill({status:404, body:''});
+            }
+            const types = {'.html':'text/html', '.js':'application/javascript', '.css':'text/css',
+              '.json':'application/json', '.webmanifest':'application/manifest+json', '.svg':'image/svg+xml', '.png':'image/png'};
+            return route.fulfill({path:file, contentType:types[path.extname(file)] || 'application/octet-stream'});
+          });
+          await context.addInitScript(() => {
+            localStorage.setItem('wp.install.engagedMs', '180000');
+            addEventListener('beforeinstallprompt', e => {
+              if (e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); }
+            });
+          });
+          const page = await context.newPage();
+          page.setDefaultTimeout(10000);
+          page.on('pageerror', error => errors.push(error.message));
+          page.on('console', message => {if (message.type() === 'error') errors.push(message.text());});
+          await page.clock.install({time:new Date(Date.parse(fixture.now) + 120000)});
+          await page.goto('https://wowpriced.test/');
+          await page.waitForFunction(() => !document.querySelector('#filtertoggle').disabled &&
+            document.querySelector('#content .card') && /live deal/i.test(document.querySelector('#tagline').textContent));
+          const beforeInstall = await page.locator('.searchfield').boundingBox();
+          await offerInstall(page);
+          assert.deepEqual(await page.locator('.searchfield').boundingBox(), beforeInstall, name + ': stable install slot');
+          const g = await page.evaluate(geometry);
+          await assertAnalyzeGeometry(page);
+          if (mode === 'off') original = g;
+          else {
+            assert.deepEqual(g.style, original.style, name + ': rainbow and Analyze styles preserved');
+            assert(g.scrollWidth <= width, name + ': no document overflow');
+            assert(Math.max(...g.tabs.map(t => t.y)) - Math.min(...g.tabs.map(t => t.y)) <= 1, name + ': one tab line');
+            if (width >= 900) assertDesktop(g, width, name);
+            const record = {name, geometry:g};
+            if (width === 390 || width === 360) {
+              const audit = await page.evaluate(`(() => { ${inspect}\nreturn inspectPage(hitAreaMath()); })()`);
+              assert(audit.headerH <= 196, name + ': headerH ' + audit.headerH);
+              assert(audit.firstCardTop !== null && audit.firstCardTop <= 402, name + ': firstCardTop ' + audit.firstCardTop);
+              assert.deepEqual(audit.overflow, [], name + ': overflow');
+              assert.deepEqual(audit.smallTaps, [], name + ': 44px hit areas');
+              assert.deepEqual(audit.smallInputs, [], name + ': input type size');
+              assert(g.header.height <= original.header.height, name + ': phone header does not grow');
+              record.mobile = audit;
+            }
+            await page.screenshot({path:path.join(shots, `${width}-${theme}.png`)});
+            // Keyboard users can reach every clipped category, including the last one.
+            const last = page.locator('#cattabs .cattab').last();
+            await last.focus();
+            assert(await last.evaluate(el => {
+              const r = el.getBoundingClientRect(), n = el.parentElement.getBoundingClientRect();
+              return r.x >= n.x - 1 && r.right <= n.right + 1;
+            }), name + ': last tab reachable');
+            const all = page.locator('#cattabs .cattab', {hasText:'All deals'});
+            await all.click();
+            assert(await all.evaluate(el => el.classList.contains('active')), name + ': category still filters');
+            await page.locator('#q').fill('kettle');
+            await page.waitForFunction(() => document.querySelector('#searchcount').textContent.includes('24'));
+            if (width >= 900) assertDesktop(await page.evaluate(geometry), width, name + '-search');
+            if (width >= 900) {
+              await page.locator('#q').fill('cofee');
+              await page.waitForFunction(() => document.querySelector('#q').value === 'coffee' &&
+                !document.querySelector('#search-spelling').hidden);
+              assertDesktop(await page.evaluate(geometry), width, name + '-spelling');
+              const undo = page.locator('[data-search-original]');
+              const beforeBlur = await undo.boundingBox();
+              await page.locator('#q').evaluate(el => el.blur());
+              assert.deepEqual(await undo.boundingBox(), beforeBlur, name + ': stable spelling undo on blur');
+              assertDesktop(await page.evaluate(geometry), width, name + '-spelling-blurred');
+              await undo.click();
+              assert.equal(await page.locator('#q').inputValue(), 'cofee', name + ': spelling undo remains clickable');
+            }
+            metrics.push(record);
+          }
+          // Other page writers retain their own header and install/Join actions.
+          if ([390, 1440].includes(width)) for (const url of fixture.pages) {
+            await page.goto('https://wowpriced.test' + url);
+            await page.locator('header').waitFor();
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), name + ': shared page ' + url);
+            const actions = {
+              subscribe:await page.locator('header #subscribe').count(),
+              install:await page.locator('header #pwa-header-install').count(),
+            };
+            if (mode === 'off') originalActions.set(url, actions);
+            else {
+              assert.deepEqual(actions, originalActions.get(url), name + ': shared header actions unchanged ' + url);
+              await page.screenshot({path:path.join(shots, `${width}-${theme}-${url.startsWith('/deal/') ? 'deal' : 'event'}.png`)});
+            }
+          }
+          assert.deepEqual(errors, [], name + ': browser errors');
+          assert.deepEqual(unexpected, [], name + ': unexpected requests');
+          await context.close();
+        }
+      }
+    }
+    fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
+    console.log('PASS: aligned desktop rows, phone audit, unchanged search styles, categories and shared pages in light/dark');
+  } finally {
+    if (browser) await browser.close();
+    fs.rmSync(scratch, {recursive:true, force:true});
+  }
+}
+
+module.exports = {buildFixture};
+if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

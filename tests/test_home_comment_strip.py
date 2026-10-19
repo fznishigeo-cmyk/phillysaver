@@ -11,8 +11,9 @@ import pytest
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.publish import comments, site
+from dealradar.rank import photoless_expired
 from scripts.publication_budget import analyze
-from tests.phone_budget_fixture import Inline, NOW, publish_fixture
+from tests.phone_budget_fixture import Inline, NOW, fixture_offers, publish_fixture
 from tests.test_offscreen_cards import offers
 from tests.test_publish_site import make_deal
 
@@ -238,7 +239,8 @@ def test_enabled_shipped_phone_budget_with_headroom(tmp_path):
     for enabled in (False, True):
         cfg.strip_comments = enabled
         def inspect(db, out):
-            report = analyze(out, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+            expected = sum(not photoless_expired(d, cfg, NOW) for d in fixture_offers())
+            report = analyze(out, cfg, expected_offers=expected)
             measurements[enabled] = report["metrics"]
             if enabled:
                 assert report["ok"], report

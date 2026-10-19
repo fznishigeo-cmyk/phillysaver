@@ -12,7 +12,8 @@ const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
-        photoRules, checkPhotos, frontRules, frontPageFlags, eventLinks } = require("./site_check_logic.cjs");
+        photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
+        frontPageFlagLine, frontPageFlags, eventLinks } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
@@ -113,6 +114,15 @@ function checkFooter(html, meta) {
 
 async function walk(page, doc, device) {
   const results = [], errors = [];
+  const homePublishes = [];
+  const capturePublish = (response) => {
+    const url = new URL(response.url());
+    if (url.origin === SITE_URL.origin && url.pathname === SITE_URL.pathname + "deals.json" &&
+        response.request().method() === "GET" && response.ok()) {
+      homePublishes.push(response.json().catch(() => null));
+    }
+  };
+  page.on("response", capturePublish);
   let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "", dealPage = "";
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
   async function step(n, name, action) {
@@ -139,17 +149,13 @@ async function walk(page, doc, device) {
     await page.waitForFunction(() => document.querySelectorAll("#content .card[data-key]").length >= 24,
       null, { timeout: STEP_TIMEOUT_MS });
     await page.waitForTimeout(1000);
-    shown = await page.evaluate(() => ({
-      cards: document.querySelectorAll("#content .card[data-key]").length, top: 0,
-      clock: (document.getElementById("countdown") || {}).textContent || "",
-      tagline: (document.getElementById("tagline") || {}).textContent || "",
-      keys: Array.from(document.querySelectorAll("#content .card[data-key]")).slice(0, 48)
-        .map((c) => c.getAttribute("data-key")),
-    }));
+    shown = await page.evaluate(frontPageSnapshot);
     check(/^\d+:[0-5]\d$/.test(shown.clock.trim()), `clock "${shown.clock}"`);
     check(/\b[\d,]+\+? live deals\b/.test(shown.tagline), "missing live-deals tagline");
     check(!errors.length, "page error");
   });
+  page.off("response", capturePublish);
+  shown.frontCards = identifyFrontCards(shown.frontCards || [], await Promise.all(homePublishes));
   // Preserve the photo report's first-screen measurement before loading more.
   if (shown.cards) {
     try {
@@ -412,11 +418,10 @@ async function walk(page, doc, device) {
   const photos = checkPhotos({ live: alive.length, showing: good, broken: broken.length, firstScreen: shown.top },
     photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
   say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);
-  const byKey = new Map(alive.map((d) => [String(d.key), d]));
-  const front = frontPageFlags((shown.keys || []).map((k) => byKey.get(k) || {}),
+  const front = frontPageFlags(shown.frontCards || [],
     frontRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
-  say(`front page: ${front.ok ? "ok" : "FAIL"} (${front.flags.length} flagged in the first ${(shown.keys || []).length} cards)`);
-  front.flags.forEach((f) => say(`  #${f.pos} ${f.why}: ${f.store} | ${f.item}`));
+  say(`front page: ${front.ok ? "ok" : "FAIL"} (${front.flags.length} flagged in the first ${(shown.frontCards || []).length} cards)`);
+  front.flags.forEach((f) => say(`  ${frontPageFlagLine(f)}`));
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);
   // Which stores earn us nothing (operator, 2026-10-15: "which websites am i
   // still not earning a commission on?"). A report, never a failure.

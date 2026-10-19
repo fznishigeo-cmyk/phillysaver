@@ -2,9 +2,19 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {buildFixture, waitFor} = require('./search_more_browser.cjs');
+const {buildFixture, waitFor, waitForSearchMore} = require('./search_more_browser.cjs');
 
 (async () => {
+  const vm = require('node:vm');
+  await waitForSearchMore({waitForFunction(check, query) {
+    for (const title of [null, 'More from Amazon for "wireless"', 'More from Amazon for "wireless mouse"']) {
+      const ready = vm.runInNewContext('(' + check + ')(query)', {
+        query, document:{querySelector:() => title === null ? null : {textContent:title}}
+      });
+      assert.equal(ready, title === 'More from Amazon for "wireless mouse"',
+        'an attached previous-query section is not ready for scrolling');
+    }
+  }}, 'wireless mouse');
   const root = buildFixture(process.argv[2]);
   assert(fs.existsSync(path.join(root, 'search-analyze.js')));
   assert(!fs.readFileSync(path.join(root, 'index.html'), 'utf8').includes('function analyzeLookup'));

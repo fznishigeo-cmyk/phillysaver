@@ -1,0 +1,10 @@
+# Task 308e — desktop cards grow 26 px when the client hydrates the static wall (load-time layout shift)
+
+Do NOT touch header_polish.py, tests/test_header_polish.py or tests/header_polish_browser.cjs (task 313b is editing them now) or docs/HANDOFF.md.
+
+My Chromium run of tests/drop_shuffle_browser.cjs: 360/390 px pass (mountCLS 0, dropCLS 0). 1280 px fails at line ~102 `lazy CSS and hydration preserve the first card slots`: the first four cards are 393.78 px at static first paint and 420.03 px after the client renders. Element heights inside the first card (static → hydrated):
+- `DIV.metarow`: 21 → 48 px (the hydrated metarow gains a `SPAN` (14 px) + an extra `SPAN.chip` (21 px) and wraps to a second line at a 238 px card width; static metarow = `SPAN.chip storechip` + `SPAN.badge tier-corroborated` only)
+- `SPAN.flag` gains an inline SVG (circle/path) after hydration
+- titles/prices/getdeal identical.
+So the server-rendered static wall (seo.static_wall / the static card markup) and the client card renderer (`index.html` card function / drop-fresh) disagree about the metarow chips (likely a "checked … ago"/freshness chip or similar). Your 308c title reserve is not the cause.
+Fix the product so the static first paint and the hydrated card have identical geometry at 360, 390 and 1280 px: preferably render the same metarow content server-side (same text, same chips, deterministic for the publish time), or if that chip depends on the visitor's clock, reserve its space in the static card so nothing moves. Keep the 308c title reserve only if still needed; keep the homepage phone gzip budget with its 1,000-byte headroom; OFF bytes/pins and idempotency unchanged. Run tests/test_drop_fresh.py, tests/test_drop_shuffle.py, tests/test_home_comment_strip.py, tests/test_first_screen_mix.py and any test of the static wall you touch (`.venv/bin/pytest -q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b308e <files>`), then delete /tmp/b308e. Chromium is blocked for you; I run the browser test. No commit or push. Reply <= 4 lines naming the chip.

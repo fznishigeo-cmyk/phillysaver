@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from dealradar import pipeline, rank, util, verify
+from tests.history_pins import pre_drop_fresh
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.growth import report
@@ -236,6 +237,7 @@ def test_scheduler_other_reasons_are_named_without_changing_recovery(db, cfg):
 
 
 def test_browser_label_sort_ticker_watch_and_surprise(db, cfg, monkeypatch):
+    pre_drop_fresh(cfg)  # Exercise the original full-wall clock/label contract.
     cfg.amazon_reference = "history"  # recorded before task 276: exercise the legacy watch guard
     cfg.amazon_history = "show"  # predates task 121b; exercise the unconfirmed-price watch guard
     cfg.amazon_watches = ""
@@ -245,6 +247,7 @@ def test_browser_label_sort_ticker_watch_and_surprise(db, cfg, monkeypatch):
 
 
 def test_shipping_mode_keeps_label_sort_ticker_surprise_and_suppresses_watches(db, cfg, monkeypatch):
+    pre_drop_fresh(cfg)  # Exercise the original full-wall clock/label contract.
     cfg.amazon_reference = load_config().amazon_reference
     assert cfg.amazon_reference == 'list_price'
     # Isolate the shipping reference policy from the older history/watch gates.

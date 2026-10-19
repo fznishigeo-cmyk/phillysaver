@@ -169,6 +169,7 @@ def test_first_paint(monkeypatch):
 @pytest.mark.parametrize('shuffle,strip', [(False, False), (True, False), (True, True)])
 def test_emitted_logic(tmp_path, shuffle, strip):
     cfg = load_config()
+    cfg.drop_fresh = False  # Test the full-wall spacing contract; fresh pages deduplicate families.
     cfg.drop_shuffle = shuffle
     cfg.strip_comments = strip
     out, *_ = render(tmp_path, cfg)

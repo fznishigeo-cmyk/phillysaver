@@ -21,6 +21,7 @@ from dealradar.parse.extractor import verify_evidence
 from dealradar.publish import open_box, seo, site
 from dealradar.util import iso
 from scripts.publication_budget import analyze
+from tests.phone_budget_fixture import visible_offer_count
 from tests.phone_budget_fixture import publish_fixture
 from tests.test_appeal import tree
 from tests.test_front_page import pick_deal, browser
@@ -685,7 +686,7 @@ def test_phone_budgets_with_all_switches_enabled(tmp_path):
     cfg.max_photoless_h = SHIPPED.max_photoless_h  # all switches, including task 283's cutoff
     # Real task-206 1,400-offer input; never modify its recorded byte ceilings.
     publish_fixture(tmp_path, cfg)
-    result = analyze(tmp_path / "site", cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+    result = analyze(tmp_path / "site", cfg, expected_offers=visible_offer_count(cfg))
     for name, value in result["metrics"].items():
         if name in ("home_html", "home_js", "home_css", "deals_json"):
             print(f'int11 {name}: {value["gzip"]} <= {cfg.phone_budget[name + "_gzip_max_bytes"]} gzip bytes')

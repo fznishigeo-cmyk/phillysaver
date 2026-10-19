@@ -1,0 +1,9 @@
+#event-search{padding-top:4px;padding-bottom:16px}
+#event-search .searchfield{--search-bg:var(--card);position:relative;width:100%;max-width:680px;min-width:0;color:var(--fg)}
+#event-search #q{display:block;width:100%;min-width:0;height:52px;padding:10px 112px 10px 14px;border:1px solid transparent;border-radius:12px;font:inherit;color:var(--tile-fg)}
+#event-search #analyze-search{position:absolute;right:3px;top:3px;min-height:46px;min-width:96px;border-radius:10px;font:inherit;font-weight:750;cursor:pointer}
+#event-search :focus-visible{outline:3px solid var(--link);outline-offset:3px}
+@property --wpspin{syntax:"<angle>";inherits:false;initial-value:0deg}
+@keyframes wpspin{to{--wpspin:360deg}}
+@keyframes wpshine{0%,45%{background-position:150% 0}100%{background-position:-150% 0}}
+@keyframes wptwinkle{50%{transform:scale(1.3) rotate(18deg)}}

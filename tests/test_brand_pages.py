@@ -272,14 +272,17 @@ def test_same_run_is_idempotent(tmp_path, mode):
 
 
 def test_enabled_shipped_phone_budgets(tmp_path):
+    from dealradar.rank import photoless_expired
     from scripts.publication_budget import analyze
+    from tests.phone_budget_fixture import NOW, fixture_offers
 
     cfg = load_config()
     cfg.brand_pages = True
     cfg.phone_budget["enabled"] = True
 
     def inspect(db, out):
-        report = analyze(out, cfg, expected_offers=1393)
+        expected = sum(not photoless_expired(d, cfg, NOW) for d in fixture_offers())
+        report = analyze(out, cfg, expected_offers=expected)
         assert report["ok"], report
         for name in PAGES:
             html = (out / name).read_text()

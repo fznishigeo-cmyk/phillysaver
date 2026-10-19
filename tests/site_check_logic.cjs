@@ -123,6 +123,67 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
     assert.equal(frontPageFlags([card("home", ok)], rules).ok, true, ok);
 }
 
+// Identify the actual DOM cards, including gone/spotlight rows and deploy races.
+{
+  const {identifyFrontCards, frontPageFlags, frontPageFlagLine, frontPageSnapshot} =
+    require("../scripts/site_check_logic.cjs");
+  const rules = {niche: ["auto", "other"]};
+  const visible = {key: 'lamp&"', item: 'Lamp & shade "large"', store: "Target", category: ""};
+  const deal = {...visible, category: "home", status: "alive"};
+  const check = (cards, docs) => frontPageFlags(identifyFrontCards(cards, docs), rules);
+  for (const status of ["alive", "dead"]) {
+    assert.deepEqual(check([visible], [{deals: [{...deal, status}]}]), {ok: true, flags: []});
+  }
+  assert.equal(check([visible], [{deals: [], spotlight: [deal]}]).ok, true);
+  assert.equal(check([visible], [null, {deals: [{...deal, key: "", dedupe_key: visible.key}]}]).ok, true);
+  assert.equal(check([{...visible, category: "home"}], []).ok, true); // DOM alone is sufficient.
+  assert.equal(check([{...visible, category: "auto"}], [{deals: [deal]}]).ok, false); // DOM wins.
+  for (const docs of [[], [null], [{deals: [{...deal, item: "Old publication"}]}],
+      [{deals: [{...deal, store: "Other store"}]}], [{deals: [{...deal, locked: true}]}],
+      [{deals: [deal]}, {deals: [{...deal, category: "auto"}]}]]) {
+    const result = check([visible], docs);
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.flags, [{pos: 1, unidentified: true, key: visible.key}]);
+    assert.equal(frontPageFlagLine(result.flags[0]), 'unidentified card #1 key=lamp&"');
+    assert(!frontPageFlagLine(result.flags[0]).includes("niche category other"));
+  }
+  const good = {...deal}, unknown = {...visible, key: "missing"};
+  for (const pos of [19, 24, 25, 30, 48]) {
+    const cards = Array.from({length: 48}, () => good);
+    cards[pos - 1] = unknown;
+    const result = check(cards, [{deals: [deal]}]);
+    assert.equal(result.ok, pos > 24);
+    assert.equal(frontPageFlagLine(result.flags[0]), `unidentified card #${pos} key=missing`);
+  }
+  for (const d of [{...deal, category: "other"}, {...deal, category: undefined},
+      {...deal, category: "auto"}, {...deal, item: "Front Brake Pads and Rotors"}]) {
+    const result = check([{...d, category: ""}], [{deals: [d]}]);
+    assert.equal(result.ok, false);
+    assert.equal(result.flags[0].unidentified, undefined);
+    assert(frontPageFlagLine(result.flags[0]).includes(d.item));
+  }
+  assert.equal(frontPageFlags([{}], rules).flags[0].unidentified, true);
+  // Snapshot the first 48 positions, with browser-decoded text and attributes.
+  global.document = {
+    getElementById: id => ({textContent: id === "countdown" ? "10:00" : "100 live deals"}),
+    querySelectorAll: selector => {
+      assert.equal(selector, "#content .card[data-key]");
+      return Array.from({length: 60}, (_, i) => ({
+        matches: () => false, getAttribute: () => `key${i}`,
+        querySelector: s => s === ".title" ? {textContent: ` ${visible.item} `} :
+          s === ".storechip" ? {textContent: " Target "} : {getAttribute: () => "home"},
+      }));
+    },
+  };
+  try {
+    const snapshot = frontPageSnapshot();
+    assert.equal(snapshot.cards, 60);
+    assert.equal(snapshot.frontCards.length, 48);
+    assert.deepEqual(snapshot.frontCards[47],
+      {key: "key47", item: visible.item, store: "Target", category: "home"});
+  } finally { delete global.document; }
+}
+
 // Footer: the enabled event pages' links follow the fixed footer links, in config order.
 {
   const fs = require("node:fs"), path = require("node:path");
@@ -132,3 +193,45 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.deepEqual(eventLinks(config.replace(/(\n[ \t]+event_pages:\n[ \t]+enabled:) true/, "$1 false")), []);
   assert.deepEqual(eventLinks("seo:\n  hub_min_items: 10\n"), []);
 }
+
+// Execute the real Home step: use the browser's cache-busted GET, never the
+// earlier report fetch, HEAD requests, failed responses or another origin.
+(async () => {
+  const fs = require("node:fs"), vm = require("node:vm");
+  const logic = require("../scripts/site_check_logic.cjs");
+  const source = fs.readFileSync(require("node:path").join(__dirname, "../scripts/site_check.js"), "utf8");
+  const start = source.indexOf("async function walk(");
+  const end = source.indexOf("  // Preserve the photo report's", start);
+  const listeners = new Map(), SITE = "https://wowpriced.com/";
+  const card = {key: "gone", item: "Robot vacuum", store: "Woot", category: ""};
+  const current = {deals: [{...card, category: "home", status: "dead"}]};
+  const stale = {deals: [{...card, category: "auto", status: "alive"}]};
+  const page = {
+    on: (event, fn) => listeners.set(event, fn),
+    off: (event, fn) => { assert.equal(listeners.get(event), fn); listeners.delete(event); },
+    goto: async () => {
+      for (const [url, method, ok, doc] of [
+        [SITE + "deals.json?t=123", "GET", true, current],
+        [SITE + "deals.json", "HEAD", true, stale],
+        [SITE + "deals.json?t=124", "GET", false, stale],
+        ["https://another.example/deals.json", "GET", true, stale],
+      ]) listeners.get("response")({url: () => url, request: () => ({method: () => method}),
+        ok: () => ok, json: async () => doc});
+      return {status: () => 200, text: async () => "<html>Home</html>"};
+    },
+    waitForFunction: async () => {}, waitForTimeout: async () => {},
+    evaluate: async fn => {
+      assert.equal(fn, logic.frontPageSnapshot);
+      return {cards: 48, top: 0, clock: "10:00", tagline: "100 live deals", frontCards: [card]};
+    },
+  };
+  const context = {page, doc: stale, ...logic, URL, SITE, SITE_URL: new URL(SITE),
+    STEP_TIMEOUT_MS: 10000, checkFooter: () => [], eventLinks: () => [],
+    fs: {readFileSync: () => ""}, path: {join: () => ""}, __dirname: "",
+    check: (ok, reason) => assert(ok, reason)};
+  const shown = await vm.runInNewContext(source.slice(start, end) +
+    '\nreturn shown;\n}\nwalk(page, doc, "desktop");', context);
+  assert.equal(shown.frontCards[0].category, "home");
+  assert.equal(shown.frontCards[0].unidentified, false);
+  assert.equal(listeners.has("response"), false);
+})().catch(error => { console.error(error); process.exitCode = 1; });

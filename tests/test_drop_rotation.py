@@ -322,15 +322,17 @@ def test_impossible_promo_prefixes_prune_category_search(rotation_site, tmp_path
 
 
 def test_enabled_shipped_phone_budget(tmp_path):
+    from dealradar.rank import photoless_expired
     from scripts.publication_budget import analyze
-    from tests.phone_budget_fixture import publish_fixture, reference_sizes
+    from tests.phone_budget_fixture import NOW, fixture_offers, publish_fixture, reference_sizes
 
     cfg = pre_first_screen_mix(load_config())  # All shipped features ON; historical fixtures stay frozen.
     cfg.max_photoless_h = load_config().max_photoless_h  # task 283's cutoff is a shipped feature too
     assert cfg.drop_rotation_windows == 3 and drop_rotation.enabled(cfg)
     cfg.phone_budget["enabled"] = True
     publish_fixture(tmp_path, cfg)
-    report = analyze(tmp_path / "site", cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+    expected = sum(not photoless_expired(d, cfg, NOW) for d in fixture_offers())
+    report = analyze(tmp_path / "site", cfg, expected_offers=expected)
     reference = reference_sizes(tmp_path / "site")
     for metric, values in report["metrics"].items():
         assert values["gzip"] == reference[metric]["gzip"]

@@ -37,6 +37,7 @@ def test_no_published_page_has_unfinished_visible_copy(tmp_path, monkeypatch, mo
         rows = [] if empty else seed(db, 2) + sample_deals() + [make_deal(
             dedupe_key=f"family-{store}", item="Everyday storage basket", brand="Acme",
             store=store, canonical_url=f"https://{store.lower()}.example/product/1",
+            image_url="https://images.example.invalid/basket.jpg",
             codes=[], conditions=[]) for store in ("Walmart", "Target", "BestBuy")]
         out = tmp_path / "site"
         site.render_site(db, cfg, NOW, out_dir=out, deals=rows)

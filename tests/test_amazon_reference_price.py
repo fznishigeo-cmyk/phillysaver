@@ -117,12 +117,13 @@ def test_shipping_category_copy_does_not_advertise_hidden_discount_floors(tmp_pa
 
 def test_current_shipping_publication_keeps_phone_budgets(tmp_path):
     from scripts.publication_budget import analyze
+    from tests.phone_budget_fixture import visible_offer_count
     from tests.phone_budget_fixture import publish_fixture
 
     cfg = load_config()
     cfg.phone_budget['enabled'] = True
     def inspect(database, out):
-        result = analyze(out, cfg, expected_offers=1393)  # task 283: seven older photo-less offers
+        result = analyze(out, cfg, expected_offers=visible_offer_count(cfg))
         assert result['ok'], result['metrics']
     publish_fixture(tmp_path, cfg, inspect=inspect)
 

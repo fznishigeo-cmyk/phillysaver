@@ -53,6 +53,12 @@ async function waitFor(page, condition, action, diagnostics) {
   }
 }
 
+function waitForSearchMore(page, query) {
+  // The previous query's section survives until the 150 ms input debounce.
+  return page.waitForFunction(query => document.querySelector('#search-more-title')?.textContent ===
+    'More from Amazon for "' + query + '"', query);
+}
+
 async function main() {
   const {chromium} = require('playwright');
   const scratch = fs.mkdtempSync('/tmp/task300-search-more-browser-');
@@ -119,6 +125,7 @@ async function main() {
         localStorage.setItem('wp.analyzeHint', '1');
       });
       const page = await context.newPage();
+      await page.clock.install();
       page.on('pageerror', error => errors.push(error.message));
       page.on('console', message => {if (message.type() === 'error') errors.push(message.text());});
       const wait = (condition, action) => waitFor(page, mode + ' ' + width + ' ' + theme + ': ' + condition, action,
@@ -129,7 +136,7 @@ async function main() {
       assert.equal(imports.length, 0, 'no Analyze asset at first paint');
       const q = page.locator('#q');
       await q.fill('mouse');
-      await wait('mouse: related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
+      await wait('mouse: related Amazon section rendered', () => waitForSearchMore(page, 'mouse'));
       releaseAnalyze();
       await page.waitForTimeout(800);
       assert.equal(calls.length, 0, 'no API request before scrolling to the end of local results');
@@ -155,6 +162,13 @@ async function main() {
       assert((await more.innerText()).includes('Amazon price as of '));
       assert.equal(await more.locator('.flag[aria-label="35% off List Price"]').count(), 3);
       assert.equal(await more.locator('s').first().textContent(), 'List Price $19.99');
+      await page.evaluate(() => {window.searchNodes = ['#content .card', '#search-more',
+        '#search-more article', '#search-more [data-search-amazon]'].map(selector =>
+        [selector, document.querySelector(selector)]);});
+      await page.clock.fastForward(15 * 60 * 1000);
+      assert(await page.evaluate(() => window.searchNodes.every(([selector, node]) =>
+        node.isConnected && document.querySelector(selector) === node)),
+        'a clock mark must preserve local results, Amazon cards and the active link');
       const links = await page.locator('#content .card a.getdeal').evaluateAll(nodes => nodes.map(n => n.href)
         .filter(href => href.includes('amazon.com/dp/')).map(href => new URL(href).pathname));
       assert.equal(new Set(links).size, links.length, 'no ASIN already on the wall is repeated');
@@ -194,6 +208,8 @@ async function main() {
       await q.evaluate(el => el.blur());
       assert.deepEqual(await page.locator('[data-search-original]').boundingBox(), undoBeforeBlur,
         'blurring the search field must not move the undo link during a click');
+      await page.clock.fastForward(40000);
+      assert(await page.locator('#join-prompt').isHidden(), 'automatic join waits while search results are active');
       await q.focus();
       await page.locator('[data-search-original]').click();
       assert.equal(await q.inputValue(), 'hair tire');
@@ -231,7 +247,7 @@ async function main() {
 
       for (const [query, reason] of [['wireless', 'rate_limited'], ['wireless mouse', 'budget_exhausted']]) {
         stopReason = reason; await q.fill(query);
-        await wait(query + ': related Amazon section attached', () => page.locator('#search-more').waitFor({state:'attached'}));
+        await wait(query + ': related Amazon section rendered', () => waitForSearchMore(page, query));
         await wait(query + ': scroll to first Amazon page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
         await wait(query + ': first Amazon card visible', () => page.locator('#search-more article').waitFor({state:'visible'}));
         await wait(query + ': scroll to limited page', () => page.locator('#search-more [data-search-amazon]').scrollIntoViewIfNeeded());
@@ -255,5 +271,5 @@ async function main() {
   }
 }
 
-module.exports = {buildFixture, waitFor};
+module.exports = {buildFixture, waitFor, waitForSearchMore};
 if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

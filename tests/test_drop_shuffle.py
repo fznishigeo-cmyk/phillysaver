@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import site
-from tests.history_pins import pre_same_product_spacing
+from tests.history_pins import pre_header_polish, pre_same_product_spacing
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_amazon import run_node
@@ -23,6 +23,7 @@ def config(mode="support"):
     cfg.search_box_glow = False
     cfg.card_tidy = False
     pre_same_product_spacing(cfg)
+    pre_header_polish(cfg)
     cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     cfg.support_enabled = mode == "support"
     cfg.paywall_open_access = mode != "membership"
@@ -73,6 +74,7 @@ def test_invalid_config(tmp_path, value):
 @pytest.mark.parametrize("manifest,strip", [(False, False), (True, True)])
 def test_emitted_drop_logic(tmp_path, manifest, strip):
     cfg = load_config()
+    cfg.drop_fresh = False
     cfg.tracking = {}
     cfg.manifest_refresh["enabled"] = manifest
     cfg.strip_comments = strip

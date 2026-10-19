@@ -47,6 +47,7 @@ def qualifies(deal, original, event, today):
 
 
 def publish(out, cfg, now, live, originals, paths, template, site_url):
+    from . import page_polish
     from .seo import _item_list, _landing_page, _write_page, cards_html
 
     if not cfg.seo_event_pages_enabled:
@@ -81,6 +82,6 @@ def publish(out, cfg, now, live, originals, paths, template, site_url):
         html = _landing_page(template, heading + ' | wowpriced', heading, dek, path, site_url,
                              content, intro=dek, extra_head=_item_list(rows, paths, site_url),
                              indexable=len(rows) >= cfg.seo_event_pages_min_items)
-        _write_page(out, path, html)
+        _write_page(out, path, page_polish.event(html, cfg))
         emitted.append(path)
     return emitted

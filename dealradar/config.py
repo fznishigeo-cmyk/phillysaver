@@ -358,6 +358,8 @@ class AppConfig:
     search_box_glow: bool = False
     same_product_spacing: bool = False
     card_tidy: bool = False
+    page_polish: bool = False
+    header_polish: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     search_more: dict = field(default_factory=lambda: validated_search_more(None))
@@ -365,6 +367,7 @@ class AppConfig:
     open_box_scarcity: bool = False
     open_box_counts: bool = False
     drop_rotation_windows: int = 3
+    drop_fresh: bool = False
     drop_shuffle: bool = False
     unconfirmed_label_enabled: bool = False
     unconfirmed_label_max_h_new: float = 48.0
@@ -1062,6 +1065,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.card_tidy = g("card_tidy", default=False)
     if type(cfg.card_tidy) is not bool:
         raise ValueError("card_tidy must be a boolean")
+    cfg.page_polish = g("page_polish", default=False)
+    if type(cfg.page_polish) is not bool:
+        raise ValueError("page_polish must be a boolean")
+    cfg.header_polish = g("header_polish", default=False)
+    if type(cfg.header_polish) is not bool:
+        raise ValueError("header_polish must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")
@@ -1079,6 +1088,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.drop_rotation_windows = g("site", "drop_rotation_windows", default=3)
     if type(cfg.drop_rotation_windows) is not int or cfg.drop_rotation_windows < 0:
         raise ValueError("site.drop_rotation_windows must be a non-negative integer")
+    cfg.drop_fresh = g("site", "drop_fresh", default=False)
+    if type(cfg.drop_fresh) is not bool:
+        raise ValueError("site.drop_fresh must be a boolean")
     cfg.drop_shuffle = g("site", "drop_shuffle", default=False)
     if type(cfg.drop_shuffle) is not bool:
         raise ValueError("site.drop_shuffle must be a boolean")
@@ -1087,6 +1099,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         setattr(cfg, "unconfirmed_label_max_h_" + condition, max(0.0, float(g(
             "site", "unconfirmed_label", "max_h_" + condition, default=48.0))))
     cfg.front_page = g("publish", "front_page", default={}) or {}
+    fresh_size = cfg.front_page.get("fresh_page_size", 60)
+    if type(fresh_size) is not int or not 24 <= fresh_size <= 120:
+        raise ValueError("publish.front_page.fresh_page_size must be an integer from 24 to 120")
     demote_words = cfg.front_page.get("demote_words", [])
     if not isinstance(demote_words, list) or any(not isinstance(word, str) or not word.strip()
                                               for word in demote_words):

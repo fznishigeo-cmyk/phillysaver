@@ -15,6 +15,7 @@ from dealradar.fetch.keepa import KeepaDealsAdapter
 from dealradar.parse.extractor import verify_evidence
 from dealradar.parse.schema import LLMDeal, to_extracted
 from dealradar.publish import site
+from tests.history_pins import pre_drop_fresh
 from tests.test_amazon_reference_price import offer, settings
 from tests.test_buybox_top_picks import transport, run
 from tests.test_click_price_known import adidas, record, cfg, db
@@ -160,6 +161,7 @@ def test_public_score_magnitude_is_private_but_score_order_and_ties_survive(db, 
 @pytest.mark.parametrize("strip", [False, True])
 def test_nonempty_open_box_inventory_stays_out_of_every_home_surface(db, tmp_path, enabled, strip):
     cfg = load_config()
+    pre_drop_fresh(cfg)  # Isolate used_tab_only from Trending's new-only selection.
     cfg.front_page["used_tab_only"], cfg.strip_comments = enabled, strip
     source = rows(3)
     source[0].update(item="Fixture open box", conditions=["open_box"],

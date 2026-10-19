@@ -1,0 +1,7 @@
+# Task 313 — header_polish OFF pins after task 310 merged
+
+This tree = your 302+303c+304+305+306–308c work plus task 309 (site check identity) and task 310 (card_tidy: the "Looking for more?" filler is removed through `card_tidy.publish`, and the Analyze button never shows a raw ASIN; see docs/codex-tasks/310-seamless-analyze.md).
+
+Targeted run (21 files incl. tests/test_header_polish.py, test_card_tidy.py, test_drop_fresh.py, test_page_polish.py, test_home_comment_strip.py, test_e2e_offline.py): 587 passed, 3 failed — all `tests/test_header_polish.py::test_recorded_off_missing_back_off_bytes[shipped|inline|membership]`: those OFF bytes were recorded on the 302 base, and card_tidy (on in config.yaml) now emits different bytes after task 310.
+
+Fix the test isolation the way earlier tasks did, without weakening it: either isolate card_tidy the way the 305 test already isolates drop_fresh/page_polish (pre_* helpers in tests/history_pins.py; add a `pre_card_tidy`-style step only if one exists or is needed — never re-pin recorded hashes), or compare header_polish OFF with the config's own OFF render where the pin's base no longer exists. OFF must still equal missing, and ON must still differ. Do not touch product code. Run tests/test_header_polish.py, tests/test_card_tidy.py and tests/test_home_comment_strip.py with `.venv/bin/pytest -q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b313 <files>`, then delete /tmp/b313 (disk is tight). No commit or push. Reply <= 3 lines.
