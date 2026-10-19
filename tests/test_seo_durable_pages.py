@@ -154,7 +154,9 @@ const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", 
 const sitemap = '<urlset>' + ["/deals/electronics/", "/deals/pets/", "/deals/home-kitchen/", "/best-deals-today/"]
   .map(p => `<url><loc>https://wowpriced.com${p}</loc></url>`).join("") + '</urlset>';
 (async () => {
-  for (const deals of [[{key: "a"}, {deal_path: "/deal/first-12345678/"}, {deal_path: "/deal/second-87654321/"}], []]) {
+  for (const deals of [[{key: "a"}, {status: "dead", deal_path: "/deal/ended-00000000/"},
+    {status: "alive", deal_path: "/deal/first-12345678/"},
+    {status: "alive", deal_path: "/deal/second-87654321/"}], []]) {
     const requests = [], problems = [];
     const read = async p => {
       const path = new URL(p, "https://wowpriced.com/").pathname;
@@ -172,6 +174,7 @@ const sitemap = '<urlset>' + ["/deals/electronics/", "/deals/pets/", "/deals/hom
       assert.deepEqual(problems, []);
       assert.equal(requests.filter(p => p === "/deal/first-12345678/").length, 1);
       assert(!requests.includes("/deal/second-87654321/"));
+      assert(!requests.includes("/deal/ended-00000000/"));
     } else {
       assert.deepEqual(problems, ["no deal page in sitemap or deals.json", "no deal page in sitemap or deals.json"]);
     }

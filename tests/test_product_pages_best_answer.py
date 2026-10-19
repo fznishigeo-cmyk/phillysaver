@@ -270,7 +270,7 @@ const pages = '<urlset>' + paths.map(p => `<url><loc>${site}${p}</loc></url>`).j
         path === '/robots.txt' ? 'User-agent: *' : '<title>Public page</title>';
       return {status:200, text:async () => body};
     }, (ok, why) => {if (!ok) throw new Error(why);}, site, new URL(site), () => {},
-    {meta:{}, deals:[{deal_path:'/deal/widget-12345678/'}]});
+    {meta:{}, deals:[{status:'alive', deal_path:'/deal/widget-12345678/'}]});
   assert.deepEqual(problems, []);
   for (const path of children) assert.equal(requested.filter(p => p === '/' + path).length, 1);
   for (const path of paths.filter(p => p.startsWith('deals/'))) assert(requested.includes('/' + path));

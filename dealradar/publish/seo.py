@@ -1069,11 +1069,17 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     logger.info("seo: %d live deal pages; %d left out by seo.deal_pages_max", len(rows), max(0, len(live) - cap))
     from ..amazon_used import excluded as amazon_used_excluded
     for k, d in raw.items():
-        if not amazon_used_excluded(d, cfg) and d.get("status") == "dead" and d.get("pct_at_checkout") is not None \
-                and (k in remembered or k in public):
+        suppressed = amazon_used_excluded(d, cfg)
+        if (suppressed and k in remembered) or (d.get("status") == "dead"
+                and d.get("pct_at_checkout") is not None and (k in remembered or k in public)):
             if k not in public:
                 d = dict(d, sightings=db.sightings_for(d["id"]))
-            rows.append(public.get(k) or _serialize_deal(d, now, cfg=cfg))
+            # Retire previously published URLs through the existing ended-page
+            # renderer; the stored offer and its history remain untouched.
+            if suppressed:
+                d = dict(d, status="dead", death=d.get("death") or "suppressed")
+            rows.append(_serialize_deal(d, now, cfg=cfg) if suppressed
+                        else public.get(k) or _serialize_deal(d, now, cfg=cfg))
     paths, lastmods = {}, {}
     for d in rows:
         k = d["key"][:8]

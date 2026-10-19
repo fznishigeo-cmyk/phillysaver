@@ -313,11 +313,10 @@ async function walk(page, doc, device) {
     if (store) await read(store);
     const price = urls.find((u) => { try { return new URL(u).pathname === "/deals/under-25/"; } catch { return false; } });
     if (price) await read(price);
-    // With seo.deal_pages_indexable off, deal pages are noindex and left out
-    // of the sitemap: visit a live deal's page from deals.json instead.
-    dealPage = urls
-      .find((u) => { try { return /^\/deal\/[^/]+\/$/.test(new URL(u).pathname); } catch { return false; } })
-      || ((doc.deals || []).find((d) => typeof d.deal_path === "string"
+    // Deal pages may be absent from the sitemap. Ended rows retain pages
+    // without Get deal, so select a public live row from deals.json.
+    dealPage = ((doc.deals || []).find((d) => !d.locked && d.status === "alive"
+        && typeof d.deal_path === "string"
         && /^\/deal\/[a-z0-9-]+\/$/.test(d.deal_path)) || {}).deal_path;
     if (!dealPage) problems.push("no deal page in sitemap or deals.json");
     check(!problems.length, problems.join("; "));

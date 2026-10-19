@@ -244,6 +244,30 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Live deal-page check + retired Amazon used URLs (Codex task 322, 2026-10-19; uncommitted):**
+  Reproduced with shipped config and Amazon used, Woot used, new and ended
+  offers: there is no first sitemap deal page (`deal_pages_indexable: false`).
+  The old deals.json fallback could choose an ended row first; the fixture's
+  `/deal/ended-kettle-28a3a5e8/` correctly had no Get deal. Step 13 now selects
+  an unlocked `status: alive` row with a local deal_path, keeping the existing
+  Get deal assertion. Real rendered-output checks cover desktop and phone.
+  Separately, task 319 removed remembered suppressed URLs instead of retaining
+  ended pages. These now use the existing ended renderer with a render-only
+  suppression reason: noindex, category alternatives, no Get deal or live
+  Product/Offer schema; stored rows/history remain unchanged. Suppressed rows
+  stay out of the wall, deals.json and sitemap; IndexNow retains its existing
+  ended/noindex transition notifications. No ended-page template/design change.
+  Regression compares suppressed pages byte-for-byte with ordinary ended pages,
+  with indexing on/off and fresh/reused output folders; Woot used and new live
+  pages retain Get deal, and deleting a stored row removes its page.
+  Requested SEO/Amazon-used/footer/identity files plus publish, IndexNow receipts
+  and offline idempotency: **315 passed in 83.02s**, using `-q -n 4
+  -p no:cacheprovider -o tmp_path_retention_policy=failed --basetemp=/tmp/b322`.
+  The unchanged 1,600-deal file-count check passes; no recorded hashes re-pinned.
+  Both standalone site-check Node harnesses, JS syntax and diff checks pass.
+  `/tmp/b322` and owned reproduction scratch removed. No full suite, live
+  API/browser calls, commit or push. Reviewer owns review/deployment/live check.
+
 - **Integrated 318 + 319 + 320 suite (Codex task 321, 2026-10-19; uncommitted):**
   Phone-budget fixtures now use the shared visible-offer count, including task
   319's Amazon-used suppression (1,270 offers instead of 1,300 after photos).

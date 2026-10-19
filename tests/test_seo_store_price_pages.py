@@ -225,7 +225,8 @@ const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", 
         return {status: selected && failure.endsWith("http") ? 503 : 200, text: async () => body};
       };
       const execute = () => run(async (n, name, action) => action(), read,
-        (ok, reason) => { if (!ok) throw new Error(reason); }, () => {}, {meta:{}});
+        (ok, reason) => { if (!ok) throw new Error(reason); }, () => {},
+        {meta:{}, deals:[{status:"alive", deal_path:"/deal/first-12345678/"}]});
       if (failure) await assert.rejects(execute, /HTTP 503|missing title/);
       else await execute();
       for (const hub of ["electronics", "pets", "home-kitchen"]) assert(requests.includes(`/deals/${hub}/`));

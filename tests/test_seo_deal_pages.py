@@ -252,10 +252,11 @@ const code = "let dealPage; await step(8," + source.split("await step(8,")[1].sp
   source.slice(source.indexOf('  for (const [name, url] of [["deal", dealPage]'),
     source.indexOf("  // Include errors from every interaction"));
 const run = new (Object.getPrototypeOf(async function(){}).constructor)("step", "readSite", "check", "page", "SITE", "SITE_URL", "device", "checkFooter", "doc", code);
-const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
+const sitemap = '<urlset>' + ["/deal/ended-00000000/", "/deal/first-12345678/", "/deal/second-87654321/",
   "/deals/electronics/", "/deals/pets/", "/deals/home-kitchen/", "/best-deals-today/"]
   .map(p => `<url><loc>https://wowpriced.com${p}</loc></url>`).join("") + '</urlset>';
 (async () => {
+  for (const device of ["desktop", "phone"]) {
   for (const missing of ["", "/deal/first-12345678/", "/best-deals-today/"]) {
     const requests = [];
     const shots = [], problems = [];
@@ -271,21 +272,77 @@ const sitemap = '<urlset>' + ["/deal/first-12345678/", "/deal/second-87654321/",
       (ok, reason) => { if (!ok) throw new Error(reason); },
       {goto: async url => {const r = await read(url); return {status: () => r.status, text: r.text};},
         screenshot: async options => shots.push(options)},
-      "https://wowpriced.com/", new URL("https://wowpriced.com/"), "desktop", () => {}, {meta:{}});
+      "https://wowpriced.com/", new URL("https://wowpriced.com/"), device, () => {}, {meta:{}, deals:[
+        {status:"dead", deal_path:"/deal/ended-00000000/"},
+        {status:"alive", locked:true, deal_path:"/deal/locked-00000000/"},
+        {status:"alive", deal_path:"https://store.test/offsite"},
+        {status:"alive", deal_path:"/deal/first-12345678/"},
+        {status:"alive", deal_path:"/deal/second-87654321/"}]});
     assert.deepEqual(problems, missing ? ["missing Get deal link"] : []);
     assert(requests.includes("/deal/first-12345678/"));
     assert(requests.includes("/best-deals-today/"));
     assert(!requests.includes("/deal/second-87654321/"));
+    assert(!requests.includes("/deal/ended-00000000/"));
+    assert(!requests.includes("/deal/locked-00000000/"));
     assert(!requests.some(p => p.includes("store.test")));
     assert.equal(requests.filter(p => p === "/deal/first-12345678/").length, 1);
     assert.equal(requests.filter(p => p === "/best-deals-today/").length, 1);
     if (!missing) assert.deepEqual(shots, [
-      {path: "shots/desktop-deal.png", fullPage: true},
-      {path: "shots/desktop-best-today.png", fullPage: true}]);
+      {path: `shots/${device}-deal.png`, fullPage: true},
+      {path: `shots/${device}-best-today.png`, fullPage: true}]);
+  }
   }
 })().catch(e => { console.error(e); process.exitCode = 1; });
 '''
     subprocess.run(["node", "-e", script], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_site_check_skips_first_ended_row_in_shipped_fixture(db, tmp_path):
+    cfg = load_config(ROOT / "config.yaml")
+    assert not cfg.amazon_used_enabled and not cfg.seo_deal_pages_indexable
+    common = dict(codes=[], image_url="https://images.example.invalid/kettle.jpg",
+                  price_rechecked_at=NOW.isoformat())
+    ended = make_deal(dedupe_key="ended", status="dead", death="confirmed",
+                      died_at=NOW.isoformat(), **common)
+    used = make_deal(dedupe_key="amazon-used", store="Amazon", conditions=["used"],
+                     canonical_url="https://www.amazon.com/dp/B000000001", **common)
+    woot = make_deal(dedupe_key="woot-used", store="Woot", conditions=["used"],
+                     canonical_url="https://www.woot.com/offers/kettle", **common)
+    new = make_deal(dedupe_key="new", **common)
+    render_site(db, cfg, NOW, out_dir=tmp_path, deals=[used, ended, woot, new])
+    doc = json.loads((tmp_path / "deals.json").read_text())
+    assert [d["dedupe_key"] for d in doc["deals"]] == ["ended", "woot-used", "new"]
+    assert not _page(tmp_path, _path(used)).exists()
+    assert '>Get deal</a>' not in _page(tmp_path, doc["deals"][0]["deal_path"]).read_text()
+    assert not any(re.search(r"<loc>[^<]*/deal/", p.read_text()) for p in tmp_path.glob("sitemap*.xml"))
+    # Execute the live check's selection and page assertions on real emitted
+    # HTML, without launching a browser or requesting a retailer URL.
+    script = r'''
+const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path");
+const out = process.argv[1], doc = JSON.parse(fs.readFileSync(path.join(out, "deals.json"), "utf8"));
+const source = fs.readFileSync("scripts/site_check.js", "utf8");
+const start = source.indexOf("    dealPage = ");
+const code = "let dealPage;" + source.slice(start, source.indexOf("    if (!dealPage)", start)) +
+  source.slice(source.indexOf('  for (const [name, url] of [["deal", dealPage]'),
+    source.indexOf("  // Include errors from every interaction"));
+const run = new (Object.getPrototypeOf(async function(){}).constructor)(
+  "doc", "step", "page", "check", "SITE", "SITE_URL", "device", "checkFooter", code);
+(async () => {
+  for (const device of ["desktop", "phone"]) {
+    const visits = [], site = "https://wowpriced.com/";
+    await run(doc, async (n, name, action) => action(), {
+      goto: async url => {
+        const relative = new URL(url).pathname;
+        visits.push(relative);
+        return {status: () => 200, text: async () =>
+          fs.readFileSync(path.join(out, relative, "index.html"), "utf8")};
+      }, screenshot: async () => {}
+    }, (ok, reason) => { if (!ok) throw new Error(reason); }, site, new URL(site), device, () => {});
+    assert.deepEqual(visits, [doc.deals[1].deal_path, "/best-deals-today/"]);
+  }
+})().catch(e => { console.error(e); process.exitCode = 1; });
+'''
+    subprocess.run(["node", "-e", script, str(tmp_path)], cwd=ROOT, check=True, capture_output=True, text=True)
 
 
 def test_small_print_names_wowpriced_once_the_amazon_tag_is_set(db, cfg, tmp_path):

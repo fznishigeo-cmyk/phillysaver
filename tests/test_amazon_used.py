@@ -14,7 +14,8 @@ from dealradar.fetch.keepa import KeepaDealsAdapter, DEAL_PAGE_SIZE
 from dealradar.keepa_budget import KeepaBudget
 from dealradar.keepa_categories import NAMES_META
 from dealradar.keepa_rechecks import History, Schedule
-from dealradar.publish import site, social
+from dealradar.publish import seo, site, social
+from dealradar.publish.seo_audit import Page
 from dealradar.volatility import Plan
 from tests.http_helpers import api_transport
 from tests.test_keepa import SRC, _amazon_row
@@ -52,8 +53,10 @@ def test_legacy_missing_conditions_are_suppressed(db, cfg, changes):
     assert not amazon_used.excluded(dict(row, store="Woot", canonical_url="https://www.woot.com/offers/x"), cfg)
 
 
-def test_all_public_artifacts_and_old_dead_page_are_removed(db, cfg, tmp_path, monkeypatch):
+@pytest.mark.parametrize("indexable", [False, True])
+def test_public_artifacts_exclude_used_but_remembered_page_is_ended(db, cfg, tmp_path, monkeypatch, indexable):
     monkeypatch.setattr(util, "now_utc", lambda: NOW)
+    cfg.seo_deal_pages_indexable = indexable
     used = seed(db, cfg, conditions=["used"], price_rechecked_at=util.iso(NOW))
     from tests.test_product_entities import insert
     woot = insert(db, "woot|319", now=NOW, store="Woot", item="Woot used kettle",
@@ -61,28 +64,58 @@ def test_all_public_artifacts_and_old_dead_page_are_removed(db, cfg, tmp_path, m
                   canonical_url="https://www.woot.com/offers/remaining-used", price_rechecked_at=util.iso(NOW),
                   image_url=used["image_url"], final_price=25, regular_price=100,
                   pct_at_checkout=75, abs_savings=75, critic=used["critic"])
+    new = seed(db, cfg, asin="B000000003", price_rechecked_at=util.iso(NOW))
     cfg.keepa_click_price_rule = "off"
     cfg.amazon_used_enabled = True
-    site.render_site(db, cfg, NOW, out_dir=tmp_path)
-    first = json.loads((tmp_path / "deals.json").read_text())
+    out = tmp_path / "initial"
+    site.render_site(db, cfg, NOW, out_dir=out)
+    first = json.loads((out / "deals.json").read_text())
     old = next(d for d in first["deals"] if d["dedupe_key"] == used["dedupe_key"])
-    path = tmp_path / old["deal_path"].strip("/") / "index.html"
+    path = out / old["deal_path"].strip("/") / "index.html"
     assert path.exists()
+    # Capture the established ended-page bytes before suppressing the offer.
+    db.update_deal(used["dedupe_key"], status="dead",
+                   payload=dict(used, death="confirmed", died_at=util.iso(NOW)))
+    site.render_site(db, cfg, NOW, out_dir=out)
+    ended = path.read_bytes()
+    db.update_deal(used["dedupe_key"], status="alive", payload=used)
     cfg.amazon_used_enabled = False
-    site.render_site(db, cfg, NOW, out_dir=tmp_path)
-    assert not path.exists()
-    public = json.loads((tmp_path / "deals.json").read_text())
-    assert [d["dedupe_key"] for d in public["deals"]] == [woot["dedupe_key"]]
-    for file in tmp_path.rglob("*"):
-        if file.is_file() and file.suffix in {".html", ".json", ".xml"}:
-            assert used["asin"] not in file.read_text(), file
-    assert db.get_deal(used["dedupe_key"])["status"] == "alive"
+    # Reused and fresh deployment folders must retain the same ended page.
+    for out in (out, tmp_path / "fresh"):
+        site.render_site(db, cfg, NOW, out_dir=out)
+        path = out / old["deal_path"].strip("/") / "index.html"
+        assert path.read_bytes() == ended
+        page = Page(path.read_text(), old["deal_path"])
+        assert page.ended and not page.indexable and page.live_offers() == 0
+        assert '>Get deal</a>' not in path.read_text()
+        assert 'href="/deals/home-kitchen/"' in path.read_text()
+        assert not page.products()
+        public = json.loads((out / "deals.json").read_text())
+        assert {d["dedupe_key"] for d in public["deals"]} == {woot["dedupe_key"], new["dedupe_key"]}
+        for d in public["deals"]:
+            html = (out / d["deal_path"].strip("/") / "index.html").read_text()
+            assert d["status"] == "alive" and '>Get deal</a>' in html
+        for file in out.rglob("*"):
+            if file != path and file.is_file() and file.suffix in {".html", ".json", ".xml"}:
+                assert used["asin"] not in file.read_text(), file
+        sitemap = "".join(p.read_text() for p in out.glob("sitemap*.xml"))
+        assert old["deal_path"] not in sitemap
+        assert all((d["deal_path"] in sitemap) == indexable for d in public["deals"])
+        # IndexNow can notify engines of the ended/noindex transition, as it
+        # does for other ended pages; it must never advertise a live offer.
+        due = json.loads(seo.due_list_path(out).read_text())
+        assert "https://wowpriced.com" + old["deal_path"] in due
+    assert db.get_deal(used["dedupe_key"]) == used
     report = amazon_used.summary(db, cfg)
     assert report["live_rows_suppressed"] == 1 and report["used_tokens_spent"] == 0
     assert report["discovery_tokens_avoided_ceiling_per_pull"] == 171
     db.update_deal(used["dedupe_key"], payload=dict(used, status="dead", death="confirmed", died_at=util.iso(NOW)), status="dead")
-    site.render_site(db, cfg, NOW, out_dir=tmp_path)
-    assert not path.exists()  # remembered dead offers cannot reappear via SEO
+    site.render_site(db, cfg, NOW, out_dir=out)
+    assert path.read_bytes() == ended
+    db.conn.execute("DELETE FROM deals WHERE dedupe_key=?", (used["dedupe_key"],))
+    db.conn.commit()
+    site.render_site(db, cfg, NOW, out_dir=out)
+    assert not path.exists()
 
 
 @pytest.mark.parametrize("planner", [False, True])
