@@ -1966,6 +1966,12 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     for deal in batch:
                         deal["buybox_requested_at"] = util.iso(now)
                         db.update_deal(deal["dedupe_key"], payload={k: deal[k] for k in _DEAL_FIELDS if k in deal})
+            if cfg.images_post_ingest_keepa and fetcher is not None:
+                # Catch-up must not buy the same identity again, including
+                # lost answers or new posts sharing an existing ASIN.
+                fetcher.keepa_recheck_asins = getattr(fetcher, "keepa_recheck_asins", set())
+                fetcher.keepa_recheck_asins.update(
+                    str(d.get("asin") or "").strip().upper() for d in batch)
             verdicts = recheck_amazon_prices(batch, cfg, budget=budget,
                                              used_offers=not is_photo, fetcher=fetcher, **options)
             for name, value in getattr(verdicts, "diagnostics", {}).items():
@@ -2734,10 +2740,20 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             db, cfg, now, image_backfill=fast_lane,
             deadline=deadline - _RESERVE_FOR_TAIL_S / 2, fetcher=fetcher)
         summary["price_recheck"]["feed_confirmed"] = {k: len(v) for k, v in feed_confirmed.items()}
+        keepa_rate_limited = summary["price_recheck"].get("rate_limited", False)
+        if cfg.images_post_ingest_keepa and early_recheck:
+            # The fetch-time inventory predates parsing and link recovery.
+            # Fill only photos here; never repeat price/death checks.
+            summary["post_ingest_photos"] = photo_recovery.backfill_keepa_images(
+                db, rank.site_deals(db, cfg, now, include_unconfirmed=recover_unconfirmed),
+                fetcher, cfg, deadline - _RESERVE_FOR_TAIL_S / 2,
+                limit=max(0, _IMAGE_BACKFILL_PER_RUN - summary["price_recheck"]["image_backfill"]),
+                rate_limited=keepa_rate_limited)
+            keepa_rate_limited = summary["post_ingest_photos"]["rate_limited"]
         summary["photo_search"] = photo_recovery.search_photos(
             db, rank.site_deals(db, cfg, now), fetcher, cfg, now,
             deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
-            rate_limited=summary["price_recheck"].get("rate_limited", False)) if fast_lane else {}
+            rate_limited=keepa_rate_limited) if fast_lane else {}
         if fast_lane and cfg.compare["refresh"]:
             from . import compare
             from .keepa_budget import KeepaBudget
@@ -2745,7 +2761,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 summary["compare"] = compare.refresh(
                     db, cfg, now, fetcher, deadline - _RESERVE_FOR_TAIL_S / 2, run_key,
                     budget=KeepaBudget.load(db, cfg),
-                    rate_limited=(summary["price_recheck"].get("rate_limited", False)
+                    rate_limited=(keepa_rate_limited
                                   or summary["photo_search"].get("rate_limited", False)))
             except Exception as exc:
                 log.warning("compare refresh unavailable (%s)", type(exc).__name__)
@@ -2844,7 +2860,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from . import accuracy
         accuracy.extra_samples(db, cfg, now, fetcher=fetcher,
                                deadline=deadline - _RESERVE_FOR_TAIL_S / 2, run_key=run_key,
-                               rate_limited=(summary["price_recheck"].get("rate_limited", False)
+                               rate_limited=(keepa_rate_limited
                                              or summary["photo_search"].get("rate_limited", False)
                                              or summary.get("compare", {}).get("rate_limited", False)))
         # last_run lands in the public deals.json: no spend or model (the

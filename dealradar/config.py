@@ -333,6 +333,7 @@ class AppConfig:
     max_photoless_h: float | None = None
     reuse_link_facts_enabled: bool = False
     images_asin_backfill_per_run: int = 60
+    images_post_ingest_keepa: bool = False
     images_short_links_per_run: int = 10
     images_keepa_search_per_run: int = 10
     images_keepa_search_per_day: int = 120
@@ -1031,6 +1032,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError("publish.reuse_link_facts.enabled must be a boolean")
     for name in ("asin_backfill_per_run", "short_links_per_run", "keepa_search_per_run", "keepa_search_per_day"):
         setattr(cfg, "images_" + name, max(0, int(g("images", name, default=getattr(cfg, "images_" + name)))))
+    cfg.images_post_ingest_keepa = g("images", "post_ingest_keepa", default=False)
+    if type(cfg.images_post_ingest_keepa) is not bool:
+        raise ValueError("images.post_ingest_keepa must be a boolean")
     cfg.images_keepa_match_min = float(g("images", "keepa_match_min", default=0.85))
     if not 0.85 <= cfg.images_keepa_match_min <= 1:
         raise ValueError("images.keepa_match_min must be between 0.85 and 1")

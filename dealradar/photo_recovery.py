@@ -271,6 +271,67 @@ def backfill_asins(db, deals, fetcher, cfg, deadline):
     return {"tried": tried, "found": found}
 
 
+def backfill_keepa_images(db, deals, fetcher, cfg, deadline, *, limit, rate_limited=False):
+    """Catch identities learned after the fetch-time recheck, photos only.
+
+    Use the existing identity cap and remaining photo slots. A known
+    empty lookup waits for ordinary price rechecks; transport misses retry.
+    Identities requested by this run's price recheck wait for the next run.
+    """
+    from .amazon_used import excluded
+    from .verify import KEEPA_BATCH, keepa_products
+    import logging
+
+    stats = {"requested": 0, "found": 0, "tokens": 0, "rate_limited": rate_limited}
+    if not cfg.images_post_ingest_keepa or not cfg.feature_flags.get("keepa") or rate_limited:
+        return stats
+    key = get_secret("KEEPA_KEY")
+    limit = min(limit, cfg.images_asin_backfill_per_run)
+    if not key or limit <= 0:
+        return stats
+    by_asin = {}
+    for deal in sorted(deals, key=lambda d: str(d.get("first_seen_at") or ""), reverse=True):
+        asin = deal.get("asin") or ""
+        if (deal.get("status") != "alive" or deal.get("image_url") or excluded(deal, cfg)
+                or not is_amazon_deal(deal) or not re.fullmatch(r"[A-Z0-9]{10}", asin)
+                or asin in getattr(fetcher, "keepa_recheck_asins", ())
+                or (deal.get("photo_lookup_asin") == asin and deal.get("photo_lookup_found_none"))):
+            continue
+        by_asin.setdefault(asin, []).append(deal)
+    pending = list(by_asin)[:limit]
+    budget = KeepaBudget.load(db, cfg)
+    reserve = max(MIN_FOR_IMAGE_BACKFILL, cfg.keepa_reserve_tokens,
+                  cfg.keepa_recheck_surplus_reserve)
+    try:
+        while pending:
+            if deadline is not None and time.monotonic() + 15 >= deadline:
+                break
+            available = budget.spendable()
+            if available is None or not math.isfinite(available) or not budget.allows(reserve + 1):
+                break
+            size = min(KEEPA_BATCH, len(pending), int(available - reserve))
+            batch, pending = pending[:size], pending[size:]
+            stats["requested"] += len(batch)
+            products = keepa_products(key, batch, 1, budget, fetcher=fetcher, deadline=deadline,
+                                      record_shared_facts=False)
+            if products is None:
+                stats["rate_limited"] = True
+                break
+            for asin in batch:
+                for deal in by_asin[asin]:
+                    photo = {"asin": asin}
+                    _harvest_image(photo, products.get(asin, {}))
+                    _save(db, deal, **{k: v for k, v in photo.items() if k != "asin"})
+                    stats["found"] += bool(photo.get("image_url"))
+    except Exception as exc:
+        logging.getLogger(__name__).info("post-ingest photos stopped: %s", error_summary(exc))
+    finally:
+        if stats["requested"]:
+            budget.save(db)
+        stats["tokens"] = budget.usage.accounted
+    return stats
+
+
 def title_match(deal, products, minimum):
     """All candidates compete, including ones rejected by brand or price."""
     mine = name_words(deal.get("item") or "")

@@ -258,6 +258,38 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   follow-up checks after fixing the three cross-feature release-pin failures.
   Phone gzip retains its 1,000-byte reserve. `/tmp/b330`, `/tmp/b330-recheck`
   and owned inspection scratch removed; no full suite, commit or push.
+- **Photo catch-up adversarial review (Codex task 331r, 2026-10-19):**
+  Confirmed duplicate paid reads after a failed fetch-time recheck and for
+  newly ingested rows sharing an already-read ASIN (both regressions failed
+  before the fix). A fetcher-local, normalized ASIN set now defers those
+  catch-up reads until the next run; OFF has no new tracking or output.
+  Targeted offline checks: **161 distinct passed** across post-ingest photos,
+  rerun idempotency, existing photo recovery and visitor reserves, including
+  sent/unsent deadline accounting and later recovery after an empty lookup.
+  No other confirmed blockers; live coverage remains unmeasured and shared
+  identities may wait one run for a photo. `/tmp/b331r` removed; no full suite,
+  live calls, commit or push. Changes remain uncommitted for owner review.
+- **Photo catch-up (Codex task 331, 2026-10-19; uncommitted):** Confirmed
+  `_fetch_all` runs Keepa rechecks before parsing; `early_recheck or ...`
+  then skips the post-ingest pass. The separate tier cross-check caps at 25.
+  Source-shaped DOA fixtures retain exact ASINs with post click URLs yet miss
+  photos after that quota; post routing itself does not prevent identity.
+  Existing offline identity/short/post passes remain capped at 60/10/40;
+  task 265's separate proposed pass is absent. No decrypted live state here
+  (`scripts/restore_state.sh` restores encrypted data-branch state), so the
+  live no-ASIN/backlog mix and any effect of used removal remain unconfirmed.
+  The first-hour burst counts toward 98%; expired photoless rows already leave
+  JSON before the check reads it. Strict `images.post_ingest_keepa` defaults
+  false/ships true: exact-ASIN photo-only catch-up after recovery, both lanes,
+  using the existing 60 cap/remaining 300 photo slots and shared Keepa reserves,
+  including visitors. No new page reads, source images/text, price/evidence or
+  click changes; unresolved photos keep the one-hour rule. OFF public bytes
+  match a pre-edit whole-output hash. Requested targeted validation: **208
+  passed**, including rerun idempotency; actual fetch-hook regression: **1 passed**.
+  All runs used `-n 4`, no cache, failed-only retention; `/tmp/b331` removed.
+  #231 needs 2 recovered photos for 98%; all 24 Amazon gaps would give 99.70%,
+  conditional on exact identity/images/budget, not a measured live forecast.
+  No full suite, live calls, commit or push; review/live measurement remain.
 - **Tool-page suite compatibility (Codex task 328c, 2026-10-19; uncommitted):**
   Both tool footers now carry the five standard trust links, adding How we
   verify and Contact while preserving the clean layout and 44px targets.

@@ -1276,6 +1276,7 @@ compare:                   # task 256: best value finder (Keepa only; filters ne
   max_terms: 120
 
 images:
+  post_ingest_keepa: true    # Catch exact-ASIN photos missed by the fetch-time recheck; existing caps/reserves.
   asin_backfill_per_run: 60   # offline identity repairs, plus existing Amazon link pass; once per deal
   short_links_per_run: 10     # additional amzn.to/a.co chains, HEAD only
   keepa_search_per_run: 10
