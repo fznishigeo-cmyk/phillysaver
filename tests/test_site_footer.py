@@ -105,8 +105,9 @@ def test_footer_contrast_in_both_themes():
 
 def test_site_check_budget_fits_the_walk_and_names_its_own_aborts():
     # 2026-10-13: the 40-request budget ran out on the phone walk's last page,
-    # which failed as a bare net::ERR_FAILED. Still paced at 1 request/s.
+    # which failed as a bare net::ERR_FAILED; 60 ran out on 2026-10-19 after
+    # the three shared U3 assets. Still paced at 1 request/s.
     script = (Path(__file__).resolve().parents[1] / "scripts/site_check.js").read_text()
-    assert "const SITE_REQUEST_LIMIT = 60;" in script
+    assert "const SITE_REQUEST_LIMIT = 80;" in script
     assert "Math.max(0, 1000 - (Date.now() - lastSiteRequest))" in script
     assert "(guard: ${lastAbort})" in script

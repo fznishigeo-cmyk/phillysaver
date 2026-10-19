@@ -104,7 +104,8 @@ assert titles == [d['item'] for d in expected], 'static paint must use publicati
       assert(mountCLS<=0.001,'lazy drop mount must not cause CLS');
       assert.equal(await page.locator('header .hnav #cattabs').count(),1);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'integrated header fits');
-      assert.equal(await page.locator('#cattabs').evaluate(el=>getComputedStyle(el).overflowX),'auto','header stylesheet applied');
+      // Task 317: desktop category tabs wrap (no scroll row); phones keep their scrolling tab row.
+      assert.equal(await page.locator('#cattabs').evaluate(el=>getComputedStyle(el).overflowX),width>=900?'visible':'auto','header stylesheet applied');
       assert(await page.locator('header + .event-links').isVisible());
       const cards='#content .grid:not(.spotlight-grid) .card[data-key]';
       const order=()=>page.locator(cards).evaluateAll(nodes=>nodes.map(el=>el.dataset.key));

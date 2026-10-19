@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {buildFixture: buildSearchFixture, assertAnalyzeGeometry} = require('./search_box_glow_browser.cjs');
+const {buildFixture: buildSearchFixture, assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 function buildFixture(scratch, lazy = true) {return buildSearchFixture(scratch, true, lazy);}
 async function main() {
   const {chromium} = require('playwright');
@@ -14,7 +14,7 @@ async function main() {
     const roots = {};
     for (const lazy of [false, true]) roots[lazy] = buildFixture(path.join(scratch, String(lazy)), lazy);
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
-    for (const lazy of [false, true]) for (const width of [360, 390, 1440]) for (const theme of ['light', 'dark']) {
+    for (const lazy of [false, true]) for (const width of [360, 390, 900, 1024, 1280, 1440, 1920]) for (const theme of ['light', 'dark']) {
       const root = roots[lazy], errors = [], unexpected = [];
       const context = await browser.newContext({viewport:{width, height:844}, colorScheme:theme, serviceWorkers:'block'});
       await context.route('**/*', route => {
@@ -22,14 +22,22 @@ async function main() {
         if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',
           body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#b9c6cd"/></svg>'});
         if (url.origin !== 'https://wowpriced.test') {unexpected.push(url.origin); return route.fulfill({status:204, body:''});}
-        if (url.pathname === '/api/search') return route.fulfill({json:{items:[{asin:'B000000901',
+        if (url.pathname === '/api/search') {
+          assert.equal(new URL(route.request().frame().url()).pathname, '/', 'event discounts never calls the API');
+          return route.fulfill({json:{items:[{asin:'B000000901',
           title:'Wireless mouse from Amazon', price_cents:1299, as_of:new Date().toISOString()}]}});
+        }
         let file = path.resolve(root, '.' + url.pathname);
         if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
         if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) return route.fulfill({status:204, body:''});
         return route.fulfill({path:file});
       });
-      await context.addInitScript(() => {localStorage.setItem('wp.analyzeHint', '1');});
+      await context.addInitScript(() => {
+        localStorage.setItem('wp.analyzeHint', '1');
+        window.discountOpens = []; window.discountTracks = [];
+        window.open = (...args) => window.discountOpens.push(args);
+        window.wpTrack = (...args) => window.discountTracks.push(args);
+      });
       const page = await context.newPage();
       page.on('pageerror', error => errors.push(error.message));
       const fits = async () => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -43,7 +51,19 @@ async function main() {
         }
         assert.equal(await page.locator('#analyze-search').innerText(), 'Analyze');
         await assertAnalyzeGeometry(page);
+        await assertDiscounts(page, false);
         await page.screenshot({path:path.join(shots, `${name}-${slug}.png`)});
+        await page.locator('#q').fill('mouse');
+        await assertAnalyzeGeometry(page);
+        await assertDiscounts(page, true);
+        const exit = page.locator(width < 900 ? '#search-discounts-mobile' : '#search-discounts');
+        for (const button of ['left', 'middle']) await exit.click({button});
+        assert.deepEqual(await page.evaluate(() => window.discountOpens), Array(2).fill([
+          'https://www.amazon.com/s?k=mouse&rh=p_n_deal_type%3A23566065011&tag=example-20', '_blank', 'noopener']));
+        assert.deepEqual(await page.evaluate(() => window.discountTracks.map(call => call[0]).filter(name => name === "search_discounts")),
+          ['search_discounts', 'search_discounts']);
+        await page.locator('#q').fill('');
+        await assertDiscounts(page, false);
         await page.locator('#q').fill('mouse');
         if (analyze) await page.locator('#analyze-search').click();
         else await page.locator('#q').press('Enter');

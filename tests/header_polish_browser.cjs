@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
-const {assertAnalyzeGeometry} = require('./search_box_glow_browser.cjs');
+const {assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 
-function buildFixture(scratch, polish = true) {
+function buildFixture(scratch, polish = true, discounts = true) {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
 import json, sys
@@ -18,6 +18,7 @@ from tests.test_publish_site import make_deal
 site.util_now = lambda: NOW
 cfg = load_config()
 cfg.header_polish = sys.argv[2] == "true"
+cfg.all_discounts_button = sys.argv[3] == "true"
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -31,7 +32,7 @@ pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal
 assert pages, "fixture must include a current deal page"
 pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
 (Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
-`, scratch, String(polish)], {encoding:'utf8'});
+`, scratch, String(polish), String(discounts)], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return path.join(scratch, 'site');
 }
@@ -48,6 +49,7 @@ function geometry() {
   joinText.selectNodeContents(document.querySelector('#subscribe').firstChild);
   return {
     header:rect(document.querySelector('header')), field:rect(field), nav:rect(nav),
+    firstCardTop:(card => card ? card.getBoundingClientRect().top + scrollY : null)(document.querySelector('#content .card')),
     row:['.brand', '#drop', '#pwa-header-install', '#subscribe'].map(selector => ({selector,
       ...rect(document.querySelector(selector))})),
     tabs:[...nav.children].map(rect), status:rect(document.querySelector('#tagline')),
@@ -58,11 +60,13 @@ function geometry() {
     why:getComputedStyle(document.querySelector('.join-why')).display,
     whyRect:rect(document.querySelector('.join-why')), joinText:rect(joinText),
     fade:getComputedStyle(nav).maskImage, overflow:getComputedStyle(nav).overflowX,
+    wrap:getComputedStyle(nav).flexWrap, justify:getComputedStyle(nav).justifyContent,
+    tabScroll:nav.scrollWidth, tabClient:nav.clientWidth,
   };
 }
 
 function assertDesktop(g, width, label) {
-  assert(g.field.width > 200 && g.field.width <= 720, label + ': usable flexible search');
+  assert(g.field.width >= 320 && g.field.width <= 900, label + ': usable flexible search');
   if (width < 1200) assert(g.field.width >= 320, label + ': compact desktop reserves a usable search track');
   for (const item of g.row) {
     assert(Math.abs(item.cy - g.field.cy) <= 2, label + ': centred ' + item.selector);
@@ -75,9 +79,15 @@ function assertDesktop(g, width, label) {
   }
   assert.equal(g.row[1].height, g.field.height, label + ': timer matches search height');
   assert(g.nav.y >= g.field.bottom && g.nav.bottom <= g.header.bottom, label + ': second row inside header');
-  assert(g.status.y >= g.nav.y && g.status.bottom <= g.nav.bottom + 1, label + ': status on nav row');
-  assert(g.status.x >= g.nav.right, label + ': status does not overlap categories');
-  assert(g.fade.includes('linear-gradient') && g.overflow === 'auto', label + ': scroll/fade cue');
+  assert(g.status.y >= g.nav.bottom && g.status.bottom <= g.header.bottom, label + ': status on its own visible line');
+  assert.equal(g.fade, 'none', label + ': no hidden-scroll fade');
+  assert.equal(g.overflow, 'visible', label + ': no scroll container');
+  assert.equal(g.wrap, 'wrap', label + ': categories wrap');
+  assert.equal(g.justify, 'center', label + ': centred categories');
+  assert(g.tabScroll <= g.tabClient, label + ': no horizontal scroll, including classic Windows scrollbars');
+  for (const tab of g.tabs) assert(tab.x >= g.nav.x - 1 && tab.right <= g.nav.right + 1 &&
+    tab.y >= g.nav.y && tab.bottom <= g.nav.bottom + 1, label + ': every category visible');
+  if (width <= 1280) assert(new Set(g.tabs.map(t => Math.round(t.y))).size >= 2, label + ': narrower desktop wraps');
   if (width >= 1500) {
     assert.notEqual(g.why, 'none', label + ': wide Join label');
     assert(g.whyRect.width > 0, label + ': wide Join label has width');
@@ -107,11 +117,11 @@ async function main() {
   const inspect = auditSource.slice(auditSource.indexOf('function hitAreaMath()'), auditSource.indexOf('async function runAudit()'));
   let browser;
   try {
-    const roots = {off:buildFixture(path.join(scratch, 'off'), false), on:buildFixture(path.join(scratch, 'on'))};
+    const roots = {off:buildFixture(path.join(scratch, 'off'), true, false), on:buildFixture(path.join(scratch, 'on'))};
     const fixture = JSON.parse(fs.readFileSync(path.join(scratch, 'on/fixture.json'), 'utf8'));
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
     const metrics = [];
-    for (const width of [900, 1024, 1199, 1280, 1440, 1500, 1920, 2560, 899, 390, 360]) {
+    for (const width of [900, 1024, 1100, 1199, 1280, 1440, 1500, 1557, 1920, 2560, 899, 390, 360]) {
       for (const theme of ['light', 'dark']) {
         let original;
         const originalActions = new Map();
@@ -158,9 +168,11 @@ async function main() {
           await assertAnalyzeGeometry(page);
           if (mode === 'off') original = g;
           else {
-            assert.deepEqual(g.style, original.style, name + ': rainbow and Analyze styles preserved');
+            for (const key of ['rainbow', 'ringWidth', 'duration'])
+              assert.equal(g.style[key], original.style[key], name + ': rainbow field preserved');
+            await assertDiscounts(page, false);
             assert(g.scrollWidth <= width, name + ': no document overflow');
-            assert(Math.max(...g.tabs.map(t => t.y)) - Math.min(...g.tabs.map(t => t.y)) <= 1, name + ': one tab line');
+            if (width < 900) assert(Math.max(...g.tabs.map(t => t.y)) - Math.min(...g.tabs.map(t => t.y)) <= 1, name + ': phone tab row unchanged');
             if (width >= 900) assertDesktop(g, width, name);
             const record = {name, geometry:g};
             if (width === 390 || width === 360) {
@@ -170,11 +182,13 @@ async function main() {
               assert.deepEqual(audit.overflow, [], name + ': overflow');
               assert.deepEqual(audit.smallTaps, [], name + ': 44px hit areas');
               assert.deepEqual(audit.smallInputs, [], name + ': input type size');
-              assert(g.header.height <= original.header.height, name + ': phone header does not grow');
+              assert.equal(g.header.height, original.header.height, name + ': phone load header is unchanged');
+              assert.deepEqual(g.field, original.field, name + ': phone load field is unchanged');
+              assert.equal(g.firstCardTop, original.firstCardTop, name + ': first card does not move on load');
               record.mobile = audit;
             }
             await page.screenshot({path:path.join(shots, `${width}-${theme}.png`)});
-            // Keyboard users can reach every clipped category, including the last one.
+            // Every desktop category is visible; phone scroll remains keyboard reachable.
             const last = page.locator('#cattabs .cattab').last();
             await last.focus();
             assert(await last.evaluate(el => {
@@ -186,7 +200,15 @@ async function main() {
             assert(await all.evaluate(el => el.classList.contains('active')), name + ': category still filters');
             await page.locator('#q').fill('kettle');
             await page.waitForFunction(() => document.querySelector('#searchcount').textContent.includes('24'));
+            await assertAnalyzeGeometry(page);
+            await assertDiscounts(page, true);
             if (width >= 900) assertDesktop(await page.evaluate(geometry), width, name + '-search');
+            await page.locator('#clearsearch').click();
+            await assertDiscounts(page, false);
+            if (width < 900) {
+              const cleared = await page.evaluate(geometry);
+              assert.equal(cleared.header.height, original.header.height, name + ': clear restores phone header');
+            }
             if (width >= 900) {
               await page.locator('#q').fill('cofee');
               await page.waitForFunction(() => document.querySelector('#q').value === 'coffee' &&
@@ -224,7 +246,7 @@ async function main() {
       }
     }
     fs.writeFileSync(path.join(shots, 'metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
-    console.log('PASS: aligned desktop rows, phone audit, unchanged search styles, categories and shared pages in light/dark');
+    console.log('PASS: twin ovals, wrapped desktop tabs, phone load/reveal audit, shared pages and light/dark');
   } finally {
     if (browser) await browser.close();
     fs.rmSync(scratch, {recursive:true, force:true});

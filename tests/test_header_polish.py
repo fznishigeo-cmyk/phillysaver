@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import card_tidy, header_polish, page_polish, search_box_glow
-from tests.history_pins import pre_drop_fresh, pre_page_polish
+from tests.history_pins import pre_all_discounts_button, pre_drop_fresh, pre_page_polish
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401 (fixed clock, no network)
@@ -18,7 +18,7 @@ PINS = json.loads(Path('tests/fixtures/header_polish_off.json').read_text())
 
 
 def config(mode):
-    cfg = load_config()
+    cfg = pre_all_discounts_button(load_config())
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
         cfg.strip_comments = False
@@ -69,7 +69,7 @@ def test_defaults_and_boolean_config(tmp_path):
 @pytest.mark.parametrize('seasonal', [False, True])
 @pytest.mark.parametrize('shared_css', [False, True])
 def test_only_home_layout_changes_and_rerun_is_stable(tmp_path, seasonal, shared_css):
-    cfg = load_config()
+    cfg = pre_all_discounts_button(load_config())
     cfg.page_polish = shared_css
     if seasonal:
         cfg.seo_event_pages_events[0]['date'] = NOW.date().isoformat()
@@ -119,5 +119,5 @@ def test_native_fixture_without_launching_chromium(tmp_path):
         "buildFixture(process.argv[1]);", str(tmp_path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     page = (tmp_path / 'site/index.html').read_text()
-    assert 'grid-template-columns:auto minmax(0,720px) auto auto' in (tmp_path / 'site' / header_polish.ASSET).read_text()
+    assert 'grid-template-columns:auto minmax(0,900px) auto auto' in (tmp_path / 'site' / header_polish.ASSET).read_text()
     assert 'id="cattabs"' in re.search(r'<header>.*?</header>', page, re.S)[0]

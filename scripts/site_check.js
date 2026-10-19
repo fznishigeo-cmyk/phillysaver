@@ -32,8 +32,9 @@ const CARDS = "#content .card[data-key]";
 const STEP_TIMEOUT_MS = 10000;
 const SITE_URL = new URL(SITE);
 // Our own site, still paced at 1 request/s. 40 ran out on 2026-10-13 as the
-// walk grew (more hubs), and the last page failed as a bare ERR_FAILED.
-const SITE_REQUEST_LIMIT = 60;
+// walk grew (more hubs), and the last page failed as a bare ERR_FAILED; 60
+// ran out on 2026-10-19 once the homepage gained three shared U3 assets.
+const SITE_REQUEST_LIMIT = 80;
 let siteRequests = 0, siteQueue = Promise.resolve(), lastSiteRequest = 0, lastAbort = "";
 async function siteRequest(photo = false) {
   if (!photo && ++siteRequests > SITE_REQUEST_LIMIT) {
@@ -169,11 +170,24 @@ async function walk(page, doc, device) {
     } catch { /* A photo shortfall alone does not fail the walk-through. */ }
   }
   await step(2, "Load more", async () => {
-    const before = await page.locator(CARDS).count();
-    check(before >= 60, `only ${before} cards before scroll`);
-    await page.locator(CARDS).nth(59).scrollIntoViewIfNeeded();
-    await page.waitForFunction((before) => document.querySelectorAll("#content .card[data-key]").length > before,
-      before, { timeout: STEP_TIMEOUT_MS });
+    // Trending is one fixed fresh page (drop_fresh, 90 cards); the full wall
+    // under "All deals" is the one that grows as the visitor scrolls.
+    const fresh = await page.locator(CARDS).count();
+    check(fresh >= 60, `only ${fresh} cards on Trending`);
+    try {
+      await page.locator('#cattabs .cattab[data-i="1"]').click();
+      await page.waitForFunction(() => document.querySelector('#cattabs .cattab[data-i="1"].active') &&
+        document.querySelectorAll("#content .card[data-key]").length >= 60, null, { timeout: STEP_TIMEOUT_MS });
+      const before = await page.locator(CARDS).count();
+      await page.locator(CARDS).nth(before - 1).scrollIntoViewIfNeeded();
+      await page.waitForFunction((before) => document.querySelectorAll("#content .card[data-key]").length > before,
+        before, { timeout: STEP_TIMEOUT_MS });
+    } finally {
+      await page.locator('#cattabs .cattab[data-i="0"]').click();
+      await page.evaluate(() => scrollTo(0, 0));
+    }
+    await page.waitForFunction(() => document.querySelector('#cattabs .cattab[data-i="0"].active') &&
+      document.querySelector("#content .card[data-key]"), null, { timeout: STEP_TIMEOUT_MS });
   });
   await step(3, "Category / All", async () => {
     const oldCard = await page.locator(CARDS).first().elementHandle();

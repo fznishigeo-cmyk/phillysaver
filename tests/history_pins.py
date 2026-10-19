@@ -196,6 +196,7 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("all_discounts_button", None)
     config.get("site", {}).pop("drop_fresh", None)
     config.get("site", {}).pop("drop_shuffle", None)  # recorded before task 300
     config.get("pwa", {}).pop("install_button", None)
@@ -289,6 +290,7 @@ def pre_card_tidy(cfg):
 
 def pre_page_polish(cfg):
     """Before event search and Support styling (task 304); never re-pin hashes."""
+    pre_all_discounts_button(cfg)
     cfg.page_polish = False
     return cfg
 
@@ -308,5 +310,12 @@ def pre_drop_fresh(cfg):
 
 def pre_header_polish(cfg):
     """Before the aligned header (task 305); preserve every recorded hash."""
+    pre_all_discounts_button(cfg)
     cfg.header_polish = False
+    return cfg
+
+
+def pre_all_discounts_button(cfg):
+    """Before the Amazon discounts twin (task 317); never re-pin older hashes."""
+    cfg.all_discounts_button = False
     return cfg

@@ -28,7 +28,9 @@ function setup(observer = true) {
   let now = Date.parse('2026-10-18T00:00:00Z'), serial = 0;
   const calls = [], events = [], opened = [], timers = new Map(), observers = [], listeners = {}, elements = {}, modules = [], analyzeModules = [];
   function node(id) {
+    // parentNode: the search field wrapper (task 317 marks it once the visitor types).
     return {id, _html:'', value:'', hidden:false, connected:true, handlers:{}, attributes:{},
+      parentNode:{classList:{add() {}, remove() {}, toggle() {}, contains:() => false}},
       get innerHTML() {return this._html;},
       set innerHTML(text) {
         this._html = text;

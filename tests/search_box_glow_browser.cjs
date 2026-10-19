@@ -33,35 +33,96 @@ assert len(rotation(doc['deals'], cfg.front_page)) == 8, 'all eight mice must be
 }
 async function assertAnalyzeGeometry(page) {
   const g = await page.locator('.searchfield').evaluate(field => {
-    const button = field.querySelector('#analyze-search'), input = field.querySelector('#q');
-    const clear = field.querySelector('#clearsearch');
-    const f = field.getBoundingClientRect(), b = button.getBoundingClientRect(), q = input.getBoundingClientRect();
-    const css = getComputedStyle(button), ring = getComputedStyle(field, '::before');
-    return {gaps:[b.top - f.top, f.bottom - b.bottom, f.right - b.right],
-      edge:parseFloat(ring.borderTopWidth) || 0,
-      borders:[css.borderTopWidth, css.borderBottomWidth, css.borderRightWidth, css.borderLeftWidth],
-      radii:[css.borderTopRightRadius, css.borderBottomRightRadius],
-      width:b.width, height:b.height, label:button.innerText,
-      textRight:q.right - parseFloat(getComputedStyle(input).paddingRight), buttonLeft:b.left,
-      clear:clear && !clear.hidden ? {left:clear.getBoundingClientRect().left, right:clear.getBoundingClientRect().right} : null,
+    const rect = el => {const r = el.getBoundingClientRect();
+      return {left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width, height:r.height};};
+    const input = field.querySelector('#q'), clear = field.querySelector('#clearsearch');
+    const q = rect(input), ic = getComputedStyle(input);
+    const pills = [...field.querySelectorAll('#analyze-search,.all-discounts')]
+      .filter(el => el.getBoundingClientRect().width).map(el => {
+        const css = getComputedStyle(el), range = document.createRange(); range.selectNodeContents(el);
+        const label = range.getBoundingClientRect();
+        return {...rect(el), label:el.innerText, labelWidth:label.width, color:css.color, shadow:css.boxShadow,
+          background:css.backgroundImage, textShadow:css.textShadow,
+          sparkle:getComputedStyle(el, '::before').content,
+          borders:[css.borderTopWidth, css.borderBottomWidth, css.borderRightWidth, css.borderLeftWidth],
+          radii:[css.borderTopLeftRadius, css.borderBottomLeftRadius, css.borderTopRightRadius, css.borderBottomRightRadius]};
+      });
+    return {field:rect(field), pills, twins:!!field.querySelector('.all-discounts'), phone:innerWidth < 900,
+      textLeft:q.left + parseFloat(ic.paddingLeft), textRight:q.right - parseFloat(ic.paddingRight),
+      clear:clear && !clear.hidden ? rect(clear) : null,
       overflow:document.documentElement.scrollWidth > innerWidth};
   });
-  assert.deepEqual(g.borders, ['0px', '0px', '0px', '0px'], 'no transparent border ring');
-  // The rainbow occupies the outer 3px; the button meets or slightly overlaps its inner edge.
-  for (const gap of g.gaps) {
-    assert(gap >= 0 && gap <= 3, 'button stays inside the field and flush with its edge');
-    if (g.edge) assert(gap - g.edge <= 2, 'at most a hairline of field background');
+  assert.equal(g.pills.length, g.twins && !g.phone ? 2 : 1, 'only desktop puts both pills in the field');
+  for (const [i, pill] of g.pills.entries()) {
+    assert.deepEqual(pill.borders, ['0px', '0px', '0px', '0px'], 'no transparent border ring');
+    const gaps = [pill.top - g.field.top, g.field.bottom - pill.bottom];
+    if (i === g.pills.length - 1) gaps.push(g.field.right - pill.right);
+    for (const gap of gaps) assert(gap >= 1.9 && gap <= (g.twins ? 4 : 3), 'small even field inset: ' + gap);
+    assert(Math.abs(gaps[0] - gaps[1]) <= .1, 'vertically centred oval');
+    assert.deepEqual(pill.radii, g.twins ? ['999px','999px','999px','999px'] : ['999px','999px','10px','10px']);
+    assert(pill.width >= 44 && pill.height >= 44, '44px tap target');
+    assert(pill.labelWidth <= pill.width - 16, 'label fits without clipping');
+    if (g.twins) {
+      assert(!/inset|255, 255, 255/.test(pill.shadow), 'no white/light ring at rest or on interaction');
+      assert.equal(pill.color, 'rgb(255, 255, 255)');
+      assert(pill.sparkle.includes('✦'), 'same sparkle icon');
+      if (i) {
+        const first = g.pills[0];
+        assert(pill.left >= first.right + 3, 'pills have an even small gap');
+        assert.equal(pill.height, first.height, 'twin heights');
+        assert.equal(pill.textShadow, first.textShadow, 'same bold-text shadow');
+        assert.notEqual(pill.background, first.background, 'distinct purple and sunset families');
+      }
+    }
   }
-  assert.deepEqual(g.radii, ['10px', '10px'], 'right corners follow the 12px field');
-  assert(g.width >= 44 && g.height >= 44, '44px tap target');
-  assert.equal(g.label, 'Analyze', 'full label on phones too');
-  assert(g.textRight <= g.buttonLeft, 'input text clears the pill');
+  assert.equal(g.pills[0].label, 'Analyze', 'full label on phones too');
+  assert(g.textRight <= g.pills[0].left, 'typed text clears both pills');
   if (g.clear) {
-    assert(g.clear.right <= g.buttonLeft, 'clear button clears the pill');
-    assert(g.textRight <= g.clear.left, 'input text clears the clear button');
+    assert(g.clear.right <= g.pills[0].left, 'clear button clears both pills');
+    assert(g.textRight <= g.clear.left, 'typed text clears the clear button');
   }
+  if (g.twins && page.viewportSize().width === 1280 && await page.locator('header>.hrow>.search').count())
+    assert(g.textRight - g.textLeft >= 300, '1280px reserves 300px of visible typed text');
   assert.equal(g.overflow, false, 'no sideways overflow');
 }
+
+async function assertDiscounts(page, typed) {
+  const phone = page.viewportSize().width < 900;
+  const desktop = page.locator('#search-discounts'), mobile = page.locator('#search-discounts-mobile');
+  assert.equal(await desktop.isVisible(), !phone);
+  assert.equal(await mobile.isVisible(), phone && typed);
+  if (phone && !typed) return;
+  const button = phone ? mobile : desktop;
+  assert.equal(await button.getAttribute('href'), 'https://www.amazon.com/');
+  assert.equal(await button.getAttribute('target'), '_blank');
+  assert.equal(await button.getAttribute('rel'), 'sponsored noopener');
+  const disclosure = phone ? page.locator('.discounts-mobile small') : page.locator('.discounts-disclosure');
+  assert(await disclosure.isVisible(), 'affiliate disclosure accompanies each visible button');
+  assert.match(await disclosure.innerText(), /Amazon links may earn us a commission\./);
+  if (phone) {
+    const b = await button.boundingBox(), field = await page.locator('.searchfield').boundingBox();
+    assert.equal(await button.innerText(), 'All discounts on Amazon →');
+    assert(b.height >= 44 && Math.abs(b.width - field.width) < 1 && Math.abs(b.x - field.x) < 1);
+    assert(b.y >= field.y + field.height && b.y <= field.y + field.height + 12, 'directly under the field');
+  }
+  // Check the actual emitted gradient stops, including the gold sheen's brightest blend.
+  for (const control of [page.locator('#analyze-search'), button]) {
+    const colors = await control.evaluate(el => {
+      const css = getComputedStyle(el), sheen = getComputedStyle(el, '::after');
+      return {fg:css.color, stops:css.backgroundImage.match(/rgba?\([^)]+\)/g), sheen:sheen.backgroundImage};
+    });
+    assert.equal(colors.fg, 'rgb(255, 255, 255)');
+    const rgb = color => color.match(/[\d.]+/g).map(Number).slice(0, 3).map(v => v / 255);
+    const luminance = color => color.map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+      .reduce((sum, v, i) => sum + v * [.2126,.7152,.0722][i], 0);
+    const sheen = /rgba\(255, 196, 0, ([\d.]+)\)/.exec(colors.sheen);
+    for (const stop of colors.stops) for (const alpha of [0, sheen ? Number(sheen[1]) : 0]) {
+      const blend = rgb(stop).map((v, i) => v * (1 - alpha) + [1,196/255,0][i] * alpha);
+      assert(1.05 / (luminance(blend) + .05) >= 4.5, 'white text AA on every painted stop: ' + stop);
+    }
+  }
+}
+
 async function main() {
   const {chromium} = require('playwright');
   const scratch = fs.mkdtempSync('/tmp/task301-browser-');
@@ -74,7 +135,7 @@ async function main() {
       roots[`${lazy}-${glow}`] = buildFixture(path.join(scratch, `${lazy}-${glow}`), glow, lazy);
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
     const metrics = [];
-    for (const lazy of [false, true]) for (const width of [360, 390, 1440]) for (const theme of ['light', 'dark'])
+    for (const lazy of [false, true]) for (const width of [360, 390, 900, 1024, 1280, 1440, 1920]) for (const theme of ['light', 'dark'])
       for (const motion of ['no-preference', 'reduce']) {
         let before;
         const name = `${lazy ? 'lazy' : 'inline'}-${width}-${theme}-${motion}`;
@@ -101,6 +162,7 @@ async function main() {
           await page.goto('https://wowpriced.test/');
           await page.locator('#content .card').first().waitFor();
           await assertAnalyzeGeometry(page);
+          await assertDiscounts(page, false);
           const geometry = await page.evaluate(() => {
             const rect = selector => {const r = document.querySelector(selector).getBoundingClientRect();
               return {x:r.x, y:r.y, width:r.width, height:r.height};};
@@ -111,7 +173,17 @@ async function main() {
           });
           if (!glow) before = geometry;
           else {
-            assert.deepEqual(geometry, before, name + ': unchanged geometry and text contrast');
+            // Task 317: the pill is a full oval with an even 3 px gap (operator), so only its
+            // width/x may differ from the glow-OFF pill; the field, input, header and cards may not.
+            const {button, ...rest} = geometry, {button: beforeButton, ...beforeRest} = before;
+            assert.deepEqual(rest, beforeRest, name + ': unchanged geometry and text contrast');
+            assert.equal(button.height, beforeButton.height, name + ': pill height unchanged');
+            assert.equal(button.y, beforeButton.y, name + ': pill row unchanged');
+            // Inside the field; on phones Analyze is the rightmost pill (All discounts sits right of it on desktop).
+            assert(button.x >= geometry.field.x && button.x + button.width <= geometry.field.x + geometry.field.width - 1,
+              name + ': pill inside the field');
+            if (/-(360|390)-/.test(name)) assert(geometry.field.x + geometry.field.width - (button.x + button.width) <= 5,
+              name + ': phone pill flush with the field end ' + JSON.stringify({button, field: geometry.field}));
             metrics.push({name, before, after:geometry});
             const style = () => page.locator('.searchfield').evaluate(el => {
               const css = getComputedStyle(el, '::before'); return {name:css.animationName, state:css.animationPlayState,
@@ -125,23 +197,39 @@ async function main() {
               const first = await angle(); await page.waitForTimeout(150); assert.notEqual(await angle(), first);
             }
             await page.screenshot({path:path.join(shots, name + '-idle.png')});
-            const button = page.locator('#analyze-search'), bounds = await button.boundingBox();
-            await button.hover();
-            await button.focus();
-            await page.mouse.down();
-            try {
-              assert.deepEqual(await button.boundingBox(), bounds, 'hover/focus/active do not shift the pill');
-              assert.equal(await button.evaluate(el => getComputedStyle(el).animationName),
-                motion === 'reduce' ? 'none' : 'wpcharge');
-              await assertAnalyzeGeometry(page);
-            } finally {
-              await page.mouse.move(0, 0);
-              await page.mouse.up();
+            for (const selector of ['#analyze-search', ...(width >= 900 ? ['#search-discounts'] : [])]) {
+              const button = page.locator(selector), bounds = await button.boundingBox();
+              await button.hover();
+              await button.focus();
+              await page.mouse.down();
+              try {
+                assert.deepEqual(await button.boundingBox(), bounds, 'hover/focus/active do not shift the pill');
+                assert.equal(await button.evaluate(el => getComputedStyle(el).animationName),
+                  motion === 'reduce' ? 'none' : 'wpcharge');
+                await assertAnalyzeGeometry(page);
+                await assertDiscounts(page, false);
+              } finally {
+                await page.mouse.move(0, 0);
+                await page.mouse.up();
+              }
             }
             await page.locator('#q').focus();
             if (motion !== 'reduce') assert.equal((await style()).state, 'paused');
             await page.locator('#q').fill('mouse'); await page.locator('#q').blur();
             await assertAnalyzeGeometry(page);
+            await assertDiscounts(page, true);
+            if (width < 900) {
+              const mobile = page.locator('#search-discounts-mobile');
+              const before = await mobile.boundingBox();
+              await mobile.focus();
+              assert.equal(await mobile.evaluate(el => getComputedStyle(el).animationName),
+                motion === 'reduce' ? 'none' : 'wpcharge', 'phone discounts shares the charge/motion rule');
+              assert.deepEqual(await mobile.boundingBox(), before, 'phone focus does not move the button');
+              await assertDiscounts(page, true);
+            }
+            await page.locator('#q').fill('');
+            await assertDiscounts(page, false);
+            await page.locator('#q').fill('mouse');
             if (motion !== 'reduce') assert.equal((await style()).state, 'paused');
             await page.locator('#search-amazon-result a.getdeal').waitFor();
             const checkTop = async analyze => {
@@ -181,5 +269,5 @@ async function main() {
     console.log('Search box native checks passed: geometry, motion, early buttons, themes and screenshots');
   } finally {if (browser) await browser.close(); fs.rmSync(scratch, {recursive:true, force:true});}
 }
-module.exports = {buildFixture, assertAnalyzeGeometry};
+module.exports = {buildFixture, assertAnalyzeGeometry, assertDiscounts};
 if (require.main === module) main().catch(error => {console.error(error); process.exitCode = 1;});

@@ -420,6 +420,9 @@ def head_snippet(cfg) -> str:
       return;
     }
     var ev = EVENTS[name];""")
+    if getattr(cfg, "all_discounts_button", False) is True:
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    search_discounts: { ga4Only: true },')
     if cfg.search_amazon and cfg.affiliate_amazon_tag:
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (name === "search_amazon") {

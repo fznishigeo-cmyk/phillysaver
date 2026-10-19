@@ -9,7 +9,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import page_polish
-from tests.history_pins import pre_page_polish, pre_task_295, pre_task_290_install_raw
+from tests.history_pins import pre_all_discounts_button, pre_page_polish, pre_task_295, pre_task_290_install_raw
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline
 from tests.test_search_amazon import run_node
@@ -25,7 +25,7 @@ ONCE_NOTE = ('One-time payment, any amount, through Stripe. wowpriced is a for-p
 
 
 def config(mode='current'):
-    cfg = load_config()
+    cfg = pre_all_discounts_button(load_config())
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
     if mode == 'membership':
@@ -174,6 +174,7 @@ def test_home_payload_headroom(tmp_path):
     from tests.phone_budget_fixture import NOW, fixture_offers, publish_fixture
 
     cfg = config()
+    cfg.all_discounts_button = True
     cfg.phone_budget['enabled'] = True
 
     def inspect(db, out):

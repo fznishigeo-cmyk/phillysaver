@@ -94,7 +94,16 @@ def test_emitted_loader_module_and_search_more_logic(tmp_path, mode):
     assert "analyze-progress" not in page
     # First-paint rules stay inline (live 2026-10-18: without them the button sat unstyled under the box,
     # +95 px on phones); only the analysis panel rules wait for the module.
-    assert "#analyze-search{" in page and "#search-hint{" in page and ".analyze-steps" in asset
+    if getattr(cfg, "all_discounts_button", False):
+        # Task 317: the twin pill rules ship in the render-blocking header stylesheet
+        # linked from <head>, so the button is still styled at first paint.
+        head = page.split("</head>", 1)[0]
+        link = re.search(r'<link rel="stylesheet" href="/header-polish\.css\?v=[a-f0-9]+">', head)
+        assert link, "header stylesheet must block first paint"
+        shared = (out / "header-polish.css").read_text()
+        assert ":is(#analyze-search,.all-discounts){" in shared and "#search-hint{" in shared and ".analyze-steps" in asset
+    else:
+        assert "#analyze-search{" in page and "#search-hint{" in page and ".analyze-steps" in asset
     assert 'price_error:"Amazon' in asset and "keepa" not in asset.lower()
     assert ('analyzeBox.addEventListener("blur"' not in asset) is cfg.search_more["enabled"]
     assert ("host.searchSpellingState()" in asset) is cfg.search_more["enabled"]

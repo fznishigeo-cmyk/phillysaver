@@ -360,6 +360,7 @@ class AppConfig:
     card_tidy: bool = False
     page_polish: bool = False
     header_polish: bool = False
+    all_discounts_button: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     search_more: dict = field(default_factory=lambda: validated_search_more(None))
@@ -1071,6 +1072,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.header_polish = g("header_polish", default=False)
     if type(cfg.header_polish) is not bool:
         raise ValueError("header_polish must be a boolean")
+    cfg.all_discounts_button = g("all_discounts_button", default=False)
+    if type(cfg.all_discounts_button) is not bool:
+        raise ValueError("all_discounts_button must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

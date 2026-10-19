@@ -7,6 +7,7 @@ import pytest
 
 from dealradar.config import load_config
 from dealradar.publish import card_tidy
+from tests.history_pins import pre_all_discounts_button
 from dealradar.publish.site import _serialize_deal
 from tests.test_offscreen_cards import offers
 from tests.test_publish_site import make_deal
@@ -98,7 +99,7 @@ def test_strict_config(tmp_path, value):
 
 
 def test_shipped_on_and_emitted(tmp_path):
-    cfg = load_config()
+    cfg = pre_all_discounts_button(load_config())  # Isolate the preceding pill style; task 317 tests its replacement.
     assert cfg.card_tidy is True
     out, *_ = render(tmp_path, cfg, offers())
     page = (out / 'index.html').read_text()

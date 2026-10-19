@@ -194,6 +194,7 @@ same_product_spacing: true  # task 302: eight cards between families; at most tw
 card_tidy: true  # operator 2026-10-18: folded checkout steps, clear cart chip, AI Analyze, price-drop Amazon button
 page_polish: true  # task 304: event search and the brand-style Support page
 header_polish: true  # task 305: aligned desktop search/actions and a single category row
+all_discounts_button: true  # operator 2026-10-19: "All discounts" — "the same style as the Analyze button"
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site

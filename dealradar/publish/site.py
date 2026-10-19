@@ -44,6 +44,7 @@ from . import same_product_spacing
 from . import card_tidy
 from . import page_polish
 from . import header_polish
+from . import all_discounts
 from . import search_circle
 from . import search_analyze
 from . import search_analyze_lazy
@@ -1129,6 +1130,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = same_product_spacing.site_version(site_version, cfg)
     site_version = drop_fresh.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
+    site_version = all_discounts.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
@@ -1403,6 +1405,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     drop_fresh.publish(out, cfg)
     header_polish.publish(out, cfg)
     card_tidy.publish(out, cfg)
+    all_discounts.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
