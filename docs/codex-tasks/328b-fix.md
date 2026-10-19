@@ -1,0 +1,6 @@
+# Task 328b — fix round for task 328 (read docs/codex-tasks/328-tool-pages.md; your partial work is in this tree)
+
+I ran `NODE_PATH=/opt/node-tools/node_modules node tests/tool_pages_browser.cjs /opt/pw-browsers/chromium <shots>` in real Chromium.
+1. First failure (FIXED by me in dealradar/publish/templates/tool-pages.css: footer links now `justify-content:center;min-width:44px`): `{"label":"About","width":39.48,"height":44}` tap target.
+2. Now it fails at tests/tool_pages_browser.cjs:139 `assert.equal(audit.columns, width === 390 ? 2 : 5)` → `3 !== 2`. The checker page at 390 light passes (screenshot checker-390-light.png is good); the failure is on the next page/state (the Discount Finder, or the checker's "Our verified deals" grid / dark run) — find which grid gives 3 columns at 390 px and fix the CSS so every product grid is 2 columns on phones and up to 5 on desktop (a grid with fewer items keeps its card width, no stretched single card). Make the test assert every `.product-grid` on the page, report which one fails in the message, and never weaken any other assertion.
+Run the browser file's own `node --check`, the targeted pytest from the brief (basetemp /tmp/b328b, delete after). Chromium is blocked for you — reason from the CSS and the test. Reply <= 4 lines.

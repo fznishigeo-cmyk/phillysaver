@@ -6,7 +6,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 
-function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true) {
+function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true, timerRing = true) {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
 import json, sys
@@ -21,6 +21,7 @@ cfg.header_polish = sys.argv[2] == "true"
 cfg.all_discounts_button = sys.argv[3] == "true"
 cfg.search_polish_1019 = cfg.all_discounts_button
 cfg.phone_tagline_count = sys.argv[4] == "true"
+cfg.timer_pill_ring = sys.argv[5] == "true"
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -34,7 +35,7 @@ pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal
 assert pages, "fixture must include a current deal page"
 pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
 (Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
-`, scratch, String(polish), String(discounts), String(phoneTagline)], {encoding:'utf8'});
+`, scratch, String(polish), String(discounts), String(phoneTagline), String(timerRing)], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return path.join(scratch, 'site');
 }
@@ -209,6 +210,132 @@ async function routeOffline(context, root, unexpected) {
   });
 }
 
+// All existing header DOM boxes must match the ring-OFF run exactly. The ring
+// is a decorative pseudo-element, so it adds no node or accessible content.
+function headerBoxes() {
+  return [...document.querySelectorAll('header,header *')].map(el => {
+    const r = el.getBoundingClientRect();
+    return {tag:el.tagName, id:el.id, cls:el.getAttribute('class'),
+      x:r.x, y:r.y, width:r.width, height:r.height};
+  });
+}
+
+function timerRingState() {
+  const box = document.querySelector('#drop'), ring = getComputedStyle(box, '::before');
+  const dial = document.querySelector('#dropdial');
+  return {content:ring.content, background:ring.backgroundImage, mask:ring.maskComposite,
+    padding:ring.padding, transition:ring.transitionDuration,
+    countdown:document.querySelector('#countdown').textContent,
+    fraction:Number(box.style.getPropertyValue('--pill-progress')),
+    dialVisible:getComputedStyle(dial).display !== 'none',
+    dialTransform:document.querySelector('#dhead').style.transform,
+    dialColor:getComputedStyle(document.querySelector('#dhead')).backgroundColor,
+    good:getComputedStyle(document.querySelector('.dtick path')).stroke};
+}
+
+async function timerRingAfterTick(page, first, enabled, name) {
+  // tick's 1000ms interval calls paintClock for the digits, dial and pill.
+  // Advance on every poll so timers and queued animation frames can run;
+  // waiting in Node alone leaves them frozen at the previous clock step.
+  for (let elapsed = 0; elapsed < 5000; elapsed += 250) {
+    await page.clock.runFor(250);
+    const state = await page.evaluate(timerRingState);
+    if (state.countdown !== first.countdown && (!enabled || state.fraction > first.fraction)) return state;
+  }
+  assert.fail(name + ': digits and ring did not reflect the advanced clock');
+}
+
+async function assertTimerPillRing(browser, roots, fixture, shots) {
+  const widths = [360, 390, 412, 430, 899, 900, 1023, 1024, 1100, 1199, 1200, 1280, 1440, 1512, 1599, 1600, 1920];
+  for (const width of widths) for (const theme of ['light', 'dark']) {
+    for (const motion of ['reduce', 'no-preference']) {
+      let baseline;
+      for (const mode of ['ringOff', 'on']) {
+        const name = `ring-${width}-${theme}-${motion}-${mode}`;
+        const context = await browser.newContext({viewport:{width, height:width < 900 ? 844 : 900},
+          deviceScaleFactor:2, colorScheme:theme, isMobile:width < 900, hasTouch:width < 900,
+          reducedMotion:motion, serviceWorkers:'block'});
+        try {
+          const errors = [], unexpected = [];
+          await routeOffline(context, roots[mode], unexpected);
+          await context.addInitScript(() => {
+            localStorage.setItem('wp.install.engagedMs', '180000');
+            addEventListener('beforeinstallprompt', e => {
+              if (e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); }
+            });
+          });
+          const page = await context.newPage();
+          page.on('pageerror', error => errors.push(error.message));
+          await page.clock.install({time:new Date(Date.parse(fixture.now) + 120000)});
+          await page.goto('https://wowpriced.test/');
+          await page.locator('#content .card').first().waitFor();
+          await offerInstall(page);
+          await page.clock.pauseAt(new Date(Date.parse(fixture.now) + 123000));
+          const boxes = await page.evaluate(headerBoxes);
+          const first = await page.evaluate(timerRingState);
+          const second = await timerRingAfterTick(page, first, mode === 'on', name);
+          const tickBoxes = await page.evaluate(headerBoxes);
+          const compact = width >= 900 && width < 1600;
+          if (mode === 'ringOff') baseline = {boxes, first, phases:{}};
+          else {
+            if (compact) {
+              assert.deepEqual(boxes, baseline.boxes, name + ': every header box unchanged (0px)');
+              assert.deepEqual(tickBoxes, boxes, name + ': progress tick moves no header element (0px)');
+            }
+            else {
+              // The dial's transformed children can sample a different millisecond;
+              // compare all stable header boxes and its existing visibility instead.
+              const stable = rows => rows.filter(r => !['dA', 'dB', 'dhead'].includes(r.id));
+              assert.deepEqual(stable(boxes), stable(baseline.boxes), name + ': phone/wide header unchanged');
+            }
+            assert.equal(first.dialVisible, baseline.first.dialVisible, name + ': original dial visibility');
+            assert.equal(first.dialVisible, width >= 1600, name + ': original dial breakpoint');
+            if (first.dialVisible) assert.notEqual(second.dialTransform, first.dialTransform, name + ': existing dial still ticks');
+            if (compact) {
+              assert.equal(first.content, '""', name + ': visible pill outline');
+              assert(first.mask.split(',').every(value => value.trim() === 'exclude'), name + ': only the rounded outline is painted');
+              assert.equal(first.padding, '3px', name + ': stroke inside existing border');
+              assert(first.background.startsWith('conic-gradient('), name + ': clockwise conic fill');
+              assert(second.fraction > first.fraction, name + ': same fraction grows between ticks');
+              assert.notEqual(second.background, first.background, name + ': visible fill grows');
+              assert.equal(first.transition, '0s', name + ': per-second jumps, including reduced motion');
+            } else assert.equal(first.content, 'none', name + ': ring absent outside compact desktop');
+          }
+          if (compact) {
+            for (const phase of ['calm', 'warm', 'hot', 'final', 'dropping']) {
+              await page.locator('#drop').evaluate((el, value) => {
+                el.dataset.phase = value === 'dropping' ? 'final' : value;
+                el.classList.toggle('dropping', value === 'dropping');
+                // Finish the dial's existing finite transitions before comparing
+                // its transformed tag/tick descendants in ordinary motion mode.
+                for (const animation of el.getAnimations({subtree:true}))
+                  if (animation.effect.getComputedTiming().iterations !== Infinity) animation.finish();
+              }, phase);
+              const state = await page.evaluate(timerRingState), phaseBoxes = await page.evaluate(headerBoxes);
+              if (mode === 'ringOff') baseline.phases[phase] = phaseBoxes;
+              else {
+                assert.deepEqual(phaseBoxes, baseline.phases[phase], name + ': ' + phase + ' moves no header element (0px)');
+                assert(state.background.includes(phase === 'dropping' ? state.good : state.dialColor),
+                  name + ': ' + phase + ' matches the dial colour');
+              }
+            }
+            await page.locator('#drop').evaluate(el => {el.classList.remove('dropping'); el.dataset.phase = 'calm';});
+            if (mode === 'on') {
+              const reset = await page.evaluate(timerRingState);
+              assert(reset.background.includes(reset.dialColor), name + ': normal colour restored after drop');
+            }
+          }
+          if (mode === 'on' && motion === 'reduce')
+            await page.screenshot({path:path.join(shots, `ring-${width}-${theme}.png`)});
+          if (mode === 'ringOff') assert.equal(first.content, 'none', name + ': flag OFF has no ring');
+          assert.deepEqual(errors, [], name + ': page errors');
+          assert.deepEqual(unexpected, [], name + ': unexpected requests');
+        } finally { await context.close(); }
+      }
+    }
+  }
+}
+
 async function main() {
   const {chromium} = require('playwright');
   const scratch = fs.mkdtempSync('/tmp/task305-browser-');
@@ -220,9 +347,11 @@ async function main() {
   let browser;
   try {
     const roots = {off:buildFixture(path.join(scratch, 'off'), true, false), on:buildFixture(path.join(scratch, 'on')),
-      taglineOff:buildFixture(path.join(scratch, 'tagline-off'), true, true, false)};
+      taglineOff:buildFixture(path.join(scratch, 'tagline-off'), true, true, false),
+      ringOff:buildFixture(path.join(scratch, 'ring-off'), true, true, true, false)};
     const fixture = JSON.parse(fs.readFileSync(path.join(scratch, 'on/fixture.json'), 'utf8'));
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
+    await assertTimerPillRing(browser, roots, fixture, shots);
     await assertPhoneTagline(browser, roots, fixture, inspect);
     const metrics = [];
     for (const width of [900, 1024, 1100, 1199, 1280, 1440, 1500, 1557, 1920, 2560, 899, 390, 360]) {

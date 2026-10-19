@@ -6,6 +6,8 @@ const {chromium} = require('playwright');
 
 (async () => {
   const root = path.resolve(process.argv[2]);
+  const tools = ['amazon-deal-checker','amazon-discount-finder']
+    .filter(slug=>fs.existsSync(path.join(root,slug,'index.html'))).map(slug=>'/'+slug+'/');
   let browser;
   try {
     browser = await chromium.launch({headless:true, executablePath:'/opt/pw-browsers/chromium'});
@@ -49,6 +51,12 @@ const {chromium} = require('playwright');
       };
       for(const [selector,method] of [['h1.brand a','logo'],['.tklabel','ticker'],['#drop','timer']]) {
         await page.goto('https://wowpriced.test/?case='+method);await ready();
+        for (const slug of ['amazon-deal-checker','amazon-discount-finder']) {
+          const links=page.locator('a[href="/'+slug+'/"]');
+          assert.equal(await links.count(),process.argv[3]==='public' ? 1 : 0);
+          assert.equal(await page.locator('#footerlinks a[href="/'+slug+'/"]').count(),
+            process.argv[3]==='public' ? 1 : 0);
+        }
         await search();
         const previous=await page.evaluate(()=>history.state.wpBrowse);
         // DOM click keeps the current scroll position until the real handler runs.
@@ -67,11 +75,17 @@ const {chromium} = require('playwright');
         await page.goForward();await ready();await fresh();
       }
       // A plain home link from another page drops the remembered private query.
-      await search();
       const deal=JSON.parse(fs.readFileSync(path.join(root,'deals.json'))).deals.find(d=>d.deal_path);
       assert(deal);
-      await page.goto('https://wowpriced.test'+deal.deal_path);
-      await page.locator('a[href="/"]').first().click();await ready();await fresh();
+      for (const destination of [deal.deal_path,...tools]) {
+        await search();
+        await page.goto('https://wowpriced.test'+destination);
+        if (tools.includes(destination)) {
+          assert.equal(await page.locator('#tool-form #q').count(),1);
+          assert.equal(await page.locator('#cattabs').count(),0);
+        }
+        await page.locator('a[href="/"]').first().click();await ready();await fresh();
+      }
       // Back from a real deal page retains the exact card, at both breakpoints.
       while(await page.locator('#content .card').count()<120) {
         await page.evaluate(()=>document.getElementById('moremore')?.click());

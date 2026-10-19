@@ -244,6 +244,109 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tool-page suite compatibility (Codex task 328c, 2026-10-19; uncommitted):**
+  Both tool footers now carry the five standard trust links, adding How we
+  verify and Contact while preserving the clean layout and 44px targets.
+  Preview/public tool render checks enforce the shared trust-link contract.
+  Search-polish checks identify tool forms explicitly, assert their own script,
+  footer disclosure and lack of homepage discount markup, and retain every
+  existing homepage/event-page assertion. Home browser coverage retains all
+  original controls, history and exact-card checks in OFF, preview and public
+  modes, adds ordinary Home navigation from both tools, and checks discovery
+  links before Chromium launches: none on home in OFF/preview; both in the
+  public footer. The original Home fixture used AppConfig with tools OFF, and
+  preview preserves existing home bytes, so its reported native failure could
+  not be attributed to tool links from the source. The exact requested local
+  Home-file command returned **23 passed, 1 Chromium skip** before edits;
+  Chromium cannot launch here (browser target closed). Final requested targeted
+  selection plus savings: **357 passed, 6 Chromium skips in 239.13s**, with
+  `-n 4`, no cache, failed-only retention and `/tmp/b328c`; that directory was
+  removed. Both browser harnesses pass `node --check`; diff checks pass.
+  Native Chromium verification remains with the operator. No full suite,
+  live API calls, commit or push.
+- **Tool grid audit repair (Codex task 328b, 2026-10-19; uncommitted):**
+  The first post-checker failure is the Finder's hidden `#top-sellers` grid:
+  its computed `repeat(2, minmax(0px, 1fr))` has three whitespace tokens,
+  which the original audit incorrectly counted as columns. CSS now defaults
+  every product grid to two fixed tracks, with five from 761px; unused tracks
+  preserve sparse-card widths. The browser audit checks both grids, including
+  hidden grids, handles the unresolved repeat value, and reports page, viewport,
+  theme, motion setting, section and template on failure. It also checks every
+  visible product card's width against a full grid, including the single verified
+  deal. Other assertions and the operator's 44px footer fix are preserved.
+  Browser-file `node --check` passed. Requested targeted pytest plus savings:
+  **304 passed, 3 Chromium skips in 170.58s**, using `-n 4`, the requested
+  no-cache/failed-retention options and `/tmp/b328b`; that directory was removed.
+  Native Chromium verification remains with the operator; no full suite,
+  live API calls, commit or push.
+- **Amazon SEO tools (Codex task 328, 2026-10-19; uncommitted preview):**
+  `/amazon-deal-checker/` and `/amazon-discount-finder/` follow the approved
+  white layout, real brand mark, phone grid and site's dark palette. Strict
+  `tool_pages` defaults OFF and ships `{enabled: true, public: false}`: preview
+  adds only the two pages and two assets; existing files and OFF release pins
+  stay byte-identical. Public mode adds footer links, sitemap/IndexNow discovery;
+  rollback excludes even queued tool URLs. Canonical/social metadata and visible
+  five-question FAQ schemas are included; previews have `noindex,nofollow`.
+  Checker uses only the existing `/api/search` with the homepage's input checks,
+  cache/retry/timeout behavior and matching; badges use current Amazon list price
+  only (browser savings function lives in `savings.py`). **Endpoint limitation:**
+  ASIN lookup returns one product, whereas text lookup returns up to five sellers.
+  Show only returned sellers; no extra paid lookup or invented related products.
+  Finder derives the exact homepage discount URL locally and reads `/deals.json`;
+  no API lookup. Ordered work gates nine-second steps; reduced motion skips delays;
+  unresolved products never receive completed steps. Tracking carries safe events
+  and `page_view` source `tool_page`; affiliate tags/disclosure remain visible.
+  Public home is **76,260 gzip bytes / 77,360 ceiling (1,100 spare)**; text palettes
+  meet AA. Node logic covers URL parity, badge boundaries, real timing, cache,
+  unavailable data, API limits/timeouts and filtering. Native Chromium harness:
+  `node tests/tool_pages_browser.cjs /path/to/chromium /tmp/tool-page-shots`;
+  syntax checked and local fixture built, native run remains with the operator.
+  Requested selection plus savings/IndexNow: **351 checks verified, 3 Chromium
+  skips across the run and follow-up**. The broad run had 350 passes and one
+  new tracking-harness assertion using the wrong output key; corrected to the
+  harness's `dataLayer`, then all **34 tool-page checks passed in 51.39s**.
+  Publish/footer/public-copy/tracking selection: **348 passed**. The existing
+  1,600-deal file-count assertion now accounts for four tool files; no recorded
+  hashes or budget ceilings changed. Commands used the requested `-n 4`,
+  no-cache/failed-retention options and `/tmp/b328`; that directory and owned
+  scratch were removed. Syntax/compile/diff checks passed.
+  No full suite, live API calls, commit or push. Public flip requires the operator's
+  preview approval in a separate commit.
+- **Compact timer ring (Codex task 329, 2026-10-19; uncommitted):** Strict
+  `timer_pill_ring` defaults false/ships true with option A's operator quote.
+  At 900–1599px a masked 3px conic outline uses `paintDial`'s existing fraction,
+  phase colours and drop green; no markup, extra timer or layout changes.
+  Three original-release OFF pins pass without changing older hashes. Browser
+  harness adds exact header-box comparisons, light/dark and reduced-motion
+  coverage, progress/drop/reset checks and `ring-<width>-<theme>.png` captures;
+  syntax checked, native Chromium remains for the operator. Requested targeted
+  run: **116 passed, 1 Chromium skip in 148.35s**. Phone HTML **76,250 / 77,360
+  gzip bytes** retains **1,110 bytes** of reserve; CSS **14,843 / 14,913**.
+  `/tmp/b329` and owned recheck scratch removed. No full suite, commit or push.
+  **329b fix round:** Pill progress now writes beside the digits in `paintClock`;
+  offline Node drives the emitted one-second callback without animation frames.
+  Browser sampling advances two seconds and polls the DOM from Node; phone
+  ticking guard and all geometry assertions remain. Added 1023/1280/1600px and
+  both motion settings across the matrix. Both `node --check` calls pass;
+  targeted six-file run: **116 passed, 1 Chromium skip in 144.82s**;
+  `/tmp/b329b` removed.
+  **329c resolution:** Operator confirmed the ring covers every desktop width
+  where the dial is hidden. Its media query now comes from the composed CSS's
+  dial-hiding rule (900–1599px shipped; 900–1199px without task 317), with no
+  independent breakpoint. OFF CSS and byte pins remain intact; >=1600px keeps
+  the dial and phones keep their layout. Browser matrix adds 1512/1599/1920px;
+  all requested ring widths retain exact OFF header-box, growth and green-drop
+  assertions in both themes/motion settings. Native Chromium remains for the
+  operator; both `node --check` calls pass. Targeted six-file run: **117 passed,
+  1 Chromium skip in 202.54s**; `/tmp/b329c` removed. No full suite, commit or push.
+  **329d clock fix:** Confirmed the emitted countdown uses `setInterval(tick,
+  1000)` → `paintClock`, with no visibility or animation-frame gate. Browser
+  helper now advances the fake clock 250ms before every sample (5s simulated
+  limit), retaining every digits/ring, dial, geometry and colour assertion.
+  Both Node syntax checks and emitted countdown logic pass; targeted six-file
+  run: **117 passed, 1 Chromium skip in 166.38s**. `/tmp/b329d` and inspection
+  scratch removed. Native Chromium rerun remains for the operator; no full
+  suite, commit or push.
 - **Merged homepage headroom (Codex task 327, 2026-10-19; uncommitted):**
   Under `discounts_from_link`, remove support-mode membership-dialog/account-email
   CSS with no consumer and the homepage placeholder assignment immediately

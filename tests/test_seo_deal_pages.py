@@ -237,7 +237,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     search += 1 if search_analyze_lazy.enabled(cfg) else 0  # search-analyze.js (task 295)
     # U3 adds only three shared assets, never another file per deal.
     shared = int(cfg.page_polish) + int(cfg.drop_fresh and cfg.drop_shuffle) + int(cfg.header_polish)
-    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search + shared
+    tools = 4 if cfg.tool_pages["enabled"] else 0  # two pages and two shared assets
+    assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search + shared + tools
 
 
 def test_site_check_reads_deal_and_daily_page_and_rejects_missing_get_deal():

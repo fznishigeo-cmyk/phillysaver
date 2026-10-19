@@ -362,8 +362,10 @@ class AppConfig:
     header_polish: bool = False
     all_discounts_button: bool = False
     discounts_from_link: bool = False
+    tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
     search_polish_1019: bool = False
     phone_tagline_count: bool = False
+    timer_pill_ring: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -835,6 +837,18 @@ def validated_keyword_volumes(value) -> dict:
     return settings
 
 
+def validated_tool_pages(value) -> dict:
+    if not isinstance(value, dict) or set(value) - {"enabled", "public"}:
+        raise ValueError("tool_pages must contain enabled and public only")
+    settings = {"enabled": False, "public": False, **value}
+    for key, flag in settings.items():
+        if type(flag) is not bool:
+            raise ValueError(f"tool_pages.{key} must be a boolean")
+    if settings["public"] and not settings["enabled"]:
+        raise ValueError("tool_pages.public requires tool_pages.enabled")
+    return settings
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path) if path else ROOT / "config.yaml"
     raw = yaml.safe_load(path.read_text())
@@ -852,6 +866,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         return cur
 
     cfg = AppConfig(raw=raw)
+    cfg.tool_pages = validated_tool_pages(raw.get("tool_pages", {}))
     from .appeal_score import validate as validate_appeal_score
     cfg.appeal_score = validate_appeal_score(raw.get("appeal_score", {}))
     cfg.compare = validated_compare(raw.get("compare", {}))
@@ -1093,6 +1108,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")
+    cfg.timer_pill_ring = g("timer_pill_ring", default=False)
+    if type(cfg.timer_pill_ring) is not bool:
+        raise ValueError("timer_pill_ring must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

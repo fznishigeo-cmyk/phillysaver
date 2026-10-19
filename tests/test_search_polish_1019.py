@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from dealradar.config import AppConfig, load_config
-from dealradar.publish import all_discounts, search_polish_1019 as polish
+from dealradar.publish import all_discounts, search_polish_1019 as polish, tool_pages
 from tests.history_pins import pre_all_discounts_button, pre_search_polish_1019, pre_task_290_install_raw
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
@@ -73,14 +73,25 @@ def test_emitted_polish_and_exits(tmp_path, mode):
     if mode == 'no-footer':
         cfg.affiliate_disclosure = 'Affiliate links may earn us a commission.'
     out, *_ = render(tmp_path, cfg)
-    pages = []
+    pages, tools = [], []
     for path in out.rglob('*.html'):
         html = path.read_text()
         if 'id="q"' not in html:
             continue
-        pages.append(path.relative_to(out).as_posix())
         assert 'id="search-hint"' not in html
         assert all('search-hint' not in ids.split() for ids in re.findall(r'aria-describedby="([^"]*)"', html))
+        if path.parent.name in tool_pages.PAGES:
+            # Tool forms share the input ID, but have their own script and exits.
+            spec = tool_pages.PAGES[path.parent.name]
+            assert '<body data-tool="' + spec['mode'] + '">' in html
+            assert '<form id="tool-form"' in html
+            assert '/tool-pages.js?v=' in html
+            assert '<div class="discounts-mobile">' not in html
+            assert '<p class="discounts-disclosure">' not in html
+            assert polish.has_footer_disclosure(html) is (mode != 'no-footer')
+            tools.append(path.relative_to(out).as_posix())
+            continue
+        pages.append(path.relative_to(out).as_posix())
         if mode == 'no-footer':
             assert not polish.has_footer_disclosure(html)
             if cfg.all_discounts_button:
@@ -97,6 +108,7 @@ def test_emitted_polish_and_exits(tmp_path, mode):
             assert '.searchfield svg{top:14px}' not in html
             assert '#clearsearch{width:44px;height:44px;top:6px}' in html
     assert 'index.html' in pages
+    assert set(tools) == {slug + '/index.html' for slug in tool_pages.PAGES}
     if cfg.page_polish:
         assert 'black-friday/index.html' in pages and 'cyber-monday/index.html' in pages
     css = (out / 'header-polish.css').read_text()

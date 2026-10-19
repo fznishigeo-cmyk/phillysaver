@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>{{TITLE}}</title>
+<meta name="description" content="{{INTRO}}">
+{{HEAD}}
+{{FAVICON}}
+<link rel="stylesheet" href="/tool-pages.css?v={{CSS_VERSION}}">
+<script defer src="/tool-pages.js?v={{JS_VERSION}}"></script>
+</head><body data-tool="{{MODE}}">
+<header class="tool-header">
+{{BRAND}}
+<nav aria-label="Tools">{{NAV}}<a href="/">Today's Deals</a></nav>
+<a class="join" href="/join">Join free</a>
+</header>
+<main>
+<h1>{{NAME}}</h1><p class="intro">{{INTRO}}</p>
+<form id="tool-form" class="search-box" data-clarity-mask="true">
+<label class="sr-only" for="q">Amazon link or product name</label>
+<svg class="search-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg>
+<input id="q" type="text" required maxlength="2000" placeholder="Paste an Amazon link or type a product" autocomplete="off" spellcheck="false" enterkeyhint="go">
+<button id="tool-submit" type="submit">{{BUTTON}}</button>
+</form>
+<section id="analyzer" class="analyzer" aria-labelledby="analyzer-title" aria-busy="false" data-clarity-mask="true" hidden>
+<h2 id="analyzer-title">Checking your product</h2>
+<div id="tool-progress" class="progress" role="progressbar" aria-label="Analysis progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+<ol class="steps">{{STEPS}}</ol>
+<p id="tool-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+</section>
+<section id="tool-result" class="result" aria-label="Your result" data-clarity-mask="true" hidden></section>
+<section id="top-sellers" aria-labelledby="top-title" hidden><h2 id="top-title">Top sellers like this on Amazon</h2><div class="product-grid"></div></section>
+<section id="verified-deals" aria-labelledby="verified-title" hidden><h2 id="verified-title">Our verified deals</h2><div class="product-grid"></div></section>
+<noscript><p>Turn on JavaScript to use this tool, or <a href="/">browse today's deals</a>.</p></noscript>
+<section class="faq" aria-labelledby="faq-title"><h2 id="faq-title">How it works</h2>{{FAQ}}</section>
+</main>
+<footer><nav id="footerlinks" aria-label="Site pages"><span>© {{YEAR}} wowpriced</span> · <a href="/about.html">About</a> · <a href="/how-it-works.html">How we verify</a> · <a href="/contact.html">Contact</a> · <a href="/privacy.html">Privacy</a> · <a href="/disclosure.html">Disclosure</a></nav><p>{{DISCLOSURE}}</p></footer>
+</body></html>

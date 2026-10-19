@@ -136,6 +136,19 @@ def display_pct(value: float) -> int:
     return math.floor(float(value) + .5)
 
 
+# Browser-only live responses never pass through Python. Keep their savings
+# arithmetic here too; the tool-page publisher emits this pure function verbatim.
+TOOL_LIST_BADGE_JS = '''function toolBadge(price, list) {
+  if (!Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(list) || list <= price)
+    return {kind:"live", label:"Live Amazon price"};
+  var pct = (list - price) * 100 / list;
+  var kind = pct >= 40 ? "big" : pct >= 15 ? "good" : "live";
+  return {kind:kind, label:kind === "live" ? "Live Amazon price" :
+    (kind === "big" ? "Big discount" : "Good discount") + " · " + Math.floor(pct) + "% off list price"};
+}
+'''
+
+
 def amazon_list_price(final: float | None, reading: dict | None, *, asin: str,
                       confirmed_at: datetime | None, now: datetime,
                       max_age_h: float) -> models.SavingsResult:

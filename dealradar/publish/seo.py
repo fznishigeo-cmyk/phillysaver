@@ -1411,6 +1411,8 @@ def publish_sitemap(db, cfg, now: datetime, out: Path, site_url: str,
         excluded = {site_url + path for path, page in pages.items() if page.unconfirmed}
         excluded |= product_exclusions(db, site_url, pages)
         excluded |= event_pages.indexnow_exclusions(db, site_url, pages)
+        from .tool_pages import indexnow_exclusions as tool_exclusions
+        excluded |= tool_exclusions(cfg, site_url)
         due = indexnow_due(db, cfg, now, contents, site_dir=out, excluded=excluded)
         due_list_path(out).write_text(json.dumps(due), encoding="utf-8")
         logger.info("indexnow: %d of %d URL(s) due", len(due), len(contents))

@@ -198,6 +198,8 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("tool_pages", None)
+    config.pop("timer_pill_ring", None)
     config.pop("discounts_from_link", None)
     config.pop("phone_tagline_count", None)
     config.pop("search_polish_1019", None)
@@ -352,7 +354,21 @@ def pre_discounts_from_link(cfg):
 
 def pre_phone_tagline_count(cfg):
     """Before task 324's phone count; preserve every recorded hash."""
+    pre_timer_pill_ring(cfg)
     cfg.phone_tagline_count = False
+    pre_tool_pages(cfg)
+    return cfg
+
+
+def pre_tool_pages(cfg):
+    """Before task 328's preview pages; preserve recorded publication hashes."""
+    cfg.tool_pages = {"enabled": False, "public": False}
+    return cfg
+
+
+def pre_timer_pill_ring(cfg):
+    """Before task 329's compact timer outline; never re-pin older hashes."""
+    cfg.timer_pill_ring = False
     return cfg
 
 

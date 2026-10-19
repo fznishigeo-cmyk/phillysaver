@@ -11,7 +11,8 @@ from tests.history_pins import pre_task_288, pre_task_290
 
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
-from dealradar.publish import site
+from dealradar.publish import site, tool_pages
+from dealradar.publish.seo_audit import Page
 from dealradar.publish.tracking import head_snippet
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import baseline_config, tree_hash
@@ -131,11 +132,20 @@ def test_enabled_publish_rerun_is_idempotent(tmp_path):
         db.close()
 
 
-def test_home_links_in_real_chromium(tmp_path):
+@pytest.mark.parametrize("tools", ["off", "preview", "public"])
+def test_home_links_in_real_chromium(tmp_path, tools):
     cfg = AppConfig(home_link_resets=True, support_enabled=True, offscreen_cards=True,
                     engagement={"saved_deals": True}, tracking={"ga4_measurement_id": SAMPLE["ga4_measurement_id"]})
+    cfg.tool_pages = {"enabled": tools != "off", "public": tools == "public"}
     out, *_ = render(tmp_path, cfg, offers())
-    result = subprocess.run(["node", str(Path(__file__).with_name("home_links_browser.cjs")), str(out)],
+    home = Page((out / "index.html").read_text(), "/")
+    footer = home.first(ident="footerlinks")
+    footer_hrefs = {n.attrs.get("href") for n in footer.nodes() if n.tag == "a"}
+    for slug in tool_pages.PAGES:
+        assert (out / slug / "index.html").exists() is (tools != "off")
+        assert ("/" + slug + "/" in home.hrefs) is (tools == "public")
+        assert ("/" + slug + "/" in footer_hrefs) is (tools == "public")
+    result = subprocess.run(["node", str(Path(__file__).with_name("home_links_browser.cjs")), str(out), tools],
                             capture_output=True, text=True, timeout=120)
     if result.returncode == 77:
         pytest.skip(result.stdout.strip())

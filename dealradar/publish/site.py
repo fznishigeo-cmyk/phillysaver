@@ -46,8 +46,10 @@ from . import page_polish
 from . import header_polish
 from . import all_discounts
 from . import discounts_from_link
+from . import tool_pages
 from . import search_polish_1019
 from . import phone_tagline_count
+from . import timer_pill_ring
 from . import search_circle
 from . import search_analyze
 from . import analyze_top_sellers
@@ -188,6 +190,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = page_polish.home(html, cfg)
         html = header_polish.template(html, cfg)
         html = phone_tagline_count.template(html, cfg)
+        html = timer_pill_ring.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -1142,6 +1145,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = all_discounts.site_version(site_version, cfg)
     site_version = discounts_from_link.site_version(site_version, cfg)
     site_version = search_polish_1019.site_version(site_version, cfg)
+    site_version = timer_pill_ring.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
@@ -1421,14 +1425,17 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     all_discounts.publish(out, cfg)
     search_polish_1019.publish(out, cfg)
     discounts_from_link.publish(out, cfg)
+    timer_pill_ring.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
+    seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"]))
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
                          excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed}
                          | indexnow.product_exclusions(db, site_url, seo_pages)
-                         | seo.event_pages.indexnow_exclusions(db, site_url, seo_pages))
+                         | seo.event_pages.indexnow_exclusions(db, site_url, seo_pages)
+                         | tool_pages.indexnow_exclusions(cfg, site_url))
 
     if clicks.enabled(cfg):
         try:
