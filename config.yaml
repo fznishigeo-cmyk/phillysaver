@@ -196,7 +196,9 @@ card_tidy: true  # operator 2026-10-18: folded checkout steps, clear cart chip, 
 page_polish: true  # task 304: event search and the brand-style Support page
 header_polish: true  # task 305: aligned desktop search/actions and a single category row
 all_discounts_button: true  # operator 2026-10-19: "All discounts" — "the same style as the Analyze button"
+discounts_from_link: true  # operator 2026-10-19: "When I enter a URL and I click All discounts, it doesn't take me to anything related to the URL"
 search_polish_1019: true  # operator 2026-10-19: "this is already at the bottom, remove it."; "Dropbox Blue"
+phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site

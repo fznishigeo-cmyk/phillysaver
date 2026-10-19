@@ -6,7 +6,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 
-function buildFixture(scratch, polish = true, discounts = true) {
+function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true) {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
 import json, sys
@@ -20,6 +20,7 @@ cfg = load_config()
 cfg.header_polish = sys.argv[2] == "true"
 cfg.all_discounts_button = sys.argv[3] == "true"
 cfg.search_polish_1019 = cfg.all_discounts_button
+cfg.phone_tagline_count = sys.argv[4] == "true"
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -33,7 +34,7 @@ pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal
 assert pages, "fixture must include a current deal page"
 pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
 (Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
-`, scratch, String(polish), String(discounts)], {encoding:'utf8'});
+`, scratch, String(polish), String(discounts), String(phoneTagline)], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return path.join(scratch, 'site');
 }
@@ -122,6 +123,92 @@ async function offerInstall(page) {
   await page.locator('#pwa-header-install').waitFor({state:'visible'});
 }
 
+// Compare the feature with its own OFF render, keeping every other shipped flag ON.
+async function assertPhoneTagline(browser, roots, fixture, inspect) {
+  for (const width of [360, 390, 412, 430, 900, 1280]) for (const theme of ['light', 'dark']) {
+    let baseline;
+    for (const mode of ['taglineOff', 'on']) {
+      const name = `tagline-${width}-${theme}-${mode}`;
+      const context = await browser.newContext({viewport:{width, height:width === 360 ? 740 : 844},
+        colorScheme:theme, isMobile:width < 900, hasTouch:width < 900, reducedMotion:'reduce', serviceWorkers:'block'});
+      const errors = [], unexpected = [];
+      await routeOffline(context, roots[mode], unexpected);
+      await context.addInitScript(() => {
+        localStorage.setItem('wp.install.engagedMs', '180000');
+        addEventListener('beforeinstallprompt', e => {
+          if (e.isTrusted) { e.preventDefault(); e.stopImmediatePropagation(); }
+        });
+      });
+      const page = await context.newPage();
+      page.on('pageerror', error => errors.push(error.message));
+      await page.clock.install({time:new Date(Date.parse(fixture.now) + 120000)});
+      await page.goto('https://wowpriced.test/');
+      await page.waitForFunction(() => document.querySelector('#content .card') &&
+        /24 (?:live|verified) deals/i.test(document.querySelector('#tagline').innerText));
+      await offerInstall(page);
+      const g = await page.evaluate(geometry);
+      const tag = page.locator('#tagline');
+      const text = await tag.innerText();
+      if (mode === 'taglineOff') baseline = {g, text};
+      else {
+        if (width >= 900) {
+          assert.deepEqual(g, baseline.g, name + ': all desktop/tablet geometry unchanged');
+          assert.equal(text, baseline.text, name + ': desktop/tablet wording unchanged');
+          assert.equal(await page.locator('.tag-short').evaluate(el => getComputedStyle(el).display), 'none');
+        } else {
+          // Only the tagline can extend into the spare space before the timer.
+          const {status, ...rest} = g, {status:oldStatus, ...oldRest} = baseline.g;
+          assert.deepEqual(rest, oldRest, name + ': header/card/timer geometry unchanged');
+          for (const key of ['x', 'y', 'height']) assert.equal(status[key], oldStatus[key], name + ': tagline ' + key);
+          assert.equal(text.trim().toLowerCase(), '24 verified deals', name + ': only one visible count');
+          for (const selector of ['.tag-lead', '.tag-count'])
+            assert.equal(await page.locator(selector).evaluate(el => getComputedStyle(el).display), 'none');
+          // roughCount currently caps at 1,000+; stress the approved 1,200+ fit example too.
+          await page.locator('.tag-short').evaluate(el => {el.textContent = '1,200+ verified deals';});
+          const fits = await tag.evaluate(el => ({scroll:el.scrollWidth, client:el.clientWidth,
+            text:el.innerText, dot:el.querySelector('.live-dot').getAttribute('aria-hidden'),
+            since:el.lastElementChild.id}));
+          assert(fits.scroll <= fits.client, name + ': full four-digit count fits without ellipsis ' + JSON.stringify(fits));
+          assert.equal(fits.text.trim().toLowerCase(), '1,200+ verified deals');
+          assert.equal(fits.dot, 'true'); assert.equal(fits.since, 'tagsince');
+          const timer = await page.locator('#drop').boundingBox();
+          const textRight = await page.locator('.tag-short').evaluate(el => el.getBoundingClientRect().right);
+          assert(textRight < timer.x, name + ': count stays clear of timer');
+          assert(g.scrollWidth <= width, name + ': no document overflow');
+          if ([360, 390, 412].includes(width)) {
+            const audit = await page.evaluate(`(() => { ${inspect}\nreturn inspectPage(hitAreaMath()); })()`);
+            assert.equal(audit.headerH, 182, name + ': mobile-audit headerH');
+            assert.equal(audit.firstCardTop, 388, name + ': mobile-audit firstCardTop');
+            assert.deepEqual(audit.overflow, [], name + ': mobile-audit overflow');
+          }
+        }
+      }
+      assert.deepEqual(errors, [], name + ': page errors');
+      assert.deepEqual(unexpected, [], name + ': unexpected requests');
+      await context.close();
+    }
+  }
+}
+
+async function routeOffline(context, root, unexpected) {
+  await context.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',
+      body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#b9c6cd"/></svg>'});
+    if (url.origin !== 'https://wowpriced.test') {
+      unexpected.push(url.origin); return route.fulfill({status:204, body:''});
+    }
+    if (url.pathname === '/api/search') return route.fulfill({json:{items:[]}});
+    const file = path.resolve(root, '.' + url.pathname, url.pathname.endsWith('/') ? 'index.html' : '');
+    if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) {
+      unexpected.push(url.pathname); return route.fulfill({status:404, body:''});
+    }
+    const types = {'.html':'text/html', '.js':'application/javascript', '.css':'text/css',
+      '.json':'application/json', '.webmanifest':'application/manifest+json', '.svg':'image/svg+xml', '.png':'image/png'};
+    return route.fulfill({path:file, contentType:types[path.extname(file)] || 'application/octet-stream'});
+  });
+}
+
 async function main() {
   const {chromium} = require('playwright');
   const scratch = fs.mkdtempSync('/tmp/task305-browser-');
@@ -132,9 +219,11 @@ async function main() {
   const inspect = auditSource.slice(auditSource.indexOf('function hitAreaMath()'), auditSource.indexOf('async function runAudit()'));
   let browser;
   try {
-    const roots = {off:buildFixture(path.join(scratch, 'off'), true, false), on:buildFixture(path.join(scratch, 'on'))};
+    const roots = {off:buildFixture(path.join(scratch, 'off'), true, false), on:buildFixture(path.join(scratch, 'on')),
+      taglineOff:buildFixture(path.join(scratch, 'tagline-off'), true, true, false)};
     const fixture = JSON.parse(fs.readFileSync(path.join(scratch, 'on/fixture.json'), 'utf8'));
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
+    await assertPhoneTagline(browser, roots, fixture, inspect);
     const metrics = [];
     for (const width of [900, 1024, 1100, 1199, 1280, 1440, 1500, 1557, 1920, 2560, 899, 390, 360]) {
       for (const theme of ['light', 'dark']) {
@@ -145,23 +234,7 @@ async function main() {
           const context = await browser.newContext({viewport:{width, height:width === 360 ? 740 : width < 900 ? 844 : 900}, colorScheme:theme,
             isMobile:width < 900, hasTouch:width < 900, reducedMotion:'reduce', serviceWorkers:'block'});
           const errors = [], unexpected = [];
-          await context.route('**/*', route => {
-            const url = new URL(route.request().url());
-            if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',
-              body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#b9c6cd"/></svg>'});
-            if (url.origin !== 'https://wowpriced.test') {
-              unexpected.push(url.origin); return route.fulfill({status:204, body:''});
-            }
-            if (url.pathname === '/api/search') return route.fulfill({json:{items:[]}});
-            const root = roots[mode];
-            const file = path.resolve(root, '.' + url.pathname, url.pathname.endsWith('/') ? 'index.html' : '');
-            if (!file.startsWith(root + path.sep) || !fs.existsSync(file)) {
-              unexpected.push(url.pathname); return route.fulfill({status:404, body:''});
-            }
-            const types = {'.html':'text/html', '.js':'application/javascript', '.css':'text/css',
-              '.json':'application/json', '.webmanifest':'application/manifest+json', '.svg':'image/svg+xml', '.png':'image/png'};
-            return route.fulfill({path:file, contentType:types[path.extname(file)] || 'application/octet-stream'});
-          });
+          await routeOffline(context, roots[mode], unexpected);
           await context.addInitScript(() => {
             localStorage.setItem('wp.install.engagedMs', '180000');
             addEventListener('beforeinstallprompt', e => {
@@ -175,7 +248,7 @@ async function main() {
           await page.clock.install({time:new Date(Date.parse(fixture.now) + 120000)});
           await page.goto('https://wowpriced.test/');
           await page.waitForFunction(() => !document.querySelector('#filtertoggle').disabled &&
-            document.querySelector('#content .card') && /live deal/i.test(document.querySelector('#tagline').textContent));
+            document.querySelector('#content .card') && /(?:live|verified) deals?/i.test(document.querySelector('#tagline').innerText));
           const beforeInstall = await page.locator('.searchfield').boundingBox();
           await offerInstall(page);
           assert.deepEqual(await page.locator('.searchfield').boundingBox(), beforeInstall, name + ': stable install slot');

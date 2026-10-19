@@ -152,7 +152,7 @@ async function walk(page, doc, device) {
     await page.waitForTimeout(1000);
     shown = await page.evaluate(frontPageSnapshot);
     check(/^\d+:[0-5]\d$/.test(shown.clock.trim()), `clock "${shown.clock}"`);
-    check(/\b[\d,]+\+? live deals\b/.test(shown.tagline), "missing live-deals tagline");
+    check(/\b[\d,]+\+? (?:live|verified) deals?\b/i.test(shown.tagline), "missing live-deals tagline");
     check(!errors.length, "page error");
   });
   page.off("response", capturePublish);

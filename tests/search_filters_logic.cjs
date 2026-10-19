@@ -320,7 +320,8 @@ async function checkFirstLoad() {
   ctx.state.deals=Array.from({length:1637},()=>ninja);
   // The published metadata renderer sets the rounded live count placeholder.
   const countCode = snippet('    var priceOnly =', '    if (floor !=') +
-    snippet('    var live = state.deals.filter', '    tagline.appendChild(document.createTextNode(" · "));');
+    snippet('    var live = state.deals.filter', html.includes('    tagLead.appendChild(document.createTextNode(" · "));')
+      ? '    tagLead.appendChild(document.createTextNode(" · "));' : '    tagline.appendChild(document.createTextNode(" · "));');
   vm.runInContext(countCode,ctx);
   assert.equal(element('q').placeholder,'Search 1,000+ deals');
   ctx.state.deals=[];

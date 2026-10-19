@@ -244,6 +244,10 @@ async function main() {
             }
             await page.locator('#q').fill('');
             await assertDiscounts(page, false);
+            await page.locator('#q').fill('https://www.amazon.com/Nulaxy-Adjustable-Anti-Slip-Smartphone-Essentials/dp/B012345678');
+            await page.locator(width < 900 ? '#search-discounts-mobile' : '#search-discounts').click();
+            assert.equal(await page.evaluate(() => window.opened.at(-1)),
+              'https://www.amazon.com/s?k=Nulaxy%20Adjustable%20Anti%20Slip%20Smartphone%20Essentials&rh=p_n_deal_type%3A23566065011&tag=example-20');
             await page.locator('#q').fill('mouse');
             if (motion !== 'reduce') assert.equal((await style()).state, 'paused');
             await page.locator('#search-amazon-result a.getdeal').waitFor();

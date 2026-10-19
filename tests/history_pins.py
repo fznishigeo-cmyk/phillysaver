@@ -198,6 +198,8 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("discounts_from_link", None)
+    config.pop("phone_tagline_count", None)
     config.pop("search_polish_1019", None)
     config.pop("analyze_top_sellers", None)
     config.pop("all_discounts_button", None)
@@ -336,7 +338,21 @@ def pre_search_polish_1019(cfg):
 
 def pre_task_320(cfg):
     """Before Analyze's top-five sellers (task 320); keep all recorded hashes."""
+    pre_discounts_from_link(cfg)
     cfg.analyze_top_sellers = False
+    return cfg
+
+
+def pre_discounts_from_link(cfg):
+    """Before task 326's URL-aware discounts; never re-pin older hashes."""
+    pre_phone_tagline_count(cfg)
+    cfg.discounts_from_link = False
+    return cfg
+
+
+def pre_phone_tagline_count(cfg):
+    """Before task 324's phone count; preserve every recorded hash."""
+    cfg.phone_tagline_count = False
     return cfg
 
 

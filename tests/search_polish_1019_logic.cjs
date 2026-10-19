@@ -15,6 +15,7 @@ const ctx = {searchText:() => input.trim(), document:{getElementById:() => ({val
   amazonResultsSettings:{tag:'example-20'}, track:(...args) => tracked.push(args),
   window:{open:(...args) => opened.push(args)}};
 vm.createContext(ctx);
+if (html.includes('  function discountsLink()')) vm.runInContext(source('discountsLink'), ctx);
 for (const name of ['searchAmazonQuery', 'searchAmazonHtml', 'searchAmazonClick', 'searchMoreTopHtml'])
   vm.runInContext(source(name), ctx);
 function target(top, discounts = false) {

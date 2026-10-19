@@ -244,6 +244,40 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Merged homepage headroom (Codex task 327, 2026-10-19; uncommitted):**
+  Under `discounts_from_link`, remove support-mode membership-dialog/account-email
+  CSS with no consumer and the homepage placeholder assignment immediately
+  overwritten by enabled Amazon search. Join's shared phone styles, membership
+  mode, search-disabled fallback, 324/326 behavior and original OFF pins remain.
+  Shipped fixture: **76,485 → 76,220 gzip bytes** (265 saved; 1,140 below the
+  unchanged 77,360 ceiling). Requested ten-file run: **225 passed, 2 browser
+  skips, 1 fresh-drop timing failure** (50.6 ms against 50 ms under four workers).
+  Both unchanged fresh-drop variants passed on rerun: **2 passed**; discounts
+  Node logic passes. All distinct requested checks pass after that timing retry.
+  `/tmp/b327` and owned scratch removed. No full suite, commit or push.
+- **Amazon-link discounts (Codex task 326, 2026-10-19; uncommitted):** Strict
+  `discounts_from_link` defaults OFF/ships ON. Slug or completed same-ASIN
+  Analyze title becomes sanitized discount words; bare ASIN falls back to its
+  tagged product page. Short/adult/non-Amazon fallbacks, typed queries and other
+  buttons stay unchanged; no fetch or UI added. Three original-release OFF byte
+  pins pass; existing hashes unchanged. Final requested selection: **301 passed,
+  6 skipped in 259.14s**. Phone HTML **76,350 / 77,360 gzip bytes** (1,010 spare).
+  Desktop/phone Nulaxy Chromium assertion added and syntax-checked; operator
+  owns native browser run. Own `/tmp/b326*` scratch removed. No full suite,
+  commit or push.
+- **Phone tagline count (Codex task 324, 2026-10-19; uncommitted):**
+  Strict flag defaults false, ships true with the operator's quote. At <=899px
+  the dot and short verified-deal count show; 200px uses spare space before
+  the timer. Desktop copy/type, zero-count fallback and visit slot stay intact.
+  OFF matches all 74 pre-edit files; no hashes/ceilings changed. Superseded
+  tagline rules fund the width rule: CSS 14,913 gzip bytes; HTML keeps 1,000
+  bytes of reserve. Site check reads visible text; other visitor scripts work.
+  **484 distinct focused passes, 1 Chromium skip** after new fixture/guard fixes;
+  final feature/native-fixture recheck **17 passed in 23.57s**. Syntax/diff checks
+  pass. Operator runs `header_polish_browser.cjs`: four-digit fit at 360/390/412/430,
+  headerH 182/firstCardTop 388 and unchanged desktop. `/tmp/b324` and owned
+  scratch removed. No full suite, commit or push.
+
 - **Visitor Keepa reserve on release 8ceabdf (Codex task 323, completing 311, 2026-10-19; uncommitted):**
   Resolved all six content conflicts while preserving task 319's Amazon-used
   switch, recheck cadence, rotating two-page focus discovery and intake caps.

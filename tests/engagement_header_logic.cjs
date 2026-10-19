@@ -32,10 +32,13 @@ vm.createContext(ctx);
 if (enabled) vm.runInContext(fragment('  function newSinceVisit(d)', '  function engagementLineText()'), ctx);
 vm.runInContext(fragment('  function renderMeta()', '    var disclosure =') + '}', ctx);
 vm.runInContext(fragment('  function sinceLastVisit(deals)', '  function rememberSeen(deals)'), ctx);
+// Model the desktop's display:none short copy when checking visible wording.
+const desktopText = node => node.className === 'tag-short' ? '' :
+  (node.value ?? node.textContent ?? '') + (node.children || []).map(desktopText).join('');
 for (let repeat = 0; repeat < 2; repeat++) {
   ctx.renderMeta();
   ctx.sinceLastVisit(ctx.state.deals);
-  assert.equal(elements.tagline.textContent, 'verified deals · 1,000+ live deals' +
+  assert.equal(desktopText(elements.tagline), 'verified deals · 1,000+ live deals' +
     (enabled && !tidy ? ' · 1893 new since your last visit' : ''));
   assert.equal(elements.tagline.children.filter(n => n.className === 'live-dot').length, 1);
   assert.equal(elements.sincevisit.hidden, tidy || enabled);

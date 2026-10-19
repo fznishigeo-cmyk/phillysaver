@@ -165,7 +165,8 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(frontPageFlags([{}], rules).flags[0].unidentified, true);
   // Snapshot the first 48 positions, with browser-decoded text and attributes.
   global.document = {
-    getElementById: id => ({textContent: id === "countdown" ? "10:00" : "100 live deals"}),
+    getElementById: id => id === "countdown" ? {textContent:"10:00"} :
+      {innerText:"1,000+ VERIFIED DEALS", textContent:"verified deals · 1,000+ live deals1,000+ verified deals"},
     querySelectorAll: selector => {
       assert.equal(selector, "#content .card[data-key]");
       return Array.from({length: 60}, (_, i) => ({
@@ -178,6 +179,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   try {
     const snapshot = frontPageSnapshot();
     assert.equal(snapshot.cards, 60);
+    assert.equal(snapshot.tagline, "1,000+ VERIFIED DEALS");
     assert.equal(snapshot.frontCards.length, 48);
     assert.deepEqual(snapshot.frontCards[47],
       {key: "key47", item: visible.item, store: "Target", category: "home"});

@@ -45,7 +45,9 @@ from . import card_tidy
 from . import page_polish
 from . import header_polish
 from . import all_discounts
+from . import discounts_from_link
 from . import search_polish_1019
+from . import phone_tagline_count
 from . import search_circle
 from . import search_analyze
 from . import analyze_top_sellers
@@ -185,6 +187,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = analyze_top_sellers.template(html, cfg)
         html = page_polish.home(html, cfg)
         html = header_polish.template(html, cfg)
+        html = phone_tagline_count.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -1137,6 +1140,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = drop_fresh.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
     site_version = all_discounts.site_version(site_version, cfg)
+    site_version = discounts_from_link.site_version(site_version, cfg)
     site_version = search_polish_1019.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
@@ -1416,6 +1420,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     card_tidy.publish(out, cfg)
     all_discounts.publish(out, cfg)
     search_polish_1019.publish(out, cfg)
+    discounts_from_link.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)

@@ -361,7 +361,9 @@ class AppConfig:
     page_polish: bool = False
     header_polish: bool = False
     all_discounts_button: bool = False
+    discounts_from_link: bool = False
     search_polish_1019: bool = False
+    phone_tagline_count: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1082,9 +1084,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.all_discounts_button = g("all_discounts_button", default=False)
     if type(cfg.all_discounts_button) is not bool:
         raise ValueError("all_discounts_button must be a boolean")
+    cfg.discounts_from_link = g("discounts_from_link", default=False)
+    if type(cfg.discounts_from_link) is not bool:
+        raise ValueError("discounts_from_link must be a boolean")
     cfg.search_polish_1019 = g("search_polish_1019", default=False)
     if type(cfg.search_polish_1019) is not bool:
         raise ValueError("search_polish_1019 must be a boolean")
+    cfg.phone_tagline_count = g("phone_tagline_count", default=False)
+    if type(cfg.phone_tagline_count) is not bool:
+        raise ValueError("phone_tagline_count must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

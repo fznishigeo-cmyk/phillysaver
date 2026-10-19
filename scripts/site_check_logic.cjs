@@ -125,7 +125,7 @@ function frontPageSnapshot() {
   return {
     cards: cards.length, top: 0,
     clock: (document.getElementById("countdown") || {}).textContent || "",
-    tagline: (document.getElementById("tagline") || {}).textContent || "",
+    tagline: ((el) => el ? (el.innerText ?? el.textContent ?? "") : "")(document.getElementById("tagline")),
     frontCards: cards.slice(0, 48).map((c) => {
       const labels = c.matches("[data-category]") ? c : c.querySelector("[data-category]");
       return {key: c.getAttribute("data-key"),
