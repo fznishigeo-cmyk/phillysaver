@@ -12,6 +12,7 @@ import pytest
 
 from dealradar import buybox, click_price, dedupe, rank, savings, util, verify
 from tests.history_pins import pre_drop_fresh
+from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.keepa_budget import KeepaBudget
@@ -31,7 +32,7 @@ from tests.test_wall_confirmation_coverage import remember
 
 @pytest.fixture
 def cfg():
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "on"
     cfg.keepa_recheck_surplus = False
     cfg.feature_flags["keepa"] = True

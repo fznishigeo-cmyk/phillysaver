@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import all_discounts, tracking
-from tests.history_pins import pre_all_discounts_button, pre_task_295, pre_task_290_install_raw
+from tests.history_pins import pre_all_discounts_button, pre_search_polish_1019, pre_task_295, pre_task_290_install_raw
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -38,7 +38,7 @@ def test_defaults_and_history(tmp_path):
 
 @pytest.mark.parametrize('mode', ['shipped', 'inline', 'membership'])
 def test_off_missing_back_off_exact_bytes(tmp_path, mode):
-    cfg = load_config()
+    cfg = pre_search_polish_1019(load_config())
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
         cfg.strip_comments = False
@@ -60,7 +60,7 @@ def test_off_missing_back_off_exact_bytes(tmp_path, mode):
 
 @pytest.mark.parametrize('mode', ['shipped', 'inline', 'inline-css', 'no-header', 'no-analyze', 'no-search-amazon'])
 def test_emitted_buttons_and_click_logic(tmp_path, mode):
-    cfg = load_config()
+    cfg = pre_search_polish_1019(load_config())
     cfg.affiliate_amazon_tag = 'example-20'
     cfg.search_boost['exclude_words'].append('butt plug')
     if mode == 'inline':

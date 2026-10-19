@@ -96,6 +96,9 @@ _AMAZON_SOLD = {"keepa", "keepa_amazon_drops"}
 def plenty_of_stock(db, deal: dict, cfg) -> bool:
     """Social posts reach many people at once; a one-off (one unit, one size,
     clearance) is gone after the first click (operator, 2026-10-13/14)."""
+    from ..amazon_used import excluded
+    if excluded(deal, cfg):
+        return False
     if deal.get("price_unconfirmed") or (deal.get("category") or "") in set(cfg.social_exclude_categories):
         return False
     if cfg.keepa_click_price_rule == "on":

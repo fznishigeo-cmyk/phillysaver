@@ -1067,8 +1067,9 @@ def _deal_pages(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     cap = int(getattr(cfg, "seo_deal_pages_max", 3000))
     rows = live[:cap]
     logger.info("seo: %d live deal pages; %d left out by seo.deal_pages_max", len(rows), max(0, len(live) - cap))
+    from ..amazon_used import excluded as amazon_used_excluded
     for k, d in raw.items():
-        if d.get("status") == "dead" and d.get("pct_at_checkout") is not None \
+        if not amazon_used_excluded(d, cfg) and d.get("status") == "dead" and d.get("pct_at_checkout") is not None \
                 and (k in remembered or k in public):
             if k not in public:
                 d = dict(d, sightings=db.sightings_for(d["id"]))

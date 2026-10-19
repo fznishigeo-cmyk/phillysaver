@@ -310,6 +310,7 @@ def search_photos(db, deals, fetcher, cfg, now, deadline, run_key, *, rate_limit
     """
     from .fetch.keepa import QUERY_URL, _finder_cost
     from .verify import keepa_products
+    from .amazon_used import excluded
     import logging
 
     stats = {"searched": 0, "matched": 0, "tokens": 0, "rate_limited": rate_limited}
@@ -345,7 +346,7 @@ def search_photos(db, deals, fetcher, cfg, now, deadline, run_key, *, rate_limit
                 break
             if deadline is not None and time.monotonic() + 15 >= deadline:
                 break
-            if (deal.get("status") != "alive" or deal.get("image_url") or deal.get("asin")
+            if (excluded(deal, cfg) or deal.get("status") != "alive" or deal.get("image_url") or deal.get("asin")
                     or not is_amazon_deal(deal) or deal.get("photo_search_tried")
                     or not {"post_link_tried", "newsletter"}.intersection(deal.get("flags") or [])
                     or len(name_words(deal.get("item") or "")) < 2):

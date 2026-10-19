@@ -48,6 +48,8 @@ async function assertAnalyzeGeometry(page) {
           radii:[css.borderTopLeftRadius, css.borderBottomLeftRadius, css.borderTopRightRadius, css.borderBottomRightRadius]};
       });
     return {field:rect(field), pills, twins:!!field.querySelector('.all-discounts'), phone:innerWidth < 900,
+      polished:!document.getElementById('search-hint'),
+      icon:field.querySelector('svg') ? rect(field.querySelector('svg')) : null,
       textLeft:q.left + parseFloat(ic.paddingLeft), textRight:q.right - parseFloat(ic.paddingRight),
       clear:clear && !clear.hidden ? rect(clear) : null,
       overflow:document.documentElement.scrollWidth > innerWidth};
@@ -57,9 +59,10 @@ async function assertAnalyzeGeometry(page) {
     assert.deepEqual(pill.borders, ['0px', '0px', '0px', '0px'], 'no transparent border ring');
     const gaps = [pill.top - g.field.top, g.field.bottom - pill.bottom];
     if (i === g.pills.length - 1) gaps.push(g.field.right - pill.right);
-    for (const gap of gaps) assert(gap >= 1.9 && gap <= (g.twins ? 4 : 3), 'small even field inset: ' + gap);
+    for (const gap of gaps) assert(gap >= (g.polished ? 5.9 : 1.9) && gap <= (g.polished ? 6.1 : g.twins ? 4 : 3),
+      'even field inset around the pill: ' + gap);
     assert(Math.abs(gaps[0] - gaps[1]) <= .1, 'vertically centred oval');
-    assert.deepEqual(pill.radii, g.twins ? ['999px','999px','999px','999px'] : ['999px','999px','10px','10px']);
+    assert.deepEqual(pill.radii, g.twins || g.polished ? ['999px','999px','999px','999px'] : ['999px','999px','10px','10px']);
     assert(pill.width >= 44 && pill.height >= 44, '44px tap target');
     assert(pill.labelWidth <= pill.width - 16, 'label fits without clipping');
     if (g.twins) {
@@ -68,18 +71,23 @@ async function assertAnalyzeGeometry(page) {
       assert(pill.sparkle.includes('✦'), 'same sparkle icon');
       if (i) {
         const first = g.pills[0];
-        assert(pill.left >= first.right + 3, 'pills have an even small gap');
+        assert(pill.left >= first.right + (g.polished ? 5.9 : 3), 'pills have an even small gap');
+        if (g.polished) assert(pill.left - first.right <= 6.1, 'same 6px gap between pills and field edges');
         assert.equal(pill.height, first.height, 'twin heights');
         assert.equal(pill.textShadow, first.textShadow, 'same bold-text shadow');
-        assert.notEqual(pill.background, first.background, 'distinct purple and sunset families');
+        assert.notEqual(pill.background, first.background, 'distinct purple and Dropbox Blue families');
       }
     }
   }
   assert.equal(g.pills[0].label, 'Analyze', 'full label on phones too');
   assert(g.textRight <= g.pills[0].left, 'typed text clears both pills');
+  if (g.icon) assert(Math.abs((g.icon.top + g.icon.bottom) / 2 - (g.field.top + g.field.bottom) / 2) <= .1,
+    'search icon stays centred in the field');
   if (g.clear) {
     assert(g.clear.right <= g.pills[0].left, 'clear button clears both pills');
     assert(g.textRight <= g.clear.left, 'typed text clears the clear button');
+    if (g.polished) assert(Math.abs((g.clear.top + g.clear.bottom) / 2 - (g.field.top + g.field.bottom) / 2) <= .1,
+      'clear button stays centred in the field');
   }
   if (g.twins && page.viewportSize().width === 1280 && await page.locator('header>.hrow>.search').count())
     assert(g.textRight - g.textLeft >= 300, '1280px reserves 300px of visible typed text');
@@ -89,6 +97,11 @@ async function assertAnalyzeGeometry(page) {
 async function assertDiscounts(page, typed) {
   const phone = page.viewportSize().width < 900;
   const desktop = page.locator('#search-discounts'), mobile = page.locator('#search-discounts-mobile');
+  assert.equal(await page.locator('#search-hint').count(), 0, 'redundant hint removed');
+  assert(!((await page.locator('#q').getAttribute('aria-describedby')) || '').split(/\s+/).includes('search-hint'));
+  assert.match(await page.locator('footer').innerText(), /As an Amazon Associate,\s*wowpriced earns from qualifying purchases\./);
+  assert.equal(await page.locator('.discounts-disclosure, .discounts-mobile small').count(), 0,
+    'footer carries the disclosure for both discounts buttons');
   assert.equal(await desktop.isVisible(), !phone);
   assert.equal(await mobile.isVisible(), phone && typed);
   if (phone && !typed) return;
@@ -96,9 +109,7 @@ async function assertDiscounts(page, typed) {
   assert.equal(await button.getAttribute('href'), 'https://www.amazon.com/');
   assert.equal(await button.getAttribute('target'), '_blank');
   assert.equal(await button.getAttribute('rel'), 'sponsored noopener');
-  const disclosure = phone ? page.locator('.discounts-mobile small') : page.locator('.discounts-disclosure');
-  assert(await disclosure.isVisible(), 'affiliate disclosure accompanies each visible button');
-  assert.match(await disclosure.innerText(), /Amazon links may earn us a commission\./);
+  assert(await page.locator('footer .footerfine').isVisible(), 'footer disclosure remains visible');
   if (phone) {
     const b = await button.boundingBox(), field = await page.locator('.searchfield').boundingBox();
     assert.equal(await button.innerText(), 'All discounts on Amazon →');
@@ -112,6 +123,7 @@ async function assertDiscounts(page, typed) {
       return {fg:css.color, stops:css.backgroundImage.match(/rgba?\([^)]+\)/g), sheen:sheen.backgroundImage};
     });
     assert.equal(colors.fg, 'rgb(255, 255, 255)');
+    if (control === button) assert(colors.stops.includes('rgb(0, 97, 254)'), 'Dropbox Blue gradient centre');
     const rgb = color => color.match(/[\d.]+/g).map(Number).slice(0, 3).map(v => v / 255);
     const luminance = color => color.map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
       .reduce((sum, v, i) => sum + v * [.2126,.7152,.0722][i], 0);
@@ -173,7 +185,7 @@ async function main() {
           });
           if (!glow) before = geometry;
           else {
-            // Task 317: the pill is a full oval with an even 3 px gap (operator), so only its
+            // Task 318: the pill is a full oval with an even 6 px gap, so only its
             // width/x may differ from the glow-OFF pill; the field, input, header and cards may not.
             const {button, ...rest} = geometry, {button: beforeButton, ...beforeRest} = before;
             assert.deepEqual(rest, beforeRest, name + ': unchanged geometry and text contrast');
@@ -182,8 +194,11 @@ async function main() {
             // Inside the field; on phones Analyze is the rightmost pill (All discounts sits right of it on desktop).
             assert(button.x >= geometry.field.x && button.x + button.width <= geometry.field.x + geometry.field.width - 1,
               name + ': pill inside the field');
-            if (/-(360|390)-/.test(name)) assert(geometry.field.x + geometry.field.width - (button.x + button.width) <= 5,
-              name + ': phone pill flush with the field end ' + JSON.stringify({button, field: geometry.field}));
+            if (/-(360|390)-/.test(name)) {
+              const gap = geometry.field.x + geometry.field.width - (button.x + button.width);
+              assert(gap >= 5.9 && gap <= 6.1,
+                name + ': phone pill has a white field gap ' + JSON.stringify({button, field: geometry.field}));
+            }
             metrics.push({name, before, after:geometry});
             const style = () => page.locator('.searchfield').evaluate(el => {
               const css = getComputedStyle(el, '::before'); return {name:css.animationName, state:css.animationPlayState,
@@ -237,6 +252,7 @@ async function main() {
               assert.equal(await page.locator('a.getdeal[data-search-amazon]:visible, a.getdeal[data-analyze-fallback]:visible').count(), 1,
                 'one big Amazon button');
               const top = page.locator(analyze ? '#search-result-top' : '#search-amazon-result');
+              assert.equal(await top.locator('small').count(), 0, 'top button relies on footer disclosure');
               if (analyze) assert(await top.evaluate(el => /^H[12]$/.test(el.previousElementSibling.tagName)));
               assert.equal(await page.locator('#search-more .getdeal[data-search-amazon]').count(), 0);
               assert(await top.locator('a').getAttribute('href').then(href => href.includes('tag=example-20')));
@@ -254,6 +270,7 @@ async function main() {
               await page.locator('#search-result-top a').click();
               const url = new URL(await page.evaluate(() => window.opened.at(-1)));
               assert.equal(url.searchParams.get('tag'), 'example-20');
+              assert.equal(url.searchParams.get('s'), 'exact-aware-popularity-rank');
               assert.equal(url.searchParams.get('k'), query.startsWith('https:') ? 'B000000901' : query);
               assert(!url.href.includes('PRIVATE'));
               await page.screenshot({path:path.join(shots, name + '-analyze-' + (query.startsWith('https:') ? 'asin' : query) + '.png')});

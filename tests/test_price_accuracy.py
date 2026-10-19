@@ -59,10 +59,10 @@ def test_live_price_tolerance_is_a_config_knob():
     assert verify.judge_live_price(deal, _product(395), 10) is True
 
 
-def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
+def test_published_picks_are_rechecked_within_two_hours_and_first(tmp_path, monkeypatch):
     db = DB(tmp_path / "state.db")
-    seen = (NOW - timedelta(hours=2)).isoformat()
-    last = (NOW - timedelta(hours=1, minutes=5)).isoformat()
+    seen = (NOW - timedelta(hours=3)).isoformat()
+    last = (NOW - timedelta(hours=2)).isoformat()
     for key in ("url|pick", "url|plain", "url|usedpick"):
         _seed_amazon(db, key, "B0" + key[4:].upper().ljust(8, "0"),
                      used=key == "url|usedpick", last=last, first_seen_at=seen)
@@ -75,7 +75,8 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
     cfg.keepa_recheck_surplus = cfg.keepa_recheck_top_live_adaptive = False
     cfg.keepa_volatility["enabled"] = False  # legacy visibility cadence
     cfg.feature_flags["keepa"] = True
-    assert cfg.keepa_recheck_top_h == .75
+    assert 0 < cfg.keepa_recheck_top_h <= 2
+    assert 0 < cfg.keepa_recheck_adaptive["max_top_h"] <= 2
     calls = []
 
     def fake_recheck(deals, _cfg, budget=None, used_offers=True, fetcher=None, live=False):
@@ -84,18 +85,18 @@ def test_published_picks_are_rechecked_hourly_and_first(tmp_path, monkeypatch):
 
     monkeypatch.setattr(verify, "recheck_amazon_prices", fake_recheck)
     pipeline._recheck_prices(db, cfg, NOW)
-    # The new-condition pick is due after an hour and leads the never-
-    # checked deal; a non-pick waits recheck_fresh_h, a used pick its
-    # offers-scan cadence (13 tokens each).
+    # The new-condition pick is due within two hours and leads the never-
+    # checked deal; a non-pick waits recheck_fresh_h. Amazon used picks
+    # remain suppressed and spend no recheck tokens.
     assert calls == [["url|pick"], ["url|never"]]
     cfg.keepa_recheck_top_h = 0
     calls.clear()
-    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=1, minutes=5))
+    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=2))
     # Zero disables cadence acceleration, not the adaptive hard deadline.
     assert calls == [["url|pick"]]
     cfg.keepa_recheck_adaptive["enabled"] = False
     calls.clear()
-    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=2, minutes=10))
+    pipeline._recheck_prices(db, cfg, NOW + timedelta(hours=4))
     assert calls == []
     db.close()
 

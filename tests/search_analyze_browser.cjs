@@ -15,9 +15,12 @@ from tests.test_support import NOW, render
 from tests.test_publish_site import make_deal
 site.util_now = lambda: NOW
 cfg = analyze_config(strip=True)
+cfg.analyze_top_sellers = True
+cfg.card_tidy = True
 cfg.search_analyze["lazy"] = sys.argv[2] == "true"
 cfg.static_photos = True
-render(Path(sys.argv[1]), cfg, [make_deal(item="Steel kitchen kettle", codes=[])])
+render(Path(sys.argv[1]), cfg, [make_deal(item="Steel kitchen kettle", codes=[],
+    image_url="https://m.media-amazon.com/images/I/photo.jpg")])
 `, scratch, String(lazy)], {encoding:'utf8'});
   assert.equal(build.status, 0, build.stderr);
   return path.join(scratch, 'site');
@@ -51,11 +54,20 @@ async function run(root, executablePath, shots) {
         }
         if (url.pathname === '/api/search') {
           calls.push(url.search);
+          if (url.searchParams.has('q')) {
+            assert.deepEqual([...url.searchParams.keys()], ['q']);
+            assert.equal(url.searchParams.get('q'), 'kettle');
+            return route.fulfill({contentType:'application/json', body:JSON.stringify({items:
+              Array.from({length:5}, (_, i) => ({asin:'B00000010' + i, title:'Electric kitchen kettle ' + i,
+                image:'https://m.media-amazon.com/images/I/photo.jpg', price_cents:1999 + i * 100,
+                as_of:new Date().toISOString(), ...([10000, 2500, 1200, 50, undefined][i] ?
+                  {monthlySold:[10000, 2500, 1200, 50, undefined][i]} : {})}))})});
+          }
           assert.deepEqual([...url.searchParams.keys()], ['asin']);
           await priceReady;
           return route.fulfill({contentType:'application/json', body:JSON.stringify({items:[{asin:'B012345678',
             title:'Steel electric kettle with temperature control', image:'https://m.media-amazon.com/images/I/photo.jpg',
-            price_cents:3499, as_of:new Date().toISOString()}]})});
+            price_cents:3499, monthlySold:1200, as_of:new Date().toISOString()}]})});
         }
         if (url.pathname === '/search-analyze.js') {
           imports.push(url.search);
@@ -101,9 +113,11 @@ async function run(root, executablePath, shots) {
       assert.equal(imports.length, lazy ? 1 : 0);
       assert((await card.innerText()).includes('$34.99'));
       assert((await card.innerText()).includes('Amazon price as of '));
+      assert((await card.innerText()).includes('1K+ bought in past month'));
       assert.equal(await card.locator('a').getAttribute('href'), 'https://www.amazon.com/dp/B012345678?tag=example-20');
       assert((await card.locator('a').getAttribute('rel')).includes('sponsored'));
       assert(await page.locator('.analyze-related .card').count() > 0);
+      assert.equal(await page.locator('.analyze-related > h2').innerText(), 'Deals');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       assert.equal(await page.evaluate(() => JSON.stringify(sessionStorage).includes('PRIVATE')), false);
       assert.equal(await page.evaluate(() => JSON.stringify(window.analyzeEvents).includes('B012345678')), false);
@@ -111,6 +125,20 @@ async function run(root, executablePath, shots) {
       assert(button.x >= box.x && button.x + button.width <= box.x + box.width);
       assert.deepEqual(unexpected, []); assert.deepEqual(errors, []);
       if (shots) await page.screenshot({path:path.join(shots, width + '-' + theme + '.png'), fullPage:true});
+      await query.fill('kettle');
+      await page.locator('#analyze-search').click();
+      await page.waitForFunction(() => document.querySelectorAll('#amazon-results article').length === 5);
+      assert.equal(calls.length, 2, 'one text page alongside the matching deals');
+      assert.equal(new URL(page.url()).origin, 'https://wowpriced.test');
+      assert.equal(await page.locator('.analyze-related > h2').innerText(), 'Deals');
+      assert.equal(await page.locator('#amazon-results article').count(), 5);
+      for (const label of ['10K+', '2K+', '1K+', '50+'])
+        assert((await page.locator('#amazon-results').innerText()).includes(label + ' bought in past month'));
+      assert.equal(await page.locator('#amazon-results article').last().getByText('bought in past month', {exact:false}).count(), 0);
+      for (const link of await page.locator('#amazon-results article a').all()) {
+        assert.match(await link.getAttribute('href'), /^https:\/\/www\.amazon\.com\/dp\/B00000010[0-4]\?tag=example-20$/);
+        assert((await link.getAttribute('rel')).includes('sponsored'));
+      }
       if (lazy) {
         // A new document has a new loader; fail just its module request.
         await context.route('**/search-analyze.js?*', route => route.fulfill({status:503,
@@ -126,7 +154,7 @@ async function run(root, executablePath, shots) {
         assert((await fallback.getAttribute('rel')).includes('sponsored'));
         await query.fill('kettle'); await query.press('Enter');
         await page.locator('#content .card').first().waitFor({state:'visible'});
-        assert.equal(calls.length, 1, 'failed import leaves plain local search usable');
+        assert.equal(calls.length, 2, 'failed import leaves plain local search usable');
         assert.equal(await page.evaluate(() => JSON.stringify(sessionStorage).includes('PRIVATE')), false);
         assert(errors.every(error => /Failed to load resource.*503/.test(error)), errors.join('\n'));
       }

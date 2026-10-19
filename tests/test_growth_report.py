@@ -1250,6 +1250,7 @@ def test_cli_never_prints_metrics_report_or_tokens(rsa_key, tmp_path, monkeypatc
     section failing: stdout, stderr, the log records and the step summary
     carry section status only."""
     caplog.set_level(logging.DEBUG)
+    monkeypatch.setattr(report, "now_utc", lambda: NOW)
     set_sources(monkeypatch, rsa_key)
     set_traffic(monkeypatch)
     set_telegram(monkeypatch)

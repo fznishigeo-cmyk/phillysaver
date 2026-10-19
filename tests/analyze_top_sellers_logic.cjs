@@ -1,0 +1,60 @@
+// Exercise the actual composed inline/lazy Analyze and Amazon card renderer.
+const assert = require('node:assert/strict');
+const {setup, deal, turn} = require('./search_more_logic.cjs');
+const s = setup();
+const local = deal(1, 'Wireless mouse', {badge:'unverified', image_url:'https://m.media-amazon.com/images/I/a.jpg'});
+const verified = deal(2, 'Wireless mouse travel', {badge:'verified', image_url:'https://m.media-amazon.com/images/I/b.jpg'});
+const click = async value => {
+  s.elements.q.value = value;
+  s.emit('q', 'input'); s.emit('analyze-search', 'click');
+  await turn(); await turn(); await turn();
+};
+(async () => {
+  s.ctx.state.deals = [local, verified, deal(3, 'Unrelated kettle')];
+  await s.query('wireless mouse'); await turn();
+  assert.equal(s.calls.length, 0, 'ordinary matching search waits for its paging observer');
+  await click('wireless mouse');
+  assert.equal(s.calls.length, 1, 'text Analyze also gets live products when our deals match');
+  assert.match(s.calls[0].url, /^\/api\/search\?q=wireless%20mouse(?:&page=0)?$/);
+  const items = Array.from({length:8}, (_, i) => s.item(101 + i, 'Wireless mouse ' + i,
+    {monthlySold:[1200, undefined, '1000', 49, 999, 5000, 2000, 100][i]}));
+  await s.respond(s.calls[0], {items}); await s.advance(900); await turn();
+  assert(s.ctx.analyzeTask.finished);
+  assert(!s.ctx.analyzeTask.local);
+  let content = s.elements.content.innerHTML;
+  assert(content.includes('data-key="1"') && content.includes('data-key="2"'));
+  assert(!content.includes('Unrelated kettle'));
+  assert(content.includes('<h2>Deals</h2>') && !content.includes('Related deals') && !content.includes('Related verified deals'));
+  const html = s.elements['amazon-results'].innerHTML;
+  assert.equal((html.match(/<article /g) || []).length, 5, 'front end also bounds the Amazon cards');
+  assert(html.includes('1K+ bought in past month'));
+  assert(html.includes('500+ bought in past month'));
+  assert.equal((html.match(/bought in past month/g) || []).length, 2, 'absent, malformed and sub-50 values have no proof');
+  assert(html.includes('?tag=example-20') && html.includes('rel="sponsored nofollow noopener"'));
+  assert(html.includes('Amazon price as of '));
+  assert(!html.includes('50+ bought') && !html.includes('undefined'));
+  s.intersect(); await s.advance(10000);
+  assert.equal(s.calls.length, 1, 'Analyze never mounts or continues ordinary search paging');
+  s.emit('analyze-search', 'click'); await turn();
+  assert.equal(s.calls.length, 1, 'same analysis stays idempotent');
+  local.badge = 'verified'; s.ctx.analyzeRender();
+  assert(s.elements.content.innerHTML.includes('<h2>Verified deals</h2>'));
+  verified.price_unconfirmed = true; s.ctx.analyzeRender();
+  assert(s.elements.content.innerHTML.includes('<h2>Deals</h2>'));
+  verified.status = 'dead'; s.ctx.analyzeRender();
+  assert(!s.elements.content.innerHTML.includes('data-key="2"'));
+  assert(s.elements.content.innerHTML.includes('<h2>Verified deals</h2>'));
+  await click('https://amazon.com/dp/B000000001?tag=PRIVATE'); await s.advance(900);
+  assert.equal(s.calls.length, 1, 'a matching pasted link still uses our one product');
+  assert.equal(s.ctx.analyzeTask.local.key, '1');
+  assert(s.elements.content.innerHTML.includes('Your verified deal'));
+  // A live failure must keep the visitor's matching deals available.
+  await click('mouse');
+  assert.equal(s.calls.length, 2);
+  await s.respond(s.calls[1], {items:[], reason:'budget_exhausted'}); await s.advance(900);
+  assert(s.elements.content.innerHTML.includes('data-key="1"'));
+  assert(s.elements.content.innerHTML.includes('<h2>Verified deals</h2>'));
+  assert(s.elements.content.innerHTML.includes('sponsored nofollow noopener'));
+  assert(!JSON.stringify(s.events).includes('PRIVATE'));
+  console.log('Analyze top sellers rendering passed');
+})().catch(error => {console.error(error); process.exitCode = 1;});

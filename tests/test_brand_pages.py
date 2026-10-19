@@ -15,7 +15,7 @@ from dealradar.db import DB
 from dealradar.publish import brand_pages, site
 from dealradar.savings import display_pct
 from tests.brand_pages_fixture import NOW, PAGES, config, offers, publish
-from tests.phone_budget_fixture import Inline, publish_fixture, sizes
+from tests.phone_budget_fixture import Inline, publish_fixture, sizes, visible_offer_count
 from tests.test_public_copy import INTERNAL
 from tests.test_pwa import tree_hash
 
@@ -272,16 +272,14 @@ def test_same_run_is_idempotent(tmp_path, mode):
 
 
 def test_enabled_shipped_phone_budgets(tmp_path):
-    from dealradar.rank import photoless_expired
     from scripts.publication_budget import analyze
-    from tests.phone_budget_fixture import NOW, fixture_offers
 
     cfg = load_config()
     cfg.brand_pages = True
     cfg.phone_budget["enabled"] = True
 
     def inspect(db, out):
-        expected = sum(not photoless_expired(d, cfg, NOW) for d in fixture_offers())
+        expected = visible_offer_count(cfg)
         report = analyze(out, cfg, expected_offers=expected)
         assert report["ok"], report
         for name in PAGES:

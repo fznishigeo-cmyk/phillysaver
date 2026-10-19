@@ -13,6 +13,7 @@ from tests.http_helpers import mock_keepa_get, api_transport
 import pytest
 
 from dealradar import verify
+from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.errors import AdapterNotConfigured
@@ -36,7 +37,7 @@ def _clean_env(monkeypatch):
 
 @pytest.fixture()
 def cfg() -> AppConfig:
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_focus_categories = []  # these tests cover the general lanes
     return cfg
 

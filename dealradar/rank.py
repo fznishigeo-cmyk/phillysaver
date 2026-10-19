@@ -621,6 +621,9 @@ def is_publishable(deal: dict[str, Any], cfg,
     ``allow_spotlight_price`` admits a configured daily source's price-only
     offer; known discounts still clear both floors. Ordinary sets never opt in.
     """
+    from .amazon_used import excluded
+    if excluded(deal, cfg):
+        return False, "amazon_used: disabled"
     status = deal.get("status", "alive")
     if status != "alive":
         return False, f"status: {status!r} is not 'alive'"

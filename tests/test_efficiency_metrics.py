@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from dealradar import ai_yield, efficiency, pipeline, util
+from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.growth import report
@@ -200,7 +201,7 @@ def test_useful_threshold_both_directions_and_stale_or_hidden_prices(cents, expe
 
 def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
     db = DB(":memory:")
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     monkeypatch.setenv("KEEPA_KEY", "offline-key")
@@ -241,7 +242,7 @@ def test_paid_rechecks_count_changes_and_confirmed_deaths_once(monkeypatch):
 ])
 def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, status, receipt, tokens, useful):
     db = DB(":memory:")
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     seed(db, cfg)
@@ -259,7 +260,7 @@ def test_recheck_receipts_on_incomplete_failed_and_throttled_calls(monkeypatch, 
 
 def test_photo_only_tokens_are_not_recheck_tokens(monkeypatch):
     db = DB(":memory:")
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.feature_flags["keepa"] = True
     deal = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(minutes=10)))
@@ -279,7 +280,7 @@ def test_feed_receipts_include_sweep_but_exclude_categories(monkeypatch):
     from dealradar.fetch.keepa import CATEGORY_URL, _Pull
     from tests.test_keepa import _adapter, SRC
 
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     cfg.keepa_focus_categories = []
     cfg.keepa_sweep_enabled = True
@@ -403,7 +404,7 @@ def test_open_pull_receipts_are_shared_without_counting_rechecks_or_photos_as_di
     from tests.test_wall_confirmation_coverage import remember
 
     db = DB(":memory:")
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
     fake = setup_pull(cfg, db, monkeypatch)
     due = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(hours=2)))

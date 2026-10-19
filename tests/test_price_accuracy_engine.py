@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from dealradar import dedupe, pipeline, rank, savings, util, verify
-from tests.history_pins import pre_drop_fresh
+from tests.history_pins import pre_drop_fresh, pre_task_319
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.keepa import KeepaDealsAdapter, reprice_post
@@ -29,7 +29,7 @@ ASIN = "B000000001"
 
 @pytest.fixture
 def cfg():
-    result = load_config()
+    result = pre_task_319(load_config())
     result.keepa_click_price_rule = "off"  # recorded before task 275
     # Predates the Buy Box top picks and surplus scheduling.
     result.keepa_buybox_top_n = 0
@@ -387,9 +387,9 @@ def test_card_and_deal_page_timestamps_and_node_logic(db, cfg, tmp_path):
 
 def test_config_knobs_defaults_overrides_and_operator_comments(cfg, tmp_path):
     defaults = {"reprice_min_pct": 1, "recheck_top_n": 200, "recheck_wall_n": 300,
-                "recheck_wall_h": 1.5, "pick_max_unconfirmed_h": 3,
-                "recheck_interval_minutes": 10, "recheck_idle_min_age_h": .5,
-                "show_max_unconfirmed_h": 12, "show_max_unconfirmed_used_h": 24,
+                "recheck_wall_h": 6, "pick_max_unconfirmed_h": 2,
+                "recheck_interval_minutes": 10, "recheck_idle_min_age_h": 12,
+                "show_max_unconfirmed_h": 24, "show_max_unconfirmed_used_h": 24,
                 "recheck_top_live": True}
     shipped = load_config()  # the fixture pins cached reads; check the shipped file
     assert {k: getattr(shipped, "keepa_" + k) for k in defaults} == defaults

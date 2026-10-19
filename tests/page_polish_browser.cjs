@@ -50,6 +50,8 @@ async function main() {
           assert(bounds.height >= 44 && bounds.width >= 44);
         }
         assert.equal(await page.locator('#analyze-search').innerText(), 'Analyze');
+        assert.equal((await page.locator('.searchfield').boundingBox()).height, 56, '44px pill and two 6px gaps');
+        if (width >= 1920) assert.equal((await page.locator('.searchfield').boundingBox()).width, 940, 'wider desktop field');
         await assertAnalyzeGeometry(page);
         await assertDiscounts(page, false);
         await page.screenshot({path:path.join(shots, `${name}-${slug}.png`)});
@@ -71,6 +73,8 @@ async function main() {
         await page.waitForFunction(() => document.getElementById('q').value === 'mouse' && !/[?&](q|analyze)=/.test(location.search));
         if (analyze) await page.locator('.search-analysis[aria-busy="false"]').waitFor();
         await page.locator('#content .card').first().waitFor();
+        assert.match(await page.locator('footer').innerText(), /As an Amazon Associate,\s*wowpriced earns from qualifying purchases\./);
+        assert.equal(await page.locator('.search-amazon-top small').count(), 0, 'top Amazon disclosure stays in footer');
         assert.match(await page.locator('#content').innerText(), /mouse/i);
         assert.equal(await page.locator('header .hnav #cattabs').count(), 1);
         // The fresh module may settle after the query; it must preserve this view.

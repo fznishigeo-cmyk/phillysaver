@@ -194,7 +194,8 @@ async function main() {
       assert.equal(await fallback.getAttribute('rel'), 'sponsored noopener');
       assert.equal(await fallback.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
       await fallback.click();
-      assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=cupping%20set&tag=example-20');
+      // Task 318: the big top Amazon button (also this no-match recovery state) opens best sellers.
+      assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=cupping%20set&s=exact-aware-popularity-rank&tag=example-20');
       assert.deepEqual(calls.filter(q => q.startsWith('?q=cupping%20set')), ['?q=cupping%20set&page=0']);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-empty.png'), fullPage:true});

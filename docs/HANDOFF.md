@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-18)
+# Handoff — state of wowpriced.com (updated 2026-10-19)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -88,6 +88,14 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   still answers "create an environment" (Codex bug).
 
 ## Operator decisions (standing rules; do not undo)
+- **Amazon used withdrawn (operator 2026-10-19 ~03:40 UTC, task 319):**
+  Stop publishing Amazon used/open-box/Warehouse/Resale offers and stop their
+  Keepa discovery/recheck spend. Preserve stored rows/history; Woot and other
+  stores retain used/refurbished offers. New Amazon discovery favors women,
+  beauty, some kids, alluring clothing and everyday essentials, with existing
+  adult exclusions and real 90-day price-drop evidence. Top price/Buy Box
+  confirmations may be up to 2 hours old; next wall targets <=6 hours, rest
+  12–24 hours; existing budget caps and hidden recovery remain.
 - **Public price history withdrawn (2026-10-17 ~04:30–04:35 UTC):** the operator
   reports Amazon's email disallows historical price elements on Amazon listings,
   and drops public price history for every store. This supersedes the public
@@ -236,6 +244,114 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Integrated 318 + 319 + 320 suite (Codex task 321, 2026-10-19; uncommitted):**
+  Phone-budget fixtures now use the shared visible-offer count, including task
+  319's Amazon-used suppression (1,270 offers instead of 1,300 after photos).
+  The reported budget failures were payload-count validation failures; measured
+  HTML is 75,936 / 77,360 gzip bytes, retaining 1,424 bytes of headroom, and CSS
+  is 14,898 / 14,913. No byte ceilings, headroom requirements or hashes changed.
+  Task 320's original-release OFF pins isolate 318 via the existing helper chain
+  and 319 via `pre_task_319`. Social condition tests use Woot so all three
+  channels still reject used/open-box/refurbished website-only offers. The price
+  accuracy test now enforces the <=2-hour top-pick deadline, pick-first order,
+  adaptive fallback and zero spend on suppressed Amazon used picks. The CLI
+  privacy test freezes its fixture's Sunday clock, avoiding real Monday-only
+  Telegram subscriber requests in the delivery mock. Emitted fresh-drop logic
+  passed unchanged, including a separate two-variant rerun.
+  All eight affected files: **309 passed, 3 Chromium skips**; the fresh rerun:
+  **2 passed**. Chromium launch here fails with `setsockopt: Operation not
+  permitted`; native Home-link verification remains for an unrestricted run.
+  The single requested full run ended **7 failed, 8629 passed, 35 skipped in
+  1543.01s (0:25:43)**. All seven additional failures were the existing yearly
+  Stripe deploy tests trying to open a localhost socket (`PermissionError`).
+  Their test helper now preloads an offline urllib transport in the child
+  Python process and executes the unchanged deployment shell step. Request
+  path/authentication and all seven validation/error cases remain covered;
+  unexpected hosts/methods/timeouts fail. Entire `tests/test_workflows.py`
+  follow-up: **65 passed in 8.74s**. No second full run, as requested. All runs
+  used `-q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed`;
+  `/tmp/b321*` output removed afterward. No commit or push.
+
+- **Search/header polish (Codex task 318, 2026-10-19; uncommitted):**
+  Strict `search_polish_1019` defaults OFF, ships ON: removes the search hint,
+  moves button disclosures to the existing footer (keeps them without that
+  disclosure), adds 6px oval insets, +40px desktop field limits, AA Dropbox
+  Blue, outlined 14px tabs and `Join free · Price Alerts`. Only top Amazon
+  buttons get bestseller sorting; secondary/discounts exits keep their URLs.
+  Original-release OFF bytes match in shipped/inline/membership modes; no
+  hashes re-pinned. Requested files + phone budgets: **406 distinct passes,
+  1 Chromium skip**; final frozen-code recheck **26/26 passed**. Phone HTML
+  **75,931 / 77,360 gzip** (1,429 spare); CSS **14,898 / 14,913**. Browser
+  syntax checks pass; operator still runs the three updated Chromium scripts.
+  `/tmp/b318*` output removed. No full suite, commit or push.
+
+- **Amazon used off + new-deal discovery (Codex task 319, 2026-10-19; uncommitted):**
+  `amazon_used.enabled` defaults true and ships false. Shared publication,
+  explicit render inputs, remembered ended deal pages, checker and social
+  gates exclude Amazon used without deleting/killing rows. Warehouse fresh,
+  deep, overflow and Finder sweep are disabled; rechecks, photo requests,
+  suspects, hidden recovery, clicks and single-price checks cannot spend on
+  suppressed rows. Woot remains unchanged. Run summaries report live rows
+  suppressed, zero used-token spend, and clearly labeled avoided ceilings.
+  Buy Box/click proof remains ON with a shared 120-minute clock; top targets
+  1.5–2 h, wall 4–6 h, rest 12–24 h; surplus idle floor 12 h prevents
+  30-minute rest repurchases. Hidden targets unchanged. Expired shopper
+  proof still suppresses price numbers. Strict config validation added for
+  changed discovery/cadence knobs. New discovery uses 12 general pages and
+  two pages per six existing focus categories (rotating first audience),
+  validates rank 1–30,000 and >= min_pct below the 90-day average in responses,
+  and uses existing appeal adult exclusions. Intake cap 10 -> 20 new posts;
+  parse/critic evidence, money caps and existing reserves unchanged. Task 311
+  remains separate; no visitor-reserve implementation is included here.
+  Estimate from the fixed 1,400-offer fixture: 34 live Amazon used rows
+  suppressed (30 pass today's photo cutoff), all 34 Woot used retained.
+  Production state is unavailable in this tree; the summary measures it live.
+  Ordinary NEW discovery ceiling 40 -> 120 tokens/pull (+80); disabled
+  Warehouse pages/sweep remove up to 60+111=171 tokens/pull, plus up to
+  13 per used recheck (14 with live update). These are ceilings, not measured
+  savings; short pages, intake caps and reserve gates usually spend less.
+  Validation: final requested core + task-319 regressions **403 passed in
+  155.70s**, including offline idempotency and the 12-hour surplus boundaries.
+  Wider affected-file run: **1,130 passed**, one new photo-test setup error
+  subsequently corrected (the helper already supplied image_url). Legacy
+  follow-up: **395 passed, 1 Chromium skip in 234.59s**, including the 144-run
+  scheduler simulation. All previously failing checks pass in the follow-ups.
+  Added explicit `pre_task_319` helpers for old used/cadence fixtures; changed
+  no recorded hashes or byte ceilings. Site-check's 45-minute publish-clock
+  check remains independent of the two-hour price proof. All pytest runs used
+  `-q -n 4 -p no:cacheprovider -o tmp_path_retention_policy=failed
+  --basetemp=/tmp/b319`; owned temporary output removed. Compile/diff checks
+  pass. No full suite, live API calls, commit or push. Reviewer owns full-suite
+  and native Chromium validation.
+
+- **Analyze top five Amazon sellers (Codex task 320, 2026-10-19; uncommitted, ON):**
+  Operator approved `analyze_top_sellers: true`; strict boolean, default/missing
+  false preserves the preceding release bytes. Text Analyze now shows our
+  matching deals alongside up to five related live Amazon products, ordered by
+  safe positive Keepa `monthlySold` descending, then current sales rank ascending.
+  The Function and page share the existing query matcher; published search
+  settings supply the flag and existing adult exclusions. Only evidenced safe
+  positive monthly counts enter the response; card labels round down through
+  50/100/200/500/1K/2K/5K/10K buckets and omit absent/invalid/sub-50 counts.
+  Headings say Deals or Verified deals only when every shown card qualifies;
+  inline/lazy paths retain matching deals when live prices fail. ASIN/link
+  analysis retains its one-product/local-first behavior. One search page, no
+  extra product reads, six-hour cache, 10,000/day cap, tagged links, commission
+  wording and all dispatch/accounting guards remain; ON cache bodies use v2.
+  New OFF pins were captured from release 6de86c0 before editing; existing pins
+  are untouched and older fixtures use `pre_task_320`. New composed rendering
+  checks passed **20/20**, and all **72 Function Node checks** passed.
+  Final requested `tests/test_search*.py`, card-tidy and comment-strip run:
+  **267 passed, 6 Chromium skips in 404.20s**, with `-n 4 -p no:cacheprovider`,
+  `-o tmp_path_retention_policy=failed --basetemp=/tmp/b320`. OFF-byte checks,
+  idempotent publication and the unchanged phone gzip ceilings/1,000-byte
+  reserve all pass. Ordinary paging detaches without aborting an already-paid
+  request. Native browser fixtures now exercise new headings, five cards,
+  monthly labels and tagged links; `node --check` and real Function import
+  resolution pass. `/tmp/b320` and owned scratch removed. Chromium remains for
+  the operator: `node tests/search_analyze_browser.cjs /path/to/chromium`.
+  No live API/LLM calls, full suite, commit or push.
+
 - **Flush Analyze pill (Codex task 314, 2026-10-18; uncommitted):**
   Supersedes the earlier white-space request: card_tidy removes the transparent
   4/5px border and padding-box clip, uses a 2px field inset and matching 10px

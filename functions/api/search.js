@@ -1,4 +1,6 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
+import {matchesSearch, searchWords} from "../../dealradar/publish/templates/search-products.js";
+
 const RESERVATION = 110; // each search page (10) + up to 100 product tokens
 const SCHEMA = `CREATE TABLE IF NOT EXISTS search_budget (
   day TEXT PRIMARY KEY, tokens INTEGER NOT NULL, minute INTEGER NOT NULL,
@@ -52,6 +54,8 @@ async function settings(context) {
   if (more != null && more !== false && (typeof more !== "object" || Array.isArray(more) ||
       typeof more.enabled !== "boolean" || !Number.isSafeInteger(more.pages) || more.pages < 1 || more.pages > 10 ||
       !Number.isSafeInteger(more.min_query_chars) || more.min_query_chars < 2 || more.min_query_chars > 60)) return null;
+  if (cfg.analyze_top_sellers !== undefined && typeof cfg.analyze_top_sellers !== "boolean") return null;
+  if (cfg.analyze_top_sellers === true && typeof cfg.analyze_exclude !== "string") return null;
   return cfg;
 }
 
@@ -108,7 +112,7 @@ function stamp(minutes, now) {
   return ms <= now && now - ms <= 86400000 ? new Date(ms).toISOString() : "";
 }
 
-export function currentItems(products, now = Date.now()) {
+export function currentItems(products, now = Date.now(), includeMonthlySold = true) {
   const items = [], seen = new Set();
   for (const p of Array.isArray(products) ? products : []) {
     if (!p || typeof p.asin !== "string" || !/^[A-Z0-9]{10}$/.test(p.asin) || seen.has(p.asin) ||
@@ -127,11 +131,23 @@ export function currentItems(products, now = Date.now()) {
     const image = filename ? "https://m.media-amazon.com/images/I/" + filename : "";
     const item = {asin:p.asin, title:p.title.trim().slice(0, 500), image, price_cents:price, as_of:asOf};
     if (Number.isSafeInteger(current[4]) && current[4] > price) item.list_price_cents = current[4];
+    if (includeMonthlySold && Number.isSafeInteger(p.monthlySold) && p.monthlySold > 0) item.monthlySold = p.monthlySold;
     items.push(item);
     seen.add(p.asin);
     if (items.length === 10) break;
   }
   return items;
+}
+
+export function topSellerItems(products, q, exclude, now = Date.now()) {
+  const adult = exclude ? new RegExp(exclude, "iu") : null, words = searchWords(q);
+  if (adult && adult.test(q)) return [];
+  const sold = p => Number.isSafeInteger(p.monthlySold) && p.monthlySold > 0 ? p.monthlySold : 0;
+  const rank = p => Number.isSafeInteger(p.stats?.current?.[3]) && p.stats.current[3] > 0 ? p.stats.current[3] : Infinity;
+  const related = (Array.isArray(products) ? products : []).filter(p => p && typeof p.title === "string" &&
+    !(adult && adult.test(p.title)) && matchesSearch({item:p.title, brand:p.brand}, words));
+  related.sort((a, b) => sold(b) - sold(a) || rank(a) - rank(b));
+  return currentItems(related, now, true).slice(0, 5);
 }
 
 // A fixed-vocabulary detail (status code, Keepa error type, error class name)
@@ -211,6 +227,7 @@ export async function onRequest(context) {
     // Limits are part of the key: switching OFF or changing policy cannot reuse
     // a result under older settings. Keys never include the API secret.
     const cacheKey = new Request(new URL("/api/search?" + (asin ? "asin=" + asin : "q=" + encodeURIComponent(q) + "&page=" + page) +
+      (cfg.analyze_top_sellers === true ? "&v=2" : "") +
       "&policy=" + encodeURIComponent(JSON.stringify(cfg)), request.url));
     const cached = cache && cfg.cache_hours && await cache.match(cacheKey);
     if (cached) return json(await cached.json());
@@ -261,7 +278,9 @@ export async function onRequest(context) {
       await env.SEARCH_LIMITS.prepare("UPDATE search_dispatch SET held = 0, ready = ? WHERE id = 1 AND ready = ?")
         .bind(Date.now() + cooldown, lease).run();
     }
-    const body = {items:currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products)};
+    const body = {items:cfg.analyze_top_sellers === true && !asin
+      ? topSellerItems(data.products, q, cfg.analyze_exclude)
+      : currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products, Date.now(), cfg.analyze_top_sellers === true)};
     const ttl = Math.floor(Math.min(cfg.cache_hours * 3600, ...body.items.map(
       item => (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000)));
     if (cache && ttl > 0) {

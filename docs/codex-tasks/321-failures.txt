@@ -1,0 +1,13 @@
+FAILED tests/test_brand_pages.py::test_enabled_shipped_phone_budgets - script...
+FAILED tests/test_home_comment_strip.py::test_enabled_shipped_phone_budget_with_headroom
+FAILED tests/test_drop_fresh.py::test_emitted_fresh_logic[False-False] - Asse...
+FAILED tests/test_growth_report.py::test_cli_never_prints_metrics_report_or_tokens
+FAILED tests/test_home_links.py::test_home_links_in_real_chromium - Assertion...
+FAILED tests/test_drop_fresh.py::test_fresh_page_stays_within_phone_budget - ...
+FAILED tests/test_price_accuracy.py::test_published_picks_are_rechecked_hourly_and_first
+FAILED tests/test_earning_links.py::test_social_channels_never_post_used_items[used]
+FAILED tests/test_earning_links.py::test_social_channels_never_post_used_items[open_box]
+FAILED tests/test_earning_links.py::test_social_channels_never_post_used_items[refurbished]
+FAILED tests/test_search_analyze_top_sellers.py::test_off_missing_back_off_keep_release_bytes[0-0]
+FAILED tests/test_search_analyze_top_sellers.py::test_off_missing_back_off_keep_release_bytes[0-1]
+FAILED tests/test_search_analyze_top_sellers.py::test_off_missing_back_off_keep_release_bytes[1-1]

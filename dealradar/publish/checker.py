@@ -139,7 +139,8 @@ def build(db, cfg, now, public, models, source=()) -> dict[str, dict]:
     """
     now = now.astimezone(timezone.utc)
     cutoff = now - timedelta(days=cfg.checker["ended_days"])
-    raw = {d["dedupe_key"]: d for d in db.all_deals() + list(source)}
+    from ..amazon_used import excluded as amazon_used_excluded
+    raw = {d["dedupe_key"]: d for d in db.all_deals() + list(source) if not amazon_used_excluded(d, cfg)}
     visible = {d["dedupe_key"]: d for d in public if not d.get("locked") and d.get("dedupe_key")}
     clean = {}
     for key, d in visible.items():

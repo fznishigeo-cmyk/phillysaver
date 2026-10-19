@@ -45,8 +45,10 @@ from . import card_tidy
 from . import page_polish
 from . import header_polish
 from . import all_discounts
+from . import search_polish_1019
 from . import search_circle
 from . import search_analyze
+from . import analyze_top_sellers
 from . import search_analyze_lazy
 from . import search_more
 from . import drop_fresh
@@ -180,6 +182,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = search_more.template(html, cfg)
         html = search_box_glow.template(html, cfg)
         html = card_tidy.template(html, cfg)
+        html = analyze_top_sellers.template(html, cfg)
         html = page_polish.home(html, cfg)
         html = header_polish.template(html, cfg)
         from .. import appeal as title_appeal
@@ -770,6 +773,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         deals = rank.site_deals(db, cfg, now, include_unconfirmed=True)
     else:
         spotlight_rows = deals
+    from ..amazon_used import excluded as amazon_used_excluded
+    deals = [d for d in deals if not amazon_used_excluded(d, cfg)]
+    spotlight_rows = [d for d in spotlight_rows if not amazon_used_excluded(d, cfg)]
     # A price-only offer has one home: the separate spotlight payload. It
     # never enters the grid, teaser rotation, picks or SEO discount pages.
     deals = [d for d in deals if d.get("pct_at_checkout") is not None]
@@ -1131,6 +1137,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = drop_fresh.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
     site_version = all_discounts.site_version(site_version, cfg)
+    site_version = search_polish_1019.site_version(site_version, cfg)
+    site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
@@ -1385,6 +1393,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     inventory.publish(out, cfg)
     search_results.publish(out, cfg)
     search_more.publish(out, cfg)
+    analyze_top_sellers.publish(out, cfg)
     page_polish.publish(out, cfg)
     if cfg.brand_pages:
         from . import brand_pages
@@ -1406,6 +1415,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     header_polish.publish(out, cfg)
     card_tidy.publish(out, cfg)
     all_discounts.publish(out, cfg)
+    search_polish_1019.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)

@@ -272,12 +272,11 @@ def test_varied_mix_reserves_later_slots():
 
 
 def test_fresh_page_stays_within_phone_budget(tmp_path):
-    from dealradar.rank import photoless_expired
     from scripts.publication_budget import analyze
-    from tests.phone_budget_fixture import NOW as fixture_now, fixture_offers, publish_fixture
+    from tests.phone_budget_fixture import publish_fixture, visible_offer_count
     cfg = load_config()
     cfg.phone_budget['enabled'] = True
-    expected = sum(not photoless_expired(d, cfg, fixture_now) for d in fixture_offers())
+    expected = visible_offer_count(cfg)
     def inspect(db, out):
         report = analyze(out, cfg, expected_offers=expected)
         assert report['ok'], report

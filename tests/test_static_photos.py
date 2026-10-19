@@ -441,11 +441,10 @@ def test_retained_ended_amazon_page_keeps_shipped_history_policy(db, tmp_path):
 
 
 def test_shipped_phone_budgets_unchanged(tmp_path):
-    from dealradar.rank import photoless_expired
-    from tests.phone_budget_fixture import NOW as fixture_now, fixture_offers
+    from tests.phone_budget_fixture import visible_offer_count
     cfg = load_config()
     publish_fixture(tmp_path, cfg)
-    expected = sum(not photoless_expired(d, cfg, fixture_now) for d in fixture_offers())
+    expected = visible_offer_count(cfg)
     report = analyze(tmp_path / "site", cfg, expected_offers=expected)
     for key in ("home_html", "home_js", "home_css", "deals_json"):
         measured = report["metrics"][key]["gzip"]

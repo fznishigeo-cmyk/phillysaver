@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from dealradar import buybox, dedupe, pipeline, rank, savings, util, verify
+from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.keepa_budget import KeepaBudget
 from dealradar.keepa_rechecks import History
@@ -21,7 +22,7 @@ from tests.test_value_per_token_rechecks import minutes
 
 @pytest.fixture
 def cfg():
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # recorded before task 275
     cfg.feature_flags["keepa"] = True
     cfg.keepa_hidden_new_tokens_per_run = cfg.keepa_hidden_used_scans_per_run = 0
@@ -69,7 +70,7 @@ def run(db, cfg, now=NOW, **kwargs):
 
 def test_shipping_config_and_safe_defaults():
     cfg = load_config()
-    assert (cfg.keepa_buybox_top_n, cfg.keepa_buybox_interval_min) == (120, 60)
+    assert (cfg.keepa_buybox_top_n, cfg.keepa_buybox_interval_min) == (120, 120)
     assert cfg.keepa_recheck_surplus and cfg.keepa_recheck_top_live_adaptive
     assert cfg.keepa_recheck_surplus_reserve >= 140 + 120 * 4
     assert AppConfig().keepa_buybox_top_n == 0

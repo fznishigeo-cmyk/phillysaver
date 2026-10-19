@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from tests.http_helpers import mock_keepa_get, api_transport
 
 from dealradar import dedupe, pipeline, util, verify
+from tests.history_pins import pre_task_319
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.models import RawPost
@@ -23,7 +24,7 @@ NOW = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
 
 
 def _cfg():
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token cadence fixtures recorded before task 275
     cfg.keepa_volatility["enabled"] = False  # legacy cadence/review regressions
     cfg.feature_flags["keepa"] = True

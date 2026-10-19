@@ -8,6 +8,7 @@ from dealradar.config import validated_checker
 
 
 def pre_history_removal(cfg):
+    pre_task_319(cfg)
     cfg.amazon_history = "show"
     cfg.seo_product_pages_enabled = True
     cfg.store_policy = {store: "history" for store in cfg.store_policy}
@@ -18,6 +19,7 @@ def pre_history_removal(cfg):
 
 def pre_history_removal_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
+    pre_task_319_raw(config)
     config["amazon_history"] = "show"
     config["seo"]["product_pages"]["enabled"] = True
     config["store_policy"] = {store: "history" for store in config.get("store_policy", {})}
@@ -196,6 +198,8 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("search_polish_1019", None)
+    config.pop("analyze_top_sellers", None)
     config.pop("all_discounts_button", None)
     config.get("site", {}).pop("drop_fresh", None)
     config.get("site", {}).pop("drop_shuffle", None)  # recorded before task 300
@@ -317,5 +321,52 @@ def pre_header_polish(cfg):
 
 def pre_all_discounts_button(cfg):
     """Before the Amazon discounts twin (task 317); never re-pin older hashes."""
+    pre_task_319(cfg)
     cfg.all_discounts_button = False
+    pre_search_polish_1019(cfg)
+    return cfg
+
+
+def pre_search_polish_1019(cfg):
+    """Before task 318's search/header polish; preserve the task 317 release."""
+    pre_task_320(cfg)
+    cfg.search_polish_1019 = False
+    return cfg
+
+
+def pre_task_320(cfg):
+    """Before Analyze's top-five sellers (task 320); keep all recorded hashes."""
+    cfg.analyze_top_sellers = False
+    return cfg
+
+
+# Task 319: historical fixtures keep Amazon used and their original schedules.
+def pre_task_319_raw(config):
+    config["amazon_used"] = {"enabled": True}
+    keepa = config.setdefault("keepa", {})
+    keepa.update(genuine_drops_only=False, focus_pages_per_category=1,
+                 amazon_pages_per_pull=6, amazon_max_new_posts_per_pull=10,
+                 focus_categories=["Beauty & Personal Care", "Health & Household"],
+                 buybox_interval_min=60, recheck_top_h=.75, recheck_wall_h=1.5,
+                 recheck_fresh_h=4, recheck_new_h=8, recheck_wall_max_age_h=4, recheck_idle_min_age_h=.5,
+                 pick_max_unconfirmed_h=3, show_max_unconfirmed_h=12)
+    keepa.setdefault("volatility", {}).update(
+        targets={"FAST": dict(top=.5, wall=.5, rest=6, hidden=48),
+                 "NORMAL": dict(top=.75, wall=2, rest=8, hidden=72),
+                 "SLOW": dict(top=2, wall=6, rest=12, hidden=72)},
+        stretch_limits={"SLOW": 4, "NORMAL": 4 / 3})
+    keepa.setdefault("recheck_adaptive", {}).update(max_top_h=1, max_wall_h=2, max_rest_h=12)
+    return config
+
+
+def pre_task_319(cfg):
+    """Pin only the changed knobs; preserve each test's other feature switches."""
+    from copy import deepcopy
+    previous = pre_task_319_raw({})
+    cfg.amazon_used_enabled = True
+    for key, value in previous["keepa"].items():
+        if isinstance(value, dict):
+            getattr(cfg, "keepa_" + key).update(deepcopy(value))
+        else:
+            setattr(cfg, "keepa_" + key, deepcopy(value))
     return cfg

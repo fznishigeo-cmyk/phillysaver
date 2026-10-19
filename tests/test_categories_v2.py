@@ -10,6 +10,7 @@ from tests.http_helpers import mock_keepa_get, api_transport
 import pytest
 
 from dealradar import verify
+from tests.history_pins import pre_task_319
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.http_client import PoliteFetcher
@@ -286,7 +287,7 @@ def test_recategorization_uses_cached_root_from_url_without_a_parser(tmp_path):
 
 
 def focus_fetch(db, monkeypatch, *, tokens=500, categories=None, now=NOW, cached=False):
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_sweep_enabled = False
     if categories is not None:
         cfg.keepa_focus_categories = categories
@@ -359,7 +360,8 @@ def test_focus_skips_short_tokens_or_empty_config(tmp_path, monkeypatch, tokens,
 
 
 def test_focus_config_empty_and_named_defaults(tmp_path):
-    assert load_config().keepa_focus_categories == ["Beauty & Personal Care", "Health & Household"]
+    assert load_config().keepa_focus_categories == ["Beauty & Personal Care", "Health & Household",
+        "Clothing, Shoes & Jewelry", "Baby Products", "Toys & Games", "Home & Kitchen"]
     path = tmp_path / "config.yaml"
     path.write_text("keepa:\n  focus_categories: []\n")
     assert load_config(path).keepa_focus_categories == []

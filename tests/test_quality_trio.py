@@ -13,6 +13,7 @@ from tests.http_helpers import mock_keepa_get, api_transport
 import pytest
 
 from dealradar import pipeline, rank
+from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
 from dealradar.dedupe import _new_payload, upsert_extracted
@@ -76,7 +77,7 @@ class _FakeClient:
 
 
 def _cfg(**over) -> AppConfig:
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token recheck fixtures recorded before task 275
     cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.critic_enabled = True

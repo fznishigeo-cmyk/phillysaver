@@ -317,8 +317,10 @@ class Plan:
             if minutes > 0:
                 return sum(v for _, v in values[:-1]) / minutes, "observed_feed_receipts"
         from .fetch.keepa import DEAL_PAGE_COST
-        pages = (self.cfg.keepa_amazon_pages_per_pull + self.cfg.keepa_warehouse_pages_per_pull
-                 + len(self.cfg.keepa_focus_categories) + self.cfg.keepa_overflow_extra_pages_max)
+        pages = (self.cfg.keepa_amazon_pages_per_pull
+                 + (self.cfg.keepa_warehouse_pages_per_pull if self.cfg.amazon_used_enabled else 0)
+                 + len(self.cfg.keepa_focus_categories) * self.cfg.keepa_focus_pages_per_category
+                 + self.cfg.keepa_overflow_extra_pages_max)
         return pages * DEAL_PAGE_COST / self.cadence_minutes, "configured_feed_ceiling"
 
     def target(self, deal, *, full=False):

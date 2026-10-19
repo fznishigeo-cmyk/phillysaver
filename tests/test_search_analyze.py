@@ -148,9 +148,12 @@ def test_enabled_pipeline_rerun_is_idempotent(env, capsys, audit_mode):
 @pytest.mark.parametrize("lazy", [False, True])
 def test_real_chromium_light_dark_phone_desktop(tmp_path, lazy):
     cfg = analyze_config(strip=True)
+    cfg.analyze_top_sellers = True
+    cfg.card_tidy = True
     cfg.search_analyze["lazy"] = lazy
     cfg.static_photos = True
-    out, *_ = render(tmp_path, cfg, [make_deal(item="Steel kitchen kettle", codes=[])])
+    out, *_ = render(tmp_path, cfg, [make_deal(item="Steel kitchen kettle", codes=[],
+        image_url="https://m.media-amazon.com/images/I/photo.jpg")])
     result = run_node("search_analyze_browser.cjs", out, "/opt/pw-browsers/chromium",
                       Path("docs/research/analyze-search").resolve() / ("lazy" if lazy else "inline"))
     if result.returncode == 77:

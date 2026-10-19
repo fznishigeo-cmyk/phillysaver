@@ -119,5 +119,5 @@ def test_native_fixture_without_launching_chromium(tmp_path):
         "buildFixture(process.argv[1]);", str(tmp_path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     page = (tmp_path / 'site/index.html').read_text()
-    assert 'grid-template-columns:auto minmax(0,900px) auto auto' in (tmp_path / 'site' / header_polish.ASSET).read_text()
+    assert 'grid-template-columns:auto minmax(0,940px) auto auto' in (tmp_path / 'site' / header_polish.ASSET).read_text()
     assert 'id="cattabs"' in re.search(r'<header>.*?</header>', page, re.S)[0]

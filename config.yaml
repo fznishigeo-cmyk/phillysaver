@@ -168,6 +168,7 @@ search:
 search_analyze:
   enabled: true              # task 291: paste Amazon links; OFF restores previous bytes
   lazy: true                 # task 295: load Analyze only when the search is used
+analyze_top_sellers: true    # task 320: our matching deals plus five related Amazon best sellers
 
 search_more:
   enabled: true              # task 293: related Amazon pages and one spelling correction
@@ -195,6 +196,7 @@ card_tidy: true  # operator 2026-10-18: folded checkout steps, clear cart chip, 
 page_polish: true  # task 304: event search and the brand-style Support page
 header_polish: true  # task 305: aligned desktop search/actions and a single category row
 all_discounts_button: true  # operator 2026-10-19: "All discounts" — "the same style as the Analyze button"
+search_polish_1019: true  # operator 2026-10-19: "this is already at the bottom, remove it."; "Dropbox Blue"
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
@@ -638,16 +640,21 @@ dedupe:
 accuracy:
   extra_samples_per_day: 0       # optional random paid audits; existing reads are always reused
 
+amazon_used:
+  enabled: false  # operator 2026-10-19: Amazon only; Woot used/open-box stays
+
 keepa:
+  genuine_drops_only: true  # also verify 90-day drop, rank and adult exclusions in responses
+  focus_pages_per_category: 2
   popular_affordable_page: false  # separate opt-in: one existing Amazon page slot
   unique_asin_rechecks:
     enabled: false               # share one product request within each compatible recheck group
   buybox_rule: on                 # operator 2026-10-17: "PRICES NEED TO BE RIGHT, NO COMPROMISE" (shadow probe: 18/30 top deals >10% under the Add-to-cart price)
   click_price_rule: "on"          # fresh qualified Buy Box required for plain new Amazon prices
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
-  buybox_interval_min: 60         # paid requests and maximum Buy Box observation age
+  buybox_interval_min: 120         # paid requests and maximum Buy Box observation age
   recheck_surplus: true           # use predicted overflow before the next scheduled run
-  recheck_surplus_reserve: 650     # 140 discovery + 120 top reads * 4 worst-case tokens, rounded up
+  recheck_surplus_reserve: 650     # 160 discovery + 120 top reads * 4 worst-case tokens, rounded up
   recheck_top_live_adaptive: true  # update=0 with surplus, otherwise update=1
   tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
   volatility:
@@ -659,14 +666,14 @@ keepa:
     enabled: true
     # Maximum paid-request ages in hours; observation clocks remain separate.
     targets:
-      FAST:   {top: 0.5, wall: 0.5, rest: 6, hidden: 48}
-      NORMAL: {top: 0.75, wall: 2, rest: 8, hidden: 72}
-      SLOW:   {top: 2, wall: 6, rest: 12, hidden: 72}
+      FAST:   {top: 1.5, wall: 4, rest: 12, hidden: 48}
+      NORMAL: {top: 1.5, wall: 4.5, rest: 18, hidden: 72}
+      SLOW:   {top: 2, wall: 6, rest: 24, hidden: 72}
     # Reduce SLOW demand first, then NORMAL, then FAST. Protect NORMAL top
-    # at one hour; FAST may stretch further when the plan cannot cover it.
-    stretch_limits: {SLOW: 4, NORMAL: 1.3333333333333333}
+    # at two hours; exhausted budgets still defer reads and hide expired prices.
+    stretch_limits: {SLOW: 1, NORMAL: 1.3333333333333333}
     # Before receipts exist, reserve the configured ordinary + overflow
-    # /deal page ceiling (currently 140 tokens/run), not an assumed yield.
+    # /deal page ceiling (currently 160 tokens/run), not an assumed yield.
     discovery_history_runs: 12    # use saved actual feed receipts when available
     batching:
       offers_seconds: 6          # cold-start latency, including polite pacing
@@ -676,21 +683,18 @@ keepa:
     idle_lookahead_runs: 2        # overflow may cover the following run's deadline
     click_boost_per_run: 20       # only with first_party_clicks.enabled
     click_lookback_hours: 6        # already ingested hourly counts only
-  # The /deal lane on the 20 token/min plan (~200 tokens per 10-minute
-  # pull). Each /deal page is 150 rows for ~5 tokens. Only the Amazon and
-  # FRESH first pages run on a near-empty bucket (10 tokens); every further
-  # page only while reserve_tokens stay untouched for the product calls
-  # (price rechecks, photos). Paging also stops on a short page, a 429, the
-  # time budget, the page cap or the new-post cap below.
-  amazon_pages_per_pull: 6         # Amazon's own price >=35% under its 90-day average
-  warehouse_pages_per_pull: 12     # a third FRESH (newest warehouse deals first),
-                                   # the rest DEEP (90-day list; its page window
-                                   # rotates across pulls via db meta keepa_deep_page)
+  # NEW discovery: six general pages -> twelve; two focus roots -> six,
+  # two pages per root. At most 120 ordinary page tokens (was 40 new +
+  # 60 Warehouse), plus the existing 40-token overflow allowance. Extra
+  # pages keep the product reserve; first general page keeps existing minimums.
+  # Warehouse settings remain for rollback, ignored while amazon_used is off.
+  amazon_pages_per_pull: 12       # current NEW price >= min_pct below its 90-day average
+  warehouse_pages_per_pull: 12
   reserve_tokens: 300              # never start an extra page below this
   # Legacy visibility cadences (used when volatility.enabled is false).
-  recheck_fresh_h: 4               # deals first seen in the last recheck_fresh_window_h
+  recheck_fresh_h: 12               # deals first seen in the last recheck_fresh_window_h
   recheck_fresh_window_h: 24
-  recheck_new_h: 8                 # task 085: retry before the 12 h display limit
+  recheck_new_h: 24                 # ordinary rest; hidden recovery remains bounded
   recheck_used_h: 6                # ordinary top/wall used offers (up to 13 tokens)
   # Used scans (including suspects and click boosts) share this cap after
   # the deal reserve, under either scheduler.
@@ -699,12 +703,12 @@ keepa:
   # showed $4.11). Correct plain new prices from the SAME paid reading,
   # with both Amazon averages; otherwise retain the existing kill tolerance.
   reprice_min_pct: 1
-  recheck_top_h: 0.75              # task 085: leave a run to retry before 1 h
+  recheck_top_h: 2              # top candidates; observation freshness is independently enforced
   recheck_tolerance_pct: 5
   # Saved visibility sets; an overdue top pick leads all volatility tiers.
   recheck_top_n: 200
   recheck_wall_n: 300              # top overlap is checked once
-  recheck_wall_h: 1.5              # legacy new cadence / aging used-wall idle priority
+  recheck_wall_h: 6              # next 300 wall candidates
   # Task 085: spend predicted overflow before the next fast run on the
   # oldest visible confirmations. Due top/wall deadlines always lead.
   recheck_interval_minutes: 10     # forecast floor / ordinary retry gap; deadlines and lost answers override
@@ -721,12 +725,13 @@ keepa:
   # used scans also share used_scan_budget_share with the visible wall.
   hidden_new_tokens_per_run: 150   # stats-only, 1 token each; 0 disables
   hidden_used_scans_per_run: 10    # at most 13 tokens each; 0 = free feeds only
-  # Legacy idle floor when volatility.enabled is false.
-  recheck_idle_min_age_h: 0.5
+  # Surplus must not re-buy healthy rest prices inside 12 h; due top/wall
+  # deadlines retain priority. Also the legacy scheduler's idle floor.
+  recheck_idle_min_age_h: 12
   # Task 087b: after due checks, spend predicted overflow on discovery first,
   # then value-ranked early checks. Extra pages share the existing post caps.
   overflow_extra_pages_max: 8     # combined Amazon + Warehouse /deal pages per run
-  recheck_wall_max_age_h: 4       # hard new-condition wall deadline, even when stable
+  recheck_wall_max_age_h: 6       # hard new-condition wall deadline, even when stable
   # Task 087 (docs/codex-tasks/087-value-per-token-rechecks.md): learn from
   # the last few distinct readings; preserve the 085 classes and reserves.
   recheck_adaptive:
@@ -741,15 +746,15 @@ keepa:
     min_new_h: 0.5
     min_used_h: 3                 # expensive offers scans stay bounded
     # Due one run BEFORE these ages. Existing pick/hide gates still apply.
-    max_top_h: 1
-    max_wall_h: 2
-    max_rest_h: 12
+    max_top_h: 2
+    max_wall_h: 6
+    max_rest_h: 24
     max_used_h: 4                 # task 087b: discovery must not age the visible used wall either
     used_deadline_margin_h: 0.5   # leave three runs to drain an expensive used queue
   # Operator request, 2026-10-13: feature only recently confirmed Amazon
   # prices; hide stale prices until confirmed, without killing their rows.
-  pick_max_unconfirmed_h: 3
-  show_max_unconfirmed_h: 12       # task 085: older prices hide alive until confirmed
+  pick_max_unconfirmed_h: 2
+  show_max_unconfirmed_h: 24       # plain prices still need a <=2 h Buy Box confirmation
   # Used/open-box: off-wall units use free Warehouse sightings, plus the
   # small hidden-recovery allowance above once hidden.
   # 24 h until live counts (hidden_unconfirmed.used) say otherwise.
@@ -762,17 +767,10 @@ keepa:
   # going unused. Live reads make "price checked" truly recent for the most
   # seen prices, within the same 20/min plan (budget gates unchanged).
   recheck_top_live: true
-  focus_categories: ["Beauty & Personal Care", "Health & Household"]  # empty = off
-  # NEW posts (not yet content-hashed: each costs an LLM parse, a critic
-  # call and a keepa_check) emitted per pull; posts already handled ride
-  # free and the rest arrive over the next pulls. Bounds the first pulls
-  # after a deploy (every Keepa hash changes, Woot's selection is new):
-  # with woot.max_new_items_per_run, at most 10 + 30 + 40 = 80 new posts a
-  # run. Live 2026-10-11 07:00 run: 75 new posts parsed in ~80 s; the run
-  # took 506 s only because link resolution sat ~330 s in store backoff,
-  # now one quick try per hop inside a 60 s budget. 80 posts fit the fast
-  # job's 12-minute timeout with room to spare.
-  amazon_max_new_posts_per_pull: 10
+  focus_categories: ["Beauty & Personal Care", "Health & Household", "Clothing, Shoes & Jewelry", "Baby Products", "Toys & Games", "Home & Kitchen"]  # empty = off
+  # Reassign part of the old 10 new + 30 used intake cap to 20 new deals.
+  # Existing parse/critic evidence and daily money caps still apply.
+  amazon_max_new_posts_per_pull: 20
   warehouse_max_new_posts_per_pull: 30   # FRESH, DEEP and the sweep share it
   warehouse_min_drop_pct: 45       # used price this far under the HONEST new price
                                    # (5 points under publish.used_min_pct)

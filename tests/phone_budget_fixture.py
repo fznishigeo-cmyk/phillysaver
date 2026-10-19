@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from unittest.mock import patch
 
 from dealradar.config import AppConfig, load_config
+from dealradar.amazon_used import excluded as amazon_used_excluded
 from dealradar.db import DB
 from dealradar.publish import indexnow, site
 from dealradar.rank import photoless_expired
@@ -90,7 +91,8 @@ def fixture_offers():
 
 def visible_offer_count(cfg):
     """Expected task-206 inventory after the configured publication photo cutoff."""
-    return sum(not photoless_expired(row, cfg, NOW) for row in fixture_offers())
+    return sum(not photoless_expired(row, cfg, NOW) and not amazon_used_excluded(row, cfg)
+               for row in fixture_offers())
 
 
 def sizes(data):

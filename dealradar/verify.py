@@ -853,7 +853,10 @@ def recheck_amazon_prices(deals: list[dict[str, Any]], cfg,
     new: list[tuple[str, list[dict[str, Any]]]] = []
     used: list[tuple[str, list[dict[str, Any]]]] = []
     consumers = ({}, {})
+    from .amazon_used import excluded
     for deal in deals:
+        if excluded(deal, cfg):
+            continue
         asin = str(deal.get("asin") or "").strip().upper()
         if not asin or deal.get("final_price") is None:
             continue
@@ -940,7 +943,8 @@ def recheck_amazon_price(deal: dict[str, Any], cfg,
     """One deal's live price verdict (see judge_live_price); None = no
     opinion (flag/key off, no ASIN/price, tokens exhausted, or the API
     failed). The pipeline uses the batched recheck_amazon_prices."""
-    if not cfg.feature_flags.get("keepa"):
+    from .amazon_used import excluded
+    if excluded(deal, cfg) or not cfg.feature_flags.get("keepa"):
         return None
     if not get_secret("KEEPA_KEY"):
         return None
@@ -977,7 +981,8 @@ def keepa_check(deal: dict[str, Any], cfg,
     - NO CamelCamelCamel scraping (their ToS forbids it).
     - Retailer product pages are never fetched to verify a price.
     """
-    if not cfg.feature_flags.get("keepa"):
+    from .amazon_used import excluded
+    if excluded(deal, cfg) or not cfg.feature_flags.get("keepa"):
         return None
     key = get_secret("KEEPA_KEY")
     if not key:

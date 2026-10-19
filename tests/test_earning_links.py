@@ -183,7 +183,9 @@ def test_social_channels_never_post_used_items(tmp_path, db, condition):
     cfg.keepa_click_price_rule = "off"  # condition fixtures recorded before task 275
     cfg.site_dir = str(tmp_path / "site")
     cfg.social_require_stock_evidence = False  # DB evidence: tests/test_social_stock.py
-    published(db, cfg, [candidate("used-one", 1, conditions=[condition]),
+    # Amazon used is now suppressed even with the social exclusion switched
+    # off. Woot stays on the website and must still obey the social rule.
+    published(db, cfg, [candidate("used-one", 1, store="Woot", conditions=[condition]),
                         candidate("new-one", 2, conditions=["online_only"])])
     for module in (pinterest, meta, telegram_pub):
         assert [d["dedupe_key"] for d, _ in module._candidates(db, cfg, {})] == ["new-one"]

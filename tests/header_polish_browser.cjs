@@ -19,6 +19,7 @@ site.util_now = lambda: NOW
 cfg = load_config()
 cfg.header_polish = sys.argv[2] == "true"
 cfg.all_discounts_button = sys.argv[3] == "true"
+cfg.search_polish_1019 = cfg.all_discounts_button
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -52,7 +53,9 @@ function geometry() {
     firstCardTop:(card => card ? card.getBoundingClientRect().top + scrollY : null)(document.querySelector('#content .card')),
     row:['.brand', '#drop', '#pwa-header-install', '#subscribe'].map(selector => ({selector,
       ...rect(document.querySelector(selector))})),
-    tabs:[...nav.children].map(rect), status:rect(document.querySelector('#tagline')),
+    tabs:[...nav.children].map(el => {const css = getComputedStyle(el); return {...rect(el),
+      font:css.fontSize, border:css.borderTopWidth, radius:css.borderRadius, padding:css.padding,
+      background:css.backgroundColor, active:el.classList.contains('active')};}), status:rect(document.querySelector('#tagline')),
     scrollWidth:document.documentElement.scrollWidth,
     style:{rainbow:ring.backgroundImage, ringWidth:ring.borderTopWidth, duration:ring.animationDuration,
       pill:pill.backgroundImage, color:pill.color, border:pill.borderTopWidth, radius:pill.borderRadius,
@@ -66,7 +69,7 @@ function geometry() {
 }
 
 function assertDesktop(g, width, label) {
-  assert(g.field.width >= 320 && g.field.width <= 900, label + ': usable flexible search');
+  assert(g.field.width >= 320 && g.field.width <= 940, label + ': usable flexible search with 40px more room');
   if (width < 1200) assert(g.field.width >= 320, label + ': compact desktop reserves a usable search track');
   for (const item of g.row) {
     assert(Math.abs(item.cy - g.field.cy) <= 2, label + ': centred ' + item.selector);
@@ -95,6 +98,18 @@ function assertDesktop(g, width, label) {
   } else {
     assert.equal(g.why, 'none', label + ': wide Join label');
   }
+}
+
+function assertTabs(g, label) {
+  for (const tab of g.tabs) {
+    assert.equal(tab.font, '14px', label + ': slightly larger tabs');
+    assert.equal(tab.border, '1px', label + ': outlined tabs');
+    assert.equal(tab.radius, '999px', label + ': rounded buttons');
+    assert.equal(tab.padding, '8px 15px', label + ': room around tab labels');
+    assert(tab.height >= 44, label + ': tab tap target');
+  }
+  const active = g.tabs.find(tab => tab.active), idle = g.tabs.find(tab => !tab.active);
+  assert(active && idle && active.background !== idle.background, label + ': clearly filled active tab');
 }
 
 async function offerInstall(page) {
@@ -173,6 +188,7 @@ async function main() {
             await assertDiscounts(page, false);
             assert(g.scrollWidth <= width, name + ': no document overflow');
             if (width < 900) assert(Math.max(...g.tabs.map(t => t.y)) - Math.min(...g.tabs.map(t => t.y)) <= 1, name + ': phone tab row unchanged');
+            assertTabs(g, name);
             if (width >= 900) assertDesktop(g, width, name);
             const record = {name, geometry:g};
             if (width === 390 || width === 360) {
@@ -182,9 +198,12 @@ async function main() {
               assert.deepEqual(audit.overflow, [], name + ': overflow');
               assert.deepEqual(audit.smallTaps, [], name + ': 44px hit areas');
               assert.deepEqual(audit.smallInputs, [], name + ': input type size');
-              assert.equal(g.header.height, original.header.height, name + ': phone load header is unchanged');
-              assert.deepEqual(g.field, original.field, name + ': phone load field is unchanged');
-              assert.equal(g.firstCardTop, original.firstCardTop, name + ': first card does not move on load');
+              assert(g.header.height <= original.header.height, name + ': removing hint offsets taller field');
+              assert.equal(g.field.width, original.field.width, name + ': phone field width unchanged');
+              assert.equal(g.field.x, original.field.x, name + ': phone field stays aligned');
+              assert.equal(g.field.y, original.field.y, name + ': phone field row unchanged');
+              assert.equal(g.field.height, 56, name + ': 44px pill plus two 6px gaps');
+              assert(g.firstCardTop <= original.firstCardTop, name + ': first card stays at least as high');
               record.mobile = audit;
             }
             await page.screenshot({path:path.join(shots, `${width}-${theme}.png`)});
@@ -207,7 +226,7 @@ async function main() {
             await assertDiscounts(page, false);
             if (width < 900) {
               const cleared = await page.evaluate(geometry);
-              assert.equal(cleared.header.height, original.header.height, name + ': clear restores phone header');
+              assert.equal(cleared.header.height, g.header.height, name + ': clear restores polished phone header');
             }
             if (width >= 900) {
               await page.locator('#q').fill('cofee');

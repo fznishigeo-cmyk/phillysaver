@@ -361,8 +361,10 @@ class AppConfig:
     page_polish: bool = False
     header_polish: bool = False
     all_discounts_button: bool = False
+    search_polish_1019: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
+    analyze_top_sellers: bool = False
     search_more: dict = field(default_factory=lambda: validated_search_more(None))
     static_photos: bool = False
     open_box_scarcity: bool = False
@@ -546,9 +548,13 @@ class AppConfig:
     social_require_stock_evidence: bool = False
     social_extreme_pct: float = 80.0
 
+    amazon_used_enabled: bool = True
+
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
     keepa_popular_affordable_page: bool = False
+    keepa_genuine_drops_only: bool = False
+    keepa_focus_pages_per_category: int = 1
     keepa_warehouse_pages_per_pull: int = 12
     keepa_reserve_tokens: float = 300.0       # left untouched for product calls
     keepa_tokens_per_minute: float = 20.0
@@ -1075,10 +1081,16 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.all_discounts_button = g("all_discounts_button", default=False)
     if type(cfg.all_discounts_button) is not bool:
         raise ValueError("all_discounts_button must be a boolean")
+    cfg.search_polish_1019 = g("search_polish_1019", default=False)
+    if type(cfg.search_polish_1019) is not bool:
+        raise ValueError("search_polish_1019 must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")
     cfg.search_analyze = validated_search_analyze(g("search_analyze", default=None))
+    cfg.analyze_top_sellers = g("analyze_top_sellers", default=False)
+    if type(cfg.analyze_top_sellers) is not bool:
+        raise ValueError("analyze_top_sellers must be a boolean")
     cfg.search_more = validated_search_more(g("search_more", default=None))
     cfg.static_photos = g("site", "static_photos", default=False)
     if type(cfg.static_photos) is not bool:
@@ -1431,6 +1443,63 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     tracking = g("tracking", default={})
     cfg.tracking = {str(k): str(v).strip() for k, v in tracking.items()
                     if v not in (None, "")} if isinstance(tracking, dict) else {}
+
+    amazon_used = g("amazon_used", default={})
+    if (not isinstance(amazon_used, dict) or set(amazon_used) - {"enabled"}
+            or type(amazon_used.get("enabled", True)) is not bool):
+        raise ValueError("amazon_used.enabled must be a boolean")
+    cfg.amazon_used_enabled = amazon_used.get("enabled", True)
+    genuine = g("keepa", "genuine_drops_only", default=False)
+    if type(genuine) is not bool:
+        raise ValueError("keepa.genuine_drops_only must be a boolean")
+    cfg.keepa_genuine_drops_only = genuine
+    focus_pages = g("keepa", "focus_pages_per_category", default=1)
+    if type(focus_pages) is not int or not 1 <= focus_pages <= 10:
+        raise ValueError("keepa.focus_pages_per_category must be an integer in 1..10")
+    cfg.keepa_focus_pages_per_category = focus_pages
+    # Reject malformed cadence/discovery knobs instead of silently clamping them.
+    limits = {"amazon_pages_per_pull": (0, 100, int),
+              "amazon_max_new_posts_per_pull": (0, 1000, int),
+              "buybox_interval_min": (.5, 1440, float),
+              "recheck_top_h": (0, 24, float), "recheck_wall_h": (0, 24, float),
+              "recheck_fresh_h": (.5, 24, float), "recheck_new_h": (.5, 24, float),
+              "recheck_wall_max_age_h": (.5, 24, float), "recheck_idle_min_age_h": (.5, 24, float),
+              "pick_max_unconfirmed_h": (0, 24, float), "show_max_unconfirmed_h": (0, 168, float)}
+    for name, (low, high, kind) in limits.items():
+        value = g("keepa", name, default=getattr(cfg, "keepa_" + name))
+        if (type(value) not in ((int,) if kind is int else (int, float))
+                or not math.isfinite(value) or not low <= value <= high):
+            raise ValueError(f"keepa.{name} must be a finite {kind.__name__} in {low}..{high}")
+    focus = g("keepa", "focus_categories", default=cfg.keepa_focus_categories)
+    if (not isinstance(focus, list) or any(not isinstance(n, str) or not n.strip() for n in focus)
+            or len({n.strip().casefold() for n in focus}) != len(focus)):
+        raise ValueError("keepa.focus_categories must contain unique nonempty category names")
+    for section in ("volatility", "recheck_adaptive"):
+        options = g("keepa", section, default={})
+        if not isinstance(options, dict):
+            raise ValueError(f"keepa.{section} must be a mapping")
+        if "enabled" in options and type(options["enabled"]) is not bool:
+            raise ValueError(f"keepa.{section}.enabled must be a boolean")
+        if section == "volatility":
+            targets = options.get("targets", {})
+            if not isinstance(targets, dict) or set(targets) - {"FAST", "NORMAL", "SLOW"}:
+                raise ValueError("keepa.volatility.targets must contain supported tiers")
+            for tier, values in targets.items():
+                if not isinstance(values, dict) or set(values) - {"top", "wall", "rest", "hidden"}:
+                    raise ValueError("keepa.volatility.targets must contain supported visibility classes")
+                for value in values.values():
+                    if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 168:
+                        raise ValueError("keepa.volatility.targets ages must be finite in (0,168]")
+            limits = options.get("stretch_limits", {})
+            if (not isinstance(limits, dict) or set(limits) - {"FAST", "NORMAL", "SLOW"}
+                    or any(type(v) not in (int, float) or not math.isfinite(v) or v < 1 for v in limits.values())):
+                raise ValueError("keepa.volatility.stretch_limits must contain finite factors >=1")
+        else:
+            for name in ("max_top_h", "max_wall_h", "max_rest_h"):
+                if name in options:
+                    value = options[name]
+                    if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= 168:
+                        raise ValueError(f"keepa.recheck_adaptive.{name} must be finite in (0,168]")
 
     cfg.keepa_amazon_pages_per_pull = max(1, int(g(
         "keepa", "amazon_pages_per_pull", default=cfg.keepa_amazon_pages_per_pull)))

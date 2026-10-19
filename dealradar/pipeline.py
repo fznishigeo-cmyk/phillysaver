@@ -1300,7 +1300,8 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     if cfg.keepa_click_price_rule != "off":
         stats["click_price_extra_tokens"] = 0
     visible = picks.keys() | wall.keys()
-    inventory = db.all_deals(status="alive")
+    from .amazon_used import excluded as amazon_used_excluded
+    inventory = [d for d in db.all_deals(status="alive") if not amazon_used_excluded(d, cfg)]
     click_samples = {d["dedupe_key"]: d for d in inventory}
     history = History(db, cfg, now)
     schedule = Schedule(history, picks, wall)
@@ -2841,6 +2842,9 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["photos"] = photo_recovery.identity_summary(identity_before, photo_deals)
         log.info("photos: %s", summary["photos"])
         log.info("photo_coverage: %s", summary["photo_coverage"])
+        from .amazon_used import summary as amazon_used_summary
+        summary["amazon_used"] = amazon_used_summary(db, cfg)
+        log.info("amazon used: %s", summary["amazon_used"])
         summary["published"] = site_res.get("published", 0)
         summary["unpublished_photoless"] = site_res["unpublished_photoless"]
         summary["appeal"] = site_res.get("appeal", {})
@@ -2914,6 +2918,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                 with open(step_summary, "a", encoding="utf-8") as fh:
                     fh.write(health_markdown(site_res["health"]))
                     from .publish.price_labels import summary_lines as label_lines
+                    fh.write("\nAmazon used: " + json.dumps(summary["amazon_used"], sort_keys=True) + "\n")
                     fh.write("\n" + "\n".join(label_lines(summary["unconfirmed_label"])) + "\n")
                     fh.write("\n" + "\n".join(freshness.summary_lines(summary["non_amazon_freshness"])) + "\n")
             except OSError as e:

@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from dealradar import pipeline, rank, util, verify
+from tests.history_pins import pre_task_319
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.fetch.keepa import KeepaDealsAdapter
@@ -25,7 +26,7 @@ from tests.test_keepa import SRC, _amazon_row, _wh_row, _junk_row
 
 @pytest.fixture
 def cfg():
-    result = load_config()
+    result = pre_task_319(load_config())
     result.keepa_click_price_rule = "off"  # recorded before task 275; cached one-token reads
     # Predates the Buy Box top picks and surplus scheduling.
     result.keepa_buybox_top_n = 0

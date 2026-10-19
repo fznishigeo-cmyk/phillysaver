@@ -529,7 +529,7 @@ class _Pull:
     sample: dict[str, Any] | None = None  # first raw row, for drift warnings
     category_names: dict[str, str] | None = None
     categories_tried: set[str] | None = None
-    focus_tried: set[int] = field(default_factory=set)
+    focus_tried: set[tuple[int, int]] = field(default_factory=set)
     confirmations: _FeedConfirmations | None = None
     overflow_only: bool = False
 
@@ -631,6 +631,18 @@ class KeepaDealsAdapter(SourceAdapter):
                                float(cfg.site_show_from_pct)}))
 
         def map_amazon(row: dict[str, Any]) -> RawPost | None:
+            if cfg.keepa_genuine_drops_only:
+                from ..appeal import matches
+                from ..savings import clears_reference_floor
+                avg90 = _avg90_price(row.get("avg") or row.get("avg90"), PRICE_TYPE_AMAZON)
+                current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
+                sales_rank = _count_at(row.get("current"), 3)
+                excludes = (cfg.front_page.get("appeal", {}).get("want") or {}).get("exclude_words", [])
+                if (current is None or avg90 is None
+                        or not clears_reference_floor(current, avg90, cfg.min_pct)
+                        or sales_rank is None or not 1 <= sales_rank <= AMAZON_MAX_RANK
+                        or matches(row.get("title"), excludes)):
+                    return None
             return self._map_row(row, source, now, floors=floors,
                                  category_names=pull.category_names,
                                  list_ratio=cfg.keepa_list_price_min_avg_ratio)
@@ -642,7 +654,8 @@ class KeepaDealsAdapter(SourceAdapter):
                 min_new_price=cfg.keepa_warehouse_min_new_price,
                 floors=floors, category_names=pull.category_names)
 
-        amazon_sel = _selection(PRICE_TYPE_AMAZON, (MIN_DROP_PCT, 100),
+        minimum_drop = math.ceil(cfg.min_pct) if cfg.keepa_genuine_drops_only else MIN_DROP_PCT
+        amazon_sel = _selection(PRICE_TYPE_AMAZON, (minimum_drop, 100),
                                 DATE_RANGE_90D, SORT_PCT_DROP, AMAZON_MAX_RANK)
         # Warehouse (Amazon Resale) open-box/used, two shapes: FRESH =
         # newest deals of the last 24 h first (new arrivals sell out fast);
@@ -684,16 +697,18 @@ class KeepaDealsAdapter(SourceAdapter):
                 # Pass 2: warehouse, a third of the pages FRESH and the rest
                 # (plus any FRESH left unused) DEEP. Only the Amazon and
                 # FRESH first pages may run under the reserve.
-                fresh_used, fresh_next = self._run_pass(
-                    pull, fresh_sel, 0, max(1, wh_pages // 3),
-                    source.name + "/warehouse-fresh", wh_seen,
-                    map_warehouse, fresh, wh_lane)
-                _, deep_next = self._run_pass(
-                    pull, deep_sel, _cursor(db, DEEP_PAGE_META),
-                    max(1, wh_pages - fresh_used),
-                    source.name + "/warehouse-deep", wh_seen,
-                    map_warehouse, deep, wh_lane,
-                    first_is_extra=True, cursor_key=DEEP_PAGE_META)
+                fresh_next = deep_next = None
+                if cfg.amazon_used_enabled:
+                    fresh_used, fresh_next = self._run_pass(
+                        pull, fresh_sel, 0, max(1, wh_pages // 3),
+                        source.name + "/warehouse-fresh", wh_seen,
+                        map_warehouse, fresh, wh_lane)
+                    _, deep_next = self._run_pass(
+                        pull, deep_sel, _cursor(db, DEEP_PAGE_META),
+                        max(1, wh_pages - fresh_used),
+                        source.name + "/warehouse-deep", wh_seen,
+                        map_warehouse, deep, wh_lane,
+                        first_is_extra=True, cursor_key=DEEP_PAGE_META)
                 # Pass 1, further pages (all of them reserve-gated).
                 if amazon_next is not None:
                     _, amazon_next = self._run_pass(
@@ -712,11 +727,12 @@ class KeepaDealsAdapter(SourceAdapter):
             if complete and self.recheck is not None:
                 # Resume the exact windows/ASIN sets and NEW-post allowances;
                 # no rereading page zero or bypassing the normal intake caps.
-                passes = [
-                    (amazon_sel, amazon_next, amazon_seen, map_amazon, amazon, amazon_lane, None),
-                    (deep_sel, deep_next, wh_seen, map_warehouse, deep, wh_lane, DEEP_PAGE_META),
-                    (fresh_sel, fresh_next, wh_seen, map_warehouse, fresh, wh_lane, None),
-                ]
+                passes = [(amazon_sel, amazon_next, amazon_seen, map_amazon, amazon, amazon_lane, None)]
+                if cfg.amazon_used_enabled:
+                    passes += [
+                        (deep_sel, deep_next, wh_seen, map_warehouse, deep, wh_lane, DEEP_PAGE_META),
+                        (fresh_sel, fresh_next, wh_seen, map_warehouse, fresh, wh_lane, None),
+                    ]
 
                 def discover(shared_budget):
                     pull.budget = shared_budget
@@ -851,30 +867,42 @@ class KeepaDealsAdapter(SourceAdapter):
 
     def _run_focus(self, pull: _Pull, cfg: AppConfig, selection: dict,
                    seen: set[str], mapper, out: list[RawPost], lane: _Lane) -> None:
-        """One Amazon page per named root, sharing the Amazon new-post cap.
+        """Configured NEW pages per root, sharing the Amazon new-post cap.
         Focus pages lead so a full general page cannot crowd them out.
         """
         ids = {name.casefold(): int(cid) for cid, name in (pull.category_names or {}).items()}
-        for name in cfg.keepa_focus_categories:
-            cid = ids.get(name.strip().casefold())
-            if cid is None or cid in pull.focus_tried or not self._may_fetch(pull, "focus", extra=True):
-                continue
-            # The focus page always keeps at least the standing 300-token reserve.
-            avail = pull.budget.available(pull.now)
-            if avail is None or avail - DEAL_PAGE_COST < max(300, pull.reserve):
-                continue
-            pull.focus_tried.add(cid)
-            rows = self._query_rows(pull, {**selection, "includeCategories": [cid]}, "focus")
-            for row in rows:
-                if not isinstance(row, dict):
+        names = cfg.keepa_focus_categories
+        # Rotate which audience leads each pull so a shared intake cap cannot
+        # permanently starve fashion/kids behind the first beauty page.
+        if cfg.keepa_focus_pages_per_category > 1 and names:
+            offset = int(pull.now.timestamp() // (60 * cfg.keepa_recheck_interval_minutes)) % len(names)
+            names = names[offset:] + names[:offset]
+        for page in range(cfg.keepa_focus_pages_per_category):
+            for name in names:
+                cid = ids.get(name.strip().casefold())
+                marker = (cid, page)
+                if cid is None or marker in pull.focus_tried or not self._may_fetch(pull, "focus", extra=True):
                     continue
-                asin = str(row.get("asin") or "").strip().upper()
-                if not asin or asin in seen:
+                if cfg.keepa_focus_pages_per_category > 1 and lane.full:
+                    return
+                # Focus pages always preserve the standing product reserve.
+                avail = pull.budget.available(pull.now)
+                if avail is None or avail - DEAL_PAGE_COST < max(300, pull.reserve):
                     continue
-                seen.add(asin)
-                post = mapper(row)
-                if post is not None and lane.admit(post):
-                    out.append(post)
+                pull.focus_tried.add(marker)
+                rows = self._query_rows(pull, {**selection, "includeCategories": [cid], "page": page}, "focus")
+                if len(rows) < DEAL_PAGE_SIZE:
+                    pull.focus_tried.update((cid, p) for p in range(page + 1, cfg.keepa_focus_pages_per_category))
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    asin = str(row.get("asin") or "").strip().upper()
+                    if not asin or asin in seen:
+                        continue
+                    seen.add(asin)
+                    post = mapper(row)
+                    if post is not None and lane.admit(post):
+                        out.append(post)
 
     def _run_popular_page(self, pull: _Pull, cfg: AppConfig, selection: dict,
                           seen: set[str], mapper, out: list[RawPost], lane: _Lane) -> bool:
@@ -1099,7 +1127,7 @@ class KeepaDealsAdapter(SourceAdapter):
         keepa_sweep_page, wrapping on a short page); a page whose check was
         deferred (429, time, tokens, a hiccup) or whose new posts the lane
         held back is read again next pull."""
-        if not cfg.keepa_sweep_enabled:
+        if not cfg.amazon_used_enabled or not cfg.keepa_sweep_enabled:
             return
         if lane.full:
             log.info("keepa sweep: the warehouse new-post cap is full; "

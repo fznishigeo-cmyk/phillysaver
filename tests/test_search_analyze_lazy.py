@@ -12,15 +12,18 @@ import pytest
 
 from dealradar.config import load_config, validated_search_analyze
 from dealradar.publish import site
+from tests.history_pins import pre_search_polish_1019
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_more import config as search_config
 from tests.test_search_amazon import run_node
 from tests.test_support import NOW, render
+from tests.history_pins import pre_task_320
 
 
 def config(mode):
-    cfg = load_config() if mode.startswith("current") else search_config(mode)
+    cfg = pre_search_polish_1019(load_config()) if mode.startswith("current") else search_config(mode)
+    pre_task_320(cfg)  # These harnesses exercise the preceding Analyze behavior.
     cfg.same_product_spacing = False  # the harness slices render(); spacing has its own tests (task 302)
     cfg.drop_fresh = False  # This search harness does not mount the separate drop module.
     cfg.search_more = {"enabled": mode != "more-off", "pages": 3, "min_query_chars": 2}

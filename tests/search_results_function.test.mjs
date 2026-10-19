@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 
-const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8');
-const {onRequest, normalizeQuery, currentItems, settle} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const productsSource = fs.readFileSync(new URL('../dealradar/publish/templates/search-products.js', import.meta.url), 'utf8');
+const productsURL = 'data:text/javascript;base64,' + Buffer.from(productsSource).toString('base64');
+const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8')
+  .replace('../../dealradar/publish/templates/search-products.js', productsURL);
+const {onRequest, normalizeQuery, currentItems, settle, topSellerItems} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const {monthlyBoughtLabel} = await import(productsURL);
 const realFetch = globalThis.fetch, realCaches = globalThis.caches, realNow = Date.now;
 const NOW = Date.parse('2026-10-17T18:00:00Z'), KEY = 'PRIVATE-test-key';
 let now, calls, config, values, kv, cache, context, database;
@@ -728,4 +732,105 @@ test('refunded capacity permits more requests while retaining the full next rese
   assert.equal(calls.length, 3);
   assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 60);
   assert.equal((await body(await run('four'))).reason, 'limit_reached');
+});
+
+test('monthlySold is optional, safe, positive and only passed with the feature on', () => {
+  for (const value of [undefined, null, true, false, '1000', -1, 0, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    const p = {...product(), monthlySold:value};
+    assert(!('monthlySold' in currentItems([p], now)[0]), String(value));
+  }
+  for (const value of [1, 49, 50, 1000, Number.MAX_SAFE_INTEGER]) {
+    const p = {...product(), monthlySold:value};
+    assert.equal(currentItems([p], now)[0].monthlySold, value);
+    assert(!('monthlySold' in currentItems([p], now, false)[0]), 'OFF preserves the previous response');
+  }
+});
+
+test('monthly proof rounds down through Amazon-style buckets and omits unknown/sub-50 values', () => {
+  for (const value of [undefined, null, true, '1000', 0, -1, 49, 50.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1])
+    assert.equal(monthlyBoughtLabel(value), '', String(value));
+  for (const [value, label] of [[50,'50'],[99,'50'],[100,'100'],[199,'100'],[200,'200'],[499,'200'],
+    [500,'500'],[999,'500'],[1000,'1K'],[1999,'1K'],[2000,'2K'],[4999,'2K'],[5000,'5K'],[9999,'5K'],
+    [10000,'10K'],[19999,'10K'],[20000,'20K'],[50000,'50K'],[100000,'100K'],[999999,'500K'],[1000000,'1M']])
+    assert.equal(monthlyBoughtLabel(value), label + '+ bought in past month', String(value));
+});
+
+test('best sellers rank the whole page before the five limit, with current rank as the tie-breaker', () => {
+  const products = Array.from({length:20}, (_, i) => {
+    const p = {...product(i), monthlySold:i < 10 ? 100 : 2000};
+    p.stats.current[3] = 100 - i;
+    return p;
+  });
+  assert.deepEqual(topSellerItems(products, 'cupping', '', now).map(p => p.asin),
+    [19,18,17,16,15].map(i => product(i).asin));
+  assert.deepEqual(topSellerItems(products.reverse(), 'cupping', '', now).map(p => p.asin),
+    [19,18,17,16,15].map(i => product(i).asin));
+});
+
+test('invalid sold/rank values sort last without inventing facts; invalid prices and duplicate ASINs cannot take slots', () => {
+  const products = [product(0), product(1), product(2), product(3), product(4), product(5), product(6)];
+  products[0].monthlySold = '999999'; products[0].stats.current[3] = 1;
+  products[1].monthlySold = 100; products[1].stats.current[3] = -1;
+  products[2].monthlySold = 100; products[2].stats.current[3] = 20;
+  products[3].monthlySold = 100; products[3].stats.current[3] = 10;
+  products[4].monthlySold = 10000; products[4].stats.current[18] = products[4].stats.current[1] = -1;
+  products[5].monthlySold = 100; products[5].stats.current[3] = '1';
+  products[6].monthlySold = 0; products[6].stats.current[3] = 2;
+  assert.deepEqual(topSellerItems([products[3], ...products], 'cupping', '', now).map(p => p.asin),
+    [3,2,1,5,0].map(i => product(i).asin));
+});
+
+test('best sellers reuse search relevance (all words, exact models, accents, prefixes and typos) and adult filters', () => {
+  const make = (i, title, sold = 100) => ({...product(i), title, monthlySold:sold});
+  const products = [make(0, 'Sony WH-1000XM5 wireless headphones'), make(1, 'Wireless headphones Sony WH-1000XM4'),
+    make(2, 'Replacement ear pads for Sony WH-1000XM4', 99999), make(3, 'Travel kettle', 99999),
+    make(4, 'Sony WH-1000XM5 wireless headphones sex toy', 99999)];
+  const exclude = '(?:^|[^\\p{L}\\p{N}])(?:sex[ -]+toy)(?![\\p{L}\\p{N}])';
+  assert.deepEqual(topSellerItems(products, 'sony 1000xm5 headphnes', exclude, now).map(p => p.asin), [product(0).asin]);
+  assert.deepEqual(topSellerItems([make(5, 'Café electric kettles')], 'cafe kett', '', now).map(p => p.asin), [product(5).asin]);
+  assert.deepEqual(topSellerItems(products, 'sex toy', exclude, now), []);
+});
+
+test('published flag enables five results, a separate cache version and just one paid page with the same six-hour cache', async () => {
+  config.analyze_top_sellers = true; config.analyze_exclude = ''; config.tokens_per_day = 10000;
+  const transport = globalThis.fetch;
+  globalThis.fetch = async (...args) => {
+    const data = await (await transport(...args)).json();
+    data.products.forEach((p, i) => { p.monthlySold = (i + 1) * 100; });
+    return Response.json(data);
+  };
+  const first = await body(await run());
+  assert.equal(first.items.length, 5); assert.equal(calls.length, 1);
+  assert.deepEqual(first.items.map(p => p.monthlySold), [1500,1400,1300,1200,1100]);
+  assert.equal(calls[0][0].searchParams.get('page'), '0');
+  assert([...cache.keys()].every(url => new URL(url).searchParams.get('v') === '2'));
+  assert.deepEqual(await body(await run()), first); assert.equal(calls.length, 1, 'cache does not spend again');
+  config.analyze_top_sellers = false;
+  now += 1001;
+  const off = await body(await run());
+  assert.equal(off.items.length, 10); assert.equal(calls.length, 2, 'OFF cannot reuse ON body');
+  assert(off.items.every(p => !('monthlySold' in p)), 'OFF omits the new field even when Keepa supplies it');
+});
+
+test('top sellers keep ASIN analysis at one exact product and no extra product reads', async () => {
+  config.analyze_top_sellers = true; config.analyze_exclude = '';
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); assert.equal(url.pathname, '/product');
+    assert.equal(url.searchParams.get('asin'), product(7).asin);
+    return Response.json({products:[{...product(7), monthlySold:1200}, product(8)], tokensConsumed:1});
+  };
+  const response = await onRequest({...context, request:new Request('https://wowpriced.test/api/search?asin=' + product(7).asin)});
+  const result = await body(response);
+  assert.equal(result.items.length, 1); assert.equal(result.items[0].asin, product(7).asin);
+  assert.equal(calls.length, 1);
+});
+
+test('published top-seller switch fails closed for non-booleans or missing filters before storage/upstream', async () => {
+  for (const value of [null, 0, 1, 'true', 'false', [], {}]) {
+    config.analyze_top_sellers = value;
+    assert.equal((await body(await run())).reason, 'disabled');
+  }
+  config.analyze_top_sellers = true;
+  assert.equal((await body(await run())).reason, 'disabled');
+  assert.equal(calls.length, 0); assert.equal(values.size, 0);
 });

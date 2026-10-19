@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from dealradar import dedupe, pipeline, rank, verify
+from tests.history_pins import pre_task_319
 from dealradar.config import SECRET_NAMES, load_config, load_sources
 from dealradar.db import DB
 from dealradar.errors import SpendCapReached
@@ -31,7 +32,7 @@ def audit_cfg(tmp_path, monkeypatch):
     for name in SECRET_NAMES + ["STATE_DB_KEY", "SOVRN_API_KEY", "SOVRN_API_KEY2",
                                 "SOVRN_SECRET_KEY", "GITHUB_STEP_SUMMARY"]:
         monkeypatch.delenv(name, raising=False)
-    cfg = load_config()
+    cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # replay/critic fixtures recorded before task 275
     cfg.critic_tiering = dict(cfg.critic_tiering, enabled=False)  # predates tiering
     cfg.site_dir = str(tmp_path / "site")
