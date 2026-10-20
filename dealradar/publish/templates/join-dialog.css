@@ -1,0 +1,18 @@
+:root{color-scheme:light dark;--card:#fff;--fg:#151719;--muted:#555b63;--line:#dcdfe3;--accent:#0e7569;--accent-fg:#fff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--card);color:var(--fg);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.joincard{max-width:none;padding:30px 30px 24px;border:0;border-radius:24px;box-shadow:none}
+.brand{display:flex;justify-content:center;margin:0 0 24px;font-size:26px;font-weight:800;letter-spacing:-.6px;line-height:1}
+.brand a{display:inline-flex;align-items:center;gap:10px;min-height:48px;color:#0b3d36;text-decoration:none}
+.mark{width:38px;height:38px;transform:rotate(-6deg)}
+.word em{font-style:normal}
+.joincard h2{font-size:28px;font-weight:750;letter-spacing:-.6px;margin:8px 0 6px}
+#join-description{font-size:16px;margin:0 0 20px}
+.joinchoice{border-radius:999px;background:#111;color:#fff;border-color:#111;font-size:17px;font-weight:750}
+.joingoogle{border-radius:999px;background:var(--card)}
+.joinclose{top:12px;right:14px;width:44px;height:44px;font-size:28px}
+.joinback{min-width:44px;min-height:44px}
+.joinlegal{font-size:13px;margin:12px 0 0}
+a,button,input{touch-action:manipulation}
+@media(prefers-color-scheme:dark){:root{--card:#161c23;--fg:#e7eaee;--muted:#a4adb7;--line:#2a313a;--accent:#4ed8bd;--accent-fg:#07211d}.brand a{color:var(--fg)}.joinchoice{background:#e7eaee;color:#111;border-color:#e7eaee}}
+@media(max-width:359px){.joincard{padding:28px 20px 24px}.brand{font-size:24px}.mark{width:34px;height:34px}}

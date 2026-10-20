@@ -148,6 +148,26 @@ TOOL_LIST_BADGE_JS = '''function toolBadge(price, list) {
 }
 '''
 
+# Opt-in meter fields preserve the original tool script when the hero is off.
+TOOL_METER_BADGE_JS = TOOL_LIST_BADGE_JS.replace(
+    'return {kind:"live", label:"Live Amazon price"}',
+    'return {kind:"live", label:"Live Amazon price", pct:0, angle:0, hasList:false}').replace(
+    'return {kind:kind, label:',
+    'return {kind:kind, pct:Math.floor(pct), angle:Math.min(pct, 80) * 2.25, hasList:true, label:')
+
+
+def tool_meter(price: float, listed: float) -> dict:
+    """The same cents, thresholds, floor and 0–80 gauge scale as live tools."""
+    current, reference = display_pct(price * 100), display_pct(listed * 100)
+    if current <= 0 or reference <= current:
+        return dict(kind="live", label="Live Amazon price", pct=0, angle=0, hasList=False)
+    pct = (reference - current) * 100 / reference
+    kind = "big" if pct >= 40 else "good" if pct >= 15 else "live"
+    label = "Live Amazon price" if kind == "live" else (
+        ("Big discount" if kind == "big" else "Good discount") + f" · {math.floor(pct)}% off list price")
+    return dict(kind=kind, label=label, pct=math.floor(pct), angle=min(pct, 80) * 2.25,
+                hasList=True)
+
 
 def amazon_list_price(final: float | None, reading: dict | None, *, asin: str,
                       confirmed_at: datetime | None, now: datetime,

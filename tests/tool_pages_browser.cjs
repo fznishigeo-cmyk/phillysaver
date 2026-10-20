@@ -19,20 +19,82 @@ site.util_now=lambda:now
 cfg=load_config()
 cfg.tool_pages={"enabled":True,"public":False}
 cfg.tracking={}
+cfg.tool_pages_hero=True
+cfg.paywall_api_url="https://account.wowpriced.test"
+cfg.paywall_google_client_id="task335-google"
 cfg.affiliate_amazon_tag="example-20"
-rows=[make_deal(dedupe_key="task328-kettle", item="Steel kitchen kettle", store="Amazon", category="kitchen",
+rows=[make_deal(dedupe_key=f"task335-kettle-{i}", item=f"Steel kitchen kettle {i}", store="Amazon", category=["kitchen","beauty","electronics"][i%3],
     verify_tier="verified", codes=[], conditions=["new"], final_price=15, regular_price=30,
-    canonical_url="https://amazon.com/dp/B099999999", asin="B099999999",
+    canonical_url=f"https://amazon.com/dp/B{i:09d}", asin=f"B{i:09d}",
+    regular_price_basis="List price on Amazon", basis="amazon_list_price",
+    keepa_list_price={"asin":f"B{i:09d}","price":30,"observed_at":now.isoformat()},
     first_seen_at=now.isoformat(), price_rechecked_at=now.isoformat(),
-    click_price_check={"asin":"B099999999","final":15,"buybox":15,"at":now.isoformat()},
+    click_price_check={"asin":f"B{i:09d}","final":15,"buybox":15,"at":now.isoformat()},
     critic={"plausible":True,"confidence":.9,"reason":"Backed basis"},
-    image_url="https://m.media-amazon.com/images/I/photo.jpg")]
+    image_url="https://m.media-amazon.com/images/I/photo.jpg") for i in range(8)]
 db=DB(":memory:")
 try: site.render_site(db,cfg,now,out_dir=Path(sys.argv[1])/"site",deals=rows)
 finally: db.close()
 `,scratch],{encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
   return path.join(scratch,'site');
+}
+
+
+async function checkMeter(locator,reduced) {
+  const meter=await locator.evaluate(el => {
+    const needle=el.querySelector('.meter-needle'), style=getComputedStyle(needle);
+    const matrix=new DOMMatrix(style.transform);
+    return {pct:Number(el.dataset.meterPct),angle:parseFloat(el.style.getPropertyValue('--meter-angle')),
+      actual:(Math.atan2(matrix.b,matrix.a)*180/Math.PI+360)%360,transition:style.transitionDuration};
+  });
+  assert(Math.abs(meter.angle-Math.min(meter.pct,80)*2.25)<2.25,'angle uses unrounded list percentage');
+  assert(Math.abs(meter.actual-meter.angle)<.1,JSON.stringify(meter));
+  if (reduced) assert.equal(meter.transition,'0s');
+}
+
+async function checkJoin(page,selector,shot) {
+  const button=page.locator(selector);
+  assert.equal(await button.getAttribute('href'),'/join');
+  const before=page.url();
+  await button.click();
+  const overlay=page.locator('#header-join-dialog');
+  await overlay.waitFor({state:'visible'});
+  const frame=page.frameLocator('#header-join-dialog iframe');
+  await frame.locator('#join-email-choice').waitFor({state:'visible'});
+  await frame.locator('#join-google button').waitFor({state:'visible'});
+  assert.equal(page.url(),before);
+  assert.equal(await overlay.getAttribute('aria-modal'),'true');
+  assert.equal(await page.evaluate(() => document.documentElement.style.overflow),'hidden');
+  assert.equal(await frame.locator('#join-email-choice').evaluate(el => document.activeElement===el),true);
+  const overflow=await frame.locator('body').evaluate(() => document.documentElement.scrollWidth>innerWidth);
+  assert.equal(overflow,false,'dialog frame overflow');
+  // The last control wraps to the first; Shift+Tab wraps back into the frame.
+  await frame.locator('#join-email-choice').focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await frame.locator('#dialog-close').evaluate(el => document.activeElement===el),true);
+  await page.keyboard.press('Shift+Tab');
+  assert.equal(await frame.locator('#join-email-choice').evaluate(el => document.activeElement===el),true);
+  await page.screenshot({path:shot,fullPage:false});
+  await frame.locator('#join-email-choice').click();
+  await frame.locator('#join-email').waitFor({state:'visible'});
+  assert.equal(await frame.locator('#join-email-fields button[type="submit"]').isDisabled(),true);
+  await frame.locator('#join-back').click();
+  await page.keyboard.press('Escape');
+  await overlay.waitFor({state:'detached'});
+  assert.equal(await button.evaluate(el => document.activeElement===el),true);
+  assert.notEqual(await page.evaluate(() => document.documentElement.style.overflow),'hidden');
+  await button.click();
+  const close=page.frameLocator('#header-join-dialog iframe').locator('#dialog-close');
+  await close.click();
+  await overlay.waitFor({state:'detached'});
+  assert.equal(await button.evaluate(el => document.activeElement===el),true);
+  // Escape also works while the lazy card is still arriving.
+  await button.click();
+  await overlay.waitFor({state:'visible'});
+  await page.keyboard.press('Escape');
+  await overlay.waitFor({state:'detached'});
+  assert.equal(await button.evaluate(el => document.activeElement===el),true);
 }
 
 async function run(root, executablePath, shots) {
@@ -45,12 +107,13 @@ async function run(root, executablePath, shots) {
   }
   root=path.resolve(root);
   fs.mkdirSync(shots,{recursive:true});
+  let liveOnly=false;
   const fixture=() => ({items:Array.from({length:6},(_,i) => ({asin:'B00000010'+i,
     title:i ? 'Steel kitchen kettle '+i : 'Steel kitchen kettle with temperature control',
-    price_cents:1500+i*100,list_price_cents:3000,monthlySold:[1200,10000,2500,5000,20000,50][i],
+    price_cents:1500+i*100,list_price_cents:liveOnly ? null : 3000,monthlySold:[1200,10000,2500,5000,20000,50][i],
     image:'https://m.media-amazon.com/images/I/photo.jpg',as_of:new Date().toISOString()}))});
   try {
-    for (const width of [390,1280]) for (const theme of ['light','dark']) for (const reduced of [false,true]) {
+    for (const width of [360,390,412,1280,1440]) for (const theme of ['light','dark']) for (const reduced of [false,true]) {
       const context=await browser.newContext({viewport:{width,height:1000},colorScheme:theme,
         reducedMotion:reduced ? 'reduce' : 'no-preference'});
       const calls=[],unexpected=[],errors=[];
@@ -58,6 +121,10 @@ async function run(root, executablePath, shots) {
       await context.route('**/*',async route => {
         const url=new URL(route.request().url());
         if (url.origin !== 'https://wowpriced.test') {
+          if (url.hostname === 'accounts.google.com') return route.fulfill({contentType:'application/javascript',body:
+            `window.google={accounts:{id:{initialize(o){this.options=o},renderButton(box){box.innerHTML='<button style="width:100%;min-height:52px;border:1px solid #dcdfe3;border-radius:999px;background:transparent;color:inherit;font:750 17px system-ui">G　Continue with Google</button>';box.firstChild.onclick=()=>this.options.callback({credential:'offline-fixture'})}}}};`});
+          if (url.hostname === 'account.wowpriced.test') return route.fulfill({contentType:'application/json',body:
+            JSON.stringify(url.pathname === '/api/google' ? {me:{email_verified:true,email:'fixture@example.invalid'}} : {ok:true})});
           if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',body:
             '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#f2f3f5"/><path d="M200 100Q270 80 250 170Q235 200 210 165M75 110L60 85L40 85L70 150L80 230Q150 250 220 230L210 110Z" fill="#b9c6cd" stroke="#263e46" stroke-width="10"/><ellipse cx="143" cy="110" rx="68" ry="14" fill="#5d7681"/></svg>'});
           unexpected.push(url.origin);return route.fulfill({status:204,body:''});
@@ -74,6 +141,7 @@ async function run(root, executablePath, shots) {
         if (candidate !== root && !candidate.startsWith(root+path.sep)) return route.fulfill({status:404,body:''});
         let file=candidate;
         if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file=path.join(file,'index.html');
+        if (!fs.existsSync(file) && fs.existsSync(file+'.html')) file+='.html';
         if (!fs.existsSync(file)) return route.fulfill({status:404,body:''});
         return route.fulfill({contentType:({'.html':'text/html','.json':'application/json','.js':'application/javascript',
           '.css':'text/css','.svg':'image/svg+xml'})[path.extname(file)] || 'application/octet-stream',body:fs.readFileSync(file)});
@@ -86,6 +154,12 @@ async function run(root, executablePath, shots) {
         await page.goto('https://wowpriced.test/'+slug+'/');
         await page.waitForFunction(() => typeof toolSubmit === 'function');
         assert.equal(await page.locator('#tool-result').isVisible(),false);
+        await page.waitForTimeout(reduced ? 0 : 800);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,'hero overflow');
+        if (mode === 'checker') await checkMeter(page.locator('.hero .gauge'),reduced);
+        if (mode === 'finder') assert.equal(await page.locator('.hero .tile').count(),6);
+        await page.screenshot({path:path.join(shots,`${mode}-hero-${width}-${theme}${reduced ? '-reduced' : ''}.png`),fullPage:true});
+        await checkJoin(page, '.tool-header>.join', path.join(shots,`${mode}-join-${width}-${theme}${reduced ? '-reduced' : ''}.png`));
         const before=calls.length;
         await page.locator('#q').fill('https://amazon.com/Steel-Kitchen-Kettle/dp/B000000100?tag=PRIVATE');
         await page.evaluate(() => {
@@ -106,6 +180,8 @@ async function run(root, executablePath, shots) {
           await page.waitForTimeout(500);
           assert.equal(await page.locator('#tool-result').isVisible(),false,'minimum step time is real');
         }
+        assert(await page.locator('#analyzer').evaluate(el => el.getBoundingClientRect().top < innerHeight),
+          'analysis progress must stay in view below the taller hero');
         await page.locator('#tool-result').waitFor({state:'visible',timeout:28000});
         const timings=await page.evaluate(() => ({steps:window.doneSteps,started:window.toolStarted}));
         assert.deepEqual(timings.steps.map(s => s.index),Array.from({length:mode === 'checker' ? 5 : 4},(_,i) => i));
@@ -115,6 +191,9 @@ async function run(root, executablePath, shots) {
         assert.equal(await page.locator('#tool-progress').getAttribute('aria-valuenow'),'100');
         assert(await page.locator('#verified-deals .product-card').count() > 0);
         if (mode === 'checker') {
+          await page.locator('#tool-result .gauge').scrollIntoViewIfNeeded();
+          await page.waitForTimeout(reduced ? 0 : 800);
+          await checkMeter(page.locator('#tool-result .gauge'),reduced);
           assert.equal(calls.length,before+1);
           assert.equal(await page.locator('#top-sellers .product-card').count(),5);
           assert((await page.locator('#tool-result').innerText()).includes('Big discount · 50% off list price'));
@@ -147,7 +226,7 @@ async function run(root, executablePath, shots) {
         assert.equal(audit.grids.length,2);
         for (const grid of audit.grids) {
           const label=`${slug} ${width}px ${theme}${reduced ? ' reduced motion' : ''} ${grid.label}`;
-          assert.equal(grid.columns,width === 390 ? 2 : 5,`${label}: ${grid.template}`);
+          assert.equal(grid.columns,width <= 760 ? 2 : 5,`${label}: ${grid.template}`);
           const cardWidth=(grid.width-grid.gap*(grid.columns-1))/grid.columns;
           for (const actual of grid.cards) if (grid.width>0)
             assert(Math.abs(actual-cardWidth)<1,`${label}: card width ${actual}, expected ${cardWidth}`);
@@ -180,13 +259,46 @@ async function run(root, executablePath, shots) {
           assert((await page.locator('#tool-result').innerText()).includes("Today's live price checks have reached their limit."));
           assert.equal(await page.locator('.steps [data-state=done]').count(),0,'failed work never ticks');
           failure=false;
+          liveOnly=true;
+          await page.reload();
+          await page.locator('#q').fill('https://amazon.com/dp/B000000100');
+          await page.locator('#tool-submit').click();
+          await page.locator('#tool-result').waitFor({state:'visible'});
+          await page.locator('#tool-result .gauge').scrollIntoViewIfNeeded();
+          await checkMeter(page.locator('#tool-result .gauge'),true);
+          assert.equal(await page.locator('#tool-result .gauge').getAttribute('data-meter-pct'),'0');
+          assert((await page.locator('#tool-result').innerText()).includes('Live Amazon price'));
+          liveOnly=false;
         }
         await page.close();
       }
+      const home=await context.newPage();
+      home.on('pageerror',error => errors.push(error.message));
+      await home.goto('https://wowpriced.test/');
+      await checkJoin(home, '#subscribe', path.join(shots,`home-join-${width}-${theme}${reduced ? '-reduced' : ''}.png`));
+      await home.close();
+      const noJS=await browser.newContext({viewport:{width,height:1000},javaScriptEnabled:false});
+      await noJS.route('**/*', async route => {
+        const url=new URL(route.request().url());
+        if (url.origin !== 'https://wowpriced.test') return route.fulfill({status:204,body:''});
+        let file=path.join(root,url.pathname);
+        if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file=path.join(file,'index.html');
+        if (!fs.existsSync(file) && fs.existsSync(file+'.html')) file+='.html';
+        return route.fulfill({status:fs.existsSync(file) ? 200 : 404,contentType:path.extname(file)==='.css' ? 'text/css' : 'text/html',body:fs.existsSync(file) ? fs.readFileSync(file) : ''});
+      });
+      for (const slug of ['','amazon-deal-checker/','amazon-discount-finder/']) {
+        const plain=await noJS.newPage();
+        await plain.goto('https://wowpriced.test/'+slug);
+        await plain.locator(slug ? '.tool-header>.join' : '#subscribe').click();
+        await plain.waitForURL('**/join');
+        assert.equal(await plain.locator('#join-email').count(),1,'no JS still reaches /join');
+        await plain.close();
+      }
+      await noJS.close();
       assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
       await context.close();
     }
-    console.log('Tool pages Chromium: 390/1280, light/dark, ordered real steps, timing/reduced motion, cards, tags, targets and overflow passed');
+    console.log('Tool pages Chromium: 360/390/412/1280/1440, light/dark, heroes/meters and lazy Join focus/escape/no-JS, ordered real steps, timing/reduced motion, cards, tags, targets and overflow passed');
   } finally {await browser.close();}
 }
 

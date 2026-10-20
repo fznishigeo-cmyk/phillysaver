@@ -14,7 +14,7 @@ const deal = {key:'verified', item:'Steel kitchen kettle', status:'alive', final
 function harness(mode='checker', reduced=false, response=fixture()) {
   let now = 0, serial = 0;
   const timers = new Map(), ticks = [], calls = [], events = [];
-  const makeElement = () => ({hidden:true, textContent:'', innerHTML:'', dataset:{}, style:{},
+  const makeElement = () => ({hidden:true, textContent:'', innerHTML:'', dataset:{}, style:{}, scrollIntoView(){},
     attributes:{}, setAttribute(key, value){this.attributes[key] = value;}});
   const ids = Object.fromEntries(['q','analyzer','analyzer-title','tool-status','tool-progress','tool-result',
     'top-sellers','verified-deals'].map(id => [id, makeElement()]));

@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 
 from ..savings import TOOL_LIST_BADGE_JS
-from . import search_analyze, search_boost, seo, tracking
+from . import search_analyze, search_boost, seo, tracking, tool_hero
 
 TEMPLATES = Path(__file__).with_name("templates")
 PAGES = {
@@ -72,7 +72,8 @@ def script(cfg):
     exclude = search_boost.adult_pattern(cfg.search_boost["exclude_words"])
     shared += "\nvar toolSettings = " + json.dumps({"tag": cfg.affiliate_amazon_tag, "exclude": exclude,
         "live": search_analyze.enabled(cfg)}, separators=(",", ":")).replace("<", "\\u003c") + ";\n"
-    return shared + (TEMPLATES / "tool-pages.js").read_text()
+    result = shared + (TEMPLATES / "tool-pages.js").read_text()
+    return tool_hero.script(result) if tool_hero.enabled(cfg) else result
 
 
 def _tracking(cfg):
@@ -104,7 +105,7 @@ def footer_links(out):
             path.write_text(updated)
 
 
-def publish(out, cfg, now, site_url, disclosure):
+def publish(out, cfg, now, site_url, disclosure, rows=()):
     from .site import linked_disclosure
 
     settings = getattr(cfg, "tool_pages", {})
@@ -117,6 +118,9 @@ def publish(out, cfg, now, site_url, disclosure):
     if not settings.get("enabled"):
         return []
     css, js = (TEMPLATES / "tool-pages.css").read_text(), script(cfg)
+    if tool_hero.enabled(cfg):
+        css += (TEMPLATES / "tool-hero.css").read_text()
+        rows = tool_hero.candidates(rows, cfg)
     assets = {}
     for suffix, content in (("css", css), ("js", js)):
         (out / ("tool-pages." + suffix)).write_text(content)
@@ -146,7 +150,8 @@ def publish(out, cfg, now, site_url, disclosure):
             head += '<meta name="robots" content="noindex,nofollow">\n'
         nav = ''.join(f'<a href="/{other}/"' + (' aria-current="page"' if other == slug else '')
                       + '>' + p["name"].replace("Amazon ", "") + '</a>' for other, p in PAGES.items())
-        html = seo._fill(base, TITLE=escape(page["title"]), NAME=page["name"], INTRO=escape(page["intro"]),
+        template = tool_hero.template(base, page, rows) if tool_hero.enabled(cfg) else base
+        html = seo._fill(template, TITLE=escape(page["title"]), NAME=page["name"], INTRO=escape(page["intro"]),
             HEAD=head, BRAND=brand, FAVICON=favicon, NAV=nav, MODE=page["mode"], BUTTON=page["button"],
             CSS_VERSION=assets["css"], JS_VERSION=assets["js"],
             STEPS=''.join('<li data-state="pending">' + escape(label) + '</li>' for label in page["steps"]),

@@ -101,7 +101,7 @@ def test_metadata_visible_faq_copy_sitemap_and_indexnow(tmp_path, public):
         html = (out / slug / "index.html").read_text()
         page = Page(html, "/" + slug + "/")
         assert page.first("title").text() == spec["title"]
-        assert page.first("h1").text() == spec["name"]
+        assert spec["name"] in page.first("h1").text()
         assert page.indexable is public
         assert ('<meta name="robots" content="noindex,nofollow">' in html) is (not public)
         assert '<link rel="canonical" href="' + url + '">' in html

@@ -364,6 +364,7 @@ class AppConfig:
     all_discounts_button: bool = False
     discounts_from_link: bool = False
     tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
+    tool_pages_hero: bool = False
     search_polish_1019: bool = False
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
@@ -1119,6 +1120,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.phone_timer_raise = g("phone_timer_raise", default=False)
     if type(cfg.phone_timer_raise) is not bool:
         raise ValueError("phone_timer_raise must be a boolean")
+    cfg.tool_pages_hero = g("tool_pages_hero", default=False)
+    if type(cfg.tool_pages_hero) is not bool:
+        raise ValueError("tool_pages_hero must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

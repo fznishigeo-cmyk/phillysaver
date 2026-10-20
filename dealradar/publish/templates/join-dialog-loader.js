@@ -1,0 +1,1 @@
+document.addEventListener('click',function(e){var a=e.target.closest('header #subscribe[href="/join"],.tool-header>.join[href="/join"]');if(!a||e.button||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||a.target)return;e.preventDefault();e.stopImmediatePropagation();import('/join-dialog.js?v=__VERSION__').then(function(m){m.openJoin(a)}).catch(function(){location.href=a.href})},true);

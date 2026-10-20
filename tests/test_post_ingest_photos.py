@@ -232,6 +232,7 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     # The OFF digest was recorded with the tool pages in preview and before task 330.
     raw["tool_pages"] = {"enabled": True, "public": False}
     raw["phone_timer_raise"] = False
+    raw["tool_pages_hero"] = False
     path.write_text(yaml.safe_dump(raw))
     fetch = pipeline._fetch_all
     canned = e2e._canned_deals

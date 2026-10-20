@@ -242,7 +242,23 @@ async function walk(page, doc, device) {
       check(/<input\b[^>]*type=["']email["']/i.test(body), "Join page missing email field");
       check(body.includes('id="join-step-one"') && body.includes('id="join-email-fields" hidden'),
         "Join page must start on step one");
-      if (await page.evaluate(() => innerWidth > 640)) {
+      const headerDialog = await page.locator('script[src^="/join-loader.js"]').count();
+      if (headerDialog) {
+        try {
+          await page.locator("#subscribe").click();
+          await page.locator("#header-join-dialog").waitFor({ state: "visible" });
+          const card = page.frameLocator("#header-join-dialog iframe");
+          await card.locator("#join-email-choice").click();
+          await card.locator('#join-email-fields input[type="email"]').waitFor({ state: "visible" });
+          check(await card.locator('#join-email-fields button[type="submit"]').isDisabled(),
+            "Continue must be disabled without an email");
+          await card.locator("#join-back").click();
+          await card.locator("#join-email-choice").waitFor({ state: "visible" });
+        } finally { await page.keyboard.press("Escape"); }
+        await page.locator("#header-join-dialog").waitFor({ state: "detached" });
+        check(await page.locator("#subscribe").evaluate(el => document.activeElement === el),
+          "Join dialog must return focus to the header");
+      } else if (await page.evaluate(() => innerWidth > 640)) {
         try {
           await page.locator("#subscribe").click();
           await page.locator("#join-prompt").waitFor({ state: "visible" });

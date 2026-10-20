@@ -244,6 +244,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tool heroes + header Join (Codex task 335, 2026-10-19; uncommitted):**
+  Approved mock CSS behind strict `tool_pages_hero` (default false, shipped true);
+  OFF preserves a69031d bytes. Meter/example and six-photo cloud use only final
+  verified public deals; gauge math stays in savings.py. Header Join lazily opens
+  the shared /join card/handlers in an isolated dialog, with /join href retained.
+  Fixed phone HTML gzip **76,302 → 76,332 bytes**, **1,028 bytes headroom**;
+  targeted suite **173 passed, 4 Chromium skips**; final focused and Node checks pass.
+  Native screenshots/focus/overflow remain with the operator.
+  Browser harness covers 360/390/412/1280/1440 light/dark and no-JS Join; hourly
+  Join check updated. No full suite, commit or push.
 - **Phone timer alignment (Codex task 330, 2026-10-19; uncommitted):** Strict
   `phone_timer_raise` defaults false/ships true with the operator's quote.
   At <=640px the tagline's 19.5px line sits atop its legacy 40px box:

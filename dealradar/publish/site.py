@@ -47,6 +47,7 @@ from . import header_polish
 from . import all_discounts
 from . import discounts_from_link
 from . import tool_pages
+from . import join_dialog
 from . import search_polish_1019
 from . import phone_tagline_count
 from . import timer_pill_ring
@@ -1150,6 +1151,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = timer_pill_ring.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
+    if getattr(cfg, "tool_pages_hero", False) is True:
+        site_version = hashlib.sha256((site_version + "tool-pages-hero").encode()).hexdigest()[:12]
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1430,7 +1433,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     timer_pill_ring.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)
-    seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"]))
+    seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
+                                       pick_order(teaser + spotlight_only, cfg.front_page)))
+    join_dialog.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
