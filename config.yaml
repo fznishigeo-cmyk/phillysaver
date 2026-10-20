@@ -211,6 +211,7 @@ buttons_to_tools: true  # operator 2026-10-20 ~03:10Z: "make the Ai Analysis but
 amazon_price_cap: true  # operator 2026-10-20 ~14:00Z: "yes... implement... but on off switch" — the three yellow Amazon exits (search results, Discount Finder, Deal Checker similar deals) show only items up to amazon_price_cap_usd; false = no cap
 amazon_price_cap_usd: 50
 tools_new_tab: true  # operator 2026-10-20 ~16:05Z: "when i click Ai Analysis or All Discount button, please make it open in a new window" — "new tab i mean"
+tool_buttons_outside: true  # operator 2026-10-20 ~20:25Z: "put the AI analysis in all discount buttons ... outside of the search bar ... name the buttons discount finder ... and deal checker" — phone: blue Discount Finder → always there, same-size Deal Checker → underneath ("→ arrows for both buttons")
 checker_similar_heading: true  # operator 2026-10-20 ~16:20Z: Deal Checker yellow → the product itself; "Top sellers like this on Amazon" → "make this a button thats yellow.. that takes to see similar deals" (search by the product name)
 tool_faq_wording: true  # operator 2026-10-20 ~16:45Z: "Yes. This tool is free to use. (DONT MENTION THE OTHER TOOL)" ... "opens Amazon's best discount results" — "for both checkers"
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."

@@ -244,6 +244,7 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     raw["tools_new_tab"] = False
     raw["checker_similar_heading"] = False
     raw["tool_faq_wording"] = False
+    raw["tool_buttons_outside"] = False
     pre_hide_deal_site_links_raw(raw)  # recorded while ASIN deals still opened the source post
     pre_keepa_focus_finder_raw(raw)
     raw["search"]["tokens_per_day"] = 10000  # recorded before the 2026-10-20 raise

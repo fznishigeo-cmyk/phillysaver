@@ -198,6 +198,7 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("tool_buttons_outside", None)
     pre_keepa_focus_finder_raw(config)
     pre_hide_deal_site_links_raw(config)
     config.pop("tool_pages_1020", None)
@@ -536,6 +537,13 @@ def pre_keepa_focus_finder_raw(config):
 
 def pre_search_tokens_40000(cfg):
     """Before the 2026-10-20 search allowance raise; search-config.json is published."""
+    pre_tool_buttons_outside(cfg)
     if cfg.search.get("tokens_per_day") == 40000:
         cfg.search = dict(cfg.search, tokens_per_day=10000)
+    return cfg
+
+
+def pre_tool_buttons_outside(cfg):
+    """Before Deal Checker / Discount Finder moved outside the search bar (operator 2026-10-20)."""
+    cfg.tool_buttons_outside = False
     return cfg

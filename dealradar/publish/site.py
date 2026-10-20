@@ -51,7 +51,7 @@ from . import tool_pages
 from . import tool_pages_1020
 from . import join_dialog
 from . import search_polish_1019
-from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab
+from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab, tool_buttons_outside
 from . import phone_tagline_count
 from . import timer_pill_ring
 from . import phone_timer_raise
@@ -1194,6 +1194,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = buttons_to_tools.site_version(site_version, cfg)
     site_version = amazon_price_cap.site_version(site_version, cfg)
     site_version = tools_new_tab.site_version(site_version, cfg)
+    site_version = tool_buttons_outside.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1482,6 +1483,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     comments.publish(out, cfg)
     amazon_price_cap.publish(out, cfg)
     tools_new_tab.publish(out, cfg)
+    tool_buttons_outside.publish(out, cfg)
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
                                        pick_order(teaser + spotlight_only, cfg.front_page)))
     join_dialog.publish(out, cfg)

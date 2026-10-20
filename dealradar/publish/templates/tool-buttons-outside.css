@@ -1,0 +1,16 @@
+/* Operator 2026-10-20: Deal Checker / Discount Finder sit outside the search bar. */
+:is(.search,#event-search).tools-outside .searchfield #q{padding-right:52px}
+:is(.search,#event-search).tools-outside .searchfield #clearsearch{right:6px}
+.tool-buttons{display:flex;gap:8px}
+.tool-buttons .tool-arrow{margin-left:6px}
+:is(.search,#event-search) .tool-buttons :is(#analyze-search,#search-discounts){position:relative;inset:auto;display:flex;align-items:center;justify-content:center;width:auto;min-height:52px;padding:0 22px;white-space:nowrap;font-size:15px;font-weight:800}
+@media(min-width:900px){
+:is(.search,#event-search).tools-outside{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;align-items:center}
+.tools-outside>:not(.searchfield):not(.tool-buttons){grid-column:1/-1}
+.tool-buttons #analyze-search{order:-1}
+.tool-buttons .tool-arrow{display:none}
+}
+@media(max-width:899px){
+.tool-buttons{flex-direction:column;width:100%;margin-top:8px}
+:is(.search,#event-search) .tool-buttons :is(#analyze-search,#search-discounts){width:100%;min-height:48px}
+}

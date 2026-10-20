@@ -240,6 +240,7 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     tools = 4 if cfg.tool_pages["enabled"] else 0  # two pages and two shared assets
     tools += 3 if cfg.tool_pages_hero else 0  # lazy Join card/module and tiny header loader
     tools += int(cfg.tool_pages_1020 and cfg.tool_pages['public'])  # shared homepage tool/ticker stylesheet
+    tools += int(cfg.tool_buttons_outside)  # tool buttons outside the search bar stylesheet
     assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search + shared + tools
 
 

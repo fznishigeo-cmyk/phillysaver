@@ -405,6 +405,7 @@ class AppConfig:
     buttons_to_tools: bool = False
     amazon_price_cap: bool = False
     tools_new_tab: bool = False
+    tool_buttons_outside: bool = False
     checker_similar_heading: bool = False
     tool_faq_wording: bool = False
     amazon_price_cap_usd: float = 50.0
@@ -1189,6 +1190,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.tools_new_tab = g("tools_new_tab", default=False)
     if type(cfg.tools_new_tab) is not bool:
         raise ValueError("tools_new_tab must be a boolean")
+    cfg.tool_buttons_outside = g("tool_buttons_outside", default=False)
+    if type(cfg.tool_buttons_outside) is not bool:
+        raise ValueError("tool_buttons_outside must be a boolean")
     cfg.amazon_price_cap = g("amazon_price_cap", default=False)
     if type(cfg.amazon_price_cap) is not bool:
         raise ValueError("amazon_price_cap must be a boolean")

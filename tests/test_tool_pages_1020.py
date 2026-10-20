@@ -140,6 +140,7 @@ def test_home_links_public_scope_variants_and_idempotence(tmp_path, variant):
     cfg = load_config()
     cfg.tool_pages_1020_home_links = True
     cfg.tool_pages_1020_phone_links = variant
+    cfg.tool_buttons_outside = False  # these links are placed relative to the in-bar buttons
     out, *_ = render(tmp_path, cfg, rows())
     html = (out / 'index.html').read_text()
     page = Page(html, '/')
