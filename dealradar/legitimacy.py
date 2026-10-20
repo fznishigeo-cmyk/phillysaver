@@ -22,7 +22,10 @@ def fingerprint(deal, cfg) -> str:
     facts["flags"] = sorted(set(deal.get("flags") or []) & {
         "unit_mismatch", "pack_mismatch", "per_unit", "range"})
     facts["has_keepa_observation"] = parse_iso(deal.get("keepa_price_seen_at") or "") is not None
-    knobs = {k: v for k, v in vars(cfg).items() if k.startswith("audit_") and k != "audit_mode"}
+    # Retention clocks do not change the verdict or invalidate paid reviews.
+    knobs = {k: getattr(cfg, k) for k in (
+        "audit_near_price_pct", "audit_history_min_near", "audit_history_min_span_h",
+        "audit_extreme_pct", "audit_round_price_multiple", "audit_reference_max_excess_pct")}
     return _hash([1, facts, knobs, cfg.min_pct, cfg.history_min_observations])
 
 
@@ -143,24 +146,37 @@ def daily_stats(db, cfg, now):
     stats["day"] = since.date().isoformat()
     if not db.conn.execute("SELECT 1 FROM sqlite_master WHERE name='legitimacy_audits'").fetchone():
         return {"unavailable": "snapshot predates legitimacy audit"}
-    rows = db.conn.execute("SELECT * FROM legitimacy_audits WHERE observed_at>=? AND observed_at<?",
-                           (iso(since), iso(until))).fetchall()
-    comparisons = db.conn.execute("SELECT reason, agreement FROM legitimacy_audits"
+    rows = [dict(r) for r in db.conn.execute("SELECT * FROM legitimacy_audits WHERE observed_at>=? AND observed_at<? AND mode!=''",
+                           (iso(since), iso(until)))]
+    comparisons = [dict(r) for r in db.conn.execute("SELECT reason, agreement FROM legitimacy_audits"
                                   " WHERE compared_at>=? AND compared_at<?",
-                                  (iso(since), iso(until))).fetchall()
-    batches = db.conn.execute("SELECT * FROM legitimacy_batches WHERE observed_at>=? AND observed_at<?",
-                              (iso(since), iso(until))).fetchall()
+                                  (iso(since), iso(until)))]
+    batches = [dict(r) for r in db.conn.execute("SELECT * FROM legitimacy_batches WHERE observed_at>=? AND observed_at<? AND model!=''",
+                              (iso(since), iso(until)))]
+    from .state_growers import exists
+    if exists(db, "state_audit_counts"):
+        batch_totals = {}
+        for kind, dimensions, n in db.conn.execute("SELECT kind,dimensions,n FROM state_audit_counts WHERE stamp=? AND kind LIKE 'legitimacy_%'", (since.date().isoformat(),)):
+            values = json.loads(dimensions)
+            if kind == "legitimacy_audits":
+                rows.append(dict(zip(("outcome", "reason", "mode"), values), n=n))
+            elif kind == "legitimacy_comparisons":
+                comparisons.append(dict(reason=values[0], agreement=values[1], n=n))
+            elif kind.startswith("legitimacy_batches"):
+                batch_totals.setdefault(tuple(values), {})[kind.partition(":")[2] or "n"] = n
+        for (mode, model), values in batch_totals.items():
+            batches.append(dict(mode=mode, model=model, deals_avoided=values.get("deals_avoided", 0), calls_avoided=values.get("calls_avoided", 0), estimated_usd_saved=None if values.get("unknown_cost") else values.get("estimated_usd_saved", 0)))
     if not rows and not comparisons and not batches:
         return {"unavailable": "no audit samples yesterday UTC"}
     stats["modes"] = sorted({r["mode"] for r in rows})
     for row in rows:
-        stats["outcomes"][row["outcome"]] += 1
+        stats["outcomes"][row["outcome"]] += row.get("n", 1)
         reason = row["reason"]
-        stats["reasons"][reason] = stats["reasons"].get(reason, 0) + 1
+        stats["reasons"][reason] = stats["reasons"].get(reason, 0) + row.get("n", 1)
     for row in comparisons:
         bucket = stats["agreement_by_reason"].setdefault(row["reason"], {"compared": 0, "agreed": 0})
-        bucket["compared"] += 1
-        bucket["agreed"] += row["agreement"]
+        bucket["compared"] += row.get("n", 1)
+        bucket["agreed"] += row["agreement"] * row.get("n", 1)
         bucket["rate"] = bucket["agreed"] / bucket["compared"]
     stats["models"] = sorted({r["model"] for r in batches})
     for row in batches:

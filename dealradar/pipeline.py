@@ -2416,6 +2416,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     kind = "fast" if fast_lane else "hourly"
 
     db = DB(db_path)
+    db.state_retention_337 = cfg.state_retention_337
     db.compact_deal_payloads = cfg.compact_deal_payloads
     db.source_audit_posts_days = cfg.source_audit_posts_days
     db.accuracy_run_key = run_key

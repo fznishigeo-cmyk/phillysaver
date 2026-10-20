@@ -423,6 +423,16 @@ def head_snippet(cfg) -> str:
     if getattr(cfg, "all_discounts_button", False) is True:
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    search_discounts: { ga4Only: true },')
+    if getattr(cfg, "buttons_to_tools", False) is True:
+        dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
+                                    '    search_similar_deals: { ga4Only: true },')
+        dispatch = dispatch.replace("  window.wpTrack = function (name, params) {", """\
+  window.wpTrack = function (name, params) {
+    if ((name === "search_analyze" || name === "search_discounts") && params && params.to_tool === true) {
+      if (on.ga4) { try { window.gtag("event", name, {to_tool:true, send_to:on.ga4}); } catch (e) {} }
+      return;
+    }
+""")
     if cfg.search_amazon and cfg.affiliate_amazon_tag:
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (name === "search_amazon") {

@@ -372,6 +372,7 @@ class AppConfig:
     search_buttons_1019: bool = False
     search_discounts_button: bool = False
     card_click_1020: bool = False
+    buttons_to_tools: bool = False
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
@@ -670,6 +671,15 @@ class AppConfig:
     compact_deal_payloads: bool = False
     compact_accuracy_samples: bool = False
     compact_click_exposure: bool = False
+    state_retention_337: bool = False
+    api_cache_days: int = 1
+    post_receipt_details_days: int = 7
+    audit_detail_days: int = 14
+    audit_hot_days: int = 1
+    click_raw_days: int = 30
+    accuracy_detail_days: int = 14
+    accuracy_last_per_deal: int = 24
+    terminal_indexnow_versions_days: int = 1
     state_maintenance_max_rows: int = 4096
     state_maintenance_budget_s: float = 1.0
     state_warn_enc_mb: float | None = None
@@ -1127,6 +1137,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.card_click_1020 = g("card_click_1020", default=False)
     if type(cfg.card_click_1020) is not bool:
         raise ValueError("card_click_1020 must be a boolean")
+    cfg.buttons_to_tools = g("buttons_to_tools", default=False)
+    if type(cfg.buttons_to_tools) is not bool:
+        raise ValueError("buttons_to_tools must be a boolean")
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")
@@ -1704,6 +1717,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         value = g("retention", name, default=False)
         if type(value) is not bool:
             raise ValueError(f"retention.{name} must be a boolean")
+        setattr(cfg, name, value)
+    cfg.state_retention_337 = g("retention", "state_retention_337", default=False)
+    if type(cfg.state_retention_337) is not bool:
+        raise ValueError("retention.state_retention_337 must be a boolean")
+    for name in ("api_cache_days", "post_receipt_details_days", "terminal_indexnow_versions_days",
+                 "audit_detail_days", "audit_hot_days", "click_raw_days", "accuracy_detail_days", "accuracy_last_per_deal"):
+        value = g("retention", name, default=getattr(cfg, name))
+        if type(value) is not int or not 1 <= value <= 3650:
+            raise ValueError(f"retention.{name} must be an integer in 1..3650")
         setattr(cfg, name, value)
     cfg.state_maintenance_max_rows = g("retention", "state_maintenance_max_rows", default=4096)
     cfg.state_maintenance_budget_s = g("retention", "state_maintenance_budget_s", default=1.0)

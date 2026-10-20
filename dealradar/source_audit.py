@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 
+from .state_growers import posts_relation, known_sql, audit_relation, audit_known_sql
 from . import rank, util
 from .config import get_secret, load_sources
 from .db import DB, SCHEMA
@@ -140,7 +141,7 @@ def record_intake_cost(db, cfg, now, run_key, extract_by_source, posts, processe
             handled = Counter({s: v.get("calls", 0) for s, v in extract_by_source.items()})
         if not sum(handled.values()):
             handled = Counter({r["source_name"]: r["n"] for r in db.conn.execute(
-                "SELECT source_name,COUNT(*) AS n FROM posts_seen WHERE first_seen_at>=?"
+                f"SELECT source_name,COUNT(*) AS n FROM {posts_relation(db)} AS posts_seen WHERE first_seen_at>=?"
                 " AND first_seen_at<=? GROUP BY source_name",
                 (util.iso(now - timedelta(days=cfg.intake_window_days)), util.iso(now)))})
         shared = delta - direct_total * scale
@@ -206,7 +207,7 @@ def intake_history(db, cfg, now):
         (util.iso(start), util.iso(now), util.iso(start), util.iso(now)))
     if any(recorded_costs.get(r["run_key"], 0) + 1e-9 < db.spend_usd_for_run(r["run_key"]) for r in paid_runs):
         return dict(result, unavailable="intake cost observation gap")
-    for row in db.conn.execute("SELECT source_name,COUNT(*) AS n FROM posts_seen"
+    for row in db.conn.execute(f"SELECT source_name,COUNT(*) AS n FROM {posts_relation(db)} AS posts_seen"
                                " WHERE first_seen_at>=? AND first_seen_at<=? GROUP BY source_name",
                                (util.iso(start), util.iso(now))):
         bucket(row["source_name"])["posts"] = row["n"]
@@ -289,8 +290,8 @@ def intake_deferred(db, sources, now):
     ages = {s: max(0.0, (now - (util.parse_iso(health.get(s, {}).get("updated_at") or "") or since))
                    .total_seconds() / 3600) for s in names}
     if _table_exists(db, "source_audit_posts"):
-        for row in db.conn.execute("SELECT source_name,MIN(first_seen_at) AS oldest FROM source_audit_posts a"
-                                   " WHERE NOT EXISTS (SELECT 1 FROM posts_seen p WHERE p.content_hash=a.content_hash)"
+        for row in db.conn.execute(f"SELECT source_name,MIN(first_seen_at) AS oldest FROM {audit_relation(db)} a"
+                                   f" WHERE NOT {known_sql(db, 'a.content_hash')}"
                                    " GROUP BY source_name"):
             if row["source_name"] in names:
                 age = max(0.0, (now - util.parse_iso(row["oldest"])).total_seconds() / 3600)
@@ -324,7 +325,7 @@ def intake_source_order(sources, weights, history, db, cfg, now, fast_lane):
 def intake_due_posts(db, names, cfg, now):
     """A fresh fetch cannot conceal starvation at the AI read budget."""
     last = {r["source_name"]: util.parse_iso(r["last_read"]) for r in db.conn.execute(
-        "SELECT source_name,MAX(first_seen_at) AS last_read FROM posts_seen GROUP BY source_name")}
+        f"SELECT source_name,MAX(first_seen_at) AS last_read FROM {posts_relation(db)} AS posts_seen GROUP BY source_name")}
     since = util.parse_iso(db.meta_get("intake_since") or "") or now
     ages = {s: max(0.0, (now - last.get(s, since)).total_seconds() / 3600) for s in names}
     return sorted((s for s in names if ages[s] >= cfg.intake_max_wait_hours), key=lambda s: -ages[s])
@@ -380,16 +381,14 @@ def _history(db, source, now, days, since_tracking):
     since = util.iso(now - timedelta(days=days))
     end = util.iso(now)
     parsed = db.conn.execute(
-        "SELECT COUNT(*) FROM posts_seen WHERE source_name=? AND first_seen_at>=?"
+        f"SELECT COUNT(*) FROM {posts_relation(db)} AS posts_seen WHERE source_name=? AND first_seen_at>=?"
         " AND first_seen_at<=?", (source.name, since, end)).fetchone()[0]
     tracked = _table_exists(db, "source_audit_posts")
-    seen_sql = "SELECT content_hash FROM posts_seen WHERE source_name=? AND first_seen_at>=? AND first_seen_at<=?"
+    seen_sql = f"SELECT content_hash FROM {posts_relation(db)} AS posts_seen WHERE source_name=? AND first_seen_at>=? AND first_seen_at<=?"
     args = (source.name, since, end)
     if tracked:
-        seen_sql += (" AND NOT EXISTS (SELECT 1 FROM source_audit_posts a"
-                     " WHERE a.source_name=posts_seen.source_name"
-                     " AND a.content_hash=posts_seen.content_hash)")
-        seen_sql += " UNION SELECT content_hash FROM source_audit_posts WHERE source_name=? AND first_seen_at>=? AND first_seen_at<=?"
+        seen_sql += " AND NOT " + audit_known_sql(db,"posts_seen.source_name","posts_seen.content_hash")
+        seen_sql += f" UNION SELECT content_hash FROM {audit_relation(db)} WHERE source_name=? AND first_seen_at>=? AND first_seen_at<=?"
         args += args
     seen = db.conn.execute("SELECT COUNT(*) FROM (" + seen_sql + ")", args).fetchone()[0]
     complete = since_tracking is not None and since_tracking <= now - timedelta(days=days)
@@ -401,7 +400,7 @@ def _history(db, source, now, days, since_tracking):
             "SELECT COALESCE(SUM(extracted),0), COALESCE(SUM(evidence),0),"
             " COALESCE(SUM(duplicate),0), COALESCE(SUM(below_floor),0),"
             " COALESCE(SUM(critic),0), COALESCE(SUM(dead),0), COALESCE(SUM(other),0)"
-            " FROM source_audit_posts WHERE source_name=? AND parsed_at>=? AND parsed_at<=?",
+            f" FROM {audit_relation(db)} WHERE source_name=? AND parsed_at>=? AND parsed_at<=?",
             (source.name, since, end)).fetchone()
         counts.update(zip(("extracted", "evidence", "duplicate", "below_floor",
                            "critic", "dead", "other"), row))

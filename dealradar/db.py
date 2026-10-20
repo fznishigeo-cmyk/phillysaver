@@ -452,13 +452,18 @@ class DB:
     def __init__(self, path: str | Path = "state.db", *, read_only: bool = False) -> None:
         self.path = str(path)
         self.compact_deal_payloads = False
+        self.state_retention_337 = False
         self.source_audit_posts_days = None
         if read_only:
             self.conn = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True)
             self.conn.row_factory = sqlite3.Row
+            from .state_growers import post_hash
+            self.conn.create_function("post_hash", 1, post_hash, deterministic=True)
             return
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
+        from .state_growers import post_hash
+        self.conn.create_function("post_hash", 1, post_hash, deterministic=True)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
@@ -529,11 +534,18 @@ class DB:
             "(source_name, content_hash, first_seen_at) SELECT ?,?,?")
         # A processed post whose shorter audit window ended is not a new
         # discovery. Its existing posts_seen receipt still prevents re-parsing.
-        if self.source_audit_posts_days is not None:
-            sql += " WHERE NOT EXISTS (SELECT 1 FROM posts_seen WHERE content_hash=?)"
+        from .state_growers import exists, known_sql
+        cold = exists(self, "posts_seen_cold")
+        guard = self.source_audit_posts_days is not None or cold
+        if guard:
+            sql += " WHERE NOT " + known_sql(self, "?")
+        cold_audits = exists(self, "source_audit_posts_cold")
+        if cold_audits:
+            sql += (" AND" if guard else " WHERE") + " NOT EXISTS (SELECT 1 FROM source_audit_posts_cold WHERE hash=post_hash(?) AND source_name=?)"
         self.conn.executemany(sql, [
             (p.source_name, p.content_hash, iso(now)) +
-            ((p.content_hash,) if self.source_audit_posts_days is not None else ()) for p in posts])
+            ((p.content_hash,) * (2 if cold else 1) if guard else ()) +
+            ((p.content_hash,p.source_name) if cold_audits else ()) for p in posts])
         self.conn.commit()
 
     def audit_parsed(self, post: RawPost, counts: dict[str, int], now: datetime) -> None:
@@ -550,13 +562,20 @@ class DB:
         self.conn.commit()
 
     def post_is_known(self, content_hash: str) -> bool:
-        row = self.conn.execute(
-            "SELECT 1 FROM posts_seen WHERE content_hash=?", (content_hash,)
-        ).fetchone()
-        return row is not None
+        from .state_growers import exists, post_hash
+        if self.conn.execute("SELECT 1 FROM posts_seen WHERE content_hash=?", (content_hash,)).fetchone():
+            return True
+        return exists(self, "posts_seen_cold") and self.conn.execute(
+            "SELECT 1 FROM posts_seen_cold WHERE hash=?", (post_hash(content_hash),)).fetchone() is not None
 
     def record_post(self, post: RawPost, now: datetime) -> bool:
         """Insert if unseen. Returns True when the post is new."""
+        from .state_growers import exists
+        if exists(self, "posts_seen_cold") and not self.conn.in_transaction:
+            self.conn.execute("BEGIN IMMEDIATE")
+        if self.post_is_known(post.content_hash):
+            self.conn.commit()
+            return False
         try:
             self.conn.execute(
                 "INSERT INTO posts_seen(source_name, uid, url, content_hash, published_at, first_seen_at)"
@@ -564,6 +583,12 @@ class DB:
                 (post.source_name, post.uid, post.url, post.content_hash,
                  iso(post.published_at), iso(now)),
             )
+            high = int(self.meta_get("post_id_high_water") or 0)
+            if high:
+                rowid = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                if rowid <= high:
+                    self.conn.execute("UPDATE posts_seen SET id=? WHERE id=?", (high + 1, rowid))
+                    self.conn.execute("UPDATE meta SET v=? WHERE k='post_id_high_water'", (str(high + 1),))
             self.conn.commit()
             return True
         except sqlite3.IntegrityError:
@@ -573,6 +598,11 @@ class DB:
         row = self.conn.execute(
             "SELECT first_seen_at FROM posts_seen WHERE content_hash=?", (content_hash,)
         ).fetchone()
+        if row is None:
+            from .state_growers import exists, post_hash, cold_seen_sql
+            if exists(self, "posts_seen_cold"):
+                row = self.conn.execute(f"SELECT {cold_seen_sql()} AS first_seen_at FROM posts_seen_cold WHERE hash=?",
+                                        (post_hash(content_hash),)).fetchone()
         return parse_iso(row["first_seen_at"]) if row else None
 
     def cached_post_parse(self, fingerprint: str, now: datetime,
@@ -1452,6 +1482,7 @@ class DB:
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
               fast_lane: bool = False, deadline: float | None = None) -> dict[str, Any] | None:
+        growers_on = state_retention is not None and "retention_337" in state_retention
         if incremental_cache_enabled and run_key is None:
             raise ValueError("incremental cache maintenance requires a run key")
         if state_retention is not None and (run_key is None or not self.conn.execute(
@@ -1475,8 +1506,9 @@ class DB:
                                              timedelta(hours=appeal_scores_ttl_h))),))
         for table in (("accuracy_samples",) if state_retention is None else ()) + (
                 "accuracy_extra_runs", "accuracy_extra_reads"):
-            self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
-                              (iso(now - timedelta(days=35)),))
+            if not (growers_on and table == "accuracy_extra_runs"):
+                self.conn.execute(f"DELETE FROM {table} WHERE checked_at < ?",
+                                  (iso(now - timedelta(days=35)),))
         if state_retention is None:
             from .accuracy import compact_exists
             if compact_exists(self):
@@ -1522,12 +1554,16 @@ class DB:
         params = (cutoff, cutoff, cutoff[:10])
         self.conn.execute("DELETE FROM llm_reservations WHERE call_key IN (" + old_calls + ")", params)
         self.conn.execute("DELETE FROM llm_calls WHERE call_key IN (" + old_calls + ")", params)
-        self.conn.execute("DELETE FROM second_opinion_yield WHERE observed_at < ?", (cutoff,))
-        self.conn.execute("DELETE FROM critic_tier_batches WHERE day < ?", (cutoff[:10],))
-        self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
-                          (iso(now - timedelta(days=run_stats_days)),))
-        self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take_run:*' AND v < ?",
-                          (iso(now - timedelta(days=min(30, run_stats_days))),))
+        if not growers_on:
+            self.conn.execute("DELETE FROM second_opinion_yield WHERE observed_at < ?", (cutoff,))
+        if not growers_on:
+            self.conn.execute("DELETE FROM critic_tier_batches WHERE day < ?", (cutoff[:10],))
+        if not growers_on:
+            self.conn.execute("DELETE FROM run_stats WHERE started_at < ?",
+                              (iso(now - timedelta(days=run_stats_days)),))
+        if not growers_on:
+            self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take_run:*' AND v < ?",
+                              (iso(now - timedelta(days=min(30, run_stats_days))),))
         self.conn.execute("DELETE FROM meta WHERE k GLOB 'ai_take_publish:*'")
         # Retire the old per-facts hashed keys (prompt v1); current caches are
         # one row per page, with a bounded history inside that row.
@@ -1539,7 +1575,8 @@ class DB:
         self.conn.execute("DELETE FROM keepa_recheck_yield WHERE day < ?",
                           (iso(now - timedelta(days=run_stats_days))[:10],))
         yield_cutoff = iso(now - timedelta(days=run_stats_days))
-        self.conn.execute("DELETE FROM efficiency_runs WHERE started_at < ?", (yield_cutoff,))
+        if not growers_on:
+            self.conn.execute("DELETE FROM efficiency_runs WHERE started_at < ?", (yield_cutoff,))
         if self.meta_get("efficiency_since"):
             self.meta_set("efficiency_retained_since", max(
                 self.meta_get("efficiency_retained_since") or "", yield_cutoff))
@@ -1548,7 +1585,8 @@ class DB:
                              ("ai_yield_events", "observed_at"),
                              ("ai_yield_runs", "started_at"),
                              ("ai_prefilter_posts", "first_seen_at")):
-            self.conn.execute(f"DELETE FROM {table} WHERE {stamp} < ?", (yield_cutoff,))
+            if not (growers_on and table in ("legitimacy_audits", "legitimacy_batches", "ai_yield_runs")):
+                self.conn.execute(f"DELETE FROM {table} WHERE {stamp} < ?", (yield_cutoff,))
         previous = self.meta_get("ai_yield_retained_since") or ""
         if self.meta_get("ai_yield_since") and yield_cutoff > previous:
             self.meta_set("ai_yield_retained_since", yield_cutoff)
@@ -1581,17 +1619,32 @@ class DB:
         pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
         free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
         if free * 10 > pages and not ((incremental_cache_enabled or state_retention is not None) and fast_lane):
+            vacuum_deadline = deadline if growers_on else None
+            busy_timeout = None
+            compacted = False
             try:
+                if vacuum_deadline is not None:
+                    remaining = vacuum_deadline - time.monotonic() - _CACHE_CHUNK_HEADROOM_S
+                    if remaining <= 0:
+                        raise sqlite3.OperationalError("run deadline reached")
+                    busy_timeout = self.conn.execute("PRAGMA busy_timeout").fetchone()[0]
+                    self.conn.execute(f"PRAGMA busy_timeout={min(busy_timeout, int(remaining * 1000))}")
+                    self.conn.set_progress_handler(lambda: int(time.monotonic() >= vacuum_deadline), 100)
                 busy, _, _ = self.conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
                 if busy:
                     raise sqlite3.OperationalError("WAL checkpoint busy")
                 self.conn.execute("VACUUM")
+                compacted = True
             except sqlite3.OperationalError as e:
                 if maintenance is not None:
                     maintenance["compaction_deferred"] = True
                 # Compaction is an optimisation: never fail the run for it.
                 log.warning("state compaction deferred (%s): pages=%d, free=%d", e, pages, free)
-            else:
+            finally:
+                if busy_timeout is not None:
+                    self.conn.set_progress_handler(None, 0)
+                    self.conn.execute(f"PRAGMA busy_timeout={busy_timeout}")
+            if compacted:
                 after = self.conn.execute("PRAGMA page_count").fetchone()[0]
                 after_free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
                 log.info("state compacted: pages=%d->%d, free=%d->%d", pages, after, free, after_free)

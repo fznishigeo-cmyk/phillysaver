@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import all_discounts, tracking
-from tests.history_pins import pre_all_discounts_button, pre_search_polish_1019, pre_task_295, pre_task_290_install_raw
+from tests.history_pins import pre_buttons_to_tools, pre_all_discounts_button, pre_search_polish_1019, pre_task_295, pre_task_290_install_raw
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -139,7 +139,7 @@ def test_white_text_contrast_through_charge_and_shine():
 
 
 def test_tracking_counts_without_query_or_url(tmp_path):
-    cfg = load_config()
+    cfg = pre_buttons_to_tools(load_config())
     cfg.tracking = SAMPLE
     calls = [['search_discounts', {key: 'PRIVATE' for key in ('query', 'url', 'store', 'category', 'method')}]]
     scenarios = {name: dict(extra, calls=calls) for name, extra in (

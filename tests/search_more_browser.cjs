@@ -15,6 +15,7 @@ from tests.test_support import NOW, render
 from tests.test_publish_site import make_deal
 site.util_now = lambda: NOW
 cfg = load_config()
+cfg.buttons_to_tools = False  # Previous search behavior; task 344 has its own navigation harness.
 cfg.tracking = {}
 cfg.max_photoless_h = None
 cfg.non_amazon_freshness_enabled = False

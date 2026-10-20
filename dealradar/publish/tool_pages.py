@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 
 from ..savings import TOOL_LIST_BADGE_JS, TOOL_FACT_BADGE_JS
-from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020
+from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020, buttons_to_tools
 
 TEMPLATES = Path(__file__).with_name("templates")
 PAGES = {
@@ -74,8 +74,10 @@ def script(cfg):
         "live": search_analyze.enabled(cfg)}, separators=(",", ":")).replace("<", "\\u003c") + ";\n"
     result = shared + (TEMPLATES / "tool-pages.js").read_text()
     if tool_pages_1020.enabled(cfg):
-        return tool_pages_1020.script(result)
-    return tool_hero.script(result) if tool_hero.enabled(cfg) else result
+        result = tool_pages_1020.script(result)
+    elif tool_hero.enabled(cfg):
+        result = tool_hero.script(result)
+    return buttons_to_tools.tool_script(result, cfg)
 
 
 def _tracking(cfg):

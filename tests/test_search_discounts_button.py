@@ -9,7 +9,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import search_discounts_button as button
-from tests.history_pins import pre_card_click_1020, pre_search_discounts_button, pre_search_buttons_1019
+from tests.history_pins import pre_buttons_to_tools, pre_card_click_1020, pre_search_discounts_button, pre_search_buttons_1019
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -64,7 +64,7 @@ def test_sibling_off_missing_rerun_back_off_bytes(tmp_path, flag, mode):
 @pytest.mark.parametrize('lazy', [False, True])
 @pytest.mark.parametrize('more', [False, True])
 def test_emitted_markup_css_urls_and_recovery(tmp_path, lazy, more):
-    cfg = load_config()
+    cfg = pre_buttons_to_tools(load_config())
     cfg.search_analyze['lazy'] = lazy
     cfg.search_more['enabled'] = more
     cfg.affiliate_amazon_tag = 'fixture-coupons-20'

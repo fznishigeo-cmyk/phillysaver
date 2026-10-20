@@ -154,12 +154,11 @@ def _click_counts(db, cfg, start, end, tz):
         return {"status": "unavailable"}
     first = int(datetime.combine(start, datetime.min.time(), tz).timestamp() // 3600)
     last = int(datetime.combine(end + timedelta(days=1), datetime.min.time(), tz).timestamp() // 3600)
-    coverage = db.conn.execute("SELECT COUNT(*), COALESCE(SUM(capped),0) "
-        "FROM deal_click_coverage WHERE hour>=? AND hour<?", (first, last)).fetchone()
-    count = db.conn.execute("SELECT COALESCE(SUM(count),0) FROM deal_clicks WHERE hour>=? AND hour<?",
-                           (first, last)).fetchone()[0]
-    return {"status": "unattributed", "observed_clicks": count if coverage[0] else None,
-            "covered_hours": coverage[0], "expected_hours": last - first, "capped_hours": coverage[1]}
+    from ..state_growers import click_rows, click_coverage
+    covered = click_coverage(db, first, last)
+    count = sum(n for key, hour, n in click_rows(db, first, last))
+    return {"status": "unattributed", "observed_clicks": count if covered else None,
+            "covered_hours": len(covered), "expected_hours": last - first, "capped_hours": sum(covered.values())}
 
 
 def check(db, cfg, now, client, *, run_key=None):

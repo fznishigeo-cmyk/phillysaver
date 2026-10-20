@@ -15,6 +15,7 @@ from tests.test_support import NOW, render
 from tests.test_publish_site import make_deal
 site.util_now = lambda: NOW
 cfg = load_config()
+cfg.buttons_to_tools = False  # Previous search behavior; task 344 has its own navigation harness.
 cfg.search_box_glow = sys.argv[2] == "true"
 cfg.search_analyze["lazy"] = sys.argv[3] == "true"
 cfg.tracking = {}
@@ -96,7 +97,9 @@ async function assertAnalyzeGeometry(page) {
   if (g.calm) {
     assert.equal(await page.locator('#analyze-search').getAttribute('aria-label'), null,
       'task 332 derives the accessible name from the visible responsive span');
-    assert.equal(await page.getByRole('button', {name:g.phone ? 'Analyze' : 'AI Analysis', exact:true}).count(), 1);
+    // Task 344 makes Analyze a real link to the Deal Checker; the visible name stays the same.
+    const role = await page.locator('#analyze-search').evaluate(el => el.tagName === 'A' ? 'link' : 'button');
+    assert.equal(await page.getByRole(role, {name:g.phone ? 'Analyze' : 'AI Analysis', exact:true}).count(), 1);
   }
   assert(g.textRight <= g.pills[0].left, 'typed text clears both pills');
   if (g.icon) assert(Math.abs((g.icon.top + g.icon.bottom) / 2 - (g.field.top + g.field.bottom) / 2) <= .1,
@@ -169,14 +172,21 @@ async function assertDiscounts(page, typed) {
   assert.equal(await mobile.isVisible(), phone && typed);
   if (phone && !typed) return;
   const button = phone ? mobile : desktop;
-  assert.equal(await button.getAttribute('href'), 'https://www.amazon.com/');
-  assert.equal(await button.getAttribute('target'), '_blank');
-  assert.equal(await button.getAttribute('rel'), 'sponsored noopener');
+  // Task 344: All Discounts is a plain link to our Discount Finder (no tag, same tab).
+  const toTool = /^\/amazon-discount-finder\/(\?q=|$)/.test(await button.getAttribute('href'));
+  if (toTool) {
+    assert.equal(await button.getAttribute('target'), null);
+    assert.equal(await button.getAttribute('rel'), null);
+  } else {
+    assert.equal(await button.getAttribute('href'), 'https://www.amazon.com/');
+    assert.equal(await button.getAttribute('target'), '_blank');
+    assert.equal(await button.getAttribute('rel'), 'sponsored noopener');
+  }
   assert(await page.locator('footer .footerfine').isVisible(), 'footer disclosure remains visible');
   if (phone) {
     const b = await button.boundingBox(), field = await page.locator('.searchfield').boundingBox();
     const calm = (await page.locator('.analyze-long').first().textContent()).includes('AI Analysis');
-    assert.equal(await button.innerText(), calm ? 'All Discounts on Amazon →' : 'All discounts on Amazon →');
+    assert.equal(await button.innerText(), toTool ? 'All Discounts →' : calm ? 'All Discounts on Amazon →' : 'All discounts on Amazon →');
     assert(b.height >= 44 && Math.abs(b.width - field.width) < 1 && Math.abs(b.x - field.x) < 1);
     assert(b.y >= field.y + field.height && b.y <= field.y + field.height + 12, 'directly under the field');
   }

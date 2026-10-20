@@ -206,6 +206,7 @@ search_polish_1019: true  # operator 2026-10-19: "this is already at the bottom,
 search_buttons_1019: true  # operator 2026-10-19: "I don't want the buttons to animate when someone hovers ... I just want them to be those colors ... I don't want it to look spammy."
 search_discounts_button: true  # operator 2026-10-20: "Replace it with this. That amazing yellow that you use, the See All Amazon Discounts, and have it direct you to Amazon discounts"
 card_click_1020: true  # operator 2026-10-20: "should we make all the entire squares clickable? not just the get deal at the bottom"
+buttons_to_tools: true  # operator 2026-10-20 ~03:10Z: "make the Ai Analysis button and the All Discounts button on the home screen link to their respective checkers ... and then the discount just finds coupons ... it has to have coupons, like clip the coupons"
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 timer_pill_ring: true  # operator 2026-10-19 ~16:10Z, option A: "draw the countdown as a ring around the timer pill itself"
 phone_timer_raise: true  # operator 2026-10-19 ~17:50Z: "please raise the timer ever so slightly"
@@ -1177,15 +1178,24 @@ state:
   max_enc_mb: 90             # Fail before any push at or above this size.
 
 retention:
+  state_retention_337: true  # OFF preserves previous maintenance/writer bytes.
+  api_cache_days: 1         # Opaque api: validators only; response bodies are never persisted.
+  post_receipt_details_days: 7  # Compact older receipts without live sightings; fresh reads stay in posts_seen.
+  audit_detail_days: 14      # Older details become counted history; run/send guards survive.
+  audit_hot_days: 1          # Older completed source audits use lossless packed hashes until day 14.
+  click_raw_days: 30         # Older click buckets become daily counts per public deal key.
+  accuracy_detail_days: 14   # Also retain only the latest observations per deal/source below.
+  accuracy_last_per_deal: 24 # Exact timestamp/bucket/outcome counts preserve the accuracy report.
+  terminal_indexnow_versions_days: 1  # Clear completed payloads; keep endpoint/run/status anchors forever.
   posts_seen_days: 30
   # Cross-source parse reuse (task 059): the same post text shows up in
   # several feeds within hours. Short on purpose: every row rides the
   # encrypted state.db that is pushed to the data branch every run.
   post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
-  accuracy_samples_days: 9  # Seven completed local days + timezone/DST/report margin (minimum 9).
+  accuracy_samples_days: 9  # Legacy/OFF window; ON uses accuracy_detail_days and accuracy_last_per_deal.
   deal_click_shown_days: 8   # Seven-day learner + margin; a longer configured lookback always wins.
-  source_audit_posts_days: 9  # Seven-day reports; keep pending discoveries and recent parse completions.
+  source_audit_posts_days: 9  # Legacy/OFF window; ON uses audit_detail_days (reader minimum 9).
   keepa_recheck_history_samples: 12  # Per deal; never below recheck_adaptive.history_samples.
   compact_deal_payloads: true  # Rehydrate duplicate SQL fields/sightings; preserve every fact.
   compact_accuracy_samples: true  # Intern replay keys, store UTC seconds; identical private reports.

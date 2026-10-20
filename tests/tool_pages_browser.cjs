@@ -215,10 +215,16 @@ async function run(root, executablePath, shots) {
           assert((await page.locator('#tool-result').innerText()).includes('price checked '));
           assert.equal(await page.locator('#top-sellers .monthly').count(),5);
           assert.equal(await page.locator('#tool-result s').innerText(),'$30.00');
+          const similar=page.locator('#tool-result .amazon-button');
+          assert.equal(await similar.innerText(),'See similar deals on Amazon →');
+          const similarURL=new URL(await similar.getAttribute('href'));
+          assert.equal(similarURL.searchParams.get('rh'),'p_n_deal_type:23566065011');
+          assert.equal(similarURL.searchParams.get('k'),'Steel kitchen kettle with temperature control');
+
         } else {
           assert.equal(calls.length,before,'finder cannot call the API');
           assert.equal(await page.locator('#tool-result .amazon-button').getAttribute('href'),
-            'https://www.amazon.com/s?k=Steel%20Kitchen%20Kettle&rh=p_n_deal_type%3A23566065011&tag=example-20');
+            'https://www.amazon.com/s?k=Steel%20Kitchen%20Kettle&rh=p_n_deal_type%3A210906366011&tag=example-20');
           assert.equal(await page.locator('#tool-result .price').count(),0,'finder cannot claim a live price');
         }
         const audit=await page.evaluate(() => ({overflow:document.documentElement.scrollWidth>innerWidth,
@@ -290,6 +296,18 @@ async function run(root, executablePath, shots) {
         }
         // Playwright's clock belongs to the context: let the next page's timers and frames run.
         await page.clock.resume();
+        if (reduced) {
+          const raw='https://amazon.com/Steel-Kitchen-Kettle/dp/B000000100';
+          for (const reload of [false,true]) {
+            if (reload) await page.reload();
+            else await page.goto('https://wowpriced.test/'+slug+'/?q='+encodeURIComponent(raw));
+            await waitData(page);
+            assert.equal(await page.locator('#q').inputValue(),raw);
+            assert.equal(await page.evaluate(()=>scrollY),0,'auto-run must not scroll');
+            assert.equal(await page.evaluate(mode=>window.toolEvents.filter(e=>e[0]===(mode==='checker'?'analyze':'search_discounts')).length,mode),1,
+              'one automatic run per load, including reload');
+          }
+        }
         await page.close();
       }
       const home=await context.newPage();

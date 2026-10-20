@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import timedelta, timezone
 
 from .util import iso
@@ -39,6 +40,13 @@ def second_opinion_sources(conn, now, days=1):
             (since, until)):
         if source in sources:
             sources[source].update(extracted=extracted, evidence=evidence, successful_posts=successful)
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE name='state_audit_counts'").fetchone():
+        for dimensions, n in conn.execute(
+                "SELECT dimensions,SUM(n) FROM state_audit_counts WHERE kind='second_opinion_yield'"
+                " AND stamp>=? AND stamp<=? GROUP BY dimensions", (since[:10], until[:10])):
+            source, field = json.loads(dimensions)
+            if source in sources:
+                sources[source][field] += n
     for row in sources.values():
         row["yield"] = min(1.0, row["successful_posts"] / row["calls"])
     return sources
@@ -46,8 +54,12 @@ def second_opinion_sources(conn, now, days=1):
 
 def record_second_opinion(db, post, fingerprint, now, extracted, evidence):
     key = hashlib.sha256((post.source_name + "\n" + fingerprint).encode()).hexdigest()
-    db.conn.execute("INSERT OR IGNORE INTO second_opinion_yield VALUES (?,?,?,?,?)",
-                    (key, iso(now), post.source_name, extracted, evidence))
+    from .state_growers import exists
+    # Test the archived guard in the INSERT's transaction, including rollback.
+    guard = (" WHERE NOT EXISTS (SELECT 1 FROM second_opinion_retired_events WHERE event_key=?)"
+             if exists(db, "second_opinion_retired_events") else "")
+    db.conn.execute("INSERT OR IGNORE INTO second_opinion_yield SELECT ?,?,?,?,?" + guard,
+                    (key, iso(now), post.source_name, extracted, evidence) + ((key,) if guard else ()))
     db.conn.commit()
 
 

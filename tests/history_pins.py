@@ -204,6 +204,7 @@ def pre_task_290_install_raw(config):
     config.pop("search_buttons_1019", None)
     config.pop("search_discounts_button", None)
     config.pop("card_click_1020", None)
+    config.pop("buttons_to_tools", None)
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
     config.pop("phone_timer_raise", None)
@@ -420,12 +421,14 @@ def pre_fresh_more_plain(cfg):
 
 def pre_search_discounts_button(cfg):
     """Before task 342's yellow results exit; keep task 332 bytes."""
+    pre_buttons_to_tools(cfg)
     cfg.search_discounts_button = False
     return cfg
 
 
 def pre_card_click_1020(cfg):
     """Before task 342's stretched Get deal link; preserve recorded hashes."""
+    pre_buttons_to_tools(cfg)
     cfg.card_click_1020 = False
     return cfg
 
@@ -460,4 +463,10 @@ def pre_task_319(cfg):
             getattr(cfg, "keepa_" + key).update(deepcopy(value))
         else:
             setattr(cfg, "keepa_" + key, deepcopy(value))
+    return cfg
+
+
+def pre_buttons_to_tools(cfg):
+    """Before task 344's tool handoff; preserve every recorded publication hash."""
+    cfg.buttons_to_tools = False
     return cfg
