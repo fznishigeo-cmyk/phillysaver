@@ -50,7 +50,7 @@ function report(label, cards) {
           const deals = Array.isArray(j.deals) ? j.deals : [];
           const count = (f) => deals.filter(f).length;
           return {keys: Object.keys(j).slice(0, 12), deals: deals.length, teaser: Array.isArray(j.teaser) ? j.teaser.length : null,
-                  dead: count(d => d.status === "dead"), noPhoto: count(d => !d.image), openBox: count(d => (d.conditions || []).some(c => /used|open_box/.test(c))),
+                  dead: count(d => d.status === "dead"), noPhoto: count(d => !d.image_url), openBox: count(d => (d.conditions || []).some(c => /used|open_box/.test(c))),
                   clickUnknown: count(d => d.click_price_unknown), locked: count(d => d.locked), tab: (document.querySelector('[aria-selected="true"], .tab.on, .active') || {}).textContent || "",
                   q: (document.getElementById("q") || {}).value || "", searchcount: (document.getElementById("searchcount") || {}).textContent || "",
                   grids: [...document.querySelectorAll("#content .grid")].map(g => g.querySelectorAll(".card").length)};

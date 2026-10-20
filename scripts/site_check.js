@@ -11,11 +11,12 @@ const {routeRobotSearch} = require('./robot_search.cjs');
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-const { amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
+const { amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
         frontPageFlagLine, frontPageFlags, eventLinks, toolLinks } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
+const UA = "wowpriced-site-check/1.0 (+https://wowpriced.com; hello@wowpriced.com)";
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
 const PHOTO_TIMEOUT_MS = 15000, CONCURRENCY = 12, EXAMPLES = 12;
 
@@ -33,8 +34,9 @@ const STEP_TIMEOUT_MS = 10000;
 const SITE_URL = new URL(SITE);
 // Our own site, still paced at 1 request/s. 40 ran out on 2026-10-13 as the
 // walk grew (more hubs), and the last page failed as a bare ERR_FAILED; 60
-// ran out on 2026-10-19 once the homepage gained three shared U3 assets.
-const SITE_REQUEST_LIMIT = 80;
+// ran out on 2026-10-19 once the homepage gained three shared U3 assets;
+// 80 ran out on 2026-10-20 when step 15 (Tools, ~11 per device) arrived.
+const SITE_REQUEST_LIMIT = 120;
 let siteRequests = 0, siteQueue = Promise.resolve(), lastSiteRequest = 0, lastAbort = "";
 async function siteRequest(photo = false) {
   if (!photo && ++siteRequests > SITE_REQUEST_LIMIT) {
@@ -55,7 +57,7 @@ async function readSite(path) {
   for (let hop = 0; hop < 3; hop++) {
     if (url.origin !== SITE_URL.origin) throw new Error("off-site URL");
     await siteRequest();
-    const response = await fetch(url, { cache: "no-store", redirect: "manual",
+    const response = await fetch(url, { cache: "no-store", redirect: "manual", headers: { "User-Agent": UA },
                                         signal: AbortSignal.timeout(15000) });
     const next = response.headers.get("location");
     if (![301, 302, 303, 307, 308].includes(response.status) || !next) return response;
@@ -111,6 +113,44 @@ function checkFooter(html, meta) {
     "old footer copy remains");
   if ((meta.support || {}).enabled) check(footer.includes('id="footer-signup"'), "missing footer signup");
   return events;
+}
+
+async function checkTools(page, tag) {
+  const started = Date.now(), words = "cupping set", query = "?q=" + encodeURIComponent(words);
+  // Tools only read our pages. Even their decorative photos must not contact a retailer.
+  const ownSiteOnly = route => new URL(route.request().url()).origin === SITE_URL.origin
+    ? route.fallback() : route.abort();
+  await page.route("**/*", ownSiteOnly);
+  await routeRobotSearch(page, true);
+  await page.addInitScript(() => {
+    window.__siteCheckToolJump = false;
+    addEventListener("scroll", () => { if (scrollY !== 0) window.__siteCheckToolJump = true; });
+  });
+  try {
+    if (page.url() !== SITE) await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
+    try {
+      await page.locator("#q").fill(words);
+      await page.waitForFunction(query => document.querySelector("#analyze-search")?.getAttribute("href") ===
+        "/amazon-deal-checker/" + query, query);
+      const analyze = page.locator("#analyze-search:visible");
+      const discounts = page.locator("#search-discounts:visible, #search-discounts-mobile:visible");
+      for (const [link, slug] of [[analyze, "amazon-deal-checker"], [discounts, "amazon-discount-finder"]]) {
+        check(await link.getAttribute("href") === `/${slug}/${query}`, `${slug} home href changed`);
+        check(await link.getAttribute("target") === null, `${slug} home link has a target`);
+      }
+    } finally { await page.locator("#q").fill(""); }
+    for (const slug of ["amazon-deal-checker", "amazon-discount-finder"]) {
+      const response = await page.goto(SITE + slug + "/" + query, { waitUntil: "load", timeout: 60000 });
+      check(response && response.status() === 200, `${slug} HTTP ${response && response.status()}`);
+      check(await page.locator("#q").inputValue() === words, `${slug} did not fill query`);
+      await page.locator("#tool-result").waitFor({ state: "visible", timeout: 40000 });
+      check(await page.evaluate(() => scrollY === 0 && !window.__siteCheckToolJump), `${slug} jumped down the page`);
+      const href = await page.locator("#tool-result .amazon-button").first().getAttribute("href");
+      const result = checkToolAmazonUrl(href, tag, slug === "amazon-discount-finder");
+      check(result.ok, `${slug}: ${result.reason}`);
+    }
+    return `home links; checker / finder results and Amazon URLs (unopened); ${((Date.now() - started) / 1000).toFixed(1)}s`;
+  } finally { await page.unroute("**/*", ownSiteOnly); }
 }
 
 async function walk(page, doc, device) {
@@ -374,6 +414,11 @@ async function walk(page, doc, device) {
     check(box && box.y < 844 && box.y + box.height > 0, "banner outside phone viewport");
     await page.screenshot({ path: "shots/phone-support.png", fullPage: false });
   });
+  // Run step 15 while home is still loaded, before the other page visits.
+  await step(15, "Tools", async () => {
+    const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
+    return checkTools(page, amazonTag(config));
+  });
   // Browser visits replace step 8's old HTML fetches: one navigation each,
   // with the same content checks and request/analytics guard as home.
   for (const [name, url] of [["deal", dealPage], ["best-today", "best-deals-today/"]]) {
@@ -405,7 +450,7 @@ async function walk(page, doc, device) {
   const withPhoto = alive.filter((d) => d.image_url);
 
   const browser = await chromium.launch();
-  const page = await browser.newPage({ serviceWorkers: "block", viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ userAgent: UA, serviceWorkers: "block", viewport: { width: 1440, height: 900 } });
   await guardPage(page);
   const desktop = await walk(page, doc, "desktop");
   const { shown, errors } = desktop;
@@ -431,7 +476,7 @@ async function walk(page, doc, device) {
     await Promise.all(Array.from({ length: conc }, worker));
     return bad;
   }, [urls, PHOTO_TIMEOUT_MS, CONCURRENCY]));
-  const phone = await browser.newPage({ serviceWorkers: "block", viewport: { width: 390, height: 844 }, isMobile: true });
+  const phone = await browser.newPage({ userAgent: UA, serviceWorkers: "block", viewport: { width: 390, height: 844 }, isMobile: true });
   await guardPage(phone);
   const mobile = await walk(phone, doc, "phone");
   await browser.close();
