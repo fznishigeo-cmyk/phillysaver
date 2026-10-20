@@ -1,0 +1,7 @@
+locator.textContent: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('#search-amazon-result [data-search-amazon]')[22m
+
+    at main (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_more_browser.cjs:145:112) {
+  name: 'TimeoutError'
+}

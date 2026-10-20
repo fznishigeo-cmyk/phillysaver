@@ -100,4 +100,5 @@ def test_native_fixture_without_launching_chromium(tmp_path):
         "buildFixture(process.argv[1], true, true);", str(tmp_path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'wpspin 6s linear infinite' in (tmp_path / 'site/page-polish.css').read_text()
-    assert 'id="search-result-top"' in (tmp_path / 'site/search-analyze.js').read_text()
+    assert 'id="search-result-top"' not in (tmp_path / 'site/search-analyze.js').read_text()
+    assert '>AI Analysis</span>' in (tmp_path / 'site/index.html').read_text()

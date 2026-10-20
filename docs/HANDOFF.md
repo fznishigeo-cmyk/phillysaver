@@ -254,6 +254,91 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Native screenshots/focus/overflow remain with the operator.
   Browser harness covers 360/390/412/1280/1440 light/dark and no-JS Join; hourly
   Join check updated. No full suite, commit or push.
+- **Remove zero-match Amazon pill (Codex task 332e, 2026-10-20; uncommitted):**
+  With `search_buttons_1019` ON, the recovery Compare/See-all pill is now a
+  plain `Search Amazon for "x"` link: the same pill was also the zero-zero
+  fallback. Its styling wrapper and button class are gone, including inline,
+  lazy and search-more-disabled paths; Analyze error exits are plain links too.
+  Live Amazon cards and their View on Amazon links, fewer-words hint, Clear
+  search, browse chips and the approved search buttons remain. OFF keeps its
+  existing bytes and recorded hash pins. Python/emitted-logic coverage checks
+  live, empty and error states; glow/more/Amazon browser harnesses assert pill
+  absence and a plain fallback when ON, retaining legacy assertions when OFF.
+  Targeted search-buttons/glow/more/Amazon pytest: **91 distinct passes,
+  2 Chromium skips**; the final search-buttons run is **16 passed** after
+  correcting the harness's paged-URL assumption for search-more OFF. The phone
+  payload guard and recorded OFF-byte checks pass. All four changed CJS files
+  pass `node --check`; `git diff --check` passes. Used
+  `--basetemp=/tmp/b332v` and removed it after validation. Native browser review
+  remains with the operator. No full suite, commit or push.
+- **Search click request timing (Codex task 332d, 2026-10-19; uncommitted):**
+  Case (b): `/api/search?q=phone%20holder&page=0` is typing-as-you-search,
+  scheduled by the 150ms input debounce then 600ms search debounce plus async
+  module work. The fixed 750ms wait raced that request. Native glow harness
+  now waits for that query's response completion and rendered live card before
+  taking the click baseline; unexpected API counts include their full paths.
+  Deterministic emitted inline/lazy logic reproduces the typing request at
+  150+600ms and verifies the settled click opens Amazon without starting
+  Analyze, loading another Analyze module or adding an API request over 1s.
+  Product code unchanged. Native rerun remains with the operator because
+  Chromium launch is blocked here by sandbox socket permissions.
+  Targeted search-buttons/glow pytest: **33 passed** with
+  `--basetemp=/tmp/b332w`; both changed CJS files pass `node --check`, and
+  `git diff --check` passes. Removed that basetemp directory after validation.
+  No full suite, commit or push.
+- **Homepage phone label cascade (Codex task 332c, 2026-10-19; uncommitted):**
+  With `search_box_glow=false`, `card_tidy` leaves its <=600px label rules in
+  an inline sheet after `header-polish.css`; equal specificity overrides the
+  task-332 phone labels. Phone selectors now include `#analyze-search`, so
+  Analyze wins without changing tests, desktop labels or font sizes. Offline
+  parsed CSS reproduces the old failure and passes 24 combinations of
+  360/390/412, light/dark, inline/lazy and glow OFF/ON. Inter 16px placeholder
+  width is 187.95px versus conservative text room 190/220/242px; the widest
+  Analyze pill plus its 6px inset fits the existing 96px reservation.
+  Targeted search-buttons/glow/polish/lazy and phone-payload pytest: **79 passed**;
+  the 1,000-byte phone headroom guard and both relevant Node syntax checks pass.
+  Used `--basetemp=/tmp/b332z`; that directory and owned inspection scratch
+  removed. Native Chromium remains for the operator: local launch is blocked
+  by sandbox socket permissions. No full suite, commit or push.
+- **Native Chromium follow-up (Codex task 332b, 2026-10-19; uncommitted):**
+  Shared Analyze geometry uses the task-332 flag/900px label rule. Real desktop
+  clipping is on Black Friday/Cyber Monday's All discounts at >=900px: the
+  event-specific cascade retains 15px/800 while the old 108px box leaves 92px
+  after padding. Offline Inter ExtraBold font metrics: AI Analysis 84.16px,
+  All discounts 97.23px; event twins now both 114px/15px/800 with 98px content.
+  Home remains 108px/14px/800 (labels 78.58/90.77px, 92px content), with unchanged
+  typing room and timer layout; event typing room remains +12px at 900–1100
+  and +42px above 1100 versus the pre-332 padding. No text size reduced.
+  Geometry checks actual padding/bounds, reports page/viewport/label/button
+  widths and includes laptop breakpoints through 1599px; event logs include
+  all measured widths for the operator's next native run. Search-more runs
+  inline/lazy, both flag states, 390/1440 and light/dark: ON asserts top-pill
+  absence; OFF retains every old assertion and both retain the remaining flow.
+  Amazon navigation issue is pre-existing invocation misuse: first arg is a
+  published site directory, not a shots directory. Read-only HEAD/current route
+  replay gives 404 for an empty shots directory and 200 for a published fixture;
+  no Chromium was launched for this comparison and no stash disturbed the tree.
+  Native geometry confirmation remains with the operator. Requested targeted
+  selection: **380 passed, 5 Chromium skips in 391.78s**, with `-n 4`, no cache
+  and `--basetemp=/tmp/b332y`; that directory and owned inspection files removed.
+  All six changed/new `.cjs` files pass `node --check`; Python compile and diff
+  checks pass. No full suite, commit or push.
+- **Calm search buttons (Codex task 332, 2026-10-19; uncommitted):** Strict
+  `search_buttons_1019` defaults false/ships true. Desktop AI Analysis and
+  phone Analyze share the existing discounts click handler for typed words:
+  configured tag, coupon filter 210906366011 and Best Sellers; pasted links,
+  ASINs, Enter and All discounts retain their flows. Static purple/blue twins,
+  keyboard outlines, shorter phone prompt; redundant results/product pill gone.
+  Event forms follow the same routing. Pre-edit OFF snapshots match all 50/49/49
+  shipped/inline/membership fixture files; no recorded hashes changed. CSS typing
+  room delta at 900/1024/1100/1280/1440/1600/1920: 0/0/0/+30/+30/+30/+30px.
+  Native harness measures actual room, equal boxes, all interaction paints,
+  360/390/412 prompt fit and light/dark screenshots; syntax passes. Chromium
+  measurements/captures remain with the operator. Requested selection and focused
+  fixes verify **394 distinct passes, 6 Chromium skips**; final new-feature run
+  **14 passed**. Both phone gzip guards retain the 1,000-byte reserve. Own
+  `/tmp/b332x` and inspection scratch removed; no full suite, live requests,
+  commit or push.
 - **Phone timer alignment (Codex task 330, 2026-10-19; uncommitted):** Strict
   `phone_timer_raise` defaults false/ships true with the operator's quote.
   At <=640px the tagline's 19.5px line sits atop its legacy 40px box:

@@ -1,0 +1,15 @@
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'AI Analysis'
+- 'Analyze'
+
+    at assertAnalyzeGeometry (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_box_glow_browser.cjs:91:10)
+    at async main (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_box_glow_browser.cjs:235:26) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'AI Analysis',
+  expected: 'Analyze',
+  operator: 'strictEqual',
+  diff: 'simple'
+}

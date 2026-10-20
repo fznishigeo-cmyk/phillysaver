@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 
-function buildFixture(scratch, lazy = true) {
+function buildFixture(scratch, lazy = true, calm = true) {
   const build = spawnSync('.venv/bin/python', ['-c', `
 import sys
 from pathlib import Path
@@ -22,6 +22,7 @@ cfg.keepa_click_price_rule = "off"
 cfg.affiliate_amazon_tag = "example-20"
 cfg.search_more = {"enabled": True, "pages": 3, "min_query_chars": 2}
 cfg.search_analyze["lazy"] = sys.argv[2] == "true"
+cfg.search_buttons_1019 = sys.argv[3] == "true"
 # make_deal's default clock is outside the Amazon confirmation window.
 deals = [make_deal(dedupe_key=f"task293-{i}", item=f"Wireless mouse {i}",
     store="Amazon", brand="Example", canonical_url=f"https://www.amazon.com/dp/B0{i:08d}",
@@ -30,7 +31,7 @@ deals = [make_deal(dedupe_key=f"task293-{i}", item=f"Wireless mouse {i}",
 deals.append(make_deal(dedupe_key="hair-tie", item="Hair tie organizer", codes=[], conditions=[],
     image_url="https://m.media-amazon.com/images/I/tie.jpg"))
 render(Path(sys.argv[1]), cfg, deals)
-`, scratch, String(lazy)], {encoding:'utf8'});
+`, scratch, String(lazy), String(calm)], {encoding:'utf8'});
   assert.equal(build.status, 0, build.stderr);
   const root = path.join(scratch, 'site');
   const published = JSON.parse(fs.readFileSync(path.join(root, 'deals.json'), 'utf8')).deals;
@@ -65,9 +66,9 @@ async function main() {
   let browser;
   try {
     const roots = {};
-    for (const lazy of [false, true]) {
-      const folder = path.join(scratch, String(lazy)); fs.mkdirSync(folder);
-      roots[lazy] = buildFixture(folder, lazy);
+    for (const calm of [false, true]) for (const lazy of [false, true]) {
+      const folder = path.join(scratch, `${calm}-${lazy}`); fs.mkdirSync(folder);
+      roots[`${calm}-${lazy}`] = buildFixture(folder, lazy, calm);
     }
     const shots = process.argv[3] && path.resolve(process.argv[3]);
     if (shots) fs.mkdirSync(shots, {recursive:true});
@@ -76,8 +77,8 @@ async function main() {
       if (!/Operation not permitted|Executable doesn't exist|Failed to launch|sandbox|Target .* closed/.test(error.message)) throw error;
       console.log('Chromium unavailable: native launch failed; no screenshots captured'); process.exitCode = 77; return;
     }
-    for (const lazy of [false, true]) for (const width of [390, 1440]) for (const theme of ['light', 'dark']) {
-      const root = roots[lazy], mode = lazy ? 'lazy' : 'inline';
+    for (const calm of [false, true]) for (const lazy of [false, true]) for (const width of [390, 1440]) for (const theme of ['light', 'dark']) {
+      const root = roots[`${calm}-${lazy}`], mode = (lazy ? 'lazy' : 'inline') + (calm ? '-calm' : '-legacy');
       const context = await browser.newContext({viewport:{width, height:844}, colorScheme:theme, serviceWorkers:'block',
         reducedMotion:width === 390 ? 'reduce' : 'no-preference'});
       const calls = [], errors = [], unexpected = [], imports = [];
@@ -142,12 +143,17 @@ async function main() {
       assert.equal(calls.length, 0, 'no API request before scrolling to the end of local results');
       const more = page.locator('#search-more');
       const topButton = page.locator('#search-amazon-result [data-search-amazon]');
-      assert(['See all "mouse" on Amazon\u00a0→', 'Analyze "mouse" on Amazon\u00a0→'].includes(await topButton.textContent()));
-      assert((await topButton.getAttribute('href')).includes('tag=example-20'));
-      assert.equal(await topButton.getAttribute('rel'), 'sponsored nofollow noopener');
-      assert.equal(await topButton.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
-      assert(await topButton.evaluate(el => el.getBoundingClientRect().bottom <= document.querySelector('#content .card').getBoundingClientRect().top));
-      assert.equal(await page.locator('[data-search-amazon].getdeal').count(), 1, 'one large Amazon button');
+      if (calm) {
+        assert.equal(await topButton.count(), 0, 'task 332 removes the top Amazon pill');
+        assert.equal(await page.locator('[data-search-amazon].getdeal').count(), 0);
+      } else {
+        assert(['See all "mouse" on Amazon\u00a0→', 'Analyze "mouse" on Amazon\u00a0→'].includes(await topButton.textContent()));
+        assert((await topButton.getAttribute('href')).includes('tag=example-20'));
+        assert.equal(await topButton.getAttribute('rel'), 'sponsored nofollow noopener');
+        assert.equal(await topButton.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
+        assert(await topButton.evaluate(el => el.getBoundingClientRect().bottom <= document.querySelector('#content .card').getBoundingClientRect().top));
+        assert.equal(await page.locator('[data-search-amazon].getdeal').count(), 1, 'one large Amazon button');
+      }
       assert.equal(await more.locator('[data-search-amazon]').textContent(), 'More on Amazon →');
       assert.equal(await more.locator('[data-search-amazon]').evaluate(el => getComputedStyle(el).fontSize), '14px');
       for (let n = 0; n < 3; n++) {
@@ -190,12 +196,19 @@ async function main() {
       assert(!(await page.locator('#content').innerText()).includes('Live Amazon prices'));
       const fallback = page.locator('.search-recovery [data-search-amazon]');
       assert(await fallback.isVisible());
-      assert.equal(await fallback.textContent(), 'Compare all "cupping set" prices on Amazon\u00a0→');
+      assert.equal(await fallback.textContent(), calm ? 'Search Amazon for "cupping set"' : 'Compare all "cupping set" prices on Amazon\u00a0→');
       assert.equal(await fallback.getAttribute('rel'), 'sponsored noopener');
-      assert.equal(await fallback.evaluate(el => getComputedStyle(el).animationName), width === 390 ? 'none' : 'wpspin');
+      assert.equal(await fallback.evaluate(el => getComputedStyle(el).animationName), calm || width === 390 ? 'none' : 'wpspin');
+      if (calm) {
+        assert.equal(await page.locator('.search-recovery .search-amazon-top, [data-search-amazon].getdeal, #search-result-top').count(), 0);
+        assert.equal(await fallback.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+        assert.equal(await fallback.evaluate(el => getComputedStyle(el).boxShadow), 'none');
+        assert((await page.locator('.search-recovery').innerText()).includes('Try fewer words'));
+        assert(await page.locator('.search-recovery [data-search-kind="clear"]').count() > 0);
+      }
       await fallback.click();
-      // Task 318: the big top Amazon button (also this no-match recovery state) opens best sellers.
-      assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=cupping%20set&s=exact-aware-popularity-rank&tag=example-20');
+      assert.equal(await page.evaluate(() => window.openedAmazon[0]), 'https://www.amazon.com/s?k=cupping%20set' +
+        (calm ? '' : '&s=exact-aware-popularity-rank') + '&tag=example-20');
       assert.deepEqual(calls.filter(q => q.startsWith('?q=cupping%20set')), ['?q=cupping%20set&page=0']);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-empty.png'), fullPage:true});
@@ -234,6 +247,11 @@ async function main() {
       assert.equal(await page.locator('#search-recovery-title').textContent(), 'Live Amazon prices for "coffee"');
       assert.equal(await page.locator('#amazon-results .flag').innerText(), '-35%');
       assert.equal(await page.locator('#amazon-results s').textContent(), 'List Price $19.99');
+      if (calm) {
+        assert.equal(await page.locator('.search-recovery .search-amazon-top, [data-search-amazon].getdeal, #search-result-top').count(), 0);
+        assert.equal(await page.locator('.search-recovery [data-search-amazon]').textContent(), 'Search Amazon for "coffee"');
+        assert.equal(await page.locator('#amazon-results .getdeal').textContent(), 'View on Amazon');
+      }
       if (shots) await page.screenshot({path:path.join(shots, mode + '-' + width + '-' + theme + '-spelling.png'), fullPage:true});
 
       await q.fill('https://www.amazon.com/dp/B000000901');

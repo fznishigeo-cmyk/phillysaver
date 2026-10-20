@@ -10,7 +10,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import site, tool_hero, tool_pages
 from dealradar.publish.seo_audit import Page
 from dealradar.savings import TOOL_METER_BADGE_JS, tool_meter, display_pct
-from tests.history_pins import pre_tool_pages_hero
+from tests.history_pins import pre_search_buttons_1019, pre_tool_pages_hero
 from tests.test_support import NOW, render
 from tests.test_tool_pages import offline  # noqa: F401
 from tests.test_publish_site import make_deal
@@ -42,7 +42,8 @@ def test_default_and_shipped(tmp_path):
     ('membership', '8de4c00d2f1e8b4321190b93b25eb7e861fbff829a9a2d6d8d2da19587e9084b'),
 ])
 def test_off_previous_release_missing_and_back(tmp_path, mode, expected):
-    cfg = pre_tool_pages_hero(load_config())
+    # Task 332 shipped after these pins; isolate it like the earlier siblings.
+    cfg = pre_search_buttons_1019(pre_tool_pages_hero(load_config()))
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
         cfg.strip_comments = False

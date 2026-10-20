@@ -1,0 +1,10 @@
+AssertionError [ERR_ASSERTION]: label fits without clipping
+    at assertAnalyzeGeometry (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_box_glow_browser.cjs:67:5)
+    at async main (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/page_polish_browser.cjs:56:9) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}

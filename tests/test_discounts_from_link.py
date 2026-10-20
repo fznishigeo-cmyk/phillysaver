@@ -90,7 +90,7 @@ def test_home_compaction_preserves_active_styles_and_prompt(tmp_path, support, a
     assert '.mx{position:absolute;' in home
     assert '#controls #surprise,.mcard input,.joincard input{font-size:16px}' in home
     assert ('placeholder = live ?' in home) is (not amazon)
-    assert ('placeholder = "Search deals or any Amazon product"' in home) is amazon
+    assert ('? "Search deals on Amazon" : "Search deals or any Amazon product"' in home) is amazon
     # No other page loses membership styling or its search fallback.
     event = (out / 'black-friday/index.html').read_text()
     assert 'function discountsLink()' in event

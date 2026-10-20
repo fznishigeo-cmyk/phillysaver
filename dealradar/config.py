@@ -366,6 +366,7 @@ class AppConfig:
     tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
     tool_pages_hero: bool = False
     search_polish_1019: bool = False
+    search_buttons_1019: bool = False
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
@@ -1111,6 +1112,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.search_polish_1019 = g("search_polish_1019", default=False)
     if type(cfg.search_polish_1019) is not bool:
         raise ValueError("search_polish_1019 must be a boolean")
+    cfg.search_buttons_1019 = g("search_buttons_1019", default=False)
+    if type(cfg.search_buttons_1019) is not bool:
+        raise ValueError("search_buttons_1019 must be a boolean")
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")

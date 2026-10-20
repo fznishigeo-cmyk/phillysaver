@@ -12,9 +12,10 @@ async function main() {
   let browser;
   try {
     const roots = {};
+    const metrics = [];
     for (const lazy of [false, true]) roots[lazy] = buildFixture(path.join(scratch, String(lazy)), lazy);
     browser = await chromium.launch({headless:true, executablePath:process.argv[2]});
-    for (const lazy of [false, true]) for (const width of [360, 390, 900, 1024, 1280, 1440, 1920]) for (const theme of ['light', 'dark']) {
+    for (const lazy of [false, true]) for (const width of [360, 390, 900, 1023, 1024, 1100, 1199, 1200, 1280, 1440, 1512, 1599, 1600, 1920]) for (const theme of ['light', 'dark']) {
       const root = roots[lazy], errors = [], unexpected = [];
       const context = await browser.newContext({viewport:{width, height:844}, colorScheme:theme, serviceWorkers:'block'});
       await context.route('**/*', route => {
@@ -49,10 +50,12 @@ async function main() {
           const bounds = await page.locator(selector).boundingBox();
           assert(bounds.height >= 44 && bounds.width >= 44);
         }
-        assert.equal(await page.locator('#analyze-search').innerText(), 'Analyze');
+        const calm = await page.locator('.analyze-long').count() > 0;
+        assert.equal(await page.locator('#analyze-search').innerText(), calm && width >= 900 ? 'AI Analysis' : 'Analyze');
         assert.equal((await page.locator('.searchfield').boundingBox()).height, 56, '44px pill and two 6px gaps');
         if (width >= 1920) assert.equal((await page.locator('.searchfield').boundingBox()).width, 940, 'wider desktop field');
-        await assertAnalyzeGeometry(page);
+        const geometry = await assertAnalyzeGeometry(page);
+        if (geometry) metrics.push({page:slug, lazy, theme, ...geometry});
         await assertDiscounts(page, false);
         await page.screenshot({path:path.join(shots, `${name}-${slug}.png`)});
         await page.locator('#q').fill('mouse');
@@ -67,10 +70,19 @@ async function main() {
         await page.locator('#q').fill('');
         await assertDiscounts(page, false);
         await page.locator('#q').fill('mouse');
+        if (analyze && calm) {
+          await page.locator('#analyze-search').click();
+          assert.equal(new URL(page.url()).pathname, '/' + slug + '/', 'typed button stays on event page');
+          assert.deepEqual(await page.evaluate(() => window.discountOpens.at(-1)), [
+            'https://www.amazon.com/s?k=mouse&rh=p_n_deal_type%3A210906366011&s=exact-aware-popularity-rank&tag=example-20', '_blank', 'noopener']);
+          // A product link still submits the old Analyze navigation to Home.
+          await page.locator('#q').fill('https://amazon.com/dp/B000000901');
+        }
         if (analyze) await page.locator('#analyze-search').click();
         else await page.locator('#q').press('Enter');
         await page.waitForURL(url => url.pathname === '/');
-        await page.waitForFunction(() => document.getElementById('q').value === 'mouse' && !/[?&](q|analyze)=/.test(location.search));
+        const expectedQuery = analyze && calm ? 'https://amazon.com/dp/B000000901' : 'mouse';
+        await page.waitForFunction(value => document.getElementById('q').value === value && !/[?&](q|analyze)=/.test(location.search), expectedQuery);
         if (analyze) await page.locator('.search-analysis[aria-busy="false"]').waitFor();
         await page.locator('#content .card').first().waitFor();
         assert.match(await page.locator('footer').innerText(), /As an Amazon Associate,\s*wowpriced earns from qualifying purchases\./);
@@ -80,7 +92,7 @@ async function main() {
         // The fresh module may settle after the query; it must preserve this view.
         await page.waitForFunction(() => Array.from(document.querySelectorAll('style'))
           .some(el => el.textContent.includes('#fresh-drop-pill')));
-        assert.equal(await page.locator('#q').inputValue(), 'mouse');
+        assert.equal(await page.locator('#q').inputValue(), expectedQuery);
         assert.match(await page.locator('#content').innerText(), /mouse/i);
         assert.equal(await page.locator('#fresh-all, #drop-confetti').count(), 0);
         assert(await page.locator('#fresh-drop-toast').isHidden());
@@ -96,6 +108,7 @@ async function main() {
       assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
       await context.close();
     }
+    console.log('Event label/button widths (CSS px): ' + JSON.stringify(metrics));
     console.log('Page polish browser checks passed: event search/Analyze, responsive layouts, themes and Support screenshots');
   } finally {if (browser) await browser.close(); fs.rmSync(scratch, {recursive:true, force:true});}
 }

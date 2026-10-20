@@ -19,6 +19,7 @@ site.util_now = lambda: NOW
 cfg = load_config()
 cfg.header_polish = sys.argv[2] == "true"
 cfg.all_discounts_button = sys.argv[3] == "true"
+cfg.search_buttons_1019 = cfg.all_discounts_button
 cfg.search_polish_1019 = cfg.all_discounts_button
 cfg.phone_tagline_count = sys.argv[4] == "true"
 cfg.timer_pill_ring = sys.argv[5] == "true"

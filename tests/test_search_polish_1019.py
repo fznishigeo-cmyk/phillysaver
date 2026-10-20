@@ -8,7 +8,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import all_discounts, search_polish_1019 as polish, tool_pages
-from tests.history_pins import pre_all_discounts_button, pre_search_polish_1019, pre_task_290_install_raw
+from tests.history_pins import pre_all_discounts_button, pre_search_polish_1019, pre_task_290_install_raw, pre_search_buttons_1019
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -60,7 +60,7 @@ def test_off_missing_back_off_exact_bytes(tmp_path, mode):
 
 @pytest.mark.parametrize('mode', ['shipped', 'inline', 'no-discounts', 'no-header', 'no-page', 'no-footer'])
 def test_emitted_polish_and_exits(tmp_path, mode):
-    cfg = load_config()
+    cfg = pre_search_buttons_1019(load_config())  # Task 332 covers the replacement buttons/pill.
     cfg.affiliate_amazon_tag = 'example-20'
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False

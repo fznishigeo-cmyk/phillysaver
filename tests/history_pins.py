@@ -198,6 +198,7 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("search_buttons_1019", None)
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
     config.pop("phone_timer_raise", None)
@@ -378,6 +379,7 @@ def pre_timer_pill_ring(cfg):
 def pre_phone_timer_raise(cfg):
     """Before task 330's phone timer alignment; preserve every recorded hash."""
     pre_tool_pages_hero(cfg)
+    pre_search_buttons_1019(cfg)
     cfg.phone_timer_raise = False
     return cfg
 
@@ -385,6 +387,12 @@ def pre_phone_timer_raise(cfg):
 def pre_tool_pages_hero(cfg):
     """Before task 335's tool heroes and header dialog; never re-pin hashes."""
     cfg.tool_pages_hero = False
+    return cfg
+
+
+def pre_search_buttons_1019(cfg):
+    """Before task 332's calm search buttons; preserve the live 328973d bytes."""
+    cfg.search_buttons_1019 = False
     return cfg
 
 

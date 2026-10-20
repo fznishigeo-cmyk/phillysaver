@@ -47,7 +47,9 @@ const path = require('node:path');
         document.addEventListener('auxclick',collect);
       });
       assert.equal(await page.locator('[data-search-amazon]').count(),0);
-      assert.equal(await page.locator('#q').getAttribute('placeholder'),'Search deals or any Amazon product');
+      const calm = await page.locator('.analyze-long').textContent().catch(() => '').then(label => label === 'AI Analysis');
+      assert.equal(await page.locator('#q').getAttribute('placeholder'), calm && width < 900
+        ? 'Search deals on Amazon' : 'Search deals or any Amazon product');
       const input=page.locator('#q'), link=page.locator('[data-search-amazon]');
       const search=async q=>{await input.fill(q);await page.waitForTimeout(350);};
       await search('cupping');
@@ -56,7 +58,12 @@ const path = require('node:path');
       assert.equal(await link.getAttribute('href'),'https://www.amazon.com/');
       assert.equal(await link.getAttribute('target'),'_blank');
       assert.equal(await link.getAttribute('rel'),'sponsored noopener');
-      assert(await link.evaluate(el=>el.classList.contains('getdeal')));
+      assert.equal(await link.evaluate(el=>el.classList.contains('getdeal')), !calm);
+      if (calm) {
+        assert.equal(await page.locator('.search-amazon-top [data-search-amazon], #search-result-top').count(), 0);
+        assert.equal(await link.evaluate(el=>getComputedStyle(el).animationName), 'none');
+        assert.equal(await link.evaluate(el=>getComputedStyle(el).backgroundImage), 'none');
+      }
       assert(await page.locator('.search-recovery').innerText().then(s=>s.includes('Amazon links may earn us a commission.')));
       assert.deepEqual(external,[],'no external request before the click');
       const outboundPromise=context.waitForEvent('request',request=>request.url().startsWith('https://www.amazon.com/s?'));
@@ -73,8 +80,12 @@ const path = require('node:path');
       await search('  café   & "tea"  ');
       assert.equal(await link.getAttribute('href'),'https://www.amazon.com/');
       assert.equal(await link.textContent(),'Search Amazon for "café & "tea""');
-      await search('kettle');await link.waitFor({state:'visible'});
-      assert(await page.locator('#search-amazon-result').innerText().then(s=>s.startsWith("Not what you're looking for? ")));
+      await search('kettle');
+      if (calm) assert.equal(await link.count(),0,'no secondary Amazon pill for local matches');
+      else {
+        await link.waitFor({state:'visible'});
+        assert(await page.locator('#search-amazon-result').innerText().then(s=>s.startsWith("Not what you're looking for? ")));
+      }
       assert.equal(await page.locator('.search-recovery').count(),0);
       if (await page.locator('#savedview').count()) {
         // Saved stays hidden until a deal is saved.
@@ -87,7 +98,8 @@ const path = require('node:path');
         assert.equal(await page.locator('#search-amazon-result').isHidden(),true);
         await page.locator('#savedall').click();
         assert.equal(await link.count(),0);
-        await search('kettle');await link.waitFor({state:'visible'});
+        await search('kettle');
+        if (!calm) await link.waitFor({state:'visible'});
       }
       for(const q of ['https://example.com/private','example.com','person@example.com','order 123456',
         '例子.测试/private','例子。测试/private','order ١٢٣٤٥٦','order 𝟏𝟐𝟑𝟒𝟓𝟔','']) {

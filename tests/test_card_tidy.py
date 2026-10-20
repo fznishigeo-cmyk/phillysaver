@@ -7,7 +7,7 @@ import pytest
 
 from dealradar.config import load_config
 from dealradar.publish import card_tidy
-from tests.history_pins import pre_all_discounts_button
+from tests.history_pins import pre_all_discounts_button, pre_search_buttons_1019
 from dealradar.publish.site import _serialize_deal
 from tests.test_offscreen_cards import offers
 from tests.test_publish_site import make_deal
@@ -18,7 +18,7 @@ from tests.test_support import NOW, render
 
 
 def test_off_and_missing_keep_bytes_on_changes_them(tmp_path):
-    cfg = load_config()
+    cfg = pre_search_buttons_1019(load_config())
     hashes = []
     render(tmp_path, cfg, offers())  # the first render into a fresh state differs in deals.json
     for value in (False, None, True, False):
@@ -34,7 +34,7 @@ def test_off_and_missing_keep_bytes_on_changes_them(tmp_path):
 @pytest.mark.parametrize('lazy', [False, True])
 @pytest.mark.parametrize('enabled', [False, True])
 def test_product_labels_and_global_filler(tmp_path, lazy, enabled):
-    cfg = load_config()
+    cfg = pre_search_buttons_1019(load_config())  # Preserve the old-label harness; 332 covers removal.
     cfg.card_tidy = enabled
     cfg.search_analyze['lazy'] = lazy
     rows = [dict(d, first_seen_at=NOW.isoformat(), last_seen_at=NOW.isoformat(),

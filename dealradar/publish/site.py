@@ -49,6 +49,7 @@ from . import discounts_from_link
 from . import tool_pages
 from . import join_dialog
 from . import search_polish_1019
+from . import search_buttons_1019
 from . import phone_tagline_count
 from . import timer_pill_ring
 from . import phone_timer_raise
@@ -1148,6 +1149,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = all_discounts.site_version(site_version, cfg)
     site_version = discounts_from_link.site_version(site_version, cfg)
     site_version = search_polish_1019.site_version(site_version, cfg)
+    site_version = search_buttons_1019.site_version(site_version, cfg)
     site_version = timer_pill_ring.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
@@ -1430,6 +1432,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     all_discounts.publish(out, cfg)
     search_polish_1019.publish(out, cfg)
     discounts_from_link.publish(out, cfg)
+    search_buttons_1019.publish(out, cfg)
     timer_pill_ring.publish(out, cfg)
     credits.publish(out, cfg)
     comments.publish(out, cfg)

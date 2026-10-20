@@ -1,0 +1,12 @@
+AssertionError [ERR_ASSERTION]: typed button adds no API call
+
+1 !== 0
+
+    at main (/tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_box_glow_browser.cjs:325:22) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 1,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}

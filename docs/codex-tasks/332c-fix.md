@@ -1,0 +1,6 @@
+# Task 332c — one real Chromium failure left (I ran it natively)
+
+PASS now: page_polish (event label/button widths logged; AI Analysis fits: label 84px in a 98px content box at 900), search_more (pill absent), search_analyze, header_polish.
+FAIL: tests/search_box_glow_browser.cjs → assertAnalyzeGeometry line 91 from main line 235 (homepage fixture, the first iteration of the width loop: lazy=false, width 360, light): `#analyze-search` innerText is 'AI Analysis' while innerWidth < 900; expected 'Analyze'. Log: docs/codex-tasks/332b/c332_search_box_glow.log.
+That means on the HOMEPAGE phone the long label shows (the operator approved "Analyze" on phones because "AI Analysis" cuts off the placeholder). Find the real cause (CSS scope `.searchfield .analyze-long` not matching the homepage markup? rule order/specificity vs another stylesheet? lazy vs inline sheets? JS setting textContent?) and fix the product, not the test. Then make sure the phone placeholder "Search deals on Amazon" fits next to "Analyze" at 360/390/412 on the homepage (light/dark, inline and lazy).
+Targeted pytest (`--basetemp=/tmp/b332z`, delete after) + `node --check`. No full suite, commit or push. Reply <= 5 lines incl. the cause.

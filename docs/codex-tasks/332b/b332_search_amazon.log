@@ -1,0 +1,7 @@
+page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://wowpriced.test/
+Call log:
+[2m  - navigating to "https://wowpriced.test/", waiting until "load"[22m
+
+    at /tmp/claude-0/-home-user-phillysaver/9d433223-0f31-5451-98af-0cdb161c5449/scratchpad/wt332/tests/search_amazon_browser.cjs:34:18 {
+  name: 'Error'
+}

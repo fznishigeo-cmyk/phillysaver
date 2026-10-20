@@ -102,14 +102,15 @@ function report(label, cards) {
         }, null, {timeout: 12000});
         const state = await page.evaluate(() => ({
           heading: (document.getElementById("search-recovery-title") || {}).textContent || "",
-          button: ((document.querySelector(".search-amazon-top .getdeal") || document.querySelector(".search-amazon a")) || {}).textContent || "",
+          button: ((document.querySelector(".search-amazon-top .getdeal") || document.querySelector(".search-amazon a") || document.querySelector("#analyze-search")) || {}).innerText || "",
           photos: [...document.querySelectorAll("#amazon-results article img")].filter(img => img.complete && img.naturalWidth > 0).length,
           overflow: document.documentElement.scrollWidth > innerWidth,
         }));
         if (cards !== 1 || !(await page.locator("#amazon-results").innerText()).includes(FIXTURE_TITLE))
           throw new Error("robot search fixture card missing");
         if (state.photos !== 1) throw new Error("robot search fixture photo missing");
-        const button = page.locator(".search-amazon-top .getdeal, .search-amazon a").first();
+        let button = page.locator(".search-amazon-top .getdeal:visible, .search-amazon a:visible").first();
+        if (!await button.count()) button = page.locator("#analyze-search:visible");
         if (await button.count()) { await button.click().catch(() => {}); await page.waitForTimeout(1500); }
         const tagged = opened.some(url => url.includes("tag=wowpriced-20"));
         console.log(`\n[${name} ${label}] search "cupping set": Amazon cards ${cards}, photos loaded ${state.photos}; heading "${state.heading}"; button "${state.button.trim()}"; ` +

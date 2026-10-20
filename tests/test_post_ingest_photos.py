@@ -233,6 +233,7 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     raw["tool_pages"] = {"enabled": True, "public": False}
     raw["phone_timer_raise"] = False
     raw["tool_pages_hero"] = False
+    raw["search_buttons_1019"] = False
     path.write_text(yaml.safe_dump(raw))
     fetch = pipeline._fetch_all
     canned = e2e._canned_deals
