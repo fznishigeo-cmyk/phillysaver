@@ -240,6 +240,9 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     raw["card_click_1020"] = False
     raw["buttons_to_tools"] = False
     raw["amazon_price_cap"] = False
+    raw["tools_new_tab"] = False
+    raw["checker_similar_heading"] = False
+    raw["tool_faq_wording"] = False
     path.write_text(yaml.safe_dump(raw))
     fetch = pipeline._fetch_all
     canned = e2e._canned_deals

@@ -207,6 +207,9 @@ def pre_task_290_install_raw(config):
     config.pop("buttons_to_tools", None)
     config.pop("amazon_price_cap", None)
     config.pop("amazon_price_cap_usd", None)
+    config.pop("tools_new_tab", None)
+    config.pop("checker_similar_heading", None)
+    config.pop("tool_faq_wording", None)
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
     config.pop("phone_timer_raise", None)
@@ -477,5 +480,26 @@ def pre_buttons_to_tools(cfg):
 
 def pre_amazon_price_cap(cfg):
     """Before the operator's $50 cap on the Amazon discount exits (2026-10-20)."""
+    pre_tools_new_tab(cfg)
     cfg.amazon_price_cap = False
+    return cfg
+
+
+def pre_tools_new_tab(cfg):
+    """Before the homepage tool links opened in a new tab (operator 2026-10-20)."""
+    pre_checker_similar_heading(cfg)
+    cfg.tools_new_tab = False
+    return cfg
+
+
+def pre_checker_similar_heading(cfg):
+    """Before the Deal Checker lead opened the product and the top-sellers heading became the similar-deals button."""
+    pre_tool_faq_wording(cfg)
+    cfg.checker_similar_heading = False
+    return cfg
+
+
+def pre_tool_faq_wording(cfg):
+    """Before the operator's 2026-10-20 tool-page FAQ wording."""
+    cfg.tool_faq_wording = False
     return cfg

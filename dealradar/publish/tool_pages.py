@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 
 from ..savings import TOOL_LIST_BADGE_JS, TOOL_FACT_BADGE_JS
-from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020, buttons_to_tools, amazon_price_cap
+from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020, buttons_to_tools, amazon_price_cap, checker_similar_heading, tool_faq_wording
 
 TEMPLATES = Path(__file__).with_name("templates")
 PAGES = {
@@ -77,7 +77,7 @@ def script(cfg):
         result = tool_pages_1020.script(result)
     elif tool_hero.enabled(cfg):
         result = tool_hero.script(result)
-    return amazon_price_cap.cap(buttons_to_tools.tool_script(result, cfg), cfg)
+    return amazon_price_cap.cap(checker_similar_heading.script(buttons_to_tools.tool_script(result, cfg), cfg), cfg)
 
 
 def _tracking(cfg):
@@ -124,6 +124,8 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
     css, js = (TEMPLATES / "tool-pages.css").read_text(), script(cfg)
     if tool_pages_1020.enabled(cfg) or tool_hero.enabled(cfg):
         css += (TEMPLATES / ("tool-hero-1020.css" if tool_pages_1020.enabled(cfg) else "tool-hero.css")).read_text()
+    if checker_similar_heading.enabled(cfg):
+        css += checker_similar_heading.CSS
         rows = tool_hero.candidates(rows, cfg)
     assets = {}
     for suffix, content in (("css", css), ("js", js)):
@@ -140,6 +142,7 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
         questions = faq(page["mode"])
         if tool_pages_1020.enabled(cfg):
             questions.append(("Is it really AI?", tool_pages_1020.ai_answer(page["mode"])))
+        questions = tool_faq_wording.questions(questions, cfg)
         schemas = [{"@context": "https://schema.org", "@type": "WebApplication", "name": page["name"],
                     "url": url, "applicationCategory": "ShoppingApplication", "operatingSystem": "Any",
                     "description": page["intro"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}},
@@ -164,7 +167,7 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
             HEAD=head, BRAND=brand, FAVICON=favicon, NAV=nav, MODE=page["mode"], BUTTON=page["button"],
             CSS_VERSION=assets["css"], JS_VERSION=assets["js"],
             STEPS=''.join('<li data-state="pending">' + escape(label) + '</li>' for label in page["steps"]),
-            FAQ=''.join('<h3>' + escape(q) + '</h3>' + (tool_pages_1020.ai_html(page["mode"])
+            FAQ=''.join('<h3>' + escape(q) + '</h3>' + (tool_faq_wording.text(tool_pages_1020.ai_html(page["mode"]), cfg)
                 if tool_pages_1020.enabled(cfg) and q == "Is it really AI?" else '<p>' + escape(a) + '</p>') for q, a in questions),
             YEAR=str(now.year), DISCLOSURE=linked_disclosure(disclosure))
         seo._write_page(out, "/" + slug + "/", tracking.inject(html, _tracking(cfg)))

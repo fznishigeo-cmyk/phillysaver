@@ -75,6 +75,7 @@ def test_off_missing_back_preserve_pre_edit_bytes(tmp_path, mode):
 @pytest.mark.parametrize('hero', [False, True])
 def test_on_copy_no_meter_faq_and_published_clouds(tmp_path, hero):
     cfg = load_config()
+    cfg.tool_faq_wording = False  # task 339 copy; the 2026-10-20 wording has its own test
     cfg.tool_pages_hero = hero
     out, doc, *_ = render(tmp_path, cfg, rows())
     css, js = ((out / ('tool-pages.' + ext)).read_text() for ext in ('css', 'js'))

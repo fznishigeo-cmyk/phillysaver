@@ -374,6 +374,9 @@ class AppConfig:
     card_click_1020: bool = False
     buttons_to_tools: bool = False
     amazon_price_cap: bool = False
+    tools_new_tab: bool = False
+    checker_similar_heading: bool = False
+    tool_faq_wording: bool = False
     amazon_price_cap_usd: float = 50.0
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
@@ -1143,6 +1146,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.buttons_to_tools = g("buttons_to_tools", default=False)
     if type(cfg.buttons_to_tools) is not bool:
         raise ValueError("buttons_to_tools must be a boolean")
+    cfg.tool_faq_wording = g("tool_faq_wording", default=False)
+    if type(cfg.tool_faq_wording) is not bool:
+        raise ValueError("tool_faq_wording must be a boolean")
+    cfg.checker_similar_heading = g("checker_similar_heading", default=False)
+    if type(cfg.checker_similar_heading) is not bool:
+        raise ValueError("checker_similar_heading must be a boolean")
+    cfg.tools_new_tab = g("tools_new_tab", default=False)
+    if type(cfg.tools_new_tab) is not bool:
+        raise ValueError("tools_new_tab must be a boolean")
     cfg.amazon_price_cap = g("amazon_price_cap", default=False)
     if type(cfg.amazon_price_cap) is not bool:
         raise ValueError("amazon_price_cap must be a boolean")

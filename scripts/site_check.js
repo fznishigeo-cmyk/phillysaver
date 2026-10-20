@@ -136,7 +136,9 @@ async function checkTools(page, tag) {
       const discounts = page.locator("#search-discounts:visible, #search-discounts-mobile:visible");
       for (const [link, slug] of [[analyze, "amazon-deal-checker"], [discounts, "amazon-discount-finder"]]) {
         check(await link.getAttribute("href") === `/${slug}/${query}`, `${slug} home href changed`);
-        check(await link.getAttribute("target") === null, `${slug} home link has a target`);
+        // Same tab, or a new tab (operator 2026-10-20) that cannot reach back into the home page.
+        const target = await link.getAttribute("target"), rel = await link.getAttribute("rel") || "";
+        check(target === null || (target === "_blank" && /\bnoopener\b/.test(rel)), `${slug} home link target ${target}`);
       }
     } finally { await page.locator("#q").fill(""); }
     for (const slug of ["amazon-deal-checker", "amazon-discount-finder"]) {

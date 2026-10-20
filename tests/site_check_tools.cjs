@@ -107,7 +107,7 @@ async function run(realtime) {
       assert(page.routes.some(r => r.pattern.includes('robot-search-fixture.png')), 'fixture image is local');
       console.log(`offline ${width}: ${note} (measured ${elapsed.toFixed(2)}s)`);
     }
-    if (!realtime) for (const [fault, reason] of [['href', /home href changed/], ['target', /has a target/],
+    if (!realtime) for (const [fault, reason] of [['href', /home href changed/], ['target', /home link target/],
       ['scroll', /jumped down/], ['jump', /jumped down/]]) {
       const page = offlinePage(runtime, false, fault);
       await assert.rejects(monitor()(page, 'example-20'), reason);
