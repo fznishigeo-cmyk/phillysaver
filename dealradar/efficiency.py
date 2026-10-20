@@ -112,6 +112,9 @@ def record(db, now, run_key, values):
         for key in COUNTERS:
             a, b = number(previous.get(key)), number(values.get(key))
             values[key] = a + b if a is not None and b is not None else None
+        if "focus_finder_tokens" in previous or "focus_finder_tokens" in values:
+            a, b = number(previous.get("focus_finder_tokens", 0)), number(values.get("focus_finder_tokens", 0))
+            values["focus_finder_tokens"] = a + b if a is not None and b is not None else None
         values["freshness"] = {"latest": values["freshness"]["latest"],
                                "worst": worst_freshness([previous["freshness"]["worst"],
                                                          values["freshness"]["worst"]])}

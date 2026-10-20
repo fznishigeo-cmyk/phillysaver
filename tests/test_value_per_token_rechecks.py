@@ -35,6 +35,7 @@ def cfg():
     # Scenarios model cached (1-token) reads; shipped live top reads
     # (update=0) are exercised where a test sets this to True.
     result.keepa_recheck_top_live = False
+    result.keepa_focus_finder = dict(result.keepa_focus_finder, enabled=False)  # task 350 is covered in its own tests
     return result
 
 

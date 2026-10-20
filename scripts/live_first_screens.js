@@ -114,7 +114,8 @@ function report(label, cards) {
         if (await button.count()) { await button.click().catch(() => {}); await page.waitForTimeout(1500); }
         const tagged = opened.some(url => url.includes("tag=wowpriced-20"));
         console.log(`\n[${name} ${label}] search "cupping set": Amazon cards ${cards}, photos loaded ${state.photos}; heading "${state.heading}"; button "${state.button.trim()}"; ` +
-          `opens Amazon ${opened.length ? (tagged ? "WITH tag=wowpriced-20" : "WITHOUT our tag (BUG)") : "(no click captured)"}; ${state.overflow ? "SIDEWAYS SCROLL (BUG)" : "no sideways scroll"}`);
+          `opens Amazon ${opened.length ? (tagged ? "WITH tag=wowpriced-20" : "WITHOUT our tag (BUG)") : "(no click captured)"}; ${state.overflow ? "SIDEWAYS SCROLL (BUG)" : "no sideways scroll"}` +
+          (opened.length ? `\n  opened ${opened[0]}` : ""));  // shows filters such as the $50 cap (p_36)
         await context.close();
       }
       if (engine !== browser) await engine.close();

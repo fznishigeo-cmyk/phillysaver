@@ -5,14 +5,14 @@ const path = require('node:path');
 const vm = require('node:vm');
 const {buildFixture} = require('./tool_pages_browser.cjs');
 const {routeRobotSearch, searchResponse} = require('../scripts/robot_search.cjs');
-const {checkToolAmazonUrl} = require('../scripts/site_check_logic.cjs');
+const {checkToolAmazonUrl, checkToolProductUrl} = require('../scripts/site_check_logic.cjs');
 const SITE = 'https://wowpriced.test/';
 const source = fs.readFileSync(path.join(__dirname, '../scripts/site_check.js'), 'utf8');
 const toolsCode = source.slice(source.indexOf('async function checkTools('), source.indexOf('async function walk('));
 const check = (ok, reason) => { if (!ok) throw Error(reason); };
 function monitor() {
   return vm.runInNewContext(toolsCode + '\ncheckTools',
-    {SITE, SITE_URL: new URL(SITE), URL, Date, check, checkToolAmazonUrl, routeRobotSearch});
+    {SITE, SITE_URL: new URL(SITE), URL, Date, check, checkToolAmazonUrl, checkToolProductUrl, routeRobotSearch});
 }
 
 function offlinePage(runtime, realtime, fault = '') {
@@ -80,8 +80,12 @@ function offlinePage(runtime, realtime, fault = '') {
           }
         }
       }};
+      const search = () => ids['tool-result'].innerHTML.match(/class="amazon-button" href="([^"]+)"/)[1].replace(/&amp;/g, '&');
+      // 'lead'/'badlead': the operator's 2026-10-20 checker (product lead, search in the heading).
+      const lead = ['lead', 'badlead'].includes(fault) && url.includes('amazon-deal-checker');
       if (selector === '#tool-result .amazon-button') return {first:() => ({getAttribute:async () =>
-        ids['tool-result'].innerHTML.match(/class="amazon-button" href="([^"]+)"/)[1].replace(/&amp;/g, '&')})};
+        lead ? `https://www.amazon.com/dp/B0ROBOT001?tag=${fault === 'badlead' ? 'wrong-20' : 'example-20'}` : search()})};
+      if (selector === '#top-title .amazon-button') return {first:() => ({getAttribute:async () => search()})};
       assert(['#analyze-search:visible', '#search-discounts:visible, #search-discounts-mobile:visible'].includes(selector));
       const slug = selector.includes('analyze') ? 'amazon-deal-checker' : 'amazon-discount-finder';
       return {getAttribute:async name => name === 'target' ? (fault === 'target' ? '_blank' : null) :
@@ -108,12 +112,13 @@ async function run(realtime) {
       console.log(`offline ${width}: ${note} (measured ${elapsed.toFixed(2)}s)`);
     }
     if (!realtime) for (const [fault, reason] of [['href', /home href changed/], ['target', /home link target/],
-      ['scroll', /jumped down/], ['jump', /jumped down/]]) {
+      ['scroll', /jumped down/], ['jump', /jumped down/], ['badlead', /product URL has wrong/]]) {
       const page = offlinePage(runtime, false, fault);
       await assert.rejects(monitor()(page, 'example-20'), reason);
       assert.equal(page.fills.at(-1), '');
       assert(!page.routes.some(r => r.pattern === '**/*'));
     }
+    if (!realtime) await monitor()(offlinePage(runtime, false, 'lead'), 'example-20');
     console.log(`Tools ${realtime ? 'real timers, four maximum 25s runs' : 'offline checks'}: ${seconds.toFixed(2)}s total; no network`);
   } finally { fs.rmSync(scratch, {recursive:true, force:true}); }
 }

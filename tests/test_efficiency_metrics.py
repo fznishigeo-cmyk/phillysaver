@@ -406,6 +406,7 @@ def test_open_pull_receipts_are_shared_without_counting_rechecks_or_photos_as_di
     db = DB(":memory:")
     cfg = pre_task_319(load_config())
     cfg.keepa_click_price_rule = "off"  # one-token receipts recorded before task 275
+    cfg.keepa_focus_finder = dict(cfg.keepa_focus_finder, enabled=False)  # task 350 is covered in its own tests
     fake = setup_pull(cfg, db, monkeypatch)
     due = seed(db, cfg, price_rechecked_at=util.iso(NOW - timedelta(hours=2)))
     idle = seed(db, cfg, asin="B000000002", price_rechecked_at=util.iso(NOW - timedelta(minutes=35)))

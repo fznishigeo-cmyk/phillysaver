@@ -289,7 +289,7 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
                links=None, popularity: bool = True) -> float | None:
     """Landing quality; internal recovery may score used items without featuring them.
     popularity=False leaves out the private popularity boost (public ``ps``)."""
-    from .publish.credits import link_policy
+    from .publish.link_facts import routing_policy as link_policy
     from .publish.link_facts import _needs_steps, _simple_code_deal, derive_link_facts
     from .verify import _price_hidden_by_promo, is_amazon_deal, price_confirmation_recent
     from . import checkout_prices
@@ -350,7 +350,8 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
             cfg.affiliate_amazon_tag, cfg.affiliate_link_overrides,
             sovrn_key=cfg.affiliate_sovrn_key, sovrn_enabled=cfg.affiliate_sovrn_enabled,
             competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
-            ebay_campid=cfg.affiliate_ebay_campaign_id))
+            ebay_campid=cfg.affiliate_ebay_campaign_id,
+            repair_competitor_trackers=cfg.affiliate_repair_competitor_trackers))
     steps = links.needs_steps if links is not None else _needs_steps(deal)
     simple = links.simple_code if links is not None else (steps and _simple_code_deal(deal))
     if steps and not simple:

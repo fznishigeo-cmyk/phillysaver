@@ -9,7 +9,7 @@ from dealradar.config import AppConfig, daily_spend_cap, load_config, spend_allo
 from dealradar.db import DB
 from dealradar.growth import report
 from tests.test_ai_spend import Messages, deal, insert, parser_for
-from tests.test_e2e_offline import env, _run, _FakeMessages
+from tests.test_e2e_offline import env, _run, _FakeMessages, keep_source_posts as e2e_keep_source_posts
 
 NOW = datetime(2026, 10, 14, tzinfo=timezone.utc)
 
@@ -70,6 +70,7 @@ def test_config_switches_and_headroom(tmp_path):
 
 
 def test_zero_paced_allowance_leaves_posts_for_next_run(env, monkeypatch, tmp_path, caplog):
+    e2e_keep_source_posts(env)
     monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW)
     step = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step))
@@ -204,6 +205,7 @@ def test_shadow_disabled_or_invalid_reply_never_changes_real_verdict(tmp_path, m
 
 
 def test_opposite_shadow_never_changes_published_deals(env, monkeypatch, tmp_path):
+    e2e_keep_source_posts(env)
     monkeypatch.setattr(pipeline.util, "now_utc", lambda: NOW)
     config = Path(env["cfg"])
     original = config.read_text()
@@ -330,6 +332,7 @@ def test_intake_config_rejects_invalid_bounds(tmp_path, key, value):
 
 
 def test_intake_shadow_preserves_reads_output_and_spend_with_a_changed_proposal(env, monkeypatch, tmp_path):
+    e2e_keep_source_posts(env)
     import json
     import yaml
     from dealradar import source_audit

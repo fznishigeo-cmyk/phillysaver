@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks} = require("../scripts/site_check_logic.cjs");
+const {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks} = require("../scripts/site_check_logic.cjs");
 const tag = "wowpriced-20";
 const doc = (...urls) => ({deals: urls.map(url => ({url})),
   meta: {disclosure: "As an Amazon Associate, wowpriced earns from qualifying purchases."}});
@@ -46,6 +46,14 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(checkToolAmazonUrl(checker, tag, true).ok, false);
   assert.equal(checkToolAmazonUrl(finder.replace(/&rh=[^&]+/, ""), tag, true).ok, false);
   assert.equal(checkToolAmazonUrl(finder.replace("210906366011", "2109063660110"), tag, true).ok, false);
+  const product = `https://www.amazon.com/dp/B0CUPPING1?tag=${tag}`;
+  assert.deepEqual(checkToolProductUrl(product, tag), {ok: true});
+  for (const href of [product.replace("https:", "http:"), product.replace("www.amazon.com", "amazon.com.evil"),
+    product.replace("/dp/B0CUPPING1", "/s"), product.replace("B0CUPPING1", "B0CUP"), product + `&tag=${tag}`,
+    product.replace(tag, "wrong-20"), product.replace(`?tag=${tag}`, ""), "garbage"]) {
+    assert.equal(checkToolProductUrl(href, tag).ok, false, href);
+  }
+  assert.equal(checkToolAmazonUrl(product, tag).ok, false);
 }
 
 // First-screens coverage reads the same public photo field as the hourly walk.
@@ -202,7 +210,9 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
       return Array.from({length: 60}, (_, i) => ({
         matches: () => false, getAttribute: () => `key${i}`,
         querySelector: s => s === ".title" ? {textContent: ` ${visible.item} `} :
-          s === ".storechip" ? {textContent: " Target "} : {getAttribute: () => "home"},
+          s === ".storechip" ? {textContent: " Target "} :
+          s === ".getdeal[href]" ? {getAttribute: () => "https://target.com/product"} :
+          {getAttribute: () => "home"},
       }));
     },
   };
@@ -212,7 +222,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
     assert.equal(snapshot.tagline, "1,000+ VERIFIED DEALS");
     assert.equal(snapshot.frontCards.length, 48);
     assert.deepEqual(snapshot.frontCards[47],
-      {key: "key47", item: visible.item, store: "Target", category: "home"});
+      {key: "key47", item: visible.item, store: "Target", category: "home", url: "https://target.com/product"});
   } finally { delete global.document; }
 }
 
@@ -280,3 +290,41 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(shown.frontCards[0].unidentified, false);
   assert.equal(listeners.has("response"), false);
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Get deal source hosts fail at any of the first 48 positions, using the
+// visible anchor even when a separately fetched publish has a different URL.
+{
+  const fs = require('node:fs'), path = require('node:path');
+  const {frontRules, frontPageFlags, frontPageFlagLine, identifyFrontCards, dealSourceHosts} =
+    require('../scripts/site_check_logic.cjs');
+  const config = fs.readFileSync(path.join(__dirname, '../config.yaml'), 'utf8');
+  const sources = fs.readFileSync(path.join(__dirname, '../sources.yaml'), 'utf8');
+  const rules = frontRules(config, sources);
+  const card = {key: 'fixture', item: 'Kitchen fixture', store: 'Amazon', category: 'home',
+    url: 'https://www.amazon.com/dp/B012345678?tag=wowpriced-20'};
+  for (const host of ['cc.dealsofamerica.com', 'slickdeals.net', 'links.southernsavers.com',
+      'moneysavingmom.com', 'go.dealmoon.com', 'hip2save.com', 'thekrazycouponlady.com',
+      'freestufffinder.com', 'sub.hip2save.com', 'www.slickdeals.net']) {
+    for (const pos of [1, 24, 25, 48]) {
+      const cards = Array.from({length: 49}, () => ({...card}));
+      cards[pos - 1].url = `https://${host}/post`;
+      const checked = frontPageFlags(identifyFrontCards(cards, [{deals: [card]}]), rules);
+      assert.equal(checked.ok, false);
+      assert.equal(checked.flags.length, 1);
+      assert.equal(checked.flags[0].pos, pos);
+      assert.ok(frontPageFlagLine(checked.flags[0]).includes('Get deal opens deal site'));
+      assert.ok(frontPageFlagLine(checked.flags[0]).includes(host.replace(/^www\./, '')));
+    }
+  }
+  for (const url of ['https://hip2save.com.evil.example/post', 'https://www.walmart.com/ip/123',
+      'https://morningsave.com/product', 'https://woot.com/product', '', 'garbage']) {
+    assert.deepEqual(frontPageFlags([{...card, url}], rules), {ok: true, flags: []});
+  }
+  const cards = Array.from({length: 49}, () => ({...card}));
+  cards[48].url = 'https://hip2save.com/post';
+  assert.deepEqual(frontPageFlags(cards, rules), {ok: true, flags: []});
+  assert.deepEqual(dealSourceHosts('  competitor_tracker_hosts: [track.example,\n    second.example]',
+    'sources:\n  - name: fixture\n    site: https://blog.example/\n    url: https://feed.example/rss\n' +
+    '  - name: store\n    site: https://www.morningsave.com/\n'),
+    ['track.example', 'second.example', 'blog.example']);
+}

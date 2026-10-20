@@ -76,6 +76,7 @@ def seed(db, cfg, url, name="hip2save"):
     ("southernsavers", "https://links.southernsavers.com/a?affid=source"),
 ])
 def test_ingest_keeps_source_tracker(db, cfg, name, link):
+    cfg.affiliate_repair_competitor_trackers = False  # legacy routing opt-out
     row = seed(db, cfg, link, name)
     post = RawPost(name, "other", source(name).site + "widget/", row["item"],
                    "regular $100.00, now $30.00.", NOW, NOW)
@@ -95,6 +96,7 @@ def test_ingest_keeps_source_tracker(db, cfg, name, link):
 
 @pytest.mark.parametrize("steps", [False, True])
 def test_source_tracker_survives_public_and_member_overrides(db, cfg, steps):
+    cfg.affiliate_repair_competitor_trackers = cfg.hide_deal_site_links = False
     link = "https://go.dealmoon.com/item?affid=source&tag=source-20"
     cfg.affiliate_link_overrides = {"go.dealmoon.com/item": "https://sovrn.co/ours"}
     deal = make_deal(canonical_url=link, link_as_posted=link,

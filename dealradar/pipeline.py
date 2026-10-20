@@ -259,6 +259,9 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             adapter.recheck = recheck
         got, ok, err = run_source(source, adapter, fetcher, source_db, cfg, now,
                                   run_deadline=fetch_deadline)
+        if cfg.keepa_focus_finder.get("enabled") is True and getattr(adapter, "focus_summary", None) is not None:
+            fetcher.keepa_focus_finder = adapter.focus_summary
+            fetcher.keepa_focus_groups = adapter.focus_groups
         if store_checks is not None and source.adapter == "woot" and hasattr(adapter, "recheck_stats"):
             store_checks["woot"] = adapter.recheck_stats
         if hasattr(fetcher, "keepa_feed_usage") and hasattr(adapter, "token_usage"):
@@ -784,12 +787,9 @@ def _site_of(url: str) -> str:
 def _restore_source_credit_links(db: DB, cfg: AppConfig) -> int:
     """Put back a source's own tracker link that a tracker repair replaced.
 
-    Deals of America, DealMoon and Southern Savers keep their affiliate credit
-    as a condition of their crawl permission; their tracker link is that credit.
-    The 2026-10-13 tracker repair, ingest redirect resolution and the Amazon
-    link-from-text fallback could swap it for the store link. While repair is
-    off, any deal posted with such a tracker whose product link now points
-    elsewhere gets the tracker back. Idempotent: a restored deal matches no more.
+    Only repair-off compatibility uses this legacy behavior. The operator
+    clarified on 2026-10-20 that permission requires credit by name, so with
+    repair on the recovered store destination stays. Idempotent when off.
     """
     from .dedupe import _DEAL_FIELDS
     from .publish.site import is_competitor_tracker_host
@@ -853,8 +853,7 @@ def _resolve_short_links(db: DB, fetcher, deadline: float | None,
         if parts.scheme not in ("http", "https") or not host or is_challenge_url(link) \
                 or keeps_source_tracker(link, cfg):
             continue
-        # Off by default: a permitted source keeps its affiliate credit, and its
-        # tracker is that credit (config affiliate.repair_competitor_trackers).
+        # Operator 2026-10-20: credit by name; repair to the retailer when on.
         tracker = cfg.affiliate_repair_competitor_trackers and \
             is_competitor_tracker_host(host, tracker_hosts)
         tentative_photo = deal.get("photo_asin") and not deal.get("asin")
@@ -1726,7 +1725,17 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
         discovery_done = True
         if overflow_discovery is not None and not rate_limited and (
                 deadline is None or time.monotonic() <= deadline):
-            stats["overflow_discovery"] = overflow_discovery(budget)
+            options = {}
+            if cfg.keepa_focus_finder.get("enabled") is True:
+                # A deferred due check keeps priority even when the planner
+                # couldn't fund/fit its batch. Extras cannot take its runway.
+                pending = any(d["dedupe_key"] not in attempted
+                    for group, *opts in groups[:-1]
+                    if not opts[-1] and not opts[3].startswith("hidden_")
+                    for d in group)
+                pending = pending or any(d["dedupe_key"] not in attempted for d in top_reads)
+                options["focus_allowed"] = not pending
+            stats["overflow_discovery"] = overflow_discovery(budget, **options)
             rate_limited = stats["overflow_discovery"].get("rate_limited", False)
 
     def planned_groups(extra_groups=None):
@@ -2437,6 +2446,10 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     fetcher = PoliteFetcher(db, cfg, transport=transport)
     from .keepa_budget import TokenUsage
     fetcher.keepa_feed_usage = TokenUsage()
+    if cfg.keepa_focus_finder.get("enabled") is True:
+        from .fetch.keepa_focus import empty_summary
+        fetcher.keepa_focus_finder = empty_summary(cfg)
+        fetcher.keepa_focus_groups = {}
     summary: dict[str, Any] = {"run_key": run_key, "kind": kind}
     identity_before = {d["dedupe_key"]: bool(d.get("asin") or d.get("product_identity_url"))
                        for d in db.all_deals()}
@@ -2893,6 +2906,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         log.info("amazon used: %s", summary["amazon_used"])
         summary["published"] = site_res.get("published", 0)
         summary["unpublished_photoless"] = site_res["unpublished_photoless"]
+        summary["hidden_deal_site_links"] = site_res["hidden_deal_site_links"]
+        summary["hidden_deal_site_links_by_credit"] = site_res["hidden_deal_site_links_by_credit"]
         summary["appeal"] = site_res.get("appeal", {})
         if "amazon_reference" in site_res:
             summary["amazon_reference"] = site_res["amazon_reference"]
@@ -2912,6 +2927,11 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         from .publish.price_labels import META as label_report_meta
         db.meta_set(label_report_meta, json.dumps(summary["unconfirmed_label"], sort_keys=True))
         summary["price_recheck"]["confirmed_age"] = site_res["confirmed_age"]
+        if cfg.keepa_focus_finder.get("enabled") is True:
+            summary["keepa_focus_finder"] = fetcher.keepa_focus_finder
+            from .fetch.keepa_focus import published_groups
+            summary["keepa_focus_finder"]["published_by_group"] = published_groups(
+                site_res["public_deals"], fetcher.keepa_focus_groups, cfg)
         if cfg.keepa_visitor_reserve_tokens:
             summary["price_recheck"]["visitor_reserve_deferred_calls"] = getattr(
                 db, "keepa_visitor_deferred_calls", 0)
@@ -3030,6 +3050,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["efficiency"] = efficiency.run_metrics(
             summary, fetcher.keepa_feed_usage,
             {s.name for s in sources if s.method == "api" and s.adapter == "keepa"})
+        if cfg.keepa_focus_finder.get("enabled") is True:
+            summary["efficiency"]["focus_finder_tokens"] = summary["keepa_focus_finder"]["tokens"]
         if step_summary:
             try:
                 with open(step_summary, "a", encoding="utf-8") as fh:

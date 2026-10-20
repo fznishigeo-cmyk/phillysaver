@@ -162,7 +162,8 @@ intake:
 search:
   amazon_results: on          # operator approved 2026-10-17 7:55pm after testing ?preview=search
   cache_hours: 6
-  tokens_per_day: 10000       # separate from pipeline recheck accounting; Nishi 2026-10-18 "raise it" (3,000 ran out at 1:45am; 5,000 again by 12:30pm, ad day)
+  tokens_per_day: 40000       # separate from pipeline recheck accounting; Nishi 2026-10-18 "raise it" (3,000 ran out at 1:45am; 5,000 again by 12:30pm, ad day)
+                              # Nishi 2026-10-20: plenty for 1000+ searchers a day; the bucket refills 86,400/day and the pipeline needs ~14,400
   max_per_minute: 20
 
 search_analyze:
@@ -278,6 +279,7 @@ publish:
                                # alert bar still render on the page (never
                                # alerted). Equal to min_pct = the tier is off.
   photoless_last: true        # photos first within each wall group; search stays unchanged
+  hide_deal_site_links: true  # operator 2026-10-20: Get deal must open the store; credit by name
   photos:
     max_photoless_h: 1        # hide live cards without an HTTPS photo after this many hours (Nishi 2026-10-18: rows of photo-less new deals; was 3)
   reuse_link_facts:
@@ -515,12 +517,11 @@ affiliate:
   # (ranked lower, never posted to social).
   competitor_tracker_hosts: [cc.dealsofamerica.com, go.dealmoon.com,
                              slickdeals.net, links.southernsavers.com]
-  # NEVER replace a source's own tracker with the store link: Deals of
-  # America, DealMoon and Southern Savers gave crawl permission on the
-  # condition that they keep their affiliate credit (sources.yaml
-  # crawl_permission), and their tracker IS that credit. Operator's
-  # agreements, 2026-10-10; repair switched off 2026-10-13.
-  repair_competitor_trackers: false
+  # Credit by name on every deal is the crawl-permission condition.
+  # Operator 2026-10-20, after re-reading the permission emails:
+  # "they said just reference them.. you don't need to link them ... so dont
+  # make it go to their website". Repair trackers to store links with our tag.
+  repair_competitor_trackers: true
   # eBay Partner Network campaign ID (operator, approved 2026-10-13; public,
   # it rides in every eBay link). Every https ebay.com Get deal link carries
   # our EPN parameters, before any Sovrn wrap. "" = off.
@@ -661,6 +662,66 @@ accuracy:
 
 amazon_used:
   enabled: false  # operator 2026-10-19: Amazon only; Woot used/open-box stays
+
+keepa_focus_finder:
+  # Operator 2026-10-20: "build it ... and sexy items.. not adult items just sexy stuff
+  # for girlfrineds to buy for their boyfriends to look sexy in or wives to wear".
+  # Only Keepa tokens that would otherwise expire unused; false = previous behavior.
+  enabled: true
+  idle_share: 0.7 # shared surplus forecast, AFTER due checks and all reserves
+  max_pages_per_run: 80  # 400 /deal tokens, plus one-time category resolution
+  max_new_deals_per_run: 10 # existing evidence/critic and run/day AI caps still apply
+  max_price: 50
+  max_rank: 30000
+  min_rating: 40  # tenths of stars; internal filter only
+  min_reviews: 50 # internal filter only; never saved in a post/public artifact
+  # Names, not guessed IDs. Search the leaf then verify its parent path once.
+  # Paths can omit intermediate nodes; names must occur in this order.
+  groups:
+    women:
+      - Clothing, Shoes & Jewelry > Women > Clothing
+      - Clothing, Shoes & Jewelry > Women > Dresses
+      - Clothing, Shoes & Jewelry > Women > Tops, Tees & Blouses
+      - Clothing, Shoes & Jewelry > Women > Handbags & Wallets
+      - Clothing, Shoes & Jewelry > Women > Jewelry
+      - Beauty & Personal Care > Makeup
+      - Beauty & Personal Care > Skin Care
+      - Beauty & Personal Care > Fragrance
+    sexy:
+      - Clothing, Shoes & Jewelry > Women > Lingerie
+      - Clothing, Shoes & Jewelry > Women > Bras
+      - Clothing, Shoes & Jewelry > Women > Panties
+      - Clothing, Shoes & Jewelry > Women > Bodysuits
+      - Clothing, Shoes & Jewelry > Women > Sleep & Lounge
+      - Clothing, Shoes & Jewelry > Women > Pajama Sets
+      - Clothing, Shoes & Jewelry > Women > Nightgowns & Sleepshirts
+      - Clothing, Shoes & Jewelry > Women > Baby Dolls & Chemises
+      - Clothing, Shoes & Jewelry > Women > Robes
+      - Clothing, Shoes & Jewelry > Women > Swimsuits & Cover Ups
+      - Clothing, Shoes & Jewelry > Men > Boxer Briefs
+      - Clothing, Shoes & Jewelry > Men > Sleep & Lounge
+      - Clothing, Shoes & Jewelry > Men > Robes
+      - Clothing, Shoes & Jewelry > Men > Trunks
+      - Beauty & Personal Care > Men > Cologne
+    kids_baby:
+      - Toys & Games
+      - Clothing, Shoes & Jewelry > Girls > Clothing
+      - Clothing, Shoes & Jewelry > Boys > Clothing
+      - Clothing, Shoes & Jewelry > Girls > Shoes
+      - Clothing, Shoes & Jewelry > Boys > Shoes
+      - Baby Products
+    everyday:
+      - Health & Household > Household Supplies
+      - Health & Household > Paper & Plastic
+      - Health & Household > Household Cleaning
+      - Beauty & Personal Care > Personal Care
+      - Grocery & Gourmet Food > Pantry Staples
+    gadgets:
+      - Electronics > Headphones, Earbuds & Accessories
+      - Cell Phones & Accessories > Chargers & Power Adapters
+      - Tools & Home Improvement > Smart Home
+      - Cell Phones & Accessories > Cases, Holsters & Sleeves
+      - Cell Phones & Accessories > Cables
 
 keepa:
   genuine_drops_only: true  # also verify 90-day drop, rank and adult exclusions in responses

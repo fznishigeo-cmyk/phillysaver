@@ -19,7 +19,7 @@ from dealradar import pipeline
 from dealradar.db import DB
 from dealradar.models import SourceConfig
 import yaml
-from tests.history_pins import pre_history_removal_raw
+from tests.history_pins import pre_history_removal_raw, pre_hide_deal_site_links_raw
 
 FIX = Path(__file__).parent / "fixtures"
 ROBOTS = "User-agent: *\nAllow: /\n"
@@ -214,6 +214,12 @@ def env(tmp_path, monkeypatch):
     return result
 
 
+def keep_source_posts(env):
+    """Recorded offline facts include source-only offers, which task 351 hides."""
+    path = Path(env["cfg"])
+    path.write_text(yaml.safe_dump(pre_hide_deal_site_links_raw(yaml.safe_load(path.read_text()))))
+
+
 def _run(env):
     return pipeline.run(
         db_path=env["db"], config_path=env["cfg"], dry_run_telegram=True,
@@ -223,6 +229,9 @@ def _run(env):
 
 
 def test_offline_end_to_end(env, capsys, monkeypatch, tmp_path):
+    # Recorded public facts include a source-only offer; retain the OFF case.
+    path = Path(env["cfg"])
+    path.write_text(yaml.safe_dump(pre_hide_deal_site_links_raw(yaml.safe_load(path.read_text()))))
     step_summary = tmp_path / "step_summary.md"
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(step_summary))
     summary = _run(env)
@@ -480,7 +489,9 @@ def test_rerun_is_idempotent(env, capsys, audit_mode):
     assert second["run_key"] == first["run_key"]
     assert second["posts_new"] == 0          # content hashes already known
     assert second["telegram"]["sent"] == 0   # alerts_sent dedup
-    assert second["published"] == 2          # same deals, no duplicates
+    assert second["published"] == first["published"] == (1 if cfg.hide_deal_site_links else 2)
+    if cfg.hide_deal_site_links:
+        assert second["hidden_deal_site_links"] == first["hidden_deal_site_links"] == 1
     assert second["critic"]["judged"] == 0   # verdicts persisted; no re-spend
     db = DB(env["db"])
     assert (redirects.read_bytes() if redirects.exists() else b"") == redirects_before

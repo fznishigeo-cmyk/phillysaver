@@ -11,7 +11,7 @@ const {routeRobotSearch} = require('./robot_search.cjs');
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
-const { amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks, overrideLinks, overrideNote,
+const { amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
         frontPageFlagLine, frontPageFlags, eventLinks, toolLinks } = require("./site_check_logic.cjs");
 
@@ -147,7 +147,14 @@ async function checkTools(page, tag) {
       check(await page.locator("#q").inputValue() === words, `${slug} did not fill query`);
       await page.locator("#tool-result").waitFor({ state: "visible", timeout: 40000 });
       check(await page.evaluate(() => scrollY === 0 && !window.__siteCheckToolJump), `${slug} jumped down the page`);
-      const href = await page.locator("#tool-result .amazon-button").first().getAttribute("href");
+      let href = await page.locator("#tool-result .amazon-button").first().getAttribute("href");
+      if (slug === "amazon-deal-checker" && /\/dp\//.test(href || "")) {
+        // Operator 2026-10-20: the lead opens the product; the similar-deals search is the
+        // top-sellers heading button.
+        const product = checkToolProductUrl(href, tag);
+        check(product.ok, `${slug}: ${product.reason}`);
+        href = await page.locator("#top-title .amazon-button").first().getAttribute("href", { timeout: 5000 }).catch(() => null);
+      }
       const result = checkToolAmazonUrl(href, tag, slug === "amazon-discount-finder");
       check(result.ok, `${slug}: ${result.reason}`);
     }
@@ -496,7 +503,8 @@ async function walk(page, doc, device) {
     photoRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
   say(`photo floors: ${photos.ok ? "ok" : "FAIL " + photos.reason}`);
   const front = frontPageFlags(shown.frontCards || [],
-    frontRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8")));
+    frontRules(fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8"),
+      fs.readFileSync(path.join(__dirname, "../sources.yaml"), "utf8")));
   say(`front page: ${front.ok ? "ok" : "FAIL"} (${front.flags.length} flagged in the first ${(shown.frontCards || []).length} cards)`);
   front.flags.forEach((f) => say(`  ${frontPageFlagLine(f)}`));
   say(`page errors: ${errors.length ? errors.join(" / ") : "none"}`);

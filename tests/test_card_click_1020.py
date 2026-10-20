@@ -26,6 +26,7 @@ def test_shared_css_and_unchanged_native_markup(tmp_path):
     cfg.non_amazon_freshness_enabled = False
     cfg.credit_links = True
     cfg.max_photoless_h = None
+    cfg.hide_deal_site_links = False  # 'live' is a source-post-only coded offer (task 351 hides it)
     deals = [make_deal(dedupe_key='live', item='Basket', store='Target', codes=['SAVE'],
                        conditions=['code'], category='home', image_url='https://images.example.invalid/basket.jpg'),
              make_deal(dedupe_key='other', item='Glass vase', brand='Acme', store='Target',

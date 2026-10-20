@@ -17,6 +17,7 @@ from dealradar.errors import DeadlineExceeded
 from dealradar.http_client import PoliteFetcher
 from dealradar.keepa_budget import KeepaBudget
 from tests import test_e2e_offline as e2e
+from tests.history_pins import pre_hide_deal_site_links_raw, pre_keepa_focus_finder_raw
 from tests.test_e2e_offline import env
 from tests.test_photo_identity import source_post
 from tests.test_photos_every_deal import A, B, PIC, seed
@@ -243,6 +244,9 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     raw["tools_new_tab"] = False
     raw["checker_similar_heading"] = False
     raw["tool_faq_wording"] = False
+    pre_hide_deal_site_links_raw(raw)  # recorded while ASIN deals still opened the source post
+    pre_keepa_focus_finder_raw(raw)
+    raw["search"]["tokens_per_day"] = 10000  # recorded before the 2026-10-20 raise
     path.write_text(yaml.safe_dump(raw))
     fetch = pipeline._fetch_all
     canned = e2e._canned_deals

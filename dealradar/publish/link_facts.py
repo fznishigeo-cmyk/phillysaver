@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
@@ -24,6 +24,7 @@ class LinkPolicy:
     sovrn_key: str = ""
     sovrn_enabled: bool = False
     competitor_tracker_hosts: tuple[str, ...] = ()
+    repair_competitor_trackers: bool = False
     ebay_campid: str = ""
     source_names: Mapping[str, str] = field(default_factory=dict)
     source_hosts: frozenset[str] = frozenset()
@@ -46,6 +47,20 @@ class LinkFacts:
     earns: bool
 
 
+def routing_policy(*args, repair_competitor_trackers=False, **kwargs) -> LinkPolicy:
+    """Add routing policy without changing the credit renderer's version bytes."""
+    from .credits import _deal_source_hosts, link_policy
+
+    return replace(link_policy(*args, **kwargs),
+                   repair_competitor_trackers=repair_competitor_trackers,
+                   source_hosts=_deal_source_hosts())
+
+
+# Stores whose own feed is a source: their "post" is the product page itself
+# (the same list credits._deal_source_hosts excludes; credits.py bytes version
+# the credit renderer, so it keeps its own copy).
+RETAILER_SOURCE_HOSTS = frozenset({"woot.com", "meh.com", "morningsave.com", "sidedeal.com",
+                                   "dealgenius.com", "dailysteals.com", "tanga.com", "1sale.com"})
 _AMAZON_HOSTS = {"amazon.com", "www.amazon.com", "smile.amazon.com"}
 _AMAZON_NETWORK_HOST = re.compile(r"(^|\.)amazon\.[a-z]{2,3}(\.[a-z]{2})?$")
 _SOVRN_HOSTS = {"redirect.viglink.com", "sovrn.co"}
@@ -245,9 +260,17 @@ def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
     posted = deal.get("link_as_posted") or ""
     protected_link = next((u for u in (posted, canon) if u and
                            is_competitor_tracker_host(host_of(u), policy.competitor_tracker_hosts)), "")
-    protected = bool(protected_link)
+    protected = bool(protected_link) and not policy.repair_competitor_trackers
     if protected:
         canon = protected_link
+    if policy.repair_competitor_trackers:
+        # Operator 2026-10-20: an Amazon item never opens the source's own post.
+        source_urls = {s.get("source_url") for s in deal.get("sightings") or []}
+        source_link = canon in source_urls or is_competitor_tracker_host(
+            host_of(canon), tuple(policy.source_hosts) + policy.competitor_tracker_hosts)
+        asin = str(deal.get("asin") or "").upper()
+        if not protected and (not canon or source_link) and re.fullmatch(r"[A-Z0-9]{10}", asin):
+            canon = f"https://www.amazon.com/dp/{asin}"
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)

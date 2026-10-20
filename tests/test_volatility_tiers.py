@@ -28,6 +28,7 @@ def cfg():
     # These tests exercise the volatility scheduler itself; the shipped switch
     # is off until its batching fix (2026-10-14).
     cfg.keepa_volatility["enabled"] = True
+    cfg.keepa_focus_finder = dict(cfg.keepa_focus_finder, enabled=False)  # task 350 is covered in its own tests
     return cfg
 
 

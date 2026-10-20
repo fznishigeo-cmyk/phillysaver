@@ -46,6 +46,17 @@ function checkToolAmazonUrl(href, tag, finder = false) {
   return {ok: true};
 }
 
+// Operator 2026-10-20: the Deal Checker's lead button opens the product itself.
+function checkToolProductUrl(href, tag) {
+  let url;
+  try { url = new URL(href); } catch { return {ok: false, reason: "invalid tool product URL"}; }
+  if (url.protocol !== "https:" || !["amazon.com", "www.amazon.com"].includes(url.hostname) ||
+      !/^\/dp\/[A-Z0-9]{10}$/.test(url.pathname)) return {ok: false, reason: "tool product URL must be https amazon.com/dp/<ASIN>"};
+  const tags = url.searchParams.getAll("tag");
+  if (!tag || tags.length !== 1 || tags[0] !== tag) return {ok: false, reason: "tool product URL has wrong or duplicate tag"};
+  return {ok: true};
+}
+
 function checkSovrnLinks(doc) {
   let links = 0, badLinks = 0;
   for (const deal of doc.deals || []) {
@@ -106,15 +117,32 @@ function checkPhotos({live, showing, broken, firstScreen}, rules) {
 
 // Front page (operator 2026-10-16: "stop putting random car parts on the front page"):
 // niche categories and model-specific car parts never belong on the first screens.
-// Every flag prints each hour; one in the first 24 cards turns the check red.
+// Every flag prints each hour; niche/car flags fail in the first 24 cards,
+// and Get deal source-host flags fail anywhere in the first 48.
 const VEHICLE_PART = /\b(?:cv axles?|radiators?|ac compressors?|brake (?:kits?|pads|rotors|calipers?)|catalytic converters?|alternators?|control arms?|struts?|tie rods?|wheel (?:hubs?|bearings?)|spark plugs?|ignition coils?|fuel pumps?|o2 sensors?|oxygen sensors?|(?:head|tail)[ -]?light assembl(?:y|ies)|floor mats? for)\b/i;
 // Footwear titles reuse part words ("School Struts Sneaker", 2026-10-20).
 const FOOTWEAR = /\b(?:sneakers?|sandals?|slippers?|loafers?)\b/i;
 
-function frontRules(config) {
+function dealSourceHosts(config, sources) {
+  const trackers = config.match(/^  competitor_tracker_hosts:\s*\[([^\]]*)\]/m);
+  const hosts = new Set(trackers ? trackers[1].split(",").map(s => s.trim()) : []);
+  const retailers = new Set(["woot.com", "meh.com", "morningsave.com", "sidedeal.com",
+    "dealgenius.com", "dailysteals.com", "tanga.com", "1sale.com"]);
+  for (const entry of sources.split(/^  - name:/m).slice(1)) {
+    const match = entry.match(/^    site:\s*(\S+)/m) || entry.match(/^    url:\s*(\S+)/m);
+    try {
+      const host = new URL(match[1].replace(/^["']|["']$/g, "")).hostname.toLowerCase().replace(/^www\./, "");
+      if (host && !retailers.has(host)) hosts.add(host);
+    } catch { /* Non-web feeds do not have a shopper link host. */ }
+  }
+  return [...hosts].filter(Boolean);
+}
+
+function frontRules(config, sources = "") {
   const match = config.match(/^[ \t]+niche_categories:[ \t]*\[([^\]]*)\]/m);
   if (!match) throw new Error("front_page.niche_categories missing from config.yaml");
-  return {niche: match[1].split(",").map((s) => s.trim()).filter(Boolean)};
+  return {niche: match[1].split(",").map((s) => s.trim()).filter(Boolean),
+    dealHosts: dealSourceHosts(config, sources)};
 }
 
 // seo.event_pages (Black Friday, Cyber Monday): when enabled, every footer
@@ -156,6 +184,7 @@ function frontPageSnapshot() {
       return {key: c.getAttribute("data-key"),
         item: (c.querySelector(".title")?.textContent || "").trim(),
         store: (c.querySelector(".storechip")?.textContent || "").trim(),
+        url: c.querySelector(".getdeal[href]")?.getAttribute("href") || "",
         category: labels?.getAttribute("data-category") || ""};
     }),
   };
@@ -189,20 +218,26 @@ function frontPageFlagLine(f) {
 
 function frontPageFlags(cards, rules) {
   const flags = [];
-  cards.forEach((d, i) => {
+  cards.slice(0, 48).forEach((d, i) => {
+    let host = "";
+    try { host = new URL(d.url).hostname.toLowerCase().replace(/^www\./, ""); } catch {}
+    const dealSiteLink = !!host && (rules.dealHosts || []).some(h => host === h || host.endsWith("." + h));
     if (d.unidentified || !d.item || !d.store) {
-      flags.push({pos: i + 1, unidentified: true, key: String(d.key || "")});
+      flags.push({pos: i + 1, unidentified: true, key: String(d.key || ""),
+        ...(dealSiteLink ? {dealSiteLink: true} : {})});
       return;
     }
     const why = [];
+    if (dealSiteLink) why.push(`Get deal opens deal site ${host}`);
     if (rules.niche.includes(d.category || "other")) why.push(`niche category ${d.category || "other"}`);
     if (VEHICLE_PART.test(String(d.item || "")) && !FOOTWEAR.test(String(d.item || ""))) why.push("car part");
     if (why.length) flags.push({pos: i + 1, why: why.join(", "), store: String(d.store || ""),
-                                item: String(d.item || "").slice(0, 70)});
+                                item: String(d.item || "").slice(0, 70),
+                                ...(dealSiteLink ? {dealSiteLink: true} : {})});
   });
-  return {ok: !flags.some((f) => f.pos <= 24), flags};
+  return {ok: !flags.some((f) => f.pos <= 24 || f.dealSiteLink), flags};
 }
 
-module.exports = {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks, overrideLinks, overrideNote,
-                  photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
+module.exports = {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
+                  photoRules, checkPhotos, dealSourceHosts, frontRules, frontPageSnapshot, identifyFrontCards,
                   frontPageFlagLine, frontPageFlags, eventLinks, toolLinks};

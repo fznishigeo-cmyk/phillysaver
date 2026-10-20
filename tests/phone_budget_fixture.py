@@ -115,6 +115,9 @@ def publish_fixture(root, cfg, *, inspect=None):
     try:
         db.meta_set("teaser_recent", '["before"]')
         rows = fixture_offers()
+        # Coded non-Amazon fixture offers route to a partner post, which task 351
+        # hides; keeping them is the larger (stricter) page for every budget.
+        cfg.hide_deal_site_links = False
         if cfg.keepa_click_price_rule == "on":
             # Shipped Unknown offers still need critic evidence to enter the
             # wall. Historical OFF fixtures keep their original facts/bytes.

@@ -615,6 +615,7 @@ def test_shipped_click_price_stays_within_phone_byte_budgets(db, tmp_path, monke
     cfg = load_config()
     cfg.keepa_click_price_rule = mode
     cfg.phone_budget = dict(cfg.phone_budget, enabled=True)
+    cfg.hide_deal_site_links = False  # as publish_fixture: the larger page with partner-post offers
     rows = fixture_offers()
     # Unknown labels use normal publish gates, including critic evidence.
     for row in rows:

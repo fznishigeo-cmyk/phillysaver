@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+import yaml
 
 from dealradar import ai_yield, pipeline, rank
 from dealradar.config import load_config
@@ -21,6 +22,7 @@ from dealradar.savings import compute_savings
 from dealradar.util import iso
 from tests.test_claude_client import (FakeCreateOnlyMessages, FakeCreateResponse,
     FakeMessagesWithParse, FakeParseResponse, FakeUsage, make_parser)
+from tests.history_pins import pre_hide_deal_site_links_raw
 from tests.test_e2e_offline import NOW, SOURCES, _handler, _run, env
 from tests.test_extractor import FakeParser, make_cfg, make_post
 from tests.test_quality_trio import SecondOpinionParser
@@ -357,6 +359,9 @@ def test_retired_inventory_reappearance_is_not_another_new_identity(tmp_path, le
 
 
 def test_pipeline_yield_spend_and_full_offline_rerun_contract(env):
+    # Recorded public facts include a source-only offer; retain the OFF case.
+    path = Path(env["cfg"])
+    path.write_text(yaml.safe_dump(pre_hide_deal_site_links_raw(yaml.safe_load(path.read_text()))))
     first = _run(env)
     assert first["ai_yield"]["unique_new_public_deals"] == 2
     assert first["ai_yield"]["useful_price_updates"] == 0

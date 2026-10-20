@@ -17,7 +17,7 @@ from dealradar.parse.schema import CriticVerdicts, LLMDeals
 from tests.test_claude_client import (FakeCreateOnlyMessages, FakeCreateResponse,
                                     FakeMessagesWithParse, FakeParseResponse,
                                     FakeUsage, META, make_parser, one_deal)
-from tests.test_e2e_offline import NOW, SOURCES, _handler, _run, env
+from tests.test_e2e_offline import NOW, SOURCES, _handler, _run, env, keep_source_posts as e2e_keep_source_posts
 from tests.test_extractor import FakeParser, good_deal, make_cfg, make_post
 from tests.test_quality_trio import SecondOpinionParser
 
@@ -363,6 +363,7 @@ def test_shadow_output_matches_off_and_lower_site_floor_preserves_useful_posts(e
 
 
 def test_pipeline_reuse_records_two_credits_and_rerun_adds_no_rows(env, monkeypatch):
+    e2e_keep_source_posts(env)
     from dealradar.parse.schema import LLMDeal
 
     posts = [make_post(source_name=s.name, url=s.url + "/post",
@@ -416,6 +417,7 @@ def test_summary_reports_evidence_and_post_critic_publishable_yield(env):
 
 
 def test_merged_better_price_does_not_inflate_shadow_or_source_yield(env, monkeypatch):
+    e2e_keep_source_posts(env)
     from dealradar.parse.schema import LLMDeal
 
     posts = [make_post(source_name=source.name, text=f"Widget was $50 now ${price}")

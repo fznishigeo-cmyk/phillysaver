@@ -265,7 +265,7 @@ def _regular_basis(avg: Any, price_type: int) -> tuple[float, str] | None:
 
 
 def _amazon_basis(row: dict[str, Any], avg: Any,
-                  list_ratio: float) -> tuple[float, str] | None:
+                  list_ratio: float, price_type: int = PRICE_TYPE_AMAZON) -> tuple[float, str] | None:
     """The reference price Amazon itself shows, so our percent matches
     the product page (operator, 2026-10-13). Amazon shows a List Price
     only when customers recently bought at it, else a Typical price (the
@@ -273,11 +273,11 @@ def _amazon_basis(row: dict[str, Any], avg: Any,
     own 90-day average reached ``list_ratio`` of it (the item really sold
     near list); otherwise the lower of the 30- and 90-day averages stands
     in for the Typical price. Never a list price the item never sold at."""
-    typical = _regular_basis(avg, PRICE_TYPE_AMAZON)
+    typical = _regular_basis(avg, price_type)
     if typical is None:
         return None
     listed = _price_at(row.get("current"), PRICE_TYPE_LIST)
-    avg90 = _avg_price(avg, PRICE_TYPE_AMAZON)
+    avg90 = _avg_price(avg, price_type)
     if listed and avg90 and listed > typical[0] and avg90 >= list_ratio * listed:
         return listed, "List Price"
     return typical
@@ -532,6 +532,7 @@ class _Pull:
     focus_tried: set[tuple[int, int]] = field(default_factory=set)
     confirmations: _FeedConfirmations | None = None
     overflow_only: bool = False
+    focus_finder: bool = False
 
 
 @dataclass
@@ -577,6 +578,8 @@ class KeepaDealsAdapter(SourceAdapter):
         self.recheck: Callable | None = None  # pipeline: due work before overflow discovery
         self.rate_limited = False
         self.pull_summary = {"popular_page_rows": 0, "popular_page_admitted": 0}
+        self.focus_summary = None
+        self.focus_groups = {}
 
     def fetch_posts(
         self,
@@ -616,6 +619,10 @@ class KeepaDealsAdapter(SourceAdapter):
         # as the bucket refills. Every further page (DEEP's first included)
         # must leave cfg.keepa_reserve_tokens untouched.
         budget = KeepaBudget.load(db, cfg)
+        if cfg.keepa_focus_finder.get("enabled") is True:
+            from .keepa_focus import empty_summary
+            self.focus_summary = empty_summary(cfg)
+            self.focus_groups = {}
         confirmations = _FeedConfirmations(db, now, cfg)
         self.feed_confirmed = confirmations.confirmed
         amazon: list[RawPost] = []
@@ -631,6 +638,10 @@ class KeepaDealsAdapter(SourceAdapter):
                                float(cfg.site_show_from_pct)}))
 
         def map_amazon(row: dict[str, Any]) -> RawPost | None:
+            if cfg.keepa_focus_finder.get("enabled") is True:
+                from .keepa_focus import adult
+                if adult(row, cfg):
+                    return None
             if cfg.keepa_genuine_drops_only:
                 from ..appeal import matches
                 from ..savings import clears_reference_floor
@@ -734,9 +745,14 @@ class KeepaDealsAdapter(SourceAdapter):
                         (fresh_sel, fresh_next, wh_seen, map_warehouse, fresh, wh_lane, None),
                     ]
 
-                def discover(shared_budget):
+                def discover(shared_budget, *, focus_allowed=False):
                     pull.budget = shared_budget
-                    return self._run_overflow(pull, cfg, passes)
+                    result = self._run_overflow(pull, cfg, passes)
+                    if cfg.keepa_focus_finder.get("enabled") is True and not result["rate_limited"]:
+                        from .keepa_focus import Finder
+                        result["rate_limited"] = Finder(
+                            self, pull, cfg, source, amazon_seen, amazon, floors).run(focus_allowed)
+                    return result
 
                 self.recheck(discover, pull.deadline)
             elif self.rate_limited and self.recheck is not None:
@@ -1050,9 +1066,9 @@ class KeepaDealsAdapter(SourceAdapter):
                                        max_attempts=1, respect_robots=False)
             payload = response_payload(resp)
         finally:
-            # Only deal discovery: /deal, sweep finder and sweep products.
-            # Category lookups and downstream rechecks have separate purposes.
-            if url != CATEGORY_URL:
+            # Ordinary category lookups are separate; focus-finder lookups
+            # share its discovery allowance and receipt accounting.
+            if url != CATEGORY_URL or pull.focus_finder:
                 self.token_usage.note(payload, estimate=estimate,
                                       rate_limited=resp is not None and resp.status_code == 429)
         pull.budget.note(payload, pull.now)
@@ -1237,17 +1253,17 @@ class KeepaDealsAdapter(SourceAdapter):
     def _map_row(row: dict[str, Any], source: SourceConfig, now: datetime,
                  *, floors: tuple[float, ...] = (),
                  category_names: dict[str, str] | None = None,
-                 list_ratio: float = 0.9) -> RawPost | None:
+                 list_ratio: float = 0.9, price_type: int = PRICE_TYPE_AMAZON) -> RawPost | None:
         asin = str(row.get("asin") or "").strip().upper()
         title = str(row.get("title") or "").strip()
         if not asin or not title:
             return None
         avg_raw = row.get("avg") or row.get("avg90") or row.get("avg30")
-        current = _price_at(row.get("current"), PRICE_TYPE_AMAZON)
-        basis = _amazon_basis(row, avg_raw, list_ratio)
+        current = _price_at(row.get("current"), price_type)
+        basis = _amazon_basis(row, avg_raw, list_ratio, price_type)
         if current is None or basis is None or current >= basis[0]:
             return None
-        if not _dense_history(avg_raw, PRICE_TYPE_AMAZON):
+        if not _dense_history(avg_raw, price_type):
             return None  # sparse history: the "average" is an artifact
         avg, label = basis
 

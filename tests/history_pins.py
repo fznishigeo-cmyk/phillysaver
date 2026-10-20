@@ -198,6 +198,8 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    pre_keepa_focus_finder_raw(config)
+    pre_hide_deal_site_links_raw(config)
     config.pop("tool_pages_1020", None)
     config.pop("tool_pages_1020_phone_links", None)
     config.pop("fresh_more_plain", None)
@@ -501,5 +503,39 @@ def pre_checker_similar_heading(cfg):
 
 def pre_tool_faq_wording(cfg):
     """Before the operator's 2026-10-20 tool-page FAQ wording."""
+    pre_hide_deal_site_links(cfg)
     cfg.tool_faq_wording = False
+    return cfg
+
+
+def pre_hide_deal_site_links(cfg):
+    """Before task 351's credit-by-name routing; never re-pin recorded bytes."""
+    pre_keepa_focus_finder(cfg)
+    cfg.hide_deal_site_links = False
+    cfg.affiliate_repair_competitor_trackers = False
+    return cfg
+
+
+def pre_hide_deal_site_links_raw(config):
+    config.get("publish", {}).pop("hide_deal_site_links", None)
+    config.setdefault("affiliate", {})["repair_competitor_trackers"] = False
+    return config
+
+
+def pre_keepa_focus_finder(cfg):
+    """Before task 350's idle-token discovery; never re-pin historical bytes."""
+    pre_search_tokens_40000(cfg)
+    cfg.keepa_focus_finder = dict(cfg.keepa_focus_finder, enabled=False)
+    return cfg
+
+
+def pre_keepa_focus_finder_raw(config):
+    config.pop("keepa_focus_finder", None)
+    return config
+
+
+def pre_search_tokens_40000(cfg):
+    """Before the 2026-10-20 search allowance raise; search-config.json is published."""
+    if cfg.search.get("tokens_per_day") == 40000:
+        cfg.search = dict(cfg.search, tokens_per_day=10000)
     return cfg

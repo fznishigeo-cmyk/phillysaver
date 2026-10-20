@@ -22,6 +22,35 @@ CHECKER_STORES = {"amazon": "link_only", "walmart": "history", "ebay": "live_onl
                   "bestbuy": "history", "target": "history", "woot": "history", "other": "history"}
 
 
+def validated_keepa_focus_finder(value) -> dict:
+    defaults = dict(enabled=False, idle_share=.7, max_pages_per_run=80,
+                    max_new_deals_per_run=10, max_price=50, max_rank=30000,
+                    min_rating=40, min_reviews=50, groups={})
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("keepa_focus_finder must contain supported settings only")
+    options = defaults | value
+    if type(options["enabled"]) is not bool:
+        raise ValueError("keepa_focus_finder.enabled must be a boolean")
+    for key, low, high in (("idle_share", 0, 1), ("max_price", .01, 10000),
+                           ("max_pages_per_run", 0, 1000), ("max_new_deals_per_run", 0, 100),
+                           ("max_rank", 1, 1000000), ("min_rating", 0, 50), ("min_reviews", 0, 1000000)):
+        v = options[key]
+        integer = key not in ("idle_share", "max_price")
+        if (type(v) not in ((int,) if integer else (int, float))
+                or not math.isfinite(v) or not low <= v <= high):
+            raise ValueError(f"keepa_focus_finder.{key} must be a finite {'integer' if integer else 'number'} in {low}..{high}")
+    groups = options["groups"]
+    if (not isinstance(groups, dict) or len(groups) > 20
+            or any(not isinstance(g, str) or not g.strip() for g in groups)):
+        raise ValueError("keepa_focus_finder.groups must map names to category paths")
+    for paths in groups.values():
+        if (not isinstance(paths, list) or not paths or len(paths) > 100
+                or any(not isinstance(p, str) or any(not n.strip() for n in p.split(">")) for p in paths)
+                or len(set(paths)) != len(paths)):
+            raise ValueError("keepa_focus_finder.groups must contain unique nonempty category paths")
+    return options
+
+
 def validated_compare(value) -> dict:
     defaults = dict(refresh=False, publish="off", terms_file="data/compare_terms.yaml",
                     candidates_per_term=20, refresh_hours=12, finder_days=7,
@@ -331,6 +360,7 @@ class AppConfig:
     site_dir: str = "site"
     photoless_last: bool = False
     max_photoless_h: float | None = None
+    hide_deal_site_links: bool = False
     reuse_link_facts_enabled: bool = False
     images_asin_backfill_per_run: int = 60
     images_post_ingest_keepa: bool = False
@@ -569,6 +599,7 @@ class AppConfig:
     social_extreme_pct: float = 80.0
 
     amazon_used_enabled: bool = True
+    keepa_focus_finder: dict[str, Any] = field(default_factory=lambda: validated_keepa_focus_finder({}))
 
     # -- keepa: /deal paging on the token plan (config.yaml keepa:) --
     keepa_amazon_pages_per_pull: int = 6
@@ -1040,6 +1071,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.manifest_refresh = validated_manifest_refresh(g("publish", "manifest_refresh"))
     cfg.site_dir = g("publish", "site_dir", default=cfg.site_dir)
     cfg.photoless_last = bool(g("publish", "photoless_last", default=False))
+    cfg.hide_deal_site_links = g("publish", "hide_deal_site_links", default=False)
+    if type(cfg.hide_deal_site_links) is not bool:
+        raise ValueError("publish.hide_deal_site_links must be a boolean")
     photos = g("publish", "photos", default={})
     if not isinstance(photos, dict):
         raise ValueError("publish.photos must be a mapping")
@@ -1551,6 +1585,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             or type(amazon_used.get("enabled", True)) is not bool):
         raise ValueError("amazon_used.enabled must be a boolean")
     cfg.amazon_used_enabled = amazon_used.get("enabled", True)
+    cfg.keepa_focus_finder = validated_keepa_focus_finder(g("keepa_focus_finder", default={}))
     genuine = g("keepa", "genuine_drops_only", default=False)
     if type(genuine) is not bool:
         raise ValueError("keepa.genuine_drops_only must be a boolean")

@@ -19,7 +19,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: krazy_coupon_lady
     display_name: "The Krazy Coupon Lady"
@@ -63,7 +63,7 @@ sources:
     allowed_html: true
     fast_lane: true
     notes: "Amazon category feed; Amazon promos are time-critical, so fast-laned."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: kcl_amazon
     display_name: "The Krazy Coupon Lady"
@@ -84,7 +84,7 @@ sources:
     allowed_html: true
     fast_lane: true   # flagship permission source; unchanged wall chunks hash out, so 10-min checks cost ~nothing
     notes: "KCL live deal wall (cards never enter their RSS). Dedicated adapter chunks the wall text for the evidence-verified parse."
-    crawl_permission: "operator reports written email permission from KCL (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from KCL (2026-10-10; condition: source receives credit by name on each deal (operator clarification 2026-10-20)). Correspondence on the operator's file. Bypass applies to this host only."
   - name: dealnews
     display_name: "DealNews"
     site: https://www.dealnews.com/
@@ -162,7 +162,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "US (English) edition only."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source receives credit by name on each deal (operator clarification 2026-10-20)). Correspondence on the operator's file. Bypass applies to this host only."
   - name: moneysavingmom
     display_name: "Money Saving Mom"
     site: https://moneysavingmom.com/
@@ -171,7 +171,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: passionate_penny_pincher
     display_name: "Passionate Penny Pincher"
@@ -201,7 +201,7 @@ sources:
     region: US
     allowed_html: true
     fast_lane: false
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: southernsavers_online
     display_name: "Southern Savers"
@@ -212,7 +212,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Online Deals category feed — skips their grocery/in-store content at the source."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: southernsavers_amazon
     display_name: "Southern Savers"
@@ -224,7 +224,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Amazon section feed (slug guessed; validation culls if wrong)."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: queen_bee_today
     display_name: "Queen Bee Today"
@@ -464,7 +464,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Freebies category feed — concentrated 70-100% territory."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: free_stuff_finder
     display_name: "Free Stuff Finder"
@@ -475,7 +475,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: "Very active freebie/deal blog."
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source keeps affiliate credit via every published deal's credit link, AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; conditions: source receives credit by name on each deal (operator clarification 2026-10-20), AND the grant covers displaying the source's own deal images with credit). Correspondence on the operator's file. Bypass applies to this host only."
     image_permission: true
   - name: stl_mommy
     display_name: "STL Mommy"
@@ -664,7 +664,7 @@ sources:
     allowed_html: true
     fast_lane: false
     notes: server-rendered deal cards; no feed autodiscovery
-    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
+    crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source receives credit by name on each deal (operator clarification 2026-10-20)). Correspondence on the operator's file. Bypass applies to this host only."
   - name: morningsave
     display_name: "MorningSave"
     site: https://morningsave.com/

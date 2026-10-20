@@ -18,6 +18,23 @@ from . import clicks, rank, util, verify
 from .conditions import normalize_conditions, USED_CONDITIONS
 
 TIERS = ("FAST", "NORMAL", "SLOW")
+
+
+def discovery_surplus(budget, cfg, gap, now):
+    """The existing overflow forecast, bounded by standing + search reserves.
+
+    Search keeps its daily allowance prorated over the same forecast gap,
+    in addition to the visitor floor. Unknown buckets never authorize work.
+    """
+    from .keepa_budget import MIN_FOR_DEAL_QUERY
+    available = budget.spendable(now)
+    reserve = max(MIN_FOR_DEAL_QUERY, cfg.keepa_reserve_tokens,
+                  cfg.keepa_recheck_surplus_reserve if cfg.keepa_recheck_surplus else 0)
+    search = cfg.search.get("tokens_per_day", 0) * gap / (24 * 60)
+    return min(budget.overflow(gap, now) or 0,
+               max(0, available - reserve - search)) if available is not None else 0
+
+
 VISIBILITY = ("top", "wall", "rest", "hidden")
 DEFAULT_TARGETS = {
     "FAST": dict(top=.5, wall=.5, rest=6, hidden=48),
@@ -307,10 +324,18 @@ class Plan:
         values = []
         for row in rows:
             try:
-                value = json.loads(row["metrics"] or "{}").get("feed_tokens")
+                metrics = json.loads(row["metrics"] or "{}")
+                value = metrics.get("feed_tokens")
             except ValueError:
                 continue
             if isinstance(value, (int, float)) and math.isfinite(value) and value >= 0:
+                if self.cfg.keepa_focus_finder.get("enabled") is True:
+                    # Optional overflow is never mandatory discovery demand;
+                    # feeding it back would stretch the protected rechecks.
+                    extra = metrics.get("focus_finder_tokens", 0)
+                    if not isinstance(extra, (int, float)) or not math.isfinite(extra) or extra < 0:
+                        continue
+                    value = max(0, value - extra)
                 values.append((util.parse_iso(row["started_at"]), value))
         if len(values) >= 2:
             minutes = (values[0][0] - values[-1][0]).total_seconds() / 60

@@ -20,8 +20,7 @@ from tests.test_sovrn_links import KEY
 @pytest.fixture
 def setup(tmp_path):
     db = DB(tmp_path / "state.db")
-    # The repair mechanism (off in config.yaml: permitted sources keep their
-    # tracker as affiliate credit) is exercised here with the switch on.
+    # Redirects run against a fake transport, including tracker repair.
     cfg = AppConfig(affiliate_repair_competitor_trackers=True)
     calls = []
     targets = {}
@@ -352,6 +351,8 @@ def test_competitor_with_photo_resolves_to_earning_store_and_keeps_credit(setup,
     PhotoFixture._seed(db, "competitor", link, image=image)
     credit(db, "competitor", "https://source.example/original-post")
     before_credit = db.sightings_for(db.get_deal("competitor")["id"])
+    db.update_deal("competitor", payload=dict(db.get_deal("competitor"), link_as_posted=link,
+                                              sightings=before_credit))
     stats = {}
     assert pipeline._resolve_short_links(db, fetcher, None, cfg, stats=stats) == 1
     row = db.get_deal("competitor")
@@ -359,8 +360,9 @@ def test_competitor_with_photo_resolves_to_earning_store_and_keeps_credit(setup,
     assert row["flags"] == ["link_resolve_tried"]
     assert db.sightings_for(row["id"]) == before_credit
     out = _serialize_deal(row, util.now_utc(), "our-store-20", sovrn_key=KEY,
-                          sovrn_enabled=True, competitor_tracker_hosts=[host])
+                          sovrn_enabled=True, competitor_tracker_hosts=[host], cfg=cfg)
     assert out["earns"] is True
+    assert out["credits"] == [{"name": "DealNews", "url": "https://source.example/original-post"}]
     if "macys" in target:
         assert out["url"].startswith("https://redirect.viglink.com?")
     else:
@@ -437,12 +439,12 @@ def test_competitors_share_cap_with_short_links_and_respect_deadline(setup, monk
     assert len(calls) == 3
 
 
-def test_production_config_never_repairs_a_permitted_sources_tracker(tmp_path):
-    """Deals of America, DealMoon and Southern Savers keep their affiliate credit
-    (their crawl-permission condition): their tracker link is never replaced."""
+def test_repair_off_never_follows_a_source_tracker(tmp_path):
+    """The compatibility switch still preserves the previous routing."""
     from dealradar.config import load_config
     cfg = load_config()
-    assert cfg.affiliate_repair_competitor_trackers is False
+    assert cfg.affiliate_repair_competitor_trackers is True
+    cfg.affiliate_repair_competitor_trackers = False
     assert {"cc.dealsofamerica.com", "go.dealmoon.com", "links.southernsavers.com"} <= set(
         cfg.affiliate_competitor_tracker_hosts)
     db = DB(tmp_path / "state.db")
@@ -473,6 +475,7 @@ def _replaced(db, key, posted, current, flags=("link_resolve_tried",)):
 def test_replaced_source_tracker_links_are_put_back_once(tmp_path):
     from dealradar.config import load_config
     cfg = load_config()
+    cfg.affiliate_repair_competitor_trackers = False
     db = DB(tmp_path / "state.db")
     tracker = "https://go.dealmoon.com/exec/j?d=123"
     _replaced(db, "swapped", tracker, "https://www.walmart.com/ip/123")
@@ -495,6 +498,7 @@ def test_replaced_source_tracker_links_are_put_back_once(tmp_path):
 def _granted_tracker_setup(tmp_path):
     from dealradar.config import load_config
     cfg = load_config()
+    cfg.affiliate_repair_competitor_trackers = False
     db = DB(tmp_path / "state.db")
     calls = []
 

@@ -30,7 +30,8 @@ from ..util import iso, parse_iso
 from .. import amazon_reference, checkout_prices, popular_affordable
 from . import ai_take, amazon_as_of, amazon_history, checker, checker_page, click_signal, compare_pages, dark, drop_rotation, indexnow, inventory, manifest_refresh, price_labels, product_pages, profiles, pwa, seo, seo_audit, traffic
 from .paywall import is_open, split_teaser, teaser_memory
-from .credits import _deal_source_hosts, _display_names, link_policy
+from .credits import _deal_source_hosts, _display_names
+from .link_facts import routing_policy as link_policy
 from . import credits, link_facts
 from .link_facts import (LinkFacts, _link_destination, _needs_steps, _override_key,
                          _simple_code_deal, earning_link, is_competitor_tracker_host)
@@ -243,9 +244,8 @@ def site_template_version(price_presets: list[int] | None = None,
 def keeps_source_tracker(url: str, cfg) -> bool:
     """True when ``url`` is a source's tracker that must stay exactly as posted.
 
-    While the tracker repair is off, a permitted source's tracker IS its
-    affiliate credit (crawl-permission condition): nothing may resolve,
-    canonicalize or replace it.
+    Repair off preserves the legacy routing. The operator clarified on
+    2026-10-20 that the permission condition is credit by name on each deal.
     """
     if getattr(cfg, "affiliate_repair_competitor_trackers", False) or not url:
         return False
@@ -605,7 +605,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
         age_hours = round((now - first_seen).total_seconds() / 3600.0, 2)
     links = links if links is not None else link_facts.derive_link_facts(deal, link_policy(
         amazon_tag, overrides, sovrn_key=sovrn_key, sovrn_enabled=sovrn_enabled,
-        competitor_tracker_hosts=competitor_tracker_hosts, ebay_campid=ebay_campid))
+        competitor_tracker_hosts=competitor_tracker_hosts, ebay_campid=ebay_campid,
+        repair_competitor_trackers=getattr(cfg, "affiliate_repair_competitor_trackers", False)))
     # Each projection owns its JSON credits; internal facts never share lists.
     credits = [{"name": name, "url": url} for name, url in links.credits]
     if amazon_reference.enabled(cfg) and not deal.get("regular_price_basis") \
@@ -804,13 +805,13 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                         sovrn_enabled=cfg.affiliate_sovrn_enabled,
                         competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                         ebay_campid=cfg.affiliate_ebay_campaign_id, cfg=cfg)
-    policy = (link_policy(amazon_tag, overrides,
-                          **{k: v for k, v in link_options.items() if k != "cfg"})
-              if cfg.reuse_link_facts_enabled else None)
+    policy = link_policy(amazon_tag, overrides,
+                         **{k: v for k, v in link_options.items() if k != "cfg"},
+                         repair_competitor_trackers=cfg.affiliate_repair_competitor_trackers)
     link_cache: dict[tuple, LinkFacts] = {}
 
-    def facts_for(deal):
-        if policy is None:
+    def facts_for(deal, *, required=False):
+        if not cfg.reuse_link_facts_enabled and not required:
             return None
         # Labels may copy a row. A complete routing key lets those copies
         # reuse facts, while a changed URL/credit/condition derives again.
@@ -834,6 +835,35 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     deals = [d for d in deals if d.get("status") == "dead" or not price_unconfirmed(d, cfg, now)] + labeled
     visible = [d for d in deals if not photoless_expired(d, cfg, now)]
     unpublished_photoless = len(deals) - len(visible)
+    hidden_links = {}
+    if cfg.hide_deal_site_links is True:
+        hosts = tuple(_deal_source_hosts()) + tuple(cfg.affiliate_competitor_tracker_hosts)
+        report_keys = {d["dedupe_key"] for d in visible + daily_spotlight(spotlight_rows, cfg, now)}
+
+        def store_destination(deal):
+            if deal.get("status", "alive") != "alive":
+                return True
+            links = facts_for(deal, required=True)
+            credit_urls = {s.get("source_url") for s in deal.get("sightings") or []}
+            credit_urls.update(url for _, url in links.credits)
+            try:
+                host = (urlsplit(links.url).hostname or "").lower()
+            except ValueError:
+                host = ""
+            own_store = any(host == h or host.endswith("." + h) for h in link_facts.RETAILER_SOURCE_HOSTS)
+            if (links.url and links.url in credit_urls and not own_store) or (
+                    host and is_competitor_tracker_host(host, hosts)):
+                if deal["dedupe_key"] in report_keys:
+                    hidden_links[deal["dedupe_key"]] = links
+                return False
+            return True
+
+        visible = [d for d in visible if store_destination(d)]
+        spotlight_rows = [d for d in spotlight_rows if store_destination(d)]
+    hidden_by_credit = dict(Counter(name for links in hidden_links.values()
+                                    for name, _ in links.credits).most_common(10))
+    if cfg.hide_deal_site_links is True:
+        logger.info("hidden_deal_site_links: %d; by credit: %s", len(hidden_links), hidden_by_credit)
     deals = visible
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
@@ -1505,6 +1535,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                      (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             "unpublished_photoless": unpublished_photoless,
+            "hidden_deal_site_links": len(hidden_links),
+            "hidden_deal_site_links_by_credit": hidden_by_credit,
             **({"amazon_reference": {"list_price": sum(d.get("regular_price_basis") == "List price" for d in teaser if not d.get("locked")),
                                       "price_drop": sum(bool(d.get("price_drop")) and is_amazon_deal(originals.get(d.get("dedupe_key"), d))
                                                         for d in teaser if not d.get("locked"))}}

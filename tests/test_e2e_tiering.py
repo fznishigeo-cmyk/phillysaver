@@ -14,6 +14,7 @@ from dealradar.models import RawPost
 from dealradar.parse.schema import CriticVerdicts
 from tests.http_helpers import HostClock
 from tests import test_e2e_offline as offline
+from tests.history_pins import pre_hide_deal_site_links_raw
 
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
@@ -31,6 +32,9 @@ def shipped_env(tmp_path, monkeypatch):
     # Exercise the real pacing path over recorded HTTP without wall-clock sleeps.
     monkeypatch.setattr("dealradar.http_client.PoliteFetcher", OfflineFetcher)
     env = offline._offline_env(tmp_path, monkeypatch)
+    # Recorded public facts include a source-only offer; retain the OFF case.
+    path = Path(env["cfg"])
+    path.write_text(yaml.safe_dump(pre_hide_deal_site_links_raw(yaml.safe_load(path.read_text()))))
     cfg = load_config(env["cfg"])
     assert cfg.critic_tiering == load_config().critic_tiering
     assert cfg.critic_tiering["enabled"] is True

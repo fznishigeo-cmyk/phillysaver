@@ -181,6 +181,7 @@ def simulate(db, cfg, monkeypatch, *, gaps=(15, 35, 20, 30, 25), duration=48 * 6
 @pytest.mark.parametrize("rate", [20, 60, 100, 150, 250])
 def test_sweet_spot(db, monkeypatch, rate):
     cfg = pre_task_319(load_config())
+    cfg.keepa_focus_finder = dict(cfg.keepa_focus_finder, enabled=False)  # task 350 is covered in its own tests
     cfg.keepa_volatility["enabled"] = True
     cfg.keepa_tokens_per_minute = rate
     result = simulate(db, cfg, monkeypatch)
@@ -201,6 +202,7 @@ def test_sweet_spot(db, monkeypatch, rate):
 
 def test_144_runs_at_20_keep_normal_top_within_one_hour(db, monkeypatch):
     cfg = pre_task_319(load_config())
+    cfg.keepa_focus_finder = dict(cfg.keepa_focus_finder, enabled=False)  # task 350 is covered in its own tests
     cfg.keepa_volatility["enabled"] = True  # the scheduler under test; shipped switch is off for now
     result = simulate(db, cfg, monkeypatch, gaps=(10,), duration=1440, warmup=120)
     assert result["runs"] == 144
