@@ -205,6 +205,8 @@ def pre_task_290_install_raw(config):
     config.pop("search_discounts_button", None)
     config.pop("card_click_1020", None)
     config.pop("buttons_to_tools", None)
+    config.pop("amazon_price_cap", None)
+    config.pop("amazon_price_cap_usd", None)
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
     config.pop("phone_timer_raise", None)
@@ -468,5 +470,12 @@ def pre_task_319(cfg):
 
 def pre_buttons_to_tools(cfg):
     """Before task 344's tool handoff; preserve every recorded publication hash."""
+    pre_amazon_price_cap(cfg)
     cfg.buttons_to_tools = False
+    return cfg
+
+
+def pre_amazon_price_cap(cfg):
+    """Before the operator's $50 cap on the Amazon discount exits (2026-10-20)."""
+    cfg.amazon_price_cap = False
     return cfg

@@ -71,6 +71,7 @@ def test_off_missing_rerun_back_preserves_previous_bytes(tmp_path, mode):
 @pytest.mark.parametrize('more', [False, True])
 def test_native_links_emitted_logic_and_tool_handoff(tmp_path, lazy, more):
     cfg = load_config()
+    cfg.amazon_price_cap = False  # exact exit URLs; the cap has its own test
     cfg.search_analyze['lazy'] = lazy
     cfg.search_more['enabled'] = more
     cfg.affiliate_amazon_tag = 'example-20'

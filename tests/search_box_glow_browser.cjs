@@ -16,6 +16,7 @@ from tests.test_publish_site import make_deal
 site.util_now = lambda: NOW
 cfg = load_config()
 cfg.buttons_to_tools = False  # Previous search behavior; task 344 has its own navigation harness.
+cfg.amazon_price_cap = False  # Exact exit URLs below; the $50 cap has its own test.
 cfg.search_box_glow = sys.argv[2] == "true"
 cfg.search_analyze["lazy"] = sys.argv[3] == "true"
 cfg.tracking = {}

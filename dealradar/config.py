@@ -373,6 +373,8 @@ class AppConfig:
     search_discounts_button: bool = False
     card_click_1020: bool = False
     buttons_to_tools: bool = False
+    amazon_price_cap: bool = False
+    amazon_price_cap_usd: float = 50.0
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
@@ -1141,6 +1143,13 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.buttons_to_tools = g("buttons_to_tools", default=False)
     if type(cfg.buttons_to_tools) is not bool:
         raise ValueError("buttons_to_tools must be a boolean")
+    cfg.amazon_price_cap = g("amazon_price_cap", default=False)
+    if type(cfg.amazon_price_cap) is not bool:
+        raise ValueError("amazon_price_cap must be a boolean")
+    cfg.amazon_price_cap_usd = g("amazon_price_cap_usd", default=50)
+    if type(cfg.amazon_price_cap_usd) not in (int, float) or not 1 <= cfg.amazon_price_cap_usd <= 10000:
+        raise ValueError("amazon_price_cap_usd must be a number from 1 to 10000")
+    cfg.amazon_price_cap_usd = float(cfg.amazon_price_cap_usd)
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")

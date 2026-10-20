@@ -17,6 +17,7 @@ from tests.test_publish_site import make_deal
 now=datetime.now(timezone.utc)
 site.util_now=lambda:now
 cfg=load_config()
+cfg.amazon_price_cap=False  # exact exit URLs; the $50 cap has its own test
 cfg.tool_pages={"enabled":True,"public":False}
 cfg.tracking={}
 cfg.tool_pages_hero=True

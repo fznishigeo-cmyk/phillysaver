@@ -207,6 +207,8 @@ search_buttons_1019: true  # operator 2026-10-19: "I don't want the buttons to a
 search_discounts_button: true  # operator 2026-10-20: "Replace it with this. That amazing yellow that you use, the See All Amazon Discounts, and have it direct you to Amazon discounts"
 card_click_1020: true  # operator 2026-10-20: "should we make all the entire squares clickable? not just the get deal at the bottom"
 buttons_to_tools: true  # operator 2026-10-20 ~03:10Z: "make the Ai Analysis button and the All Discounts button on the home screen link to their respective checkers ... and then the discount just finds coupons ... it has to have coupons, like clip the coupons"
+amazon_price_cap: true  # operator 2026-10-20 ~14:00Z: "yes... implement... but on off switch" — the three yellow Amazon exits (search results, Discount Finder, Deal Checker similar deals) show only items up to amazon_price_cap_usd; false = no cap
+amazon_price_cap_usd: 50
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 timer_pill_ring: true  # operator 2026-10-19 ~16:10Z, option A: "draw the countdown as a ring around the timer pill itself"
 phone_timer_raise: true  # operator 2026-10-19 ~17:50Z: "please raise the timer ever so slightly"

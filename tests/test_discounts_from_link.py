@@ -57,6 +57,7 @@ def test_original_release_off_bytes(tmp_path, mode, expected):
 @pytest.mark.parametrize('mode', ['shipped', 'inline', 'no-analyze', 'no-search-amazon', 'no-adult-words'])
 def test_emitted_logic(tmp_path, mode):
     cfg = load_config()
+    cfg.amazon_price_cap = False  # exact exit URLs; the cap has its own test
     cfg.affiliate_amazon_tag = 'example-20'
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
