@@ -3,7 +3,7 @@ const {routeRobotSearch, searchResponse} = require('./robot_search.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFile} = require('node:child_process');
-const {QUERY, BLOCK, rulesFromConfig, assess, summary, health} = require('./visitor_watch_logic.cjs');
+const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health} = require('./visitor_watch_logic.cjs');
 const {pixels, glare} = require('./browser_pixels.cjs');
 const {photoState, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
   dealPageProbe, boundedScreenshot} =
@@ -97,8 +97,8 @@ async function searchProbe(page, ignored = new Set()) {
   await page.locator('#q').fill(QUERY);
   // Give the site's search debounce and empty-state renderer time to finish.
   await page.waitForTimeout(700);
-  const button = page.getByRole('link', {name: /^\W*(?:Search (?:all of )?Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i})
-    .or(page.getByRole('button', {name: /^\W*(?:Search (?:all of )?Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i})).first();
+  const button = page.getByRole('link', {name: SEARCH_BUTTON})
+    .or(page.getByRole('button', {name: SEARCH_BUTTON})).first();
   result.visible = await button.isVisible();
   if (!result.visible) return result;
   result.label = (await button.innerText()).trim();

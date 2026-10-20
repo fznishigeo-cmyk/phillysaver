@@ -142,6 +142,8 @@ test('search checks placeholder, visible label, actual click URL/query/tag and t
   // search_boost (operator 2026-10-17): the big button's label.
   assert(!check('search', scene({search: {...good.search, label: 'Compare all \"zzqx cupping test\" prices on Amazon \u2192'}})).flag);
   assert(check('search', scene({search: {...good.search, label: 'Compare deals'}})).flag);
+  // search_discounts_button (task 342): the yellow results exit.
+  assert(!check('search', scene({search: {...good.search, label: 'See Amazon discounts \u2192'}})).flag);
   assert(!check('search', scene({search: {...good.search, label: 'Search all of Amazon for \"zzqx cupping test\" \u2192'}})).flag);
   assert(check('search', scene({search: undefined})).flag);
   assert(check('search', good, null, {...rules, amazonTag: ''}).flag);

@@ -1,5 +1,7 @@
 // Pure snapshot checks. No browser, network, credentials or persisted prices.
 const QUERY = 'zzqx cupping test';
+// The Amazon exit for typed words; since 342 the yellow "See Amazon discounts →".
+const SEARCH_BUTTON = /^\W*(?:Search (?:all of )?Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*|See Amazon discounts\b.*)$/i;
 const NAMES = ['top_rotation', 'price_mix', 'impulse', 'photos', 'errors', 'freshness', 'search', 'dark',
   'photos_deep', 'optical', 'working', 'text', 'links'];
 const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|googlesyndication|facebook\.net|facebook\.com\/tr|analytics\.tiktok|pinimg\.com\/ct|bat\.bing|clarity\.ms/;
@@ -81,7 +83,7 @@ function utilityMatch(title, groups) {
 function searchProblems(search, tag) {
   const problems = [];
   if (!/search/i.test(search?.placeholder || '')) problems.push('search placeholder missing');
-  if (!search?.visible || !/^\W*(?:Search (?:all of )?Amazon(?:\s+for\b.*)?|Compare all\b.*\bprices on Amazon\b.*)$/i.test(search.label || '')) problems.push('Search Amazon button missing');
+  if (!search?.visible || !SEARCH_BUTTON.test(search.label || '')) problems.push('Search Amazon button missing');
   if (search?.target !== '_blank') problems.push('target is not _blank');
   try {
     const url = new URL(search.clickedHref);
@@ -212,5 +214,5 @@ function summary(snapshot) {
       'No repeated flags; one-off flags are report only.') + '\n';
 }
 
-module.exports = {QUERY, NAMES, BLOCK, rulesFromConfig, utilityMatch, searchProblems, checksForScene, assess, summary,
+module.exports = {QUERY, SEARCH_BUTTON, NAMES, BLOCK, rulesFromConfig, utilityMatch, searchProblems, checksForScene, assess, summary,
   textFindings, dealLinkProblem, opticalProblems, health};
