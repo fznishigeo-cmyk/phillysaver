@@ -36,7 +36,8 @@ const run = new (Object.getPrototypeOf(async function () {}).constructor)(
       },
       screenshot: async options => shots.push(options),
     };
-    await run(async (n, name, action) => action(), page, device, support,
+    // Tools has its own Chromium harness; these fakes cover screenshots only.
+    await run(async (n, name, action) => n === 15 ? undefined : action(), page, device, support,
       { mkdirSync: (dir, options) => { assert.equal(dir, "shots"); assert.equal(options.recursive, true); } },
       site + "deal/first-12345678/", (ok, reason) => { if (!ok) throw new Error(reason); },
       site, new URL(site), "cards", (html, meta) => {footers.push(html); assert.deepEqual(meta, {});}, {meta:{}});
