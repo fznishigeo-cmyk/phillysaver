@@ -1481,7 +1481,8 @@ class DB:
               state_retention: dict | None = None,
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
-              fast_lane: bool = False, deadline: float | None = None) -> dict[str, Any] | None:
+              fast_lane: bool = False, deadline: float | None = None,
+              state_deadline: float | None = None) -> dict[str, Any] | None:
         growers_on = state_retention is not None and "retention_337" in state_retention
         if incremental_cache_enabled and run_key is None:
             raise ValueError("incremental cache maintenance requires a run key")
@@ -1607,7 +1608,7 @@ class DB:
             from .state_retention import maintain
             state_result = maintain(self, now, run_key=run_key, options=state_retention,
                                     posts_seen_days=posts_seen_days, deals_days=deals_days,
-                                    deadline=deadline)
+                                    deadline=deadline if state_deadline is None else state_deadline)
             log.info("state maintenance: %s", state_result)
         if incremental_cache_enabled:
             maintenance = self.prune_http_cache(

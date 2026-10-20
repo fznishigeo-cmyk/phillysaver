@@ -682,6 +682,7 @@ class AppConfig:
     terminal_indexnow_versions_days: int = 1
     state_maintenance_max_rows: int = 4096
     state_maintenance_budget_s: float = 1.0
+    state_maintenance_after_deadline: bool = False
     state_warn_enc_mb: float | None = None
     state_max_enc_mb: float | None = None
     feature_flags: dict[str, bool] = field(default_factory=dict)
@@ -1731,6 +1732,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.state_maintenance_budget_s = g("retention", "state_maintenance_budget_s", default=1.0)
     from .state_retention import validate_limits as validate_state_maintenance
     validate_state_maintenance(cfg.state_maintenance_max_rows, cfg.state_maintenance_budget_s)
+    cfg.state_maintenance_after_deadline = g("retention", "state_maintenance_after_deadline", default=False)
+    if type(cfg.state_maintenance_after_deadline) is not bool:
+        raise ValueError("retention.state_maintenance_after_deadline must be a boolean")
     from .state_size import validate_limits
     cfg.state_warn_enc_mb, cfg.state_max_enc_mb = validate_limits(g("state", default={}))
     cfg.feature_flags = g("feature_flags", default={}) or {}

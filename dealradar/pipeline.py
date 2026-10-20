@@ -33,11 +33,22 @@ log = logging.getLogger("dealradar.pipeline")
 # Seconds reserved at the end of the run budget for publish (critic + price
 # rechecks + site render) after parse stops.
 _RESERVE_FOR_TAIL_S = 90.0
+
 # Fetching (and its enrichment) stops this early so parse gets real time. The
 # parse window is _RESERVE_FOR_PARSE_S - _RESERVE_FOR_TAIL_S; keep the gap wide.
 # Live incident: a 60-source sweep ran to the wire, parse got seconds, and the
 # back half of the source list never published a single deal.
 _RESERVE_FOR_PARSE_S = 300.0
+
+
+def _prune_deadline(cfg, deadline, now):
+    """The tail reserve bounds the state trim too, but a run that used its whole
+    budget still gives it its allowance (state_maintenance_budget_s); the HTTP
+    cache prune keeps the plain tail deadline."""
+    limit = deadline - _RESERVE_FOR_TAIL_S
+    if cfg.state_maintenance_after_deadline:
+        limit = max(limit, now + cfg.state_maintenance_budget_s)
+    return limit
 
 
 def _spend_markdown(spend_by_kind: dict, extract_by_source: dict) -> str:
@@ -3055,7 +3066,8 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
                  incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
                  cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
                  cache_budget_s=cfg.incremental_cache_budget_s, fast_lane=fast_lane,
-                 deadline=deadline - _RESERVE_FOR_TAIL_S)
+                 deadline=deadline - _RESERVE_FOR_TAIL_S,
+                 state_deadline=_prune_deadline(cfg, deadline, time.monotonic()))
         if cache_maintenance is not None:
             summary["cache_maintenance"] = cache_maintenance
         inbox = getattr(fetcher, "newsletter_inbox", None)

@@ -332,3 +332,24 @@ def test_length_fallback_is_labelled_and_counts_blobs_nulls_utf8_and_without_row
     for value in (0, -1, float("inf"), float("nan"), True):
         with pytest.raises(ValueError, match="hours"):
             growers(result, result, value)
+
+
+def test_prune_deadline_after_exhausted_run(tmp_path):
+    from dealradar import pipeline
+    cfg = AppConfig()
+    assert cfg.state_maintenance_after_deadline is False
+    reserve = pipeline._RESERVE_FOR_TAIL_S
+    # OFF: exactly the previous tail deadline, even when it already passed.
+    assert pipeline._prune_deadline(cfg, 1000.0, 2000.0) == 1000.0 - reserve
+    cfg.state_maintenance_after_deadline = True
+    cfg.state_maintenance_budget_s = 1.0
+    # A busy hourly run that used its whole budget still gets the bounded trim.
+    assert pipeline._prune_deadline(cfg, 1000.0, 2000.0) == 2001.0
+    # A run with time left keeps the tail reserve.
+    assert pipeline._prune_deadline(cfg, 1000.0, 100.0) == 1000.0 - reserve
+    assert load_config().state_maintenance_after_deadline is True
+    path = tmp_path / "config.yaml"
+    for value in (None, 0, 1, "true", []):
+        path.write_text(yaml.safe_dump({"retention": {"state_maintenance_after_deadline": value}}))
+        with pytest.raises(ValueError, match="state_maintenance_after_deadline must be a boolean"):
+            load_config(path)
