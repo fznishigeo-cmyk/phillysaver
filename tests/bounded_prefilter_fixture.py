@@ -19,10 +19,11 @@ from tests.test_extractor import make_post
 from tests.history_pins import pre_history_removal, pre_task_279
 
 
-def capture(out, monkeypatch, setting="omitted"):
+def capture(out, monkeypatch, setting="omitted", *, retention=False):
     monkeypatch.setattr("dealradar.util.now_utc", lambda: NOW)
     monkeypatch.setattr(site, "util_now", lambda: NOW)
     cfg = pre_history_removal(load_config())
+    cfg.state_retention_337 = retention
     cfg.offscreen_cards = False  # recorded before task 237's phone-only CSS
     cfg.dark_polish = False  # recorded before task 254
     cfg.strip_comments = False  # recorded before task 278
@@ -96,6 +97,7 @@ def capture(out, monkeypatch, setting="omitted"):
                       decisions=db.all_deals(), public={})
         for mode in ("membership", "open", "support", "shipped"):
             publication = pre_history_removal(load_config())  # Retain 119/121 and every other shipped switch.
+            publication.state_retention_337 = retention
             publication.offscreen_cards = False  # recorded before task 237
             publication.dark_polish = False  # recorded before task 254
             publication.strip_comments = False  # recorded before task 278

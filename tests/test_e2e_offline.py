@@ -349,7 +349,7 @@ def test_pipeline_uses_configured_state_retention(env):
 
     assert summary["state_db_bytes"] == Path(env["db"]).stat().st_size > 0
     db = DB(env["db"])
-    assert not db.conn.execute("SELECT 1 FROM run_stats WHERE run_key='old'").fetchone()
+    assert db.conn.execute("SELECT 1 FROM run_stats WHERE run_key='old'").fetchone()  # permanent replay anchor under 337
     assert db.get_validators("https://old.example/feed") == ("", "")
     assert not db.conn.execute("SELECT 1 FROM llm_calls WHERE call_key='old-settled'").fetchone()
     assert db.conn.execute("SELECT status FROM llm_calls WHERE call_key='old-reserved'").fetchone()[0] == "reserved"

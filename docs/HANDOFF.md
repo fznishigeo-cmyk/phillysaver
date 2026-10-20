@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-19)
+# Handoff — state of wowpriced.com (updated 2026-10-20)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -339,6 +339,104 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   **14 passed**. Both phone gzip guards retain the 1,000-byte reserve. Own
   `/tmp/b332x` and inspection scratch removed; no full suite, live requests,
   commit or push.
+- **Retention pipeline regressions (Codex task 337c, 2026-10-20; uncommitted):**
+  Reproduced all seven reported failures serially. All are product regressions:
+  the three prefilter baseline cases include new `audit_detail_days` and
+  `audit_hot_days` in the prefix-selected audit fingerprint, invalidating
+  existing paid verdicts even with retention OFF; the other four expose new
+  reads bypassing `posts_seen` for immediate cold storage (including an inbox
+  durable-ack assertion). Fingerprints now select only audit decision knobs;
+  every fresh processed post again gets its normal `posts_seen` row, failed
+  reads included. Existing bounded cold compaction at seven days, live-sighting
+  protection, cold readers and the 30-day dedup window remain. All original
+  behavioural assertions remain; baseline cases additionally exercise retention
+  OFF/ON with the same saved calls, decisions and four public trees. Added
+  tiered/untiered paid-verdict replay and fresh-to-cold/reopen/rollback checks.
+  Serial focused validation: **13 passed in 133.36s** (all seven reported
+  failures plus OFF/ON and new regressions). Final requested selection plus
+  legitimacy/critic coverage: **635 passed in 249.33s**, including both
+  `test_rerun_is_idempotent` modes. No `tests/test_db*.py` files exist in this
+  checkout. All runs used `--basetemp=/tmp/b337c`; that directory and owned
+  logs were removed. `git diff --check` passes. No full suite, live calls,
+  commit or push. Prior 337b size projections assumed immediate cold writes
+  and need remeasurement after this correction; the encrypted-size target
+  remains unproven.
+- **Retention adversarial review (Codex task 337r, 2026-10-20; uncommitted):**
+  Reviewed only 337/337b's working diff and new files. Fixed second-opinion
+  rollups losing successful-post counts in the routing reader and deleting
+  event replay guards: aggregate readers now retain measured yield, with
+  permanent retired-event keys checked atomically by the writer. Fixed flagged
+  hourly VACUUM ignoring the run deadline: expired runs defer it; checkpoint
+  lock waits and SQLite execution honor the remaining deadline, with connection
+  settings restored after interruption. OFF keeps the previous vacuum policy.
+  Non-blocking: post receipts still expire at the existing 30d dedup boundary;
+  the live-sighting hash scan and permanent aggregate/guard growth need production
+  timing/sizing. Allowance-inclusive <60 MB remains unproven; the prior 337b
+  model was not rerun for these fixes. Restore/decrypt ordering is unchanged:
+  scheduled pipeline steps follow successful restore, whose failure is fatal.
+  Targeted validation: **300 passed, 1 browser skip** (retention, readers,
+  publication bytes, both required rerun modes and protected state), then
+  **54 passed** (new regressions, Telegram alert deduplication and both
+  posted/pruned rerun modes), then **2 passed** after explicitly exercising
+  the retired-event guard with the flag OFF. A direct pre-337/current OFF
+  receipt/audit/cache/maintenance comparison matched all **499,712 DB bytes**.
+  `/tmp/b337r` and owned scratch removed; no full suite, live calls, commit
+  or push. Native browser verification and production measurements remain.
+- **State growers (Codex task 337b, 2026-10-20; uncommitted, ON):** Supersedes
+  337's post-detail clearing. Same strict `state_retention_337` flag. New posts
+  use lossless binary-key/UTC-second receipts immediately; legacy unlinked
+  receipts backfill at 7d, retaining IDs/UIDs/URLs/clocks for the existing 30d
+  dedup window. Full post text/HTML/prompts are absent from storage; the 2d
+  parse cache is validated facts only. Source audits pack full detail after 1d,
+  aggregate after 14d (pending/recent parses survive); critic/run audit detail
+  becomes counts at 14d while identities remain. Raw clicks archive at 30d to
+  exact daily totals/hour slots/coverage bitmaps; all click/source readers
+  include compact data. Accuracy keeps 14d/last 24 per deal/source, with exact
+  scoreboard counts and permanent retired-run/cached-reading replay guards.
+  Protected deal/evidence/death facts and today's/future money remain unchanged.
+  All sweeps keep 64-row transactions, 4096 examined/table/run and 1s shared
+  budget; old run/send/alert guards survive. OFF-byte and rollback readers pass.
+  Largest expanded fixture: **98.55 → 57.05 MB encrypted** after 276 bounded
+  calls + VACUUM; mature-writer projection **52.28 → 52.73 MB** after the next
+  24h46m of publication clocks (+3,300 protected own-price facts). Full 90-day
+  own-check envelope adds 6.60 MB; with 5% mix margin: **59.67 MB** modeled,
+  **69.67 MB with the separate 10 MB unmodeled-state allowance**. Thus the
+  modeled cohorts meet 60 MB; production/allowance-inclusive <60 is not proven.
+  [Per-table measurements and limitations](research/state-size.md#337b-retain-identities-compact-hot-growers-2026-10-20).
+  **609 distinct targeted passes**, then **239 final replay/accuracy/alert passes**,
+  including both required rerun modes; final **50** knob/grower checks pass
+  (**616 distinct cases** across the final selections).
+  The last model clock/replay changes were bounded/documented rather than
+  rerunning the entire long model. No full suite, live access, commit or push.
+  `/tmp/b337b` and owned model scratch removed; owner review, live snapshots
+  and deployed catch-up/size monitoring remain. Warning/stop stay 70/90 MB.
+- **State growth (Codex task 337, 2026-10-19; superseded by 337b above):** Strict
+  `retention.state_retention_337` defaults false/ships true. Existing bounded
+  maintenance expires only opaque API validators after 1d, clears unused
+  post-receipt uid/URL/published-clock details after 2d (hash/source/discovery
+  guards remain), and clears terminal IndexNow maps after 1d (permanent run/
+  status receipts and sending maps remain). Evidence/history, live/hidden/
+  suspect deals, photo retry markers, alert/send/run guards and money caps
+  retain their prior policies. OFF adds no schema/writer/bookkeeping bytes.
+  New read-only `python -m scripts.state_growth later.db --before earlier.db
+  --hours 1` reports every table's counts/bytes/column lengths and deltas,
+  using dbstat or labelled logical lengths. Keepa bodies are memory-only;
+  photo markers add 64 raw bytes once/offer, zero on repeated lookups.
+  [Measurements/reader audit](research/state-size.md#337-receipt-details-and-disposable-apiindexnow-payloads-2026-10-19):
+  corrected 448k-post/122k-audit/432k-accuracy/3,300-live-offer stress model
+  **84.57 → 81.36 MB encrypted before VACUUM / 80.66 after**; retained next
+  day **80.43 MB, −0.0095 MB/hour**, after extra bounded drains. Initial
+  receipt sweep takes 110 calls; no immediate production saving is promised.
+  **60 MB target NOT met:** with the existing 10 MB reserve, **90.43 MB**;
+  ordinary VACUUM will not immediately trigger (zero freelist pages). Current
+  supplied live rate is 0.3689 MB/hour, ~50.9 hours to refusal from #260;
+  production top growers need two decrypted snapshots. Protected receipt/
+  history cohorts dominate; further lossless receipt compaction or separate
+  R2 work remains, so this change does not establish that live saves are safe.
+  **261 distinct targeted passes, 1 browser skip**, including both rerun modes,
+  exact publication bytes, protected money/alerts/run keys, bounds and rollback.
+  `/tmp/b337` and owned model scratch removed. No full suite, live calls,
+  commit or push; owner review and production measurements remain.
 - **Phone timer alignment (Codex task 330, 2026-10-19; uncommitted):** Strict
   `phone_timer_raise` defaults false/ships true with the operator's quote.
   At <=640px the tagline's 19.5px line sits atop its legacy 40px box:

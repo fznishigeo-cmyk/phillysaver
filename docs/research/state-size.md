@@ -1,4 +1,299 @@
-# State size and retention — tasks 296 / 296b / 296c
+# State size and retention — tasks 296 / 296b / 296c / 337 / 337b
+
+## 337b: retain identities, compact hot growers (2026-10-20)
+
+This supersedes 337's receipt clearing and size conclusion below. The strict
+`retention.state_retention_337` flag still defaults false and ships true.
+No production database, key, network, commit or push was used. These are
+disposable synthetic fixtures, not measurements of live state.
+
+### Policies and readers
+
+| Data | Flagged policy and reader verification |
+| --- | --- |
+| Posts | No writer/schema persists `RawPost.text`, HTML or raw LLM prompts/responses. `post_parses` contains model-validated extracted facts/quotes and already expires after two days; no full-body purge was necessary. New flagged `DB.record_post` emits compact receipts immediately. Legacy receipts backfill after `post_receipt_details_days: 7` only without a live/hidden/suspect sighting. Binary SHA256 primary keys remove duplicate hex indexes; UTC-second clocks and ordinary JSON retain every ID, UID, URL and published clock. Per-row zlib was rejected after it harmed final gzip compression. The existing 30-day dedup window remains. `post_is_known`, `post_first_seen`, all source/intake readers, reopened read-only connections and OFF-after-migration readers include both formats. Indexed binary predicates avoid scanning decoded-hex unions; a locked ID high-water prevents ID reuse. |
+| Source audits | `audit_hot_days: 1` moves completed detail to a lossless binary-key table, retaining discovery time, parse-time delay and all counters. `audit_detail_days: 14` then aggregates daily source counts and removes detail. The seven-day reader floor is nine days; pending discoveries and recent completions survive regardless of discovery age. All source audit/intake readers merge both formats. Composite hash/source cursors preserve unusual source names and identical hashes across sources. |
+| Critic/run audits | Old legitimacy outcomes, comparison counts on their comparison day, avoided-call/deal totals and estimated costs become daily counts; event/batch identities remain tombstones. Recent comparisons defer archival. Historical daily reports merge detail and counts. Completed efficiency metrics become summed counters; unfinished attempts survive. Run maintenance JSON becomes a retired marker after 14 days, preventing another maintenance allowance. Existing bounded critic quorum samples remain because the tiering guard reads them. Persisted critic/audit facts on deals never change. |
+| Clicks | `click_raw_days: 30` atomically archives raw clicks and coverage to daily rows per existing public deal key. Totals plus exact hourly slots and availability/cap bitmaps preserve partial days, local-zone/DST boundaries and missing coverage. The raw floor is eight days, beyond the Worker's seven-day catch-up/replay interval. Shared readers serve `clicks.features`, the ads guard and volatility's click priority. Growth reads the unchanged feature snapshot; money-report click figures still come from GA4. `rank.py` has no raw-click SQL; live ranking stays unchanged. Exact exposure packing and its eight-day-or-configured-lookback floor remain. |
+| Accuracy | `accuracy_detail_days: 14`, capped by `accuracy_last_per_deal: 24` per deal/source. Both legacy and compact samples archive exact checked-time/bucket/outcome counts in the deletion transaction. Weighted counts preserve the daily/weekly scoreboard and Wilson intervals. Per-key observed-time high-waters suppress replayed cached readings after retirement; run identities remain. Readings older than an archived watermark are conservatively skipped, rather than counted as fresh. |
+
+All new sweeps use the existing 64-row transactions, frozen durable cursors,
+4096 examined rows per table/run and shared one-second cooperative allowance.
+Cold post/audit sweeps use binary keys without another random-hash expiry index.
+Counts, deletion, cursor progress and allowance roll back together. OFF on an
+untouched database preserves prior persistent bytes; migrated data retains
+readers after OFF.
+
+Deals, published prices/evidence, sightings, product/death-confirmation facts,
+Keepa history and current/future money accounting keep their prior policies.
+The flag additionally preserves old run, click-run, accuracy-extra, critic-batch,
+AI-yield and AI-take run guards that legacy time-based cleanup could remove.
+Sent/pending delivery and alert identities remain untouched. Warning/stop
+limits remain 70/90 MB.
+
+### Fixture and projection boundaries
+
+`python -m scripts.state_growers_experiment` builds the largest fixture used
+here: 448,000 receipts over 30 days, 189,800 source audits over 14 days,
+672,000 accuracy samples (2,000/hour over 14 days), 3,300 live offers,
+66,000 immutable sightings and 66,000 post-price facts, 12 protected Keepa
+samples per offer and eight days of exact exposure. It adds 45 days of
+100 accepted public deal-key click buckets/hour (108,000 rows), with complete
+coverage. These are explicit synthetic inputs, not observed production rates.
+
+The first cleanup uses shipped bounds until every initial frozen cohort has
+completed. A separate **writer steady encoding** projection losslessly encodes
+remaining young legacy receipts: new flagged writers already emit that format,
+and the seven-day backfill eventually replaces those young legacy rows. It is
+not a claim that normal maintenance immediately rewrites young/live-linked
+legacy receipts. It changes no receipt identity, clock, URL or retained count.
+The continuation has 24 hourly arrival batches and publications through
+24h46m, using compact writers, hourly samples/clicks, five publications
+and maintenance slots/hour, plus 3,300 protected own-price facts. Extra bounded
+drains and VACUUM are counted explicitly. Actual gzip -6 + AES/PBKDF2 uses a
+public fixture password; owned scratch is removed on exit.
+
+Inventory and historical post-fact cohorts are fixed. Continuous new inventory
+and production's other permanent receipt ledgers are unmeasured. A separate
+`python -m scripts.state_growers_experiment --history-only` adds **297,000 own
+price checks** (3,300 offers × 90 days), using the real `check:keepa:date/hour`
+identity shape and one check per offer/day. Its incremental encrypted size is
+**6,601,408 bytes** (70,205,440 SQLite bytes including indexes). We add that
+entire cost without credit for the own-check day already present, plus 5% for
+separate-stream/layout compression differences.
+
+### Measurements (decimal MB)
+
+[Content-free measurement artifact](state-337b-measurements.json).
+
+| Table (including owned indexes) | Before | Bounded cleanup | Writer encoding | Continuation |
+| --- | ---: | ---: | ---: | ---: |
+| `posts_seen` | 140.042 | 32.182 | 0.012 | 0.012 |
+| `posts_seen_cold` | 0.000 | 53.408 | 68.129 | 69.157 |
+| `source_audit_posts` | 50.000 | 3.490 | 3.490 | 3.551 |
+| `source_audit_posts_cold` | 0.000 | 10.478 | 10.478 | 10.478 |
+| `accuracy_samples_compact` | 51.429 | 6.160 | 6.160 | 6.160 |
+| `accuracy_sample_keys` | 0.369 | 0.369 | 0.369 | 0.369 |
+| `accuracy_sample_runs` | 0.041 | 0.041 | 0.041 | 0.041 |
+| `accuracy_archive_watermarks` | 0.000 | 0.188 | 0.188 | 0.188 |
+| `accuracy_retired_runs` | 0.000 | 0.000 | 0.000 | 0.020 |
+| `state_audit_counts` | 0.000 | 0.127 | 0.127 | 0.164 |
+| `deal_clicks` | 6.361 | 4.284 | 4.284 | 4.284 |
+| `click_daily_counts` | 0.000 | 0.201 | 0.201 | 0.213 |
+| `deal_click_coverage` | 0.016 | 0.012 | 0.012 | 0.012 |
+| `click_daily_coverage` | 0.000 | 0.004 | 0.004 | 0.004 |
+| `deal_click_days` | 7.025 | 7.025 | 7.025 | 7.897 |
+| `deals` | 2.531 | 2.531 | 2.531 | 2.531 |
+| `sightings` | 16.544 | 16.544 | 16.544 | 16.544 |
+| `price_history` | 21.012 | 21.012 | 21.012 | 21.733 |
+| `keepa_recheck_history` | 27.230 | 27.230 | 27.230 | 27.230 |
+| `run_stats` | 0.008 | 1.147 | 1.147 | 1.888 |
+| `meta` | 0.098 | 0.098 | 0.098 | 0.098 |
+
+| Snapshot | SQLite MB | Encrypted MB |
+| --- | ---: | ---: |
+| Largest starting fixture | 323.940352 | 98.550688 |
+| Actual bounded cleanup + VACUUM | 186.888192 | 57.045696 |
+| Projected mature writer encoding | 169.439232 | 52.280160 |
+| Following continuation + VACUUM | 173.117440 | 52.734864 |
+
+Initial maintenance took **276 bounded calls**, followed by 120 scheduled
+publication/maintenance slots and **60 extra drain calls**. These are synthetic
+catch-up calls, not a promise of immediate production saving. Protected deals,
+sightings, Keepa samples and alert rows were compared byte-for-byte; price
+history gained exactly the intended 3,300 rows. Integrity/FK checks passed.
+
+The measured continuation delta is **0.454704 MB** over publication clocks
+spanning 24h46m, approximately **0.01836 MB/hour**. The original final drain
+used the 24h cutoff, potentially over-retaining a small boundary cohort; the
+helper now uses the latest publication clock (24h46m). The final replay fix
+was mirrored into the in-flight synthetic database with equivalent retired-run
+receipts; the application uses direct transactional inserts, not triggers.
+The quoted sizes include its 0.020 MB identity table. The 5% projection margin
+also exceeds these small cutoff/schema differences; the full corrected long
+experiment was not repeated after those final changes.
+
+**Fixed-cohort steady projection with full own-history envelope:**
+52.734864 + 1.05 × 6.601408 = **59.666342 MB**.
+This meets the requested 60 MB target **for the modeled cohorts**. Adding the
+separate 10 MB allowance for unmodeled state gives **69.666342 MB**;
+that broader allowance does not meet 60 MB. Aggregates/permanent identities
+still grow, so neither figure proves globally flat production state. Inspect
+two decrypted live snapshots and post-deploy size lines before declaring live
+state below 60 MB. The 70/90 MB guards were not relaxed.
+
+### Targeted verification
+
+**609 distinct targeted cases passed in 139.78 s** across retention, source
+and accuracy reports, clicks/ads guard/volatility, money reports, critic and
+efficiency readers, pipeline reruns and Telegram delivery. After the final
+retired-run replay guard, **239 cases passed in 55.50 s**, including both
+`tests/test_e2e_offline.py::test_rerun_is_idempotent` modes and alert dedupe
+(first-send, once-per-deal, legacy sent receipts, dry-run and uncertain-send
+suppression). A final **50 grower-only cases passed in 4.45 s**, including all five new
+retention knobs and newer-observation replays of retired run keys. Across the
+final selections, **616 distinct cases** passed (the last run adds seven knob
+cases to the broad 609). Python compilation and
+`git diff --check` pass. Every pytest run used `--basetemp=/tmp/b337b`; that
+folder and owned model scratch are removed after use. No full suite, commit,
+push, deployment or live calls. Owner review and live measurements remain.
+
+## 337: receipt details and disposable API/IndexNow payloads (2026-10-19)
+
+The supplied production totals imply **0.368913 MB/hour encrypted** over
+19:45–22:37 UTC, and **50.89 hours** from 71,227,392 bytes to the unchanged
+90 MB refusal guard if that rate continues. Those two totals cannot identify
+production's top tables. No decrypted production snapshots are available in
+this worktree; no live API, secret, state restore or network call was made.
+The per-table measurements below are explicitly offline fixture measurements.
+
+### Read-only size/delta helper
+
+Run `python -m scripts.state_growth state.db` or
+`python -m scripts.state_growth later.db --before earlier.db --hours 2.866667`.
+Unlike the existing eight-table commit log, it reports **every user table**,
+row counts, physical bytes including owned indexes from `dbstat`, and logical
+byte totals for every column. Without `dbstat`, per-table bytes are labelled
+`length_sums`: UTF-8/BLOB lengths, textual numeric lengths, no index or SQLite
+record/page overhead. Mixed physical/logical snapshot comparisons fail instead
+of manufacturing a rate. A read-only transaction keeps each inventory coherent;
+added/dropped tables and negative deltas are included. Output contains counts,
+schema names and byte totals, never row contents, keys, URLs or evidence.
+
+### Writer/reader audit and protected state
+
+| Data | Growth path and reader requirement | Task 337 action |
+| --- | --- | --- |
+| `posts_seen` | `DB.record_post` writes one receipt per processed content hash. Pipeline and fetch adapters use the hash to avoid repeat work; `post_first_seen`, source reporting/intake use source/discovery time for up to 30 days. Repository-wide SQL search finds **no reader** of `uid`, `url`, or `published_at`. Credited URLs and price evidence are independently retained in `sightings` and deal payloads. | After two days, clear only these three unused detail columns, retaining row ID, hash, source and discovery time. The existing 30-day receipt policy is unchanged. Pending discoveries live separately in `source_audit_posts`. |
+| `source_audit_posts` | One discovery receipt per source/hash, parse counters filled once. Completed 7-day reports and arbitrarily old deferred discoveries remain readers. | Existing 9-day rule, including recent parse-completion protection and pending discoveries, stays. No further safe expiry was found. |
+| Accuracy | `accuracy.record` adds a receipt for each new observed price/run identity. At 2,000 fresh readings/hour: 48,000/day. Current writes intern keys/runs and use `accuracy_samples_compact`; old `accuracy_samples` drains through existing migration. Reports need nine days, sampling needs six hours, two identities suppress replays/cached readings. | Keep the existing encoding/window and both uniqueness guards. |
+| Clicks | `clicks.observe_publication` updates hourly slots in `deal_click_days`; for a fixed 3,300-offer set, a new day adds 3,300 rows × 192 payload bytes, rather than 3,300 rows every publication. A midnight allocation is a burst, not a sustained hourly rate. Features require exact covered hours over the configured learner window. | Keep 8 days (or longer configured lookback) and run receipts. No exposure sampling. |
+| Keepa/API responses | `PoliteFetcher.api_get` keeps response bodies in **`_api_bodies` memory**, never SQLite. `http_cache` persists only opaque `api:` identities, validators and a fetched clock; current price calls with `conditional=False` bypass even that cache. A bodyless later process already retries a 304 unconditionally. | Expire only `api:` validators older than one day; ordinary feed/page validators and NULL/future clocks retain their prior policy. No request, token reserve or cap logic changes. |
+| Keepa history | `History.record` replaces each retained offer's at-most-12-sample ring. Scheduler, death confirmation, stability and token/cached-observation accounting read those facts, including old stability anchors. | Existing orphan/excess-sample cleanup only; no age cutoff. Fixed inventory saturates; new inventory is unbounded. |
+| Deal/photo fields | `verify._harvest_image` writes `photo_lookup_asin` and `photo_lookup_found_none` on the existing deal; later reads overwrite them. The new visitor reserve overwrites a single small `keepa_budget` meta record. Full product reads are reduced to selected facts, not saved raw responses. | Keep photo retry/suppression and liveness markers, image URLs, evidence, critic facts and popularity. A cold metadata addition is not one appended record/hour. Never expire an alive/hidden/suspect deal. |
+| Price observations | `price_checks.record` is bounded by the shipped **one own check/offer/UTC day**: at most 3,300/day for this fixed fixture (137.5/hour averaged), plus permanent post facts. `verify`, `savings.py`, volatility, product history and Deal Check read observations; some readers need lifetime post facts. | Preserve 90-day own checks and all post-price facts, even though public history is hidden. |
+| Run/AI/critic logs | Existing run/efficiency/yield windows, LLM call ledger/reservations, critic rolling samples, per-run spend claims, delivery batches and receipts have report/replay/cap readers. Cached extracted facts (`post_parses`) already expire after two days. | No new deletion or shortened window. Pending calls, today's/tomorrow's reservations, current-day/run accounting, alert/send claims and all existing replay anchors remain. |
+| IndexNow | `indexnow_batches.versions` repeats URL/hash maps. Terminal batches no longer read the map; endpoint/run/status still suppress submissions. Sending batches need their full map to finish, however old. | Clear only received/failed version maps after one day. Keep the entire receipt row and every sending map; existing page-level facts/queue/receipt timestamps stay. |
+| Link facts/tool pages | `publish.link_facts.derive_link_facts` computes from retained facts; tool pages are static artifacts. Neither creates an append-only state table. Stable posted redirects, product identities/offers, attribution and SEO fact memory have active readers. | No pruning. |
+
+An offline call to the real `verify._harvest_image` with a known ASIN and no
+photo adds **64 compact-JSON bytes once**, or 211,200 raw bytes across 3,300
+offers. Repeating it 100 times adds **zero** bytes. This is a logical payload
+measurement, not an encrypted-size saving or a production photo-coverage claim.
+
+### Flag, expiry and compaction
+
+`retention.state_retention_337` is a **strict bool**, defaults **false** in
+`config.py`, ships **true** in `config.yaml`. The three positive integer knobs
+are `api_cache_days: 1`, `post_receipt_details_days: 2`, and
+`terminal_indexnow_versions_days: 1`. They have no effect while OFF; existing
+options, schemas, writers, bytes and maintenance bookkeeping remain as before.
+Disabling after cleanup cannot restore discarded unused details; all readers
+still work with trimmed receipts. No new table/schema migration is required.
+
+The existing cooperative maintenance now adds three rowid keyset sweeps. They
+share its one-second budget, frozen high water, round-robin cursor, 64-row
+transaction and 4,096-examined/table/run allowance. Expiry is strict `<`:
+recent, exact-boundary, future and API NULL clocks survive. Updates/deletes,
+cursors and allowance commit together, including deadline rollback. Finishing
+a sweep cannot restart it under the same run key or join another lane's newer
+sweep. Fast lanes continue deferring VACUUM; the existing hourly 10%-free-page
+policy is retained. Bounded draining and subsequent compaction must finish
+before any projected saving can be claimed in production.
+
+### Reproduction and size limit
+
+`python -m scripts.state_growth_experiment` builds the largest existing 296c
+fixture shape (3,300 live deals, 66,000 sightings and permanent price facts,
+432,000 compact accuracy samples, eight full click-exposure days, 12 Keepa
+facts/offer, 448,000 post receipts and 122,000 completed audit receipts).
+It reuses the existing real schema/fixture helpers and gzip-6/OpenSSL helper
+with its **public fixture password**, never a repository secret. Receipt ages
+are spread uniformly over their full 30-/9-day windows; the old helper's
+i-second timestamps covered only 5.2/1.4 days, which is unsuitable for a
+steady-state expiry estimate. Historical cohorts are seeded transactionally;
+the measured hour/day uses actual accuracy, deal-upsert and click writers.
+All databases/encrypted files live in automatically removed owned `/tmp`
+scratch. The model records both unvacuumed and explicitly vacuumed sizes,
+bounded-drain calls, complete table/column inventories, a one-hour snapshot
+delta and a further 24-hour continuation with retention.
+
+Scenario inputs are **623 post receipts/hour**, **565 completed audits/hour**
+(the existing cohort sizes divided by their retention windows, rounded up),
+2,000 accuracy observations/hour, five publications/hour, and an explicit
+**40 unique API validator identities/hour**. These are model inputs, not live
+traffic measurements. The first snapshot follows VACUUM: packed hash indexes
+split when inserts resume, and the first publication of a UTC day allocates
+daily exposure blocks. That hour's page growth must not be extrapolated as
+a perpetual production rate. The day continuation exposes the distinction.
+
+Measured top five **first-hour physical growers**, including indexes:
+
+| Table | Added rows | Raw MB/hour | Evidence |
+| --- | ---: | ---: | --- |
+| `posts_seen` | 623 | **2.396160** | 39,872 new hash bytes, 15,575 discovery-clock bytes, 60,001 unused uid/URL/published-clock bytes; most physical allocation is packed-index splitting, not new row data. |
+| `source_audit_posts` | 565 | **1.515520** | 36,160 new hash bytes, 28,250 discovery/parse-clock bytes, scalar report counters and two indexes. |
+| `deal_click_days` | 3,300 | **0.954368** | A new UTC day allocates 633,600 hourly-slot payload bytes and 3,300 key/day identities once. |
+| `accuracy_samples_compact` | 2,000 | **0.499712** | New key/run integer IDs, checked/observed clocks, bucket/outcome and receipt indexes; legacy table adds zero rows. |
+| `http_cache` | 40 | **0.008192** | 2,720 opaque API-key bytes plus 1,000 fetched-clock bytes; **zero response-body bytes**. |
+
+The whole encrypted snapshot grows **571,136 bytes** in that cold allocation
+hour. These numbers do **not** apportion the supplied live 0.368913 MB/hour.
+In the following retained day, the largest physical net growers instead are
+`price_history` **0.030037 MB/hour**, maintenance/run bookkeeping
+**0.016213**, `posts_seen` **0.010411**, API validators **0.006997**, and
+compact accuracy **0.002389**; click daily blocks have saturated. Physical
+growth can coexist with fewer retained rows because indexes/pages rebalance.
+
+| Snapshot | SQLite bytes | gzip bytes | encrypted bytes |
+| --- | ---: | ---: | ---: |
+| Largest fixture before measured hour | 280,137,728 | 84,569,438 | **84,569,456** |
+| After that hour and initial bounded cleanup, before VACUUM | 285,663,232 | 81,358,287 | **81,358,304** |
+| Same data after explicit VACUUM | 243,941,376 | 80,659,068 | **80,659,088** |
+| Further 24-hour continuation and final drain/VACUUM | 245,538,816 | 80,430,918 | **80,430,944** |
+
+Initial receipt cleanup needs **110** maintenance calls with the shipped
+limits; the final drain needs **97 additional** calls after the 120 modeled
+publications. These are same-clock fixture drains, not promised production
+throughput. The 24-hour encrypted delta is **−228,144 bytes**, or
+**−0.009506 MB/hour**: approximately flat for the fixed inventory/cohorts,
+after catching maintenance up. Keeping 10 MB for unmodeled production state
+gives **90.43 MB**, already above the 90 MB guard and far above 60 MB.
+The fixture includes only a day of own checks; their full 90-day residency,
+new live offers, permanent post observations and pending discoveries can
+increase this estimate. It is not a finite bound for growing inventory.
+VACUUM is material but modest for encryption: the first cleanup leaves **zero
+freelist pages**, so the normal 10% trigger will not immediately perform the
+explicit fixture VACUUM. Use **81.36 MB** as the measured initial saving's
+unvacuumed endpoint, not the lower manually compacted number. No new forced
+VACUUM policy is introduced.
+
+The **below-60-MB production target is not established** by disposable-cache
+expiry alone. Receipt hashes, inventory, source audit and historical facts
+remain protected. The 296c stress model already measured 83.94 MB before its
+10 MB allowance, and none of its largest protected cohorts can simply be
+deleted. This is a conservative reduction plus a usable measurement tool;
+production attribution still requires two decrypted snapshots and this report.
+Do not deploy assuming the 90 MB incident is solved. Further lossless receipt
+storage compaction or the separately documented R2 migration remains necessary
+if production follows the stress case; no storage backend is changed here.
+
+### Targeted verification
+
+**261 distinct cases passed, one browser case skipped** across the requested
+offline selections (262 unique collected IDs). Final overlapping runs:
+162 passed/1 skipped; 100 passed; 48 passed. The initial quoting error in the
+diagnostic test fixture was corrected; no failing selected case remains.
+Selections cover the new rules/strict flag/config validation, exact-boundary
+and future/NULL retention, OFF/missing behavior, bounds, interrupted chunk
+rollback, receipt replay, all protected fact/alert/delivery/money fixtures,
+source-audit readers, existing 296b/c maintenance, incremental-cache behavior,
+every published file's bytes and both offline pipeline rerun variants.
+Every pytest invocation used `--basetemp=/tmp/b337`, `-p no:cacheprovider`
+(execution runs `-n 1`); scratch was deleted afterward. Both large model runs
+completed with SQLite integrity/fact-count checks; the initial young-age run
+was superseded by the uniform-age results above. No full suite, live calls,
+commit or push. Runtime/production size and the 60 MB target remain unresolved.
 
 ## 296c: lossless compact writes (2026-10-18)
 

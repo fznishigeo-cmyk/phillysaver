@@ -220,6 +220,8 @@ def observe_publication(db, cfg, now, rows, *, run_key=None):
                         "DO UPDATE SET v=excluded.v", (json.dumps(snapshot),))
         cutoff = int(stamp // 3600) - opt["retention_days"] * 24
         for table in ("deal_clicks", "deal_click_shown", "deal_click_coverage", "deal_click_runs"):
+            if cfg.state_retention_337 and table in ("deal_clicks", "deal_click_coverage", "deal_click_runs"):
+                continue  # atomic archival in bounded maintenance; run guards never expire
             if table == "deal_click_shown" and cfg.deal_click_shown_days is not None:
                 continue  # bounded cooperative cleanup in DB.prune
             db.conn.execute(f"DELETE FROM {table} WHERE hour < ?", (cutoff,))
@@ -241,28 +243,20 @@ def features(db, cfg, now, published):
     opt = settings(cfg)
     end = int(now.timestamp() // 3600)
     start = end - opt["lookback_hours"]
-    coverage = db.conn.execute("SELECT COUNT(*),SUM(capped) FROM deal_click_coverage "
-                               "WHERE hour>=? AND hour<?", (start, end)).fetchone()
-    counts = dict(db.conn.execute("SELECT deal_key,SUM(count) FROM deal_clicks "
-                                  "WHERE hour>=? AND hour<? GROUP BY deal_key", (start, end)))
-    if compact_exists(db):
-        covered = {r[0] for r in db.conn.execute(
-            "SELECT hour FROM deal_click_coverage WHERE hour>=? AND hour<?", (start, end))}
-        by_hour = {(r[0], r[1]): r[2] for r in db.conn.execute(
-            "SELECT deal_key,hour,count FROM deal_clicks WHERE hour>=? AND hour<?", (start, end))}
-        totals = {}
-        for key, hour, seconds in exposure(db, start, end):
-            if hour in covered:
-                value = totals.setdefault(key, [0., 0])
-                value[0] += seconds
-                value[1] += by_hour.get((key, hour), 0)
-        shown = {key: (value[0] / 3600, value[1]) for key, value in totals.items()}
-    else:
-        shown = {r[0]: (r[1] / 3600, r[2]) for r in db.conn.execute(
-            "SELECT s.deal_key,SUM(s.seconds),SUM(COALESCE(c.count,0)) FROM deal_click_shown s "
-            "JOIN deal_click_coverage h ON h.hour=s.hour LEFT JOIN deal_clicks c "
-            "ON c.hour=s.hour AND c.deal_key=s.deal_key WHERE s.hour>=? AND s.hour<? "
-            "GROUP BY s.deal_key", (start, end))}
+    from .state_growers import click_rows, click_coverage
+    covered = click_coverage(db, start, end)
+    coverage = (len(covered), sum(covered.values()))
+    by_hour = {(key, hour): n for key, hour, n in click_rows(db, start, end)}
+    counts = {}
+    for (key, hour), n in by_hour.items():
+        counts[key] = counts.get(key, 0) + n
+    totals = {}
+    for key, hour, seconds in exposure(db, start, end):
+        if hour in covered:
+            value = totals.setdefault(key, [0., 0])
+            value[0] += seconds
+            value[1] += by_hour.get((key, hour), 0)
+    shown = {key: (value[0] / 3600, value[1]) for key, value in totals.items()}
     def age(value):
         at = parse_iso(value or "")
         return max(0, (now - at).total_seconds() / 3600) if at and at <= now else None

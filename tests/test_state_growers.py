@@ -90,14 +90,14 @@ def test_invalid_knobs_fail_closed(tmp_path, name, value):
 def test_shipped_values_and_reader_floors():
     cfg = load_config()
     options = state_retention.options(cfg)
-    assert (options["accuracy_days"], options["click_hours"], options["history_samples"]) == (9, 192, 12)
+    assert (options["accuracy_days"], options["click_hours"], options["history_samples"]) == (14, 192, 12)
     assert cfg.deals_days == 14 and cfg.posts_seen_days == 30
-    assert options["audit_days"] == 9
+    assert options["audit_days"] == 14
     cfg.accuracy_samples_days = cfg.deal_click_shown_days = cfg.keepa_recheck_history_samples = 1
     cfg.raw["first_party_clicks"]["lookback_hours"] = 720
     cfg.keepa_recheck_adaptive["history_samples"] = 24
     options = state_retention.options(cfg)
-    assert (options["accuracy_days"], options["click_hours"], options["history_samples"]) == (9, 720, 24)
+    assert (options["accuracy_days"], options["click_hours"], options["history_samples"]) == (14, 720, 24)
 
 
 @pytest.mark.parametrize("zone,now", [

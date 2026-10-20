@@ -128,6 +128,13 @@ def record(db, cfg, deal_key, now, *, source, price=None, unavailable=False, obs
     shown = published(db).get(deal_key)
     run_key = run_key or getattr(db, "accuracy_run_key", None) or iso(now)
     observed = observed or now
+    from .state_growers import exists
+    if exists(db, "accuracy_retired_runs") and db.conn.execute("SELECT 1 FROM accuracy_retired_runs WHERE run_key=?", (run_key,)).fetchone():
+        return
+    if exists(db, "accuracy_archive_watermarks"):
+        watermark = db.conn.execute("SELECT observed_at FROM accuracy_archive_watermarks WHERE deal_key=? AND source=?", (deal_key, source)).fetchone()
+        if watermark and math.floor(observed.timestamp()) <= watermark[0]:
+            return
     if (not shown or shown["created_run"] == run_key or observed > now
             or observed < parse_iso(shown["at"])):
         return
@@ -285,7 +292,9 @@ def wilson(matches, n):
 
 
 def score(rows):
-    counts = Counter(row["outcome"] for row in rows)
+    counts = Counter()
+    for row in rows:
+        counts[row["outcome"]] += row.get("n", 1)
     n = sum(counts[k] for k in ("match", "higher", "lower", "unavailable"))
     return {"n": n, "matches": counts["match"], "rate": counts["match"] / n if n else None,
             "interval": wilson(counts["match"], n), "checkout_price": counts["checkout_price"],
@@ -307,6 +316,14 @@ def report_data(db, cfg, now):
                      "bucket": r[1], "outcome": r[2]} for r in db.conn.execute(
             "SELECT checked_at,bucket,outcome FROM accuracy_samples_compact WHERE checked_at>=? AND checked_at<?",
             (int(start.timestamp()), int(end.timestamp()))))
+    from .state_growers import exists
+    if exists(db, "state_audit_counts"):
+        import json
+        rows.extend({"checked_at": r[0], "bucket": json.loads(r[1])[0],
+                     "outcome": json.loads(r[1])[1], "n": r[2]}
+                    for r in db.conn.execute("SELECT stamp,dimensions,n FROM state_audit_counts"
+                                             " WHERE kind='accuracy' AND stamp>=? AND stamp<?",
+                                             (iso(start), iso(end))))
     for row in rows:
         row["day"] = parse_iso(row["checked_at"]).astimezone(tz).date()
     daily = []

@@ -1,0 +1,1097 @@
+{
+  "synthetic_only": true,
+  "notes": [
+    "Continuation publication clocks span 24h46m; measured final drain used 24h. The reproducible helper now uses 24h46m.",
+    "Final replay ledger mirrored transactionally into the in-flight fixture; application inserts directly without a trigger.",
+    "Writer encoding is a lossless projection of eventual legacy receipt backfill, not immediate production cleanup.",
+    "Full-history projection sums separate-stream costs with 5% mixing margin; other production cohorts are unmeasured."
+  ],
+  "cohorts": {
+    "initial_posts": 448000,
+    "source_audits": 189800,
+    "accuracy_samples": 672000,
+    "live_deals": 3300,
+    "sightings": 66000,
+    "post_price_facts": 66000,
+    "raw_clicks": 108000
+  },
+  "snapshots": {
+    "before": {
+      "sqlite_bytes": 323940352,
+      "gzip_bytes": 98550662,
+      "encrypted_bytes": 98550688,
+      "tables": [
+        {
+          "name": "posts_seen",
+          "rows": 448000,
+          "bytes": 140042240
+        },
+        {
+          "name": "accuracy_samples_compact",
+          "rows": 672000,
+          "bytes": 51429376
+        },
+        {
+          "name": "source_audit_posts",
+          "rows": 189800,
+          "bytes": 49999872
+        },
+        {
+          "name": "keepa_recheck_history",
+          "rows": 3300,
+          "bytes": 27230208
+        },
+        {
+          "name": "price_history",
+          "rows": 66000,
+          "bytes": 21012480
+        },
+        {
+          "name": "sightings",
+          "rows": 66000,
+          "bytes": 16543744
+        },
+        {
+          "name": "deal_click_days",
+          "rows": 26400,
+          "bytes": 7024640
+        },
+        {
+          "name": "deal_clicks",
+          "rows": 108000,
+          "bytes": 6361088
+        },
+        {
+          "name": "deals",
+          "rows": 3300,
+          "bytes": 2531328
+        },
+        {
+          "name": "http_cache",
+          "rows": 4800,
+          "bytes": 888832
+        },
+        {
+          "name": "accuracy_sample_keys",
+          "rows": 3300,
+          "bytes": 368640
+        },
+        {
+          "name": "meta",
+          "rows": 2,
+          "bytes": 98304
+        },
+        {
+          "name": "accuracy_sample_runs",
+          "rows": 336,
+          "bytes": 40960
+        },
+        {
+          "name": "accuracy_samples",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_yield_events",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "deal_click_coverage",
+          "rows": 1080,
+          "bytes": 16384
+        },
+        {
+          "name": "legitimacy_audits",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "llm_calls",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_prefilter_posts",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "alerts_sent",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_shown",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "efficiency_runs",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "legitimacy_batches",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "llm_reservations",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "post_parses",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "accuracy_extra_reads",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "accuracy_extra_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "ai_yield_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "appeal_scores",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_shadow_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_samples",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "deal_click_runs",
+          "rows": 1,
+          "bytes": 8192
+        },
+        {
+          "name": "delivery_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_pages",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "keepa_recheck_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "llm_legacy_spend",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "outgoing",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "pinterest_pin_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_keys",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_offers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "run_stats",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "second_opinion_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_audit_breakers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_health",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "products",
+          "rows": 0,
+          "bytes": 4096
+        }
+      ]
+    },
+    "bounded_cleanup": {
+      "sqlite_bytes": 186888192,
+      "gzip_bytes": 57045671,
+      "encrypted_bytes": 57045696,
+      "tables": [
+        {
+          "name": "posts_seen_cold",
+          "rows": 343466,
+          "bytes": 53407744
+        },
+        {
+          "name": "posts_seen",
+          "rows": 104534,
+          "bytes": 32182272
+        },
+        {
+          "name": "keepa_recheck_history",
+          "rows": 3300,
+          "bytes": 27230208
+        },
+        {
+          "name": "price_history",
+          "rows": 66000,
+          "bytes": 21012480
+        },
+        {
+          "name": "sightings",
+          "rows": 66000,
+          "bytes": 16543744
+        },
+        {
+          "name": "source_audit_posts_cold",
+          "rows": 176242,
+          "bytes": 10477568
+        },
+        {
+          "name": "deal_click_days",
+          "rows": 26400,
+          "bytes": 7024640
+        },
+        {
+          "name": "accuracy_samples_compact",
+          "rows": 79200,
+          "bytes": 6160384
+        },
+        {
+          "name": "deal_clicks",
+          "rows": 72000,
+          "bytes": 4284416
+        },
+        {
+          "name": "source_audit_posts",
+          "rows": 13558,
+          "bytes": 3489792
+        },
+        {
+          "name": "deals",
+          "rows": 3300,
+          "bytes": 2531328
+        },
+        {
+          "name": "run_stats",
+          "rows": 276,
+          "bytes": 1146880
+        },
+        {
+          "name": "accuracy_sample_keys",
+          "rows": 3300,
+          "bytes": 368640
+        },
+        {
+          "name": "click_daily_counts",
+          "rows": 1500,
+          "bytes": 200704
+        },
+        {
+          "name": "accuracy_archive_watermarks",
+          "rows": 3300,
+          "bytes": 188416
+        },
+        {
+          "name": "state_audit_counts",
+          "rows": 2035,
+          "bytes": 126976
+        },
+        {
+          "name": "meta",
+          "rows": 26,
+          "bytes": 98304
+        },
+        {
+          "name": "accuracy_sample_runs",
+          "rows": 336,
+          "bytes": 40960
+        },
+        {
+          "name": "accuracy_samples",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_yield_events",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "legitimacy_audits",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "llm_calls",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_prefilter_posts",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "alerts_sent",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_coverage",
+          "rows": 720,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_shown",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "efficiency_runs",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "legitimacy_batches",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "llm_reservations",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "post_parses",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "accuracy_extra_reads",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "accuracy_extra_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "ai_yield_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "appeal_scores",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_shadow_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_samples",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "deal_click_runs",
+          "rows": 1,
+          "bytes": 8192
+        },
+        {
+          "name": "delivery_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "http_cache",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_pages",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "keepa_recheck_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "llm_legacy_spend",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "outgoing",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "pinterest_pin_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_keys",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_offers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "second_opinion_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_audit_breakers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_health",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "click_daily_coverage",
+          "rows": 15,
+          "bytes": 4096
+        },
+        {
+          "name": "products",
+          "rows": 0,
+          "bytes": 4096
+        }
+      ]
+    },
+    "writer_encoding": {
+      "sqlite_bytes": 169439232,
+      "gzip_bytes": 52280134,
+      "encrypted_bytes": 52280160,
+      "tables": [
+        {
+          "name": "posts_seen_cold",
+          "rows": 448000,
+          "bytes": 68128768
+        },
+        {
+          "name": "keepa_recheck_history",
+          "rows": 3300,
+          "bytes": 27230208
+        },
+        {
+          "name": "price_history",
+          "rows": 66000,
+          "bytes": 21012480
+        },
+        {
+          "name": "sightings",
+          "rows": 66000,
+          "bytes": 16543744
+        },
+        {
+          "name": "source_audit_posts_cold",
+          "rows": 176242,
+          "bytes": 10477568
+        },
+        {
+          "name": "deal_click_days",
+          "rows": 26400,
+          "bytes": 7024640
+        },
+        {
+          "name": "accuracy_samples_compact",
+          "rows": 79200,
+          "bytes": 6160384
+        },
+        {
+          "name": "deal_clicks",
+          "rows": 72000,
+          "bytes": 4284416
+        },
+        {
+          "name": "source_audit_posts",
+          "rows": 13558,
+          "bytes": 3489792
+        },
+        {
+          "name": "deals",
+          "rows": 3300,
+          "bytes": 2531328
+        },
+        {
+          "name": "run_stats",
+          "rows": 276,
+          "bytes": 1146880
+        },
+        {
+          "name": "accuracy_sample_keys",
+          "rows": 3300,
+          "bytes": 368640
+        },
+        {
+          "name": "click_daily_counts",
+          "rows": 1500,
+          "bytes": 200704
+        },
+        {
+          "name": "accuracy_archive_watermarks",
+          "rows": 3300,
+          "bytes": 188416
+        },
+        {
+          "name": "state_audit_counts",
+          "rows": 2035,
+          "bytes": 126976
+        },
+        {
+          "name": "meta",
+          "rows": 26,
+          "bytes": 98304
+        },
+        {
+          "name": "accuracy_sample_runs",
+          "rows": 336,
+          "bytes": 40960
+        },
+        {
+          "name": "accuracy_samples",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_yield_events",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "legitimacy_audits",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "llm_calls",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_prefilter_posts",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "alerts_sent",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_coverage",
+          "rows": 720,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_shown",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "efficiency_runs",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "legitimacy_batches",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "llm_reservations",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "post_parses",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "posts_seen",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "accuracy_extra_reads",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "accuracy_extra_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "ai_yield_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "appeal_scores",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_shadow_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_samples",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "deal_click_runs",
+          "rows": 1,
+          "bytes": 8192
+        },
+        {
+          "name": "delivery_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "http_cache",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_pages",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "keepa_recheck_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "llm_legacy_spend",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "outgoing",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "pinterest_pin_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_keys",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_offers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "second_opinion_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_audit_breakers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_health",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "click_daily_coverage",
+          "rows": 15,
+          "bytes": 4096
+        },
+        {
+          "name": "products",
+          "rows": 0,
+          "bytes": 4096
+        }
+      ]
+    },
+    "continuation": {
+      "sqlite_bytes": 173117440,
+      "gzip_bytes": 52734839,
+      "encrypted_bytes": 52734864,
+      "tables": [
+        {
+          "name": "posts_seen_cold",
+          "rows": 450257,
+          "bytes": 69156864
+        },
+        {
+          "name": "keepa_recheck_history",
+          "rows": 3300,
+          "bytes": 27230208
+        },
+        {
+          "name": "price_history",
+          "rows": 69300,
+          "bytes": 21733376
+        },
+        {
+          "name": "sightings",
+          "rows": 66000,
+          "bytes": 16543744
+        },
+        {
+          "name": "source_audit_posts_cold",
+          "rows": 176228,
+          "bytes": 10477568
+        },
+        {
+          "name": "deal_click_days",
+          "rows": 29700,
+          "bytes": 7897088
+        },
+        {
+          "name": "accuracy_samples_compact",
+          "rows": 79200,
+          "bytes": 6160384
+        },
+        {
+          "name": "deal_clicks",
+          "rows": 72000,
+          "bytes": 4284416
+        },
+        {
+          "name": "source_audit_posts",
+          "rows": 13560,
+          "bytes": 3551232
+        },
+        {
+          "name": "deals",
+          "rows": 3300,
+          "bytes": 2531328
+        },
+        {
+          "name": "run_stats",
+          "rows": 456,
+          "bytes": 1888256
+        },
+        {
+          "name": "accuracy_sample_keys",
+          "rows": 3300,
+          "bytes": 368640
+        },
+        {
+          "name": "click_daily_counts",
+          "rows": 1600,
+          "bytes": 212992
+        },
+        {
+          "name": "accuracy_archive_watermarks",
+          "rows": 3300,
+          "bytes": 188416
+        },
+        {
+          "name": "http_cache",
+          "rows": 960,
+          "bytes": 184320
+        },
+        {
+          "name": "state_audit_counts",
+          "rows": 2658,
+          "bytes": 163840
+        },
+        {
+          "name": "meta",
+          "rows": 26,
+          "bytes": 98304
+        },
+        {
+          "name": "accuracy_sample_runs",
+          "rows": 360,
+          "bytes": 40960
+        },
+        {
+          "name": "accuracy_retired_runs",
+          "rows": 336,
+          "bytes": 20480
+        },
+        {
+          "name": "accuracy_samples",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_yield_events",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "deal_click_runs",
+          "rows": 121,
+          "bytes": 16384
+        },
+        {
+          "name": "legitimacy_audits",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "llm_calls",
+          "rows": 0,
+          "bytes": 16384
+        },
+        {
+          "name": "ai_prefilter_posts",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "alerts_sent",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_coverage",
+          "rows": 720,
+          "bytes": 12288
+        },
+        {
+          "name": "deal_click_shown",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "efficiency_runs",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "legitimacy_batches",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "llm_reservations",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "post_parses",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "posts_seen",
+          "rows": 0,
+          "bytes": 12288
+        },
+        {
+          "name": "accuracy_extra_reads",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "accuracy_extra_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "ai_yield_runs",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "appeal_scores",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_shadow_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "critic_tier_samples",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "delivery_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_batches",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "indexnow_pages",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "keepa_recheck_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "llm_legacy_spend",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "outgoing",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "pinterest_pin_daily",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_keys",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "product_offers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "second_opinion_yield",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_audit_breakers",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "source_health",
+          "rows": 0,
+          "bytes": 8192
+        },
+        {
+          "name": "click_daily_coverage",
+          "rows": 16,
+          "bytes": 4096
+        },
+        {
+          "name": "products",
+          "rows": 0,
+          "bytes": 4096
+        }
+      ]
+    }
+  },
+  "maintenance_calls": {
+    "initial": 276,
+    "scheduled_continuation": 120,
+    "final_drain": 60
+  },
+  "own_check_envelope": {
+    "rows": 297000,
+    "before_encrypted_bytes": 6768,
+    "after_encrypted_bytes": 6608176,
+    "increment_encrypted_bytes": 6601408,
+    "price_history_sqlite_bytes": 70205440
+  },
+  "projection_encrypted_bytes": 59666342.4,
+  "projection_with_10mb_allowance": 69666342.4
+}

@@ -1171,15 +1171,24 @@ state:
   max_enc_mb: 90             # Fail before any push at or above this size.
 
 retention:
+  state_retention_337: true  # OFF preserves previous maintenance/writer bytes.
+  api_cache_days: 1         # Opaque api: validators only; response bodies are never persisted.
+  post_receipt_details_days: 7  # Compact older receipts without live sightings; fresh reads stay in posts_seen.
+  audit_detail_days: 14      # Older details become counted history; run/send guards survive.
+  audit_hot_days: 1          # Older completed source audits use lossless packed hashes until day 14.
+  click_raw_days: 30         # Older click buckets become daily counts per public deal key.
+  accuracy_detail_days: 14   # Also retain only the latest observations per deal/source below.
+  accuracy_last_per_deal: 24 # Exact timestamp/bucket/outcome counts preserve the accuracy report.
+  terminal_indexnow_versions_days: 1  # Clear completed payloads; keep endpoint/run/status anchors forever.
   posts_seen_days: 30
   # Cross-source parse reuse (task 059): the same post text shows up in
   # several feeds within hours. Short on purpose: every row rides the
   # encrypted state.db that is pushed to the data branch every run.
   post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
-  accuracy_samples_days: 9  # Seven completed local days + timezone/DST/report margin (minimum 9).
+  accuracy_samples_days: 9  # Legacy/OFF window; ON uses accuracy_detail_days and accuracy_last_per_deal.
   deal_click_shown_days: 8   # Seven-day learner + margin; a longer configured lookback always wins.
-  source_audit_posts_days: 9  # Seven-day reports; keep pending discoveries and recent parse completions.
+  source_audit_posts_days: 9  # Legacy/OFF window; ON uses audit_detail_days (reader minimum 9).
   keepa_recheck_history_samples: 12  # Per deal; never below recheck_adaptive.history_samples.
   compact_deal_payloads: true  # Rehydrate duplicate SQL fields/sightings; preserve every fact.
   compact_accuracy_samples: true  # Intern replay keys, store UTC seconds; identical private reports.

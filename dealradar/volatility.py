@@ -204,9 +204,9 @@ class Plan:
         if clicks.enabled(self.cfg):
             end = int(self.now.timestamp() // 3600)
             hours = max(1, int(self.options.get("click_lookback_hours", 6)))
-            public = dict(history.db.conn.execute(
-                "SELECT c.deal_key,SUM(c.count) FROM deal_clicks c JOIN deal_click_coverage h USING(hour) "
-                "WHERE c.hour>=? AND c.hour<? GROUP BY c.deal_key HAVING SUM(c.count)>0", (end - hours, end)))
+            from .state_growers import click_rows, click_coverage
+            covered = click_coverage(history.db, end - hours, end)
+            public = {key for key, hour, n in click_rows(history.db, end - hours, end) if hour in covered and n > 0}
             self.clicked = {k for k in self.rows if hashlib.sha256(k.encode()).hexdigest()[:16] in public}
         self.boosted = set()
 
