@@ -119,7 +119,8 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(result.ok, false); assert.equal(result.flags[0].why, "car part");
   early[5] = card("auto", "KAX Front Brake Kit, Ceramic Brake Pads and Rotors");
   assert.equal(frontPageFlags(early, rules).flags[0].why, "niche category auto, car part");
-  for (const ok of ["Shark FlexStyle Air Styler", "Car Seat Cover for Babies", "Hot Wheels 20-Car Pack"])
+  for (const ok of ["Shark FlexStyle Air Styler", "Car Seat Cover for Babies", "Hot Wheels 20-Car Pack",
+                    "Skechers Girl's Glimmer Kicks - School Struts Sneaker"])
     assert.equal(frontPageFlags([card("home", ok)], rules).ok, true, ok);
 }
 

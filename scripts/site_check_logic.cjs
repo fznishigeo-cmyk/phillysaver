@@ -93,6 +93,8 @@ function checkPhotos({live, showing, broken, firstScreen}, rules) {
 // niche categories and model-specific car parts never belong on the first screens.
 // Every flag prints each hour; one in the first 24 cards turns the check red.
 const VEHICLE_PART = /\b(?:cv axles?|radiators?|ac compressors?|brake (?:kits?|pads|rotors|calipers?)|catalytic converters?|alternators?|control arms?|struts?|tie rods?|wheel (?:hubs?|bearings?)|spark plugs?|ignition coils?|fuel pumps?|o2 sensors?|oxygen sensors?|(?:head|tail)[ -]?light assembl(?:y|ies)|floor mats? for)\b/i;
+// Footwear titles reuse part words ("School Struts Sneaker", 2026-10-20).
+const FOOTWEAR = /\b(?:sneakers?|sandals?|slippers?|loafers?)\b/i;
 
 function frontRules(config) {
   const match = config.match(/^[ \t]+niche_categories:[ \t]*\[([^\]]*)\]/m);
@@ -179,7 +181,7 @@ function frontPageFlags(cards, rules) {
     }
     const why = [];
     if (rules.niche.includes(d.category || "other")) why.push(`niche category ${d.category || "other"}`);
-    if (VEHICLE_PART.test(String(d.item || ""))) why.push("car part");
+    if (VEHICLE_PART.test(String(d.item || "")) && !FOOTWEAR.test(String(d.item || ""))) why.push("car part");
     if (why.length) flags.push({pos: i + 1, why: why.join(", "), store: String(d.store || ""),
                                 item: String(d.item || "").slice(0, 70)});
   });
