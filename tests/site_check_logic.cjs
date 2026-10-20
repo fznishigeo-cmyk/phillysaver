@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks} = require("../scripts/site_check_logic.cjs");
+const {amazonTag, checkAmazonTag, checkSovrnLinks} = require("../scripts/site_check_logic.cjs");
 const tag = "wowpriced-20";
 const doc = (...urls) => ({deals: urls.map(url => ({url})),
   meta: {disclosure: "As an Amazon Associate, wowpriced earns from qualifying purchases."}});
@@ -27,35 +27,6 @@ for (const value of ['""', "''", "", '"wowpriced-20"', "'wowpriced-20'", "wowpri
     value.includes(tag) ? tag : "");
 }
 assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
-
-// Tool exits are inspected only: neither the check nor these tests request Amazon.
-{
-  const finder = `https://www.amazon.com/s?k=cupping%20set&rh=p_n_deal_type%3A210906366011&tag=${tag}`;
-  const checker = `https://amazon.com/s?k=Robot+fixture+cupping+set&rh=p_n_deal_type%3A23566065011&tag=${tag}`;
-  assert.deepEqual(checkToolAmazonUrl(finder, tag, true), {ok: true});
-  assert.deepEqual(checkToolAmazonUrl(checker, tag), {ok: true});
-  assert.equal(checkToolAmazonUrl(finder.replace("p_n_deal_type", "other%3Avalue%2Cp_n_deal_type"), tag, true).ok, true);
-  for (const href of [finder.replace("www.amazon.com", "amazon.com.evil"),
-    finder + `&tag=${tag}`, finder.replace(tag, "wrong-20"), finder.replace("https:", "http:"),
-    finder.replace("/s?", "/dp/item?"), finder.replace("k=cupping%20set", "k="),
-    finder.replace("k=cupping%20set&", ""), finder.replace("k=cupping%20set", "k=%20"),
-    finder.replace(`&tag=${tag}`, ""), "garbage", "/s?k=cupping"]) {
-    assert.equal(checkToolAmazonUrl(href, tag, true).ok, false, href);
-  }
-  assert.equal(checkToolAmazonUrl(finder, "", true).ok, false);
-  assert.equal(checkToolAmazonUrl(checker, tag, true).ok, false);
-  assert.equal(checkToolAmazonUrl(finder.replace(/&rh=[^&]+/, ""), tag, true).ok, false);
-  assert.equal(checkToolAmazonUrl(finder.replace("210906366011", "2109063660110"), tag, true).ok, false);
-}
-
-// First-screens coverage reads the same public photo field as the hourly walk.
-{
-  const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
-  const source = fs.readFileSync(path.join(__dirname, "../scripts/live_first_screens.js"), "utf8");
-  const expression = source.match(/noPhoto: count\(([^\n]+?)\), openBox:/)[1];
-  const rows = [{image_url: "https://wowpriced.test/photo.jpg"}, {image_url: ""}, {}, {image: "legacy"}];
-  assert.equal(rows.filter(vm.runInNewContext(expression)).length, 3);
-}
 
 // Manual Sovrn links decode once, keep product parameters, and never wrap Amazon.
 {

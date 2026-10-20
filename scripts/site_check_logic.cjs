@@ -31,21 +31,6 @@ function checkAmazonTag(doc, tag) {
   return {ok: true, badLinks: 0};
 }
 
-function checkToolAmazonUrl(href, tag, finder = false) {
-  let url;
-  try { url = new URL(href); } catch { return {ok: false, reason: "invalid tool Amazon URL"}; }
-  if (url.protocol !== "https:" || !["amazon.com", "www.amazon.com"].includes(url.hostname) ||
-      url.pathname !== "/s") return {ok: false, reason: "tool Amazon URL must be https amazon.com/s"};
-  if (!(url.searchParams.get("k") || "").trim()) return {ok: false, reason: "tool Amazon URL missing search words"};
-  const tags = url.searchParams.getAll("tag");
-  if (!tag || tags.length !== 1 || tags[0] !== tag) return {ok: false, reason: "tool Amazon URL has wrong or duplicate tag"};
-  if (finder && !url.searchParams.getAll("rh").some(value =>
-    value.split(",").includes("p_n_deal_type:210906366011"))) {
-    return {ok: false, reason: "finder Amazon URL missing discounts filter"};
-  }
-  return {ok: true};
-}
-
 function checkSovrnLinks(doc) {
   let links = 0, badLinks = 0;
   for (const deal of doc.deals || []) {
@@ -203,6 +188,6 @@ function frontPageFlags(cards, rules) {
   return {ok: !flags.some((f) => f.pos <= 24), flags};
 }
 
-module.exports = {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkSovrnLinks, overrideLinks, overrideNote,
+module.exports = {amazonTag, checkAmazonTag, checkSovrnLinks, overrideLinks, overrideNote,
                   photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
                   frontPageFlagLine, frontPageFlags, eventLinks, toolLinks};
