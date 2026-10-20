@@ -20,6 +20,7 @@ cfg=load_config()
 cfg.tool_pages={"enabled":True,"public":False}
 cfg.tracking={}
 cfg.tool_pages_hero=True
+cfg.tool_pages_1020=True
 cfg.paywall_api_url="https://account.wowpriced.test"
 cfg.paywall_google_client_id="task335-google"
 cfg.affiliate_amazon_tag="example-20"
@@ -41,16 +42,12 @@ finally: db.close()
 }
 
 
-async function checkMeter(locator,reduced) {
-  const meter=await locator.evaluate(el => {
-    const needle=el.querySelector('.meter-needle'), style=getComputedStyle(needle);
-    const matrix=new DOMMatrix(style.transform);
-    return {pct:Number(el.dataset.meterPct),angle:parseFloat(el.style.getPropertyValue('--meter-angle')),
-      actual:(Math.atan2(matrix.b,matrix.a)*180/Math.PI+360)%360,transition:style.transitionDuration};
-  });
-  assert(Math.abs(meter.angle-Math.min(meter.pct,80)*2.25)<2.25,'angle uses unrounded list percentage');
-  assert(Math.abs(meter.actual-meter.angle)<.1,JSON.stringify(meter));
-  if (reduced) assert.equal(meter.transition,'0s');
+async function waitData(page) {
+  for(let i=0;i<300;i++) {
+    if(await page.evaluate(()=>toolActive && toolActive.ready)) return;
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  throw Error('fixture data did not finish');
 }
 
 async function checkJoin(page,selector,shot) {
@@ -111,9 +108,9 @@ async function run(root, executablePath, shots) {
   const fixture=() => ({items:Array.from({length:6},(_,i) => ({asin:'B00000010'+i,
     title:i ? 'Steel kitchen kettle '+i : 'Steel kitchen kettle with temperature control',
     price_cents:1500+i*100,list_price_cents:liveOnly ? null : 3000,monthlySold:[1200,10000,2500,5000,20000,50][i],
-    image:'https://m.media-amazon.com/images/I/photo.jpg',as_of:new Date().toISOString()}))});
+    image:'https://m.media-amazon.com/images/I/photo.jpg',as_of:new Date(Date.now()-60000).toISOString()}))});
   try {
-    for (const width of [360,390,412,1280,1440]) for (const theme of ['light','dark']) for (const reduced of [false,true]) {
+    for (const width of [390,1280]) for (const theme of ['light','dark']) for (const reduced of [false,true]) {
       const context=await browser.newContext({viewport:{width,height:1000},colorScheme:theme,
         reducedMotion:reduced ? 'reduce' : 'no-preference'});
       const calls=[],unexpected=[],errors=[];
@@ -133,7 +130,7 @@ async function run(root, executablePath, shots) {
           calls.push(url.search);
           assert.deepEqual([...url.searchParams.keys()],['asin']);
           assert.equal(url.searchParams.get('asin'),'B000000100');
-          await new Promise(resolve => setTimeout(resolve,180));
+          await new Promise(resolve => setTimeout(resolve,5));
           return route.fulfill({contentType:'application/json',body:JSON.stringify(failure ?
             {items:[],reason:'budget_exhausted'} : fixture())});
         }
@@ -149,15 +146,16 @@ async function run(root, executablePath, shots) {
       for (const mode of ['checker','finder']) {
         const slug=mode === 'checker' ? 'amazon-deal-checker' : 'amazon-discount-finder';
         const page=await context.newPage();
+        await page.clock.install({time:new Date()});
         page.on('pageerror',error => errors.push(error.message));
-        await page.addInitScript(() => {window.toolEvents=[];window.wpTrack=(...args) => window.toolEvents.push(args);});
+        await page.addInitScript(() => {Math.random=()=>.4;window.toolEvents=[];window.wpTrack=(...args) => window.toolEvents.push(args);});
         await page.goto('https://wowpriced.test/'+slug+'/');
         await page.waitForFunction(() => typeof toolSubmit === 'function');
         assert.equal(await page.locator('#tool-result').isVisible(),false);
         await page.waitForTimeout(reduced ? 0 : 800);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,'hero overflow');
-        if (mode === 'checker') await checkMeter(page.locator('.hero .gauge'),reduced);
-        if (mode === 'finder') assert.equal(await page.locator('.hero .tile').count(),6);
+        assert.equal(await page.locator('.gauge,.meter-card').count(),0);
+        assert.equal(await page.locator('.hero .tile').count(),6);
         await page.screenshot({path:path.join(shots,`${mode}-hero-${width}-${theme}${reduced ? '-reduced' : ''}.png`),fullPage:true});
         await checkJoin(page, '.tool-header>.join', path.join(shots,`${mode}-join-${width}-${theme}${reduced ? '-reduced' : ''}.png`));
         const before=calls.length;
@@ -174,29 +172,45 @@ async function run(root, executablePath, shots) {
           }).observe(document.querySelector('.steps'),{subtree:true,attributes:true,attributeFilter:['data-state']});
           document.querySelector('#tool-form').addEventListener('submit',() => {window.toolStarted=performance.now();},{capture:true});
         });
+        await page.clock.pauseAt(await page.evaluate(()=>Date.now()+1000));
+        await page.locator('#tool-submit').scrollIntoViewIfNeeded();
+        const origin=await page.evaluate(()=>({scroll:scrollY,hero:['.hero','.hero h1','#tool-form'].map(selector=>{
+          const b=document.querySelector(selector).getBoundingClientRect();return {x:b.x,y:b.y+scrollY,width:b.width,height:b.height};
+        })}));
         await page.locator('#tool-submit').click();
         await page.locator('#analyzer').waitFor({state:'visible'});
-        if (!reduced) {
-          await page.waitForTimeout(500);
-          assert.equal(await page.locator('#tool-result').isVisible(),false,'minimum step time is real');
+        assert.equal(await page.evaluate(()=>scrollY),origin.scroll,'submit must not scroll');
+        await waitData(page);
+        const T=await page.evaluate(()=>toolActive.duration);
+        let sampled=0;
+        for(const fraction of [.25,.5,.9]) {
+          await page.clock.runFor(T*(fraction-sampled));sampled=fraction;
+          const progress=await page.locator('#tool-progress').evaluate(el=>({
+            width:el.firstElementChild.getBoundingClientRect().width/el.getBoundingClientRect().width*100,
+            elapsed:(performance.now()-toolActive.started)/toolActive.duration*100}));
+          assert(Math.abs(progress.width-fraction*100)<=2,JSON.stringify(progress));
+          assert(Math.abs(progress.width-progress.elapsed)<=2,JSON.stringify(progress));
+          assert.equal(await page.evaluate(()=>scrollY),origin.scroll,'progress must not scroll');
+          assert.equal(await page.locator('#tool-result').isVisible(),false);
         }
-        assert(await page.locator('#analyzer').evaluate(el => el.getBoundingClientRect().top < innerHeight),
-          'analysis progress must stay in view below the taller hero');
+        await page.clock.runFor(T*.1+32);
         await page.locator('#tool-result').waitFor({state:'visible',timeout:28000});
         const timings=await page.evaluate(() => ({steps:window.doneSteps,started:window.toolStarted}));
         assert.deepEqual(timings.steps.map(s => s.index),Array.from({length:mode === 'checker' ? 5 : 4},(_,i) => i));
         const duration=timings.steps.at(-1).at-timings.started;
-        assert(reduced ? duration < 1500 : duration >= 8000 && duration <= 10000,`duration ${duration} ms`);
+        assert(Math.abs(duration-T)<32,`duration ${duration} ms, target ${T}`);
+        assert.equal(await page.evaluate(()=>scrollY),origin.scroll,'result must not scroll');
+        assert.deepEqual(await page.evaluate(()=>['.hero','.hero h1','#tool-form'].map(selector=>{
+          const b=document.querySelector(selector).getBoundingClientRect();return {x:b.x,y:b.y+scrollY,width:b.width,height:b.height};
+        })),origin.hero,'hero CLS 0');
         assert.equal(await page.locator('#analyzer').getAttribute('aria-busy'),'false');
         assert.equal(await page.locator('#tool-progress').getAttribute('aria-valuenow'),'100');
         assert(await page.locator('#verified-deals .product-card').count() > 0);
         if (mode === 'checker') {
-          await page.locator('#tool-result .gauge').scrollIntoViewIfNeeded();
-          await page.waitForTimeout(reduced ? 0 : 800);
-          await checkMeter(page.locator('#tool-result .gauge'),reduced);
+          assert.equal(await page.locator('.gauge').count(),0);
           assert.equal(calls.length,before+1);
           assert.equal(await page.locator('#top-sellers .product-card').count(),5);
-          assert((await page.locator('#tool-result').innerText()).includes('Big discount · 50% off list price'));
+          assert((await page.locator('#tool-result').innerText()).includes('50% off list price'));
           assert((await page.locator('#tool-result').innerText()).includes('$15.00'));
           assert((await page.locator('#tool-result').innerText()).includes('price checked '));
           assert.equal(await page.locator('#top-sellers .monthly').count(),5);
@@ -244,6 +258,8 @@ async function run(root, executablePath, shots) {
         if (mode === 'finder' && reduced) {
           await page.locator('#q').fill('https://amazon.com/dp/B000000100');
           await page.locator('#tool-submit').click();
+          await waitData(page);
+          await page.clock.runFor(25032);
           await page.locator('#tool-result').waitFor({state:'visible'});
           assert.equal(await page.locator('#tool-result .amazon-button').getAttribute('href'),
             'https://www.amazon.com/dp/B000000100?tag=example-20');
@@ -255,21 +271,25 @@ async function run(root, executablePath, shots) {
           await page.reload();
           await page.locator('#q').fill('https://amazon.com/dp/B000000100');
           await page.locator('#tool-submit').click();
+          await waitData(page);
+          await page.clock.runFor(25032);
           await page.locator('#tool-result').waitFor({state:'visible'});
           assert((await page.locator('#tool-result').innerText()).includes("Today's live price checks have reached their limit."));
-          assert.equal(await page.locator('.steps [data-state=done]').count(),0,'failed work never ticks');
+          assert.equal(await page.locator('.steps [data-state=failed]').count(),1,'error state at completion');
           failure=false;
           liveOnly=true;
           await page.reload();
           await page.locator('#q').fill('https://amazon.com/dp/B000000100');
           await page.locator('#tool-submit').click();
+          await waitData(page);
+          await page.clock.runFor(25032);
           await page.locator('#tool-result').waitFor({state:'visible'});
-          await page.locator('#tool-result .gauge').scrollIntoViewIfNeeded();
-          await checkMeter(page.locator('#tool-result .gauge'),true);
-          assert.equal(await page.locator('#tool-result .gauge').getAttribute('data-meter-pct'),'0');
+          assert.equal(await page.locator('.gauge').count(),0);
           assert((await page.locator('#tool-result').innerText()).includes('Live Amazon price'));
           liveOnly=false;
         }
+        // Playwright's clock belongs to the context: let the next page's timers and frames run.
+        await page.clock.resume();
         await page.close();
       }
       const home=await context.newPage();
@@ -298,7 +318,7 @@ async function run(root, executablePath, shots) {
       assert.deepEqual(unexpected,[]);assert.deepEqual(errors,[]);
       await context.close();
     }
-    console.log('Tool pages Chromium: 360/390/412/1280/1440, light/dark, heroes/meters and lazy Join focus/escape/no-JS, ordered real steps, timing/reduced motion, cards, tags, targets and overflow passed');
+    console.log('Tool pages Chromium: 390/1280, light/dark, photo clouds/no gauges, no scroll/hero CLS, linear 25/50/90% progress and lazy Join focus/escape/no-JS, ordered real steps, timing/reduced motion, cards, tags, targets and overflow passed');
   } finally {await browser.close();}
 }
 

@@ -7,8 +7,8 @@ import shutil
 from html import escape
 from pathlib import Path
 
-from ..savings import TOOL_LIST_BADGE_JS
-from . import search_analyze, search_boost, seo, tracking, tool_hero
+from ..savings import TOOL_LIST_BADGE_JS, TOOL_FACT_BADGE_JS
+from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020
 
 TEMPLATES = Path(__file__).with_name("templates")
 PAGES = {
@@ -61,7 +61,7 @@ def script(cfg):
     analyze = search_analyze.SCRIPT.read_text()
     shared = (TEMPLATES / "search-products.js").read_text().replace("export ", "")
     shared = shared.replace("var CATGROUPS = [];", "var CATGROUPS = " + json.dumps(seo.CATGROUPS) + ";")
-    shared += "\n" + TOOL_LIST_BADGE_JS
+    shared += "\n" + (TOOL_FACT_BADGE_JS if tool_pages_1020.enabled(cfg) else TOOL_LIST_BADGE_JS)
     shared += _function(home, "searchAmazonQuery")
     shared = shared.replace('function searchAmazonQuery() {', 'function searchAmazonQuery(value) {')
     shared = shared.replace('var q = searchText().replace',
@@ -73,6 +73,8 @@ def script(cfg):
     shared += "\nvar toolSettings = " + json.dumps({"tag": cfg.affiliate_amazon_tag, "exclude": exclude,
         "live": search_analyze.enabled(cfg)}, separators=(",", ":")).replace("<", "\\u003c") + ";\n"
     result = shared + (TEMPLATES / "tool-pages.js").read_text()
+    if tool_pages_1020.enabled(cfg):
+        return tool_pages_1020.script(result)
     return tool_hero.script(result) if tool_hero.enabled(cfg) else result
 
 
@@ -118,8 +120,8 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
     if not settings.get("enabled"):
         return []
     css, js = (TEMPLATES / "tool-pages.css").read_text(), script(cfg)
-    if tool_hero.enabled(cfg):
-        css += (TEMPLATES / "tool-hero.css").read_text()
+    if tool_pages_1020.enabled(cfg) or tool_hero.enabled(cfg):
+        css += (TEMPLATES / ("tool-hero-1020.css" if tool_pages_1020.enabled(cfg) else "tool-hero.css")).read_text()
         rows = tool_hero.candidates(rows, cfg)
     assets = {}
     for suffix, content in (("css", css), ("js", js)):
@@ -130,8 +132,12 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
     brand = re.search(r'<p class="brand">.*?</p>', hub)[0]
     favicon = re.search(r'<link rel="icon"[^>]+>', hub)[0]
     for slug, page in PAGES.items():
+        if tool_pages_1020.enabled(cfg):
+            page = tool_pages_1020.page_spec(page)
         url = site_url + "/" + slug + "/"
         questions = faq(page["mode"])
+        if tool_pages_1020.enabled(cfg):
+            questions.append(("Is it really AI?", tool_pages_1020.ai_answer(page["mode"])))
         schemas = [{"@context": "https://schema.org", "@type": "WebApplication", "name": page["name"],
                     "url": url, "applicationCategory": "ShoppingApplication", "operatingSystem": "Any",
                     "description": page["intro"], "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}},
@@ -150,12 +156,14 @@ def publish(out, cfg, now, site_url, disclosure, rows=()):
             head += '<meta name="robots" content="noindex,nofollow">\n'
         nav = ''.join(f'<a href="/{other}/"' + (' aria-current="page"' if other == slug else '')
                       + '>' + p["name"].replace("Amazon ", "") + '</a>' for other, p in PAGES.items())
-        template = tool_hero.template(base, page, rows) if tool_hero.enabled(cfg) else base
+        template = (tool_pages_1020.template(base, page, rows) if tool_pages_1020.enabled(cfg) else
+                    tool_hero.template(base, page, rows) if tool_hero.enabled(cfg) else base)
         html = seo._fill(template, TITLE=escape(page["title"]), NAME=page["name"], INTRO=escape(page["intro"]),
             HEAD=head, BRAND=brand, FAVICON=favicon, NAV=nav, MODE=page["mode"], BUTTON=page["button"],
             CSS_VERSION=assets["css"], JS_VERSION=assets["js"],
             STEPS=''.join('<li data-state="pending">' + escape(label) + '</li>' for label in page["steps"]),
-            FAQ=''.join('<h3>' + escape(q) + '</h3><p>' + escape(a) + '</p>' for q, a in questions),
+            FAQ=''.join('<h3>' + escape(q) + '</h3>' + (tool_pages_1020.ai_html(page["mode"])
+                if tool_pages_1020.enabled(cfg) and q == "Is it really AI?" else '<p>' + escape(a) + '</p>') for q, a in questions),
             YEAR=str(now.year), DISCLOSURE=linked_disclosure(disclosure))
         seo._write_page(out, "/" + slug + "/", tracking.inject(html, _tracking(cfg)))
     if settings.get("public"):

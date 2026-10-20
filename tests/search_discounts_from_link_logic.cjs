@@ -25,8 +25,9 @@ function click(raw, expected, discounts = true) {
   for (const [type, button] of [['click', 0], ['auxclick', 1]]) {
     let prevented = false;
     const before = opened.length;
-    const target = {href:'https://www.amazon.com/', closest:selector =>
-      selector === '.all-discounts' ? discounts : selector === '[data-search-amazon]' ? !discounts : false};
+    // closest() takes selector lists (task 342 adds the yellow results button to All Discounts).
+    const target = {href:'https://www.amazon.com/', closest:selector => selector.split(',').some(one =>
+      one.trim() === '.all-discounts' ? discounts : one.trim() === '[data-search-amazon]' ? !discounts : false)};
     ctx.searchAmazonClick({type, button, target, preventDefault(){prevented = true;}});
     if (expected === null) {assert.equal(opened.length, before); continue;}
     assert(prevented); assert.equal(opened.length, before + 1);

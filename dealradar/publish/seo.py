@@ -458,9 +458,15 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         total = sum(d.get("status") != "dead" for d in teaser)
         size = (front_page or {}).get("fresh_page_size", 60)
         drops = (len(pool) + size - 1) // size
+        if getattr(fresh_config, 'fresh_more_plain', False) is True:
+            from .fresh_more_plain import count_label
+            label, cycle = count_label(total), ''
+        else:
+            label = f'{total:,}+ deals'
+            cycle = (f'<p class="meta">Full rotation: {drops} drops '
+                     f'(about {drops * fresh_config.drop_minutes} minutes)</p>')
         html += (f'<div class="more fresh-more"><button type="button" id="fresh-all" class="pwbtn">'
-                 f'See all {total:,}+ deals</button><p class="meta">Full rotation: {drops} drops '
-                 f'(about {drops * fresh_config.drop_minutes} minutes)</p></div>')
+                 f'See all {label}</button>{cycle}</div>')
         stubs = []
     if stubs:
         by_store: dict[str, list[dict[str, Any]]] = {}

@@ -23,6 +23,8 @@ cfg.affiliate_amazon_tag = "example-20"
 cfg.search_more = {"enabled": True, "pages": 3, "min_query_chars": 2}
 cfg.search_analyze["lazy"] = sys.argv[2] == "true"
 cfg.search_buttons_1019 = sys.argv[3] == "true"
+cfg.search_discounts_button = False
+cfg.card_click_1020 = False
 # make_deal's default clock is outside the Amazon confirmation window.
 deals = [make_deal(dedupe_key=f"task293-{i}", item=f"Wireless mouse {i}",
     store="Amazon", brand="Example", canonical_url=f"https://www.amazon.com/dp/B0{i:08d}",

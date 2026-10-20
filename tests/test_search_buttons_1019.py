@@ -8,7 +8,8 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import search_buttons_1019 as buttons
-from tests.history_pins import pre_phone_timer_raise, pre_search_buttons_1019, pre_task_290_install_raw
+from tests.history_pins import (pre_phone_timer_raise, pre_search_buttons_1019, pre_task_290_install_raw,
+                                pre_search_discounts_button, pre_card_click_1020)
 from tests.test_pwa import tree_hash
 from tests.test_search_more import offline  # noqa: F401
 from tests.test_support import render
@@ -62,7 +63,7 @@ def test_off_missing_on_rerun_back_off_exact_bytes(tmp_path, mode):
 @pytest.mark.parametrize('lazy', [False, True])
 @pytest.mark.parametrize('more', [False, True])
 def test_markup_styles_routing_and_content_addresses(tmp_path, lazy, more):
-    cfg = load_config()
+    cfg = pre_card_click_1020(pre_search_discounts_button(load_config()))
     cfg.search_analyze['lazy'] = lazy
     cfg.search_more['enabled'] = more
     cfg.affiliate_amazon_tag = 'fixture-coupons-20'

@@ -199,11 +199,17 @@ all_discounts_button: true  # operator 2026-10-19: "All discounts" — "the same
 discounts_from_link: true  # operator 2026-10-19: "When I enter a URL and I click All discounts, it doesn't take me to anything related to the URL"
 tool_pages: {enabled: true, public: true}  # operator 2026-10-19 ~19:08Z: "amazon deal checker and amazon discount finder both APPROVED!"
 tool_pages_hero: true  # operator 2026-10-19 ~21:00Z: "Mockups LOOK AMAZING.. GO AHEAD"
+tool_pages_1020: true  # operator 2026-10-20 ~02:15Z: "it looks cheap ... people are not stupid"; "it should say AI ... it is AI"
+tool_pages_1020_phone_links: "chips"  # "chips" keeps the category row's existing height; "line" adds 28px below the header
+tool_pages_1020_home_links: false  # operator 2026-10-20 ~03:20Z: skip the homepage tool links — "it doesn't really need that because the buttons are that"
 search_polish_1019: true  # operator 2026-10-19: "this is already at the bottom, remove it."; "Dropbox Blue"
 search_buttons_1019: true  # operator 2026-10-19: "I don't want the buttons to animate when someone hovers ... I just want them to be those colors ... I don't want it to look spammy."
+search_discounts_button: true  # operator 2026-10-20: "Replace it with this. That amazing yellow that you use, the See All Amazon Discounts, and have it direct you to Amazon discounts"
+card_click_1020: true  # operator 2026-10-20: "should we make all the entire squares clickable? not just the get deal at the bottom"
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 timer_pill_ring: true  # operator 2026-10-19 ~16:10Z, option A: "draw the countdown as a ring around the timer pill itself"
 phone_timer_raise: true  # operator 2026-10-19 ~17:50Z: "please raise the timer ever so slightly"
+fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site

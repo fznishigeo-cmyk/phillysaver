@@ -6,7 +6,7 @@ const path = require('node:path');
 const {spawnSync} = require('node:child_process');
 const {assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 
-function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true, timerRing = true, timerRaise = true) {
+function buildFixture(scratch, polish = true, discounts = true, phoneTagline = true, timerRing = true, timerRaise = true, toolVariant = 'off') {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
 import json, sys
@@ -24,6 +24,9 @@ cfg.search_polish_1019 = cfg.all_discounts_button
 cfg.phone_tagline_count = sys.argv[4] == "true"
 cfg.timer_pill_ring = sys.argv[5] == "true"
 cfg.phone_timer_raise = sys.argv[6] == "true"
+cfg.tool_pages_1020 = sys.argv[7] != "off"
+cfg.tool_pages_1020_phone_links = sys.argv[7] if sys.argv[7] != "off" else "chips"
+cfg.tool_pages_1020_home_links = sys.argv[7] != "off"
 cfg.tracking = {}
 cfg.affiliate_amazon_tag = "example-20"
 deals = [make_deal(dedupe_key=f"task305-{i}", item=f"Kitchen kettle {i}", store="Amazon", category="kitchen",
@@ -37,7 +40,7 @@ pages = ["/" + str(p.parent.relative_to(out)) + "/" for p in sorted((out / "deal
 assert pages, "fixture must include a current deal page"
 pages += ["/" + cfg.seo_event_pages_events[0]["slug"] + "/"]
 (Path(sys.argv[1]) / "fixture.json").write_text(json.dumps({"now":NOW.isoformat(), "pages":pages}))
-`, scratch, String(polish), String(discounts), String(phoneTagline), String(timerRing), String(timerRaise)], {encoding:'utf8'});
+`, scratch, String(polish), String(discounts), String(phoneTagline), String(timerRing), String(timerRaise), toolVariant], {encoding:'utf8'});
   assert.equal(result.status, 0, result.stdout + result.stderr);
   return path.join(scratch, 'site');
 }

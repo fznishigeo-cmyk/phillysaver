@@ -365,11 +365,17 @@ class AppConfig:
     discounts_from_link: bool = False
     tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
     tool_pages_hero: bool = False
+    tool_pages_1020: bool = False
+    tool_pages_1020_phone_links: str = "chips"
+    tool_pages_1020_home_links: bool = False
     search_polish_1019: bool = False
     search_buttons_1019: bool = False
+    search_discounts_button: bool = False
+    card_click_1020: bool = False
     phone_tagline_count: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
+    fresh_more_plain: bool = False
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1115,6 +1121,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.search_buttons_1019 = g("search_buttons_1019", default=False)
     if type(cfg.search_buttons_1019) is not bool:
         raise ValueError("search_buttons_1019 must be a boolean")
+    cfg.search_discounts_button = g("search_discounts_button", default=False)
+    if type(cfg.search_discounts_button) is not bool:
+        raise ValueError("search_discounts_button must be a boolean")
+    cfg.card_click_1020 = g("card_click_1020", default=False)
+    if type(cfg.card_click_1020) is not bool:
+        raise ValueError("card_click_1020 must be a boolean")
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")
@@ -1127,6 +1139,18 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.tool_pages_hero = g("tool_pages_hero", default=False)
     if type(cfg.tool_pages_hero) is not bool:
         raise ValueError("tool_pages_hero must be a boolean")
+    cfg.tool_pages_1020 = g("tool_pages_1020", default=False)
+    if type(cfg.tool_pages_1020) is not bool:
+        raise ValueError("tool_pages_1020 must be a boolean")
+    cfg.tool_pages_1020_phone_links = g("tool_pages_1020_phone_links", default="chips")
+    if type(cfg.tool_pages_1020_phone_links) is not str or cfg.tool_pages_1020_phone_links not in ("chips", "line"):
+        raise ValueError('tool_pages_1020_phone_links must be "chips" or "line"')
+    cfg.tool_pages_1020_home_links = g("tool_pages_1020_home_links", default=False)
+    if type(cfg.tool_pages_1020_home_links) is not bool:
+        raise ValueError("tool_pages_1020_home_links must be a boolean")
+    cfg.fresh_more_plain = g("fresh_more_plain", default=False)
+    if type(cfg.fresh_more_plain) is not bool:
+        raise ValueError("fresh_more_plain must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

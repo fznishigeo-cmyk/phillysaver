@@ -65,9 +65,11 @@ def test_config(tmp_path):
     assert load_config().drop_fresh is True
 
 
+@pytest.mark.parametrize('plain', [False, True])
 @pytest.mark.parametrize('strip,spacing', [(False, False), (True, True)])
-def test_emitted_fresh_logic(tmp_path, strip, spacing):
+def test_emitted_fresh_logic(tmp_path, strip, spacing, plain):
     cfg = load_config()
+    cfg.fresh_more_plain = plain
     cfg.tracking = {}
     cfg.strip_comments = strip
     cfg.same_product_spacing = spacing
@@ -155,10 +157,12 @@ def test_pick_rank_caps_unchanged():
     assert drop_fresh.pick_options(cfg) is cfg.front_page
 
 
+@pytest.mark.parametrize('plain', [False, True])
 @pytest.mark.parametrize('size', [24, 60, 90, 120])
-def test_static_first_paint_matches_rotation(monkeypatch, size):
+def test_static_first_paint_matches_rotation(monkeypatch, size, plain):
     from dealradar.publish import seo
     cfg = load_config()
+    cfg.fresh_more_plain = plain
     cfg.front_page['fresh_page_size'] = size
     rows = inventory()
     # Spotlight inventory joins the same rotation; it must not add cards beyond the configured page.
@@ -172,7 +176,8 @@ def test_static_first_paint_matches_rotation(monkeypatch, size):
                            static_photos=True, same_product_spacing=True, fresh_config=cfg)
     assert [d['key'] for d in captured] == [d['key'] for d in expected]
     assert len(captured) == size
-    assert 'See all ' in html and 'Full rotation: ' in html
+    assert 'See all ' in html
+    assert ('Full rotation: ' in html) is (not plain)
     assert 'spotlight-grid' not in html
 
 
@@ -280,5 +285,6 @@ def test_fresh_page_stays_within_phone_budget(tmp_path):
     def inspect(db, out):
         report = analyze(out, cfg, expected_offers=expected)
         assert report['ok'], report
+        assert cfg.phone_budget['home_html_gzip_max_bytes'] - report['metrics']['home_html']['gzip'] >= 1000
         print(json.dumps({k: v['gzip'] for k, v in report['metrics'].items()}, sort_keys=True))
     publish_fixture(tmp_path, cfg, inspect=inspect)

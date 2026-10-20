@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const task342 = require('./task342_browser_checks.cjs');
 function buildFixture(scratch, glow, lazy) {
   fs.mkdirSync(scratch, {recursive:true});
   const result = spawnSync('.venv/bin/python', ['-c', `
@@ -300,6 +301,10 @@ async function main() {
             await page.locator('#q').fill('mouse'); await page.locator('#q').blur();
             await assertAnalyzeGeometry(page);
             await assertDiscounts(page, true);
+            if ([390, 1280].includes(width)) {
+              await task342.compareYellowURL(page);
+              await page.screenshot({path:path.join(shots, name + '-yellow-local.png')});
+            }
             if (width < 900) {
               const mobile = page.locator('#search-discounts-mobile');
               if (calm) await assertCalm(page, mobile);
@@ -341,7 +346,8 @@ async function main() {
               assert.equal(await page.locator('.search-recovery .search-amazon-top, .search-recovery [data-search-amazon].getdeal').count(), 0,
                 'zero-local Amazon recovery pill absent');
               const fallback = page.locator('.search-recovery [data-search-amazon]');
-              assert.equal(await fallback.textContent(), 'Search Amazon for "phone holder"');
+              assert.equal(await fallback.textContent(), 'See Amazon discounts →');
+              if ([390, 1280].includes(width)) await task342.compareYellowURL(page);
               assert.equal(await fallback.evaluate(el => getComputedStyle(el).animationName), 'none');
               assert.equal(await fallback.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
               assert.equal(await page.locator('#amazon-results .getdeal').first().textContent(), 'View on Amazon');
@@ -354,13 +360,18 @@ async function main() {
               await (await emptyResponse).finished();
               await page.waitForFunction(() => document.querySelector('#search-recovery-title')?.textContent ===
                 'See every "unavailable" price on Amazon');
-              assert.equal(await fallback.textContent(), 'Search Amazon for "unavailable"');
+              assert.equal(await fallback.textContent(), 'See Amazon discounts →');
+              if ([390, 1280].includes(width)) {
+                await task342.compareYellowURL(page);
+                await page.screenshot({path:path.join(shots, name + '-yellow-empty.png')});
+              }
               assert.equal(await page.locator('#amazon-results article, .search-recovery .search-amazon-top, .search-recovery .getdeal').count(), 0);
               await page.locator('#q').fill('https://amazon.com/dp/B000000901?tag=PRIVATE');
               await page.locator('#analyze-search').click();
               await page.locator('.search-analysis[aria-busy="false"]').waitFor();
               assert.equal(await page.locator('#search-result-top, .search-analysis .search-amazon-top').count(), 0);
               assert(await page.locator('.search-analysis #amazon-results article').count() > 0, 'product analysis still renders its live card');
+              if ([390, 1280].includes(width)) await task342.compareYellowURL(page);
               assert.deepEqual(errors, []); assert.deepEqual(unexpected, []);
               await context.close();
               continue;

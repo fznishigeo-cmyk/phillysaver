@@ -148,6 +148,11 @@ TOOL_LIST_BADGE_JS = '''function toolBadge(price, list) {
 }
 '''
 
+# Task 339 keeps the same floor and colour thresholds, with a factual label.
+TOOL_FACT_BADGE_JS = TOOL_LIST_BADGE_JS.replace(
+    'kind === "live" ? "Live Amazon price" :\n    (kind === "big" ? "Big discount" : "Good discount") + " · " + ', '')
+
+
 # Opt-in meter fields preserve the original tool script when the hero is off.
 TOOL_METER_BADGE_JS = TOOL_LIST_BADGE_JS.replace(
     'return {kind:"live", label:"Live Amazon price"}',

@@ -244,6 +244,48 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tool pages v2 + home links (Codex task 339, 2026-10-20; uncommitted):**
+  Strict `tool_pages_1020` defaults false/ships true; phone enum ships `chips`,
+  with `line` available. OFF preserves pre-edit bytes/pins and task 332 behavior.
+  Linear 10–25s clock, 99% hold/+10s cap, no submit scroll, no emitted meters,
+  distinct Checker cloud, factual badges, AI headings/FAQ/schema and home links.
+  Shared ticker CSS plus removal of unused support-home membership CSS keeps
+  HTML gzip **75,676 chips / 75,362 line**, headroom **1,684 / 1,998 bytes**;
+  CSS **14,796 / 14,913 bytes**. AI copy avoids unproven hourly volume and
+  universal store verification. Targeted coverage **233 passed, 4 browser skips**;
+  final affected selection **17 passed**, fake-clock logic and Node syntax green.
+  Native screenshots/audits remain with the operator (`tool_pages_browser.cjs`,
+  `tool_pages_1020_home_browser.cjs`): phone `headerH/firstCardTop` targets
+  **chips 182/388; line 182/416**, not measured here. Removed owned `/tmp/b339`
+  and inspection scratch. No full suite, commit or push.
+- **Plain See all copy (Codex task 340, 2026-10-20; uncommitted):** Strict
+  `fresh_more_plain` defaults false/ships true with the operator's quote.
+  Static and browser buttons match the header's rough count (exact/plural
+  below 100, hundreds rounded down, capped at `1,000+`); the rotation
+  paragraph is absent, with no empty `<p>`. Button classes, click
+  handling, inventory, drop selection and timer stay unchanged. A small
+  ON-only controls fragment preserves the legacy fresh module's source/hash
+  inputs; its replacement asset has a matching content-hashed import.
+  Three pre-edit whole-publication OFF hashes are unchanged; historical pins
+  disable this flag without changing recorded hashes. Count/parity tests cover
+  85, 999, 1,000, 1,381 and 2,400 plus plural/rounding boundaries and dead rows.
+  Fixed phone HTML gzip is **76,274 bytes**, **1,086 bytes headroom**.
+  Targeted pytest: **284 distinct passed, 1 Chromium skip**. Three focused
+  serial reruns passed after correcting the new harness's event-listener stub
+  and isolating the existing 50 ms rotation benchmark from parallel contention.
+  All three changed/new JS/CJS files pass `node --check`; `git diff --check`
+  passes. Used `--basetemp=/tmp/b340`; that directory and owned baseline scratch
+  removed. No full suite, commit or push. Git's shared directory is read-only, so branch creation
+  was blocked; edits remain in the supplied worktree for review.
+- **Yellow search exit + clickable cards (Codex task 342, 2026-10-20; uncommitted):**
+  Strict `search_discounts_button`/`card_click_1020` default false/ship true with operator quotes.
+  Yellow results/recovery exit shares All Discounts URLs, pasted-link names and `search_discounts` tracking.
+  Native Get deal stretches via CSS above badges; other controls stay above it; gone/no-link cards unchanged.
+  OFF pins retained. **260 distinct targeted passes, 1 Chromium skip** after serial rechecks; Node/diff checks pass.
+  Phone gzip: **75,812 / 77,360 HTML (1,548 spare)**; JS **51,176 / 53,767**,
+  CSS **14,585 / 14,913**, JSON **90,836 / 103,976**; final stacking/payload checks pass.
+  Glow/page harnesses cover 390/1280 light/dark URLs, popups, title/heart and screenshots; native run remains with operator.
+  Owned `/tmp/b342*` scratch removed. No full suite, commit or push.
 - **Tool heroes + header Join (Codex task 335, 2026-10-19; uncommitted):**
   Approved mock CSS behind strict `tool_pages_hero` (default false, shipped true);
   OFF preserves a69031d bytes. Meter/example and six-photo cloud use only final

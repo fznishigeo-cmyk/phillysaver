@@ -10,7 +10,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import site, tool_hero, tool_pages
 from dealradar.publish.seo_audit import Page
 from dealradar.savings import TOOL_METER_BADGE_JS, tool_meter, display_pct
-from tests.history_pins import pre_search_buttons_1019, pre_tool_pages_hero
+from tests.history_pins import pre_search_buttons_1019, pre_tool_pages_hero, pre_tool_pages_1020
 from tests.test_support import NOW, render
 from tests.test_tool_pages import offline  # noqa: F401
 from tests.test_publish_site import make_deal
@@ -83,7 +83,7 @@ def test_published_hero_copy_h1_metadata_and_honest_visuals(tmp_path):
         'finder': ('Every Amazon discount.', 'One click.',
             "Type what you want or paste a link. We open Amazon's discounts for it and show our verified deals.", 'Updated every hour'),
     }
-    cfg = load_config()
+    cfg = pre_tool_pages_1020(load_config())
     out, doc, *_ = render(tmp_path, cfg, rows())
     before = files(out)
     published = tool_hero.candidates(doc['deals'], cfg)

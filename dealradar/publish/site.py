@@ -47,9 +47,10 @@ from . import header_polish
 from . import all_discounts
 from . import discounts_from_link
 from . import tool_pages
+from . import tool_pages_1020
 from . import join_dialog
 from . import search_polish_1019
-from . import search_buttons_1019
+from . import search_buttons_1019, search_discounts_button, card_click_1020
 from . import phone_tagline_count
 from . import timer_pill_ring
 from . import phone_timer_raise
@@ -59,6 +60,7 @@ from . import analyze_top_sellers
 from . import search_analyze_lazy
 from . import search_more
 from . import drop_fresh
+from . import fresh_more_plain
 from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -1145,16 +1147,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = page_polish.site_version(site_version, cfg)
     site_version = same_product_spacing.site_version(site_version, cfg)
     site_version = drop_fresh.site_version(site_version, cfg)
+    site_version = fresh_more_plain.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
     site_version = all_discounts.site_version(site_version, cfg)
     site_version = discounts_from_link.site_version(site_version, cfg)
     site_version = search_polish_1019.site_version(site_version, cfg)
     site_version = search_buttons_1019.site_version(site_version, cfg)
+    site_version = search_discounts_button.site_version(site_version, cfg)
+    site_version = card_click_1020.site_version(site_version, cfg)
     site_version = timer_pill_ring.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if getattr(cfg, "tool_pages_hero", False) is True:
         site_version = hashlib.sha256((site_version + "tool-pages-hero").encode()).hexdigest()[:12]
+    site_version = tool_pages_1020.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1427,14 +1433,18 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # All template markers and injected scripts have had their final consumer.
     search_analyze_lazy.publish(out, cfg)
     drop_fresh.publish(out, cfg)
+    fresh_more_plain.publish(out, cfg)
     header_polish.publish(out, cfg)
     card_tidy.publish(out, cfg)
     all_discounts.publish(out, cfg)
     search_polish_1019.publish(out, cfg)
     discounts_from_link.publish(out, cfg)
     search_buttons_1019.publish(out, cfg)
+    search_discounts_button.publish(out, cfg)
+    card_click_1020.publish(out, cfg)
     timer_pill_ring.publish(out, cfg)
     credits.publish(out, cfg)
+    tool_pages_1020.publish_home(out, cfg)
     comments.publish(out, cfg)
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
                                        pick_order(teaser + spotlight_only, cfg.front_page)))

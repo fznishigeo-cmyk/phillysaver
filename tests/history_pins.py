@@ -198,7 +198,12 @@ def pre_task_290_install(cfg):
 
 
 def pre_task_290_install_raw(config):
+    config.pop("tool_pages_1020", None)
+    config.pop("tool_pages_1020_phone_links", None)
+    config.pop("fresh_more_plain", None)
     config.pop("search_buttons_1019", None)
+    config.pop("search_discounts_button", None)
+    config.pop("card_click_1020", None)
     config.pop("tool_pages", None)
     config.pop("timer_pill_ring", None)
     config.pop("phone_timer_raise", None)
@@ -386,13 +391,42 @@ def pre_phone_timer_raise(cfg):
 
 def pre_tool_pages_hero(cfg):
     """Before task 335's tool heroes and header dialog; never re-pin hashes."""
+    pre_fresh_more_plain(cfg)
     cfg.tool_pages_hero = False
     return cfg
 
 
 def pre_search_buttons_1019(cfg):
     """Before task 332's calm search buttons; preserve the live 328973d bytes."""
+    pre_tool_pages_1020(cfg)
     cfg.search_buttons_1019 = False
+    return cfg
+
+
+def pre_tool_pages_1020(cfg):
+    """Before task 339's tool refresh and discovery; never re-pin older hashes."""
+    pre_fresh_more_plain(cfg)
+    cfg.tool_pages_1020 = False
+    return cfg
+
+
+def pre_fresh_more_plain(cfg):
+    """Before task 340's See all copy; preserve every recorded publication hash."""
+    pre_search_discounts_button(cfg)
+    pre_card_click_1020(cfg)
+    cfg.fresh_more_plain = False
+    return cfg
+
+
+def pre_search_discounts_button(cfg):
+    """Before task 342's yellow results exit; keep task 332 bytes."""
+    cfg.search_discounts_button = False
+    return cfg
+
+
+def pre_card_click_1020(cfg):
+    """Before task 342's stretched Get deal link; preserve recorded hashes."""
+    cfg.card_click_1020 = False
     return cfg
 
 

@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const task342 = require('./task342_browser_checks.cjs');
 const {buildFixture: buildSearchFixture, assertAnalyzeGeometry, assertDiscounts} = require('./search_box_glow_browser.cjs');
 function buildFixture(scratch, lazy = true) {return buildSearchFixture(scratch, true, lazy);}
 async function main() {
@@ -22,6 +23,10 @@ async function main() {
         const url = new URL(route.request().url());
         if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml',
           body:'<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><rect width="320" height="320" fill="#b9c6cd"/></svg>'});
+        if (url.hostname === 'www.amazon.com') return route.fulfill({contentType:'text/html', body:'<p>Offline destination</p>'});
+        // Get deal clicks (task 342's card taps included) send the first-party click beacon.
+        if (url.origin === 'https://wowpriced-subscribe.wowpriced.workers.dev' && route.request().method() === 'POST')
+          return route.fulfill({status:204, body:''});
         if (url.origin !== 'https://wowpriced.test') {unexpected.push(url.origin); return route.fulfill({status:204, body:''});}
         if (url.pathname === '/api/search') {
           assert.equal(new URL(route.request().frame().url()).pathname, '/', 'event discounts never calls the API');
@@ -97,6 +102,10 @@ async function main() {
         assert.equal(await page.locator('#fresh-all, #drop-confetti').count(), 0);
         assert(await page.locator('#fresh-drop-toast').isHidden());
         await fits();
+        if ([390, 1280].includes(width)) {
+          await task342.compareYellowURL(page);
+          if (!analyze) await task342.cards(page, shots, name + '-' + slug);
+        }
         await page.screenshot({path:path.join(shots, `${name}-${slug}-${analyze ? 'analyze' : 'search'}.png`)});
       }
       await page.goto('https://wowpriced.test/subscribe.html');

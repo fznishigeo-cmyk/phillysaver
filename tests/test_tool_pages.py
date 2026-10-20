@@ -19,7 +19,7 @@ from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
 from tests.test_support import NOW, render
 from tests.test_tracking import HARNESS, _script
-from tests.history_pins import pre_timer_pill_ring
+from tests.history_pins import pre_timer_pill_ring, pre_tool_pages_1020
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ def offline(monkeypatch):
 
 
 def config(public=False):
-    cfg = load_config()
+    cfg = pre_tool_pages_1020(load_config())
     cfg.tool_pages = {"enabled": True, "public": public}
     return cfg
 

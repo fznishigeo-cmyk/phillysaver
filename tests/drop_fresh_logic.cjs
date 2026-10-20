@@ -4,6 +4,7 @@ const {harness,row,fragment} = require('./browse_logic.cjs');
 const keys = rows => Array.from(rows,d=>d.key);
 const fixture = JSON.parse(fs.readFileSync(process.argv[4],'utf8'));
 const source=fixture.rows, h=harness({rows:source}), {ctx}=h;
+const plain=!fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[2]),'drop-fresh.js'),'utf8').includes('Full rotation:');
 ctx.document.querySelectorAll=()=>[];
 const before=JSON.stringify(source), pool=ctx.freshRotation(source);
 assert.deepEqual(keys(pool),fixture.pool,'server/browser full rotation');
@@ -38,7 +39,8 @@ for(let mark=0;mark<21;mark++) {
   for(let i=0;i<88;i++) assert(new Set(out.slice(i,i+3).map(d=>d.category)).size>1,'category');
   assert.equal(new Set(out.map(ctx.freshFamily)).size,90,'family dedup');
 }
-assert(returned>0,'the test exercises returning winners');assert.equal(seen.size,1170);assert(ctx.freshCycleText().includes('14 drops'));
+assert(returned>0,'the test exercises returning winners');assert.equal(seen.size,1170);
+assert.equal(ctx.freshCycleText().includes('14 drops'),!plain);
 assert.equal(JSON.stringify(source),before,'immutable inventory');
 for(let mark=0;mark<20;mark++) {
   const out=ctx.shuffleDropPicks(fixture.stress,mark);
@@ -77,7 +79,8 @@ const twins=[row('a',{item:'Acme countertop storage container Black',store:'Walm
   row('b',{item:'Acme countertop storage container Blue',store:'Walmart'})];
 assert.equal(ctx.freshRotation(twins).length,1);
 ctx.shuffleDropPicks(source,0);
-assert.equal(h.keys().length,90);assert(h.el('content').innerHTML.includes('See all 1,560+ deals'));
+assert.equal(h.keys().length,90);assert(h.el('content').innerHTML.includes(plain ? 'See all 1,000+ deals' : 'See all 1,560+ deals'));
+if(plain) assert(!h.el('content').innerHTML.includes('<p class="meta">'));
 assert(!h.el('content').innerHTML.includes('id="moremore"'));
 assert.equal(ctx.freshDropKeys.size,0);
 const animations=[], originalCards=ctx.cardEls;
