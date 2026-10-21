@@ -34,7 +34,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          # Like the fast lane: the state scripts fetch origin/data themselves.
+          # Full history (every unsquashed state snapshot) took 6-20 min on
+          # 2026-10-20 and run 283 hit the 30 min limit before committing state.
+          fetch-depth: 1
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v6

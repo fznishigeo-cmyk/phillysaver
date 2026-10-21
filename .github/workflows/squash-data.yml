@@ -13,9 +13,13 @@ on:
 permissions:
   contents: write
 
-# Same group as the hourly/fast runs: a squash must never race a state commit.
+# Its own queue. In the shared `dealradar` group a waiting squash was replaced
+# by the next 10-minute run before it started (2026-10-20 03:43Z, cancelled
+# with 0 jobs). Racing a state commit is safe: the squash only pushes over the
+# exact tip it squashed (force-with-lease, retried if a run pushed meanwhile),
+# and commit_state.sh re-snapshots onto whatever tip it finds.
 concurrency:
-  group: dealradar
+  group: dealradar-squash
   cancel-in-progress: false
 
 jobs:
@@ -27,26 +31,42 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 1 # only the data tip is needed; its history is gigabytes
 
       - name: Squash data branch to a single commit
         run: |
           set -euo pipefail
-          git fetch origin data || true
-          if ! git rev-parse --verify --quiet origin/data >/dev/null; then
-            echo 'no data branch yet - nothing to squash'
-            exit 0
-          fi
           git config user.name 'dealradar-bot'
           git config user.email 'actions@users.noreply.github.com'
-          # Detach at the data tip, then re-root the exact same tree as a
-          # single orphan commit and force-push it back to data.
-          FETCHED_SHA="$(git rev-parse origin/data)"
-          git checkout --detach origin/data
-          git checkout --orphan data-squashed
-          git add -A
-          git commit -m 'squash data branch (daily)'
-          # force-with-lease pinned to the tip we squashed: if any run pushed
-          # state between our fetch and this push, abort instead of discarding
-          # that state commit (next month's squash will get it).
-          git push --force-with-lease=refs/heads/data:"$FETCHED_SHA" origin HEAD:data
+          squash() {
+            git fetch --depth=1 origin +refs/heads/data:refs/remotes/origin/data || true
+            if ! git rev-parse --verify --quiet origin/data >/dev/null; then
+              echo 'no data branch yet - nothing to squash'
+              exit 0
+            fi
+            # Detach at the data tip, then re-root the exact same tree as a
+            # single orphan commit and force-push it back to data.
+            FETCHED_SHA="$(git rev-parse origin/data)" || return 1
+            git checkout --quiet --detach origin/data || return 1
+            git branch -D data-squashed >/dev/null 2>&1 || true
+            git checkout --orphan data-squashed || return 1
+            git add -A || return 1
+            git commit --quiet -m 'squash data branch (daily)' || return 1
+            # force-with-lease pinned to the tip we squashed: if any run pushed
+            # state between our fetch and this push, retry from the new tip
+            # instead of discarding that state commit.
+            git push --force-with-lease=refs/heads/data:"$FETCHED_SHA" origin HEAD:data
+          }
+          for delay in 2 4 8 16 0; do
+            if squash; then
+              echo 'data branch squashed'
+              exit 0
+            fi
+            if [ "$delay" -eq 0 ]; then
+              break
+            fi
+            echo "data branch moved during the squash - retrying in ${delay}s"
+            sleep "$delay"
+          done
+          echo '::error::data branch squash failed after 5 attempts'
+          exit 1

@@ -179,7 +179,7 @@ def test_hourly_shape() -> None:
     uses = [s.get("uses", "") for s in steps]
     checkout = next(s for s in steps if s.get("uses", "").startswith("actions/checkout@"))
     assert checkout["uses"] == "actions/checkout@v5"
-    assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["fetch-depth"] == 1  # state scripts fetch origin/data themselves
     setup = next(s for s in steps if s.get("uses", "").startswith("actions/setup-python@"))
     assert setup["uses"] == "actions/setup-python@v6"
     assert str(setup["with"]["python-version"]) == "3.12"
@@ -332,6 +332,13 @@ def test_squash_shape() -> None:
     assert "git checkout --orphan" in body
     assert "squash data branch (daily)" in body
     assert "git push --force-with-lease=refs/heads/data:" in body
+    # Its own queue: in the shared group a waiting squash was replaced by the
+    # next fast-lane run before it started (2026-10-20). Only the tip is fetched.
+    assert doc["concurrency"] == {"group": "dealradar-squash", "cancel-in-progress": False}
+    checkout = next(s for s in single_job(doc)["steps"] if s.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["fetch-depth"] == 1
+    assert "git fetch --depth=1 origin +refs/heads/data:refs/remotes/origin/data" in body
+    assert "for delay in 2 4 8 16 0" in body
 
 
 def test_deploy_subscribe_worker_shape() -> None:
