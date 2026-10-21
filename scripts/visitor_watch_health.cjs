@@ -122,6 +122,17 @@ async function scanScreens(page, selector, deadline) {
     await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
     card.photo = await photoState(element, Math.max(1, until - Date.now()));
   }
+  // Name the photo host of each broken card, so a flag says where to look.
+  for (const card of cards.values()) {
+    if (card.photo !== 'broken') continue;
+    const {index, keyed} = where.get(card.key);
+    const at = keyed ? await page.locator(selector).evaluateAll((elements, key) =>
+      elements.findIndex(el => el.dataset.key === key), card.key) : index;
+    if (at >= 0) card.host = await page.locator(selector).nth(at).evaluate(el => {
+      const img = el.querySelector('img');
+      try {return new URL(img?.currentSrc || img?.src).hostname;} catch {return '';}
+    }).catch(() => '') || undefined;
+  }
   await page.evaluate(() => window.scrollTo(0, 0));
   return {photos: [...cards.values()], optical: {overflow, boxes: [...boxes.values()], bands}};
 }

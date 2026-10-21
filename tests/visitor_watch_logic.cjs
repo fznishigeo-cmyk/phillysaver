@@ -530,7 +530,9 @@ test('deep photo flags distinguish placeholders/broken images; page switches are
   assert(!check('photos_deep', queued, null, gated).flag);
   assert.match(check('photos_deep', queued, null, gated).detail, /3 still downloading \(paced\)/);
   queued.photosDeep.category[1].photo = 'placeholder';
-  assert.match(check('photos_deep', queued, null, gated).detail, /category: missing\/broken photo/);
+  queued.photosDeep.category.push({photo: 'broken', host: 'www.moneysavingmom.com'});
+  assert.match(check('photos_deep', queued, null, gated).detail,
+    /category: missing\/broken photo \(placeholder, www\.moneysavingmom\.com\)/);
   const configured = rulesFromConfig({quality: {visitor_watch: {category_photos: true,
     deal_photos: 'false', exclude_used_on_all: true, image_hosts: ['target.scene7.com']}}});
   assert(configured.categoryPhotos); assert(!configured.dealPhotos); assert(configured.excludeUsedOnAll);
@@ -875,6 +877,14 @@ test('first-screen photo flags name the cause from the card and its request', ()
   assert.equal(photoIssue(photo(amazon), 'HTTP 304', hosts, origin), 'm.media-amazon.com hidden or off screen');
   const s = scene(); Object.assign(s.cards[23], {hasPhoto: false, photoIssue: 'm.media-amazon.com HTTP 404'});
   assert.match(check('photos', s).detail, /Kitchen set 23 \(m\.media-amazon\.com HTTP 404\)/);
+  // Still queued behind our own pacing after the second look: reported, not flagged.
+  const paced = scene(); Object.assign(paced.cards[5], {hasPhoto: false, photoPending: true,
+    photoIssue: 'm.media-amazon.com still loading'});
+  assert(!check('photos', paced).flag);
+  assert.equal(check('photos', paced).detail, '23/24 loaded visible photos; 1 still downloading (paced)');
+  Object.assign(paced.cards[6], {hasPhoto: false, photoIssue: 'm.media-amazon.com did not decode'});
+  assert(check('photos', paced).flag, 'a photo that failed is still a flag');
+  assert.equal(check('photos', scene()).detail, '24/24 loaded visible photos');
 });
 
 test('published photo hosts come from deals.json: https host names only', () => {

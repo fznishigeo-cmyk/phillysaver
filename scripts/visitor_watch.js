@@ -283,18 +283,14 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
         scene.photosDeep.home = scan.photos; scene.optical = scan.optical;
       } catch (error) {scene.optical = {error: error.message.split('\n')[0]};}
       // Lazy photos count only once scrolled into view and actually decoded.
-      for (let i = 0; i < scene.cards.length; i++) {
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) {scene.errors.push('photo capture exceeded 120 seconds'); break;}
-        const card = page.locator(CARDS).nth(i);
-        await card.scrollIntoViewIfNeeded({timeout: Math.min(3000, remaining)});
+      const firstPhoto = async (card, wait) => {
         const image = card.locator('img').first();
         if (await image.count()) {
           try { await image.evaluate((img, timeout) => Promise.race([
-            img.decode().catch(() => {}), new Promise(resolve => setTimeout(resolve, timeout))]), Math.min(3000, remaining)); }
+            img.decode().catch(() => {}), new Promise(resolve => setTimeout(resolve, timeout))]), wait); }
           catch { /* missing photo is a photos FLAG */ }
         }
-        const photo = await card.evaluate(el => {
+        return card.evaluate(el => {
           const img = el.querySelector('img');
           return {key: el.dataset.key, src: img?.currentSrc || img?.src || '', complete: Boolean(img?.complete),
             width: img?.naturalWidth || 0, loaded: [...el.querySelectorAll('img')].some(img => {
@@ -303,11 +299,35 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
                 box.width > 1 && box.height > 1 && box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
             })};
         });
+      };
+      const record = (row, photo) => {
+        row.hasPhoto = photo.loaded;
+        if (photo.loaded) delete row.photoIssue;
+        else row.photoIssue = photoIssue(photo, photoRequests.get(photo.src), rules, origin);
+      };
+      for (let i = 0; i < scene.cards.length; i++) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {scene.errors.push('photo capture exceeded 120 seconds'); break;}
+        const card = page.locator(CARDS).nth(i);
+        await card.scrollIntoViewIfNeeded({timeout: Math.min(3000, remaining)});
+        const photo = await firstPhoto(card, Math.min(3000, remaining));
         if (photo.key !== scene.cards[i].key) {scene.errors.push('card order changed during capture'); break;}
-        scene.cards[i].hasPhoto = photo.loaded;
-        if (!photo.loaded) scene.cards[i].photoIssue = photoIssue(photo, photoRequests.get(photo.src), rules, origin);
+        record(scene.cards[i], photo);
         await collectText(card, scene.text);
       }
+      // Photos still queued behind our own 1 request/second pacing (live #159:
+      // 4 desktop Amazon photos "still loading") get one shared 8 s look; any
+      // still downloading after it are reported, not flagged.
+      const until = Math.min(deadline, Date.now() + 8000);
+      for (const [i, row] of scene.cards.entries()) {
+        if (row.hasPhoto || !/ still loading$/.test(row.photoIssue || '') || until - Date.now() <= 0) continue;
+        const card = page.locator(CARDS).nth(i);
+        await card.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
+        const photo = await firstPhoto(card, Math.max(1, until - Date.now()));
+        if (photo.key !== row.key) break;
+        record(row, photo);
+      }
+      for (const row of scene.cards) if (!row.hasPhoto && / still loading$/.test(row.photoIssue || '')) row.photoPending = true;
       if (rules.excludeUsedOnAll) scene.text.used = await allUsedProbe(page, doc);
       // Each probe has its own failure result; one broken control must not hide
       // the other health checks. No Get deal link is ever clicked.

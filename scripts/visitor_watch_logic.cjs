@@ -147,8 +147,12 @@ function checksForScene(scene, previous, rules) {
   const utility = cards.filter(card => utilityMatch(card.title, rules.utilityGroups)).map(card => card.title);
   add('impulse', utility.length, utility.length ? utility.join('; ') :
     Object.keys(rules.utilityGroups).length ? 'no utility titles' : 'report only: task 267 utility_groups not present');
-  const missing = cards.filter(card => !card.hasPhoto).map(card => card.title + (card.photoIssue ? ` (${card.photoIssue})` : ''));
-  add('photos', cards.length < 24 || missing.length, missing.length ? missing.join('; ') : `${cards.length}/24 loaded visible photos`);
+  // photoPending: still queued behind the watcher's own pacing after a second look.
+  const missing = cards.filter(card => !card.hasPhoto && !card.photoPending)
+    .map(card => card.title + (card.photoIssue ? ` (${card.photoIssue})` : ''));
+  const queued = cards.filter(card => !card.hasPhoto && card.photoPending).length;
+  add('photos', cards.length < 24 || missing.length, missing.length ? missing.join('; ') :
+    `${cards.length - queued}/24 loaded visible photos` + (queued ? `; ${queued} still downloading (paced)` : ''));
   const errors = [...(scene.errors || [])];
   if (!/^\d+:[0-5]\d$/.test(scene.countdown || '')) errors.push('missing/invalid drop countdown');
   add('errors', errors.length, errors.join('; '));
@@ -167,8 +171,10 @@ function checksForScene(scene, previous, rules) {
   // "pending" = still queued behind the watcher's own pacing: reported, never a flag.
   const bad = card => card.photo === 'broken' || card.photo === 'placeholder';
   for (const [page, enabled] of [['category', rules.categoryPhotos], ['deal', rules.dealPhotos]]) {
-    if (enabled && (!deep?.[page]?.length || deep[page].some(bad)))
-      photoProblems.push(page + ': missing/broken photo');
+    if (enabled && (!deep?.[page]?.length || deep[page].some(bad))) {
+      const hosts = [...new Set((deep?.[page] || []).filter(bad).map(card => card.host || card.photo))];
+      photoProblems.push(page + ': missing/broken photo' + (hosts.length ? ` (${hosts.join(', ')})` : ''));
+    }
   }
   const pending = ['home', 'category', 'deal'].reduce((sum, page) =>
     sum + (deep?.[page] || []).filter(card => card.photo === 'pending').length, 0);

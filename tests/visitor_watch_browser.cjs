@@ -142,8 +142,9 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
       assert.equal(text.invalid.length > 0, bug === 'text');
       assert.equal(text.history.length > 0, bug === 'text');
       const scan = await scanScreens(page, '.card', Date.now() + 15000);
-      const photo = scan.photos.find(card => card.key === 'health-0').photo;
+      const first = scan.photos.find(card => card.key === 'health-0'), photo = first.photo;
       assert.equal(photo, bug === 'placeholder' ? 'placeholder' : bug === 'broken' ? 'broken' : 'loaded', bug);
+      if (bug === 'broken') assert.equal(first.host, 'wowpriced.test', 'a broken photo names its host');
       const problems = opticalProblems(scan.optical);
       assert.equal(problems.length > 0, ['overflow', 'overlap', 'stretch', 'blank'].includes(bug), bug + ': ' + problems);
       const detail = page.locator('[data-deal-detail]');
