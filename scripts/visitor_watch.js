@@ -3,7 +3,8 @@ const {routeRobotSearch, searchResponse} = require('./robot_search.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFile} = require('node:child_process');
-const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue} = require('./visitor_watch_logic.cjs');
+const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue, imageHostsOf} =
+  require('./visitor_watch_logic.cjs');
 const {pixels, glare} = require('./browser_pixels.cjs');
 const {photoState, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
   dealPageProbe, boundedScreenshot} =
@@ -173,6 +174,27 @@ function watchContextErrors(context, origin, errors, ignored, active) {
         errors.push(`HTTP ${response.status()}: ${url.pathname}`);
     });
   });
+}
+
+// One paced read of deals.json per watch, before any page loads its photos.
+async function publishedImageHosts(browser, options, pace) {
+  const url = new URL('deals.json', options.site);
+  try {
+    let text;
+    if (options.offlineSite) {
+      text = String(offlineRoute(options.offlineSite, url.origin,
+        {url: () => url.href, method: () => 'GET', resourceType: () => 'fetch'}).body || '');
+    } else {
+      if (!await pace(url.hostname)) return [];
+      const context = await browser.newContext({userAgent: UA});
+      try {
+        const response = await context.request.get(url.href, {timeout: 20000, maxRedirects: 0});
+        if (!response.ok()) return [];
+        text = await response.text();
+      } finally {await context.close();}
+    }
+    return imageHostsOf(JSON.parse(text));
+  } catch {return [];}
 }
 
 async function capture(browser, mode, options, rules, pace, linkCache) {
@@ -370,6 +392,7 @@ async function runWatch(options = {}) {
   if (browser) {
     try {
       const pace = pacer(), linkCache = new Map();
+      rules.imageHosts = [...new Set([...rules.imageHosts, ...await publishedImageHosts(browser, options, pace)])];
       for (const mode of MODES) {
         try {snapshot.scenes.push(await capture(browser, mode, options, rules, pace, linkCache));}
         catch (error) {snapshot.scenes.push({name: mode.name, scheme: mode.scheme, takenAt: snapshot.takenAt,
@@ -401,4 +424,4 @@ if (require.main === module) {
     .catch(error => {console.error(error.message); process.exitCode = 1;});
 }
 module.exports = {runWatch, readConfig, pacer, offlineRoute, guardedRoute, searchProbe, firstScreenGlare,
-  watchContextErrors, MODES, UA};
+  watchContextErrors, publishedImageHosts, MODES, UA};

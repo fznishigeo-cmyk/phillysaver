@@ -316,7 +316,7 @@ const {rulesFromConfig} = require('./scripts/visitor_watch_logic.cjs');
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize('scenario', ['missing-search', 'clean', 'ignored-input', 'sample-error',
+@pytest.mark.parametrize('scenario', ['missing-search', 'clean', 'derived-hosts', 'ignored-input', 'sample-error',
                                       'missing-main-button', 'wrong-main-link', 'no-socks',
                                       'category-invalid', 'deal-invalid', 'both-invalid', 'category-history',
                                       'empty-department', 'identical-department'])
@@ -362,8 +362,10 @@ def test_chromium_local_static_build(tmp_path, watch_build, scenario):
             assert replacement != buttons[0]
             sample.write_text(html.replace(buttons[0], replacement, 1))
     config = tmp_path / 'watch.yaml'
+    # derived-hosts: no configured photo host; the published deals.json supplies it.
+    hosts = [] if scenario == 'derived-hosts' else ['images.example.invalid']
     config.write_text(yaml.safe_dump({'affiliate': {'amazon_tag': 'wowpriced-20'},
-                                    'quality': {'visitor_watch': {'image_hosts': ['images.example.invalid']}}}))
+                                    'quality': {'visitor_watch': {'image_hosts': hosts}}}))
     output, summary = tmp_path / 'snapshot.json', tmp_path / 'summary.md'
     args = ['scripts/visitor_watch.js', '--offline-site', out, '--site', 'https://wowpriced.test/',
             '--config', config, '--output', output, '--summary', summary,
@@ -387,7 +389,7 @@ def test_chromium_local_static_build(tmp_path, watch_build, scenario):
         if working_search:
             assert scene['search']['clickedHref'].startswith('https://www.amazon.com/s?')
     flagged = {check['name'] for check in snapshot['checks'] if check['flag']}
-    expected = {'missing-search': {'search'}, 'clean': set(), 'ignored-input': {'working'},
+    expected = {'missing-search': {'search'}, 'clean': set(), 'derived-hosts': set(), 'ignored-input': {'working'},
                 'sample-error': {'errors'}, 'missing-main-button': {'working'}, 'wrong-main-link': {'working'},
                 'no-socks': set(), 'category-invalid': {'text'}, 'deal-invalid': {'text'},
                 'both-invalid': {'text'}, 'category-history': {'text'},

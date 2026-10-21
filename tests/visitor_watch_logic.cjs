@@ -5,7 +5,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const {EventEmitter} = require('node:events');
 const {QUERY, NAMES, BLOCK, rulesFromConfig, utilityMatch, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health, photoIssue} =
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf} =
   require('../scripts/visitor_watch_logic.cjs');
 const {pixels, glare, blankBands} = require('../scripts/browser_pixels.cjs');
 const {headLinks, internalLinks, photoState, departmentProbe, inventorySearchProbe, allUsedProbe, firstScreenLinks,
@@ -875,6 +875,17 @@ test('first-screen photo flags name the cause from the card and its request', ()
   assert.equal(photoIssue(photo(amazon), 'HTTP 304', hosts, origin), 'm.media-amazon.com hidden or off screen');
   const s = scene(); Object.assign(s.cards[23], {hasPhoto: false, photoIssue: 'm.media-amazon.com HTTP 404'});
   assert.match(check('photos', s).detail, /Kitchen set 23 \(m\.media-amazon\.com HTTP 404\)/);
+});
+
+test('published photo hosts come from deals.json: https host names only', () => {
+  const doc = {deals: [{image_url: 'https://www.MoneySavingMom.com/wp/a.jpg'}, {image_url: 'https://m.media-amazon.com/I/b.jpg'},
+    {image_url: 'http://plain.example.com/c.jpg'}, {image_url: 'https://cdn.example.com:8443/d.jpg'},
+    {image_url: 'https://user:pw@creds.example.com/e.jpg'}, {image_url: 'https://127.0.0.1/f.jpg'}, {image_url: 'not a url'},
+    {image_url: ''}, {}, {image_url: 'https://m.media-amazon.com/I/g.jpg'}],
+    spotlight: [{image_url: 'https://d3gqasl9vmjfd8.cloudfront.net/h.jpg'}]};
+  assert.deepEqual(imageHostsOf(doc), ['d3gqasl9vmjfd8.cloudfront.net', 'm.media-amazon.com', 'www.moneysavingmom.com']);
+  assert.deepEqual(imageHostsOf({}), []);
+  assert.deepEqual(imageHostsOf(null), []);
 });
 
 test('department flags say how many eligible cards showed and which kinds are missing or extra', () => {

@@ -28,6 +28,20 @@ function textFindings(text) {
     history: [...new Set(String(text).match(HISTORY) || [])]};
 }
 
+// Photo hosts the site itself publishes: what a visitor's browser loads. The
+// configured list alone missed new source hosts (live 2026-10-21: moneysavingmom.com).
+function imageHostsOf(doc) {
+  const hosts = new Set();
+  for (const row of [...(doc?.deals || []), ...(doc?.spotlight || [])]) {
+    try {
+      const url = new URL(row.image_url);
+      if (url.protocol === 'https:' && !url.port && !url.username && !url.password &&
+          /^([a-z0-9-]+\.)+[a-z][a-z0-9-]*\.?$/i.test(url.hostname)) hosts.add(url.hostname.toLowerCase().replace(/\.$/, ''));
+    } catch { /* no usable photo URL */ }
+  }
+  return [...hosts].sort();
+}
+
 // Why a first-screen photo did not show, from the card and the image request.
 function photoIssue(photo, outcome, rules, origin) {
   let host;
@@ -237,4 +251,4 @@ function summary(snapshot) {
 }
 
 module.exports = {QUERY, SEARCH_BUTTON, NAMES, BLOCK, rulesFromConfig, utilityMatch, searchProblems, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health, photoIssue};
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf};
