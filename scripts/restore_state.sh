@@ -21,7 +21,7 @@ if git -C "$REPO_DIR" ls-remote --exit-code --heads origin refs/heads/data >/dev
     # A depth-1 tip cannot prove ancestry; refresh only this remote state ref.
     git -C "$REPO_DIR" fetch --depth=1 origin +refs/heads/data:refs/remotes/origin/data
   else
-    git -C "$REPO_DIR" fetch origin refs/heads/data:refs/remotes/origin/data
+    git -C "$REPO_DIR" fetch origin +refs/heads/data:refs/remotes/origin/data
   fi
 else
   remote_status=$?

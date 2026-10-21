@@ -647,6 +647,29 @@ def test_commit_state_appends_and_includes_report(repo: Path) -> None:
     assert not (repo / ".state-worktree").exists()
 
 
+def test_commit_state_follows_a_squashed_data_branch(repo: Path, tmp_path: Path) -> None:
+    """The daily squash may rewrite data between a run's fetch and its next
+    commit (2026-10-21 01:49Z: "! [rejected] data -> origin/data
+    (non-fast-forward)" failed the hourly social-state commit)."""
+    (repo / "state.db").write_bytes(b"sqlite-bytes-v1")
+    assert run_script(repo, key=KEY).returncode == 0
+    (repo / "state.db").write_bytes(b"sqlite-bytes-v2")
+    assert run_script(repo, key=KEY).returncode == 0
+    other = tmp_path / "squasher"
+    _git(tmp_path, "clone", "--quiet", "--branch", "data", (tmp_path / "origin.git").as_uri(), str(other))
+    _git(other, "checkout", "--quiet", "--orphan", "squashed")
+    _git(other, "commit", "--quiet", "-m", "squash data branch (daily)")
+    _git(other, "push", "--quiet", "--force", "origin", "HEAD:data")
+    (repo / "state.db").write_bytes(b"sqlite-bytes-v3")
+    res = run_script(repo, key=KEY)
+    assert res.returncode == 0, res.stderr + res.stdout
+    assert "state committed to origin/data" in res.stdout
+    _git(repo, "fetch", "origin", "+refs/heads/data:refs/remotes/origin/data")
+    assert _git(repo, "rev-list", "--count", "origin/data") == "2"
+    assert _git(repo, "log", "-1", "--format=%s", "origin/data~1") == "squash data branch (daily)"
+    assert not (repo / ".state-worktree").exists()
+
+
 # ----------------------------------------------- encrypted state (public repo)
 
 KEY = "correct horse battery staple"

@@ -58,7 +58,9 @@ python3 "$SCRIPT_DIR/../dealradar/state_size.py" "$REPO_DIR/state.db" \
 cleanup
 
 if git -C "$REPO_DIR" ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null; then
-  git -C "$REPO_DIR" fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  # "+": the daily squash rewrites the branch, so the tracking ref must follow
+  # a non-fast-forward tip (2026-10-21: a squash mid-run failed this fetch).
+  git -C "$REPO_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
 else
   remote_status=$?
   if [[ "$remote_status" -ne 2 ]] || git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
@@ -148,7 +150,7 @@ for delay in 2 4 8 16 0; do
   fi
   log "push failed — re-snapshotting from the moved tip and retrying in ${delay}s"
   sleep "$delay"
-  git -C "$REPO_DIR" fetch origin "refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  git -C "$REPO_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   if git -C "$REPO_DIR" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
     git -C "$REPO_DIR" worktree remove --force "$WORKTREE" >/dev/null 2>&1 || true
     rm -rf "$WORKTREE"
