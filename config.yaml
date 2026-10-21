@@ -538,16 +538,15 @@ affiliate:
   # it rides in every eBay link). Every https ebay.com Get deal link carries
   # our EPN parameters, before any Sovrn wrap. "" = off.
   ebay_campaign_id: "5339221823"
-  # One store page -> one network short link ("<host>/<product id>"). Sovrn
-  # onboarding (2026-10-12): its first-click check needs a click from our site.
-  link_overrides:
-    "walmart.com/222918738": "https://sovrn.co/168n3ev"
-  # Sovrn Commerce (2026-10-12, site under review): non-Amazon retailer links
-  # go through redirect.viglink.com. The link key is the GitHub secret
-  # SOVRN_API_KEY (operator's call: not in the repo, though it travels inside
-  # every Sovrn link); the reporting key SOVRN_SECRET_KEY never goes here.
-  # On since 2026-10-12: the probe got a 302 to walmart.com with the link key.
-  sovrn_enabled: true
+  # One store page -> one network short link ("<host>/<product id>"). The Sovrn
+  # onboarding link (walmart.com/222918738 -> sovrn.co/168n3ev) went with Sovrn.
+  link_overrides: {}
+  # Sovrn Commerce: wowpriced.com DENIED 2026-10-21 ("does not currently meet our
+  # merchant requirements"; re-evaluation on request as the site grows). Off:
+  # non-Amazon retailer links go straight to the store, not redirect.viglink.com.
+  # The link key stays in the GitHub secret SOVRN_API_KEY for a later re-apply;
+  # the reporting key SOVRN_SECRET_KEY never goes here. true = Sovrn links again.
+  sovrn_enabled: false
   sovrn_key: ""
   disclosure: >-
     Disclosure: wowpriced is an independent service supported by affiliate commissions.

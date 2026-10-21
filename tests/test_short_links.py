@@ -266,7 +266,8 @@ def test_pipeline_fast_lane_and_rerun(tmp_path, monkeypatch, caplog, host, track
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text((Path(__file__).resolve().parents[1] / "config.yaml").read_text().replace(
         'site_dir: "site"', f'site_dir: "{tmp_path / "site"}"').replace(
-        "repair_competitor_trackers: false", "repair_competitor_trackers: true"))
+        "repair_competitor_trackers: false", "repair_competitor_trackers: true").replace(
+        "sovrn_enabled: false", "sovrn_enabled: true"))  # recorded with Sovrn on (denied 2026-10-21)
     db_path = tmp_path / "state.db"
     db = DB(db_path)
     PhotoFixture._seed(db, "stable", f"https://{host}/abc")

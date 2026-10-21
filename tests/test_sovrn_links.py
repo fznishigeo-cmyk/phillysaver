@@ -120,7 +120,7 @@ def test_config_switch_and_valid_key(tmp_path, caplog):
     cfg = load_config(path)
     assert not cfg.affiliate_sovrn_enabled and not cfg.affiliate_sovrn_key
     # Switched on 2026-10-12 after the probe's 302 to walmart.com with the link key.
-    assert not caplog.text and load_config().affiliate_sovrn_enabled
+    assert not caplog.text and not load_config().affiliate_sovrn_enabled  # Sovrn denied the site 2026-10-21
 
 
 def test_emails_untouched_with_site_sovrn_enabled():

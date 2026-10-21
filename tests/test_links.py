@@ -226,7 +226,8 @@ class TestAmazonAffiliateTag:
         assert _serialize_deal(d, NOW, "wowpriced-20", o)["url"] == "https://sovrn.co/168n3ev"
         other = dict(d, canonical_url="https://www.walmart.com/ip/111")
         assert _serialize_deal(other, NOW, "wowpriced-20", o)["url"] == "https://www.walmart.com/ip/111"
-        assert load_config().affiliate_link_overrides == o
+        shipped = load_config()  # Sovrn denied the site 2026-10-21: no Sovrn links ship
+        assert shipped.affiliate_link_overrides == {} and not shipped.affiliate_sovrn_enabled
 
     def test_emails_never_carry_the_tag(self):
         from dealradar.publish import newsletter

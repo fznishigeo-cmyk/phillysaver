@@ -194,6 +194,9 @@ def _offline_env(tmp_path, monkeypatch):
     text = root_cfg.read_text().replace('site_dir: "site"', f'site_dir: "{site_dir}"')
     # Legacy captures predate task 282; the rating-specific rerun opts in below.
     text = text.replace("appeal_score:\n  enabled: true", "appeal_score:\n  enabled: false")
+    # The capture earns through Sovrn; production switched it off when Sovrn
+    # denied the site (2026-10-21), so the recorded run keeps the earlier switch.
+    text = text.replace("sovrn_enabled: false", "sovrn_enabled: true")
     # The offline fake Claude implements messages.parse (not create), so this
     # end-to-end run exercises the structured path; production keeps it off.
     text = text.replace("retries_on_invalid_json: 2",

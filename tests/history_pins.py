@@ -572,7 +572,15 @@ def pre_checker_fixes_1021(cfg):
 
 def pre_exact_variant_links(cfg):
     """Before Amazon size/colour children opened as themselves (operator 2026-10-21)."""
+    pre_sovrn_denied(cfg)
     cfg.affiliate_exact_variant_links = False
+    return cfg
+
+
+def pre_sovrn_denied(cfg):
+    """Before Sovrn denied wowpriced.com and its links were switched off (2026-10-21)."""
+    cfg.affiliate_sovrn_enabled = True
+    cfg.affiliate_link_overrides = {"walmart.com/222918738": "https://sovrn.co/168n3ev"}
     return cfg
 
 
