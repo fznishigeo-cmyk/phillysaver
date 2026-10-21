@@ -51,11 +51,12 @@ def test_strict_days(tmp_path, value):
 
 
 @pytest.mark.parametrize("value", [None, 1, 3650])
-def test_valid_days_and_ships_off(tmp_path, value):
+def test_valid_days_default_off_and_operator_setting(tmp_path, value):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"retention": {"offsite_unseen_days": value}}))
     assert load_config(path).offsite_unseen_days == value
-    assert load_config().offsite_unseen_days is None
+    # Operator 2026-10-21 "CONFIRMED YES GO AHEAD": 7 days; the code default stays OFF.
+    assert load_config().offsite_unseen_days == 7
     assert AppConfig().offsite_unseen_days is None
 
 
