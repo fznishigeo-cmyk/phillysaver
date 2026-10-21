@@ -14,7 +14,27 @@ function rulesFromConfig(config) {
     imageHosts: Array.isArray(health.image_hosts) ? health.image_hosts : [],
     categoryPhotos: health.category_photos === true, dealPhotos: health.deal_photos === true,
     excludeUsedOnAll: health.exclude_used_on_all === true,
-    usedTabOnly: config.publish?.front_page?.used_tab_only === true};
+    usedTabOnly: config.publish?.front_page?.used_tab_only === true,
+    maxPhotolessH: photolessHours(config.publish?.photos?.max_photoless_h)};
+}
+
+function photolessHours(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+// Deals the site still shows without a photo by design: no https photo and
+// younger than publish.photos.max_photoless_h at publish time (rank.photoless_expired).
+function newPhotoless(doc, maxHours) {
+  const at = Date.parse(doc?.meta?.generated_at || doc?.meta?.published_at || '');
+  const paths = new Set(), titles = new Set();
+  if (!Number.isFinite(maxHours) || !Number.isFinite(at)) return {paths, titles};
+  for (const row of doc?.deals || []) {
+    const seen = Date.parse(row.first_seen_at || '');
+    if (/^https:\/\//.test(row.image_url || '') || !Number.isFinite(seen) || at - seen >= maxHours * 3600000) continue;
+    if (row.deal_path) paths.add(row.deal_path);
+    if (row.item) titles.add(String(row.item).trim());
+  }
+  return {paths, titles};
 }
 
 const DURATION = String.raw`90(?:[-\u2010-\u2015]|\s+)days?`;
@@ -169,7 +189,7 @@ function checksForScene(scene, previous, rules) {
   const broken = (deep?.home || []).filter(card => card.photo === 'broken').length;
   if (placeholders || broken) photoProblems.push(`home: ${placeholders} store-tile placeholders; ${broken} broken/hidden photos`);
   // "pending" = still queued behind the watcher's own pacing: reported, never a flag.
-  const bad = card => card.photo === 'broken' || card.photo === 'placeholder';
+  const bad = card => card.photo === 'broken' || card.photo === 'placeholder' && !card.newPhotoless;
   for (const [page, enabled] of [['category', rules.categoryPhotos], ['deal', rules.dealPhotos]]) {
     if (enabled && (!deep?.[page]?.length || deep[page].some(bad))) {
       const hosts = [...new Set((deep?.[page] || []).filter(bad).map(card => card.host || card.photo))];
@@ -178,9 +198,11 @@ function checksForScene(scene, previous, rules) {
   }
   const pending = ['home', 'category', 'deal'].reduce((sum, page) =>
     sum + (deep?.[page] || []).filter(card => card.photo === 'pending').length, 0);
+  const fresh = (deep?.category || []).filter(card => card.photo === 'placeholder' && card.newPhotoless).length;
   add('photos_deep', photoProblems.length, photoProblems.join('; ') ||
     `${(deep?.home || []).filter(card => card.photo === 'loaded').length} home photos loaded` +
     (pending ? `; ${pending} still downloading (paced)` : '') +
+    (fresh ? `; ${fresh} new without a photo yet (shown up to ${rules.maxPhotolessH} h by design)` : '') +
     `; category/deal gates ${Boolean(rules.categoryPhotos)}/${Boolean(rules.dealPhotos)}`);
   const layout = opticalProblems(scene.optical);
   for (const sample of scene.pageOptical || []) layout.push(...opticalProblems(sample).map(problem => sample.page + ': ' + problem));
@@ -257,4 +279,4 @@ function summary(snapshot) {
 }
 
 module.exports = {QUERY, SEARCH_BUTTON, NAMES, BLOCK, rulesFromConfig, utilityMatch, searchProblems, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf};
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf, newPhotoless};

@@ -5,7 +5,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const {EventEmitter} = require('node:events');
 const {QUERY, NAMES, BLOCK, rulesFromConfig, utilityMatch, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf} =
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue, imageHostsOf, newPhotoless} =
   require('../scripts/visitor_watch_logic.cjs');
 const {pixels, glare, blankBands} = require('../scripts/browser_pixels.cjs');
 const {headLinks, internalLinks, photoState, departmentProbe, inventorySearchProbe, allUsedProbe, firstScreenLinks,
@@ -221,8 +221,11 @@ test('real YAML parser scopes configured rules and preserves inline phrases/excl
   assert.deepEqual(shipped.utilityGroups, config.publish.front_page.impulse?.utility_groups || {});
   assert.equal(shipped.rotationEnabled, Number(config.site?.drop_rotation_windows || 0) > 0);
   assert.deepEqual(rulesFromConfig({}), {amazonTag: '', rotationEnabled: false, utilityGroups: {},
-    imageHosts: [], categoryPhotos: false, dealPhotos: false, excludeUsedOnAll: false, usedTabOnly: false});
+    imageHosts: [], categoryPhotos: false, dealPhotos: false, excludeUsedOnAll: false, usedTabOnly: false,
+    maxPhotolessH: null});
   assert.equal(shipped.usedTabOnly, config.publish.front_page.used_tab_only === true);
+  assert.equal(shipped.maxPhotolessH, config.publish.photos.max_photoless_h);
+  for (const max_photoless_h of [null, '1', NaN]) assert.equal(rulesFromConfig({publish: {photos: {max_photoless_h}}}).maxPhotolessH, null);
   assert.equal(rulesFromConfig({site: {drop_rotation_windows: 3}}).rotationEnabled, true);
   for (const image_hosts of ['images.test', '*', true, {}])
     assert.deepEqual(rulesFromConfig({quality: {visitor_watch: {image_hosts}}}).imageHosts, []);
@@ -509,6 +512,21 @@ test('dark screenshot waits for a delayed visible white image and treats decode 
 });
 
 
+test('new photo-less deals follow the site cutoff: no https photo and younger than max_photoless_h', () => {
+  const doc = {meta: {generated_at: '2026-10-21T20:00:00Z'}, deals: [
+    {item: 'New, no photo', deal_path: '/deal/new-aaaa1111/', first_seen_at: '2026-10-21T19:20:00Z', image_url: ''},
+    {item: 'Old, no photo', deal_path: '/deal/old-bbbb2222/', first_seen_at: '2026-10-21T18:59:00Z', image_url: ''},
+    {item: 'New, http photo', first_seen_at: '2026-10-21T19:50:00Z', image_url: 'http://img.test/a.jpg'},
+    {item: 'New, photo', deal_path: '/deal/photo-cccc3333/', first_seen_at: '2026-10-21T19:50:00Z',
+      image_url: 'https://m.media-amazon.com/images/I/a.jpg'},
+    {item: 'No time', first_seen_at: '', image_url: ''}]};
+  const allowed = newPhotoless(doc, 1);
+  assert.deepEqual([...allowed.paths], ['/deal/new-aaaa1111/']);
+  assert.deepEqual([...allowed.titles], ['New, no photo', 'New, http photo']);
+  for (const max of [null, undefined, NaN]) assert.equal(newPhotoless(doc, max).titles.size, 0);
+  assert.equal(newPhotoless({deals: doc.deals}, 1).titles.size, 0, 'no publish time: nothing is excused');
+});
+
 test('deep photo flags distinguish placeholders/broken images; page switches are independent and strict', () => {
   assert(!check('photos_deep', scene()).flag);
   const bad = scene(); bad.photosDeep.home = [{photo: 'placeholder'}, {photo: 'broken'}];
@@ -533,6 +551,15 @@ test('deep photo flags distinguish placeholders/broken images; page switches are
   queued.photosDeep.category.push({photo: 'broken', host: 'www.moneysavingmom.com'});
   assert.match(check('photos_deep', queued, null, gated).detail,
     /category: missing\/broken photo \(placeholder, www\.moneysavingmom\.com\)/);
+  // Live 2026-10-21 (#167, #173, #174): a new deal without a photo yet on the
+  // category page is by design for max_photoless_h; any other placeholder flags.
+  const fresh = scene(); fresh.photosDeep.deal = [{photo: 'loaded'}];
+  fresh.photosDeep.category = [{photo: 'loaded'}, {photo: 'placeholder', newPhotoless: true}];
+  assert(!check('photos_deep', fresh, null, {...gated, maxPhotolessH: 1}).flag);
+  assert.match(check('photos_deep', fresh, null, {...gated, maxPhotolessH: 1}).detail,
+    /1 new without a photo yet \(shown up to 1 h by design\)/);
+  fresh.photosDeep.category.push({photo: 'placeholder'});
+  assert.match(check('photos_deep', fresh, null, gated).detail, /category: missing\/broken photo \(placeholder\)/);
   const configured = rulesFromConfig({quality: {visitor_watch: {category_photos: true,
     deal_photos: 'false', exclude_used_on_all: true, image_hosts: ['target.scene7.com']}}});
   assert(configured.categoryPhotos); assert(!configured.dealPhotos); assert(configured.excludeUsedOnAll);

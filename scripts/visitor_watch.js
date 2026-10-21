@@ -3,10 +3,11 @@ const {routeRobotSearch, searchResponse} = require('./robot_search.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFile} = require('node:child_process');
-const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue, imageHostsOf} =
+const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue, imageHostsOf,
+  newPhotoless} =
   require('./visitor_watch_logic.cjs');
 const {pixels, glare} = require('./browser_pixels.cjs');
-const {photoState, relookPending, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
+const {photoState, relookPending, markNewPhotoless, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
   dealPageProbe, boundedScreenshot} =
   require('./visitor_watch_health.cjs');
 
@@ -363,8 +364,10 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
           }
           const scan = await scanScreens(sample, '.card', deadline);
           scene.pageOptical.push({page: name, ...scan.optical, emptyAllowed: true});
-          if (name === 'category') scene.photosDeep.category = scan.photos;
-          else {
+          if (name === 'category') {
+            scene.photosDeep.category = scan.photos;
+            await markNewPhotoless(sample, '.card', scan.photos, newPhotoless(doc, rules.maxPhotolessH));
+          } else {
             // Related-card photos cannot stand in for the main deal's photo.
             const detail = sample.locator('[data-deal-detail]');
             const image = detail.locator('img:not(.grid img)').first();

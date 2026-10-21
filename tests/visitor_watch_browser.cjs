@@ -4,7 +4,7 @@ const {searchProbe, firstScreenGlare} = require('../scripts/visitor_watch.js');
 const {pixels, glare} = require('../scripts/browser_pixels.cjs');
 const {QUERY, searchProblems} = require('../scripts/visitor_watch_logic.cjs');
 const {opticalProblems} = require('../scripts/visitor_watch_logic.cjs');
-const {scanScreens, relookPending, photoState, firstScreenLinks, visibleText, dealPageProbe, boundedScreenshot} =
+const {scanScreens, relookPending, markNewPhotoless, photoState, firstScreenLinks, visibleText, dealPageProbe, boundedScreenshot} =
   require('../scripts/visitor_watch_health.cjs');
 
 (async () => {
@@ -77,6 +77,12 @@ const {scanScreens, relookPending, photoState, firstScreenLinks, visibleText, de
     if (url.pathname === '/loading') return route.fulfill({contentType: 'text/html', body:
       '<!doctype html><style>body{margin:0;background:#111}@keyframes up{from{background:#000}to{background:#fff}}' +
       '.fade{height:100vh;animation:up 60s forwards}</style><div class="fade"></div><img src="/held.svg">'});
+    if (url.pathname === '/category-new') return route.fulfill({contentType: 'text/html', body:
+      '<!doctype html><style>body{margin:0}.card{height:150px}</style><main id="content">' +
+      '<article class="card"><div class="media"></div><h3 class="title"><a href="/deal/new-aaaa1111/">New &amp; no photo</a></h3></article>' +
+      '<article class="card"><div class="media"></div><h3 class="title"><a href="https://www.walmart.com/ip/1">Store-linked new</a></h3></article>' +
+      '<article class="card"><div class="media"></div><h3 class="title"><a href="/deal/old-bbbb2222/">Old no photo</a></h3></article>' +
+      '</main>'});
     if (url.pathname === '/paced') return route.fulfill({contentType: 'text/html', body:
       '<!doctype html><style>body{margin:0}main{width:100%}.card{height:200px}img{width:100px;height:100px}</style>' +
       '<main id="content"><article class="card" data-key="slow"><img src="/slow.svg"></article>' +
@@ -136,6 +142,16 @@ const {scanScreens, relookPending, photoState, firstScreenLinks, visibleText, de
       {slow: 'loaded', held: 'pending', queued: 'loaded'});
     assert(Date.now() - relookStarted < 3000, 'a short look per card, not the whole wait on one held photo');
     await paced.close();
+    // Live 2026-10-21: category placeholders for deals still inside max_photoless_h
+    // are by design; matched by deal-page link or exact title, never by position.
+    const category = await context.newPage();
+    await category.goto('https://wowpriced.test/category-new', {waitUntil: 'domcontentloaded'});
+    const categoryScan = await scanScreens(category, '.card', Date.now() + 30000);
+    assert.deepEqual(categoryScan.photos.map(card => card.photo), ['placeholder', 'placeholder', 'placeholder']);
+    await markNewPhotoless(category, '.card', categoryScan.photos,
+      {paths: new Set(['/deal/new-aaaa1111/']), titles: new Set(['Store-linked new'])});
+    assert.deepEqual(categoryScan.photos.map(card => Boolean(card.newPhotoless)), [true, true, false]);
+    await category.close();
     const page = await context.newPage();
     await page.goto('https://wowpriced.test/glare', {waitUntil: 'domcontentloaded'});
     await page.waitForFunction(() => document.images.length === 1);

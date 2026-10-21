@@ -80,6 +80,25 @@ async function relookPending(page, selector, photos, until, look = Infinity) {
   }
 }
 
+// Placeholder cards for deals the site still shows without a photo by design
+// (newPhotoless), matched by their deal-page link or exact title.
+async function markNewPhotoless(page, selector, photos, allowed) {
+  const keys = photos.filter(card => card.photo === 'placeholder').map(card => card.key);
+  if (!keys.length || !allowed.paths.size && !allowed.titles.size) return;
+  const found = await page.locator(selector).evaluateAll((elements, keys) => elements.flatMap((el, index) => {
+    const key = el.dataset.key || String(index);
+    if (!keys.includes(key)) return [];
+    let path = '';
+    try {path = new URL(el.querySelector('.title a')?.getAttribute('href') || '', location.href).pathname;}
+    catch { /* no usable link */ }
+    return [{key, path, title: el.querySelector('.title')?.textContent.trim() || ''}];
+  }), keys);
+  for (const card of photos) {
+    const hit = found.find(row => row.key === card.key);
+    if (hit && (allowed.paths.has(hit.path) || allowed.titles.has(hit.title))) card.newPhotoless = true;
+  }
+}
+
 async function scanScreens(page, selector, deadline) {
   const cards = new Map(), where = new Map(), boxes = new Map(), bands = [];
   let overflow = 0;
@@ -297,5 +316,5 @@ async function collectText(content, findings, page = '') {
     findings[field].push(...text[field].map(phrase => page ? page + ': ' + phrase : phrase));
 }
 
-module.exports = {photoState, relookPending, scanScreens, internalLinks, headLinks, firstScreenLinks,
+module.exports = {photoState, relookPending, markNewPhotoless, scanScreens, internalLinks, headLinks, firstScreenLinks,
   departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText, dealPageProbe, boundedScreenshot};
