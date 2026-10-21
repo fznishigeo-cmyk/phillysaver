@@ -27,6 +27,18 @@ function textFindings(text) {
     history: [...new Set(String(text).match(HISTORY) || [])]};
 }
 
+// Why a first-screen photo did not show, from the card and the image request.
+function photoIssue(photo, outcome, rules, origin) {
+  let host;
+  try {host = new URL(photo.src).hostname;} catch {return 'no photo URL';}
+  if (host !== new URL(origin).hostname && !(rules.imageHosts || []).includes(host))
+    return host + ' not in image_hosts';
+  if (outcome && !/^HTTP [23]\d\d$/.test(outcome)) return host + ' ' + outcome;
+  if (!photo.complete) return host + ' still loading';
+  if (!(photo.width > 1)) return host + ' did not decode';
+  return host + ' hidden or off screen';
+}
+
 function dealLinkProblem(card, rules) {
   if (card.ended === true && !card.href) return '';
   try {
@@ -120,7 +132,7 @@ function checksForScene(scene, previous, rules) {
   const utility = cards.filter(card => utilityMatch(card.title, rules.utilityGroups)).map(card => card.title);
   add('impulse', utility.length, utility.length ? utility.join('; ') :
     Object.keys(rules.utilityGroups).length ? 'no utility titles' : 'report only: task 267 utility_groups not present');
-  const missing = cards.filter(card => !card.hasPhoto).map(card => card.title);
+  const missing = cards.filter(card => !card.hasPhoto).map(card => card.title + (card.photoIssue ? ` (${card.photoIssue})` : ''));
   add('photos', cards.length < 24 || missing.length, missing.length ? missing.join('; ') : `${cards.length}/24 loaded visible photos`);
   const errors = [...(scene.errors || [])];
   if (!/^\d+:[0-5]\d$/.test(scene.countdown || '')) errors.push('missing/invalid drop countdown');
@@ -152,7 +164,10 @@ function checksForScene(scene, previous, rules) {
   if (department?.active !== true || !expected.size || department.after?.length !== expected.size ||
       new Set(department.after).size !== expected.size || department.after.some(key => !expected.has(key)) ||
       !department.allowed?.length || department.categories?.length !== department.after.length ||
-      department.categories.some(category => !department.allowed.includes(category))) workProblems.push('department does not show its eligible published cards');
+      department.categories.some(category => !department.allowed.includes(category))) workProblems.push('department does not show its eligible published cards' +
+    (department ? ` (shows ${department.after?.length ?? 0} of ${expected.size}` +
+      (department.missing?.length ? `; missing e.g. ${department.missing.join(', ')}` : '') +
+      (department.extra?.length ? `; extra e.g. ${department.extra.join(', ')}` : '') + ')' : ''));
   if (!working?.inventorySearch?.query || !(working?.inventorySearch?.matches > 0))
     workProblems.push('inventory search has no matching results');
   if (working?.deal?.status !== 200 || !working.deal.price || !working.deal.getDeal) workProblems.push('deal page needs HTTP 200, price and Get deal');
@@ -215,4 +230,4 @@ function summary(snapshot) {
 }
 
 module.exports = {QUERY, SEARCH_BUTTON, NAMES, BLOCK, rulesFromConfig, utilityMatch, searchProblems, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health};
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue};

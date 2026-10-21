@@ -62,6 +62,19 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
         <div hidden>Price history undefined</div><script>/* price history $NaN */</script>
         <div data-deal-detail><div class="grid"><img src="/health-image.svg"></div></div>`});
     }
+    if (url.pathname === '/held.svg') return;  // never answered: keeps the page loading
+    if (url.pathname === '/slow.svg') {
+      await new Promise(resolve => setTimeout(resolve, 2500));  // past the 1.5 s first look
+      return route.fulfill({contentType: 'image/svg+xml', body:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#728b9b"/></svg>'});
+    }
+    if (url.pathname === '/loading') return route.fulfill({contentType: 'text/html', body:
+      '<!doctype html><style>body{margin:0;background:#111}@keyframes up{from{background:#000}to{background:#fff}}' +
+      '.fade{height:100vh;animation:up 60s forwards}</style><div class="fade"></div><img src="/held.svg">'});
+    if (url.pathname === '/paced') return route.fulfill({contentType: 'text/html', body:
+      '<!doctype html><style>body{margin:0}main{width:100%}.card{height:200px}img{width:100px;height:100px}</style>' +
+      '<main id="content"><article class="card" data-key="slow"><img src="/slow.svg"></article>' +
+      '<article class="card" data-key="held"><img src="/held.svg"></article></main>'});
     if (url.pathname === '/white.svg') {
       imageRequested = true; await released;
       return route.fulfill({contentType: 'image/svg+xml', body:
@@ -87,6 +100,23 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
       await page.close();
     }
     assert.deepEqual(outside, [], 'search navigation must be aborted before the network guard sees it');
+    // Live 2026-10-17..21: page.screenshot waited for document.fonts.ready,
+    // which stays pending while a paced photo keeps the page loading.
+    const loading = await context.newPage();
+    await loading.goto('https://wowpriced.test/loading', {waitUntil: 'domcontentloaded'});
+    const started = Date.now();
+    const still = pixels(await boundedScreenshot(loading, Date.now() + 3000));
+    assert(Date.now() - started < 3000, 'capture must not wait for the page to finish loading');
+    assert.equal(await loading.evaluate(() => document.readyState), 'interactive', 'captured while still loading');
+    assert(glare(still) > .9, 'finite animations are captured finished, as with animations: disabled');
+    assert.equal(await loading.evaluate(() => document.getAnimations()[0].playState), 'finished');
+    await loading.close();
+    // A paced photo that arrives after the first look is loaded; one that never arrives is broken.
+    const paced = await context.newPage();
+    await paced.goto('https://wowpriced.test/paced', {waitUntil: 'domcontentloaded'});
+    const pacedScan = await scanScreens(paced, '.card', Date.now() + 6000);
+    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])), {slow: 'loaded', held: 'broken'});
+    await paced.close();
     const page = await context.newPage();
     await page.goto('https://wowpriced.test/glare', {waitUntil: 'domcontentloaded'});
     await page.waitForFunction(() => document.images.length === 1);

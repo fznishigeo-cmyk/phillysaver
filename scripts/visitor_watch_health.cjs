@@ -2,10 +2,49 @@
 const {pixels, blankBands} = require('./browser_pixels.cjs');
 const {textFindings, dealLinkProblem, BLOCK} = require('./visitor_watch_logic.cjs');
 
+// page.screenshot waits for document.fonts.ready, which Chromium holds until
+// the page finishes loading; with photos paced at 1 request/second/host a
+// category or deal page stays loading for minutes, so every capture there
+// timed out at 3 s (live 2026-10-17..21). The site has no web fonts: capture
+// the viewport from Chromium directly, with animations stilled as before.
+const sessions = new WeakMap();
 async function boundedScreenshot(page, deadline) {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error('screenshot deadline expired');
-  return page.screenshot({animations: 'disabled', caret: 'hide', timeout: Math.min(3000, remaining)});
+  const timeout = Math.min(3000, remaining);
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`screenshot: Timeout ${timeout}ms exceeded.`)), timeout);
+  });
+  try {
+    return await Promise.race([expired, (async () => {
+      if (!sessions.has(page)) sessions.set(page, await page.context().newCDPSession(page));
+      await page.evaluate(() => {
+        // Same stilling as Playwright's animations: 'disabled' and caret: 'hide'.
+        const resume = [];
+        for (const animation of document.getAnimations()) {
+          if (!animation.effect || animation.playbackRate === 0) continue;
+          try {
+            if (Number.isFinite(animation.effect.getComputedTiming().endTime)) animation.finish();
+            else {animation.cancel(); resume.push(animation);}
+          } catch { /* animation already gone */ }
+        }
+        const style = document.createElement('style');
+        style.textContent = '*,*::before,*::after{transition:none!important;caret-color:transparent!important}';
+        document.documentElement.append(style);
+        window.__visitorWatchRestore = () => {
+          style.remove();
+          for (const animation of resume) try {animation.play();} catch { /* animation already gone */ }
+        };
+      });
+      try {
+        const shot = await sessions.get(page).send('Page.captureScreenshot', {format: 'png'});
+        return Buffer.from(shot.data, 'base64');
+      } finally {
+        await page.evaluate(() => {window.__visitorWatchRestore?.(); delete window.__visitorWatchRestore;}).catch(() => {});
+      }
+    })()]);
+  } finally {clearTimeout(timer);}
 }
 
 async function photoState(card, timeout = 1500, selector = 'img') {
@@ -21,12 +60,14 @@ async function photoState(card, timeout = 1500, selector = 'img') {
       return img.complete && img.naturalWidth > 0 && img.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
         box.width > 1 && box.height > 1 && box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
     });
-    return loaded ? 'loaded' : images.length ? 'broken' : 'placeholder';
+    // Still downloading is not broken: our own 1 request/second/host pacing
+    // queues photos, so the caller gives these a second, longer look.
+    return loaded ? 'loaded' : images.some(img => !img.complete) ? 'pending' : images.length ? 'broken' : 'placeholder';
   }, {timeout, selector});
 }
 
 async function scanScreens(page, selector, deadline) {
-  const cards = new Map(), boxes = new Map(), bands = [];
+  const cards = new Map(), where = new Map(), boxes = new Map(), bands = [];
   let overflow = 0;
   for (let screen = 0; screen < 3; screen++) {
     await page.evaluate(screen => window.scrollTo(0, screen * innerHeight), screen);
@@ -35,13 +76,16 @@ async function scanScreens(page, selector, deadline) {
       const box = el.getBoundingClientRect();
       return el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) && box.width > 1 && box.height > 1 &&
         box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth ?
-        [{index, key: el.dataset.key || String(index)}] : [];
+        [{index, key: el.dataset.key || String(index), keyed: Boolean(el.dataset.key)}] : [];
     }));
     for (const card of visible) {
-      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(1500, deadline - Date.now())));
+      where.set(card.key, card);
       // A partially visible image can be outside this viewport. Keep a loaded
-      // observation if any of the three screens actually displays the photo.
-      if (cards.get(card.key)?.photo !== 'loaded') cards.set(card.key, {key: card.key, photo});
+      // observation if any of the three screens actually displays the photo;
+      // one still downloading gets its single longer look after the scan.
+      if (['loaded', 'pending'].includes(cards.get(card.key)?.photo)) continue;
+      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(1500, deadline - Date.now())));
+      cards.set(card.key, {key: card.key, photo});
     }
     const geometry = await page.evaluate(selector => {
       const rect = el => {const r = el.getBoundingClientRect(); return {left: r.left, right: r.right,
@@ -60,6 +104,21 @@ async function scanScreens(page, selector, deadline) {
     if (!geometry.content) throw new Error('content area missing');
     const image = pixels(await boundedScreenshot(page, deadline));
     bands.push(...blankBands(image, geometry.content, geometry.scrollY));
+  }
+  // Paced photos keep arriving while we wait on any one of them: give those
+  // still downloading one more look, 20 s in all, before calling them broken.
+  const until = Math.min(deadline, Date.now() + 20000);
+  for (const card of cards.values()) {
+    if (card.photo !== 'pending') continue;
+    const {index, keyed} = where.get(card.key);
+    const at = keyed ? await page.locator(selector).evaluateAll((elements, key) =>
+      elements.findIndex(el => el.dataset.key === key), card.key) : index;
+    if (until - Date.now() > 0 && at >= 0) {
+      const element = page.locator(selector).nth(at);
+      await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
+      card.photo = await photoState(element, Math.max(1, until - Date.now()));
+    }
+    if (card.photo === 'pending') card.photo = 'broken';
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   return {photos: [...cards.values()], optical: {overflow, boxes: [...boxes.values()], bands}};
@@ -131,13 +190,21 @@ async function departmentProbe(page, doc) {
       if (!await more.count()) break;
       const count = await page.locator('#content .card[data-key]').count();
       await more.evaluate(button => button.click());
-      await page.waitForTimeout(100);
+      // A slow runner can take longer than one frame to render the next page.
+      for (let waited = 0; waited < 3000 && await page.locator('#content .card[data-key]').count() <= count; waited += 100)
+        await page.waitForTimeout(100);
       after = await keys();
       if (await page.locator('#content .card[data-key]').count() <= count) break;
     }
+    // Which rows differ, by category/condition only, so a flag says what to fix.
+    const shown = new Set(after), wanted = new Set(department.expected);
+    const describe = key => {const row = rows.get(key) || {};
+      return [row.category || 'other', ...(row.conditions || []), row.status || ''].filter(Boolean).join('/');};
     return {before, after, expected: department.expected,
       active: await tab.evaluate(tab => tab.classList.contains('active')),
-      allowed: department.group[1], categories: after.map(key => rows.get(key)?.category || 'other')};
+      allowed: department.group[1], categories: after.map(key => rows.get(key)?.category || 'other'),
+      missing: department.expected.filter(key => !shown.has(key)).slice(0, 5).map(describe),
+      extra: after.filter(key => !wanted.has(key)).slice(0, 5).map(describe)};
   } finally {
     await page.locator('#cattabs .cattab[data-i="0"]').click();
     await page.waitForTimeout(100);

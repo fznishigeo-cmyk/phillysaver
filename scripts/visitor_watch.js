@@ -3,7 +3,7 @@ const {routeRobotSearch, searchResponse} = require('./robot_search.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 const {execFile} = require('node:child_process');
-const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health} = require('./visitor_watch_logic.cjs');
+const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue} = require('./visitor_watch_logic.cjs');
 const {pixels, glare} = require('./browser_pixels.cjs');
 const {photoState, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
   dealPageProbe, boundedScreenshot} =
@@ -207,6 +207,16 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
     });
     await routeRobotSearch(context);
     watchContextErrors(context, origin, scene.errors, ignored, () => !closing);
+    // Photo URL -> what its request did, so a photo flag names its cause.
+    const photoRequests = new Map();
+    context.on('page', page => {
+      page.on('response', response => {
+        if (response.request().resourceType() === 'image') photoRequests.set(response.url(), `HTTP ${response.status()}`);
+      });
+      page.on('requestfailed', request => {
+        if (request.resourceType() === 'image') photoRequests.set(request.url(), 'request failed');
+      });
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(8000);
     if (options.now) await page.clock.setFixedTime(new Date(options.now));
@@ -262,13 +272,18 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
             img.decode().catch(() => {}), new Promise(resolve => setTimeout(resolve, timeout))]), Math.min(3000, remaining)); }
           catch { /* missing photo is a photos FLAG */ }
         }
-        const photo = await card.evaluate(el => ({key: el.dataset.key, loaded: [...el.querySelectorAll('img')].some(img => {
-          const box = img.getBoundingClientRect();
-          return img.complete && img.naturalWidth > 1 && img.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
-            box.width > 1 && box.height > 1 && box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
-        })}));
+        const photo = await card.evaluate(el => {
+          const img = el.querySelector('img');
+          return {key: el.dataset.key, src: img?.currentSrc || img?.src || '', complete: Boolean(img?.complete),
+            width: img?.naturalWidth || 0, loaded: [...el.querySelectorAll('img')].some(img => {
+              const box = img.getBoundingClientRect();
+              return img.complete && img.naturalWidth > 1 && img.checkVisibility({checkOpacity: true, checkVisibilityCSS: true}) &&
+                box.width > 1 && box.height > 1 && box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
+            })};
+        });
         if (photo.key !== scene.cards[i].key) {scene.errors.push('card order changed during capture'); break;}
         scene.cards[i].hasPhoto = photo.loaded;
+        if (!photo.loaded) scene.cards[i].photoIssue = photoIssue(photo, photoRequests.get(photo.src), rules, origin);
         await collectText(card, scene.text);
       }
       if (rules.excludeUsedOnAll) scene.text.used = await allUsedProbe(page, doc);
@@ -308,7 +323,8 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
             const detail = sample.locator('[data-deal-detail]');
             const image = detail.locator('img:not(.grid img)').first();
             if (await image.count()) await image.scrollIntoViewIfNeeded();
-            scene.photosDeep.deal = [{photo: await photoState(detail, 1500, 'img:not(.grid img)')}];
+            const photo = await photoState(detail, Math.max(1, Math.min(10000, deadline - Date.now())), 'img:not(.grid img)');
+            scene.photosDeep.deal = [{photo: photo === 'pending' ? 'broken' : photo}];
           }
           if (response?.status() !== 200) throw new Error(name + ' page did not return 200');
         } catch (error) {

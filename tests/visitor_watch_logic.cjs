@@ -5,7 +5,7 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const {EventEmitter} = require('node:events');
 const {QUERY, NAMES, BLOCK, rulesFromConfig, utilityMatch, checksForScene, assess, summary,
-  textFindings, dealLinkProblem, opticalProblems, health} =
+  textFindings, dealLinkProblem, opticalProblems, health, photoIssue} =
   require('../scripts/visitor_watch_logic.cjs');
 const {pixels, glare, blankBands} = require('../scripts/browser_pixels.cjs');
 const {headLinks, internalLinks, photoState, departmentProbe, inventorySearchProbe, allUsedProbe, firstScreenLinks,
@@ -487,12 +487,12 @@ test('dark screenshot waits for a delayed visible white image and treats decode 
     decode: () => new Promise(resolve => setTimeout(() => {white = true; resolve();}, 30))};
   try {
     global.document = {images: [image]}; global.innerWidth = 390; global.innerHeight = 844;
-    const page = {evaluate: async (fn, arg) => fn(arg),
-      screenshot: async options => {
-        assert.equal(options.animations, 'disabled'); assert.equal(options.caret, 'hide');
-        assert(options.timeout > 0 && options.timeout <= 3000, 'screenshot waits must be bounded');
-        screenshots++; return png(white ? 255 : 0);
-      }};
+    // Numeric args are the decode wait; the argument-less calls still/restore animations in the page.
+    const page = {evaluate: async (fn, arg) => typeof arg === 'number' ? fn(arg) : undefined,
+      context: () => ({newCDPSession: async () => ({send: async method => {
+        assert.equal(method, 'Page.captureScreenshot');
+        screenshots++; return {data: png(white ? 255 : 0).toString('base64')};
+      }})})};
     assert.equal(await firstScreenGlare(page, Date.now() + 1000), 1);
     assert.equal(screenshots, 1);
     image.decode = () => new Promise(() => {});
@@ -538,7 +538,7 @@ test('photo capture distinguishes absent, failed, hidden, offscreen, and natural
   try {
     assert.equal(await photoState(card), 'placeholder'); images = [image];
     assert.equal(await photoState(card), 'loaded'); image.complete = false;
-    assert.equal(await photoState(card), 'broken'); image.complete = true; image.naturalWidth = 0;
+    assert.equal(await photoState(card), 'pending', 'still downloading is not broken'); image.complete = true; image.naturalWidth = 0;
     assert.equal(await photoState(card), 'broken'); image.naturalWidth = 1; image.checkVisibility = () => false;
     assert.equal(await photoState(card), 'broken'); image.checkVisibility = () => true;
     image.getBoundingClientRect = () => ({width: 100, height: 100, top: 900, bottom: 1000, left: 0, right: 100});
@@ -827,19 +827,55 @@ test('visible text findings exclude hidden descendants and script/style source i
   } finally {if (saved === undefined) delete global.NodeFilter; else global.NodeFilter = saved;}
 });
 
-test('screenshots disable animation/caret waits, cap the remaining timeout and stop at the deadline', async () => {
-  let calls = 0;
-  const page = {screenshot: async options => {
-    calls++;
-    assert.equal(options.animations, 'disabled'); assert.equal(options.caret, 'hide');
-    assert(options.timeout > 0 && options.timeout <= 3000);
-    return Buffer.from('captured');
-  }};
+test('screenshots come from Chromium directly with animations stilled, cap the remaining timeout and stop at the deadline', async () => {
+  const fake = (data, hold = false) => {
+    const page = {calls: 0, evaluated: 0, sessions: 0, evaluate: async () => {page.evaluated++;},
+      context: () => ({newCDPSession: async target => {assert.equal(target, page); page.sessions++; return {
+        send: async (method, params) => {
+          assert.equal(method, 'Page.captureScreenshot'); assert.deepEqual(params, {format: 'png'});
+          page.calls++;
+          return hold ? new Promise(() => {}) : {data: Buffer.from(data).toString('base64')};
+        }};}})};
+    return page;
+  };
+  const page = fake('captured');
   assert.equal((await boundedScreenshot(page, Date.now() + 60000)).toString(), 'captured');
-  const soon = {screenshot: async options => {assert(options.timeout <= 100); return Buffer.from('soon');}};
-  assert.equal((await boundedScreenshot(soon, Date.now() + 100)).toString(), 'soon');
+  assert.equal((await boundedScreenshot(page, Date.now() + 60000)).toString(), 'captured');
+  assert.equal(page.sessions, 1, 'one CDP session per page');
+  assert.equal(page.evaluated, 4, 'animations stilled before and restored after every capture');
+  const held = fake('', true), started = Date.now();
+  await assert.rejects(boundedScreenshot(held, Date.now() + 100), /Timeout 100ms exceeded/);
+  assert(Date.now() - started < 1000, 'a stuck capture is bounded by the remaining time');
   await assert.rejects(boundedScreenshot(page, Date.now() - 1), /screenshot deadline/);
-  assert.equal(calls, 1, 'expired captures must not start another screenshot');
+  assert.equal(page.calls, 2, 'expired captures must not start another screenshot');
+});
+
+test('first-screen photo flags name the cause from the card and its request', () => {
+  const origin = 'https://wowpriced.com', hosts = {imageHosts: ['m.media-amazon.com']};
+  const photo = (src, patch = {}) => ({src, complete: true, width: 500, ...patch});
+  const amazon = 'https://m.media-amazon.com/images/I/a.jpg';
+  assert.equal(photoIssue(photo(''), undefined, hosts, origin), 'no photo URL');
+  assert.equal(photoIssue(photo('https://cdn.example.com/a.jpg'), 'request failed', hosts, origin),
+    'cdn.example.com not in image_hosts');
+  assert.equal(photoIssue(photo('https://wowpriced.com/p.png', {complete: false}), undefined, hosts, origin),
+    'wowpriced.com still loading', 'own photos never need an image_hosts entry');
+  assert.equal(photoIssue(photo(amazon), 'HTTP 404', hosts, origin), 'm.media-amazon.com HTTP 404');
+  assert.equal(photoIssue(photo(amazon, {complete: false}), 'request failed', hosts, origin), 'm.media-amazon.com request failed');
+  assert.equal(photoIssue(photo(amazon, {complete: false}), undefined, hosts, origin), 'm.media-amazon.com still loading');
+  assert.equal(photoIssue(photo(amazon, {width: 0}), 'HTTP 200', hosts, origin), 'm.media-amazon.com did not decode');
+  assert.equal(photoIssue(photo(amazon), 'HTTP 304', hosts, origin), 'm.media-amazon.com hidden or off screen');
+  const s = scene(); Object.assign(s.cards[23], {hasPhoto: false, photoIssue: 'm.media-amazon.com HTTP 404'});
+  assert.match(check('photos', s).detail, /Kitchen set 23 \(m\.media-amazon\.com HTTP 404\)/);
+});
+
+test('department flags say how many eligible cards showed and which kinds are missing or extra', () => {
+  const s = scene();
+  Object.assign(s.working.department, {after: ['beauty', 'soap'], categories: ['beauty', 'beauty'],
+    expected: ['beauty', 'cream', 'lotion'], missing: ['beauty/used', 'beauty'], extra: ['beauty/dead']});
+  const result = check('working', s);
+  assert(result.flag);
+  assert.match(result.detail, /department does not show its eligible published cards \(shows 2 of 3; missing e\.g\. beauty\/used, beauty; extra e\.g\. beauty\/dead\)/);
+  assert(!check('working', scene()).flag, 'a matching department stays clean');
 });
 
 test('internal HEADs are unique, at most 20 across views, same-origin only and do not follow redirects', async () => {
@@ -972,7 +1008,8 @@ test('browser working probes select populated departments, resolve every categor
   }};
   const department = await departmentProbe(page, {deals: rows});
   assert.deepEqual(department, {before: ['home', 'beauty'], after: ['beauty', 'used', 'open'],
-    expected: ['beauty', 'used', 'open'], active: true, categories: ['beauty', 'beauty', 'beauty'], allowed: ['beauty']});
+    expected: ['beauty', 'used', 'open'], active: true, categories: ['beauty', 'beauty', 'beauty'], allowed: ['beauty'],
+    missing: [], extra: []});
   assert.equal(tab, 0);
   assert.deepEqual(await inventorySearchProbe(page, {deals: [{item: 'Socks'}]}),
     {query: 'socks', matches: 2}); assert.equal(query, '');
