@@ -3,7 +3,6 @@ import json
 import re
 import socket
 import subprocess
-from pathlib import Path
 
 import httpx
 import pytest
@@ -155,7 +154,7 @@ def test_real_chromium_light_dark_phone_desktop(tmp_path, lazy):
     out, *_ = render(tmp_path, cfg, [make_deal(item="Steel kitchen kettle", codes=[],
         image_url="https://m.media-amazon.com/images/I/photo.jpg")])
     result = run_node("search_analyze_browser.cjs", out, "/opt/pw-browsers/chromium",
-                      Path("docs/research/analyze-search").resolve() / ("lazy" if lazy else "inline"))
+                      tmp_path / "shots" / ("lazy" if lazy else "inline"))  # not docs/research: runs must not rewrite it
     if result.returncode == 77:
         pytest.skip(result.stdout.strip())
     assert result.returncode == 0, result.stdout + result.stderr

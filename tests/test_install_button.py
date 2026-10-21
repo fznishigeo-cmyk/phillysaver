@@ -162,7 +162,7 @@ def test_real_chromium_installability_layout_and_screenshots(tmp_path):
     cfg.max_photoless_h = None
     out, *_ = render(tmp_path, cfg, sample_deals())
     result = subprocess.run(["node", str(ROOT / "tests/install_button_browser.cjs"), str(out),
-                             str(ROOT / "docs/research/install-button")],
+                             str(tmp_path / "shots")],  # docs/research shots are refreshed by hand, not by every run
                             capture_output=True, text=True, timeout=120)
     if result.returncode == 77:
         pytest.skip(result.stdout.strip())
