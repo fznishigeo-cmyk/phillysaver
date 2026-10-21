@@ -43,7 +43,7 @@ are preserved. Paused web feeds are included; feed settings stay unchanged.
 - [ ] [Free Stuff Finder](https://www.freestufffinder.com/) (`free_stuff_finder`) — Matched sender: —
 - [ ] [Freebies2Deals](https://www.freebies2deals.com/) (`freebies2deals`) — Matched sender: —
 - [ ] [Frugal Coupon Living](https://www.frugalcouponliving.com/) (`frugal_coupon_living`) — Matched sender: —
-- [ ] [GottaDEAL](https://www.gottadeal.com/) (`gottadeal`) — Matched sender: —
+- [ ] [GottaDEAL](https://www.gottadeal.com/) (`gottadeal`) — Matched sender: email@gottadeal.email
 - [ ] [Hip2Save](https://hip2save.com/) (`hip2save`) — Matched sender: —
 - [ ] [Hip2Save](https://hip2save.com/) (`hip2save_amazon`) — Matched sender: —
 - [ ] [Hip2Save](https://hip2save.com/) (`hip2save_freebies`) — Matched sender: —

@@ -421,6 +421,7 @@ sources:
     allowed_html: false
     fast_lane: false
     notes: "E-commerce promo codes, doorbusters, digital freebies."
+    newsletter_from: ["email@gottadeal.email"]   # its newsletter mails from gottadeal.email (growth report, 2026-10-20)
     crawl_permission: "operator reports written email permission from this site (2026-10-10; condition: source keeps affiliate credit, which every published deal honors via the credit link). Correspondence on the operator's file. Bypass applies to this host only."
   - name: offers_blog
     display_name: "Offers.com"
