@@ -213,6 +213,8 @@ amazon_price_cap_usd: 50
 tools_new_tab: true  # operator 2026-10-20 ~16:05Z: "when i click Ai Analysis or All Discount button, please make it open in a new window" — "new tab i mean"
 tool_buttons_outside: true  # operator 2026-10-20 ~20:25Z: "put the AI analysis in all discount buttons ... outside of the search bar ... name the buttons discount finder ... and deal checker" — phone: blue Discount Finder → always there, same-size Deal Checker → underneath ("→ arrows for both buttons")
 checker_similar_heading: true  # operator 2026-10-20 ~16:20Z: Deal Checker yellow → the product itself; "Top sellers like this on Amazon" → "make this a button thats yellow.. that takes to see similar deals" (search by the product name)
+checker_similar_typed_words: true  # operator 2026-10-21 ~02:20Z (screenshot: "headphones" → Amazon search for "Apple EarPods Headphones with USB-C Plug"): "it should have just searched headphones" — See similar deals uses the typed words; a pasted link still uses the product name
+price_age_minutes: true  # operator 2026-10-21 ~02:25Z: "44 min ago is way better" (was "price checked 2638 sec ago")
 tool_faq_wording: true  # operator 2026-10-20 ~16:45Z: "Yes. This tool is free to use. (DONT MENTION THE OTHER TOOL)" ... "opens Amazon's best discount results" — "for both checkers"
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 timer_pill_ring: true  # operator 2026-10-19 ~16:10Z, option A: "draw the countdown as a ring around the timer pill itself"

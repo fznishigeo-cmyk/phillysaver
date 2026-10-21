@@ -407,6 +407,8 @@ class AppConfig:
     tools_new_tab: bool = False
     tool_buttons_outside: bool = False
     checker_similar_heading: bool = False
+    checker_similar_typed_words: bool = False
+    price_age_minutes: bool = False
     tool_faq_wording: bool = False
     amazon_price_cap_usd: float = 50.0
     phone_tagline_count: bool = False
@@ -1189,6 +1191,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.checker_similar_heading = g("checker_similar_heading", default=False)
     if type(cfg.checker_similar_heading) is not bool:
         raise ValueError("checker_similar_heading must be a boolean")
+    for name in ("checker_similar_typed_words", "price_age_minutes"):
+        setattr(cfg, name, g(name, default=False))
+        if type(getattr(cfg, name)) is not bool:
+            raise ValueError(f"{name} must be a boolean")
     cfg.tools_new_tab = g("tools_new_tab", default=False)
     if type(cfg.tools_new_tab) is not bool:
         raise ValueError("tools_new_tab must be a boolean")

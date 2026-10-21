@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 
 from ..savings import TOOL_LIST_BADGE_JS, TOOL_FACT_BADGE_JS
-from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020, buttons_to_tools, amazon_price_cap, checker_similar_heading, tool_faq_wording
+from . import search_analyze, search_boost, seo, tracking, tool_hero, tool_pages_1020, buttons_to_tools, amazon_price_cap, checker_similar_heading, tool_faq_wording, checker_fixes_1021
 
 TEMPLATES = Path(__file__).with_name("templates")
 PAGES = {
@@ -77,7 +77,8 @@ def script(cfg):
         result = tool_pages_1020.script(result)
     elif tool_hero.enabled(cfg):
         result = tool_hero.script(result)
-    return amazon_price_cap.cap(checker_similar_heading.script(buttons_to_tools.tool_script(result, cfg), cfg), cfg)
+    result = checker_similar_heading.script(buttons_to_tools.tool_script(result, cfg), cfg)
+    return amazon_price_cap.cap(checker_fixes_1021.script(result, cfg), cfg)
 
 
 def _tracking(cfg):

@@ -34,6 +34,7 @@ def test_defaults_history_and_shipped(tmp_path):
 
 def test_script_moves_similar_deals_to_the_heading(tmp_path):
     cfg = load_config()
+    cfg.checker_similar_typed_words = False  # this button's original name-first search; typed words has its own test
     on = tool_pages.script(cfg)
     assert "toolButton(toolAmazon(item.asin), lead ? 'See it on Amazon →' : 'View at Amazon', 'search_amazon')" in on
     assert "toolSimilar(item), 'See similar deals on Amazon →'" not in on

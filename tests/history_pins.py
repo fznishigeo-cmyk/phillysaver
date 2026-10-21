@@ -201,6 +201,8 @@ def pre_task_290_install_raw(config):
     config.pop("tool_buttons_outside", None)
     config.pop("timer_center", None)
     config.pop("search_focus_ring_keyboard_only", None)
+    config.pop("checker_similar_typed_words", None)
+    config.pop("price_age_minutes", None)
     pre_keepa_focus_finder_raw(config)
     pre_hide_deal_site_links_raw(config)
     config.pop("tool_pages_1020", None)
@@ -554,7 +556,15 @@ def pre_tool_buttons_outside(cfg):
 
 def pre_search_focus_ring(cfg):
     """Before the search box ring was limited to keyboard (Tab) focus (operator 2026-10-21)."""
+    pre_checker_fixes_1021(cfg)
     cfg.search_focus_ring_keyboard_only = False
+    return cfg
+
+
+def pre_checker_fixes_1021(cfg):
+    """Before similar deals used the typed words and the price age read in minutes (operator 2026-10-21)."""
+    cfg.checker_similar_typed_words = False
+    cfg.price_age_minutes = False
     return cfg
 
 
