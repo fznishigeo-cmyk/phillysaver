@@ -1235,9 +1235,10 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     from .. import product_shadow
 
     shadow_run = run_key or "publish:" + iso(now)
+    # OFF (None) keeps the previous call exactly; ON collects contributor keys.
     also_at, lowest, shadow = product_offers.evaluate(
         db, cfg, now, deal_rows, source_deals, paths, shadow_run,
-        offsite_protected_keys=offsite_protected_keys)
+        **({} if offsite_protected_keys is None else {"offsite_protected_keys": offsite_protected_keys}))
     original_facts = {d["dedupe_key"]: d for d in db.all_deals() + source_deals}
     for d in deal_rows:
         path = paths[d["key"][:8]]
