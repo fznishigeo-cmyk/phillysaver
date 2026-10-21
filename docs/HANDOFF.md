@@ -1,4 +1,4 @@
-# Handoff — state of wowpriced.com (updated 2026-10-20)
+# Handoff — state of wowpriced.com (updated 2026-10-21)
 
 Keep this file current: whoever stops working updates it in their last commit.
 
@@ -244,6 +244,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Off-site unseen expiry (Codex task 365, 2026-10-21; uncommitted, OFF):**
+  Strict `retention.offsite_unseen_days` defaults/ships null; integer 1–3650 opts
+  in. Current render selections, retained pages, public aggregate contributors
+  and live IndexNow receipts protect rows; incomplete mappings keep every
+  non-dead row. Uses existing 64-row transactions, cursor, run allowance and
+  shared maintenance budget with 337 OFF/ON. Sightings/recheck samples expire;
+  independent product/history facts and all send/replay guards survive, with
+  lifetime yield anchors restored on re-sighting. OFF matched pre-change DB
+  and publication bytes in three modes. Synthetic 33,919-deal measurement:
+  N=7 saves **2,554,343 gzip bytes**, N=3 **6,879,986**, eight bounded runs each;
+  production savings/timing remain unmeasured. See
+  [measurement and dependency audit](research/offsite-expiry-365.md).
+  Relevant regression run: **667 passed, 1 browser skip**; final publication
+  recheck **392 passed, 1 browser skip**, then **4/4** expanded guard cases.
+  No full suite, live calls, commit or push;
+  Claude owns review/full suite, operator owns enabling the switch.
 - **Homepage buttons to tools (Codex task 344, 2026-10-20; uncommitted):**
   Strict `buttons_to_tools` defaults false/ships true; three pre-edit OFF hashes retained.
   Home/event buttons use native tool links with raw `?q=`; tools auto-run once per load.

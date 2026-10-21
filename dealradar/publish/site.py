@@ -1398,10 +1398,12 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         public.append("join.html")
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
+    offsite_keys = set() if cfg.offsite_unseen_days is not None else None
     seo_paths, seo_wall = seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
                                      spotlight=spotlight, deal_pages=deal_pages,
                                      products=products,
-                                     run_key=(last_run or {}).get("run_key"))
+                                     run_key=(last_run or {}).get("run_key"),
+                                     offsite_protected_keys=offsite_keys)
     checker_summary = {}
     if cfg.checker["enabled"]:
         checker_summary = checker.publish(out, cfg, now, checker.build(
@@ -1542,7 +1544,20 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     audit_wall = seo.home_order(audit_wall, cfg.front_page)
     accuracy.publish(db, spotlight + audit_wall, now,
                      (last_run or {}).get("run_key") or getattr(db, "accuracy_run_key", None) or iso(now))
+    offsite = {}
+    if cfg.offsite_unseen_days is not None:
+        from ..offsite_expiry import protected_keys
+        try:
+            offsite["offsite_protected_keys"] = protected_keys(
+                db, serialized + spotlight + deal_pages[1], products)
+            if offsite["offsite_protected_keys"] is not None:
+                offsite["offsite_protected_keys"].update(offsite_keys)
+        except (ValueError, TypeError, KeyError):
+            # Unreadable surface facts cannot establish absence. The tail
+            # retains every non-dead row until a complete proof is available.
+            offsite["offsite_protected_keys"] = None
     return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+            **offsite,
             "unpublished_photoless": unpublished_photoless,
             "hidden_deal_site_links": len(hidden_links),
             "hidden_deal_site_links_by_credit": hidden_by_credit,

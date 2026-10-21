@@ -697,6 +697,7 @@ class AppConfig:
     posts_seen_days: int = 30
     post_parses_days: int = 2
     deals_days: int = 14
+    offsite_unseen_days: int | None = None
     llm_calls_days: int = 35
     run_stats_days: int = 60
     http_cache_days: int = 30
@@ -1787,7 +1788,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.outgoing_days = int(g("retention", "outgoing_days", default=cfg.outgoing_days))
     for name in ("indexnow_batch_versions_days", "appeal_scores_days",
                  "accuracy_samples_days", "deal_click_shown_days", "source_audit_posts_days",
-                 "keepa_recheck_history_samples"):
+                 "keepa_recheck_history_samples", "offsite_unseen_days"):
         value = g("retention", name, default=None)
         if value is not None and (type(value) is not int or not 1 <= value <= 3650):
             raise ValueError(f"retention.{name} must be an integer in 1..3650 or null")

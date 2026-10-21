@@ -130,7 +130,7 @@ def blocks(live: list[dict], source: list[dict], paths: dict[str, str], cfg=None
     return result
 
 
-def evaluate(db, cfg, now, pages, source, paths, run_key):
+def evaluate(db, cfg, now, pages, source, paths, run_key, *, offsite_protected_keys=None):
     selected, pairs = comparisons(pages, source, paths, cfg)
     eligible = _eligible(pages, source, paths)
     original_facts = {d["dedupe_key"]: d for d in db.all_deals() + source}
@@ -145,6 +145,8 @@ def evaluate(db, cfg, now, pages, source, paths, run_key):
         fact = lowest_seen(histories[product_id], condition(facts), now)
         if fact:
             lowest[key] = fact
+            if offsite_protected_keys is not None and cfg.product_entities_lowest_seen_enabled:
+                offsite_protected_keys.update(row["dedupe_key"] for row in histories[product_id])
     counts = {kind: len({p["page_key"] for p in pairs if p["shown"] and p["match"] == kind})
               for kind in MATCH_TYPES}
     blocked = {}

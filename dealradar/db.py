@@ -689,6 +689,8 @@ class DB:
              final_price, pct_at_checkout, abs_savings,
              online_only, expires_at, iso(now), iso(now)),
         )
+        from .offsite_expiry import restore
+        restore(self, dedupe_key)
         self._attach_product(dedupe_key)
         self.conn.commit()
         return int(cur.lastrowid)
@@ -1479,6 +1481,7 @@ class DB:
               indexnow_batch_versions_days: int | None = None,
               appeal_scores_days: int | None = None, appeal_scores_ttl_h: float = 72,
               state_retention: dict | None = None,
+              offsite_protected_keys: set[str] | None = None,
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
               fast_lane: bool = False, deadline: float | None = None,
@@ -1532,11 +1535,13 @@ class DB:
         self.conn.execute(
             "DELETE FROM post_parses WHERE parsed_at < ?",
             (iso(now - timedelta(days=post_parses_days)),))
-        # Only DEAD deals are pruned, deals_days after they died. A live deal
-        # is never removed for its age (operator call, 2026-10-11): Amazon
+        # By default only DEAD deals are pruned, deals_days after they died.
+        # A live deal is never removed for its age (operator call, 2026-10-11): Amazon
         # "used - like new" offers stay up until someone buys them, so a
         # deal leaves the wall only when it is genuinely over (its expiry
         # passed, its post says so, or a live price check found it gone).
+        # Optional off-site expiry is handled by the bounded inventory sweep;
+        # the current render's protected rows never expire for their age.
         if state_retention is None:
             self.conn.execute(
                 "DELETE FROM deals WHERE status = 'dead' AND"
@@ -1608,8 +1613,12 @@ class DB:
             from .state_retention import maintain
             state_result = maintain(self, now, run_key=run_key, options=state_retention,
                                     posts_seen_days=posts_seen_days, deals_days=deals_days,
-                                    deadline=deadline if state_deadline is None else state_deadline)
+                                    deadline=deadline if state_deadline is None else state_deadline,
+                                    offsite_protected_keys=offsite_protected_keys)
             log.info("state maintenance: %s", state_result)
+            if (days := state_retention.get("offsite_unseen_days")) is not None:
+                from .offsite_expiry import report
+                report(self, now, days, offsite_protected_keys, run_key)
         if incremental_cache_enabled:
             maintenance = self.prune_http_cache(
                 now, run_key=run_key, days=http_cache_days,

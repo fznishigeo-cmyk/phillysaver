@@ -1271,6 +1271,7 @@ retention:
   # encrypted state.db that is pushed to the data branch every run.
   post_parses_days: 2
   deals_days: 14             # DEAD deals are deleted this long after they died; a live deal is never removed for its age
+  offsite_unseen_days: null  # OFF. Optional 1..3650: expire unseen non-dead rows only after a full render proves them off-site.
   accuracy_samples_days: 9  # Legacy/OFF window; ON uses accuracy_detail_days and accuracy_last_per_deal.
   deal_click_shown_days: 8   # Seven-day learner + margin; a longer configured lookback always wins.
   source_audit_posts_days: 9  # Legacy/OFF window; ON uses audit_detail_days (reader minimum 9).

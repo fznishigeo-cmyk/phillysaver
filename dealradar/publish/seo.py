@@ -593,7 +593,7 @@ def _site_floor(cfg) -> float:
     return min(cfg.min_pct, getattr(cfg, "site_show_from_pct", cfg.min_pct))
 
 
-def week_stats(db, cfg, now: datetime) -> dict[str, dict[str, Any]]:
+def week_stats(db, cfg, now: datetime, *, offsite_protected_keys=None) -> dict[str, dict[str, Any]]:
     """Per hub: the deals first seen in the last 7 days that clear every
     publish gate at the site floor (alive or dead since), their median % off
     and how many 2+ sources confirmed. Historical context only; current
@@ -608,6 +608,8 @@ def week_stats(db, cfg, now: datetime) -> dict[str, dict[str, Any]]:
         if seen is not None and seen >= since \
                 and rank.is_publishable(dict(d, status="alive"), cfg, min_pct=floor)[0]:
             week.append(d)
+            if offsite_protected_keys is not None:
+                offsite_protected_keys.add(d["dedupe_key"])
     out = {}
     for _label, group, slug in HUB_GROUPS:
         rows = [d for d in week if in_group(d, group)]
@@ -1110,7 +1112,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             source_deals: list[dict[str, Any]], *, spotlight: list[dict[str, Any]] | None = None,
             deal_pages: tuple[dict[str, str], list[dict[str, Any]], dict[str, str], dict[str, int]],
             products: dict | None = None,
-            run_key: str | None = None) -> tuple[list[str], str]:
+            run_key: str | None = None, offsite_protected_keys=None) -> tuple[list[str], str]:
     """Emit the wall, hubs and deal pages; return paths and the static wall.
 
     publish_sitemap reads the final tracked pages for dates and the audit.
@@ -1184,7 +1186,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
             for path, _name in events:
                 headers.write(f"\n{path}*\n  Cache-Control: no-cache\n")
 
-    stats, copy = week_stats(db, cfg, now), _hub_copy(cfg)
+    stats, copy = week_stats(db, cfg, now, offsite_protected_keys=offsite_protected_keys), _hub_copy(cfg)
     actions = (TEMPLATES_DIR / "deal-actions.js").read_text(encoding="utf-8")
     if inventory.enabled(cfg):
         actions = inventory.deal_actions(actions)
@@ -1234,7 +1236,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
 
     shadow_run = run_key or "publish:" + iso(now)
     also_at, lowest, shadow = product_offers.evaluate(
-        db, cfg, now, deal_rows, source_deals, paths, shadow_run)
+        db, cfg, now, deal_rows, source_deals, paths, shadow_run,
+        offsite_protected_keys=offsite_protected_keys)
     original_facts = {d["dedupe_key"]: d for d in db.all_deals() + source_deals}
     for d in deal_rows:
         path = paths[d["key"][:8]]

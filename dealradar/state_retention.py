@@ -25,7 +25,7 @@ def options(cfg):
     """Omitted knobs preserve bulk legacy expiry; reader windows are floors."""
     if not (cfg.state_retention_337 or cfg.compact_deal_payloads or cfg.compact_accuracy_samples or cfg.compact_click_exposure or any(v is not None for v in (
             cfg.accuracy_samples_days, cfg.deal_click_shown_days, cfg.keepa_recheck_history_samples,
-            cfg.source_audit_posts_days))):
+            cfg.source_audit_posts_days, cfg.offsite_unseen_days))):
         return None
     from .clicks import settings
 
@@ -50,6 +50,8 @@ def options(cfg):
             "audit_detail_days", "audit_hot_days", "click_raw_days", "accuracy_detail_days", "accuracy_last_per_deal")}
         result["accuracy_days"] = cfg.accuracy_detail_days
         result["audit_days"] = max(9, cfg.audit_detail_days)
+    if cfg.offsite_unseen_days is not None:
+        result["offsite_unseen_days"] = cfg.offsite_unseen_days
     return result
 
 
@@ -57,7 +59,8 @@ class _Deferred(Exception):
     pass
 
 
-def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline=None):
+def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline=None,
+             offsite_protected_keys=None):
     """Round-robin 64-row transactions, including durable cursor/run allowance.
 
     Expiry-index scans touch only expired samples/clicks/posts. Inventory and
@@ -66,6 +69,9 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
     This is cooperative, not a hard SQLite wall-clock timeout.
     """
     validate_limits(options["max_rows"], options["budget_s"])
+    from . import offsite_expiry
+    offsite_days = options.get("offsite_unseen_days")
+    offsite_expiry.validate_days(offsite_days)
     if json.loads(db.conn.execute("SELECT state_maintenance FROM run_stats WHERE run_key=?", (run_key,)).fetchone()[0]).get("retired"):
         return {"tables": {}, "deferred": False, "elapsed_s": 0.0}
     start = time.monotonic()
@@ -280,6 +286,16 @@ def maintain(db, now, *, run_key, options, posts_seen_days, deals_days, deadline
                             payload = json.loads(row["payload"])
                             delete = (row["status"] == "dead" and
                                       (payload.get("died_at") or row["last_seen_at"]) < deals_cutoff)
+                            if (offsite_days is not None and row["status"] != "dead"
+                                    and offsite_protected_keys is not None
+                                    and row["dedupe_key"] not in offsite_protected_keys
+                                    and (seen := parse_iso(row["last_seen_at"])) is not None
+                                    and seen < now - timedelta(days=offsite_days)):
+                                offsite_expiry.retire(db, row)
+                                expired = counts.setdefault("offsite_expired", {})
+                                status = offsite_expiry.status_group(row["status"])
+                                expired[status] = expired.get(status, 0) + 1
+                                delete = True
                             if not delete and options["compact_deals"]:
                                 replacement = db._deal_payload(payload, row["id"])
                                 if replacement != row["payload"]:
