@@ -523,6 +523,14 @@ test('deep photo flags distinguish placeholders/broken images; page switches are
     assert(!check('photos_deep', good).flag, 'OFF pages are report-only');
   }
   assert(check('photos_deep', scene({photosDeep: undefined})).flag);
+  // Still queued behind the watcher's own pacing: reported, never a flag.
+  const queued = scene(); queued.photosDeep.home.push({photo: 'pending'});
+  queued.photosDeep.category = [{photo: 'loaded'}, {photo: 'pending'}]; queued.photosDeep.deal = [{photo: 'pending'}];
+  const gated = {...rules, categoryPhotos: true, dealPhotos: true};
+  assert(!check('photos_deep', queued, null, gated).flag);
+  assert.match(check('photos_deep', queued, null, gated).detail, /3 still downloading \(paced\)/);
+  queued.photosDeep.category[1].photo = 'placeholder';
+  assert.match(check('photos_deep', queued, null, gated).detail, /category: missing\/broken photo/);
   const configured = rulesFromConfig({quality: {visitor_watch: {category_photos: true,
     deal_photos: 'false', exclude_used_on_all: true, image_hosts: ['target.scene7.com']}}});
   assert(configured.categoryPhotos); assert(!configured.dealPhotos); assert(configured.excludeUsedOnAll);

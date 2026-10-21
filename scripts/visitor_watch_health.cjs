@@ -84,7 +84,9 @@ async function scanScreens(page, selector, deadline) {
       // observation if any of the three screens actually displays the photo;
       // one still downloading gets its single longer look after the scan.
       if (['loaded', 'pending'].includes(cards.get(card.key)?.photo)) continue;
-      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(1500, deadline - Date.now())));
+      // A short first look: pending photos share one bounded wait after the scan
+      // (live 2026-10-21: 1.5 s per paced card ran desktop past its 120 s).
+      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(250, deadline - Date.now())));
       cards.set(card.key, {key: card.key, photo});
     }
     const geometry = await page.evaluate(selector => {
@@ -106,19 +108,19 @@ async function scanScreens(page, selector, deadline) {
     bands.push(...blankBands(image, geometry.content, geometry.scrollY));
   }
   // Paced photos keep arriving while we wait on any one of them: give those
-  // still downloading one more look, 20 s in all, before calling them broken.
-  const until = Math.min(deadline, Date.now() + 20000);
+  // still downloading one more look, 8 s in all. Any still queued behind our
+  // own 1 request/second pacing stay "pending" (reported, not a site fault);
+  // a photo that failed to load is "broken".
+  const until = Math.min(deadline, Date.now() + 8000);
   for (const card of cards.values()) {
-    if (card.photo !== 'pending') continue;
+    if (card.photo !== 'pending' || until - Date.now() <= 0) continue;
     const {index, keyed} = where.get(card.key);
     const at = keyed ? await page.locator(selector).evaluateAll((elements, key) =>
       elements.findIndex(el => el.dataset.key === key), card.key) : index;
-    if (until - Date.now() > 0 && at >= 0) {
-      const element = page.locator(selector).nth(at);
-      await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
-      card.photo = await photoState(element, Math.max(1, until - Date.now()));
-    }
-    if (card.photo === 'pending') card.photo = 'broken';
+    if (at < 0) continue;
+    const element = page.locator(selector).nth(at);
+    await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
+    card.photo = await photoState(element, Math.max(1, until - Date.now()));
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   return {photos: [...cards.values()], optical: {overflow, boxes: [...boxes.values()], bands}};

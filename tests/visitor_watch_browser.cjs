@@ -111,11 +111,14 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
     assert(glare(still) > .9, 'finite animations are captured finished, as with animations: disabled');
     assert.equal(await loading.evaluate(() => document.getAnimations()[0].playState), 'finished');
     await loading.close();
-    // A paced photo that arrives after the first look is loaded; one that never arrives is broken.
+    // A paced photo that arrives after the first look is loaded; one still queued is
+    // pending (reported, never a flag); a failed photo is broken (the bug= cases below).
     const paced = await context.newPage();
     await paced.goto('https://wowpriced.test/paced', {waitUntil: 'domcontentloaded'});
-    const pacedScan = await scanScreens(paced, '.card', Date.now() + 6000);
-    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])), {slow: 'loaded', held: 'broken'});
+    const pacedStarted = Date.now();
+    const pacedScan = await scanScreens(paced, '.card', Date.now() + 30000);
+    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])), {slow: 'loaded', held: 'pending'});
+    assert(Date.now() - pacedStarted < 12000, 'one shared 8 s wait, not one per card or screen');
     await paced.close();
     const page = await context.newPage();
     await page.goto('https://wowpriced.test/glare', {waitUntil: 'domcontentloaded'});

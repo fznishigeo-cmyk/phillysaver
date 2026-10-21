@@ -17,6 +17,7 @@ quality:
     image_hosts: [m.media-amazon.com, images-na.ssl-images-amazon.com, images.amazon.com,
                   i5.walmartimages.com, target.scene7.com, t.scene7.com, pisces.bbystatic.com,
                   d2b8wt72ktn9a2.cloudfront.net, d3gqasl9vmjfy8.cloudfront.net,
+                  d3gqasl9vmjfd8.cloudfront.net,  # Woot photos as published (visitor watch #156)
                   dks.scene7.com, static.nike.com, hip2save.com, i0.wp.com]
   phone_budget:
     enabled: false             # proposed offline/lab gates; review before activation

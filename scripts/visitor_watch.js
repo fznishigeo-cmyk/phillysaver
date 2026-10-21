@@ -323,8 +323,8 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
             const detail = sample.locator('[data-deal-detail]');
             const image = detail.locator('img:not(.grid img)').first();
             if (await image.count()) await image.scrollIntoViewIfNeeded();
-            const photo = await photoState(detail, Math.max(1, Math.min(10000, deadline - Date.now())), 'img:not(.grid img)');
-            scene.photosDeep.deal = [{photo: photo === 'pending' ? 'broken' : photo}];
+            scene.photosDeep.deal = [{photo: await photoState(detail, Math.max(1, Math.min(5000, deadline - Date.now())),
+              'img:not(.grid img)')}];
           }
           if (response?.status() !== 200) throw new Error(name + ' page did not return 200');
         } catch (error) {

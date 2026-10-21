@@ -150,12 +150,18 @@ function checksForScene(scene, previous, rules) {
   const placeholders = (deep?.home || []).filter(card => card.photo === 'placeholder').length;
   const broken = (deep?.home || []).filter(card => card.photo === 'broken').length;
   if (placeholders || broken) photoProblems.push(`home: ${placeholders} store-tile placeholders; ${broken} broken/hidden photos`);
+  // "pending" = still queued behind the watcher's own pacing: reported, never a flag.
+  const bad = card => card.photo === 'broken' || card.photo === 'placeholder';
   for (const [page, enabled] of [['category', rules.categoryPhotos], ['deal', rules.dealPhotos]]) {
-    if (enabled && (!deep?.[page]?.length || deep[page].some(card => card.photo !== 'loaded')))
+    if (enabled && (!deep?.[page]?.length || deep[page].some(bad)))
       photoProblems.push(page + ': missing/broken photo');
   }
+  const pending = ['home', 'category', 'deal'].reduce((sum, page) =>
+    sum + (deep?.[page] || []).filter(card => card.photo === 'pending').length, 0);
   add('photos_deep', photoProblems.length, photoProblems.join('; ') ||
-    `${deep?.home?.length || 0} home photos loaded; category/deal gates ${Boolean(rules.categoryPhotos)}/${Boolean(rules.dealPhotos)}`);
+    `${(deep?.home || []).filter(card => card.photo === 'loaded').length} home photos loaded` +
+    (pending ? `; ${pending} still downloading (paced)` : '') +
+    `; category/deal gates ${Boolean(rules.categoryPhotos)}/${Boolean(rules.dealPhotos)}`);
   const layout = opticalProblems(scene.optical);
   for (const sample of scene.pageOptical || []) layout.push(...opticalProblems(sample).map(problem => sample.page + ': ' + problem));
   add('optical', layout.length, layout.join('; ') || 'no overflow, overlaps, stretched cards or blank bands');
