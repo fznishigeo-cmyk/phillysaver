@@ -13,7 +13,8 @@ function rulesFromConfig(config) {
     amazonTag: String(config.affiliate?.amazon_tag || ''),
     imageHosts: Array.isArray(health.image_hosts) ? health.image_hosts : [],
     categoryPhotos: health.category_photos === true, dealPhotos: health.deal_photos === true,
-    excludeUsedOnAll: health.exclude_used_on_all === true};
+    excludeUsedOnAll: health.exclude_used_on_all === true,
+    usedTabOnly: config.publish?.front_page?.used_tab_only === true};
 }
 
 const DURATION = String.raw`90(?:[-\u2010-\u2015]|\s+)days?`;

@@ -221,7 +221,8 @@ test('real YAML parser scopes configured rules and preserves inline phrases/excl
   assert.deepEqual(shipped.utilityGroups, config.publish.front_page.impulse?.utility_groups || {});
   assert.equal(shipped.rotationEnabled, Number(config.site?.drop_rotation_windows || 0) > 0);
   assert.deepEqual(rulesFromConfig({}), {amazonTag: '', rotationEnabled: false, utilityGroups: {},
-    imageHosts: [], categoryPhotos: false, dealPhotos: false, excludeUsedOnAll: false});
+    imageHosts: [], categoryPhotos: false, dealPhotos: false, excludeUsedOnAll: false, usedTabOnly: false});
+  assert.equal(shipped.usedTabOnly, config.publish.front_page.used_tab_only === true);
   assert.equal(rulesFromConfig({site: {drop_rotation_windows: 3}}).rotationEnabled, true);
   for (const image_hosts of ['images.test', '*', true, {}])
     assert.deepEqual(rulesFromConfig({quality: {visitor_watch: {image_hosts}}}).imageHosts, []);
@@ -969,6 +970,23 @@ test('identical eligible department cards before filtering and across consecutiv
     assert(!current.checks.some(row => row.flag)); assert.deepEqual(current.repeated, []);
     prior = JSON.parse(JSON.stringify(current));
   }
+});
+
+test('used_tab_only departments leave used/open-box rows to the Used tab (live since 2026-10-17)', async () => {
+  const groups = [['Trending', null, ''], ['All', null, ''], ['Used', 'USED', 'used'], ['Beauty', ['beauty'], 'beauty']];
+  const rows = [{key: 'cream', category: 'beauty'}, {key: 'soap', category: 'beauty'},
+    {key: 'used-cream', category: 'beauty', conditions: ['used']}, {key: 'open-soap', category: 'beauty', conditions: ['open_box']}];
+  const shown = rows.filter(row => !row.conditions);  // what the site renders in Beauty
+  const clean = await departmentProbe(departmentPage(groups, shown, ['cream']), {deals: rows}, {usedTabOnly: true});
+  assert.deepEqual(clean.expected, ['cream', 'soap']);
+  const s = scene(); s.working.department = clean;
+  assert(!check('working', s).flag);
+  const old = await departmentProbe(departmentPage(groups, shown, ['cream']), {deals: rows});
+  const flagged = scene(); flagged.working.department = old;
+  assert.match(check('working', flagged).detail, /shows 2 of 4; missing e\.g\. beauty\/used, beauty\/open_box\)/);
+  assert.equal(rulesFromConfig({publish: {front_page: {used_tab_only: true}}}).usedTabOnly, true);
+  assert.equal(rulesFromConfig({publish: {front_page: {used_tab_only: 'true'}}}).usedTabOnly, false);
+  assert.equal(rulesFromConfig({}).usedTabOnly, false);
 });
 
 test('department comparison loads the complete set and flags stalled pagination without looping', async () => {

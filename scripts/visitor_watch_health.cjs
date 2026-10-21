@@ -157,7 +157,7 @@ async function firstScreenLinks(page) {
   }).map(link => link.href));
 }
 
-async function departmentProbe(page, doc) {
+async function departmentProbe(page, doc, rules = {}) {
   const before = await page.locator('#content .card[data-key]').evaluateAll(cards => cards.map(card => card.dataset.key));
   // Read the actual published taxonomy rather than maintaining a second list.
   const groups = await page.locator('script').evaluateAll(scripts => {
@@ -168,8 +168,10 @@ async function departmentProbe(page, doc) {
     return [];
   });
   const rows = new Map((doc.deals || []).map(row => [row.key || row.dedupe_key, row]));
+  // publish.front_page.used_tab_only: used/open-box rows show only in the Used tab.
+  const used = row => (row.conditions || []).some(condition => ['used', 'open_box'].includes(condition));
   const eligible = [...rows.values()].filter(row => row.status !== 'dead' && !row.locked &&
-    !(row.spotlight && row.pct_at_checkout == null));
+    !(row.spotlight && row.pct_at_checkout == null) && !(rules.usedTabOnly && used(row)));
   const departments = groups.flatMap((group, index) => Array.isArray(group[1]) ?
     [{group, index, expected: eligible.filter(row => group[1].includes(row.category || 'other'))
       .map(row => row.key || row.dedupe_key)}] : [])

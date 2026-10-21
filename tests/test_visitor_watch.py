@@ -254,6 +254,16 @@ readConfig('config.yaml').then(config => {
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_watch_reads_the_live_used_tab_only_switch():
+    result = node(['-e', """
+const {readConfig} = require('./scripts/visitor_watch.js');
+const {rulesFromConfig} = require('./scripts/visitor_watch_logic.cjs');
+readConfig('config.yaml').then(config => console.log(JSON.stringify(rulesFromConfig(config).usedTabOnly)));
+"""])
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) is load_config().front_page['used_tab_only'] is True
+
+
 def test_configured_image_hosts_cover_published_photo_fixtures():
     from dealradar.db import DB
     from dealradar.fetch.keepa import _image_url

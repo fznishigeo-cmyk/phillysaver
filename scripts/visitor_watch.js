@@ -289,7 +289,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
       if (rules.excludeUsedOnAll) scene.text.used = await allUsedProbe(page, doc);
       // Each probe has its own failure result; one broken control must not hide
       // the other health checks. No Get deal link is ever clicked.
-      try {scene.working.department = await departmentProbe(page, doc);}
+      try {scene.working.department = await departmentProbe(page, doc, rules);}
       catch (error) {scene.working.error = error.message.split('\n')[0];}
       try {scene.working.inventorySearch = await inventorySearchProbe(page, doc);}
       catch (error) {scene.working.error = error.message.split('\n')[0];}
