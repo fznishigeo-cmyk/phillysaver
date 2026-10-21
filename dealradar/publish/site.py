@@ -607,7 +607,8 @@ def _serialize_deal(deal: dict[str, Any], now: datetime, amazon_tag: str = "",
     links = links if links is not None else link_facts.derive_link_facts(deal, link_policy(
         amazon_tag, overrides, sovrn_key=sovrn_key, sovrn_enabled=sovrn_enabled,
         competitor_tracker_hosts=competitor_tracker_hosts, ebay_campid=ebay_campid,
-        repair_competitor_trackers=getattr(cfg, "affiliate_repair_competitor_trackers", False)))
+        repair_competitor_trackers=getattr(cfg, "affiliate_repair_competitor_trackers", False),
+        exact_variant_links=getattr(cfg, "affiliate_exact_variant_links", False)))
     # Each projection owns its JSON credits; internal facts never share lists.
     credits = [{"name": name, "url": url} for name, url in links.credits]
     if amazon_reference.enabled(cfg) and not deal.get("regular_price_basis") \
@@ -808,7 +809,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                         ebay_campid=cfg.affiliate_ebay_campaign_id, cfg=cfg)
     policy = link_policy(amazon_tag, overrides,
                          **{k: v for k, v in link_options.items() if k != "cfg"},
-                         repair_competitor_trackers=cfg.affiliate_repair_competitor_trackers)
+                         repair_competitor_trackers=cfg.affiliate_repair_competitor_trackers,
+                         exact_variant_links=cfg.affiliate_exact_variant_links)
     link_cache: dict[tuple, LinkFacts] = {}
 
     def facts_for(deal, *, required=False):

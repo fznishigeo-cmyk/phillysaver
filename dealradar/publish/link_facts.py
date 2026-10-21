@@ -25,6 +25,7 @@ class LinkPolicy:
     sovrn_enabled: bool = False
     competitor_tracker_hosts: tuple[str, ...] = ()
     repair_competitor_trackers: bool = False
+    exact_variant_links: bool = False
     ebay_campid: str = ""
     source_names: Mapping[str, str] = field(default_factory=dict)
     source_hosts: frozenset[str] = frozenset()
@@ -47,12 +48,14 @@ class LinkFacts:
     earns: bool
 
 
-def routing_policy(*args, repair_competitor_trackers=False, **kwargs) -> LinkPolicy:
+def routing_policy(*args, repair_competitor_trackers=False, exact_variant_links=False,
+                   **kwargs) -> LinkPolicy:
     """Add routing policy without changing the credit renderer's version bytes."""
     from .credits import _deal_source_hosts, link_policy
 
     return replace(link_policy(*args, **kwargs),
                    repair_competitor_trackers=repair_competitor_trackers,
+                   exact_variant_links=exact_variant_links,
                    source_hosts=_deal_source_hosts())
 
 
@@ -247,7 +250,34 @@ def routing_key(deal: dict[str, Any]) -> tuple:
             bool(deal.get("codes")), tuple(str(c) for c in deal.get("codes") or []),
             tuple(str(s) for s in deal.get("stack_steps") or []),
             tuple(deal.get("conditions") or []), bool(deal.get("rebates")),
-            "rebate_dependent" in (deal.get("flags") or []))
+            "rebate_dependent" in (deal.get("flags") or []), _variant_asin(deal))
+
+
+def _variant_asin(deal: dict[str, Any]) -> str:
+    """The deal's ASIN when Keepa read it as one size/colour of a parent listing."""
+    check = deal.get("click_price_check") or {}
+    asin = str(deal.get("asin") or "").upper()
+    return asin if (re.fullmatch(r"[A-Z0-9]{10}", asin) and check.get("variation_child")
+                    and str(check.get("asin") or "").upper() == asin) else ""
+
+
+def exact_variant(url: str, deal: dict[str, Any]) -> str:
+    """Open a size/colour child as itself, not the shopper's last-viewed size.
+
+    th=1&psc=1 is the form Amazon's own affiliate links use for a variation;
+    the tag is added after it as usual. Operator 2026-10-21 (shoe at $5.91
+    opened in her saved size at $15.23).
+    """
+    asin = _variant_asin(deal)
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if (not asin or parts.scheme != "https" or (parts.hostname or "").lower() not in _AMAZON_HOSTS
+            or not re.search(rf"/(?:dp|gp/product)/{asin}(?:/|$)", parts.path, re.IGNORECASE)):
+        return url
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in {"th", "psc"}]
+    return urlunsplit(parts._replace(query=urlencode([("th", "1"), ("psc", "1"), *query])))
 
 
 def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
@@ -271,6 +301,8 @@ def derive_link_facts(deal: dict[str, Any], policy: LinkPolicy) -> LinkFacts:
         asin = str(deal.get("asin") or "").upper()
         if not protected and (not canon or source_link) and re.fullmatch(r"[A-Z0-9]{10}", asin):
             canon = f"https://www.amazon.com/dp/{asin}"
+    if policy.exact_variant_links and not protected:
+        canon = exact_variant(canon, deal)
     post = next((c["url"] for c in credits
                  if str(c["url"]).startswith(("https://", "http://"))), "")
     steps = _needs_steps(deal)

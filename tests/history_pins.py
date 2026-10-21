@@ -203,6 +203,7 @@ def pre_task_290_install_raw(config):
     config.pop("search_focus_ring_keyboard_only", None)
     config.pop("checker_similar_typed_words", None)
     config.pop("price_age_minutes", None)
+    config.get("affiliate", {}).pop("exact_variant_links", None)
     pre_keepa_focus_finder_raw(config)
     pre_hide_deal_site_links_raw(config)
     config.pop("tool_pages_1020", None)
@@ -563,8 +564,15 @@ def pre_search_focus_ring(cfg):
 
 def pre_checker_fixes_1021(cfg):
     """Before similar deals used the typed words and the price age read in minutes (operator 2026-10-21)."""
+    pre_exact_variant_links(cfg)
     cfg.checker_similar_typed_words = False
     cfg.price_age_minutes = False
+    return cfg
+
+
+def pre_exact_variant_links(cfg):
+    """Before Amazon size/colour children opened as themselves (operator 2026-10-21)."""
+    cfg.affiliate_exact_variant_links = False
     return cfg
 
 

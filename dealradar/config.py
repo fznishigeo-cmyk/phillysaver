@@ -443,6 +443,7 @@ class AppConfig:
     affiliate_link_overrides: dict = field(default_factory=dict)
     affiliate_competitor_tracker_hosts: list[str] = field(default_factory=list)
     affiliate_repair_competitor_trackers: bool = False
+    affiliate_exact_variant_links: bool = False  # size/colour children open as themselves
     affiliate_ebay_campaign_id: str = ""  # eBay Partner Network, 10 digits ("" = off)
     # -- seo: category hubs and IndexNow (config.yaml seo:) --
     seo_hub_min_items: int = 10        # visible live offers for an indexable hub
@@ -1304,6 +1305,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         if re.fullmatch(r"[a-z0-9.-]+", str(host).strip().lower())]
     cfg.affiliate_repair_competitor_trackers = bool(
         g("affiliate", "repair_competitor_trackers", default=False))
+    cfg.affiliate_exact_variant_links = g("affiliate", "exact_variant_links", default=False)
+    if type(cfg.affiliate_exact_variant_links) is not bool:
+        raise ValueError("affiliate.exact_variant_links must be a boolean")
     campid = str(g("affiliate", "ebay_campaign_id", default="") or "").strip()
     if campid and not re.fullmatch(r"[0-9]{10}", campid):
         logging.getLogger("dealradar.config").warning("affiliate.ebay_campaign_id ignored: not 10 digits")
