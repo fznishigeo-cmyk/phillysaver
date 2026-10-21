@@ -4,7 +4,7 @@ const {searchProbe, firstScreenGlare} = require('../scripts/visitor_watch.js');
 const {pixels, glare} = require('../scripts/browser_pixels.cjs');
 const {QUERY, searchProblems} = require('../scripts/visitor_watch_logic.cjs');
 const {opticalProblems} = require('../scripts/visitor_watch_logic.cjs');
-const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, boundedScreenshot} =
+const {scanScreens, relookPending, photoState, firstScreenLinks, visibleText, dealPageProbe, boundedScreenshot} =
   require('../scripts/visitor_watch_health.cjs');
 
 (async () => {
@@ -19,8 +19,9 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
   }
   const context = await browser.newContext({viewport: {width: 390, height: 844}, serviceWorkers: 'block'});
   const href = 'https://www.amazon.com/s?k=zzqx+cupping+test&tag=wowpriced-20';
-  let releaseImage, imageRequested = false;
+  let releaseImage, releaseQueued, imageRequested = false;
   const released = new Promise(resolve => {releaseImage = resolve;});
+  const queued = new Promise(resolve => {releaseQueued = resolve;});
   const outside = [];
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -63,6 +64,11 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
         <div data-deal-detail><div class="grid"><img src="/health-image.svg"></div></div>`});
     }
     if (url.pathname === '/held.svg') return;  // never answered: keeps the page loading
+    if (url.pathname === '/queued.svg') {
+      await queued;  // answered once the test releases it, like a photo behind our pacing
+      return route.fulfill({contentType: 'image/svg+xml', body:
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#728b9b"/></svg>'});
+    }
     if (url.pathname === '/slow.svg') {
       await new Promise(resolve => setTimeout(resolve, 2500));  // past the 1.5 s first look
       return route.fulfill({contentType: 'image/svg+xml', body:
@@ -74,7 +80,8 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
     if (url.pathname === '/paced') return route.fulfill({contentType: 'text/html', body:
       '<!doctype html><style>body{margin:0}main{width:100%}.card{height:200px}img{width:100px;height:100px}</style>' +
       '<main id="content"><article class="card" data-key="slow"><img src="/slow.svg"></article>' +
-      '<article class="card" data-key="held"><img src="/held.svg"></article></main>'});
+      '<article class="card" data-key="held"><img src="/held.svg"></article>' +
+      '<article class="card" data-key="queued"><img src="/queued.svg"></article></main>'});
     if (url.pathname === '/white.svg') {
       imageRequested = true; await released;
       return route.fulfill({contentType: 'image/svg+xml', body:
@@ -117,8 +124,17 @@ const {scanScreens, photoState, firstScreenLinks, visibleText, dealPageProbe, bo
     await paced.goto('https://wowpriced.test/paced', {waitUntil: 'domcontentloaded'});
     const pacedStarted = Date.now();
     const pacedScan = await scanScreens(paced, '.card', Date.now() + 30000);
-    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])), {slow: 'loaded', held: 'pending'});
+    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])),
+      {slow: 'loaded', held: 'pending', queued: 'pending'});
     assert(Date.now() - pacedStarted < 12000, 'one shared 8 s wait, not one per card or screen');
+    // Live 2026-10-21: the desktop home scan saw "0 loaded; 37 still downloading";
+    // after the first-24 pass the queued photos have arrived and a short look sees them.
+    releaseQueued();
+    const relookStarted = Date.now();
+    await relookPending(paced, '.card', pacedScan.photos, Date.now() + 5000, 250);
+    assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])),
+      {slow: 'loaded', held: 'pending', queued: 'loaded'});
+    assert(Date.now() - relookStarted < 3000, 'a short look per card, not the whole wait on one held photo');
     await paced.close();
     const page = await context.newPage();
     await page.goto('https://wowpriced.test/glare', {waitUntil: 'domcontentloaded'});

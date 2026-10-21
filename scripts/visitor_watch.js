@@ -6,7 +6,7 @@ const {execFile} = require('node:child_process');
 const {QUERY, SEARCH_BUTTON, BLOCK, rulesFromConfig, assess, summary, health, photoIssue, imageHostsOf} =
   require('./visitor_watch_logic.cjs');
 const {pixels, glare} = require('./browser_pixels.cjs');
-const {photoState, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
+const {photoState, relookPending, scanScreens, headLinks, firstScreenLinks, departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText,
   dealPageProbe, boundedScreenshot} =
   require('./visitor_watch_health.cjs');
 
@@ -328,6 +328,10 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
         record(row, photo);
       }
       for (const row of scene.cards) if (!row.hasPhoto && / still loading$/.test(row.photoIssue || '')) row.photoPending = true;
+      // The home scan ran while our own pacing still queued most desktop photos
+      // (live 2026-10-21: "0 loaded; 37 still downloading"); the pass above gave
+      // them time to arrive. One more short look each, 5 s in all.
+      await relookPending(page, CARDS, scene.photosDeep.home || [], Math.min(deadline, Date.now() + 5000), 250);
       if (rules.excludeUsedOnAll) scene.text.used = await allUsedProbe(page, doc);
       // Each probe has its own failure result; one broken control must not hide
       // the other health checks. No Get deal link is ever clicked.

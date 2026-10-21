@@ -66,6 +66,20 @@ async function photoState(card, timeout = 1500, selector = 'img') {
   }, {timeout, selector});
 }
 
+// Photos still "pending" get one more look until `until`, at most `look` ms
+// each. Cards are found by the key scanScreens gave them (data-key or index).
+async function relookPending(page, selector, photos, until, look = Infinity) {
+  for (const card of photos) {
+    if (card.photo !== 'pending' || until - Date.now() <= 0) continue;
+    const at = await page.locator(selector).evaluateAll((elements, key) =>
+      elements.findIndex((el, index) => (el.dataset.key || String(index)) === key), card.key);
+    if (at < 0) continue;
+    const element = page.locator(selector).nth(at);
+    await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
+    card.photo = await photoState(element, Math.max(1, Math.min(look, until - Date.now())));
+  }
+}
+
 async function scanScreens(page, selector, deadline) {
   const cards = new Map(), where = new Map(), boxes = new Map(), bands = [];
   let overflow = 0;
@@ -111,17 +125,7 @@ async function scanScreens(page, selector, deadline) {
   // still downloading one more look, 8 s in all. Any still queued behind our
   // own 1 request/second pacing stay "pending" (reported, not a site fault);
   // a photo that failed to load is "broken".
-  const until = Math.min(deadline, Date.now() + 8000);
-  for (const card of cards.values()) {
-    if (card.photo !== 'pending' || until - Date.now() <= 0) continue;
-    const {index, keyed} = where.get(card.key);
-    const at = keyed ? await page.locator(selector).evaluateAll((elements, key) =>
-      elements.findIndex(el => el.dataset.key === key), card.key) : index;
-    if (at < 0) continue;
-    const element = page.locator(selector).nth(at);
-    await element.scrollIntoViewIfNeeded({timeout: Math.min(3000, until - Date.now())}).catch(() => {});
-    card.photo = await photoState(element, Math.max(1, until - Date.now()));
-  }
+  await relookPending(page, selector, cards.values(), Math.min(deadline, Date.now() + 8000));
   // Name the photo host of each broken card, so a flag says where to look.
   for (const card of cards.values()) {
     if (card.photo !== 'broken') continue;
@@ -293,5 +297,5 @@ async function collectText(content, findings, page = '') {
     findings[field].push(...text[field].map(phrase => page ? page + ': ' + phrase : phrase));
 }
 
-module.exports = {photoState, scanScreens, internalLinks, headLinks, firstScreenLinks,
+module.exports = {photoState, relookPending, scanScreens, internalLinks, headLinks, firstScreenLinks,
   departmentProbe, inventorySearchProbe, allUsedProbe, visibleText, collectText, dealPageProbe, boundedScreenshot};
