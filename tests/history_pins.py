@@ -199,6 +199,8 @@ def pre_task_290_install(cfg):
 
 def pre_task_290_install_raw(config):
     config.pop("tool_buttons_outside", None)
+    config.pop("timer_center", None)
+    config.pop("search_focus_ring_keyboard_only", None)
     pre_keepa_focus_finder_raw(config)
     pre_hide_deal_site_links_raw(config)
     config.pop("tool_pages_1020", None)
@@ -545,5 +547,19 @@ def pre_search_tokens_40000(cfg):
 
 def pre_tool_buttons_outside(cfg):
     """Before Deal Checker / Discount Finder moved outside the search bar (operator 2026-10-20)."""
+    pre_timer_center(cfg)
     cfg.tool_buttons_outside = False
+    return cfg
+
+
+def pre_search_focus_ring(cfg):
+    """Before the search box ring was limited to keyboard (Tab) focus (operator 2026-10-21)."""
+    cfg.search_focus_ring_keyboard_only = False
+    return cfg
+
+
+def pre_timer_center(cfg):
+    """Before the countdown digits were centred in the pill (operator 2026-10-20)."""
+    pre_search_focus_ring(cfg)
+    cfg.timer_center = False
     return cfg

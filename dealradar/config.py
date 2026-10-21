@@ -410,6 +410,8 @@ class AppConfig:
     tool_faq_wording: bool = False
     amazon_price_cap_usd: float = 50.0
     phone_tagline_count: bool = False
+    timer_center: bool = False
+    search_focus_ring_keyboard_only: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
@@ -1203,6 +1205,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.phone_tagline_count = g("phone_tagline_count", default=False)
     if type(cfg.phone_tagline_count) is not bool:
         raise ValueError("phone_tagline_count must be a boolean")
+    cfg.timer_center = g("timer_center", default=False)
+    if type(cfg.timer_center) is not bool:
+        raise ValueError("timer_center must be a boolean")
+    cfg.search_focus_ring_keyboard_only = g("search_focus_ring_keyboard_only", default=False)
+    if type(cfg.search_focus_ring_keyboard_only) is not bool:
+        raise ValueError("search_focus_ring_keyboard_only must be a boolean")
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")

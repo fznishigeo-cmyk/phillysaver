@@ -217,6 +217,8 @@ tool_faq_wording: true  # operator 2026-10-20 ~16:45Z: "Yes. This tool is free t
 phone_tagline_count: true  # operator 2026-10-19 ~13:00Z: "shorten that line so the number shows. Nothing else would change."
 timer_pill_ring: true  # operator 2026-10-19 ~16:10Z, option A: "draw the countdown as a ring around the timer pill itself"
 phone_timer_raise: true  # operator 2026-10-19 ~17:50Z: "please raise the timer ever so slightly"
+timer_center: true  # operator 2026-10-20 ~23:00Z (phone) "can you center it in the oval.." + 2026-10-21 ~00:30Z "CONFIRMED GO FOR IT!!!!" (phone + laptops 900–1599 px; 1600+ with the dial unchanged)
+search_focus_ring_keyboard_only: true  # operator 2026-10-21 ~00:45Z: "when i click inside the box a black circle appears.. is there anyway to not have that appear" (phone + computer) -> "I CHOOSE ---> A": no ring on click/tap, keyboard Tab keeps it
 fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 
 site:

@@ -51,8 +51,8 @@ from . import tool_pages
 from . import tool_pages_1020
 from . import join_dialog
 from . import search_polish_1019
-from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab, tool_buttons_outside
-from . import phone_tagline_count
+from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab, tool_buttons_outside, search_focus_ring
+from . import phone_tagline_count, timer_center
 from . import timer_pill_ring
 from . import phone_timer_raise
 from . import search_circle
@@ -198,6 +198,7 @@ def _page_template(html: str, cfg, *, home: bool = False) -> str:
         html = phone_tagline_count.template(html, cfg)
         html = timer_pill_ring.template(html, cfg)
         html = phone_timer_raise.template(html, cfg)
+        html = timer_center.template(html, cfg)
         from .. import appeal as title_appeal
         from . import open_box
         html = title_appeal.template(html, cfg.front_page.get("appeal") or {})
@@ -1186,6 +1187,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = search_discounts_button.site_version(site_version, cfg)
     site_version = card_click_1020.site_version(site_version, cfg)
     site_version = timer_pill_ring.site_version(site_version, cfg)
+    site_version = timer_center.site_version(site_version, cfg)
     site_version = analyze_top_sellers.site_version(site_version, cfg)
     site_version = comments.site_version(site_version, cfg)
     if getattr(cfg, "tool_pages_hero", False) is True:
@@ -1195,6 +1197,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = amazon_price_cap.site_version(site_version, cfg)
     site_version = tools_new_tab.site_version(site_version, cfg)
     site_version = tool_buttons_outside.site_version(site_version, cfg)
+    site_version = search_focus_ring.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1478,12 +1481,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     card_click_1020.publish(out, cfg)
     buttons_to_tools.publish(out, cfg)
     timer_pill_ring.publish(out, cfg)
+    timer_center.publish(out, cfg)
     credits.publish(out, cfg)
     tool_pages_1020.publish_home(out, cfg)
     comments.publish(out, cfg)
     amazon_price_cap.publish(out, cfg)
     tools_new_tab.publish(out, cfg)
     tool_buttons_outside.publish(out, cfg)
+    search_focus_ring.publish(out, cfg)
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
                                        pick_order(teaser + spotlight_only, cfg.front_page)))
     join_dialog.publish(out, cfg)
