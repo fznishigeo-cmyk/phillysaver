@@ -1,7 +1,10 @@
 function reviewInput(value) {
   var text = String(value || '').trim();
-  return /^[a-z0-9]{10}$/i.test(text) ? {kind:'amazon', asin:text.toUpperCase()} : analyzeInput(text);
+  // A bare ASIN needs a digit, so a typed ten-letter word never spends a lookup.
+  return /^(?=.*\d)[a-z0-9]{10}$/i.test(text) ? {kind:'amazon', asin:text.toUpperCase()} : analyzeInput(text);
 }
+var reviewExclude = toolSettings.exclude ? new RegExp(toolSettings.exclude, 'iu') : null;
+function reviewExcluded(title) { return !!reviewExclude && reviewExclude.test(String(title || '')); }
 function reviewProgress(elapsed, duration, ready) {
   return ready && elapsed >= duration ? 100 : Math.min(99, Math.floor(elapsed / duration * 100));
 }
@@ -39,6 +42,8 @@ function reviewProgress(elapsed, duration, ready) {
       message.textContent = 'We couldn’t complete this check just now. Please try again in a moment.';
       input.focus(); return;
     }
+    // Same adult exclusion as Deal Checker and Deal Spotter.
+    if (reviewExcluded(item.title)) {message.textContent = 'This product is not shown in our results.'; input.focus(); return;}
     report.replaceChildren();
     var line = element('div', undefined, 'report-topline');
     line.append(element('span', 'YOUR REVIEW SIGNAL REPORT'), link('How the grades work', '#grades'));
@@ -74,7 +79,8 @@ function reviewProgress(elapsed, duration, ready) {
     report.append(seen.size ? table : element('p', 'Read a few reviews to get to know this product and see how it fits your needs.', 'empty-checks'));
     var actions = element('div', undefined, 'report-actions');
     var amazon = link('Read the reviews on Amazon', toolAmazon(asin), 'button'); amazon.rel = 'sponsored noopener'; amazon.target = '_blank';
-    actions.append(amazon, link('Is the price right? → Deal Spotter', '/deal-spotter/?asin=' + asin, 'secondary'));
+    actions.append(amazon);
+    if (toolSettings.spotter) actions.append(link('Is the price right? → Deal Spotter', '/deal-spotter/?asin=' + asin, 'secondary'));
     var another = element('button', '← Check another product', 'report-another'); another.type = 'button';
     another.addEventListener('click', function () {
       report.hidden = true; start.hidden = false; history.replaceState(null, '', location.pathname); input.value = ''; input.focus();
@@ -125,7 +131,8 @@ function reviewProgress(elapsed, duration, ready) {
       }).then(function (data) {
         if (active !== task) return;
         task.data = data; task.ready = true;
-        if (typeof data.items?.[0]?.title === 'string') document.getElementById('loading-product').textContent = data.items[0].title;
+        if (typeof data.items?.[0]?.title === 'string' && !reviewExcluded(data.items[0].title))
+          document.getElementById('loading-product').textContent = data.items[0].title;
         tick();
       }).catch(function () {if (active === task) {task.data = {reason:'unavailable'}; task.ready = true; tick();}});
   }
@@ -139,6 +146,12 @@ function reviewProgress(elapsed, duration, ready) {
     if (event.key === 'Tab') {event.preventDefault(); document.getElementById('loading-close').focus();}
   });
   window.addEventListener('pagehide', function () {stop(false);});
+  var pause = document.getElementById('demo-pause');
+  pause.addEventListener('click', function () {
+    var paused = pause.getAttribute('aria-pressed') !== 'true';
+    pause.setAttribute('aria-pressed', String(paused)); pause.textContent = paused ? 'Play animation' : 'Pause animation';
+    document.querySelector('.animation').classList.toggle('paused', paused);
+  });
   document.getElementById('cookies-ok').addEventListener('click', function () {
     try {localStorage.setItem('wp.tools.cookies', '1');} catch (_) {}
     document.documentElement.classList.add('cookies-ok');
@@ -170,7 +183,7 @@ function reviewProgress(elapsed, duration, ready) {
   });
   var params = new URLSearchParams(location.search), asin = params.get('asin');
   if (asin !== null) {
-    if (params.getAll('asin').length === 1 && /^[a-z0-9]{10}$/i.test(asin)) submit(asin);
+    if (params.getAll('asin').length === 1 && /^(?=.*\d)[a-z0-9]{10}$/i.test(asin)) submit(asin);
     else {message.textContent = 'Paste an Amazon.com product link or ASIN above to get started.'; input.focus();}
   }
 })();

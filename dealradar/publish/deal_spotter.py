@@ -32,10 +32,17 @@ def enabled(cfg):
     return getattr(cfg, "deal_spotter", {}).get("enabled") is True
 
 
-def menu(cfg):
+def reviews_on(cfg):
+    return getattr(cfg, "review_checker", {}).get("enabled") is True
+
+
+def nav(cfg, links=NAV):
     # Review Checker ships separately; never link to it while it is OFF.
-    links = [(url, label) for url, label in NAV
-             if url != "/review-checker/" or getattr(cfg, "review_checker", {}).get("enabled") is True]
+    return [(url, label) for url, label in links if url != "/review-checker/" or reviews_on(cfg)]
+
+
+def menu(cfg):
+    links = nav(cfg)
     return ('<details class="spotter-menu"><summary>Menu <span aria-hidden="true">☰</span></summary>'
             '<nav aria-label="Site menu">' + ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in links)
             + '</nav></details>')
@@ -144,11 +151,11 @@ def cards(rows):
     return ''.join(selected)
 
 
-def footer(cfg, year, disclosure):
+def footer(cfg, year, disclosure, amazon_store):
     from .site import linked_disclosure
     groups = (("wowpriced", (("/about.html", "About"), ("/deal-spotter/#how-it-works", "How to use Deal Spotter"),
                 ("/careers.html", "Careers"))),
-              ("Shop smarter", NAV[:5]),
+              ("Shop smarter", nav(cfg, NAV[:5])),
               ("Here to help", (("/deal-spotter/#faq", "FAQ"), ("/contact.html", "Contact"),
                 ("/subscribe.html", "Terms"), ("/privacy.html", "Privacy"))))
     content = ''.join('<div><h3>' + title + '</h3>' + ''.join(
@@ -165,7 +172,9 @@ def footer(cfg, year, disclosure):
             + content + '<div><h3>Stay connected</h3><div class="social-icons">' + social + '</div>'
             '<a href="/fakespot-alternative/">A fresh way to check prices</a></div></nav>'
             '<nav class="seo-links" aria-label="Explore"><a href="/deal-spotter/">Grade Amazon deals</a>'
-            '<a href="/review-checker/">Check Amazon reviews</a><a href="/stores/amazon/">Today’s Amazon deals</a></nav>'
+            + ('<a href="/review-checker/">Check Amazon reviews</a>' if reviews_on(cfg) else '')
+            # The Amazon store page exists only with enough live Amazon deals (seo._store_pages).
+            + ('<a href="/stores/amazon/">Today’s Amazon deals</a>' if amazon_store else '') + '</nav>'
             '<div class="footer-bottom"><a class="spotter-brand" href="/"><img src="/deal-spotter-mark.svg" '
             'alt="" width="34" height="34">wowpriced</a><span>Copyright ' + str(year) + ' wowpriced</span></div>'
             '<p class="disclosure">' + linked_disclosure(disclosure) + '</p></div></footer>')
@@ -213,6 +222,7 @@ def publish(out, cfg, now, site_url, disclosure):
             content += (TEMPLATES / 'deal-spotter-menu.css').read_text()
         (out / name).write_text(content)
         versions[name] = hashlib.sha256(content.encode()).hexdigest()[:12]
+    amazon_store = (out / "stores" / "amazon" / "index.html").exists()
     questions = ''.join('<details><summary>' + escape(q) + '</summary><p>' + escape(a) + '</p></details>' for q, a in FAQ)
     faq_schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]}
@@ -232,8 +242,13 @@ def publish(out, cfg, now, site_url, disclosure):
         install = ('<link rel="manifest" href="/manifest.webmanifest"><script defer src="/deal-spotter-install.js?v='
                    + versions['deal-spotter-install.js'] + '"></script>') if cfg.pwa_enabled else ''
         html = seo._fill((TEMPLATES / (slug + '.html')).read_text(), TITLE=escape(title), DESCRIPTION=description,
-            HEAD=head + install, MENU=menu(cfg), FOOTER=footer(cfg, now.year, disclosure), FAQ=questions,
+            HEAD=head + install, MENU=menu(cfg), FOOTER=footer(cfg, now.year, disclosure, amazon_store), FAQ=questions,
             CSS_VERSION=versions['deal-spotter.css'], JS_VERSION=versions['deal-spotter.js'],
+            REVIEW_LINK=('<a id="review-link" class="review-link">Check the reviews →</a>' if reviews_on(cfg) else ''),
+            REVIEW_NOTE=('<p>It does not read reviews. For reviews, visit our <a href="/review-checker/">Review Checker</a>.</p>'
+                         if reviews_on(cfg) else '<p>It does not read reviews.</p>'),
+            STORE_LINK=('<a class="text-link" href="/stores/amazon/">Explore today\'s Amazon deals →</a>' if amazon_store
+                        else '<a class="text-link" href="/">Explore today\'s deals →</a>'),
             DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '')

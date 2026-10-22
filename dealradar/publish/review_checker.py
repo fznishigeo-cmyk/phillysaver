@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import social_profiles, validated_review_checker
-from . import amazon_as_of, seo, tool_pages, tracking
+from . import amazon_as_of, search_boost, seo, tool_pages, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -44,13 +44,19 @@ def enabled(cfg):
     return getattr(cfg, "review_checker", {}).get("enabled") is True
 
 
+def spotter_on(cfg):
+    return getattr(cfg, "deal_spotter", {}).get("enabled") is True
+
+
 def script(cfg):
     # Same Amazon URL validation and affiliate product-link builder as Deal Checker.
     shared = tool_pages._function((TEMPLATES / "search-analyze.js").read_text(), "analyzeInput")
     source = (TEMPLATES / "tool-pages.js").read_text()
     shared += re.search(r'function toolAmazon\(asin\) \{.*?\n\}', source, re.S)[0]
+    # Same adult exclusion as Deal Checker; Deal Spotter links only while it is ON.
     settings = {"tag": cfg.affiliate_amazon_tag, "api": cfg.paywall_api_url,
-                "disclaimer": amazon_as_of.DISCLAIMER}
+                "disclaimer": amazon_as_of.DISCLAIMER, "spotter": spotter_on(cfg),
+                "exclude": search_boost.adult_pattern(cfg.search_boost["exclude_words"])}
     return ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
             + shared + '\n' + (TEMPLATES / "review-checker.js").read_text())
 
@@ -112,7 +118,7 @@ def publish(out, cfg, now, site_url, disclosure):
         assets[suffix] = hashlib.sha256(content.encode()).hexdigest()[:12]
     # Deal Spotter ships separately; never link to it while it is OFF.
     nav = ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV
-                  if url != "/deal-spotter/" or getattr(cfg, "deal_spotter", {}).get("enabled") is True)
+                  if url != "/deal-spotter/" or spotter_on(cfg))
     faq = ''.join(f'<details><summary>{escape(q)}</summary><p>{escape(a)}</p></details>' for q, a in FAQ)
     schema = seo._json_ld({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]})
@@ -141,7 +147,13 @@ def publish(out, cfg, now, site_url, disclosure):
                          INSTALL_HELP=(TEMPLATES / "pwa-install-help.html").read_text() if cfg.pwa_enabled else '',
                          INSTALL_SCRIPT='<script>' + install_script + '</script>' if cfg.pwa_enabled else '',
                          YEAR=str(now.year), DISCLOSURE=linked_disclosure(disclosure), ALTERNATIVE=intro,
-                         PRICE_NOTE=escape(amazon_as_of.DISCLAIMER))
+                         PRICE_NOTE=escape(amazon_as_of.DISCLAIMER),
+                         SPOTTER_ABOUT='<a href="/deal-spotter/">Deal Spotter</a> for price context and ' if spotter_on(cfg) else '',
+                         SPOTTER_TILE=('<a href="/deal-spotter/"><span class="tile-art" aria-hidden="true">◇<i>✓</i></span>'
+                                       '<span>Deal Spotter →</span></a>' if spotter_on(cfg) else
+                                       '<a href="/amazon-discount-finder/"><span class="tile-art" aria-hidden="true">%<i>✓</i></span>'
+                                       '<span>Discount Finder →</span></a>'),
+                         SPOTTER_FOOTER='<a href="/deal-spotter/">Deal Spotter</a>' if spotter_on(cfg) else '')
         html = tracking.inject(html, tool_pages._tracking(cfg))
         seo._write_page(out, path, html)
     # Only footer links change on home/deal pages. Existing tool navigation gains

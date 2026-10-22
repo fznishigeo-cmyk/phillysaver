@@ -12,7 +12,8 @@ for(const input of ['B0D8KZHN1Q','b0d8kzhn1q',' https://www.amazon.com/name/dp/B
 for(const input of ['', 'shoes','B0SHORT','https://amazon.com.evil/dp/B0D8KZHN1Q','https://amazon.com@evil.test/dp/B0D8KZHN1Q',
  'javascript:alert(1)','https://amazon.com/dp/B0D8KZHN1Q?asin=B000000000',
  'https://amazon.com/?asin=B0D8KZHN1Q&asin=B0D8KZHN1Q','https://amazon.com/dp/B0D8KZHN1QQ',
- 'https://amazon.com:444/dp/B0D8KZHN1Q','https://evil.test/?asin=B0D8KZHN1Q']) assert.notEqual(parse(input).kind,'amazon',input);
+ 'https://amazon.com:444/dp/B0D8KZHN1Q','https://evil.test/?asin=B0D8KZHN1Q',
+ 'headphones','smartwatch']) assert.notEqual(parse(input).kind,'amazon',input);
 for (const input of ['https://a.co/test','https://amzn.to/test']) assert.equal(parse(input).kind,'short');
 assert.equal(scope.toolAmazon('B0D8KZHN1Q'),'https://www.amazon.com/dp/B0D8KZHN1Q?tag=example-20');
 scope.toolActive = {raw:'B0D8KZHN1Q',input:parse('B0D8KZHN1Q')};

@@ -1,7 +1,7 @@
 // Task 366: UI only. Grades and explanatory facts come from the server.
 function parseSpotterInput(value) {
   var text = String(value || '').trim();
-  return /^[a-z0-9]{10}$/i.test(text) ? {kind:'amazon', asin:text.toUpperCase()} : analyzeInput(text);
+  return /^(?=.*\d)[a-z0-9]{10}$/i.test(text) ? {kind:'amazon', asin:text.toUpperCase()} : analyzeInput(text);
 }
 (function () {
   'use strict';
@@ -98,7 +98,7 @@ function parseSpotterInput(value) {
     $('result-buy').href = toolAmazon(item.asin);
     toolActive = {raw:task.raw, input:task.input};
     $('result-similar').href = toolSimilar(item);
-    $('review-link').href = '/review-checker/?asin=' + encodeURIComponent(item.asin);
+    if ($('review-link')) $('review-link').href = '/review-checker/?asin=' + encodeURIComponent(item.asin);
     var facts = (Array.isArray(grade.facts) ? grade.facts : []).filter(fact => typeof fact === 'string');
     var minutes = Math.max(0, Math.floor((Date.now() - Date.parse(item.as_of)) / 60000));
     facts.push(minutes < 1 ? 'Price checked less than a minute ago' : 'Price checked ' + minutes + ' minutes ago');

@@ -102,3 +102,30 @@ def test_browser_all_sizes_and_states(tmp_path,monkeypatch):
     result=subprocess.run(['node','tests/review_checker_browser.cjs',str(out),str(tmp_path)],capture_output=True,text=True,timeout=180)
     if result.returncode==77:pytest.skip(result.stdout.strip())
     assert result.returncode==0,result.stdout+result.stderr
+
+
+def settings(script):
+    return json.loads(re.search(r'var toolSettings=(\{.*?\});\n', script)[1])
+
+
+def test_each_tool_never_links_to_the_other_while_it_is_off(tmp_path, monkeypatch):
+    # Independent review 2026-10-22: OFF must not leave dead links behind (seo audit stays clean).
+    monkeypatch.setattr(site, 'util_now', lambda: NOW)
+    for off, gone in (('review_checker', '/review-checker/'), ('deal_spotter', '/deal-spotter/')):
+        cfg = load_config(); setattr(cfg, off, dict(getattr(cfg, off), enabled=False))
+        (tmp_path / off).mkdir()
+        out, *_ = render(tmp_path / off, cfg, deals())
+        linking = [str(p.relative_to(out)) for p in out.rglob('*.html') if f'href="{gone}' in p.read_text()]
+        assert linking == []
+        if off == 'deal_spotter':
+            assert settings((out / 'review-checker.js').read_text())['spotter'] is False
+
+
+def test_review_checker_hides_adult_titles_like_deal_checker(tmp_path):
+    cfg = load_config(); script = review_checker.script(cfg)
+    assert settings(script)['exclude'] and settings(script)['spotter'] is True
+    assert "if (reviewExcluded(item.title))" in script and "This product is not shown in our results." in script
+    assert "/^(?=.*\\d)[a-z0-9]{10}$/i" in script  # a ten-letter word is not an ASIN
+    html_pause = (review_checker.TEMPLATES / 'review-checker.html').read_text()
+    assert 'id="demo-pause"' in html_pause and 'aria-pressed="false"' in html_pause
+

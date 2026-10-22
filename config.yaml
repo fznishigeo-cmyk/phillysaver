@@ -1200,18 +1200,19 @@ ads:
     # 2026-10-22 (operator: "used key words like fakespot, reviewmeta, price checker,
     # review checker etc?"): one ad group per new tool, added PAUSED to the SAME
     # campaign and budget (no new money); the operator enables them. Brand names
-    # may be keywords but never ad text; nothing promises fake-review detection.
+    # may be keywords but never ad text; nothing promises fake-review detection and
+    # no ad text is negative about products or discounts.
     ad_groups:
       - name: "deal spotter"
         final_url: "https://wowpriced.com/deal-spotter/"
         keywords: ["fakespot", "fake spot", "fakespot alternative", "deal grader",
                    "fake discount checker", "is this discount real", "deal spotter"]
-        headlines: ["Spot Fake Discounts Fast", "Free Deal Grader: A, B or C", "Is That Discount Real?",
+        headlines: ["Spot Great Deals Fast", "Free Deal Grader: A, B or C", "Is It a Great Price?",
                     "Paste a Link, Get a Grade", "Free. No Extension Needed", "Deal Spotter by wowpriced",
                     "Check a Price in Seconds", "No Sign-Up Needed"]
         descriptions:
           - "Paste a product link and get an A, B or C grade for the price in seconds. Free."
-          - "Spot inflated list prices before you buy. Free, no extension, no sign-up."
+          - "See if today's price is a great deal before you buy. Free, no extension needed."
       - name: "review checker"
         final_url: "https://wowpriced.com/review-checker/"
         keywords: ["review checker", "reviewmeta", "review meta", "reviewmeta alternative",
