@@ -94,7 +94,7 @@ def cmd_prune(args: argparse.Namespace) -> int:
                  indexnow_batch_versions_days=cfg.indexnow_batch_versions_days,
                  appeal_scores_days=cfg.appeal_scores_days,
                  appeal_scores_ttl_h=cfg.appeal_score.get("ttl_h", 72),
-                 state_retention=retention,
+                 state_retention=retention, vacuum_free_pct=cfg.vacuum_free_pct,
                  incremental_cache_enabled=cfg.incremental_cache_enabled, run_key=run_key,
                  cache_max_examined_per_run=cfg.incremental_cache_max_examined_per_run,
                  cache_budget_s=cfg.incremental_cache_budget_s)

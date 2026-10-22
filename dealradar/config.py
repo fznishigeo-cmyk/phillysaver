@@ -704,6 +704,7 @@ class AppConfig:
     llm_calls_days: int = 35
     run_stats_days: int = 60
     http_cache_days: int = 30
+    vacuum_free_pct: float = 10
     incremental_cache_enabled: bool = False
     incremental_cache_max_examined_per_run: int = 256
     incremental_cache_budget_s: float = 0.25
@@ -1826,6 +1827,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.llm_calls_days = int(g("retention", "llm_calls_days", default=cfg.llm_calls_days))
     cfg.run_stats_days = int(g("retention", "run_stats_days", default=cfg.run_stats_days))
     cfg.http_cache_days = int(g("retention", "http_cache_days", default=cfg.http_cache_days))
+    vacuum = g("retention", "vacuum_free_pct", default=cfg.vacuum_free_pct)
+    if type(vacuum) not in (int, float) or not 1 <= vacuum <= 50:
+        raise ValueError("retention.vacuum_free_pct must be a number from 1 to 50")
+    cfg.vacuum_free_pct = vacuum
     cache = g("retention", "incremental_cache", default={})
     if not isinstance(cache, dict) or type(cache.get("enabled", False)) is not bool:
         raise ValueError("retention.incremental_cache must be a mapping with a boolean enabled")

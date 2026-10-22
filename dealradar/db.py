@@ -1480,7 +1480,7 @@ class DB:
               http_cache_days: int = 30, outgoing_days: int = 60,
               indexnow_batch_versions_days: int | None = None,
               appeal_scores_days: int | None = None, appeal_scores_ttl_h: float = 72,
-              state_retention: dict | None = None,
+              state_retention: dict | None = None, vacuum_free_pct: float = 10,
               offsite_protected_keys: set[str] | None = None,
               incremental_cache_enabled: bool = False, run_key: str | None = None,
               cache_max_examined_per_run: int = 256, cache_budget_s: float = 0.25,
@@ -1628,7 +1628,9 @@ class DB:
 
         pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
         free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
-        if free * 10 > pages and not ((incremental_cache_enabled or state_retention is not None) and fast_lane):
+        # Freed pages keep their old bytes, which the gzip'd state copy still
+        # carries; compact once they pass vacuum_free_pct of the file.
+        if free * 100 > pages * vacuum_free_pct and not ((incremental_cache_enabled or state_retention is not None) and fast_lane):
             vacuum_deadline = deadline if growers_on else None
             busy_timeout = None
             compacted = False

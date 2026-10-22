@@ -1356,6 +1356,9 @@ retention:
   llm_calls_days: 10
   run_stats_days: 10         # AI-yield/recheck-yield tables (readers use 7 complete UTC days); run_stats rows stay under 337. Was 60 until 2026-10-22.
   http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
+  # Compact (VACUUM, hourly only) once free pages pass this % of state.db. Freed pages keep
+  # their old bytes in the encrypted copy; at 10 a ~6% free file (~17 MB, 2026-10-22) never compacted.
+  vacuum_free_pct: 3
   # Offline bounds/limits: docs/incremental-cache-maintenance.md. Ship OFF.
   incremental_cache:
     enabled: false
