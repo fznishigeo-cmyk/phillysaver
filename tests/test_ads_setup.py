@@ -62,6 +62,16 @@ class API:
             rows = [{"billingSetup": {"status": "APPROVED"}}]
         elif "FROM recommendation_subscription" in query:
             rows = []
+        elif "FROM ad_group_ad" in query:
+            assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
+            rows = [{"adGroup": {"name": n, "status": "ENABLED"},
+                     "adGroupAd": {"adStrength": "AVERAGE", "policySummary": {"approvalStatus": "APPROVED"}}}
+                    for n in self.groups]
+        elif "FROM keyword_view" in query:
+            assert "ad_group_criterion.negative = FALSE" in query
+            rows = [{"adGroup": {"name": "deal spotter"}, "adGroupCriterion": {"qualityInfo": {"qualityScore": 7},
+                                                                              "approvalStatus": "APPROVED"}},
+                    {"adGroup": {"name": "deal spotter"}, "adGroupCriterion": {"approvalStatus": "UNDER_REVIEW"}}]
         elif "FROM ad_group" in query:
             assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query and "!= 'REMOVED'" in query
             rows = [{"adGroup": {"name": n}} for n in self.groups]
@@ -123,6 +133,9 @@ def test_an_existing_campaign_is_never_touched(status, caplog):
     with caplog.at_level(logging.INFO):
         assert api.setup() == 0
     assert api.mutates == [] and "already exists" in caplog.text
+    # Google's own grades, read-only (operator 2026-10-22: "they're optimized, right?").
+    assert "ad in deal spotter (ENABLED): strength AVERAGE, APPROVED" in caplog.text
+    assert "keywords in deal spotter: no score yet x1, quality 7/10 x1, under_review x1" in caplog.text
 
 
 @pytest.mark.parametrize("have", [[], ["deal spotter"]])
@@ -208,3 +221,16 @@ def test_shipped_plan_and_workflow_and_cli(monkeypatch):
     monkeypatch.setattr(ads_setup, "run", lambda cfg, **kw: called.append(kw) or 0)
     assert cli.main(["ads-setup", "--validate-only"]) == 0
     assert called == [{"validate_only": True}]
+
+
+def test_ad_quality_report_never_fails_the_check(caplog):
+    api = API(existing=["ENABLED"], groups=["wowpriced search - deal tools ad group", "deal spotter", "review checker"])
+    real = api.__call__
+
+    def broken(request):
+        if request.url.host == "googleads.googleapis.com" and b"keyword_view" in request.content:
+            return httpx.Response(400, json={"error": {"status": "INVALID_ARGUMENT", "message": "bad field"}})
+        return real(request)
+    with caplog.at_level(logging.INFO), httpx.Client(transport=httpx.MockTransport(broken)) as client:
+        assert ads_setup.setup(config(), NOW, client) == 0
+    assert "ad quality: unavailable" in caplog.text and api.mutates == []

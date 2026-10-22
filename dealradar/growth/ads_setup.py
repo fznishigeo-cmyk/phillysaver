@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -163,6 +164,37 @@ def _report(api) -> None:
             log.warning("ads_setup: %s: unavailable (%s)", label, ads_guard._error(exc))
 
 
+def _quality(api, name) -> None:
+    """Diagnostics only: Google's own grades for the campaign's ads and keywords
+    (operator 2026-10-22: "they're optimized, right?"). Enum names and counts."""
+    where = f"WHERE campaign.name = '{name}' AND ad_group.status != 'REMOVED'"
+    try:
+        for r in sorted(api.search(
+                "SELECT ad_group.name, ad_group.status, ad_group_ad.ad_strength, "
+                "ad_group_ad.policy_summary.approval_status FROM ad_group_ad " + where
+                + " AND ad_group_ad.status != 'REMOVED'"), key=lambda r: r["adGroup"].get("name", "")):
+            ad = r.get("adGroupAd", {})
+            log.info("ads_setup: ad in %s (%s): strength %s, %s", r["adGroup"].get("name"),
+                     r["adGroup"].get("status"), ad.get("adStrength", "UNSPECIFIED"),
+                     (ad.get("policySummary") or {}).get("approvalStatus", "UNKNOWN"))
+        groups = {}
+        for r in api.search(
+                "SELECT ad_group.name, ad_group_criterion.quality_info.quality_score, "
+                "ad_group_criterion.approval_status FROM keyword_view " + where
+                + " AND ad_group_criterion.status != 'REMOVED' AND ad_group_criterion.negative = FALSE"):
+            keyword = r.get("adGroupCriterion", {})
+            score = (keyword.get("qualityInfo") or {}).get("qualityScore")
+            counts = groups.setdefault(r["adGroup"].get("name"), Counter())
+            counts["no score yet" if score is None else f"quality {score}/10"] += 1
+            if keyword.get("approvalStatus", "APPROVED") != "APPROVED":
+                counts[str(keyword["approvalStatus"]).lower()] += 1
+        for group, counts in sorted(groups.items()):
+            log.info("ads_setup: keywords in %s: %s", group,
+                     ", ".join(f"{label} x{n}" for label, n in sorted(counts.items())))
+    except Exception as exc:
+        log.warning("ads_setup: ad quality: unavailable (%s)", ads_guard._error(exc))
+
+
 def setup(cfg, now, client, *, validate_only=False) -> int:
     try:
         p = plan(cfg, now)
@@ -183,6 +215,7 @@ def setup(cfg, now, client, *, validate_only=False) -> int:
                 log.info("ads_setup: campaign already exists (%s); nothing created",
                          found[0]["campaign"].get("status"))
                 _report(api)
+                _quality(api, p["name"])
                 return 0
             # Same campaign, same budget: never touches the campaign, its budget or status.
             campaign = found[0]["campaign"]["resourceName"]
