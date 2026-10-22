@@ -440,7 +440,8 @@ def test_operator_decisions_ship_without_changing_code_defaults():
     assert cfg.front_page["checkout_price_deals"]["enabled"] is True
     assert not defaults.front_page.get("checkout_price_deals", {}).get("enabled", False)
     assert cfg.pinterest["daily_max"] == 10
-    assert cfg.meta["facebook"]["daily_max"] == 1 and cfg.meta["facebook"]["hours_utc"] == [17]
+    # Operator 2026-10-22 01:30Z: "i want you to start posting stuff" -> four posts a day.
+    assert cfg.meta["facebook"]["daily_max"] == 4 and cfg.meta["facebook"]["hours_utc"] == [13, 17, 21, 1]
     assert cfg.meta["instagram"]["mode"] == "draft"
     assert (cfg.seo_product_pages_max_indexable, cfg.seo_product_pages_max_new_indexable_per_day) == (200, 50)
     assert (defaults.seo_product_pages_max_indexable, defaults.seo_product_pages_max_new_indexable_per_day) == (2000, 50)
