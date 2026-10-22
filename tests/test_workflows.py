@@ -67,12 +67,19 @@ def run_commands(doc: dict) -> list[str]:
     return [s["run"] for s in single_job(doc)["steps"] if "run" in s]
 
 
-def assert_state_steps_get_the_key(steps: list[dict]) -> None:
+STATE_KEY = {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+# Copy mode (2026-10-22): the hourly and fast-lane saves also copy to Cloudflare R2.
+R2_SAVE = {**STATE_KEY, **{name: "${{ secrets.%s }}" % name for name in
+                         ("R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET")}}
+
+
+def assert_state_steps_get_the_key(steps: list[dict], r2: bool = False) -> None:
     """Restore and commit both see STATE_DB_KEY (decrypt / encrypt state.db);
-    the pipeline step does not need it."""
+    the pipeline step does not need it. Lanes with R2 copy mode also pass the
+    R2 secrets to every save (never to restore)."""
     for script in ("restore_state.sh", "commit_state.sh"):
-        step = next(s for s in steps if script in s.get("run", ""))
-        assert step["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+        for step in (s for s in steps if script in s.get("run", "")):
+            assert step["env"] == (R2_SAVE if r2 and script == "commit_state.sh" else STATE_KEY)
 
 
 def assert_cloudflare_is_the_only_host(doc: dict) -> None:
@@ -191,7 +198,7 @@ def test_hourly_shape() -> None:
     assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any(r.strip() == "python -m dealradar run" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
-    assert_state_steps_get_the_key(steps)
+    assert_state_steps_get_the_key(steps, r2=True)
 
     assert_cloudflare_is_the_only_host(doc)
 
@@ -263,7 +270,7 @@ def test_hourly_pinterest_after_deploy_and_state_committed_even_after_failure():
                         "if": "${{ !cancelled() && steps.ads_guard.outcome == 'failure' }}",
                         "run": "exit 1"}
     assert commit["run"] == "bash scripts/commit_state.sh"
-    assert commit["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert commit["env"] == R2_SAVE
     assert commit["name"] == "Commit social state to data branch"
     assert commit["if"] == ("${{ !cancelled() && (steps.pinterest.outcome != 'skipped' "
                             "|| steps.meta.outcome != 'skipped') }}")
@@ -280,7 +287,7 @@ def test_fast_shape() -> None:
     # Same concurrency group as hourly so the two never overlap.
     assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     job = single_job(doc)
-    assert job["timeout-minutes"] == 15
+    assert job["timeout-minutes"] == 20
     checkout = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@"))
     assert checkout["with"]["fetch-depth"] == 1
 
@@ -288,7 +295,7 @@ def test_fast_shape() -> None:
     assert any(r.strip() == "python -m dealradar run --fast-lane" for r in runs)
     assert any(r.strip() == "bash scripts/restore_state.sh" for r in runs)
     assert any("bash scripts/commit_state.sh" in r for r in runs)
-    assert_state_steps_get_the_key(job["steps"])
+    assert_state_steps_get_the_key(job["steps"], r2=True)
 
     # The fast lane deploys the site too: a 15-minute-lane find (Keepa price
     # drop) must reach the page in minutes, not wait for the hourly deploy.
@@ -316,7 +323,7 @@ def test_indexnow_step_runs_after_every_deploy_and_never_fails_the_run(path: Pat
     save = steps[at + 1]
     assert save["run"] == "bash scripts/commit_state.sh"
     assert save["if"] == "${{ !cancelled() && steps.indexnow.outcome != 'skipped' }}"
-    assert save["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert save["env"] == R2_SAVE
     assert "continue-on-error" not in save
     assert single_job(load_workflow(path))["env"]["DEALRADAR_DURABLE_STATE"] == "1"
 

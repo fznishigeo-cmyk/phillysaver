@@ -1116,8 +1116,8 @@ social:
     facebook:
       mode: live                  # draft | live
       posts_per_run: 1
-      daily_max: 1                # per UTC day
-      hours_utc: [17]            # live only: 1pm New York (EDT)
+      daily_max: 4                # per UTC day; Nishi 2026-10-22 "i want you to start posting stuff" (was 1 since 2026-10-15)
+      hours_utc: [13, 17, 21, 1]  # live only: 9am, 1pm, 5pm, 9pm New York (EDT)
     instagram:
       mode: draft                 # auto-posting paused; drafts only
       posts_per_run: 1
@@ -1261,6 +1261,11 @@ state:
   # Fail before any push at or above this size. GitHub blocks files over 100 MiB
   # (104.9 MB); 95 since 2026-10-22 (was 90) while shorter retention catches up.
   max_enc_mb: 95
+  # Copy mode (operator 2026-10-21/22): after each push to the data branch the same
+  # encrypted file also goes to the R2 bucket (secrets R2_*); git stays the source
+  # of truth. false = no copies. r2_keep = timestamped copies kept (+ latest.enc).
+  r2_copy: true
+  r2_keep: 24
 
 retention:
   state_retention_337: true  # OFF preserves previous maintenance/writer bytes.

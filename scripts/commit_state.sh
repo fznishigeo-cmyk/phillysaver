@@ -11,6 +11,8 @@
 #   * state.db but no STATE_DB_KEY           -> refuses, exit 1
 #   * origin/data missing                     -> creates it as an orphan branch
 #   * push races (concurrent runs)            -> up to 4 retries, backoff 2 4 8 16 s
+#   * after a successful push                 -> best-effort copy to Cloudflare R2
+#     (scripts/r2_copy.sh, config state.r2_copy; never fails this script)
 #
 # Runs against the repository that contains the current working directory, so it
 # works the same from GitHub Actions (`bash scripts/commit_state.sh` at the repo
@@ -24,6 +26,8 @@ BOT_EMAIL="actions@users.noreply.github.com"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/state_crypt.sh
 . "$SCRIPT_DIR/state_crypt.sh"
+# shellcheck source=scripts/r2_copy.sh
+. "$SCRIPT_DIR/r2_copy.sh"
 
 REPO_DIR="$(git rev-parse --show-toplevel)"
 WORKTREE="$REPO_DIR/.state-worktree"
@@ -173,3 +177,5 @@ if [[ "$pushed" -ne 1 ]]; then
   exit 1
 fi
 log "state committed to origin/$BRANCH"
+# Copy mode: the same encrypted bytes also go to Cloudflare R2 (best effort).
+r2_copy "$WORKTREE/state.db.enc" "$REPO_DIR/config.yaml"

@@ -138,8 +138,8 @@ def test_config_cli_and_shared_pinterest_helpers(db, cfg, monkeypatch):
     production = load_config().meta
     assert production["facebook"]["mode"] == "live"
     assert production["instagram"]["mode"] == "draft"
-    assert production["facebook"]["daily_max"] == 1
-    assert production["facebook"]["hours_utc"] == [17]
+    assert production["facebook"]["daily_max"] == 4
+    assert production["facebook"]["hours_utc"] == [13, 17, 21, 1]
     assert cfg.meta["facebook"]["hours_utc"] == [13, 17, 21, 1]
     assert cfg.meta["instagram"]["hours_utc"] == [14, 19, 23]
     assert "META_SYSTEM_TOKEN" in SECRET_NAMES

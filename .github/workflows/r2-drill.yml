@@ -1,0 +1,54 @@
+# Restore drill for Cloudflare R2 copy mode (operator 2026-10-22): download the
+# newest R2 copy of the encrypted state, decrypt it, open it and compare it with
+# the data branch. Read-only: never writes R2, git or the site.
+name: r2 restore drill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Restore the R2 copy and compare with git
+        env:
+          STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          set -euo pipefail
+          . scripts/state_crypt.sh
+          . scripts/r2_copy.sh
+          work="$(mktemp -d)"
+          if ! r2_aws s3 cp --only-show-errors "s3://$R2_BUCKET/state/latest.enc" "$work/r2.enc" >/dev/null; then
+            echo "r2 drill: FAILED — could not download state/latest.enc"
+            exit 1
+          fi
+          git fetch --depth=1 origin +refs/heads/data:refs/remotes/origin/data
+          git show origin/data:state.db.enc > "$work/git.enc"
+          state_decrypt "$work/r2.enc" "$work/r2.db" require-gzip
+          state_decrypt "$work/git.enc" "$work/git.db" require-gzip
+          python3 - "$work/r2.db" "$work/git.db" <<'PY'
+          import hashlib, sqlite3, sys
+          def facts(path):
+              with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as conn:
+                  ok = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                  deals = conn.execute("SELECT COUNT(*) FROM deals").fetchone()[0]
+              return ok, deals, hashlib.sha256(open(path, "rb").read()).hexdigest()
+          r2, git = facts(sys.argv[1]), facts(sys.argv[2])
+          print(f"r2 drill: R2 copy integrity {r2[0]}, {r2[1]} deals; git copy integrity {git[0]}, {git[1]} deals")
+          print("r2 drill: " + ("ok — identical to git" if r2[2] == git[2] else
+                               "ok — opens fine; differs from git (a newer save landed in between)"))
+          sys.exit(0 if r2[0] == "ok" else 1)
+          PY

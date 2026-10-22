@@ -1,0 +1,113 @@
+"""Cloudflare R2 copy mode (scripts/r2_copy.sh): best effort, silent about secrets."""
+import os
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+
+from dealradar.config import load_config
+
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "scripts" / "r2_copy.sh"
+SECRETS = {"R2_ACCESS_KEY_ID": "AKIDSECRETVALUE", "R2_SECRET_ACCESS_KEY": "sk-very-secret",
+           "R2_ENDPOINT": "https://acct123.r2.cloudflarestorage.com", "R2_BUCKET": "wowpriced-state"}
+
+FAKE_AWS = """#!/usr/bin/env bash
+# Records every call; "ls" lists FAKE_LIST; FAKE_FAIL makes "cp" fail.
+printf '%s\\n' "$*" >> "$FAKE_LOG"
+printf 'KEY=%s SECRET=%s REGION=%s\\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_DEFAULT_REGION" >> "$FAKE_LOG"
+case "$*" in
+  *" s3 cp "*) [[ -n "${FAKE_FAIL:-}" ]] && { echo "boom $AWS_SECRET_ACCESS_KEY" >&2; exit 1; } ;;
+  *" s3 ls "*) cat "$FAKE_LIST" 2>/dev/null ;;
+esac
+exit 0
+"""
+
+
+def run(tmp_path, *, config=None, secrets=True, fail=False, listing="", aws=True):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    if aws:
+        (bin_dir / "aws").write_text(FAKE_AWS)
+        (bin_dir / "aws").chmod(0o755)
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.safe_dump({"state": config if config is not None else {"r2_copy": True, "r2_keep": 2}}))
+    state = tmp_path / "state.db.enc"
+    state.write_bytes(b"x" * 1234)
+    (tmp_path / "list.txt").write_text(listing)
+    env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "FAKE_LOG": str(tmp_path / "calls.log"),
+           "FAKE_LIST": str(tmp_path / "list.txt"), "GITHUB_RUN_ID": "777", "GITHUB_RUN_ATTEMPT": "1",
+           "HOME": str(tmp_path)}
+    if secrets:
+        env.update(SECRETS)
+    if fail:
+        env["FAKE_FAIL"] = "1"
+    result = subprocess.run(["bash", "-c", f'set -euo pipefail; . "{SCRIPT}"; r2_copy "{state}" "{cfg}"; echo rc=$?'],
+                            env=env, capture_output=True, text=True, timeout=60)
+    calls = (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
+    return result, calls
+
+
+def no_secret_in(text):
+    return not any(value in text for value in SECRETS.values())
+
+
+def test_copies_to_a_timestamped_key_and_latest_then_prunes_old_copies(tmp_path):
+    listing = "\n".join(f"2026-10-22 01:00:00 100 {name}" for name in (
+        "20261020T010000Z-1-1.enc", "20261021T010000Z-2-1.enc", "20261022T010000Z-3-1.enc", "latest.enc",
+        "notes.txt"))
+    result, calls = run(tmp_path, listing=listing)
+    assert result.returncode == 0 and "rc=0" in result.stdout
+    assert "r2 copy: ok 1234 bytes -> state/" in result.stdout and "-777-1.enc" in result.stdout
+    lines = calls.splitlines()
+    cps = [l for l in lines if " s3 cp " in f" {l} "]
+    assert len(cps) == 2 and cps[1].endswith("s3://wowpriced-state/state/latest.enc")
+    assert all("--endpoint-url https://acct123.r2.cloudflarestorage.com" in l for l in cps)
+    removed = [l for l in lines if " s3 rm " in f" {l} "]
+    assert removed == ["--endpoint-url https://acct123.r2.cloudflarestorage.com s3 rm --only-show-errors "
+                       "s3://wowpriced-state/state/20261020T010000Z-1-1.enc"]
+    assert "KEY=AKIDSECRETVALUE SECRET=sk-very-secret REGION=auto" in calls
+    assert no_secret_in(result.stdout + result.stderr)
+
+
+def test_failure_never_fails_the_caller_or_leaks_the_secret(tmp_path):
+    result, _ = run(tmp_path, fail=True)
+    assert result.returncode == 0 and "rc=0" in result.stdout
+    assert "r2 copy: failed (the git copy is unaffected)" in result.stdout
+    assert no_secret_in(result.stdout + result.stderr)
+
+
+@pytest.mark.parametrize("config", [{"r2_copy": False}, {}, {"r2_copy": "yes"}, {"r2_copy": True, "r2_keep": 0},
+                                    {"r2_copy": True, "r2_keep": True}])
+def test_off_or_invalid_settings_copy_nothing(tmp_path, config):
+    result, calls = run(tmp_path, config=config)
+    assert result.returncode == 0 and "r2 copy: off" in result.stdout and calls == ""
+
+
+def test_missing_secrets_or_cli_skip_quietly(tmp_path):
+    result, calls = run(tmp_path, secrets=False)
+    assert "r2 copy: skipped (R2 secrets not set)" in result.stdout and calls == ""
+    other = tmp_path / "no-cli"
+    other.mkdir()
+    result, calls = run(other, aws=False)
+    assert "r2 copy: skipped (aws cli missing)" in result.stdout and result.returncode == 0 and calls == ""
+
+
+def test_commit_state_copies_only_after_the_push_and_shipped_config_is_on():
+    text = (ROOT / "scripts" / "commit_state.sh").read_text()
+    assert text.index('log "state committed to origin/$BRANCH"') < text.index('r2_copy "$WORKTREE/state.db.enc"')
+    assert text.rstrip().endswith('r2_copy "$WORKTREE/state.db.enc" "$REPO_DIR/config.yaml"')
+    shipped = load_config().raw["state"]
+    assert shipped["r2_copy"] is True and shipped["r2_keep"] == 24
+
+
+def test_restore_drill_is_manual_read_only_and_checks_integrity():
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "r2-drill.yml").read_text())
+    on = doc.get("on", doc.get(True))
+    assert list(on) == ["workflow_dispatch"] and doc["permissions"] == {"contents": "read"}
+    step = doc["jobs"]["drill"]["steps"][1]
+    assert set(step["env"]) == {"STATE_DB_KEY", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET"}
+    for banned in ("git push", "s3 rm", "s3 cp --only-show-errors \"$work", "commit_state", "wrangler"):
+        assert banned not in step["run"]
+    assert "PRAGMA integrity_check" in step["run"] and "state/latest.enc" in step["run"]

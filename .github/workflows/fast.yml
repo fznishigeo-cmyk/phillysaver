@@ -29,7 +29,7 @@ jobs:
       DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
     # Runs take 8.5-10 min (2026-10-18, with the state size report); 12 left no
     # room for a slow checkout.
-    timeout-minutes: 15
+    timeout-minutes: 20  # fast #788 needed 14m21s (daily source revalidation + render); 15 left 39 s
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -88,6 +88,10 @@ jobs:
         if: ${{ !cancelled() && steps.pipeline.outcome != 'skipped' }}
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: bash scripts/commit_state.sh
 
       - name: Deploy site to Cloudflare Pages
@@ -142,4 +146,8 @@ jobs:
         if: ${{ !cancelled() && steps.indexnow.outcome != 'skipped' }}
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: bash scripts/commit_state.sh
