@@ -118,6 +118,10 @@ function spotterAge(asOf) {
     $('grade-letter').className = 'grade-letter ' + grade.grade.toLowerCase();
     $('grade-label').textContent = grade.label;
     $('result-buy').href = toolAmazon(item.asin);
+    // Operator 2026-10-22: the photo and the grade box open the same tagged Amazon page.
+    $('result-photo').href = $('grade-letter').href = $('result-buy').href;
+    $('result-photo').setAttribute('aria-label', 'See ' + item.title + ' on Amazon');
+    $('grade-letter').setAttribute('aria-label', 'Grade ' + grade.grade + ' — see it on Amazon');
     toolActive = {raw:task.raw, input:task.input};
     $('result-similar').href = spotterSimilar(item);
     if ($('review-link')) $('review-link').href = '/review-checker/?asin=' + encodeURIComponent(item.asin);

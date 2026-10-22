@@ -59,7 +59,10 @@ def test_profile_urls_strict_host_and_https(network, bad, caplog):
 
 
 def test_profile_config_loads_and_empty_defaults(tmp_path):
-    assert AppConfig().social_profiles == load_config().social_profiles == {}
+    assert AppConfig().social_profiles == {}
+    # Operator 2026-10-22: the real Facebook and Pinterest pages ship; Instagram and Telegram stay empty.
+    assert load_config().social_profiles == {"facebook": "https://www.facebook.com/Wowpriced",
+                                             "pinterest": "https://www.pinterest.com/wowpriced/"}
     path = tmp_path / "config.yaml"
     path.write_text("social:\n  profiles:\n" + "".join(f"    {key}: {url}\n" for key, url in PROFILES.items()))
     assert load_config(path).social_profiles == PROFILES

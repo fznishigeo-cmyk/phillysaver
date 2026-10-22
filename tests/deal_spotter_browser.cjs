@@ -64,6 +64,8 @@ async function contrastAudit(page) {
         const errors=[], calls=[]; let grade='A', hold=false, releases=[];
         await context.addInitScript(() => {
           Math.random=()=>0;
+          // Amazon clicks are recorded, never followed (the run stays offline).
+          window.amazonClicks=[];document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="https://www.amazon.com/"]');if(a){window.amazonClicks.push({href:a.href,target:a.target,rel:a.rel});e.preventDefault();}},true);
           window.layoutShift=0;
           new PerformanceObserver(list=>{for(const e of list.getEntries()) if(!e.hadRecentInput) window.layoutShift+=e.value;}).observe({type:'layout-shift',buffered:true});
         });
@@ -159,6 +161,18 @@ async function contrastAudit(page) {
           assert.match(page.url(),/\?asin=B0D8KZHN1Q$/);
           assert.match(await page.locator('#result-buy').getAttribute('href'),/tag=wowpriced-20/);
           assert.match(await page.locator('#review-link').getAttribute('href'),/asin=B0D8KZHN1Q/);
+          // The photo and the grade box open the same tagged Amazon page as the button; Price details only toggles.
+          const buy=await page.locator('#result-buy').getAttribute('href');
+          assert.equal(await page.locator('#result-photo').getAttribute('aria-label'),'See Wireless over-ear headphones with a comfortable folding design on Amazon');
+          assert.equal(await page.locator('#grade-letter').getAttribute('aria-label'),`Grade ${next} — see it on Amazon`);
+          for(const selector of ['#result-photo img','#grade-letter']){
+            const spot=page.locator(selector);await spot.scrollIntoViewIfNeeded();const box=await spot.boundingBox();
+            await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+            assert.deepEqual(await page.evaluate(()=>window.amazonClicks.pop()),{href:buy,target:'_blank',rel:'sponsored nofollow noopener'},selector);
+          }
+          await page.locator('.price-disclaimer summary').click();assert(await page.locator('.price-disclaimer').evaluate(e=>e.open));
+          assert.equal(await page.evaluate(()=>window.amazonClicks.length),0);assert.match(page.url(),/\?asin=B0D8KZHN1Q$/);
+          await page.locator('.price-disclaimer summary').click();
           assert(!/avg90|lowest|average|overpriced|fake/i.test(await page.locator('#spotter-result').textContent()));
           assert.equal(await page.locator('#spotter-result a[href*="review-rank"]').count(),0);
           assert.match(await page.locator('#result-facts').textContent(),/Price checked 4 min ago/);

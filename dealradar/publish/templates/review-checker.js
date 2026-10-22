@@ -25,7 +25,7 @@ function reviewProgress(elapsed, duration, ready) {
     var el = element('a', text, className); el.href = url; return el;
   }
   function photo(url, title) {
-    var holder = element('div', undefined, 'report-photo');
+    var holder = element('a', undefined, 'report-photo');
     if (typeof url === 'string' && /^https:\/\/m\.media-amazon\.com\/images\/I\/[A-Za-z0-9+_.%-]+\.(?:jpg|jpeg|png|webp)$/i.test(url)) {
       var img = element('img'); img.src = url; img.alt = title; img.width = 180; img.height = 190;
       img.referrerPolicy = 'no-referrer'; holder.append(img);
@@ -50,7 +50,9 @@ function reviewProgress(elapsed, duration, ready) {
     var line = element('div', undefined, 'report-topline');
     line.append(element('span', 'YOUR REVIEW SIGNAL REPORT'), link('How the grades work', '#grades'));
     var hero = element('div', undefined, 'report-hero'), copy = element('div', undefined, 'product-copy');
-    var title = element('h1', item.title); title.id = 'report-title'; title.tabIndex = -1;
+    // Operator 2026-10-22: photo, name and grade box each open the same tagged Amazon page as the button.
+    function toAmazon(el) {el.href = toolAmazon(asin); el.rel = 'sponsored noopener'; el.target = '_blank'; return el;}
+    var title = element('h1'); title.id = 'report-title'; title.tabIndex = -1; title.append(toAmazon(element('a', item.title)));
     copy.append(element('p', 'Checked on amazon.com', 'checked-on'), title);
     var checked = Date.parse(item.as_of), age = Date.now() - checked;
     if (Number.isSafeInteger(item.price_cents) && item.price_cents > 0 && age >= 0 && age <= 86400000) {
@@ -63,8 +65,11 @@ function reviewProgress(elapsed, duration, ready) {
       details.append(element('summary', 'Price details'), element('p', toolSettings.disclaimer)); copy.append(details);
     } else copy.append(element('p', 'See today’s price on Amazon.', 'as-of'));
     var grade = element('div', undefined, 'grade-box'); grade.dataset.grade = review.grade;
-    grade.append(element('h2', 'Wowpriced review grade'), element('strong', review.grade, 'grade-letter'), element('p', review.label));
-    hero.append(photo(item.image, item.title), copy, grade);
+    var letter = toAmazon(element('a', review.grade, 'grade-letter'));
+    letter.setAttribute('aria-label', 'Grade ' + review.grade + ' — see it on Amazon');
+    grade.append(element('h2', 'Wowpriced review grade'), letter, element('p', review.label));
+    var picture = toAmazon(photo(item.image, item.title)); picture.setAttribute('aria-label', 'See ' + item.title + ' on Amazon');
+    hero.append(picture, copy, grade);
     report.append(line, hero, element('h2', '✓  The checks this product passed', 'blue-bar'),
       element('p', 'We show the checks this product passed.', 'checks-intro'));
     var table = element('table', undefined, 'checks-table'), tbody = element('tbody');
@@ -80,7 +85,7 @@ function reviewProgress(elapsed, duration, ready) {
     });
     report.append(seen.size ? table : element('p', 'Read a few reviews to get to know this product and see how it fits your needs.', 'empty-checks'));
     var actions = element('div', undefined, 'report-actions');
-    var amazon = link('Read the reviews on Amazon', toolAmazon(asin), 'button'); amazon.rel = 'sponsored noopener'; amazon.target = '_blank';
+    var amazon = toAmazon(element('a', 'Read the reviews on Amazon', 'button'));
     actions.append(amazon);
     if (toolSettings.spotter) actions.append(link('Is the price right? → Fake Deal Spotter', '/deal-spotter/?asin=' + asin, 'secondary'));
     var another = element('button', '← Check another product', 'report-another'); another.type = 'button';

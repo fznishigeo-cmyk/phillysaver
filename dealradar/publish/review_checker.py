@@ -6,7 +6,7 @@ import shutil
 from html import escape
 from pathlib import Path
 
-from ..config import social_profiles, validated_review_checker
+from ..config import validated_review_checker
 from . import amazon_as_of, deal_spotter, search_boost, seo, tool_pages, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
@@ -135,10 +135,8 @@ def publish(out, cfg, now, site_url, disclosure):
     faq = ''.join(f'<details><summary>{escape(q)}</summary><p>{escape(a)}</p></details>' for q, a in FAQ)
     schema = seo._json_ld({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]})
-    profiles = social_profiles(cfg.social_profiles)
-    socials = ''.join((f'<a href="{escape(profiles[name], quote=True)}" rel="noopener" aria-label="{name.title()}">{icon}</a>'
-                      if profiles.get(name) else f'<span title="{name.title()} — profile link coming soon" aria-label="{name.title()} — profile link coming soon">{icon}</span>')
-                     for name, icon in (("facebook", "f"), ("instagram", "◎"), ("pinterest", "p")))
+    socials = deal_spotter.social_links(cfg)
+    follow = '<h2>Follow us:</h2><div class="socials">' + socials + '</div>' if socials else ''
     signup = (TEMPLATES / "footer-signup.html").read_text().replace('aria-labelledby="footer-signup-title" hidden', 'aria-labelledby="footer-signup-title"')
     signup = signup.replace('>Sign up for the latest deals<', '>Newsletter sign-up<').replace(
         '<button type="submit" aria-label="Sign up"><span aria-hidden="true">→</span></button>', '<button type="submit">Subscribe</button>')
@@ -157,7 +155,7 @@ def publish(out, cfg, now, site_url, disclosure):
         html = seo._fill(base, TITLE=escape(title), CANONICAL=site_url + path, LOGO=LOGO, NAV=nav, NAV_ROW=nav_row,
                          CSS_VERSION=assets["css"], JS_VERSION=assets["js"], SCHEMA=schema,
                          DISCLAIMER=escape(DISCLAIMER), AMAZON_COUNT=str(len(amazon)), STORE_COUNT=str(len(stores)),
-                         CARDS=cards(amazon), FAQ=faq, SIGNUP=signup, SOCIALS=socials,
+                         CARDS=cards(amazon), FAQ=faq, SIGNUP=signup, FOLLOW=follow,
                          INSTALL=install if cfg.pwa_enabled else '',
                          INSTALL_HELP=(TEMPLATES / "pwa-install-help.html").read_text() if cfg.pwa_enabled else '',
                          INSTALL_SCRIPT='<script>' + install_script + '</script>' if cfg.pwa_enabled else '',

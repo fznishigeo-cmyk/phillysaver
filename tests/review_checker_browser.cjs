@@ -39,6 +39,8 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       });
       await context.addInitScript(()=>{
         Math.random=()=>0;window.reviewCLS=0;
+        // Amazon clicks are recorded, never followed (the run stays offline).
+        window.amazonClicks=[];document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="https://www.amazon.com/"]');if(a){window.amazonClicks.push({href:a.href,target:a.target,rel:a.rel});e.preventDefault();}},true);
         new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.reviewCLS+=entry.value;}).observe({type:'layout-shift',buffered:true});
       });
       const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -124,6 +126,18 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         assert.equal(await page.locator('#review-report a[href*="review-rank"]').count(),0);
         const text=await page.locator('#review-report').innerText();assert(!/\bstars?\b|\bFAIL\b|\bWARN\b|100 reviews|4\.5/.test(text));
         assert(text.includes('Price as of'));await page.locator('.price-note summary').first().click();
+        // Photo, name and grade box each open the button's tagged Amazon page; Price details only toggles.
+        assert(await page.locator('.price-note').first().evaluate(e=>e.open));
+        assert.equal(await page.evaluate(()=>window.amazonClicks.length),0);assert.equal(new URL(page.url()).searchParams.get('asin'),'B012345678');
+        assert.equal(await page.locator('.report-photo').getAttribute('aria-label'),'See Everyday wireless over-ear headphones with a comfortable fit on Amazon');
+        assert.equal(await page.locator('#review-report .grade-letter').getAttribute('aria-label'),`Grade ${grade} — see it on Amazon`);
+        for(const selector of ['.report-photo img','.grade-box h2','.grade-box p','#report-title a']){
+          // The first line box: a title that wraps has gaps inside its bounding box.
+          const spot=page.locator(selector).first();await spot.scrollIntoViewIfNeeded();
+          const box=await spot.evaluate(e=>{const r=e.getClientRects()[0];return {x:r.x+r.width/2,y:r.y+r.height/2};});
+          await page.mouse.click(box.x,box.y);
+          assert.deepEqual(await page.evaluate(()=>window.amazonClicks.pop()),{href:amazon,target:'_blank',rel:'sponsored noopener'},selector);
+        }
         if(grade!=='C'){await page.locator('.checks-table summary').first().click();assert(await page.locator('.checks-table details').first().evaluate(e=>e.open));}
         await snap('report-'+grade);
         measurements.push({width,height,theme,state:grade,cls:await page.evaluate(()=>window.reviewCLS)});

@@ -1086,7 +1086,9 @@ tracking:
   impact_site_verification_2: "46843b39-5068-4c26-bb6b-8e69aedf615e"
 
 social:
-  profiles: {pinterest: "", facebook: "", instagram: "", telegram: ""}
+  # Operator 2026-10-22: the real Facebook and Pinterest pages; Instagram is suspended, no Telegram.
+  profiles: {pinterest: "https://www.pinterest.com/wowpriced/", facebook: "https://www.facebook.com/Wowpriced",
+             instagram: "", telegram: ""}
   require_earning_link: true
   # Never post a used / open-box / refurbished item anywhere social (often
   # one unit: gone for everyone after the first click). Operator, 2026-10-13.

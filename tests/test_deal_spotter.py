@@ -214,3 +214,23 @@ def test_store_row_names_only_stores_in_todays_deals():
     assert row.count('<span>') == 3 and row.index('Amazon') < row.index('Walmart') < row.index('Woot')
     assert 'A&B' not in row and '<x>' not in row and "Today's deals come from" in row
     assert '&lt;x&gt;' in stores_row([{'store': 'A&B <x>'}, {'store': 'Amazon'}])
+
+
+def test_footer_icons_are_real_marks_and_only_for_configured_profiles(tmp_path):
+    # Operator 2026-10-22: the text glyphs "didn't work and looked fake"; never show an unlinked icon.
+    for name, profiles in (('none', {}), ('facebook', {'facebook': 'https://www.facebook.com/Wowpriced'})):
+        cfg = load_config(); cfg.social_profiles = profiles; (tmp_path / name).mkdir()
+        out, *_ = render(tmp_path / name, cfg)
+        for page in ('deal-spotter', 'review-checker'):
+            html = (out / page / 'index.html').read_text()
+            footer = re.search(r'<footer class="(?:spotter|review)-footer".*?</footer>', html, re.S)[0]
+            assert '◎' not in html and 'coming soon' not in footer
+            assert 'aria-label="Instagram"' not in footer and 'aria-label="Pinterest"' not in footer
+            if profiles:
+                assert re.search(r'<a class="social-facebook" href="https://www.facebook.com/Wowpriced" rel="noopener" '
+                                 r'aria-label="Facebook"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"', footer)
+            else:
+                assert 'class="social-' not in footer and 'aria-label="Facebook"' not in footer
+                assert 'social-icons' not in footer and 'Follow us:' not in footer
+            if page == 'deal-spotter':
+                assert 'A fresh way to check prices' in footer
