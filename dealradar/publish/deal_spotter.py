@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import shutil
+from collections import Counter
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -97,6 +98,16 @@ def live_rows(doc, now, single_source_ok=False):
         seen.add(key)
         result.append(d)
     return result
+
+
+def stores_row(rows, limit=5):
+    """Where Fakespot listed press logos: the stores today's deals really come from (plain names)."""
+    counts = Counter(d["store"].strip() for d in rows if isinstance(d.get("store"), str) and d["store"].strip())
+    names = [name for name, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0].casefold()))[:limit]]
+    if len(names) < 2:
+        return ''
+    return ('<section class="stores wrap" aria-label="Stores in today\'s deals"><p>Today\'s deals come from</p><div>'
+            + ''.join('<span>' + escape(name) + '</span>' for name in names) + '</div></section>')
 
 
 PRICES = "deal-spotter-prices.json"
@@ -262,7 +273,7 @@ def publish(out, cfg, now, site_url, disclosure):
                          if reviews_on(cfg) else '<p>It does not read reviews.</p>'),
             STORE_LINK=('<a class="text-link" href="/stores/amazon/">Explore today\'s Amazon deals →</a>' if amazon_store
                         else '<a class="text-link" href="/">Explore today\'s deals →</a>'),
-            DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
+            STORES=stores_row(rows), DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '')
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))

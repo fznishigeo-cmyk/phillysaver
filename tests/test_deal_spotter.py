@@ -98,8 +98,7 @@ def test_both_pages_metadata_schema_copy_assets_and_menu(tmp_path):
     text = page.root.text()
     assert 'fakespot' not in text.casefold().replace('fakespot alternative', '')
     assert not re.search(r'as mentioned|as seen|trusted by|million|testimonial|★', text, re.I)
-    assert text.index('How it works') < text.index('Want to learn more?') < text.index('Deals from stores you know') \
-        < text.index('deal guide') < text.index('Step one') < text.index('Step two')
+    assert text.index('How it works') < text.index('Want to see it in action?') < text.index('deal guide') < text.index('Step one') < text.index('Step two')
     config = json.loads((out / 'search-config.json').read_text())
     assert config['deal_spotter'] == load_config().deal_spotter
     assert config['tokens_per_day'] == 8000 and config['max_per_minute'] == 4
@@ -205,3 +204,13 @@ def test_one_legitimate_source_counts_only_when_switched_on():
     assert index['single_source_ok'] is True
     assert index['deals'] == [{k: ok[k] for k in ('status', 'final_price', 'url', 'headline')}]
     assert 'single_source_ok' not in deal_spotter.price_index(doc)
+
+
+def test_store_row_names_only_stores_in_todays_deals():
+    from dealradar.publish.deal_spotter import stores_row
+    assert stores_row([{'store': 'Amazon'}] * 3) == ''  # one store: no row
+    row = stores_row([{'store': 'Amazon'}] * 3 + [{'store': 'Woot'}, {'store': 'Walmart'}] * 2
+                     + [{'store': 'A&B <x>'}, {'store': ' '}, {'store': None}, {}], limit=3)
+    assert row.count('<span>') == 3 and row.index('Amazon') < row.index('Walmart') < row.index('Woot')
+    assert 'A&B' not in row and '<x>' not in row and "Today's deals come from" in row
+    assert '&lt;x&gt;' in stores_row([{'store': 'A&B <x>'}, {'store': 'Amazon'}])
