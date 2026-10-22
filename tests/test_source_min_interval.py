@@ -21,7 +21,10 @@ def test_slickdeals_is_hourly_rss_only_with_permission_on_file():
         assert s.method == "rss" and not s.allowed_html and not s.fast_lane, s.name
         if s.enabled:
             assert s.min_interval_minutes >= 60 and "at most once an hour" in s.crawl_permission, s.name
-    assert [s.name for s in feeds if s.enabled] == ["slickdeals_frontpage"]
+            assert "written permission by email" in s.crawl_permission, s.name
+    # Operator 2026-10-22: one hourly check may read all three feeds.
+    assert [s.name for s in feeds if s.enabled] == ["slickdeals_frontpage", "slickdeals_popular",
+                                                    "slickdeals_amazon"]
     # Their deal-alert emails credit Slickdeals instead of being dropped as unknown.
     assert match_sender("alerts@mail.slickdeals.net", primary).name == "slickdeals_frontpage"
 

@@ -127,7 +127,9 @@ parse:
     window_deals: 32
     min_judged_deals: 16
     max_disagreement: 0.10          # above this: sticky Sonnet-for-all fallback
-    second_opinion_calls_per_day: 12 # Sonnet calls, including retries
+    # Operator 2026-10-22 ("use haiku ... so we can meet our $6 a day budget"):
+    # 0 = every second opinion uses Haiku; the critic keeps Sonnet.
+    second_opinion_calls_per_day: 0 # Sonnet calls, including retries
     second_opinion_yield_floor: 0.10 # evidence-backed posts / paid calls; strictly above
     second_opinion_min_calls: 3
     second_opinion_window_days: 7   # cold/low-yield sources use Haiku, same prompt

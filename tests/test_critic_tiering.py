@@ -51,6 +51,9 @@ class TierMessages(Messages):
 
 def tier_parser(messages=None, **options):
     parser, messages = parser_for(messages or TierMessages())
+    # Mechanism tests keep the original Sonnet second-opinion allowance; the live
+    # config sets 0 (operator 2026-10-22: every second opinion on Haiku).
+    options.setdefault("second_opinion_calls_per_day", 12)
     parser.cfg.critic_tiering.update(enabled=True, shadow_batches_per_day=0, **options)
     # Routing unit tests separately exercise projection with real rank knobs.
     parser.cfg.keepa_recheck_top_n = parser.cfg.keepa_recheck_wall_n = 0
@@ -381,6 +384,7 @@ def day_replay(path, monkeypatch, *, enabled, all_escalate=False):
     if enabled:
         cfg.spend_cap_boost_usd_per_day = 0
     cfg.critic_tiering["enabled"] = enabled
+    cfg.critic_tiering["second_opinion_calls_per_day"] = 12  # replay of the original allowance
     # Historical successful evidence keeps the source eligible all day, so
     # the daily cap (not low-yield routing) supplies this conservative bound.
     for run in range(82):  # documented 58 fast + 24 hourly runs/day
@@ -535,3 +539,10 @@ def test_rejected_leader_cannot_promote_a_haiku_only_wall_candidate(tmp_path, ca
         assert db.get_deal("ordinary")["critic"]["model"] == HAIKU
         assert rank.is_publishable(db.get_deal("ordinary"), parser.cfg)[0]
     db.close()
+
+
+def test_live_config_sends_every_second_opinion_to_haiku():
+    # Operator 2026-10-22: Haiku for second opinions so the $6/day lasts; the critic keeps Sonnet.
+    cfg = load_config()
+    assert cfg.critic_tiering["enabled"] and cfg.critic_tiering["second_opinion_calls_per_day"] == 0
+    assert cfg.critic_model == "claude-sonnet-5-5" and cfg.critic_tiering["model"] == "claude-haiku-5-5"

@@ -12,7 +12,7 @@ const BLOCK = /googletagmanager|google-analytics|googleadservices|doubleclick|go
 const OUT = "tools-live";
 const TOOLS = [
   {name: "deal-spotter", path: "/deal-spotter/", input: "#q", result: "#spotter-result",
-   message: "#input-error", grade: "#grade-letter", label: "#grade-label"},
+   message: "#input-error", grade: "#grade-letter", label: "#grade-label", price: "#result-price"},
   {name: "review-checker", path: "/review-checker/", input: "#review-input", result: "#review-report",
    message: "#input-message", grade: "#review-report .grade-letter", label: "#review-report .grade-box p",
    terms: "#review-terms[open]"},
@@ -76,12 +76,14 @@ async function amazonBreakdown() {
         await page.screenshot({path: `${OUT}/${tool.name}-${size}-start.png`});
         await page.fill(tool.input, asin);
         await page.press(tool.input, "Enter");
-        let grade = "", label = "", note = "";
+        let grade = "", label = "", price = "", note = "";
         try {
           await page.waitForSelector(`${tool.result}:not([hidden])`, {timeout: 75000});
           await page.waitForTimeout(800);
           grade = (await page.textContent(tool.grade) || "").trim();
           label = (await page.textContent(tool.label) || "").trim();
+          // The shown price (public product facts), e.g. "$153.84 + $25.15 shipping".
+          if (tool.price) price = (await page.textContent(tool.price) || "").replace(/\s+/g, " ").replace(/(\S)\+/, "$1 +").trim();
           await page.screenshot({path: `${OUT}/${tool.name}-${size}-result.png`});
         } catch (_) {
           note = (await page.textContent(tool.message).catch(() => "") || "").trim() || "no result within 75 s";
@@ -90,6 +92,7 @@ async function amazonBreakdown() {
         const ok = response && response.status() === 200 && ["A", "B", "C"].includes(grade) && !errors.length;
         if (!ok) failures++;
         console.log(`${tool.name} ${size}: HTTP ${response && response.status()} grade=${grade || "-"} "${label}"` +
+                    `${price ? " price=" + JSON.stringify(price) : ""}` +
                     `${note ? " note=" + JSON.stringify(note) : ""}${errors.length ? " page errors: " + errors.join(" | ") : ""}`);
         await page.close();
       }
