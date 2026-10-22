@@ -94,6 +94,12 @@ def test_both_pages_metadata_schema_copy_assets_and_menu(tmp_path):
     assert 'Fakespot Alternative: Free Amazon Deal Grader | wowpriced' in seo
     assert 'July 1, 2025' in seo and 'does not read reviews' in seo
     assert 'by Mozilla' not in html
+    # Operator 2026-10-22: Fakespot's layout, our own words and no proof we can't back up.
+    text = page.root.text()
+    assert 'fakespot' not in text.casefold().replace('fakespot alternative', '')
+    assert not re.search(r'as mentioned|as seen|trusted by|million|testimonial|★', text, re.I)
+    assert text.index('How it works') < text.index('Want to learn more?') < text.index('Deals from stores you know') \
+        < text.index('deal guide') < text.index('Step one') < text.index('Step two')
     config = json.loads((out / 'search-config.json').read_text())
     assert config['deal_spotter'] == load_config().deal_spotter
     assert config['tokens_per_day'] == 8000 and config['max_per_minute'] == 4

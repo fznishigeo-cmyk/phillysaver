@@ -154,6 +154,23 @@ async function contrastAudit(page) {
         await page.locator('#phone-next').click();assert.equal(await page.locator('#slide-title').textContent(),"Today's Deals");
         await page.locator('#phone-prev').click();assert.equal(await page.locator('#slide-title').textContent(),'Fake Deal Spotter');
         await page.locator('.how-step').nth(2).click();assert.equal(await page.locator('.how-step').nth(2).getAttribute('aria-pressed'),'true');
+        assert.equal(await page.locator('.illustration').getAttribute('data-illustration'),'2');
+        assert.equal((await page.locator('.panel-title span:visible').textContent()).trim(),'Look past the “was” price');
+        // Guide band: list picks a screen; tabs frame it as a computer or a phone.
+        await page.locator('.guide-item').nth(2).click();assert.equal(await page.locator('#slide-title').textContent(),'Discount Finder');
+        assert.deepEqual(await page.locator('.guide-item').evaluateAll(els=>els.map(el=>el.getAttribute('aria-pressed'))),['false','false','true']);
+        assert.equal(await page.locator('[data-slide="2"]').isVisible(),true);
+        await page.locator('.screen-tab[data-view="phone"]').click();assert.equal(await page.locator('#screen-stage').getAttribute('data-view'),'phone');
+        assert.deepEqual(await page.locator('.screen-tab').evaluateAll(els=>els.map(el=>el.getAttribute('aria-pressed'))),['false','true']);
+        await geometry();
+        await page.locator('.screen-tab[data-view="desktop"]').click();assert.equal(await page.locator('#screen-stage').getAttribute('data-view'),'desktop');
+        // Demo band: pause keeps its name and reports its state; replay restarts without errors.
+        await page.locator('#pause-demo').click();assert.equal(await page.locator('#pause-demo').getAttribute('aria-pressed'),'true');
+        assert(await page.locator('.demo-frame').evaluate(el=>el.classList.contains('paused')));
+        assert.equal(await page.locator('#pause-demo').getAttribute('aria-label'),'Pause demo');
+        await page.locator('#replay-demo').click();await page.locator('#pause-demo').click();
+        assert.equal(await page.locator('#pause-demo').getAttribute('aria-pressed'),'false');
+        assert(!/as mentioned|as seen on|trusted by|million|testimonial|★/i.test(await page.locator('main').textContent()));
         await page.locator('.spotter-menu summary').click();assert(await page.locator('.spotter-menu nav').isVisible());
         await page.keyboard.press('Escape');assert(!(await page.locator('.spotter-menu').evaluate(el=>el.open)));
         await page.emulateMedia({reducedMotion:'reduce'});

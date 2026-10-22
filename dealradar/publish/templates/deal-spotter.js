@@ -229,16 +229,28 @@ function spotterSimilar(item) {
   $('pause-demo').addEventListener('click', () => {
     var frame = document.querySelector('.demo-frame'), paused = frame.dataset.paused !== 'true';
     frame.dataset.paused = String(paused); frame.classList.toggle('paused', paused);
-    $('pause-demo').textContent = paused ? 'Play demo' : 'Pause demo'; $('pause-demo').setAttribute('aria-pressed', String(paused));
+    $('pause-demo').setAttribute('aria-pressed', String(paused));
+  });
+  // Replay restarts the CSS demo and its progress line from the first frame.
+  $('replay-demo').addEventListener('click', () => {
+    document.querySelectorAll('.demo-frame *, .demo-progress i').forEach(el => { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; });
   });
   var slide = 0, names = ['Fake Deal Spotter', "Today's Deals", 'Discount Finder'];
   var captions = ['A link goes in. A clear deal grade comes out.', 'Explore the verified deals published on wowpriced.', 'Find Amazon discounts for what you have in mind.'];
-  function showSlide(delta) {
-    slide = (slide + delta + 3) % 3;
+  function showSlide(index) {
+    slide = (index + 3) % 3;
     document.querySelectorAll('[data-slide]').forEach(el => { el.hidden = Number(el.dataset.slide) !== slide; });
+    document.querySelectorAll('.guide-item').forEach((item, i) => { item.classList.toggle('active', i === slide); item.setAttribute('aria-pressed', String(i === slide)); });
     $('slide-title').textContent = names[slide]; $('slide-caption').textContent = captions[slide]; $('slide-count').textContent = '0' + (slide + 1) + ' / 03';
   }
-  $('phone-prev').addEventListener('click', () => showSlide(-1)); $('phone-next').addEventListener('click', () => showSlide(1));
+  $('phone-prev').addEventListener('click', () => showSlide(slide - 1)); $('phone-next').addEventListener('click', () => showSlide(slide + 1));
+  document.querySelectorAll('.guide-item').forEach((item, i) => item.addEventListener('click', () => showSlide(i)));
+  // The same screens, framed as a computer browser or a phone.
+  var tabs = [...document.querySelectorAll('.screen-tab')];
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    $('screen-stage').dataset.view = tab.dataset.view;
+    tabs.forEach(other => other.setAttribute('aria-pressed', String(other === tab)));
+  }));
   window.addEventListener('pagehide', () => { cancel(); clearInterval(interval); observer.disconnect(); });
   // A shared URL reruns the same cache-respecting lookup. No price facts in URLs.
   var params = new URLSearchParams(location.search), initial = params.get('asin');
