@@ -491,6 +491,27 @@ def _keepa_since_price(minutes: Any, deal: dict[str, Any]) -> bool | None:
     return at >= max(since)
 
 
+#: A run's requests go out at most this long after its ``now`` (the hourly
+#: job's 30-minute limit); a Keepa clock may run KEEPA_CLOCK_SKEW ahead of ours.
+KEEPA_IN_RUN_WINDOW = timedelta(minutes=30)
+KEEPA_CLOCK_SKEW = timedelta(minutes=5)
+
+
+def keepa_reading_at(at: datetime | None, now: datetime) -> datetime | None:
+    """A Buy Box stamp, on the run's clock.
+
+    Requests go out minutes after the run's ``now``, so a reading Keepa took
+    during the run is stamped after it. That is a real observation: count it
+    as of ``now`` (like keepa_observed_at's listing clock). A stamp later than
+    the run could have asked, or beyond the real clock, is refused as future.
+    """
+    if at is None or at <= now:
+        return at
+    if at <= now + KEEPA_IN_RUN_WINDOW and at <= util.now_utc() + KEEPA_CLOCK_SKEW:
+        return now
+    return None
+
+
 def keepa_observed_at(product: dict[str, Any] | None, now: datetime, *, used=False) -> datetime:
     """Use the observation behind the verdict, never a future confirmation."""
     product = product or {}

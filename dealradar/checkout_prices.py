@@ -7,7 +7,7 @@ import re
 from . import buybox
 from .savings import page_price_moved
 from .util import iso, parse_iso
-from .verify import _price_hidden_by_promo, keepa_time
+from .verify import _price_hidden_by_promo, keepa_reading_at, keepa_time
 
 BLOCK = re.compile(r"/\*checkout-price\*/(.*?)/\*/checkout-price\*/", re.S)
 SUFFIXES = {"code": "until you enter the code", "coupon": "before the coupon",
@@ -41,8 +41,8 @@ def remember(deal, product, cfg, now):
     source = "buybox" if values["buybox"] is not None else "amazon"
     stats = product.get("stats") or {}
     stamp = stats.get("lastBuyBoxUpdate") if source == "buybox" else product.get("lastUpdate")
-    at, price = keepa_time(stamp), values[source]
-    if price is None or at is None or at > now:
+    at, price = keepa_reading_at(keepa_time(stamp), now), values[source]
+    if price is None or at is None:
         return
     previous = _valid_reading(deal, deal.get("checkout_price_reading"), now)
     if previous and at < parse_iso(previous["at"]):

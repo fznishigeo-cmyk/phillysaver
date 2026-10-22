@@ -137,7 +137,7 @@ def test_invalid_buybox_falls_back_to_existing_reprice(db, cfg, monkeypatch, inv
     elif invalid == "unqualified":
         p["stats"]["buyBoxIsUnqualified"] = True
     elif invalid in ("stale", "future", "before_price"):
-        p["stats"]["lastBuyBoxUpdate"] = minutes(NOW + timedelta(minutes={"stale": -61, "future": 1, "before_price": -600}[invalid]))
+        p["stats"]["lastBuyBoxUpdate"] = minutes(NOW + timedelta(minutes={"stale": -61, "future": 31, "before_price": -600}[invalid]))
     else:
         row["price_rechecked_at"] = util.iso(NOW - timedelta(minutes=1))
         db.update_deal(row["dedupe_key"], payload=row)

@@ -142,6 +142,8 @@ def test_disabled_transport_and_pipeline_match_pre_edit_baseline(db, cfg, monkey
     assert digest(snapshot) == "e24faa8be7f9e1e7f19c02d6a7f3b3df4b0020e7c9aef60cd3426eb93506ae5a"
     calls.clear()
     stats = pipeline._recheck_prices(db, cfg, NOW, image_backfill=False, fetcher=fetcher)
+    # 2026-10-22 added the buybox_stale counts (empty here); the pin predates them.
+    assert stats.pop("buybox_stale") == {}
     # Tasks 253, 255 and 276 added fields after this pin; compare the recorded fields.
     later = {"product_identity_url", "product_identity_tried", "keepa_popularity", "keepa_list_price"}
     rows = [{k: v for k, v in d.items() if k not in later} for d in db.all_deals()]

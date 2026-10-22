@@ -6,7 +6,7 @@ import re
 from . import buybox
 from .savings import exceeds_price_tolerance
 from .util import iso, parse_iso
-from .verify import _price_hidden_by_promo, keepa_time, price_confirmed_at
+from .verify import _price_hidden_by_promo, keepa_reading_at, keepa_time, price_confirmed_at
 
 VISIBLE_META = "click_price_visible"
 PICKS_META = "click_price_picks"
@@ -30,7 +30,10 @@ def remember(deal, product, observed, now):
         deal["click_price_check"] = dict(legacy, buybox=legacy["price"])
     values = buybox.prices(product)
     stats = product.get("stats") or {}
-    at = keepa_time(stats.get("lastBuyBoxUpdate")) if isinstance(stats, dict) else None
+    raw = keepa_time(stats.get("lastBuyBoxUpdate")) if isinstance(stats, dict) else None
+    at = keepa_reading_at(raw, now)
+    if raw is not None and at is None:
+        return  # beyond the real clock: never a future confirmation
     previous = deal.get("click_price_check") or {}
     same = previous.get("asin") == deal["asin"] and previous.get("final") == deal["final_price"]
     previous_at = parse_iso(previous.get("at") or "") if same else None

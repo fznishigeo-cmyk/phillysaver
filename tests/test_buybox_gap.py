@@ -285,7 +285,8 @@ def test_probe_selection_excludes_unpublished_used_non_amazon_dead_and_duplicate
 def test_old_or_unknown_buybox_clock_cannot_borrow_fresh_listing_time(db, cfg):
     deal = seed(db, cfg)
     p = record(deal["asin"], buyBoxPrice=5000, buyBoxShipping=0)
-    for stamp in (-1, 0, p["lastUpdate"] + 1):
+    # Future = beyond the run's request window (a +1 min stamp is a reading taken during the run).
+    for stamp in (-1, 0, p["lastUpdate"] + 31):
         p["stats"]["lastBuyBoxUpdate"] = stamp
         buybox.remember(deal, p, NOW, now=NOW)
         assert not buybox.would_unconfirm(deal, NOW)

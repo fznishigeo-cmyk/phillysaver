@@ -6,7 +6,7 @@ import math
 
 from .savings import exceeds_price_tolerance
 from .util import iso, parse_iso
-from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, keepa_time
+from .verify import _price_hidden_by_promo, is_amazon_deal, is_used_deal, keepa_reading_at, keepa_time
 
 
 def number(value):
@@ -61,14 +61,15 @@ def _reading_or_reason(deal, product, cfg, now):
         return "not_eligible"
     stats = product.get("stats") or {}
     stamp = stats.get("lastBuyBoxUpdate") if isinstance(stats, dict) else None
-    at, price = keepa_time(stamp), prices(product)["buybox"]
+    raw, price = keepa_time(stamp), prices(product)["buybox"]
+    at = keepa_reading_at(raw, now)
     previous = price_confirmed_at(deal)
     if price is None:
         return "no_buybox_price"
-    if at is None:
+    if raw is None:
         return "no_buybox_time"
-    if at > now:
-        return "after_run_start"
+    if at is None:
+        return "future_stamp"
     if at < now - timedelta(minutes=cfg.keepa_buybox_interval_min):
         return "older_than_interval"
     if _keepa_since_price(stamp, deal) is not True:
@@ -117,7 +118,7 @@ def remember(deal, product, observed, *, now):
     if source == "buybox":
         stamp = (product.get("stats") or {}).get("lastBuyBoxUpdate")
         if stamp is not None:
-            observed = keepa_time(stamp)  # never borrow the listing's newer clock
+            observed = keepa_reading_at(keepa_time(stamp), now)  # never borrow the listing's newer clock
     previous = deal.get("buybox_check") or {}
     previous_at = parse_iso(previous.get("at") or "")
     if (values[source] is None or observed is None or observed > now

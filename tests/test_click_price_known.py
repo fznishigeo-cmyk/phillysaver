@@ -125,7 +125,7 @@ def test_buybox_uses_its_own_clock_and_qualification(db, cfg, bad):
     if bad == "stale":
         p["stats"]["lastBuyBoxUpdate"] = minutes(NOW - timedelta(minutes=61))
     elif bad == "future":
-        p["stats"]["lastBuyBoxUpdate"] = minutes(NOW + timedelta(minutes=1))
+        p["stats"]["lastBuyBoxUpdate"] = minutes(NOW + timedelta(minutes=31))  # beyond the in-run window
     elif bad == "no_clock":
         del p["stats"]["lastBuyBoxUpdate"]
     elif bad == "before_price":

@@ -1268,7 +1268,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     from .verify import (KEEPA_BATCH, KEEPA_OFFERS_BATCH, USED_RECHECK_TOKENS,
                          confirmation_coverage, is_amazon_deal, is_used_deal,
                          _live_new_price, _price_hidden_by_promo,
-                         _harvest_popularity, _keepa_since_price, keepa_time, keepa_observed_at,
+                         _harvest_popularity, _keepa_since_price, keepa_time, keepa_observed_at, keepa_reading_at,
                          live_price_reading, price_confirmed_at, price_unconfirmed,
                          recheck_amazon_prices, woot_offer_url)
     from .publish.site import PICKS_META, WALL_META
@@ -2027,7 +2027,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                     if offers:
                         product_stats = product.get("stats")
                         stamp = product_stats.get("lastOffersUpdate") if isinstance(product_stats, dict) else None
-                    at = keepa_time(stamp)
+                    at = keepa_reading_at(keepa_time(stamp), now)
                     hide = cfg.keepa_show_max_unconfirmed_used_h if used else cfg.keepa_show_max_unconfirmed_h
                     regressed = (regressed or at is None or at > now
                                  or _keepa_since_price(stamp, deal) is not True
