@@ -29,7 +29,10 @@ FAQ = (
 
 
 def enabled(cfg):
-    return getattr(cfg, "deal_spotter", {}).get("enabled") is True
+    # script() reuses the checker's helpers (toolSimilar comes from buttons_to_tools);
+    # without them there is no Deal Spotter to publish.
+    from . import buttons_to_tools
+    return getattr(cfg, "deal_spotter", {}).get("enabled") is True and buttons_to_tools.enabled(cfg)
 
 
 def reviews_on(cfg):

@@ -416,6 +416,7 @@ class AppConfig:
     phone_tagline_count: bool = False
     timer_center: bool = False
     search_focus_ring_keyboard_only: bool = False
+    hide_timer_ticker_confetti: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
@@ -1265,6 +1266,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.search_focus_ring_keyboard_only = g("search_focus_ring_keyboard_only", default=False)
     if type(cfg.search_focus_ring_keyboard_only) is not bool:
         raise ValueError("search_focus_ring_keyboard_only must be a boolean")
+    cfg.hide_timer_ticker_confetti = g("hide_timer_ticker_confetti", default=False)
+    if type(cfg.hide_timer_ticker_confetti) is not bool:
+        raise ValueError("hide_timer_ticker_confetti must be a boolean")
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")
