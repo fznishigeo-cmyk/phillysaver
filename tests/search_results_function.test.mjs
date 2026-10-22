@@ -908,6 +908,13 @@ test('deal grade then normal checker keeps checker output unchanged and recalcul
   assert.equal((await body(await request('&grade=deal'))).deal_grade.grade,'C');
   const checker = await body(await request()); assert.deepEqual(checker,{items:result.items}); assert.equal(calls.length,1);
 });
+test('deal grade reads the slim prices file, never the full deals.json (10 ms CPU budget)', async () => {
+  const request = enableDealGrade(), paths = [];
+  context.env.ASSETS.fetch = async req => {const path = new URL(req.url).pathname; paths.push(path);
+    return Response.json(path === '/search-config.json' ? config : {deals:[liveDeal()]});};
+  assert.equal((await body(await request('&grade=deal'))).deal_grade.grade,'A');
+  assert(paths.includes('/deal-spotter-prices.json') && !paths.includes('/deals.json'));
+});
 test('deal average follows the same qualified fresh price series as the checker', async () => {
   for (const kind of ['new','stale','unqualified','same-price']) {
     cache.clear(); now += 61000;

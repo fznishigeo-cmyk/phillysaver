@@ -125,6 +125,31 @@ def test_live_counts_and_cards_use_only_published_facts():
     assert 'Published item 0' not in deal_spotter.cards(rows)
 
 
+def test_price_index_keeps_only_qualifying_amazon_rows_and_the_fields_the_grade_reads():
+    ok = {'key': 'k1', 'status': 'alive', 'badge': 'verified', 'final_price': 19.99, 'headline': 'Deal',
+          'url': 'https://www.amazon.com/dp/B0D8KZHN1Q?tag=x-20', 'item': 'Headphones', 'image_url': 'https://x/y.jpg'}
+    rows = [ok, {**ok, 'url': 'https://www.walmart.com/ip/1'}, {**ok, 'price_unconfirmed': True},
+            {**ok, 'status': 'dead'}, {**ok, 'badge': 'unverified'}, {**ok, 'locked': True},
+            {**ok, 'url': 'https://amazon.com.evil.test/dp/B0D8KZHN1Q'}, {**ok, 'headline': 'Price not yet confirmed'}]
+    spot = {**ok, 'spotlight': {'until': '2026-10-22T05:00:00Z', 'title': 'x'}}
+    index = deal_spotter.price_index({'deals': rows, 'spotlight': [spot, {**spot, 'price_aged': True}]})
+    assert index == {'deals': [{k: ok[k] for k in ('status', 'badge', 'final_price', 'url', 'headline')}],
+                     'spotlight': [{**{k: ok[k] for k in ('status', 'badge', 'final_price', 'url', 'headline')},
+                                    'spotlight': {'until': '2026-10-22T05:00:00Z'}}]}
+
+
+def test_prices_file_is_published_on_and_removed_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(site, 'util_now', lambda: NOW)
+    cfg = load_config()
+    out, *_ = render(tmp_path, cfg)
+    doc = json.loads((out / 'deal-spotter-prices.json').read_text())
+    assert set(doc) == {'deals', 'spotlight'}
+    assert len((out / 'deal-spotter-prices.json').read_bytes()) < len((out / 'deals.json').read_bytes())
+    cfg.deal_spotter = {'enabled': False}
+    render(tmp_path, cfg)
+    assert not (out / 'deal-spotter-prices.json').exists()
+
+
 def test_emitted_javascript_parsing_and_shared_links(tmp_path):
     cfg = load_config(); cfg.affiliate_amazon_tag='example-20'
     path = tmp_path / 'deal-spotter.js'; path.write_text(deal_spotter.script(cfg))

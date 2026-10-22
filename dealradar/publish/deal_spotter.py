@@ -85,6 +85,33 @@ def live_rows(doc, now):
     return result
 
 
+PRICES = "deal-spotter-prices.json"
+PRICE_FIELDS = ("status", "badge", "final_price", "url", "headline")
+
+
+def price_index(doc):
+    """The few public fields /api/search?grade=deal reads, for Amazon rows only.
+
+    The Pages Function has a 10 ms CPU budget on the free plan; parsing all of
+    deals.json per request could exceed it. functions/api/deal-grade.js applies
+    the same checks again to whatever it reads here.
+    """
+    def slim(d):
+        row = {k: d[k] for k in PRICE_FIELDS if k in d}
+        if d.get("spotlight"):
+            row["spotlight"] = {"until": (d.get("spotlight") or {}).get("until")}
+        return row
+
+    def amazon(d):
+        host = urlsplit(str(d.get("url", ""))).hostname or ""
+        return (not d.get("locked") and d.get("status") == "alive" and d.get("badge") in {"verified", "history-checked"}
+                and not any(d.get(k) for k in ("price_unconfirmed", "price_aged", "click_price_unknown"))
+                and "not yet confirmed" not in d.get("headline", "")
+                and re.fullmatch(r"(?:(?:www|smile|m)\.)?amazon\.com", host) is not None)
+    return {"deals": [slim(d) for d in doc.get("deals", []) if amazon(d)],
+            "spotlight": [slim(d) for d in doc.get("spotlight", []) if amazon(d)]}
+
+
 def cards(rows):
     selected = []
     for d in rows:
@@ -163,7 +190,7 @@ def discovery(out, cfg):
 def publish(out, cfg, now, site_url, disclosure):
     for slug in SLUGS:
         shutil.rmtree(out / slug, ignore_errors=True)
-    for name in ASSETS:
+    for name in (*ASSETS, PRICES):
         (out / name).unlink(missing_ok=True)
     if not enabled(cfg):
         return []
@@ -173,7 +200,9 @@ def publish(out, cfg, now, site_url, disclosure):
         settings = json.loads(config_path.read_text())
         settings["deal_spotter"] = cfg.deal_spotter
         config_path.write_text(json.dumps(settings, separators=(",", ":")))
-    rows = live_rows(json.loads((out / "deals.json").read_text()), now)
+    doc = json.loads((out / "deals.json").read_text())
+    (out / PRICES).write_text(json.dumps(price_index(doc), separators=(",", ":")))
+    rows = live_rows(doc, now)
     versions = {}
     for name in ASSETS:
         content = (script(cfg) if name == "deal-spotter.js" else

@@ -241,7 +241,8 @@ export async function onRequest(context) {
       if (dealGrade) {
         let verified;
         try {
-          const response = await env.ASSETS.fetch(new Request(new URL('/deals.json', request.url)));
+          // A slim copy of deals.json (Python deal_spotter.price_index): the full file is too big to parse per request.
+          const response = await env.ASSETS.fetch(new Request(new URL('/deal-spotter-prices.json', request.url)));
           if (response.ok) verified = publishedDealPrice(await response.json(), asin);
         } catch (_) { /* Missing inventory cannot confer verified status. */ }
         publicBody.deal_grade = gradeDeal({...publicBody.items?.[0], avg90:_deal?.avg90,
