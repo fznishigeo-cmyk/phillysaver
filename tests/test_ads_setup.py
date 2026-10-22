@@ -33,8 +33,8 @@ def secrets(monkeypatch):
 
 
 class API:
-    def __init__(self, existing=(), reject=False):
-        self.existing, self.reject = list(existing), reject
+    def __init__(self, existing=(), reject=False, groups=()):
+        self.existing, self.reject, self.groups = list(existing), reject, list(groups)
         self.requests, self.mutates = [], []
 
     def __call__(self, request):
@@ -62,9 +62,13 @@ class API:
             rows = [{"billingSetup": {"status": "APPROVED"}}]
         elif "FROM recommendation_subscription" in query:
             rows = []
+        elif "FROM ad_group" in query:
+            assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query and "!= 'REMOVED'" in query
+            rows = [{"adGroup": {"name": n}} for n in self.groups]
         else:
             assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
-            rows = [{"campaign": {"status": s}} for s in self.existing]
+            rows = [{"campaign": {"status": s, "resourceName": f"customers/{CID}/campaigns/777"}}
+                    for s in self.existing]
         return httpx.Response(200, json={"results": rows})
 
     def setup(self, cfg=None, **kw):
@@ -100,7 +104,12 @@ def test_creates_one_paused_campaign_after_google_validates_it(caplog):
     assert len(negatives) == 15 and {n["matchType"] for n in negatives} == {"BROAD"}
     assert {"text": "amazon", "matchType": "BROAD"} in negatives
     keywords = [c["keyword"] for k, c in ops if k == "adGroupCriterionOperation"]
-    assert len(keywords) == 10 and {k["matchType"] for k in keywords} == {"PHRASE"}
+    assert len(keywords) == 24 and {k["matchType"] for k in keywords} == {"PHRASE"}
+    assert not any("amazon" in k["text"] for k in keywords)
+    groups = [c for k, c in ops if k == "adGroupOperation"]
+    assert [(g["name"], g["status"]) for g in groups] == [
+        ("wowpriced search - deal tools ad group", "ENABLED"), ("deal spotter", "PAUSED"), ("review checker", "PAUSED")]
+    assert len({g["resourceName"] for g in groups}) == 3
     ad = next(c for k, c in ops if k == "adGroupAdOperation")["ad"]
     assert ad["finalUrls"] == ["https://wowpriced.com/amazon-deal-checker/"]
     assert len(ad["responsiveSearchAd"]["headlines"]) == 8
@@ -110,10 +119,39 @@ def test_creates_one_paused_campaign_after_google_validates_it(caplog):
 
 @pytest.mark.parametrize("status", ["ENABLED", "PAUSED"])
 def test_an_existing_campaign_is_never_touched(status, caplog):
-    api = API(existing=[status])
+    api = API(existing=[status], groups=["wowpriced search - deal tools ad group", "deal spotter", "review checker"])
     with caplog.at_level(logging.INFO):
         assert api.setup() == 0
     assert api.mutates == [] and "already exists" in caplog.text
+
+
+@pytest.mark.parametrize("have", [[], ["deal spotter"]])
+def test_missing_tool_ad_groups_are_added_paused_to_the_same_campaign(have, caplog):
+    # Operator 2026-10-22: Deal Spotter / Review Checker keywords, same campaign and budget.
+    api = API(existing=["ENABLED"], groups=["wowpriced search - deal tools ad group", *have])
+    with caplog.at_level(logging.INFO):
+        assert api.setup() == 0
+    check, real = api.mutates
+    assert check.pop("validateOnly") is True and check == real
+    ops = creates(real)
+    kinds = {k for k, _c in ops}
+    assert kinds == {"adGroupOperation", "adGroupCriterionOperation", "adGroupAdOperation"}  # no campaign/budget
+    groups = [c for k, c in ops if k == "adGroupOperation"]
+    expected = [n for n in ("deal spotter", "review checker") if n not in have]
+    assert [g["name"] for g in groups] == expected
+    assert {g["status"] for g in groups} == {"PAUSED"}
+    assert {g["campaign"] for g in groups} == {f"customers/{CID}/campaigns/777"}
+    urls = [c["ad"]["finalUrls"] for k, c in ops if k == "adGroupAdOperation"]
+    assert urls == [[f"https://wowpriced.com/{n.replace(' ', '-')}/"] for n in expected]
+    texts = " ".join(json.dumps(c["ad"]) for k, c in ops if k == "adGroupAdOperation").lower()
+    assert "fakespot" not in texts and "reviewmeta" not in texts and "amazon" not in texts
+    assert "added %d PAUSED ad group(s)" % len(expected) in caplog.text
+
+
+def test_validate_only_adds_no_ad_group():
+    api = API(existing=["ENABLED"], groups=["wowpriced search - deal tools ad group"])
+    assert api.setup(validate_only=True) == 0
+    assert [m.get("validateOnly") for m in api.mutates] == [True]
 
 
 @pytest.mark.parametrize("cap,budget", [(0, 5), (8, 5), (10, 5.01), (10, 0)])
@@ -138,8 +176,17 @@ def test_validate_only_never_creates():
     assert [m.get("validateOnly") for m in api.mutates] == [True]
 
 
+GROUP = SHIPPED["ad_groups"][0]
+
+
 @pytest.mark.parametrize("field,value", [("headlines", ["x" * 31, "a", "b"]), ("descriptions", ["only one"]),
-                                         ("final_url", "http://wowpriced.com/"), ("campaign_name", "it's")])
+                                         ("final_url", "http://wowpriced.com/"), ("campaign_name", "it's"),
+                                         ("keywords", ["amazon price checker"]),
+                                         ("ad_groups", [{**GROUP, "keywords": ["Amazon deal grader"]}]),
+                                         ("ad_groups", [GROUP, GROUP]), ("ad_groups", [{**GROUP, "name": "x'y"}]),
+                                         ("ad_groups", [{**GROUP, "final_url": "http://wowpriced.com/"}]),
+                                         ("ad_groups", [{**GROUP, "headlines": ["x" * 31, "a", "b"]}]),
+                                         ("ad_groups", [GROUP] * 6)])
 def test_plan_rejects_what_google_would(field, value):
     with pytest.raises(ValueError):
         ads_setup.plan(config(**{field: value}), NOW)

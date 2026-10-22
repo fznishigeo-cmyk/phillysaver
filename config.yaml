@@ -1197,6 +1197,31 @@ ads:
     descriptions:
       - "Paste a product link and see if today's price is really a deal. Free, no sign-up."
       - "Find real price drops on thousands of products. Checked all day, free to use."
+    # 2026-10-22 (operator: "used key words like fakespot, reviewmeta, price checker,
+    # review checker etc?"): one ad group per new tool, added PAUSED to the SAME
+    # campaign and budget (no new money); the operator enables them. Brand names
+    # may be keywords but never ad text; nothing promises fake-review detection.
+    ad_groups:
+      - name: "deal spotter"
+        final_url: "https://wowpriced.com/deal-spotter/"
+        keywords: ["fakespot", "fake spot", "fakespot alternative", "deal grader",
+                   "fake discount checker", "is this discount real", "deal spotter"]
+        headlines: ["Spot Fake Discounts Fast", "Free Deal Grader: A, B or C", "Is That Discount Real?",
+                    "Paste a Link, Get a Grade", "Free. No Extension Needed", "Deal Spotter by wowpriced",
+                    "Check a Price in Seconds", "No Sign-Up Needed"]
+        descriptions:
+          - "Paste a product link and get an A, B or C grade for the price in seconds. Free."
+          - "Spot inflated list prices before you buy. Free, no extension, no sign-up."
+      - name: "review checker"
+        final_url: "https://wowpriced.com/review-checker/"
+        keywords: ["review checker", "reviewmeta", "review meta", "reviewmeta alternative",
+                   "product review checker", "review grader", "check product reviews"]
+        headlines: ["Free Review Checker", "Review Signals at a Glance", "A, B or C Review Grade",
+                    "Paste a Link, Get a Grade", "Free. No Sign-Up Needed", "Review Checker by wowpriced",
+                    "Shop With More Confidence", "Works on Any Device"]
+        descriptions:
+          - "Paste a product link and see its review signals with a simple A, B or C grade. Free."
+          - "See rating steadiness, review pace and popularity in seconds. No extension needed."
 
 growth:
   # The daily PRIVATE growth report (python -m dealradar growth-report,
