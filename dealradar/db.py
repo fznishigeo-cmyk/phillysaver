@@ -1474,6 +1474,30 @@ class DB:
         )
         self.conn.commit()
 
+    def compact(self, vacuum_free_pct: float) -> dict[str, Any]:
+        """VACUUM once freed pages pass vacuum_free_pct of the file (hourly step).
+
+        prune() compacts under the run deadline, which hourly runs reach out of
+        time (hourly #321: deferred at 4.4% free). This runs after the pipeline,
+        before the state is saved. Freed pages keep their old bytes, which the
+        gzip'd encrypted copy carries; data is never changed. Never raises.
+        """
+        pages = self.conn.execute("PRAGMA page_count").fetchone()[0]
+        free = self.conn.execute("PRAGMA freelist_count").fetchone()[0]
+        result = {"pages": pages, "free": free, "compacted": False}
+        if free * 100 <= pages * vacuum_free_pct:
+            return result
+        try:
+            busy, _, _ = self.conn.execute("PRAGMA wal_checkpoint(FULL)").fetchone()
+            if busy:
+                raise sqlite3.OperationalError("WAL checkpoint busy")
+            self.conn.execute("VACUUM")
+        except sqlite3.OperationalError as e:
+            return dict(result, error=str(e)[:120])
+        return dict(result, compacted=True,
+                    pages_after=self.conn.execute("PRAGMA page_count").fetchone()[0],
+                    free_after=self.conn.execute("PRAGMA freelist_count").fetchone()[0])
+
     def prune(self, now: datetime, *, posts_seen_days: int = 30,
               deals_days: int = 14, post_parses_days: int = 2,
               llm_calls_days: int = 35, run_stats_days: int = 60,

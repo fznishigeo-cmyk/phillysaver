@@ -107,6 +107,26 @@ def cmd_prune(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_compact(args: argparse.Namespace) -> int:
+    from .config import load_config
+    from .db import DB
+
+    cfg = load_config(args.config)
+    db = DB(args.db)
+    try:
+        r = db.compact(cfg.vacuum_free_pct)
+    finally:
+        db.close()
+    share = 100 * r["free"] / r["pages"] if r["pages"] else 0
+    if r["compacted"]:
+        print(f"[compact] state compacted: pages={r['pages']}->{r['pages_after']}, free={r['free']}->{r['free_after']}")
+    elif "error" in r:
+        print(f"[compact] state compaction deferred ({r['error']}): pages={r['pages']}, free={r['free']}")
+    else:
+        print(f"[compact] not needed: free {r['free']} of {r['pages']} pages ({share:.1f}% <= {cfg.vacuum_free_pct}%)")
+    return 0
+
+
 def cmd_indexnow(args: argparse.Namespace) -> int:
     """Record receipts for an explicitly successful deployment of this run."""
     from .config import load_config
@@ -289,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
     sp = sub.add_parser("prune", help="apply retention (posts 30 d, dead deals 14 d after they died)")
     common(sp)
     sp.set_defaults(fn=cmd_prune)
+
+    sp = sub.add_parser("compact", help="VACUUM state.db once freed pages pass retention.vacuum_free_pct")
+    common(sp)
+    sp.set_defaults(fn=cmd_compact)
 
     sp = sub.add_parser("indexnow", help="submit the last publish's changed URLs to IndexNow")
     common(sp)

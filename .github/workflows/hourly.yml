@@ -107,6 +107,14 @@ jobs:
           CLICK_SIGNAL_TOKEN: ${{ secrets.CLICK_SIGNAL_TOKEN }}
         run: python -m dealradar run
 
+      - name: Compact state
+        # The pipeline's own VACUUM waits for spare run time, which hourly runs
+        # do not have (hourly #321: deferred at 4.4% free). Best effort.
+        if: ${{ steps.pipeline.outcome == 'success' }}
+        continue-on-error: true
+        timeout-minutes: 4
+        run: python -m dealradar compact
+
       - name: Commit state to data branch
         # Save billed calls and pending deliveries even when the pipeline fails.
         if: ${{ !cancelled() && steps.restore.outcome == 'success' && (steps.pipeline.outcome != 'skipped' || steps.ads_guard.outcome != 'skipped') }}
