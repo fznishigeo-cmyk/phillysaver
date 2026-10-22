@@ -320,7 +320,7 @@ class AppConfig:
     critic_shadow_model: str = "claude-haiku-5-5"
     critic_shadow_batches_per_day: int = 12
     critic_tiering: dict = field(default_factory=lambda: {
-        "enabled": False, "model": "claude-haiku-5-5", "min_confidence": 0.8,
+        "enabled": False, "model": "claude-haiku-5-5", "min_confidence": 0.8, "haiku_only": False,
         "max_tokens_per_deal": 160,
         "high_price_usd": 250.0, "shadow_batches_per_day": 2,
         "window_deals": 32, "min_judged_deals": 16, "max_disagreement": 0.10,
@@ -1063,6 +1063,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     tier = cfg.critic_tiering
     if not isinstance(tier["enabled"], bool) or not isinstance(tier["model"], str) or not tier["model"]:
         raise ValueError("critic_tiering needs a boolean enabled and a model")
+    if not isinstance(tier["haiku_only"], bool):
+        raise ValueError("critic_tiering.haiku_only must be true or false")
     if tier["enabled"] and tier["model"] in {cfg.critic_model, cfg.second_opinion_model}:
         raise ValueError("critic_tiering.model must differ from the Sonnet models")
     for name in ("min_confidence", "max_disagreement", "second_opinion_yield_floor"):

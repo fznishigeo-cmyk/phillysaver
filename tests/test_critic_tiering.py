@@ -54,6 +54,7 @@ def tier_parser(messages=None, **options):
     # Mechanism tests keep the original Sonnet second-opinion allowance; the live
     # config sets 0 (operator 2026-10-22: every second opinion on Haiku).
     options.setdefault("second_opinion_calls_per_day", 12)
+    options.setdefault("haiku_only", False)  # live config: True (operator 2026-10-22)
     parser.cfg.critic_tiering.update(enabled=True, shadow_batches_per_day=0, **options)
     # Routing unit tests separately exercise projection with real rank knobs.
     parser.cfg.keepa_recheck_top_n = parser.cfg.keepa_recheck_wall_n = 0
@@ -385,6 +386,7 @@ def day_replay(path, monkeypatch, *, enabled, all_escalate=False):
         cfg.spend_cap_boost_usd_per_day = 0
     cfg.critic_tiering["enabled"] = enabled
     cfg.critic_tiering["second_opinion_calls_per_day"] = 12  # replay of the original allowance
+    cfg.critic_tiering["haiku_only"] = False
     # Historical successful evidence keeps the source eligible all day, so
     # the daily cap (not low-yield routing) supplies this conservative bound.
     for run in range(82):  # documented 58 fast + 24 hourly runs/day
@@ -428,13 +430,15 @@ def test_full_day_replay_cost_and_model_split(tmp_path, monkeypatch, all_escalat
     (tmp_path / "measured.json").write_text(json.dumps({"before": before, "after": after}, indent=2))
 
 
-def test_tiered_pipeline_rerun_is_idempotent(env):
+@pytest.mark.parametrize("haiku_only", [False, True])
+def test_tiered_pipeline_rerun_is_idempotent(env, haiku_only):
     from pathlib import Path
 
     path = Path(env["cfg"])
-    path.write_text(path.read_text().replace("critic_tiering:\n    enabled: false", "critic_tiering:\n    enabled: true"))
+    text = path.read_text().replace("critic_tiering:\n    enabled: false", "critic_tiering:\n    enabled: true")
+    path.write_text(text.replace("haiku_only: true", f"haiku_only: {str(haiku_only).lower()}"))
     first = _run(env)
-    assert first["critic"]["tiering"]["escalated"] > 0
+    assert (first["critic"]["tiering"]["escalated"] > 0) is not haiku_only
     db = DB(env["db"])
     rows = db.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0]
     verdicts = {d["dedupe_key"]: d.get("critic") for d in db.all_deals()}
@@ -542,7 +546,66 @@ def test_rejected_leader_cannot_promote_a_haiku_only_wall_candidate(tmp_path, ca
 
 
 def test_live_config_sends_every_second_opinion_to_haiku():
-    # Operator 2026-10-22: Haiku for second opinions so the $6/day lasts; the critic keeps Sonnet.
+    # Operator 2026-10-22: Haiku for second opinions and, "do both on haiku", for the price
+    # check; Sonnet (critic_model) is left only for samples and the automatic fallback.
     cfg = load_config()
     assert cfg.critic_tiering["enabled"] and cfg.critic_tiering["second_opinion_calls_per_day"] == 0
+    assert cfg.critic_tiering["haiku_only"] is True and cfg.critic_tiering["shadow_batches_per_day"] > 0
     assert cfg.critic_model == "claude-sonnet-5-5" and cfg.critic_tiering["model"] == "claude-haiku-5-5"
+
+
+def test_haiku_only_verdicts_are_final_front_page_included(tmp_path):
+    db = DB(tmp_path / "state.db")
+    parser, messages = tier_parser(haiku_only=True)
+    cfg = parser.cfg
+    for key in ("plain", "kill", "low", "invalid", "expensive"):
+        add(db, key, final_price=251 if key == "expensive" else 25)
+    db.meta_set("published_wall", json.dumps(["plain"]))  # high visibility
+    parser.bind_ledger(db, "route")
+    stats = pipeline._run_critic(db, cfg, parser, NOW)
+    # Only Haiku's unsure (low) and invalid answers still go to Sonnet.
+    assert [c["model"] for c in messages.calls] == [HAIKU, SONNET]
+    assert len(json.loads(messages.calls[1]["messages"][0]["content"])) == 2
+    assert stats["tiering"]["escalated"] == 2 and stats["tiering"]["haiku_approved"] == 2
+    for key in ("plain", "expensive"):
+        row = db.get_deal(key)
+        assert row["critic"]["model"] == HAIKU and row["critic"]["plausible"]
+        assert rank.is_publishable(row, cfg)[0]
+    kill = db.get_deal("kill")
+    assert kill["critic"]["model"] == HAIKU and not kill["critic"]["plausible"]
+    assert not rank.is_publishable(kill, cfg)[0]
+    assert {db.get_deal(k)["critic"]["model"] for k in ("low", "invalid")} == {SONNET}
+    # Every verdict is settled: a rerun asks nobody, and nothing waits on Sonnet.
+    before = len(messages.calls)
+    assert pipeline._run_critic(db, cfg, parser, NOW)["judged"] == 0
+    assert len(messages.calls) == before
+    assert critic_tiering.protect_promoted(db, cfg, parser, NOW, lambda *a: None) == 0
+    db.close()
+
+
+def test_haiku_only_keeps_sonnet_samples_and_the_automatic_fallback(tmp_path):
+    db = DB(tmp_path / "state.db")
+    parser, messages = tier_parser(TierMessages(sonnet_kills=True), haiku_only=True,
+                                   window_deals=4, min_judged_deals=4)
+    parser.cfg.critic_tiering["shadow_batches_per_day"] = 1
+    parser.cfg.critic_batch_size = 4
+    for i in range(4):
+        add(db, str(i))
+    result = pipeline._run_critic(db, parser.cfg, parser, NOW)
+    assert [c["model"] for c in messages.calls] == [HAIKU, SONNET]
+    assert result["tiering"]["sample_disagreed"] == 4
+    assert "4/4" in db.meta_get(critic_tiering.FALLBACK)
+    # Tripped: everything goes back to Sonnet, as without haiku_only.
+    next_parser, next_messages = tier_parser(TierMessages(sonnet_kills=False), haiku_only=True)
+    add(db, "new")
+    pipeline._run_critic(db, next_parser.cfg, next_parser, NOW)
+    assert next_messages.calls and all(c["model"] == SONNET for c in next_messages.calls)
+    assert db.get_deal("new")["critic"]["model"] == SONNET
+    db.close()
+
+
+def test_haiku_only_must_be_a_boolean(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("parse:\n  critic_tiering:\n    enabled: true\n    haiku_only: \"yes\"\n")
+    with pytest.raises(ValueError, match="haiku_only"):
+        load_config(path)
