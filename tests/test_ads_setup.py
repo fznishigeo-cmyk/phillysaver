@@ -15,6 +15,7 @@ from dealradar.growth import ads_setup
 NOW = datetime(2026, 10, 15, 3, 0, tzinfo=timezone.utc)
 CID = "4412275803"
 ROOT = Path(__file__).resolve().parents[1]
+SHIPPED = load_config().raw["ads"]["setup"]  # operator 2026-10-22: the deal-tools campaign
 
 
 def config(cap=10, **setup):
@@ -62,7 +63,7 @@ class API:
         elif "FROM recommendation_subscription" in query:
             rows = []
         else:
-            assert "campaign.name = 'wowpriced search - generic deals'" in query
+            assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
             rows = [{"campaign": {"status": s}} for s in self.existing]
         return httpx.Response(200, json={"results": rows})
 
@@ -101,7 +102,7 @@ def test_creates_one_paused_campaign_after_google_validates_it(caplog):
     keywords = [c["keyword"] for k, c in ops if k == "adGroupCriterionOperation"]
     assert len(keywords) == 10 and {k["matchType"] for k in keywords} == {"PHRASE"}
     ad = next(c for k, c in ops if k == "adGroupAdOperation")["ad"]
-    assert ad["finalUrls"] == ["https://wowpriced.com/"]
+    assert ad["finalUrls"] == ["https://wowpriced.com/amazon-deal-checker/"]
     assert len(ad["responsiveSearchAd"]["headlines"]) == 8
     assert "created PAUSED campaign" in caplog.text and "billing: APPROVED" in caplog.text
     assert "auto-apply on: none" in caplog.text
