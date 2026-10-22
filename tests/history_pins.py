@@ -448,6 +448,7 @@ def pre_card_click_1020(cfg):
 
 # Task 319: historical fixtures keep Amazon used and their original schedules.
 def pre_task_319_raw(config):
+    config.pop("deal_spotter", None)
     config["amazon_used"] = {"enabled": True}
     keepa = config.setdefault("keepa", {})
     # These token-allocation fixtures also predate task 323's visitor floor.
@@ -523,6 +524,7 @@ def pre_hide_deal_site_links(cfg):
 
 
 def pre_hide_deal_site_links_raw(config):
+    config.pop("deal_spotter", None)
     config.get("publish", {}).pop("hide_deal_site_links", None)
     config.setdefault("affiliate", {})["repair_competitor_trackers"] = False
     return config
@@ -537,6 +539,7 @@ def pre_keepa_focus_finder(cfg):
 
 def pre_keepa_focus_finder_raw(config):
     config.pop("keepa_focus_finder", None)
+    config.pop("deal_spotter", None)
     return config
 
 
@@ -596,6 +599,7 @@ def pre_keepa_starter(cfg):
     and only when they hold the new shipped values; scheduler tests that size
     reads to the 60/min plan set keepa_tokens_per_minute themselves.
     """
+    pre_deal_spotter(cfg)
     old = {"tokens_per_day": (8000, 40000), "max_per_minute": (4, 20)}
     cfg.search = {key: old[key][1] if key in old and value == old[key][0] else value
                   for key, value in cfg.search.items()}
@@ -604,6 +608,7 @@ def pre_keepa_starter(cfg):
 
 def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
+    config.pop("deal_spotter", None)
     config["keepa"]["tokens_per_minute"] = 60
     config["search"].update(tokens_per_day=40000, max_per_minute=20)
     return config
@@ -613,4 +618,10 @@ def pre_timer_center(cfg):
     """Before the countdown digits were centred in the pill (operator 2026-10-20)."""
     pre_search_focus_ring(cfg)
     cfg.timer_center = False
+    return cfg
+
+
+def pre_deal_spotter(cfg):
+    """Before task 366's public tool and footer links; retain every recorded hash."""
+    cfg.deal_spotter = {"enabled": False}
     return cfg

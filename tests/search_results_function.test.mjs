@@ -5,7 +5,11 @@ import {DatabaseSync} from 'node:sqlite';
 
 const productsSource = fs.readFileSync(new URL('../dealradar/publish/templates/search-products.js', import.meta.url), 'utf8');
 const productsURL = 'data:text/javascript;base64,' + Buffer.from(productsSource).toString('base64');
+const gradeSource = fs.readFileSync(new URL('../functions/api/deal-grade.js', import.meta.url), 'utf8');
+const gradeURL = 'data:text/javascript;base64,' + Buffer.from(gradeSource).toString('base64');
+const {gradeDeal, publishedDealPrice} = await import(gradeURL);
 const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8')
+  .replace('./deal-grade.js', gradeURL)
   .replace('../../dealradar/publish/templates/search-products.js', productsURL);
 const {onRequest, normalizeQuery, currentItems, settle, topSellerItems} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const {monthlyBoughtLabel} = await import(productsURL);
@@ -22,6 +26,7 @@ function product(i = 0) {
 const run = (query = 'cupping', options = {}) => onRequest({...context,
   request:new Request('https://wowpriced.test/api/search?q=' + encodeURIComponent(query), options)});
 const body = response => response.json();
+const DEAL_SETTINGS = {enabled:true, a_max_avg_ratio:.85, b_max_avg_ratio:.97, b_min_list_pct:20, verified_max_ratio:1.02};
 
 beforeEach(() => {
   now = NOW; Date.now = () => now; calls = [];
@@ -833,4 +838,103 @@ test('published top-seller switch fails closed for non-booleans or missing filte
   config.analyze_top_sellers = true;
   assert.equal((await body(await run())).reason, 'disabled');
   assert.equal(calls.length, 0); assert.equal(values.size, 0);
+});
+
+// Task 366: the public grade contains no historical input, and shares every cap/cache.
+test('deal grades include exact A/B/C boundaries, missing values and no D or F', () => {
+  for (const [price, expected] of [[8499,'A'],[8500,'A'],[8501,'B'],[9700,'B'],[9701,'C'],[99999,'C']]) {
+    const grade = gradeDeal({price_cents:price, avg90:10000}, DEAL_SETTINGS);
+    assert.equal(grade.grade, expected); assert.deepEqual(Object.keys(grade), ['grade','label','facts']);
+    assert(!JSON.stringify(grade).includes('avg'));
+  }
+  for (const price of [undefined, null, 0, -1, NaN, Infinity, '100', 10.5, true]) {
+    assert.deepEqual(gradeDeal({price_cents:price, avg90:10000, verified_price_cents:1000}, DEAL_SETTINGS),
+      {grade:'C', label:'Fair price', facts:[]});
+  }
+  assert.equal(gradeDeal({}, DEAL_SETTINGS).grade, 'C');
+  assert.equal(gradeDeal({price_cents:100, avg90:1000}, {}).grade, 'C');
+});
+test('list discount is a fallback only, and verified threshold is inclusive', () => {
+  assert.equal(gradeDeal({price_cents:8000, list_price_cents:10000}, DEAL_SETTINGS).grade,'B');
+  assert.equal(gradeDeal({price_cents:8001, list_price_cents:10000}, DEAL_SETTINGS).grade,'C');
+  assert.equal(gradeDeal({price_cents:8000, list_price_cents:10000, avg90:7000}, DEAL_SETTINGS).grade,'C');
+  for (const avg90 of [-1, null, 0, '10000']) assert.equal(gradeDeal({price_cents:8000, list_price_cents:10000, avg90}, DEAL_SETTINGS).grade,'B');
+  assert.equal(gradeDeal({price_cents:1020, verified_price_cents:1000}, DEAL_SETTINGS).grade,'A');
+  assert.equal(gradeDeal({price_cents:1021, verified_price_cents:1000}, DEAL_SETTINGS).grade,'C');
+  assert.deepEqual(gradeDeal({price_cents:8000, list_price_cents:10000, verified_price_cents:8000}, DEAL_SETTINGS).facts,
+    ['20% below the list price','Verified deal on wowpriced']);
+  assert.equal(gradeDeal({price_cents:8000, avg90:10000}, {...DEAL_SETTINGS,a_max_avg_ratio:.7}).grade,'B');
+});
+const liveDeal = () => ({key:'one', url:'https://www.amazon.com/dp/B000000000?tag=example-20', status:'alive', badge:'verified', final_price:13.99});
+test('only live public verified offers can confer verified grade credit', () => {
+  assert.equal(publishedDealPrice({deals:[liveDeal()]},'B000000000', NOW),1399);
+  for (const change of [{status:'dead'},{locked:true},{price_unconfirmed:true},{price_aged:true},{click_price_unknown:true},
+    {badge:'unverified'},{final_price:0},{final_price:'13.99'},{url:'https://amazon.com.evil/dp/B000000000'},
+    {url:'https://www.amazon.com/dp/B000000001'},{url:'javascript:alert(1)'}]) {
+    assert.equal(publishedDealPrice({deals:[{...liveDeal(),...change}]},'B000000000', NOW),undefined);
+  }
+  assert.equal(publishedDealPrice({spotlight:[{...liveDeal(),spotlight:{until:new Date(NOW-1).toISOString()}}]},'B000000000',NOW),undefined);
+  assert.equal(publishedDealPrice({spotlight:[{...liveDeal(),spotlight:{until:new Date(NOW+1000).toISOString()}}]},'B000000000',NOW),1399);
+});
+function enableDealGrade(p = product()) {
+  config.deal_spotter = {...DEAL_SETTINGS};
+  context.env.ASSETS.fetch = async req => Response.json(new URL(req.url).pathname === '/search-config.json' ? config : {deals:[]});
+  globalThis.fetch = async (url, options) => {
+    calls.push([url,options]); assert.equal(url.pathname,'/product');
+    assert.equal(url.searchParams.get('stats'),'1'); assert.equal(url.searchParams.get('history'),'0');
+    return Response.json({products:[p], tokensConsumed:1});
+  };
+  return suffix => onRequest({...context,request:new Request('https://wowpriced.test/api/search?asin='+p.asin+(suffix || ''))});
+}
+test('checker then deal grade reuses one cache and never exposes private average', async () => {
+  const p = product(); p.stats.avg90[18]=2000;
+  const request = enableDealGrade(p);
+  const checker = await body(await request()); assert(!checker.deal_grade && !checker._deal);
+  const result = await body(await request('&grade=deal'));
+  assert.equal(result.deal_grade.grade,'A'); assert.deepEqual(result.items,checker.items); assert.equal(calls.length,1);
+  assert.equal(JSON.parse(values.get('search:v1:2026-10-17')).tokens,1);
+  for (const word of ['avg90','_deal','history',KEY]) assert(!JSON.stringify(result).includes(word));
+  const cached = await [...cache.values()][0].clone().json(); assert.equal(cached._deal.avg90,2000);
+  assert(!Object.hasOwn(cached,'deal_grade'));
+});
+test('deal grade then normal checker keeps checker output unchanged and recalculates live membership', async () => {
+  const request = enableDealGrade();
+  context.env.ASSETS.fetch = async req => Response.json(new URL(req.url).pathname === '/search-config.json' ? config : {deals:[liveDeal()]});
+  const result = await body(await request('&grade=deal')); assert.equal(result.deal_grade.grade,'A');
+  context.env.ASSETS.fetch = async req => Response.json(new URL(req.url).pathname === '/search-config.json' ? config : {deals:[]});
+  assert.equal((await body(await request('&grade=deal'))).deal_grade.grade,'C');
+  const checker = await body(await request()); assert.deepEqual(checker,{items:result.items}); assert.equal(calls.length,1);
+});
+test('deal average follows the same qualified fresh price series as the checker', async () => {
+  for (const kind of ['new','stale','unqualified','same-price']) {
+    cache.clear(); now += 61000;
+    const p = product(); p.stats.avg90[1]=1000; p.stats.avg90[18]=10000;
+    if (kind==='new') p.stats.current[18]=-1;
+    if (kind==='stale') p.stats.lastBuyBoxUpdate=minute(now)-1441;
+    if (kind==='unqualified') p.stats.buyBoxIsUnqualified=true;
+    if (kind==='same-price') {p.stats.current[18]=p.stats.current[1]; p.stats.buyBoxIsUnqualified=true;}
+    const request = enableDealGrade(p);
+    assert.equal((await body(await request('&grade=deal'))).deal_grade.grade,'C',kind);
+  }
+});
+test('deal option is gated, ASIN-only and cannot bypass the shared daily or minute caps', async () => {
+  const request = enableDealGrade();
+  config.tokens_per_day=109;
+  assert.equal((await body(await request('&grade=deal'))).reason,'budget_exhausted');
+  assert.equal(calls.length,0); config.tokens_per_day=3000; config.max_per_minute=0;
+  assert.equal((await body(await request('&grade=deal'))).reason,'rate_limited');
+  config.max_per_minute=20; config.deal_spotter.enabled=false;
+  assert.equal((await body(await request('&grade=deal'))).reason,'disabled');
+  delete config.deal_spotter;
+  assert.equal((await body(await request('&grade=deal'))).reason,'disabled');
+  assert.equal((await request('&grade=deal&grade=deal')).status,400);
+  assert.equal((await onRequest({...context,request:new Request('https://wowpriced.test/api/search?q=tea&grade=deal')})).status,400);
+  assert.equal(calls.length,0);
+});
+test('missing price still gives C and failed inventory cannot award A', async () => {
+  const p = product(); p.stats.current[1]=-1; p.stats.current[18]=-1;
+  const request=enableDealGrade(p);
+  context.env.ASSETS.fetch = async req => {if(new URL(req.url).pathname==='/search-config.json') return Response.json(config); throw Error('offline');};
+  const result = await body(await request('&grade=deal'));
+  assert.deepEqual(result.items,[]);assert.deepEqual(result.deal_grade,{grade:'C',label:'Fair price',facts:[]});
 });
