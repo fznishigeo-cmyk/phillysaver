@@ -1,0 +1,128 @@
+name: Facebook Page kit (manual)
+
+# Fills in the wowpriced Facebook Page from docs/social/ (operator 2026-10-22:
+# "facebook ... needs to be filled in properly with high quality images").
+# One action per run, never scheduled: "check" (read-only), "profile" (about,
+# description, website, email, cover photo), "welcome" (the welcome photo post,
+# then pin it) or "checker" (the Deal Checker photo post). Prints ids and
+# Facebook's error codes only, never the key. Profile edits need the
+# pages_manage_metadata permission; without it Facebook refuses and the run
+# says which fields to fill in by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "check | profile | welcome | checker"
+        type: choice
+        options: [check, profile, welcome, checker]
+        default: check
+
+permissions:
+  contents: read
+
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install YAML reader
+        run: python3 -m pip install --quiet pyyaml
+
+      - name: Talk to the Graph API
+        env:
+          META_SYSTEM_TOKEN: ${{ secrets.META_SYSTEM_TOKEN }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request, uuid
+          from pathlib import Path
+          import yaml
+          meta = yaml.safe_load(open("config.yaml"))["social"]["meta"]
+          base, page_id = meta["graph_base"], meta["page_id"]
+          tok, action = os.environ.get("META_SYSTEM_TOKEN", "").strip(), os.environ["ACTION"]
+          UA = {"User-Agent": "wowpriced-page-kit/1.0 (+https://wowpriced.com; hello@wowpriced.com)"}
+          if not tok:
+              print("META_SYSTEM_TOKEN is empty or missing"); raise SystemExit(1)
+
+          def call(method, path, token, data=None, files=None):
+              url = f"{base}/{path}"
+              if method == "GET":
+                  url += "?" + urllib.parse.urlencode({**(data or {}), "access_token": token})
+                  body, headers = None, dict(UA)
+              elif files:
+                  boundary = uuid.uuid4().hex
+                  parts = []
+                  for k, v in {**(data or {}), "access_token": token}.items():
+                      parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+                  for k, path_ in files.items():
+                      parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"; filename="{Path(path_).name}"\r\n'
+                                   f'Content-Type: image/png\r\n\r\n'.encode() + Path(path_).read_bytes() + b"\r\n")
+                  body = b"".join(parts) + f"--{boundary}--\r\n".encode()
+                  headers = {**UA, "Content-Type": f"multipart/form-data; boundary={boundary}"}
+              else:
+                  body = urllib.parse.urlencode({**(data or {}), "access_token": token}).encode()
+                  headers = dict(UA)
+              req = urllib.request.Request(url, data=body, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      return json.load(r), None
+              except urllib.error.HTTPError as e:
+                  err = json.load(e).get("error", {})
+                  return None, f"HTTP {e.code} code {err.get('code')} {err.get('type', '')}: {err.get('message', '')}"
+
+          page, err = call("GET", page_id, tok, {"fields": "name,access_token,link,about,website,emails"})
+          if err:
+              print("page access failed:", err); raise SystemExit(1)
+          ptok = page.pop("access_token")
+          print(f"page: {page.get('name')} {page.get('link')} website={page.get('website')!r} about={page.get('about')!r}")
+          scopes, _ = call("GET", "debug_token", tok, {"input_token": tok})
+          have = set((scopes or {}).get("data", {}).get("scopes", []))
+          print("pages_manage_metadata:", "yes" if "pages_manage_metadata" in have else "MISSING")
+          if action == "check":
+              raise SystemExit(0)
+
+          WELCOME = ("Welcome to Wowpriced 👋 We find real price drops from trusted deal sites and stores, all day. "
+                     "Every price is checked against its source before it goes live, and expired deals come down fast.\n"
+                     "🔎 Free Deal Checker: paste a product link and see if today's price is really a deal → "
+                     "https://wowpriced.com/amazon-deal-checker/\n"
+                     "🏷️ Discount Finder → https://wowpriced.com/amazon-discount-finder/\n"
+                     "Free, no sign-up. Follow for deals every day.")
+          CHECKER = ("Is it really a good deal? 🤔 Paste any product link into our free Deal Checker. No sign-up. "
+                     "👉 https://wowpriced.com/amazon-deal-checker/")
+          ABOUT = "Real deals, verified prices. Every price is checked before it goes live. Free at wowpriced.com"
+          DESCRIPTION = ("Wowpriced finds real price drops from trusted deal sites and stores, around the clock. Every price "
+                         "is checked against its source before it goes live, Amazon prices are re-checked right before they "
+                         "show, and expired deals come down fast. Free tools: the Deal Checker (paste a product link to see "
+                         "if today's price is really a deal) and the Discount Finder. Free, no sign-up. We may earn a "
+                         "commission when you buy through our links, at no extra cost to you.")
+          failed = []
+          if action == "profile":
+              for field, value in (("about", ABOUT), ("description", DESCRIPTION),
+                                   ("website", "https://wowpriced.com"), ("emails", json.dumps(["hello@wowpriced.com"]))):
+                  _, err = call("POST", page_id, ptok, {field: value})
+                  print(f"{field}: {'ok' if not err else err}")
+                  if err: failed.append(field)
+              photo, err = call("POST", f"{page_id}/photos", ptok, {"published": "false"},
+                                files={"source": "docs/social/cover.png"})
+              if not err:
+                  _, err = call("POST", page_id, ptok, {"cover": photo["id"], "no_feed_story": "true"})
+              print(f"cover: {'ok' if not err else err}")
+              if err: failed.append("cover")
+          elif action in ("welcome", "checker"):
+              image = "docs/social/welcome-post.png" if action == "welcome" else "docs/social/deal-checker-post.png"
+              post, err = call("POST", f"{page_id}/photos", ptok, {"caption": WELCOME if action == "welcome" else CHECKER},
+                               files={"source": image})
+              print(f"{action} post: {'ok ' + str(post.get('post_id') or post.get('id')) if not err else err}")
+              if err:
+                  raise SystemExit(1)
+              if action == "welcome" and post.get("post_id"):
+                  _, err = call("POST", post["post_id"], ptok, {"is_pinned": "true"})
+                  print(f"pin: {'ok' if not err else err + ' (pin it by hand: … → Pin to Featured)'}")
+          if failed:
+              print("fill in by hand:", ", ".join(failed))
+          PY
