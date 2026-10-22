@@ -244,6 +244,36 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Deal Spotter (Codex task 366, 2026-10-22; enabled, not deployed):**
+  `deal_spotter.enabled` ships true. New `/deal-spotter/` and
+  `/fakespot-alternative/` pages, sitemap entries, footer discovery and tool
+  menus. Original HTML/SVG illustrations, animated stepper/demo, phone
+  carousel, published deal counts/cards, FAQ schema, cookie notice and the
+  existing install flow. The input parser, affiliate/variant links, similar
+  discounts and price disclosure come from the existing checker code.
+  Shareable ASIN results, 10–25-second real-time progress gated on response,
+  modal keyboard handling, Escape cancellation, copy/share and reanalysis.
+  `functions/api/deal-grade.js` owns deterministic A/B/C math; `grade=deal`
+  decorates the existing search lookup, cache, reservation and settlement.
+  Ordinary and graded requests share one cache; its private selected-series
+  `avg90` is stripped from every browser response. Current published verified
+  membership is checked again on cache hits. `stats=1, history=0`, all search
+  caps and token options stay unchanged. Task 367 can add `grade=reviews`
+  separately; no review grading was implemented here.
+  OFF/missing/back-to-OFF matches three pre-edit whole-publication hashes;
+  historical fixtures opt out via `pre_deal_spotter`, without re-pinning.
+  ON leaves homepage/card bytes unchanged apart from requested footer links.
+  Validation so far: 22 focused Python tests passed; 80 backend Node tests
+  passed, plus emitted UI timing/cancel/reanalysis/share/parser checks. Task
+  206's shipped phone budget passed. Full `.venv/bin/pytest -q -n 3` is in
+  progress; final results will replace this note. Real Chromium is blocked by
+  sandbox `setsockopt: Operation not permitted`; the new harness covers all
+  four requested viewports, light/dark, states, focus, contrast, geometry and
+  CLS and writes screenshots only to its supplied tmp_path. No screenshots
+  could be produced here. Git branch/commit writes are blocked by the shared
+  Git directory's read-only filesystem. No push, deployment or live API call;
+  `.codex-ref` remains ignored and untouched. Remaining: full-suite result,
+  native visual review, commit in a writable Git checkout, review/merge/deploy.
 - **Off-site unseen expiry (Codex task 365, 2026-10-21; uncommitted, OFF):**
   Strict `retention.offsite_unseen_days` defaults/ships null; integer 1–3650 opts
   in. Current render selections, retained pages, public aggregate contributors

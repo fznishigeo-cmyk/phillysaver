@@ -394,6 +394,7 @@ class AppConfig:
     all_discounts_button: bool = False
     discounts_from_link: bool = False
     tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
+    deal_spotter: dict = field(default_factory=lambda: validated_deal_spotter({}))
     tool_pages_hero: bool = False
     tool_pages_1020: bool = False
     tool_pages_1020_phone_links: str = "chips"
@@ -901,6 +902,24 @@ def validated_keyword_volumes(value) -> dict:
     return settings
 
 
+def validated_deal_spotter(value) -> dict:
+    defaults = dict(enabled=False, a_max_avg_ratio=.85, b_max_avg_ratio=.97,
+                    b_min_list_pct=20, verified_max_ratio=1.02)
+    if not isinstance(value, dict) or set(value) - defaults.keys():
+        raise ValueError("deal_spotter must contain only supported settings")
+    settings = {**defaults, **value}
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("deal_spotter.enabled must be a boolean")
+    for key in defaults.keys() - {"enabled"}:
+        if type(settings[key]) not in (int, float) or not math.isfinite(settings[key]):
+            raise ValueError(f"deal_spotter.{key} must be finite")
+    if not (0 < settings["a_max_avg_ratio"] <= settings["b_max_avg_ratio"] <= 1
+            and 0 <= settings["b_min_list_pct"] <= 100
+            and 1 <= settings["verified_max_ratio"] <= 1.1):
+        raise ValueError("deal_spotter thresholds are out of range")
+    return settings
+
+
 def validated_tool_pages(value) -> dict:
     if not isinstance(value, dict) or set(value) - {"enabled", "public"}:
         raise ValueError("tool_pages must contain enabled and public only")
@@ -931,6 +950,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     cfg = AppConfig(raw=raw)
     cfg.tool_pages = validated_tool_pages(raw.get("tool_pages", {}))
+    cfg.deal_spotter = validated_deal_spotter(raw.get("deal_spotter", {}))
     from .appeal_score import validate as validate_appeal_score
     cfg.appeal_score = validate_appeal_score(raw.get("appeal_score", {}))
     cfg.compare = validated_compare(raw.get("compare", {}))

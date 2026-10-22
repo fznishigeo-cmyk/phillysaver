@@ -1,5 +1,6 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
 import {matchesSearch, searchWords} from "../../dealradar/publish/templates/search-products.js";
+import {gradeDeal, publishedDealPrice, validDealSettings} from "./deal-grade.js";
 
 const RESERVATION = 110; // each search page (10) + up to 100 product tokens
 const SCHEMA = `CREATE TABLE IF NOT EXISTS search_budget (
@@ -214,6 +215,10 @@ export async function onRequest(context) {
   const params = new URL(request.url).searchParams;
   const q = normalizeQuery(params.get("q"));
   const asin = params.get("asin") || "";
+  // Deal Spotter (366): decoration only. The lookup, reservation and cache below
+  // are shared with Deal Checker; grade=reviews belongs to the separate tool.
+  const dealGrade = params.get("grade") === "deal";
+  if (dealGrade && (!asin || params.getAll("grade").length !== 1)) return json({items:[], reason:"invalid_query"}, 400);
   if (params.has("asin") ? !/^[A-Z0-9]{10}$/.test(asin) || params.getAll("asin").length !== 1 || params.has("q")
       : !q || params.getAll("q").length !== 1) return json({items:[], reason:"invalid_query"}, 400);
   const rawPage = params.get("page"), page = rawPage === null ? 0 : Number(rawPage);
@@ -222,6 +227,21 @@ export async function onRequest(context) {
   try {
     const cfg = await settings(context);
     if (!cfg) return json({items:[], reason:"disabled"});
+    if (dealGrade && !validDealSettings(cfg.deal_spotter)) return json({items:[], reason:"disabled"});
+    async function respond(body) {
+      // Never serialize private cache inputs, even for a normal checker request.
+      const {_deal, ...publicBody} = body;
+      if (dealGrade) {
+        let verified;
+        try {
+          const response = await env.ASSETS.fetch(new Request(new URL('/deals.json', request.url)));
+          if (response.ok) verified = publishedDealPrice(await response.json(), asin);
+        } catch (_) { /* Missing inventory cannot confer verified status. */ }
+        publicBody.deal_grade = gradeDeal({...publicBody.items?.[0], avg90:_deal?.avg90,
+          verified_price_cents:verified}, cfg.deal_spotter);
+      }
+      return json(publicBody);
+    }
     if (page >= (cfg.search_more?.enabled ? cfg.search_more.pages : 1)) return json({items:[], reason:"invalid_page"}, 400);
     const cache = globalThis.caches && caches.default;
     // Limits are part of the key: switching OFF or changing policy cannot reuse
@@ -230,7 +250,7 @@ export async function onRequest(context) {
       (cfg.analyze_top_sellers === true ? "&v=2" : "") +
       "&policy=" + encodeURIComponent(JSON.stringify(cfg)), request.url));
     const cached = cache && cfg.cache_hours && await cache.match(cacheKey);
-    if (cached) return json(await cached.json());
+    if (cached) return respond(await cached.json());
     if (!env.KEEPA_KEY || !env.SEARCH_BUDGET || typeof env.SEARCH_BUDGET.get !== "function" ||
         typeof env.SEARCH_BUDGET.put !== "function") return json({items:[], reason:"unavailable"});
     if (!env.SEARCH_LIMITS || typeof env.SEARCH_LIMITS.prepare !== "function" ||
@@ -278,9 +298,19 @@ export async function onRequest(context) {
       await env.SEARCH_LIMITS.prepare("UPDATE search_dispatch SET held = 0, ready = ? WHERE id = 1 AND ready = ?")
         .bind(Date.now() + cooldown, lease).run();
     }
+    const checkedNow = Date.now();
     const body = {items:cfg.analyze_top_sellers === true && !asin
       ? topSellerItems(data.products, q, cfg.analyze_exclude)
-      : currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products, Date.now(), cfg.analyze_top_sellers === true)};
+      : currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products, checkedNow, cfg.analyze_top_sellers === true)};
+    // Task 366: capture only the matching series' average in the edge cache.
+    // stats=1 is unchanged; use avg90 when supplied, with no added token cost.
+    if (asin && validDealSettings(cfg.deal_spotter) && body.items.length) {
+      const p = data.products.find(p => p?.asin === asin), current = p.stats.current;
+      const buybox = p.stats.buyBoxIsUnqualified !== true && Number.isSafeInteger(current[18]) &&
+        current[18] > 0 && stamp(p.stats.lastBuyBoxUpdate, checkedNow);
+      const avg90 = p.stats.avg90?.[buybox ? 18 : 1];
+      body._deal = {avg90:Number.isSafeInteger(avg90) && avg90 > 0 ? avg90 : null};
+    }
     const ttl = Math.floor(Math.min(cfg.cache_hours * 3600, ...body.items.map(
       item => (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000)));
     if (cache && ttl > 0) {
@@ -288,6 +318,6 @@ export async function onRequest(context) {
         await cache.put(cacheKey, Response.json(body, {headers:{"Cache-Control":"public, max-age=" + ttl}}));
       } catch (_) { /* A cache failure cannot turn into an upstream retry. */ }
     }
-    return json(body);
+    return respond(body);
   } catch (_) { return json({items:[], reason:"budget_unavailable"}); }
 }

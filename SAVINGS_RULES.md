@@ -264,3 +264,45 @@ in `savings.pack_quantity`; the pack count must be a whole number.
   up paying nothing", which is the deal's real economics — but it is **always
   flagged `rebate_dependent`** because the buyer must float the cash and file
   the rebate, and a missed rebate makes the real pct 0%.
+
+## Deal Spotter (operator 2026-10-22, task 366)
+
+`deal_spotter.enabled` ships true; false or missing emits no tool pages,
+assets, discovery links or search-config extension. Grading is deterministic
+server code in `functions/api/deal-grade.js` (the browser never grades).
+This is the Pages Function exception to the Python savings-math location:
+live browser requests do not pass through Python. Published card savings
+still use `dealradar/savings.py`.
+
+All grade inputs are integer cents. Select exactly the checker's current
+qualified, fresh Buy Box price (`stats.current[18]`) or its NEW fallback
+(`[1]`), with the same timestamp/freshness checks. Read `stats.avg90` at
+that same index; missing, nonpositive or malformed averages count as absent.
+Keep `stats=1, history=0` unchanged and use `avg90` when present. There is
+no extra request, no extra token option, no second budget and no second
+cache. The selected average lives only inside the edge cache; every response
+path strips it, including ordinary checker requests reading that cache.
+
+In priority order, using thresholds in `config.yaml`:
+
+- A, **Great price**: price <= `a_max_avg_ratio` (0.85) times the private
+  average, OR a live verified published offer exists for that ASIN and
+  price <= `verified_max_ratio` (1.02) times its offer price.
+- B, **Good price**: price <= `b_max_avg_ratio` (0.97) times the private
+  average, OR no usable average and current list-price discount >=
+  `b_min_list_pct` (20).
+- C, **Fair price**: all other cases, including missing price inputs.
+
+There are no D/F grades. List-price percent is `(list - price) / list * 100`,
+compared before rounding; factual display uses floor. Invalid settings fail
+closed. Verified eligibility is recalculated from current `deals.json` even
+on a cache hit: locked, ended, unverified, unconfirmed and aged offers, and
+expired spotlight offers, never confer credit. Where multiple eligible offers
+exist, use the lowest current published offer price. Original affiliate links
+and any checkout-step instructions remain those of the published cards.
+
+The public grade object contains only `{grade, label, facts}`. No historical
+prices, averages, ratios, reasons implying price history, or price-history
+fields reach HTML, browser JSON, alt text or structured data. A grade describes
+a price, not product quality. The SEO shutdown date is sourced to Mozilla's
+announcement: https://blog.mozilla.org/en/mozilla/building-whats-next/ .

@@ -201,6 +201,13 @@ header_polish: true  # task 305: aligned desktop search/actions and a single cat
 all_discounts_button: true  # operator 2026-10-19: "All discounts" — "the same style as the Analyze button"
 discounts_from_link: true  # operator 2026-10-19: "When I enter a URL and I click All discounts, it doesn't take me to anything related to the URL"
 tool_pages: {enabled: true, public: true}  # operator 2026-10-19 ~19:08Z: "amazon deal checker and amazon discount finder both APPROVED!"
+# Operator 2026-10-22: Deal Spotter ships ON. Uses the existing search budget/cache.
+deal_spotter:
+  enabled: true
+  a_max_avg_ratio: 0.85
+  b_max_avg_ratio: 0.97
+  b_min_list_pct: 20
+  verified_max_ratio: 1.02
 tool_pages_hero: true  # operator 2026-10-19 ~21:00Z: "Mockups LOOK AMAZING.. GO AHEAD"
 tool_pages_1020: true  # operator 2026-10-20 ~02:15Z: "it looks cheap ... people are not stupid"; "it should say AI ... it is AI"
 tool_pages_1020_phone_links: "chips"  # "chips" keeps the category row's existing height; "line" adds 28px below the header
