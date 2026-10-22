@@ -29,7 +29,10 @@ jobs:
         with:
           node-version: '20'
       - name: Install Playwright Chromium
-        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+        # The system-library step (apt) took 8.5-9.5 min twice on 2026-10-22 and timed the
+        # 12-minute watch out (#199, #201). Cap it; the runner image already has
+        # Chromium's libraries, so the browser alone is enough when apt is slow.
+        run: npm install --no-save playwright@1.48.2 && (timeout 240 npx playwright install --with-deps chromium || npx playwright install chromium)
       - name: Check the live site
         run: node scripts/site_check.js
       - name: Upload screenshots
