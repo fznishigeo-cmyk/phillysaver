@@ -21,6 +21,17 @@ const similar = new URL(scope.toolSimilar({title:'Wireless Headphones (Blue) wit
 assert.equal(similar.searchParams.get('tag'),'example-20');
 assert.equal(similar.searchParams.get('k'),'Wireless Headphones with charging case');
 assert.match(similar.searchParams.get('rh'),/23566065011,p_36:-5000/);
+// Operator 2026-10-22: the kind of product, best sellers first, still capped and tagged.
+const kind = new URL(scope.spotterSimilar({title:'SENNHEISER HD 599SE Open-Back Wired Audiophile Headphones, Black',
+  category:'Over-Ear Headphones'}));
+assert.equal(kind.searchParams.get('k'),'Over-Ear Headphones');
+assert.equal(kind.searchParams.get('s'),'exact-aware-popularity-rank');
+assert.equal(kind.searchParams.get('tag'),'example-20');
+assert.match(kind.searchParams.get('rh'),/23566065011,p_36:-5000/);
+const named = new URL(scope.spotterSimilar({title:'Wireless Headphones (Blue) with charging case, Foldable'}));
+assert.equal(named.searchParams.get('k'),'Wireless Headphones with charging case');  // no category: product words
+assert.equal(named.searchParams.get('s'),'exact-aware-popularity-rank');
+assert.equal(new URL(scope.spotterSimilar({title:'Mug', category:'Kitchen & Dining'})).searchParams.get('k'),'Kitchen Dining');
 assert(!source.includes('avg90'));
 console.log('Deal Spotter parser, shared affiliate links, and private-input guard passed');
 

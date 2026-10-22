@@ -134,6 +134,10 @@ export function currentItems(products, now = Date.now(), includeMonthlySold = tr
     const item = {asin:p.asin, title:p.title.trim().slice(0, 500), image, price_cents:price, as_of:asOf};
     if (Number.isSafeInteger(current[4]) && current[4] > price) item.list_price_cents = current[4];
     if (includeMonthlySold && Number.isSafeInteger(p.monthlySold) && p.monthlySold > 0) item.monthlySold = p.monthlySold;
+    // Amazon's own most specific category ("Over-Ear Headphones"): Deal Spotter's
+    // "similar deals" searches the kind of product, not its full name.
+    const leaf = Array.isArray(p.categoryTree) && p.categoryTree.length ? p.categoryTree[p.categoryTree.length - 1] : null;
+    if (leaf && typeof leaf.name === "string" && leaf.name.trim() && leaf.name.length <= 80) item.category = leaf.name.trim();
     items.push(item);
     seen.add(p.asin);
     if (items.length === 10) break;

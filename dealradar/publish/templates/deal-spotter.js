@@ -3,6 +3,15 @@ function parseSpotterInput(value) {
   var text = String(value || '').trim();
   return /^(?=.*\d)[a-z0-9]{10}$/i.test(text) ? {kind:'amazon', asin:text.toUpperCase()} : analyzeInput(text);
 }
+// Operator 2026-10-22 ("CONFIRMED proceed!"): Amazon's best sellers of the same
+// kind that are on deal, under the price cap, so the exit earns on whatever the
+// shopper buys. Falls back to the checker's product words.
+function spotterSimilar(item) {
+  var kind = toolQuery(String(item && item.category || '').replace(/&/g, ' '));
+  if (kind && analyzeAdult(kind)) kind = '';
+  var url = toolSimilar(kind ? Object.assign({}, item, {title: kind}) : item);
+  return url.replace('&tag=', '&s=exact-aware-popularity-rank&tag=');
+}
 (function () {
   'use strict';
   var $ = id => document.getElementById(id), modal = $('analyze-modal'), active = null, resultItem = null;
@@ -97,7 +106,7 @@ function parseSpotterInput(value) {
     $('grade-label').textContent = grade.label;
     $('result-buy').href = toolAmazon(item.asin);
     toolActive = {raw:task.raw, input:task.input};
-    $('result-similar').href = toolSimilar(item);
+    $('result-similar').href = spotterSimilar(item);
     if ($('review-link')) $('review-link').href = '/review-checker/?asin=' + encodeURIComponent(item.asin);
     var facts = (Array.isArray(grade.facts) ? grade.facts : []).filter(fact => typeof fact === 'string');
     var minutes = Math.max(0, Math.floor((Date.now() - Date.parse(item.as_of)) / 60000));

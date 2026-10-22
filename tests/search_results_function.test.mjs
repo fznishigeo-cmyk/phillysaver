@@ -93,6 +93,16 @@ test('first-page facts have an exact public allowlist, current Buy Box price and
   for (const word of ['history', 'avg90', 'rating', 'reviewCount', 'sales']) assert(!output.includes(word));
   assert.equal(JSON.parse([...values.values()][0]).tokens, 20);
 });
+test('items carry Amazon\'s most specific category name when Keepa has one', () => {
+  const p = product();
+  assert.equal(currentItems([p], now)[0].category, undefined);
+  p.categoryTree = [{catId:1, name:'Electronics'}, {catId:2, name:'Over-Ear Headphones'}];
+  assert.equal(currentItems([p], now)[0].category, 'Over-Ear Headphones');
+  p.categoryTree = [{catId:3, name:'x'.repeat(81)}];
+  assert.equal(currentItems([p], now)[0].category, undefined);
+  p.categoryTree = [{catId:4}];
+  assert.equal(currentItems([p], now)[0].category, undefined);
+});
 test('new current fallback skips absent/invalid/stale prices and never falls back to averages', () => {
   const p = product(); p.stats.current[18] = -1;
   assert.equal(currentItems([p], now)[0].price_cents, 1234);
