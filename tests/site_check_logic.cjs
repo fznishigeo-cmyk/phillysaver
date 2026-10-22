@@ -237,16 +237,24 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
 }
 
 // Public tool pages append their two links after the event pages; preview adds none.
+// Deal Spotter (with buttons_to_tools) and Review Checker follow, in publish order.
 {
   const fs = require("node:fs"), path = require("node:path");
   const {toolLinks} = require("../scripts/site_check_logic.cjs");
   const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
-  assert.deepEqual(toolLinks(config), [["/amazon-deal-checker/", "Amazon Deal Checker"],
-    ["/amazon-discount-finder/", "Amazon Discount Finder"]]);
+  const checker = [["/amazon-deal-checker/", "Amazon Deal Checker"], ["/amazon-discount-finder/", "Amazon Discount Finder"]];
+  const spotter = [["/deal-spotter/", "Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]];
+  const reviews = [["/review-checker/", "Review Checker"]];
+  assert.deepEqual(toolLinks(config), [...checker, ...spotter, ...reviews]);
   assert.deepEqual(toolLinks(config.replace(/^tool_pages: \{enabled: true, public: true\}/m,
-    "tool_pages: {enabled: true, public: false}")), []);
+    "tool_pages: {enabled: true, public: false}")), [...spotter, ...reviews]);
+  assert.deepEqual(toolLinks(config.replace(/^(deal_spotter:\n  enabled:) true/m, "$1 false")), [...checker, ...reviews]);
+  assert.deepEqual(toolLinks(config.replace(/^buttons_to_tools: true/m, "buttons_to_tools: false")), [...checker, ...reviews]);
+  assert.deepEqual(toolLinks(config.replace(/^(review_checker:\n  enabled:) true/m, "$1 false")), [...checker, ...spotter]);
   assert.deepEqual(toolLinks("tool_pages: {enabled: false, public: true}\n"), []);
   assert.deepEqual(toolLinks("seo:\n  hub_min_items: 10\n"), []);
+  // Only the block's own enabled counts, not a nested one.
+  assert.deepEqual(toolLinks("review_checker:\n  min_reviews: 100\n  sub:\n    enabled: true\n"), []);
 }
 
 // Execute the real Home step: use the browser's cache-busted GET, never the

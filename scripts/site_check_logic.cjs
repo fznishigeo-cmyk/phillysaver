@@ -163,12 +163,22 @@ function eventLinks(config) {
   return enabled ? links : [];
 }
 
-// Public tool pages (task 328) append their links after the event pages.
+// A top-level block's own "enabled: true" (deal_spotter:\n  enabled: true).
+function blockOn(config, key) {
+  const m = config.match(new RegExp(`^${key}:[ \\t]*(?:#.*)?\\n((?:[ \\t]+.*(?:\\n|$))*)`, "m"));
+  return !!m && /^[ \t]{2}enabled:[ \t]*true\b/m.test(m[1]);
+}
+
+// Public tool pages (task 328) append their links after the event pages, then
+// Deal Spotter (needs buttons_to_tools) and Review Checker, in publish order.
 function toolLinks(config) {
   const m = config.match(/^tool_pages:[ \t]*\{([^}]*)\}/m);
   const on = (key) => m && new RegExp(`\\b${key}:[ \\t]*true\\b`).test(m[1]);
-  return on("enabled") && on("public") ? [["/amazon-deal-checker/", "Amazon Deal Checker"],
-    ["/amazon-discount-finder/", "Amazon Discount Finder"]] : [];
+  const spotter = blockOn(config, "deal_spotter") && /^buttons_to_tools:[ \t]*true\b/m.test(config);
+  return [...(on("enabled") && on("public") ? [["/amazon-deal-checker/", "Amazon Deal Checker"],
+    ["/amazon-discount-finder/", "Amazon Discount Finder"]] : []),
+    ...(spotter ? [["/deal-spotter/", "Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]] : []),
+    ...(blockOn(config, "review_checker") ? [["/review-checker/", "Review Checker"]] : [])];
 }
 
 // Runs inside Chromium: take identity and ordering together, before the walk
