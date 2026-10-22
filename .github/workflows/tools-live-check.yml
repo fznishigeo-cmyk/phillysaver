@@ -1,0 +1,37 @@
+name: tools live check (read-only, manual)
+
+# Opens Deal Spotter and Review Checker on wowpriced.com in Chromium (phone and
+# laptop), grades one real Amazon product in each, and keeps the screenshots as
+# the run's artifact. Lookups go through the site's own /api/search caps.
+on:
+  workflow_dispatch:
+    inputs:
+      asin:
+        description: "Amazon ASIN to grade (blank = the first verified Amazon deal on the site)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  look:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+      - name: Install Playwright Chromium
+        run: npm install --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: Open both tools and grade one product
+        env:
+          ASIN: ${{ inputs.asin }}
+        run: node scripts/tools_live_check.js
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: tools-live
+          path: tools-live/*.png
+          retention-days: 7
