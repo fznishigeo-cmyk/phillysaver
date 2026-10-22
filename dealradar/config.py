@@ -932,13 +932,14 @@ def validated_keyword_volumes(value) -> dict:
 
 def validated_deal_spotter(value) -> dict:
     defaults = dict(enabled=False, a_max_avg_ratio=.85, b_max_avg_ratio=.97,
-                    b_min_list_pct=20, verified_max_ratio=1.02)
+                    b_min_list_pct=20, verified_max_ratio=1.02, single_source_ok=False)
     if not isinstance(value, dict) or set(value) - defaults.keys():
         raise ValueError("deal_spotter must contain only supported settings")
     settings = {**defaults, **value}
-    if type(settings["enabled"]) is not bool:
-        raise ValueError("deal_spotter.enabled must be a boolean")
-    for key in defaults.keys() - {"enabled"}:
+    for key in ("enabled", "single_source_ok"):
+        if type(settings[key]) is not bool:
+            raise ValueError(f"deal_spotter.{key} must be a boolean")
+    for key in defaults.keys() - {"enabled", "single_source_ok"}:
         if type(settings[key]) not in (int, float) or not math.isfinite(settings[key]):
             raise ValueError(f"deal_spotter.{key} must be finite")
     if not (0 < settings["a_max_avg_ratio"] <= settings["b_max_avg_ratio"] <= 1

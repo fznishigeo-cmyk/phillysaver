@@ -219,6 +219,7 @@ deal_spotter:
   b_max_avg_ratio: 0.97
   b_min_list_pct: 20
   verified_max_ratio: 1.02
+  single_source_ok: true  # operator 2026-10-22 ~14:35Z (A30): "it doesnt have to verify from 2 sources.. 1 source is fine.. if its a legitimate source" ("Keepa or Slickdeals etc, are super legimate"); our own Amazon price checks still apply
 tool_pages_hero: true  # operator 2026-10-19 ~21:00Z: "Mockups LOOK AMAZING.. GO AHEAD"
 tool_pages_1020: true  # operator 2026-10-20 ~02:15Z: "it looks cheap ... people are not stupid"; "it should say AI ... it is AI"
 tool_pages_1020_phone_links: "chips"  # "chips" keeps the category row's existing height; "line" adds 28px below the header

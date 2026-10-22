@@ -79,9 +79,12 @@ def script(cfg):
     return '\n'.join([settings, exclude, *functions, glue, (TEMPLATES / "deal-spotter.js").read_text()])
 
 
-def live_rows(doc, now):
+def live_rows(doc, now, single_source_ok=False):
     # Every published deal passed the price checks; "badge" only says how many
     # sources agreed (index.html: "No badge = single source"), so it is not a filter.
+    # single_source_ok (operator 2026-10-22, A30: "1 source is fine.. if its a
+    # legitimate source") also keeps deals one source reported; our own Amazon
+    # price checks below still apply.
     rows = list(doc.get("deals", [])) + [d for d in doc.get("spotlight", [])
             if (until := parse_iso((d.get("spotlight") or {}).get("until"))) and until > now]
     seen, result = set(), []
@@ -89,7 +92,7 @@ def live_rows(doc, now):
         key = d.get("key")
         if (not key or key in seen or d.get("locked") or d.get("status") != "alive"
                 or any(d.get(k) for k in ("price_unconfirmed", "price_aged", "click_price_unknown"))
-                or "not yet confirmed" in d.get("headline", "")):
+                or (not single_source_ok and "not yet confirmed" in d.get("headline", ""))):
             continue
         seen.add(key)
         result.append(d)
@@ -100,7 +103,7 @@ PRICES = "deal-spotter-prices.json"
 PRICE_FIELDS = ("status", "final_price", "url", "headline")
 
 
-def price_index(doc):
+def price_index(doc, single_source_ok=False):
     """The few public fields /api/search?grade=deal reads, for Amazon rows only.
 
     The Pages Function has a 10 ms CPU budget on the free plan; parsing all of
@@ -117,10 +120,13 @@ def price_index(doc):
         host = urlsplit(str(d.get("url", ""))).hostname or ""
         return (not d.get("locked") and d.get("status") == "alive"
                 and not any(d.get(k) for k in ("price_unconfirmed", "price_aged", "click_price_unknown"))
-                and "not yet confirmed" not in d.get("headline", "")
+                and (single_source_ok or "not yet confirmed" not in d.get("headline", ""))
                 and re.fullmatch(r"(?:(?:www|smile|m)\.)?amazon\.com", host) is not None)
-    return {"deals": [slim(d) for d in doc.get("deals", []) if amazon(d)],
-            "spotlight": [slim(d) for d in doc.get("spotlight", []) if amazon(d)]}
+    index = {"deals": [slim(d) for d in doc.get("deals", []) if amazon(d)],
+             "spotlight": [slim(d) for d in doc.get("spotlight", []) if amazon(d)]}
+    if single_source_ok:
+        index["single_source_ok"] = True  # deal-grade.js then skips its own one-source check
+    return index
 
 
 def cards(rows):
@@ -216,8 +222,9 @@ def publish(out, cfg, now, site_url, disclosure):
         settings["deal_spotter"] = cfg.deal_spotter
         config_path.write_text(json.dumps(settings, separators=(",", ":")))
     doc = json.loads((out / "deals.json").read_text())
-    (out / PRICES).write_text(json.dumps(price_index(doc), separators=(",", ":")))
-    rows = live_rows(doc, now)
+    single = cfg.deal_spotter.get("single_source_ok") is True
+    (out / PRICES).write_text(json.dumps(price_index(doc, single), separators=(",", ":")))
+    rows = live_rows(doc, now, single)
     versions = {}
     for name in ASSETS:
         content = (script(cfg) if name == "deal-spotter.js" else

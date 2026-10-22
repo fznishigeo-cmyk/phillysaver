@@ -34,7 +34,8 @@ export function publishedDealPrice(doc, asin, now = Date.now()) {
   for (const d of rows) {
     // Published rows passed the price checks; badge only counts agreeing sources.
     if (!d || d.locked || d.status !== 'alive' ||
-        d.price_unconfirmed || d.price_aged || d.click_price_unknown || /not yet confirmed/.test(d.headline || '') ||
+        d.price_unconfirmed || d.price_aged || d.click_price_unknown ||
+        (doc.single_source_ok !== true && /not yet confirmed/.test(d.headline || '')) ||
         typeof d.final_price !== 'number' || !Number.isFinite(d.final_price) || d.final_price <= 0) continue;
     try {
       const url = new URL(d.url);

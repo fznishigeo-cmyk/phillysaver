@@ -881,6 +881,12 @@ test('only live public verified offers can confer verified grade credit', () => 
   }
   assert.equal(publishedDealPrice({spotlight:[{...liveDeal(),spotlight:{until:new Date(NOW-1).toISOString()}}]},'B000000000',NOW),undefined);
   assert.equal(publishedDealPrice({spotlight:[{...liveDeal(),spotlight:{until:new Date(NOW+1000).toISOString()}}]},'B000000000',NOW),1399);
+  // One legitimate source is enough only when the prices file says so (A30, 2026-10-22).
+  const single = {...liveDeal(), headline:'Reported by one source — not yet confirmed.'};
+  assert.equal(publishedDealPrice({deals:[single]},'B000000000', NOW),undefined);
+  assert.equal(publishedDealPrice({deals:[single],single_source_ok:'yes'},'B000000000', NOW),undefined);
+  assert.equal(publishedDealPrice({deals:[single],single_source_ok:true},'B000000000', NOW),1399);
+  assert.equal(publishedDealPrice({deals:[{...single,click_price_unknown:true}],single_source_ok:true},'B000000000', NOW),undefined);
 });
 function enableDealGrade(p = product()) {
   config.deal_spotter = {...DEAL_SETTINGS};

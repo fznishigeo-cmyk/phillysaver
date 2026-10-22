@@ -22,7 +22,8 @@ def clock(monkeypatch):
 
 def test_config_ships_on_defaults_off(tmp_path):
     assert load_config().deal_spotter == dict(enabled=True, a_max_avg_ratio=.85, b_max_avg_ratio=.97,
-                                             b_min_list_pct=20, verified_max_ratio=1.02)
+                                             b_min_list_pct=20, verified_max_ratio=1.02, single_source_ok=True)
+    assert AppConfig().deal_spotter['single_source_ok'] is False  # previous rule: 2+ sources
     path = tmp_path / 'empty.yaml'; path.write_text('{}')
     assert load_config(path).deal_spotter == AppConfig().deal_spotter
     assert AppConfig().deal_spotter['enabled'] is False
@@ -30,7 +31,8 @@ def test_config_ships_on_defaults_off(tmp_path):
 
 @pytest.mark.parametrize('value', [False, None, [], 'on', {'enabled':'true'}, {'enabled':1}, {'typo':True},
     {'a_max_avg_ratio':float('nan')}, {'b_max_avg_ratio':float('inf')}, {'a_max_avg_ratio':True},
-    {'a_max_avg_ratio':1.01}, {'a_max_avg_ratio':.99}, {'b_min_list_pct':-1}, {'verified_max_ratio':2}])
+    {'a_max_avg_ratio':1.01}, {'a_max_avg_ratio':.99}, {'b_min_list_pct':-1}, {'verified_max_ratio':2},
+    {'single_source_ok':'true'}, {'single_source_ok':1}])
 def test_config_rejects_invalid_thresholds(value):
     with pytest.raises(ValueError, match='deal_spotter'):
         validated_deal_spotter(value)
@@ -147,7 +149,7 @@ def test_prices_file_is_published_on_and_removed_off(tmp_path, monkeypatch):
     cfg = load_config()
     out, *_ = render(tmp_path, cfg)
     doc = json.loads((out / 'deal-spotter-prices.json').read_text())
-    assert set(doc) == {'deals', 'spotlight'}
+    assert set(doc) == {'deals', 'spotlight', 'single_source_ok'} and doc['single_source_ok'] is True  # shipped (A30)
     assert len((out / 'deal-spotter-prices.json').read_bytes()) < len((out / 'deals.json').read_bytes())
     cfg.deal_spotter = {'enabled': False}
     render(tmp_path, cfg)
@@ -180,3 +182,20 @@ def test_real_chromium_all_states_and_sizes(tmp_path):
         pytest.skip(result.stdout.strip())
     assert result.returncode == 0,result.stdout+result.stderr
     assert len(list(tmp_path.rglob('*.png'))) >= 56
+
+
+def test_one_legitimate_source_counts_only_when_switched_on():
+    """A30 (2026-10-22): "1 source is fine.. if its a legitimate source". Our own
+    Amazon price checks still decide; only the 2-source headline rule is relaxed."""
+    ok = {'key': 'k1', 'status': 'alive', 'badge': 'unverified', 'final_price': 19.99,
+          'headline': 'Was $40. Reported by one source — not yet confirmed.',
+          'url': 'https://www.amazon.com/dp/B0D8KZHN1Q?tag=x-20'}
+    checked_out = [{**ok, 'key': 'k' + k, k: True} for k in ('price_unconfirmed', 'price_aged', 'click_price_unknown')]
+    doc = {'deals': [ok, *checked_out]}
+    assert deal_spotter.live_rows(doc, NOW) == []
+    assert deal_spotter.live_rows(doc, NOW, single_source_ok=True) == [ok]
+    assert deal_spotter.price_index(doc)['deals'] == []
+    index = deal_spotter.price_index(doc, single_source_ok=True)
+    assert index['single_source_ok'] is True
+    assert index['deals'] == [{k: ok[k] for k in ('status', 'final_price', 'url', 'headline')}]
+    assert 'single_source_ok' not in deal_spotter.price_index(doc)
