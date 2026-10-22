@@ -57,12 +57,11 @@ TOOL_PAGE_CSS = ('.tool-header .spotter-menu{display:none}@media(max-width:960px
                  '.tool-header nav[aria-label="Tools"]{display:none}.tool-header .spotter-menu{display:block}}')
 
 
-def script(cfg):
-    # Extract the same implementations the checker emits: fixes, tag, adult
-    # exclusions and configured Amazon price cap travel with these functions.
-    source = tool_pages.script(cfg)
-    names = ("analyzeInput", "analyzeReason", "analyzeAdult", "analyzeItems", "toolAmazon",
-             "toolQuery", "searchAmazonQuery", "toolSimilar", "monthlyBoughtLabel", "esc")
+EXCLUDE = 'var analyzeExclude = toolSettings.exclude ? new RegExp(toolSettings.exclude, "iu") : null;'
+
+
+def shared_functions(source, names):
+    # The checker's own emitted implementations, so both tools stay in step with it.
     functions = []
     for name in names:
         match = re.search(r"^function " + name + r"\([^\n]*\) \{[^\n]+\}", source, re.M)
@@ -72,12 +71,21 @@ def script(cfg):
         if not match:
             raise ValueError("Deal Spotter shared helper missing: " + name)
         functions.append(match[0])
+    return functions
+
+
+def script(cfg):
+    # Extract the same implementations the checker emits: fixes, tag, adult
+    # exclusions and configured Amazon price cap travel with these functions.
+    source = tool_pages.script(cfg)
+    functions = shared_functions(source, ("analyzeInput", "analyzeReason", "analyzeAdult", "analyzeItems", "toolAmazon",
+                                          "toolQuery", "searchAmazonQuery", "toolSimilar", "monthlyBoughtLabel", "esc"))
     settings = re.search(r"var toolSettings = .*?;", source)[0]
-    exclude = 'var analyzeExclude = toolSettings.exclude ? new RegExp(toolSettings.exclude, "iu") : null;'
     # toolSimilar receives an Amazon input, so its title path is the checker path.
     glue = ('var toolActive = null; function searchText() { return document.getElementById("q").value.trim(); }\n'
             'function discountsLink() { return null; }\n')
-    return '\n'.join([settings, exclude, *functions, glue, (TEMPLATES / "deal-spotter.js").read_text()])
+    return '\n'.join([settings, EXCLUDE, *functions, glue, (TEMPLATES / "tool-name-panel.js").read_text(),
+                      (TEMPLATES / "deal-spotter.js").read_text()])
 
 
 def live_rows(doc, now, single_source_ok=False):

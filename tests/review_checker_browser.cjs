@@ -78,6 +78,12 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         await page.screenshot({path:path.join(shots,`${width}-${theme}-${name}.png`),fullPage:true,animations:'disabled'});
       };
       await snap('start');
+      // Placeholders are never cut off: the long one where it fits, the short one on phones.
+      for(const field of await page.locator('[data-short-placeholder]').all())assert(await field.evaluate(e=>{
+        const s=getComputedStyle(e),c=document.createElement('canvas').getContext('2d');c.font=s.font;
+        return !e.checkVisibility()||c.measureText(e.placeholder).width<=e.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight);}),`${width}: placeholder cut off`);
+      if(width>=1280)assert.equal(await page.locator('#hero-input').getAttribute('placeholder'),'Paste an Amazon link or type a product');
+      if(width===390)assert.equal(await page.locator('#review-input').getAttribute('placeholder'),'Link or product name');
       const watch=await page.locator('.watch-bar').boundingBox();assert(watch.y+watch.height<=height+1);
       // Shoppers never see star ratings or review counts (Amazon's rule), on the page or in the cards.
       assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('body').innerText()));
@@ -115,6 +121,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         assert.equal(new URL(page.url()).searchParams.get('asin'),'B012345678');
         const amazon=await page.getByRole('link',{name:'Read the reviews on Amazon'}).getAttribute('href');
         assert.equal(new URL(amazon).searchParams.get('tag'),'wowpriced-20');
+        assert.equal(await page.locator('#review-report a[href*="review-rank"]').count(),0);
         const text=await page.locator('#review-report').innerText();assert(!/\bstars?\b|\bFAIL\b|\bWARN\b|100 reviews|4\.5/.test(text));
         assert(text.includes('Price as of'));await page.locator('.price-note summary').first().click();
         if(grade!=='C'){await page.locator('.checks-table summary').first().click();assert(await page.locator('.checks-table details').first().evaluate(e=>e.open));}
@@ -149,13 +156,31 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       await page.getByRole('button',{name:'Check another product'}).click();
       // The second (hero) box runs the same check, and errors stay on the box that was used.
       const heroInput=page.locator('#hero-input');
-      await heroInput.fill('not a product link');await page.locator('#hero-form button').click();
+      await heroInput.fill('https://example.test/not-a-product');await page.locator('#hero-form button').click();
       assert.equal(await heroInput.getAttribute('aria-invalid'),'true');assert(await heroInput.evaluate(e=>e===document.activeElement));
-      assert.match(await page.locator('#input-message').textContent(),/Paste an Amazon\.com product link/);
+      assert.match(await page.locator('#input-message').textContent(),/Paste an Amazon\.com product link, or type a product name/);
+      // A typed name spends no lookup: one tagged Amazon highly rated search in a new tab (operator 2026-10-22).
+      const searches=requests.filter(u=>u.endsWith('/api/search')).length;
+      await heroInput.fill('wireless  headphones');await page.locator('#hero-form button').click();
+      const named=page.locator('#name-results .name-button');
+      assert.equal(await named.getAttribute('href'),'https://www.amazon.com/s?k=wireless%20headphones&s=review-rank&tag=wowpriced-20');
+      assert.equal(await named.getAttribute('target'),'_blank');assert.equal(await named.getAttribute('rel'),'sponsored noopener');
+      assert.equal((await named.innerText()).trim(),'See highly rated wireless headphones on Amazon →');
+      assert(await named.evaluate(e=>e===document.activeElement));assert.equal(await heroInput.getAttribute('aria-invalid'),null);
+      assert.equal(await page.locator('#name-results .name-hint').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+      assert.equal(await page.locator('#input-message').textContent(),'');
+      assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('body').innerText()));
+      await snap('name');
+      // The adult filter applies: no button, only the paste-a-link hint.
+      await input.fill('vibrator');await page.locator('#review-form button').click();
+      assert.equal(await page.locator('#name-results').isVisible(),false);
+      assert.equal(await page.locator('#input-message').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+      assert.equal(requests.filter(u=>u.endsWith('/api/search')).length,searches);
       grade='B';await heroInput.fill('https://www.amazon.com/dp/B012345678');await page.locator('#hero-form button').click();
       await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();await page.clock.runFor(10100);
       assert.equal(await page.locator('.grade-letter').textContent(),'B');assert.equal(await heroInput.getAttribute('aria-invalid'),null);
       await page.getByRole('button',{name:'Check another product'}).click();
+      assert.equal(await page.locator('#name-results').isVisible(),false);
       await page.emulateMedia({reducedMotion:'reduce'});
       assert.equal(await page.locator('.tick').first().evaluate(e=>getComputedStyle(e).animationName),'none');
       await page.locator('#footer-email').fill('reader@example.test');await page.locator('[data-join-footer] button').click();

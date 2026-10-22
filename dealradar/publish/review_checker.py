@@ -7,7 +7,7 @@ from html import escape
 from pathlib import Path
 
 from ..config import social_profiles, validated_review_checker
-from . import amazon_as_of, search_boost, seo, tool_pages, tracking
+from . import amazon_as_of, deal_spotter, search_boost, seo, tool_pages, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 PATHS = ("/review-checker/", "/reviewmeta-alternative/")
@@ -61,8 +61,11 @@ def script(cfg):
     settings = {"tag": cfg.affiliate_amazon_tag, "api": cfg.paywall_api_url,
                 "disclaimer": amazon_as_of.DISCLAIMER, "spotter": spotter_on(cfg),
                 "exclude": search_boost.adult_pattern(cfg.search_boost["exclude_words"])}
+    # A typed name uses the checker's own word cleaning and adult filter (no lookup).
+    names = deal_spotter.shared_functions(tool_pages.script(cfg), ("toolQuery", "searchAmazonQuery", "analyzeAdult"))
     return ('"use strict";\nvar toolSettings=' + json.dumps(settings).replace("<", "\\u003c") + ';\n'
-            + shared + '\n' + (TEMPLATES / "review-checker.js").read_text())
+            + shared + '\n' + '\n'.join([deal_spotter.EXCLUDE, *names, (TEMPLATES / "tool-name-panel.js").read_text()])
+            + (TEMPLATES / "review-checker.js").read_text())
 
 
 def _asin(row):

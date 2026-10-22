@@ -13,7 +13,7 @@ function reviewProgress(elapsed, duration, ready) {
   var message = document.getElementById('input-message'), dialog = document.getElementById('review-loading');
   var report = document.getElementById('review-report'), start = document.getElementById('review-start');
   var hero = document.getElementById('hero-form'), heroInput = document.getElementById('hero-input');
-  var terms = document.getElementById('review-terms');
+  var terms = document.getElementById('review-terms'), names = document.getElementById('name-results');
   var active = null, opener = null;
   function element(tag, text, className) {
     var el = document.createElement(tag);
@@ -94,10 +94,15 @@ function reviewProgress(elapsed, duration, ready) {
   }
   function submit(value, knownTitle, field) {
     var parsed = reviewInput(value);
-    field = field || input;
+    field = field || input; names.hidden = true;
+    if (parsed.kind === 'query') {
+      report.hidden = true; start.hidden = false; history.replaceState(null, '', location.pathname);
+      var button = namePanel(names, value);
+      if (button) {input.removeAttribute('aria-invalid'); heroInput.removeAttribute('aria-invalid'); message.textContent = ''; button.focus(); return;}
+    }
     if (parsed.kind !== 'amazon') {
       message.textContent = parsed.kind === 'short' ? 'Open the short link first, then paste the full Amazon product address.' :
-        'Paste an Amazon.com product link or a ten-character ASIN to get started.';
+        parsed.kind === 'query' ? nameHint : 'Paste an Amazon.com product link, or type a product name.';
       field.setAttribute('aria-invalid', 'true'); field.focus(); return;
     }
     stop(false); input.removeAttribute('aria-invalid'); heroInput.removeAttribute('aria-invalid'); message.textContent = '';
@@ -151,6 +156,7 @@ function reviewProgress(elapsed, duration, ready) {
     if (event.key === 'Tab') {event.preventDefault(); document.getElementById('loading-close').focus();}
   });
   window.addEventListener('pagehide', function () {stop(false);});
+  namePlaceholders(); window.addEventListener('resize', namePlaceholders);
   var pause = document.getElementById('demo-pause');
   pause.addEventListener('click', function () {
     var paused = pause.getAttribute('aria-pressed') !== 'true';
@@ -199,6 +205,6 @@ function reviewProgress(elapsed, duration, ready) {
   var params = new URLSearchParams(location.search), asin = params.get('asin');
   if (asin !== null) {
     if (params.getAll('asin').length === 1 && /^(?=.*\d)[a-z0-9]{10}$/i.test(asin)) submit(asin);
-    else {message.textContent = 'Paste an Amazon.com product link or ASIN above to get started.'; input.focus();}
+    else {message.textContent = 'Paste an Amazon.com product link above, or type a product name.'; input.focus();}
   }
 })();

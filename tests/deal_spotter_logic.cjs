@@ -33,6 +33,11 @@ assert.equal(named.searchParams.get('k'),'Wireless Headphones with charging case
 assert.equal(named.searchParams.get('s'),'exact-aware-popularity-rank');
 assert.equal(new URL(scope.spotterSimilar({title:'Mug', category:'Kitchen & Dining'})).searchParams.get('k'),'Kitchen Dining');
 assert(!source.includes('avg90'));
+// Price age reads like the Deal Checker's, never "1084 minutes ago" (operator 2026-10-22).
+const ago = ms => scope.spotterAge(new Date(Date.now() - ms).toISOString());
+for (const [ms,text] of [[-60000,'less than a minute'],[59000,'less than a minute'],[61000,'1 min'],[59*60000+1000,'59 min'],
+  [3600000+1000,'1 hr'],[7200000-1000,'1 hr'],[7200000+1000,'2 hrs'],[1084*60000,'18 hrs'],[86400000-1000,'23 hrs'],
+  [86400000+1000,'1 day'],[2*86400000+1000,'2 days']]) assert.equal(ago(ms),'Price checked '+text+' ago',String(ms));
 console.log('Deal Spotter parser, shared affiliate links, and private-input guard passed');
 
 // Exercise the complete emitted UI with a deterministic clock and network. Native
@@ -42,7 +47,8 @@ function ui() {
   const doc={body:{style:{}},hidden:false};
   function element(id='') {
     const handlers={}, attrs={}, classes=new Set();
-    return {id,hidden:false,style:{},dataset:{},value:'',textContent:'',innerHTML:'',handlers,
+    return {id,hidden:false,style:{},dataset:{},value:'',textContent:'',innerHTML:'',handlers,children:[],
+      append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},
       addEventListener(name,fn){handlers[name]=fn;},setAttribute(k,v){attrs[k]=v;},getAttribute:k=>attrs[k],removeAttribute:k=>delete attrs[k],
       classList:{toggle(k,on){on===false?classes.delete(k):classes.add(k);},contains:k=>classes.has(k)},
       focus(){doc.activeElement=this;},scrollIntoView(){},contains(el){return this===el;},
@@ -55,7 +61,7 @@ function ui() {
   ids['pwa-install'].hidden=ids['pwa-ios'].hidden=true;ids['spotter-result'].hidden=true;
   ids['analyze-modal'].querySelector=()=>progress;
   ids['analyze-modal'].querySelectorAll=()=>[ids['cancel-analysis'],ids['modal-install'],ids['modal-deals']];
-  doc.getElementById=id=>ids[id]; doc.activeElement=ids.q;
+  doc.getElementById=id=>ids[id]; doc.activeElement=ids.q; doc.createElement=()=>element();
   doc.querySelectorAll=selector=>({'[data-analyze]':[hero],'[data-analyze] input':[ids.q],'.how-step':steps,'[data-slide]':slides}[selector]||[]);
   const demo=element(), how=element();
   doc.querySelector=selector=>({'.illustration':illustration,'.demo-frame':demo,'.how-steps':how}[selector]);
@@ -86,7 +92,15 @@ function ui() {
       as_of:new Date(fixed).toISOString(),monthlySold:1000}],deal_grade:{grade,label:{A:'Great price',B:'Good price',C:'Fair price'}[grade],facts:['33% below the list price']}};}};
 }
 (async()=>{
-  const h=ui();h.submit('bad input');assert.equal(h.requests.length,0);assert(h.ids['input-error'].textContent);
+  const h=ui();h.submit('https://not-amazon.example/item');assert.equal(h.requests.length,0);assert(h.ids['input-error'].textContent);
+  // A typed name never calls /api/search: one tagged Amazon highly rated search link, in a new tab.
+  h.submit('wireless  headphones');assert.equal(h.requests.length,0);assert(!h.ids['name-results'].hidden);
+  const [named,hint]=h.ids['name-results'].children;
+  assert.equal(named.href,'https://www.amazon.com/s?k=wireless%20headphones&s=review-rank&tag=example-20');
+  assert.equal(named.target,'_blank');assert.equal(named.rel,'sponsored noopener');assert.equal(h.ctx.document.activeElement,named);
+  assert.equal(named.children[0],'See highly rated wireless headphones on Amazon');assert.match(hint.textContent,/paste the product’s Amazon link/);
+  h.submit('vibrator');assert.equal(h.requests.length,0);assert(h.ids['name-results'].hidden);
+  assert.equal(h.ids['input-error'].textContent,'For an A, B or C grade, paste the product’s Amazon link.');
   h.submit('B0D8KZHN1Q');assert(h.ids['analyze-modal'].open);assert.equal(h.requests.length,1);
   assert.equal(h.requests[0].url,'/api/search?asin=B0D8KZHN1Q&grade=deal');
   h.requests[0].respond(h.data());await h.flush();assert.equal(h.ids['modal-product'].textContent,'Wireless headphones');

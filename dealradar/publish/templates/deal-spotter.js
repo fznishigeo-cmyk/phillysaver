@@ -12,6 +12,12 @@ function spotterSimilar(item) {
   var url = toolSimilar(kind ? Object.assign({}, item, {title: kind}) : item);
   return url.replace('&tag=', '&s=exact-aware-popularity-rank&tag=');
 }
+// Operator 2026-10-22: the Deal Checker's short age wording ("44 min ago", "1 hr ago"), plus days.
+function spotterAge(asOf) {
+  var minutes = Math.max(0, Math.floor((Date.now() - Date.parse(asOf)) / 60000)), hours = Math.floor(minutes / 60), days = Math.floor(hours / 24);
+  return 'Price checked ' + (minutes < 1 ? 'less than a minute' : minutes < 60 ? minutes + ' min' :
+    hours < 24 ? hours + (hours === 1 ? ' hr' : ' hrs') : days + (days === 1 ? ' day' : ' days')) + ' ago';
+}
 (function () {
   'use strict';
   var $ = id => document.getElementById(id), modal = $('analyze-modal'), active = null, resultItem = null;
@@ -30,6 +36,7 @@ function spotterSimilar(item) {
     });
     document.addEventListener('click', event => { if (!menu.contains(event.target)) menu.open = false; });
   });
+  namePlaceholders(); window.addEventListener('resize', namePlaceholders);
   if (!modal) return;
 
   function inputError(message, field) {
@@ -115,8 +122,7 @@ function spotterSimilar(item) {
     $('result-similar').href = spotterSimilar(item);
     if ($('review-link')) $('review-link').href = '/review-checker/?asin=' + encodeURIComponent(item.asin);
     var facts = (Array.isArray(grade.facts) ? grade.facts : []).filter(fact => typeof fact === 'string');
-    var minutes = Math.max(0, Math.floor((Date.now() - Date.parse(item.as_of)) / 60000));
-    facts.push(minutes < 1 ? 'Price checked less than a minute ago' : 'Price checked ' + minutes + ' minutes ago');
+    facts.push(spotterAge(item.as_of));
     var monthly = monthlyBoughtLabel(item.monthlySold);
     if (monthly) facts.push('Popular: ' + monthly);
     $('result-facts').innerHTML = facts.map(fact => '<li>' + esc(fact) + '</li>').join('');
@@ -164,8 +170,15 @@ function spotterSimilar(item) {
     if (active) return;
     var input = parseSpotterInput(raw);
     document.querySelectorAll('[data-analyze] input').forEach(el => el.removeAttribute('aria-invalid'));
+    $('name-results').hidden = true;
+    var button = input.kind === 'query' && namePanel($('name-results'), raw);
+    if (button) {
+      $('input-error').textContent = ''; $('start').hidden = false; $('spotter-result').hidden = true; $('spotter-story').hidden = false;
+      button.focus(); return;
+    }
     if (input.kind !== 'amazon') {
-      inputError(input.kind === 'short' ? analyzeReason('short') : 'Paste an Amazon product link or a 10-character ASIN to get started.', field); return;
+      inputError(input.kind === 'short' ? analyzeReason('short') : input.kind === 'query' ? nameHint :
+        'Paste an Amazon product link, or type a product name.', field); return;
     }
     $('input-error').textContent = '';
     $('q').value = raw; $('header-link').value = raw;

@@ -107,6 +107,11 @@ async function contrastAudit(page) {
         };
         await page.goto('https://wowpriced.test/deal-spotter/');
         await page.clock.runFor(500); await geometry();
+        // Placeholders are never cut off: the long one where it fits, the short one on phones.
+        for(const field of await page.locator('[data-short-placeholder]').all())assert(await field.evaluate(e=>{
+        const s=getComputedStyle(e),c=document.createElement('canvas').getContext('2d');c.font=s.font;
+        return !e.checkVisibility()||c.measureText(e.placeholder).width<=e.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight);}),`${width}: placeholder cut off`);
+        if(width===390)assert.equal(await page.locator('#q').getAttribute('placeholder'),'Link or product name');
         assert((await page.evaluate(()=>window.layoutShift))<.01);
         await shot('start'); await shot('cookie');
         await page.locator('#cookie-ok').click();
@@ -114,6 +119,22 @@ async function contrastAudit(page) {
         await page.locator('#q').fill('https://not-amazon.example/product');
         await page.locator('.hero-box button').click(); assert(await page.locator('#input-error').textContent());
         await geometry(); await shot('error');
+        // A typed name spends no lookup: one tagged Amazon highly rated search in a new tab (operator 2026-10-22).
+        const searches=calls.length;
+        await page.locator('#q').fill('wireless  headphones'); await page.locator('.hero-box button').click();
+        const named=page.locator('#name-results .name-button');
+        assert.equal(await named.getAttribute('href'),'https://www.amazon.com/s?k=wireless%20headphones&s=review-rank&tag=wowpriced-20');
+        assert.equal(await named.getAttribute('target'),'_blank'); assert.equal(await named.getAttribute('rel'),'sponsored noopener');
+        assert.equal((await named.innerText()).trim(),'See highly rated wireless headphones on Amazon →');
+        assert(await named.evaluate(e=>e===document.activeElement)); assert.equal(await page.locator('#input-error').textContent(),'');
+        assert.equal(await page.locator('#name-results .name-hint').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+        assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('main').innerText()));
+        await geometry(); await shot('name');
+        // The adult filter applies: no button, only the paste-a-link hint.
+        await page.locator('#header-link').fill('vibrator'); await page.locator('#header-link').press('Enter');
+        assert(await page.locator('#name-results').isHidden());
+        assert.equal(await page.locator('#input-error').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+        assert.equal(calls.length,searches);
         for(const next of ['A','B','C']) {
           grade=next;
           if(next==='A') {
@@ -139,6 +160,8 @@ async function contrastAudit(page) {
           assert.match(await page.locator('#result-buy').getAttribute('href'),/tag=wowpriced-20/);
           assert.match(await page.locator('#review-link').getAttribute('href'),/asin=B0D8KZHN1Q/);
           assert(!/avg90|lowest|average|overpriced|fake/i.test(await page.locator('#spotter-result').textContent()));
+          assert.equal(await page.locator('#spotter-result a[href*="review-rank"]').count(),0);
+          assert.match(await page.locator('#result-facts').textContent(),/Price checked 4 min ago/);
           await geometry(); await shot('result-'+next);
         }
         // Share URLs rerun the lookup; a slow response cannot be outrun by progress.
