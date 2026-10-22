@@ -50,7 +50,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
           const rgb=s=>s.match(/[\d.]+/g)?.slice(0,3).map(Number);
           const luminance=c=>c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
           const problems=[];
-          for(const el of document.querySelectorAll('h1,.intro-copy,.eyebrow,.blue-bar,.independence,.coverage td,.coverage th,.deal-card h3,.deal-price,.cookie-bar p,.cookie-bar a,.watch-bar a,.grade-box h2,.grade-box p,.grade-letter,.checks-table p,.checks-table h3,.checks-table summary,.footerfine,#footerlinks a')) {
+          for(const el of document.querySelectorAll('h1,.intro h2,.header-label,.header-nav a,.run-report,.hero-box label,.hero-box button,.blue-bar,.independence,.coverage td,.coverage th,.deal-card h3,.card-title,.card-from,.deal-price,.view-report,.watch-bar a,.grade-box h2,.grade-box p,.grade-letter,.checks-table p,.checks-table h3,.checks-table summary,#review-terms h2,#review-terms li,.terms-fine,#cookies-ok,.footer-disclaimer,.footerfine,#footerlinks a,.back-top')) {
             if(!el.checkVisibility())continue;
             const style=getComputedStyle(el);let bgEl=el,bg;
             while(bgEl){const c=getComputedStyle(bgEl).backgroundColor;if(c!=='rgba(0, 0, 0, 0)'&&c!=='transparent'){bg=rgb(c);break;}bgEl=bgEl.parentElement;}
@@ -77,18 +77,30 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${width} ${name}: horizontal scroll`);
         await page.screenshot({path:path.join(shots,`${width}-${theme}-${name}.png`),fullPage:true,animations:'disabled'});
       };
-      await snap('start-cookie-sticky');
-      const cookie=await page.locator('.cookie-bar').boundingBox(),watch=await page.locator('.watch-bar').boundingBox();
-      assert(cookie.y+cookie.height<=watch.y+1);assert(watch.y+watch.height<=height+1);
+      await snap('start');
+      const watch=await page.locator('.watch-bar').boundingBox();assert(watch.y+watch.height<=height+1);
+      // Shoppers never see star ratings or review counts (Amazon's rule), on the page or in the cards.
+      assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('body').innerText()));
+      assert.equal(await page.locator('#review-terms').evaluate(e=>e.open),false);
       await page.keyboard.press('Tab');assert(await page.locator('.skip').evaluate(e=>e===document.activeElement));
       await page.keyboard.press('Tab');await page.keyboard.press('Tab');
       const input=page.locator('#review-input');assert(await input.evaluate(e=>e===document.activeElement));
       assert(await input.evaluate(e=>parseFloat(getComputedStyle(e).outlineWidth)>=2));
+      // The terms notice opens after about 1.5 s; Escape closes it for this visit only.
+      await page.clock.runFor(1600);const terms=page.locator('#review-terms');
+      assert.equal(await terms.evaluate(e=>e.open),true);assert(await page.locator('#cookies-ok').evaluate(e=>e===document.activeElement));
+      await snap('terms');
+      await page.keyboard.press('Escape');assert.equal(await terms.evaluate(e=>e.open),false);
+      assert.equal(await page.evaluate(()=>localStorage.getItem('wp.tools.cookies')),null);
       await input.fill('https://example.test/product');await page.locator('#review-form button').click();
       assert.equal(await input.getAttribute('aria-invalid'),'true');await snap('input-error');
-      await page.locator('#cookies-ok').click();await page.locator('#watch-close').click();
-      await page.reload();await page.locator('#review-input').waitFor();
-      assert.equal(await page.locator('.cookie-bar').isVisible(),false);assert.equal(await page.locator('.watch-bar').isVisible(),false);
+      await page.reload();await page.locator('#review-input').waitFor();await page.clock.runFor(1600);
+      assert.equal(await terms.evaluate(e=>e.open),true);
+      await page.locator('#cookies-ok').click();assert.equal(await terms.evaluate(e=>e.open),false);
+      assert.equal(await page.evaluate(()=>localStorage.getItem('wp.tools.cookies')),'1');
+      await page.locator('#watch-close').click();
+      await page.reload();await page.locator('#review-input').waitFor();await page.clock.runFor(3000);
+      assert.equal(await terms.evaluate(e=>e.open),false);assert.equal(await page.locator('.watch-bar').isVisible(),false);
       for(grade of ['A','B','C']){
         await input.fill('https://amazon.com/dp/B012345678');await page.locator('#review-form button').click();
         await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
@@ -123,11 +135,26 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
       await page.keyboard.press('Escape');
       assert(await page.locator('[data-check-asin]').first().evaluate(e=>e===document.activeElement));
+      // A shared link on a first visit: the notice waits for the check, then opens over the finished report.
+      await page.evaluate(()=>localStorage.removeItem('wp.tools.cookies'));
       await page.goto('https://review.test/review-checker/?asin=B012345678');
       await page.locator('#review-loading[open]').waitFor();
       await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
-      await page.clock.runFor(10100);
-      assert.equal(await page.locator('.grade-letter').textContent(),'C');
+      await page.clock.runFor(2000);
+      assert.equal(await page.locator('#review-loading').evaluate(e=>e.open),true);assert.equal(await terms.evaluate(e=>e.open),false);
+      await page.clock.runFor(8100);assert.equal(await page.locator('.grade-letter').textContent(),'C');
+      await page.clock.runFor(3000);assert.equal(await terms.evaluate(e=>e.open),true);
+      assert(await page.locator('#review-report').isVisible());
+      await page.locator('#cookies-ok').click();
+      await page.getByRole('button',{name:'Check another product'}).click();
+      // The second (hero) box runs the same check, and errors stay on the box that was used.
+      const heroInput=page.locator('#hero-input');
+      await heroInput.fill('not a product link');await page.locator('#hero-form button').click();
+      assert.equal(await heroInput.getAttribute('aria-invalid'),'true');assert(await heroInput.evaluate(e=>e===document.activeElement));
+      assert.match(await page.locator('#input-message').textContent(),/Paste an Amazon\.com product link/);
+      grade='B';await heroInput.fill('https://www.amazon.com/dp/B012345678');await page.locator('#hero-form button').click();
+      await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();await page.clock.runFor(10100);
+      assert.equal(await page.locator('.grade-letter').textContent(),'B');assert.equal(await heroInput.getAttribute('aria-invalid'),null);
       await page.getByRole('button',{name:'Check another product'}).click();
       await page.emulateMedia({reducedMotion:'reduce'});
       assert.equal(await page.locator('.tick').first().evaluate(e=>getComputedStyle(e).animationName),'none');

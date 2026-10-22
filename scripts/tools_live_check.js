@@ -14,7 +14,8 @@ const TOOLS = [
   {name: "deal-spotter", path: "/deal-spotter/", input: "#q", result: "#spotter-result",
    message: "#input-error", grade: "#grade-letter", label: "#grade-label"},
   {name: "review-checker", path: "/review-checker/", input: "#review-input", result: "#review-report",
-   message: "#input-message", grade: "#review-report .grade-letter", label: "#review-report .grade-box p"},
+   message: "#input-message", grade: "#review-report .grade-letter", label: "#review-report .grade-box p",
+   terms: "#review-terms[open]"},
 ];
 
 async function pickAsin() {
@@ -67,6 +68,11 @@ async function amazonBreakdown() {
         await page.route("**/*", route => BLOCK.test(route.request().url()) ? route.abort() : route.continue());
         const response = await page.goto(SITE + tool.path, {waitUntil: "domcontentloaded", timeout: 45000});
         await page.waitForTimeout(1500);
+        // Review Checker's terms notice opens about 1.5 s after load on a first visit.
+        if (tool.terms && await page.waitForSelector(tool.terms, {timeout: 5000}).catch(() => null)) {
+          await page.screenshot({path: `${OUT}/${tool.name}-${size}-terms.png`});
+          await page.click("#cookies-ok");
+        }
         await page.screenshot({path: `${OUT}/${tool.name}-${size}-start.png`});
         await page.fill(tool.input, asin);
         await page.press(tool.input, "Enter");

@@ -35,6 +35,10 @@ background:var(--card);border:1px solid var(--line);border-radius:8px;min-width:
 box-shadow:0 8px 24px #0002;padding:10px;display:flex;flex-direction:column;align-items:stretch;gap:0}
 .tool-header .review-tools-menu nav a{font-size:15px;min-height:44px;padding:8px 12px}}
 </style>"""
+# The desktop links row under the header, as on ReviewMeta (operator 2026-10-22).
+NAV_ROW = [("/amazon-deal-checker/", "Deal Checker"), ("/amazon-discount-finder/", "Discount Finder"),
+           ("/deal-spotter/", "Fake Deal Spotter"), ("/", "Today's Deals"), ("#how-it-works", "How it works"),
+           ("#faq", "FAQ"), ("/about.html", "About")]
 NAV = [("/", "Today's Deals"), ("/amazon-deal-checker/", "Deal Checker"),
        ("/amazon-discount-finder/", "Discount Finder"), ("/deal-spotter/", "Fake Deal Spotter"),
        ("/review-checker/", "Review Checker"), ("/about.html", "About"), ("/review-checker/#faq", "FAQ")]
@@ -79,13 +83,16 @@ def cards(rows):
         pct = row.get("pct_at_checkout") if row.get("regular_price_basis") == "List price" else None
         price_text = f'${price:.2f}' if isinstance(price, (float, int)) else "See today's price"
         discount = f'<span class="discount">{pct:g}% off</span>' if isinstance(pct, (float, int)) and pct > 0 else ''
-        result.append(f'<article class="deal-card"><div class="deal-photo">' +
+        check = f'data-check-asin="{asin}" data-title="{title}"'
+        # Report-card layout: title link first, then the photo, price and a full-width View Report bar.
+        result.append(f'<article class="deal-card"><h3><a class="card-title" href="/review-checker/?asin={asin}" {check}>{title}</a></h3>'
+            f'<p class="card-from">From <span>{escape(row.get("store") or "Amazon")}</span></p><div class="deal-photo">' +
             (f'<img src="{escape(photo, quote=True)}" alt="{title}" width="240" height="180" loading="lazy" decoding="async" referrerpolicy="no-referrer">' if photo else '<span aria-hidden="true">◇</span>') +
-            f'</div><h3>{title}</h3><p class="deal-price">{price_text} {discount}</p>'
+            f'</div><div class="card-body"><p class="deal-price">{price_text} {discount}</p>'
             + (f'<p class="card-as-of">Price as of {escape(row["amazon_as_of"])}</p>' if row.get("amazon_as_of") else '')
             + (f'<p class="card-steps">{escape(row.get("checkout", {}).get("summary", ""))}</p>' if row.get("needs_steps") else '') +
-            f'<button type="button" data-check-asin="{asin}" data-title="{title}">Check reviews</button>'
-            f'<a class="get-deal" href="{escape(row["url"], quote=True)}" rel="sponsored noopener" target="_blank">Get deal <span aria-hidden="true">↗</span></a></article>')
+            f'<a class="get-deal" href="{escape(row["url"], quote=True)}" rel="sponsored noopener" target="_blank">Get deal <span aria-hidden="true">↗</span></a></div>'
+            f'<button type="button" class="view-report" {check}>View Report</button></article>')
     return ''.join(result) or '<p>Explore <a href="/">today’s deals</a>, or paste an Amazon product link above.</p>'
 
 
@@ -120,6 +127,8 @@ def publish(out, cfg, now, site_url, disclosure):
     # Deal Spotter ships separately; never link to it while it is OFF.
     nav = ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV
                   if url != "/deal-spotter/" or spotter_on(cfg))
+    nav_row = ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV_ROW
+                      if url != "/deal-spotter/" or spotter_on(cfg))
     faq = ''.join(f'<details><summary>{escape(q)}</summary><p>{escape(a)}</p></details>' for q, a in FAQ)
     schema = seo._json_ld({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]})
@@ -128,6 +137,8 @@ def publish(out, cfg, now, site_url, disclosure):
                       if profiles.get(name) else f'<span title="{name.title()} — profile link coming soon" aria-label="{name.title()} — profile link coming soon">{icon}</span>')
                      for name, icon in (("facebook", "f"), ("instagram", "◎"), ("pinterest", "p")))
     signup = (TEMPLATES / "footer-signup.html").read_text().replace('aria-labelledby="footer-signup-title" hidden', 'aria-labelledby="footer-signup-title"')
+    signup = signup.replace('>Sign up for the latest deals<', '>Newsletter sign-up<').replace(
+        '<button type="submit" aria-label="Sign up"><span aria-hidden="true">→</span></button>', '<button type="submit">Subscribe</button>')
     install = (TEMPLATES / "pwa-install-button.html").read_text().replace('Install app', 'Install the free app')
     install_script = (TEMPLATES / "pwa-install.js").read_text().replace('phoneDelay = 180000', 'phoneDelay = 0')
     if cfg.pwa_android["enabled"]:
@@ -140,7 +151,7 @@ def publish(out, cfg, now, site_url, disclosure):
                  '<h1>Looking for a ReviewMeta alternative?</h1><p>ReviewMeta is no longer available. '
                  'Review Checker by wowpriced is a free tool that grades the review signals of an Amazon product. '
                  'It does not read or remove reviews.</p><a class="button" href="/review-checker/">Try Review Checker →</a></section>') if alternative else ''
-        html = seo._fill(base, TITLE=escape(title), CANONICAL=site_url + path, LOGO=LOGO, NAV=nav,
+        html = seo._fill(base, TITLE=escape(title), CANONICAL=site_url + path, LOGO=LOGO, NAV=nav, NAV_ROW=nav_row,
                          CSS_VERSION=assets["css"], JS_VERSION=assets["js"], SCHEMA=schema,
                          DISCLAIMER=escape(DISCLAIMER), AMAZON_COUNT=str(len(amazon)), STORE_COUNT=str(len(stores)),
                          CARDS=cards(amazon), FAQ=faq, SIGNUP=signup, SOCIALS=socials,

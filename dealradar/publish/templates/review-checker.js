@@ -12,6 +12,8 @@ function reviewProgress(elapsed, duration, ready) {
   var form = document.getElementById('review-form'), input = document.getElementById('review-input');
   var message = document.getElementById('input-message'), dialog = document.getElementById('review-loading');
   var report = document.getElementById('review-report'), start = document.getElementById('review-start');
+  var hero = document.getElementById('hero-form'), heroInput = document.getElementById('hero-input');
+  var terms = document.getElementById('review-terms');
   var active = null, opener = null;
   function element(tag, text, className) {
     var el = document.createElement(tag);
@@ -90,14 +92,15 @@ function reviewProgress(elapsed, duration, ready) {
     history.replaceState(null, '', location.pathname + '?asin=' + asin);
     title.focus();
   }
-  function submit(value, knownTitle) {
+  function submit(value, knownTitle, field) {
     var parsed = reviewInput(value);
+    field = field || input;
     if (parsed.kind !== 'amazon') {
       message.textContent = parsed.kind === 'short' ? 'Open the short link first, then paste the full Amazon product address.' :
         'Paste an Amazon.com product link or a ten-character ASIN to get started.';
-      input.setAttribute('aria-invalid', 'true'); input.focus(); return;
+      field.setAttribute('aria-invalid', 'true'); field.focus(); return;
     }
-    stop(false); input.removeAttribute('aria-invalid'); message.textContent = '';
+    stop(false); input.removeAttribute('aria-invalid'); heroInput.removeAttribute('aria-invalid'); message.textContent = '';
     input.value = parsed.asin; opener = document.activeElement?.tagName === 'BODY' ? input : document.activeElement;
     var task = {asin:parsed.asin, controller:new AbortController(), started:performance.now(),
       duration:10000 + Math.random() * 15000, ready:false, data:null, lastStep:''};
@@ -137,8 +140,10 @@ function reviewProgress(elapsed, duration, ready) {
       }).catch(function () {if (active === task) {task.data = {reason:'unavailable'}; task.ready = true; tick();}});
   }
   form.addEventListener('submit', function (event) {event.preventDefault(); submit(input.value);});
+  hero.addEventListener('submit', function (event) {event.preventDefault(); submit(heroInput.value, undefined, heroInput);});
+  // Card titles are real ?asin= links (they work without JavaScript); here they check in place.
   document.querySelectorAll('[data-check-asin]').forEach(function (button) {
-    button.addEventListener('click', function () {submit(button.dataset.checkAsin, button.dataset.title);});
+    button.addEventListener('click', function (event) {event.preventDefault(); submit(button.dataset.checkAsin, button.dataset.title);});
   });
   document.getElementById('loading-close').addEventListener('click', function () {stop(true);});
   dialog.addEventListener('cancel', function (event) {event.preventDefault(); stop(true);});
@@ -152,20 +157,30 @@ function reviewProgress(elapsed, duration, ready) {
     pause.setAttribute('aria-pressed', String(paused)); pause.textContent = paused ? 'Play animation' : 'Pause animation';
     document.querySelector('.animation').classList.toggle('paused', paused);
   });
+  // The notice opens once per browser until "I understand and agree"; Escape closes it for this
+  // visit only. It never opens over the loading dialog: it tries again until a check has finished.
+  function showTerms() {
+    if (document.documentElement.classList.contains('cookies-ok') || terms.open) return;
+    if (dialog.open) {setTimeout(showTerms, 1500); return;}
+    terms.showModal();
+  }
+  setTimeout(showTerms, 1500);
   document.getElementById('cookies-ok').addEventListener('click', function () {
     try {localStorage.setItem('wp.tools.cookies', '1');} catch (_) {}
-    document.documentElement.classList.add('cookies-ok');
+    document.documentElement.classList.add('cookies-ok'); terms.close();
   });
   window.addEventListener('storage', function (event) {
-    if (event.key === 'wp.tools.cookies' && event.newValue === '1') document.documentElement.classList.add('cookies-ok');
+    if (event.key === 'wp.tools.cookies' && event.newValue === '1') {document.documentElement.classList.add('cookies-ok'); if (terms.open) terms.close();}
   });
   document.getElementById('watch-close').addEventListener('click', function () {
     try {sessionStorage.setItem('wp.review.watch', '1');} catch (_) {}
     document.documentElement.classList.add('watch-hidden');
   });
-  document.querySelector('.watch-bar a').addEventListener('click', function () {
-    start.hidden = false;
-    document.getElementById('how-it-works').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+  document.querySelectorAll('a[href="#how-it-works"]').forEach(function (link) {
+    link.addEventListener('click', function () {
+      start.hidden = false;
+      document.getElementById('how-it-works').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+    });
   });
   var signup = document.querySelector('[data-join-footer]');
   signup.addEventListener('submit', async function (event) {

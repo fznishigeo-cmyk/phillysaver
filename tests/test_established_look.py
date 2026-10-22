@@ -58,8 +58,9 @@ def test_no_published_page_has_unfinished_visible_copy(tmp_path, monkeypatch, mo
         page = seo_audit.Page(html, name)
         footer = page.first(tag="footer")
         assert footer and f"© {NOW.year} wowpriced" in footer.text(), name
-        links = {n.attrs.get("href"): n.text() for n in footer.nodes() if n.tag == "a"}
-        assert TRUST_LINKS.items() <= links.items(), name
+        # Pairs, not a dict: a later link to the same page (the sign-up's "privacy policy") must not hide the trust link.
+        links = {(n.attrs.get("href"), n.text()) for n in footer.nodes() if n.tag == "a"}
+        assert set(TRUST_LINKS.items()) <= links, name
     if empty:
         best = paths["best-deals-today/index.html"].read_text()
         assert "The 0 best of 0" not in visible_text(best)

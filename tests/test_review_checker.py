@@ -68,7 +68,12 @@ def test_published_facts_links_and_schema(tmp_path,monkeypatch):
     monkeypatch.setattr(site,'util_now',lambda:NOW)
     cfg=load_config();out,doc,*_=render(tmp_path,cfg,deals())
     html=(out/'review-checker/index.html').read_text()
-    assert html.count('data-check-asin=')==6
+    # Each card checks from its title link and its View Report bar (operator 2026-10-22: ReviewMeta layout).
+    assert html.count('data-check-asin=')==12 and html.count('class="view-report"')==6
+    assert html.count('href="/review-checker/?asin=B0')==6
+    assert 'id="hero-form"' in html and 'id="review-terms"' in html and 'I understand and agree' in html
+    assert 'class="cookie-bar"' not in html and 'Microsoft may receive' in html
+    assert not re.search(r'★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b', html, re.I)
     assert '$10.00' in html and '80% off' in html
     assert '6</strong><span>live verified Amazon deals' in html
     assert '1</strong><span>stores in today' in html
@@ -137,5 +142,5 @@ def test_single_source_published_amazon_deals_count(tmp_path, monkeypatch):
     rows = [dict(row, verify_tier='unverified') for row in deals()]
     out, *_ = render(tmp_path, load_config(), rows)
     html = (out / 'review-checker/index.html').read_text()
-    assert html.count('data-check-asin=') == 6
+    assert html.count('class="view-report"') == 6
     assert '6</strong><span>live verified Amazon deals' in html
