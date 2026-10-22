@@ -1,4 +1,4 @@
-import test, {beforeEach, afterEach} from 'node:test';
+import test, {beforeEach, afterEach, mock} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
@@ -57,6 +57,7 @@ beforeEach(() => {
     assert.equal(url.pathname, '/search'); assert.equal(url.searchParams.get('key'), KEY);
     assert.equal(url.searchParams.get('page'), '0'); assert.equal(url.searchParams.get('history'), '0');
     assert.equal(url.searchParams.get('domain'), '1'); assert.equal(url.searchParams.get('type'), 'product');
+    assert(!url.searchParams.has('update'));
     assert.equal(options.redirect, 'manual');
     assert(options.headers['User-Agent'].includes('contact: hello@wowpriced.com'));
     return Response.json({products:Array.from({length:15}, (_, i) => product(i)), tokensConsumed:20,
@@ -251,8 +252,10 @@ test('dispatch lease spaces holders, lapses for a cancelled holder, and a stale 
   while (!finish) await new Promise(resolve => setImmediate(resolve));
   now += 1000;
   assert.equal((await body(await run('second'))).reason, 'rate_limited');
-  // The runtime cancels a holder whose browser aborted: its lease lapses.
+  // The runtime cancels a holder whose browser aborted: its lease lapses after 20 s.
   now += 15000;
+  assert.equal((await body(await run('still held'))).reason, 'rate_limited');
+  now += 4000;
   const stale = finish; finish = null;
   const third = run('third');
   while (!finish) await new Promise(resolve => setImmediate(resolve));
@@ -401,7 +404,7 @@ function productTransport() {
     calls.push([url, options]);
     assert.equal(url.origin + url.pathname, 'https://api.keepa.com/product');
     assert.deepEqual(Object.fromEntries(url.searchParams), {key:KEY, domain:'1', stats:'1', history:'0',
-      asin:url.searchParams.get('asin')});
+      asin:url.searchParams.get('asin'), update:'0'});
     assert.equal(options.redirect, 'manual');
     assert(options.headers['User-Agent'].includes('contact: hello@wowpriced.com'));
     return Response.json({products:[{...product(), asin:url.searchParams.get('asin')}, product(99)], tokensConsumed:1});
@@ -928,6 +931,7 @@ function enableDealGrade(p = product()) {
   globalThis.fetch = async (url, options) => {
     calls.push([url,options]); assert.equal(url.pathname,'/product');
     assert.equal(url.searchParams.get('stats'),'1'); assert.equal(url.searchParams.get('history'),'0');
+    assert.equal(url.searchParams.get('update'),'0');
     return Response.json({products:[p], tokensConsumed:1});
   };
   return suffix => onRequest({...context,request:new Request('https://wowpriced.test/api/search?asin='+p.asin+(suffix || ''))});
@@ -1002,6 +1006,7 @@ function reviewUpstream(receipt=2) {
     calls.push([url,options]); assert.equal(url.origin,'https://api.keepa.com');
     assert.equal(url.pathname,'/product'); assert.equal(url.searchParams.get('rating'),'1');
     assert.equal(url.searchParams.get('stats'),'30'); assert.equal(url.searchParams.get('history'),'0');
+    assert.equal(url.searchParams.get('update'),'0');
     const p=product(); p.stats.current[16]=45; p.stats.current[17]=100;
     p.stats.avg180=Array(18).fill(-1); p.stats.avg180[16]=44;
     p.stats.atIntervalStart=Array(18).fill(-1); p.stats.atIntervalStart[17]=75;
@@ -1048,4 +1053,44 @@ test('review requests share search cooldown and the same daily ledger', async ()
   config.review_checker={...reviewConfig}; await run(); reviewUpstream();
   assert.equal((await body(await reviewRun())).reason,'rate_limited'); assert.equal(calls.length,1);
   now+=1001; await reviewRun(); assert.equal(JSON.parse([...values.values()][0]).tokens,22);
+});
+// Fresh single-product prices: update=0 on every ASIN lookup (never a name search),
+// a longer wait only where the page shows a 10-25 s progress dialog.
+test('a live refresh gets 10 s on Deal Spotter and Review Checker, 4 s elsewhere, and keeps its reservation', async () => {
+  config.deal_spotter = {...DEAL_SETTINGS}; config.review_checker = {...reviewConfig};
+  let signal, url;
+  globalThis.fetch = async (requested, options) => {
+    url = requested; signal = options.signal; return {ok:true, arrayBuffer:() => new Promise(() => {})};
+  };
+  const get = path => onRequest({...context, request:new Request('https://wowpriced.test/api/search?' + path)});
+  mock.timers.enable({apis:['setTimeout']});
+  try {
+    const cases = [['asin=B000000001', 4000, '0'], ['asin=B000000002&grade=deal', 10000, '0'],
+      ['asin=B000000003&grade=reviews', 10000, '0'], ['q=kettle', 4000, null]];
+    for (const [i, [path, wait, update]] of cases.entries()) {
+      signal = null; now += 2000;
+      const pending = get(path);
+      while (!signal) await new Promise(resolve => setImmediate(resolve));
+      assert.equal(url.searchParams.get('update'), update, path);
+      mock.timers.tick(wait - 1);
+      for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setImmediate(resolve));
+      assert(!signal.aborted, path);
+      mock.timers.tick(1);
+      assert.deepEqual(await body(await pending), {items:[], reason:'timeout'}, path);
+      assert(signal.aborted, path);
+      assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 110 * (i + 1), path);
+    }
+  } finally { mock.timers.reset(); }
+});
+test("a live refresh's extra token settles from Keepa's receipt", async () => {
+  const p = product();
+  enableDealGrade(p);
+  globalThis.fetch = async (url, options) => {
+    calls.push([url, options]); assert.equal(url.searchParams.get('update'), '0');
+    return Response.json({products:[p], tokensConsumed:2});
+  };
+  const result = await body(await onRequest({...context,
+    request:new Request('https://wowpriced.test/api/search?asin=' + p.asin + '&grade=deal')}));
+  assert.equal(result.items[0].as_of, new Date(now).toISOString().slice(0, 17) + '00.000Z');
+  assert.equal(database.prepare('SELECT tokens FROM search_budget').get().tokens, 2);
 });

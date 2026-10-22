@@ -143,7 +143,8 @@ function spotterSimilar(item) {
       task.controller = new AbortController();
       var data;
       try {
-        task.timeout = setTimeout(() => task.controller.abort(), 6000);
+        // Past the server's 10 s wait for Keepa's live refresh (functions/api/search.js).
+        task.timeout = setTimeout(() => task.controller.abort(), 14000);
         var response = await fetch('/api/search?asin=' + task.input.asin + '&grade=deal',
           {signal:task.controller.signal, cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer'});
         data = response.ok ? await response.json() : {items:[], reason:'unavailable'};

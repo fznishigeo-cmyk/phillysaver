@@ -101,7 +101,8 @@ function ui() {
   h.ids.reanalyze.click();h.ids['analyze-modal'].handlers.cancel({preventDefault(){}});
   h.requests.at(-1).respond(h.data('C'));await h.flush();await h.advance(26000);assert.equal(h.ids['grade-letter'].textContent,'B');
   h.ids['cookie-ok'].click();assert(h.ids['cookie-bar'].hidden);assert.equal(h.storage.get('wp.spotter.cookies'),'1');
-  const slow=ui();slow.submit('B0D8KZHN1Q');await slow.advance(10000);
+  // The server waits up to 10 s for Keepa's live refresh: no retry before 14 s.
+  const slow=ui();slow.submit('B0D8KZHN1Q');await slow.advance(13900);assert.equal(slow.requests.length,1);await slow.advance(2100);
   assert(slow.ids['analyze-modal'].open);assert.equal(slow.progress.getAttribute('aria-valuenow'),'99');
   assert.equal(slow.requests.length,2);slow.requests[1].respond(slow.data('C'));await slow.flush();
   assert.equal(slow.ids['grade-letter'].textContent,'C');assert(!slow.ids['analyze-modal'].open);

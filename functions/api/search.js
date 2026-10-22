@@ -17,7 +17,7 @@ const DISPATCH_SCHEMA = `CREATE TABLE IF NOT EXISTS search_dispatch (
 // `ready` is the lease expiry while held and the cooldown end once released. A
 // holder the runtime cancels (the browser aborts a stale query) never runs its
 // release, so its lease lapses instead of switching search off for good.
-const LEASE = 15000; // well past the 4 s upstream timeout
+const LEASE = 20000; // well past the longest upstream timeout (10 s)
 const ACQUIRE = `INSERT INTO search_dispatch (id, held, ready) VALUES (1, 1, ?)
   ON CONFLICT(id) DO UPDATE SET held = 1, ready = excluded.ready
   WHERE search_dispatch.ready <= ? RETURNING id`;
@@ -196,7 +196,7 @@ async function jsonBody(response) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function keepa(q, asin, page, key, reviews = false) {
+async function keepa(q, asin, page, key, reviews = false, wait = 4000) {
   const controller = new AbortController();
   let timer;
   try {
@@ -207,7 +207,11 @@ async function keepa(q, asin, page, key, reviews = false) {
           // Task 367: rating is needed for review stats; its extra token is in
           // tokensConsumed, settled against the same 110-token reservation.
           ...(reviews ? {stats:"30", rating:"1"} : {}),
-          ...(asin ? {asin} : {type:"product", term:q, page:String(page)})})
+          // One product: update=0 makes Keepa refresh it now ("Might cost an extra
+          // token if 0 (= live data)", keepacom/api_backend Request.java), so its
+          // Buy Box is today's, not a reading hours old. tokensConsumed carries the
+          // extra token into the same settlement. Name searches keep Keepa's data.
+          ...(asin ? {asin, update:"0"} : {type:"product", term:q, page:String(page)})})
           .forEach(([k, v]) => url.searchParams.set(k, v));
         // Workers reject redirect:"error"; "manual" returns any 3xx unfollowed (not ok → failure).
         const response = await fetch(url, {signal:controller.signal, redirect:"manual",
@@ -229,7 +233,7 @@ async function keepa(q, asin, page, key, reviews = false) {
       })(),
       new Promise((resolve, reject) => { timer = setTimeout(() => {
         controller.abort(); reject(new Error("timeout"));
-      }, 4000); })
+      }, wait); })
     ]);
   } finally { clearTimeout(timer); }
 }
@@ -306,7 +310,10 @@ export async function onRequest(context) {
       // A reservation covers its own minute (so its own UTC day) only: one that
       // waited into the next window is spent, never dispatched against it.
       if (Math.floor(Date.now() / 60000) !== Math.floor(started / 60000)) return json({items:[], reason:"rate_limited"});
-      try { data = await keepa(q, asin, page, env.KEEPA_KEY, reviews); }
+      // A live refresh takes longer. Deal Spotter and Review Checker wait inside a
+      // 10-25 s progress dialog, so they allow 10 s; other lookups keep 4 s
+      // because their pages give up at 6 s.
+      try { data = await keepa(q, asin, page, env.KEEPA_KEY, reviews, dealGrade || reviews ? 10000 : 4000); }
       catch (error) {
         cooldown = error.cooldown || cooldown;
         if (error.message === "timeout") return json({items:[], reason:"timeout"});
