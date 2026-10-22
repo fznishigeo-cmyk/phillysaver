@@ -417,6 +417,7 @@ class AppConfig:
     timer_center: bool = False
     search_focus_ring_keyboard_only: bool = False
     hide_timer_ticker_confetti: bool = False
+    tagline_full_row: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
@@ -1270,6 +1271,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.hide_timer_ticker_confetti = g("hide_timer_ticker_confetti", default=False)
     if type(cfg.hide_timer_ticker_confetti) is not bool:
         raise ValueError("hide_timer_ticker_confetti must be a boolean")
+    cfg.tagline_full_row = g("tagline_full_row", default=False)
+    if type(cfg.tagline_full_row) is not bool:
+        raise ValueError("tagline_full_row must be a boolean")
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")
