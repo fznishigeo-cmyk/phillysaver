@@ -1282,6 +1282,7 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
     stats["buybox_top"] = dict.fromkeys(
         ("requested", "with_buybox", "repriced_up", "repriced_down", "unchanged", "tokens"), 0)
     stats["live_reads"] = {"forced": 0, "conditional": 0}
+    stats["buybox_stale"] = {}  # why requested Buy Box readings were not fresh (2026-10-22 diagnosis)
     if cfg.keepa_unique_asin_rechecks_enabled:
         stats["unique_asin_rechecks"] = dict.fromkeys(
             ("selected_consumers", "unique_asins", "duplicate_slots_avoided", "product_requests"), 0)
@@ -2015,6 +2016,9 @@ def _recheck_prices(db: DB, cfg: AppConfig, now: datetime,
                 if shopper is not None:
                     observed = shopper[1]
                     stats["buybox_top"]["with_buybox"] += 1
+                elif product is not None and deal["dedupe_key"] in buybox_top:
+                    reason = buybox.stale_reason(deal, product, cfg, now) or "unknown"
+                    stats["buybox_stale"][reason] = stats["buybox_stale"].get(reason, 0) + 1
                 previous = observed_check(deal)
                 regressed = previous is not None and observed < previous
                 if (is_recovery or price_unconfirmed(original, cfg, now)) and product is not None:

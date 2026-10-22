@@ -45,16 +45,36 @@ def eligible(deal):
 
 def fresh_reading(deal, product, cfg, now):
     """Buy Box has its own clock; a fresh listing cannot refresh that clock."""
+    reading = _reading_or_reason(deal, product, cfg, now)
+    return reading if isinstance(reading, tuple) else None
+
+
+def stale_reason(deal, product, cfg, now):
+    """Why fresh_reading returned None (one word, for the run summary)."""
+    reading = _reading_or_reason(deal, product, cfg, now)
+    return None if isinstance(reading, tuple) else reading
+
+
+def _reading_or_reason(deal, product, cfg, now):
     from .verify import _keepa_since_price, price_confirmed_at
     if not eligible(deal) or _price_hidden_by_promo(deal):
-        return None
+        return "not_eligible"
     stats = product.get("stats") or {}
     stamp = stats.get("lastBuyBoxUpdate") if isinstance(stats, dict) else None
     at, price = keepa_time(stamp), prices(product)["buybox"]
     previous = price_confirmed_at(deal)
-    if (price is None or at is None or not now - timedelta(minutes=cfg.keepa_buybox_interval_min) <= at <= now
-            or _keepa_since_price(stamp, deal) is not True or (previous is not None and at < previous)):
-        return None
+    if price is None:
+        return "no_buybox_price"
+    if at is None:
+        return "no_buybox_time"
+    if at > now:
+        return "after_run_start"
+    if at < now - timedelta(minutes=cfg.keepa_buybox_interval_min):
+        return "older_than_interval"
+    if _keepa_since_price(stamp, deal) is not True:
+        return "before_price_since"
+    if previous is not None and at < previous:
+        return "older_than_last_confirm"
     return price, at
 
 
