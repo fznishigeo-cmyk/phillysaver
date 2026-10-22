@@ -177,7 +177,7 @@ function toolLinks(config) {
   const spotter = blockOn(config, "deal_spotter") && /^buttons_to_tools:[ \t]*true\b/m.test(config);
   return [...(on("enabled") && on("public") ? [["/amazon-deal-checker/", "Amazon Deal Checker"],
     ["/amazon-discount-finder/", "Amazon Discount Finder"]] : []),
-    ...(spotter ? [["/deal-spotter/", "Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]] : []),
+    ...(spotter ? [["/deal-spotter/", "Fake Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]] : []),
     ...(blockOn(config, "review_checker") ? [["/review-checker/", "Review Checker"]] : [])];
 }
 

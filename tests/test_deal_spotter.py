@@ -56,7 +56,7 @@ def test_off_missing_back_to_off_bytes_and_idempotence(tmp_path, mode, expected)
     render(tmp_path, cfg); after = files(out)
     assert after != before
     # Existing home/deal cards and all assets remain exact; only footer discovery changes.
-    footer_links = b' \xc2\xb7 <a href="/deal-spotter/">Deal Spotter</a> \xc2\xb7 <a href="/fakespot-alternative/">Fakespot alternative</a>'
+    footer_links = b' \xc2\xb7 <a href="/deal-spotter/">Fake Deal Spotter</a> \xc2\xb7 <a href="/fakespot-alternative/">Fakespot alternative</a>'
     assert after['index.html'].replace(footer_links,b'') == before['index.html']
     assert after['deals.json'] == before['deals.json']
     render(tmp_path, cfg); assert files(out) == after

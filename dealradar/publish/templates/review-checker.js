@@ -80,7 +80,7 @@ function reviewProgress(elapsed, duration, ready) {
     var actions = element('div', undefined, 'report-actions');
     var amazon = link('Read the reviews on Amazon', toolAmazon(asin), 'button'); amazon.rel = 'sponsored noopener'; amazon.target = '_blank';
     actions.append(amazon);
-    if (toolSettings.spotter) actions.append(link('Is the price right? → Deal Spotter', '/deal-spotter/?asin=' + asin, 'secondary'));
+    if (toolSettings.spotter) actions.append(link('Is the price right? → Fake Deal Spotter', '/deal-spotter/?asin=' + asin, 'secondary'));
     var another = element('button', '← Check another product', 'report-another'); another.type = 'button';
     another.addEventListener('click', function () {
       report.hidden = true; start.hidden = false; history.replaceState(null, '', location.pathname); input.value = ''; input.focus();

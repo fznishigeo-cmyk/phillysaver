@@ -183,7 +183,7 @@ function spotterSimilar(item) {
   $('share').addEventListener('click', async () => {
     var url = new URL('/deal-spotter/', location.origin); url.searchParams.set('asin', resultItem.asin);
     if (navigator.share) {
-      try { await navigator.share({title:'Deal Spotter by wowpriced', url:url.href}); return; }
+      try { await navigator.share({title:'Fake Deal Spotter by wowpriced', url:url.href}); return; }
       catch (error) { if (error.name === 'AbortError') return; }
     }
     try {
@@ -225,7 +225,7 @@ function spotterSimilar(item) {
     frame.dataset.paused = String(paused); frame.classList.toggle('paused', paused);
     $('pause-demo').textContent = paused ? 'Play demo' : 'Pause demo'; $('pause-demo').setAttribute('aria-pressed', String(paused));
   });
-  var slide = 0, names = ['Deal Spotter', "Today's Deals", 'Discount Finder'];
+  var slide = 0, names = ['Fake Deal Spotter', "Today's Deals", 'Discount Finder'];
   var captions = ['A link goes in. A clear deal grade comes out.', 'Explore the verified deals published on wowpriced.', 'Find Amazon discounts for what you have in mind.'];
   function showSlide(delta) {
     slide = (slide + delta + 3) % 3;

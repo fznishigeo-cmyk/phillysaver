@@ -150,7 +150,7 @@ async function contrastAudit(page) {
         // Return to the start to verify carousel, steps, menu and reduced motion.
         await page.goto('https://wowpriced.test/deal-spotter/');
         await page.locator('#phone-next').click();assert.equal(await page.locator('#slide-title').textContent(),"Today's Deals");
-        await page.locator('#phone-prev').click();assert.equal(await page.locator('#slide-title').textContent(),'Deal Spotter');
+        await page.locator('#phone-prev').click();assert.equal(await page.locator('#slide-title').textContent(),'Fake Deal Spotter');
         await page.locator('.how-step').nth(2).click();assert.equal(await page.locator('.how-step').nth(2).getAttribute('aria-pressed'),'true');
         await page.locator('.spotter-menu summary').click();assert(await page.locator('.spotter-menu nav').isVisible());
         await page.keyboard.press('Escape');assert(!(await page.locator('.spotter-menu').evaluate(el=>el.open)));

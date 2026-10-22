@@ -36,7 +36,7 @@ box-shadow:0 8px 24px #0002;padding:10px;display:flex;flex-direction:column;alig
 .tool-header .review-tools-menu nav a{font-size:15px;min-height:44px;padding:8px 12px}}
 </style>"""
 NAV = [("/", "Today's Deals"), ("/amazon-deal-checker/", "Deal Checker"),
-       ("/amazon-discount-finder/", "Discount Finder"), ("/deal-spotter/", "Deal Spotter"),
+       ("/amazon-discount-finder/", "Discount Finder"), ("/deal-spotter/", "Fake Deal Spotter"),
        ("/review-checker/", "Review Checker"), ("/about.html", "About"), ("/review-checker/#faq", "FAQ")]
 
 
@@ -149,12 +149,12 @@ def publish(out, cfg, now, site_url, disclosure):
                          INSTALL_SCRIPT='<script>' + install_script + '</script>' if cfg.pwa_enabled else '',
                          YEAR=str(now.year), DISCLOSURE=linked_disclosure(disclosure), ALTERNATIVE=intro,
                          PRICE_NOTE=escape(amazon_as_of.DISCLAIMER),
-                         SPOTTER_ABOUT='<a href="/deal-spotter/">Deal Spotter</a> for price context and ' if spotter_on(cfg) else '',
+                         SPOTTER_ABOUT='<a href="/deal-spotter/">Fake Deal Spotter</a> for price context and ' if spotter_on(cfg) else '',
                          SPOTTER_TILE=('<a href="/deal-spotter/"><span class="tile-art" aria-hidden="true">◇<i>✓</i></span>'
-                                       '<span>Deal Spotter →</span></a>' if spotter_on(cfg) else
+                                       '<span>Fake Deal Spotter →</span></a>' if spotter_on(cfg) else
                                        '<a href="/amazon-discount-finder/"><span class="tile-art" aria-hidden="true">%<i>✓</i></span>'
                                        '<span>Discount Finder →</span></a>'),
-                         SPOTTER_FOOTER='<a href="/deal-spotter/">Deal Spotter</a>' if spotter_on(cfg) else '')
+                         SPOTTER_FOOTER='<a href="/deal-spotter/">Fake Deal Spotter</a>' if spotter_on(cfg) else '')
         html = tracking.inject(html, tool_pages._tracking(cfg))
         seo._write_page(out, path, html)
     # Only footer links change on home/deal pages. Existing tool navigation gains

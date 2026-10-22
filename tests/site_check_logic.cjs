@@ -243,7 +243,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   const {toolLinks} = require("../scripts/site_check_logic.cjs");
   const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
   const checker = [["/amazon-deal-checker/", "Amazon Deal Checker"], ["/amazon-discount-finder/", "Amazon Discount Finder"]];
-  const spotter = [["/deal-spotter/", "Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]];
+  const spotter = [["/deal-spotter/", "Fake Deal Spotter"], ["/fakespot-alternative/", "Fakespot alternative"]];
   const reviews = [["/review-checker/", "Review Checker"]];
   assert.deepEqual(toolLinks(config), [...checker, ...spotter, ...reviews]);
   assert.deepEqual(toolLinks(config.replace(/^tool_pages: \{enabled: true, public: true\}/m,

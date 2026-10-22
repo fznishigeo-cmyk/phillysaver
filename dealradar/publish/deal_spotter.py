@@ -17,14 +17,14 @@ TEMPLATES = Path(__file__).with_name("templates")
 SLUGS = ("deal-spotter", "fakespot-alternative")
 ASSETS = ("deal-spotter.css", "deal-spotter.js", "deal-spotter-install.js", "deal-spotter-mark.svg")
 NAV = (("/", "Today's Deals"), ("/amazon-deal-checker/", "Deal Checker"),
-       ("/amazon-discount-finder/", "Discount Finder"), ("/deal-spotter/", "Deal Spotter"),
+       ("/amazon-discount-finder/", "Discount Finder"), ("/deal-spotter/", "Fake Deal Spotter"),
        ("/review-checker/", "Review Checker"), ("/about.html", "About"), ("/deal-spotter/#faq", "FAQ"))
 FAQ = (
     ("Is it free?", "Yes. This tool is free to use."),
-    ("Do I need an extension?", "No. Deal Spotter works in your browser on your phone or computer. No extension or sign-up needed."),
+    ("Do I need an extension?", "No. Fake Deal Spotter works in your browser on your phone or computer. No extension or sign-up needed."),
     ("What do the grades mean?", "A means Great price, B means Good price, and C means Fair price. A grade describes the price, not the quality of the product. When price information is limited, the grade is C."),
     ("Where do prices come from?", "We use Amazon's current product price, its list price when available, and our published verified deals. Prices can change; confirm the price on Amazon before buying."),
-    ("Is Deal Spotter part of Amazon?", "No. Deal Spotter by wowpriced is independent of Amazon. As an Amazon Associate, wowpriced earns from qualifying purchases. Our links may earn a commission at no extra cost to you."),
+    ("Is Fake Deal Spotter part of Amazon?", "No. Fake Deal Spotter by wowpriced is independent of Amazon. As an Amazon Associate, wowpriced earns from qualifying purchases. Our links may earn a commission at no extra cost to you."),
 )
 
 
@@ -166,7 +166,7 @@ def footer(cfg, year, disclosure, amazon_store):
     # Site-wide trust links (tests/test_established_look.py): About, How we verify, Contact,
     # Privacy and Disclosure (the disclosure line below links the last one).
     groups = (("wowpriced", (("/about.html", "About"), ("/how-it-works.html", "How we verify"),
-                ("/deal-spotter/#how-it-works", "How to use Deal Spotter"), ("/careers.html", "Careers"))),
+                ("/deal-spotter/#how-it-works", "How to use Fake Deal Spotter"), ("/careers.html", "Careers"))),
               ("Shop smarter", nav(cfg, NAV[:5])),
               ("Here to help", (("/deal-spotter/#faq", "FAQ"), ("/contact.html", "Contact"),
                 ("/subscribe.html", "Terms"), ("/privacy.html", "Privacy"))))
@@ -193,14 +193,14 @@ def footer(cfg, year, disclosure, amazon_store):
 
 
 def discovery(out, cfg):
-    links = ' · <a href="/deal-spotter/">Deal Spotter</a> · <a href="/fakespot-alternative/">Fakespot alternative</a>'
+    links = ' · <a href="/deal-spotter/">Fake Deal Spotter</a> · <a href="/fakespot-alternative/">Fakespot alternative</a>'
     for path in out.rglob("*.html"):
         html = path.read_text()
         updated = re.sub(r'(<nav\b[^>]*\bid="footerlinks"[^>]*>)([\s\S]*?)(</nav>)',
                          lambda m: m[0] if 'href="/deal-spotter/"' in m[2] else m[1] + m[2] + links + m[3], html, count=1)
         if path.parent.name in tool_pages.PAGES and 'class="spotter-menu"' not in updated:
             tools = lambda m: (m[1] + m[2] + ('' if 'href="/deal-spotter/"' in m[2] else
-                               '<a href="/deal-spotter/">Deal Spotter</a>') + m[3] + menu(cfg))
+                               '<a href="/deal-spotter/">Fake Deal Spotter</a>') + m[3] + menu(cfg))
             updated = re.sub(r'(<nav aria-label="Tools">)(.*?)(</nav>)', tools, updated, count=1, flags=re.S)
             updated = updated.replace('</head>', '<style>' + (TEMPLATES / 'deal-spotter-menu.css').read_text()
                                       + TOOL_PAGE_CSS + '</style></head>', 1)
@@ -240,7 +240,7 @@ def publish(out, cfg, now, site_url, disclosure):
     faq_schema = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in FAQ]}
     for slug in SLUGS:
-        title = ("Deal Spotter by wowpriced | Free Amazon Deal Grader" if slug == "deal-spotter" else
+        title = ("Fake Deal Spotter by wowpriced | Free Amazon Deal Grader" if slug == "deal-spotter" else
                  "Fakespot Alternative: Free Amazon Deal Grader | wowpriced")
         description = "Paste any Amazon link and get a deal grade in seconds. Free, no extension needed."
         url = site_url + '/' + slug + '/'
@@ -250,7 +250,7 @@ def publish(out, cfg, now, site_url, disclosure):
                 '<meta name="twitter:card" content="summary">')
         if slug == 'deal-spotter':
             head += seo._json_ld(faq_schema) + seo._json_ld({"@context": "https://schema.org", "@type": "WebApplication",
-                "name": "Deal Spotter by wowpriced", "url": url, "applicationCategory": "ShoppingApplication",
+                "name": "Fake Deal Spotter by wowpriced", "url": url, "applicationCategory": "ShoppingApplication",
                 "operatingSystem": "Any", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}})
         install = ('<link rel="manifest" href="/manifest.webmanifest"><script defer src="/deal-spotter-install.js?v='
                    + versions['deal-spotter-install.js'] + '"></script>') if cfg.pwa_enabled else ''
