@@ -20,14 +20,18 @@ const TOOLS = [
 async function pickAsin() {
   const given = (process.env.ASIN || "").trim().toUpperCase();
   if (/^(?=.*\d)[A-Z0-9]{10}$/.test(given)) return given;
-  // The first verified Amazon deal on the live site (the slim file Deal Spotter reads).
-  const response = await fetch(SITE + "/deal-spotter-prices.json", {headers: {"User-Agent": "wowpriced-tools-check/1.0"}});
-  const doc = await response.json();
-  for (const row of [...(doc.deals || []), ...(doc.spotlight || [])]) {
-    const match = String(row.url || "").match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i);
-    if (match) return match[1].toUpperCase();
+  // The first Amazon deal in the slim file Deal Spotter reads, else in deals.json.
+  // Each file's Amazon row count is printed: an empty prices file is itself a finding.
+  for (const file of ["/deal-spotter-prices.json", "/deals.json"]) {
+    const response = await fetch(SITE + file, {headers: {"User-Agent": "wowpriced-tools-check/1.0"}});
+    const doc = response.ok ? await response.json() : {};
+    const rows = [...(doc.deals || []), ...(doc.spotlight || [])];
+    const asins = rows.map(row => (String(row.url || "").match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i) || [])[1])
+      .filter(Boolean);
+    console.log(`${file}: HTTP ${response.status}, ${rows.length} rows, ${asins.length} Amazon product links`);
+    if (asins.length) return asins[0].toUpperCase();
   }
-  throw new Error("no Amazon deal found in deal-spotter-prices.json");
+  throw new Error("no Amazon deal found in deal-spotter-prices.json or deals.json");
 }
 
 (async () => {

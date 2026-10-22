@@ -27,7 +27,24 @@ r2_aws() {
   AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
     AWS_DEFAULT_REGION=auto AWS_EC2_METADATA_DISABLED=true \
     AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
-    timeout 180 aws --endpoint-url "$R2_ENDPOINT" "$@" 2>/dev/null
+    timeout 180 aws --endpoint-url "$R2_ENDPOINT" "$@" 2>>"${R2_ERR_FILE:-/dev/null}"
+}
+
+r2_reason() {
+  # One safe word for the log: the S3 error code (letters only), or a fixed
+  # category. The raw message (endpoint, bucket, request ids) is never printed.
+  local text code
+  text="$(cat "$1" 2>/dev/null || true)"
+  code="$(grep -oE 'An error occurred \([A-Za-z]{1,40}\)' <<<"$text" | head -n1 | sed -E 's/.*\(([A-Za-z]+)\)/\1/')" || true
+  if [[ -n "$code" ]]; then printf '%s' "$code"
+  elif grep -qi 'could not connect\|connection\|name resolution' <<<"$text"; then printf 'endpoint unreachable'
+  elif grep -qi 'invalid endpoint\|not a valid' <<<"$text"; then printf 'invalid endpoint'
+  elif grep -qi 'unable to locate credentials' <<<"$text"; then printf 'no credentials'
+  elif grep -qi 'ssl\|certificate' <<<"$text"; then printf 'tls error'
+  elif grep -qi 'timed out\|timeout' <<<"$text"; then printf 'timeout'
+  elif [[ -n "$text" ]]; then printf 'unrecognized error'
+  else printf 'no error text'
+  fi
 }
 
 r2_copy() {
@@ -46,11 +63,16 @@ r2_copy() {
     return 0
   fi
   key="state/$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.enc"
+  R2_ERR_FILE="$(mktemp)" || R2_ERR_FILE=/dev/null
   if ! r2_aws s3 cp --only-show-errors "$file" "s3://$R2_BUCKET/$key" >/dev/null ||
      ! r2_aws s3 cp --only-show-errors "s3://$R2_BUCKET/$key" "s3://$R2_BUCKET/state/latest.enc" >/dev/null; then
-    printf '[commit_state] r2 copy: failed (the git copy is unaffected)\n'
+    printf '[commit_state] r2 copy: failed: %s (the git copy is unaffected)\n' "$(r2_reason "$R2_ERR_FILE")"
+    [[ "$R2_ERR_FILE" == /dev/null ]] || rm -f "$R2_ERR_FILE"
+    R2_ERR_FILE=/dev/null
     return 0
   fi
+  [[ "$R2_ERR_FILE" == /dev/null ]] || rm -f "$R2_ERR_FILE"
+  R2_ERR_FILE=/dev/null
   printf '[commit_state] r2 copy: ok %s bytes -> %s\n' "$(wc -c < "$file" | tr -d ' ')" "$key"
   # Keep the newest $keep timestamped copies; latest.enc is never pruned.
   listing="$(r2_aws s3 ls "s3://$R2_BUCKET/state/")" || return 0

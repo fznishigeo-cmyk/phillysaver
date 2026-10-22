@@ -129,3 +129,13 @@ def test_review_checker_hides_adult_titles_like_deal_checker(tmp_path):
     html_pause = (review_checker.TEMPLATES / 'review-checker.html').read_text()
     assert 'id="demo-pause"' in html_pause and 'aria-pressed="false"' in html_pause
 
+
+
+def test_single_source_published_amazon_deals_count(tmp_path, monkeypatch):
+    # Live 2026-10-22: the badge only counts agreeing sources; published rows are price-checked.
+    monkeypatch.setattr(site, 'util_now', lambda: NOW)
+    rows = [dict(row, verify_tier='unverified') for row in deals()]
+    out, *_ = render(tmp_path, load_config(), rows)
+    html = (out / 'review-checker/index.html').read_text()
+    assert html.count('data-check-asin=') == 6
+    assert '6</strong><span>live verified Amazon deals' in html

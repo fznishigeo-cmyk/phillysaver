@@ -80,13 +80,14 @@ def script(cfg):
 
 
 def live_rows(doc, now):
+    # Every published deal passed the price checks; "badge" only says how many
+    # sources agreed (index.html: "No badge = single source"), so it is not a filter.
     rows = list(doc.get("deals", [])) + [d for d in doc.get("spotlight", [])
             if (until := parse_iso((d.get("spotlight") or {}).get("until"))) and until > now]
     seen, result = set(), []
     for d in rows:
         key = d.get("key")
         if (not key or key in seen or d.get("locked") or d.get("status") != "alive"
-                or d.get("badge") not in {"verified", "history-checked"}
                 or any(d.get(k) for k in ("price_unconfirmed", "price_aged", "click_price_unknown"))
                 or "not yet confirmed" in d.get("headline", "")):
             continue
@@ -96,7 +97,7 @@ def live_rows(doc, now):
 
 
 PRICES = "deal-spotter-prices.json"
-PRICE_FIELDS = ("status", "badge", "final_price", "url", "headline")
+PRICE_FIELDS = ("status", "final_price", "url", "headline")
 
 
 def price_index(doc):
@@ -114,7 +115,7 @@ def price_index(doc):
 
     def amazon(d):
         host = urlsplit(str(d.get("url", ""))).hostname or ""
-        return (not d.get("locked") and d.get("status") == "alive" and d.get("badge") in {"verified", "history-checked"}
+        return (not d.get("locked") and d.get("status") == "alive"
                 and not any(d.get(k) for k in ("price_unconfirmed", "price_aged", "click_price_unknown"))
                 and "not yet confirmed" not in d.get("headline", "")
                 and re.fullmatch(r"(?:(?:www|smile|m)\.)?amazon\.com", host) is not None)

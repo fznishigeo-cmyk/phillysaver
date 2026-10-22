@@ -871,8 +871,11 @@ test('list discount is a fallback only, and verified threshold is inclusive', ()
 const liveDeal = () => ({key:'one', url:'https://www.amazon.com/dp/B000000000?tag=example-20', status:'alive', badge:'verified', final_price:13.99});
 test('only live public verified offers can confer verified grade credit', () => {
   assert.equal(publishedDealPrice({deals:[liveDeal()]},'B000000000', NOW),1399);
+  // Published = price-checked; the badge only counts agreeing sources (single source = 'unverified').
+  for (const badge of ['unverified','corroborated',undefined])
+    assert.equal(publishedDealPrice({deals:[{...liveDeal(),badge}]},'B000000000', NOW),1399);
   for (const change of [{status:'dead'},{locked:true},{price_unconfirmed:true},{price_aged:true},{click_price_unknown:true},
-    {badge:'unverified'},{final_price:0},{final_price:'13.99'},{url:'https://amazon.com.evil/dp/B000000000'},
+    {final_price:0},{final_price:'13.99'},{url:'https://amazon.com.evil/dp/B000000000'},
     {url:'https://www.amazon.com/dp/B000000001'},{url:'javascript:alert(1)'}]) {
     assert.equal(publishedDealPrice({deals:[{...liveDeal(),...change}]},'B000000000', NOW),undefined);
   }

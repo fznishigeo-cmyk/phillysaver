@@ -32,7 +32,8 @@ export function publishedDealPrice(doc, asin, now = Date.now()) {
     (Array.isArray(doc?.spotlight) ? doc.spotlight : []).filter(d => Date.parse(d?.spotlight?.until) > now));
   let price;
   for (const d of rows) {
-    if (!d || d.locked || d.status !== 'alive' || !['verified', 'history-checked'].includes(d.badge) ||
+    // Published rows passed the price checks; badge only counts agreeing sources.
+    if (!d || d.locked || d.status !== 'alive' ||
         d.price_unconfirmed || d.price_aged || d.click_price_unknown || /not yet confirmed/.test(d.headline || '') ||
         typeof d.final_price !== 'number' || !Number.isFinite(d.final_price) || d.final_price <= 0) continue;
     try {

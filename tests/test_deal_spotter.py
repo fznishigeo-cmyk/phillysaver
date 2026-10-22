@@ -109,12 +109,15 @@ def test_live_counts_and_cards_use_only_published_facts():
              deal_path='/deal/fixture-'+str(i)+'/') for i in range(5)]
     rows[0].update(needs_steps=True)
     invalid = [{**rows[0], 'key':'invalid', **change} for change in
-               ({'status':'dead'},{'locked':True},{'badge':'unverified'},{'price_unconfirmed':True},
+               ({'status':'dead'},{'locked':True},{'price_unconfirmed':True},
                 {'price_aged':True},{'click_price_unknown':True})]
     live = deal_spotter.live_rows({'deals':rows+invalid,'spotlight':[
         {**rows[0],'key':'expired','spotlight':{'until':'2020-01-01'}},
         {**rows[0],'key':'just-ended','spotlight':{'until':NOW.isoformat().replace('+00:00','Z')}}]},NOW)
     assert live == rows
+    # Every published deal is price-checked; the badge only counts sources (live 2026-10-22: 0 rows).
+    for badge in ('unverified', 'corroborated', None):
+        assert deal_spotter.live_rows({'deals': [{**rows[1], 'badge': badge}]}, NOW) == [{**rows[1], 'badge': badge}]
     cards = deal_spotter.cards(live)
     assert cards.count('<article') == 4
     assert cards.count('loading="lazy"') == 4
@@ -129,12 +132,13 @@ def test_price_index_keeps_only_qualifying_amazon_rows_and_the_fields_the_grade_
     ok = {'key': 'k1', 'status': 'alive', 'badge': 'verified', 'final_price': 19.99, 'headline': 'Deal',
           'url': 'https://www.amazon.com/dp/B0D8KZHN1Q?tag=x-20', 'item': 'Headphones', 'image_url': 'https://x/y.jpg'}
     rows = [ok, {**ok, 'url': 'https://www.walmart.com/ip/1'}, {**ok, 'price_unconfirmed': True},
-            {**ok, 'status': 'dead'}, {**ok, 'badge': 'unverified'}, {**ok, 'locked': True},
+            {**ok, 'status': 'dead'}, {**ok, 'locked': True},
             {**ok, 'url': 'https://amazon.com.evil.test/dp/B0D8KZHN1Q'}, {**ok, 'headline': 'Price not yet confirmed'}]
     spot = {**ok, 'spotlight': {'until': '2026-10-22T05:00:00Z', 'title': 'x'}}
     index = deal_spotter.price_index({'deals': rows, 'spotlight': [spot, {**spot, 'price_aged': True}]})
-    assert index == {'deals': [{k: ok[k] for k in ('status', 'badge', 'final_price', 'url', 'headline')}],
-                     'spotlight': [{**{k: ok[k] for k in ('status', 'badge', 'final_price', 'url', 'headline')},
+    assert deal_spotter.price_index({'deals': [{**ok, 'badge': 'unverified'}]})['deals'] == [{k: ok[k] for k in ('status', 'final_price', 'url', 'headline')}]
+    assert index == {'deals': [{k: ok[k] for k in ('status', 'final_price', 'url', 'headline')}],
+                     'spotlight': [{**{k: ok[k] for k in ('status', 'final_price', 'url', 'headline')},
                                     'spotlight': {'until': '2026-10-22T05:00:00Z'}}]}
 
 

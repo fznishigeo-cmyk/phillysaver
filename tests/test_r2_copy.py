@@ -18,7 +18,7 @@ FAKE_AWS = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$FAKE_LOG"
 printf 'KEY=%s SECRET=%s REGION=%s\\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" "$AWS_DEFAULT_REGION" >> "$FAKE_LOG"
 case "$*" in
-  *" s3 cp "*) [[ -n "${FAKE_FAIL:-}" ]] && { echo "boom $AWS_SECRET_ACCESS_KEY" >&2; exit 1; } ;;
+  *" s3 cp "*) [[ -n "${FAKE_FAIL:-}" ]] && { echo "${FAKE_FAIL} $AWS_SECRET_ACCESS_KEY https://acct123.r2.cloudflarestorage.com" >&2; exit 1; } ;;
   *" s3 ls "*) cat "$FAKE_LIST" 2>/dev/null ;;
 esac
 exit 0
@@ -42,7 +42,7 @@ def run(tmp_path, *, config=None, secrets=True, fail=False, listing="", aws=True
     if secrets:
         env.update(SECRETS)
     if fail:
-        env["FAKE_FAIL"] = "1"
+        env["FAKE_FAIL"] = fail if isinstance(fail, str) else "boom"
     result = subprocess.run(["bash", "-c", f'set -euo pipefail; . "{SCRIPT}"; r2_copy "{state}" "{cfg}"; echo rc=$?'],
                             env=env, capture_output=True, text=True, timeout=60)
     calls = (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
@@ -74,8 +74,20 @@ def test_copies_to_a_timestamped_key_and_latest_then_prunes_old_copies(tmp_path)
 def test_failure_never_fails_the_caller_or_leaks_the_secret(tmp_path):
     result, _ = run(tmp_path, fail=True)
     assert result.returncode == 0 and "rc=0" in result.stdout
-    assert "r2 copy: failed (the git copy is unaffected)" in result.stdout
+    assert "r2 copy: failed: unrecognized error (the git copy is unaffected)" in result.stdout
     assert no_secret_in(result.stdout + result.stderr)
+
+
+@pytest.mark.parametrize("message,word", [
+    ("An error occurred (AccessDenied) when calling the PutObject operation: Access Denied", "AccessDenied"),
+    ("An error occurred (NoSuchBucket) when calling the PutObject operation", "NoSuchBucket"),
+    ("Could not connect to the endpoint URL:", "endpoint unreachable"),
+    ("Unable to locate credentials", "no credentials")])
+def test_failure_names_only_a_safe_reason(tmp_path, message, word):
+    # Live 2026-10-22 (fast #799): "failed" alone could not say why.
+    result, _ = run(tmp_path, fail=message)
+    assert f"r2 copy: failed: {word} (the git copy is unaffected)" in result.stdout
+    assert no_secret_in(result.stdout + result.stderr) and "acct123" not in result.stdout
 
 
 @pytest.mark.parametrize("config", [{"r2_copy": False}, {}, {"r2_copy": "yes"}, {"r2_copy": True, "r2_keep": 0},

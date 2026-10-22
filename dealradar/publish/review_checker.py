@@ -109,7 +109,8 @@ def publish(out, cfg, now, site_url, disclosure):
     doc = json.loads((out / "deals.json").read_text())
     live = [d for d in doc["deals"] if not d.get("locked") and d.get("status") == "alive"
             and not d.get("price_unconfirmed")]
-    amazon = [d for d in live if _asin(d) and d.get("badge") in {"verified", "history-checked"}
+    # Published = price-checked; "badge" only counts agreeing sources, so it is not a filter.
+    amazon = [d for d in live if _asin(d)
               and not any(d.get(k) for k in ("price_aged", "click_price_unknown"))]
     stores = {d["store"].casefold() for d in live if d.get("store")}
     assets = {}
