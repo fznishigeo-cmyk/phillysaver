@@ -32,10 +32,18 @@ def enabled(cfg):
     return getattr(cfg, "deal_spotter", {}).get("enabled") is True
 
 
-def menu():
+def menu(cfg):
+    # Review Checker ships separately; never link to it while it is OFF.
+    links = [(url, label) for url, label in NAV
+             if url != "/review-checker/" or getattr(cfg, "review_checker", {}).get("enabled") is True]
     return ('<details class="spotter-menu"><summary>Menu <span aria-hidden="true">☰</span></summary>'
-            '<nav aria-label="Site menu">' + ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in NAV)
+            '<nav aria-label="Site menu">' + ''.join(f'<a href="{url}">{escape(label)}</a>' for url, label in links)
             + '</nav></details>')
+
+
+# Tool pages keep their approved desktop links (plus Deal Spotter); phones get the Menu.
+TOOL_PAGE_CSS = ('.tool-header .spotter-menu{display:none}@media(max-width:960px){'
+                 '.tool-header nav[aria-label="Tools"]{display:none}.tool-header .spotter-menu{display:block}}')
 
 
 def script(cfg):
@@ -136,15 +144,18 @@ def footer(cfg, year, disclosure):
             '<p class="disclosure">' + linked_disclosure(disclosure) + '</p></div></footer>')
 
 
-def discovery(out):
+def discovery(out, cfg):
     links = ' · <a href="/deal-spotter/">Deal Spotter</a> · <a href="/fakespot-alternative/">Fakespot alternative</a>'
     for path in out.rglob("*.html"):
         html = path.read_text()
         updated = re.sub(r'(<nav\b[^>]*\bid="footerlinks"[^>]*>)([\s\S]*?)(</nav>)',
                          lambda m: m[0] if 'href="/deal-spotter/"' in m[2] else m[1] + m[2] + links + m[3], html, count=1)
         if path.parent.name in tool_pages.PAGES and 'class="spotter-menu"' not in updated:
-            updated = re.sub(r'<nav aria-label="Tools">.*?</nav>', menu(), updated, count=1, flags=re.S)
-            updated = updated.replace('</head>', '<style>' + (TEMPLATES / 'deal-spotter-menu.css').read_text() + '</style></head>', 1)
+            tools = lambda m: (m[1] + m[2] + ('' if 'href="/deal-spotter/"' in m[2] else
+                               '<a href="/deal-spotter/">Deal Spotter</a>') + m[3] + menu(cfg))
+            updated = re.sub(r'(<nav aria-label="Tools">)(.*?)(</nav>)', tools, updated, count=1, flags=re.S)
+            updated = updated.replace('</head>', '<style>' + (TEMPLATES / 'deal-spotter-menu.css').read_text()
+                                      + TOOL_PAGE_CSS + '</style></head>', 1)
         if updated != html:
             path.write_text(updated)
 
@@ -192,11 +203,11 @@ def publish(out, cfg, now, site_url, disclosure):
         install = ('<link rel="manifest" href="/manifest.webmanifest"><script defer src="/deal-spotter-install.js?v='
                    + versions['deal-spotter-install.js'] + '"></script>') if cfg.pwa_enabled else ''
         html = seo._fill((TEMPLATES / (slug + '.html')).read_text(), TITLE=escape(title), DESCRIPTION=description,
-            HEAD=head + install, MENU=menu(), FOOTER=footer(cfg, now.year, disclosure), FAQ=questions,
+            HEAD=head + install, MENU=menu(cfg), FOOTER=footer(cfg, now.year, disclosure), FAQ=questions,
             CSS_VERSION=versions['deal-spotter.css'], JS_VERSION=versions['deal-spotter.js'],
             DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '')
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))
-    discovery(out)
+    discovery(out, cfg)
     return ['/' + slug + '/' for slug in SLUGS]

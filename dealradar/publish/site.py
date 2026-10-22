@@ -1497,6 +1497,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                        pick_order(teaser + spotlight_only, cfg.front_page)))
     from . import deal_spotter
     seo_paths.extend(deal_spotter.publish(out, cfg, now, site_url, meta["disclosure"]))
+    from . import review_checker
+    seo_paths.extend(review_checker.publish(out, cfg, now, site_url, meta["disclosure"]))
     join_dialog.publish(out, cfg)
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)

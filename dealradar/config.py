@@ -385,6 +385,7 @@ class AppConfig:
     home_description: str = ""
     search_amazon: bool = False
     search: dict = field(default_factory=lambda: validated_search(None))
+    review_checker: dict = field(default_factory=lambda: validated_review_checker({}))
     search_boost: dict = field(default_factory=lambda: validated_search_boost(None))
     search_box_glow: bool = False
     same_product_spacing: bool = False
@@ -759,6 +760,30 @@ def validated_search(value) -> dict:
     return {key: result[key] for key in ("amazon_results", "cache_hours", "tokens_per_day", "max_per_minute")}
 
 
+def validated_review_checker(value) -> dict:
+    defaults = {"enabled": False, "min_reviews": 100, "min_rating": 4.3,
+                "steady_rating_delta": 0.2, "pace_min_reviews": 50,
+                "pace_max_fraction": 0.25, "popular_monthly_sold": 100,
+                "grade_a_checks": 4, "grade_b_checks": 2}
+    if not isinstance(value, dict) or set(value) - set(defaults):
+        raise ValueError("review_checker must contain only documented settings")
+    result = defaults | value
+    if type(result["enabled"]) is not bool:
+        raise ValueError("review_checker.enabled must be a boolean")
+    for key, low, high in (("min_reviews", 1, 1000000000), ("pace_min_reviews", 1, 1000000000),
+                           ("popular_monthly_sold", 1, 1000000000),
+                           ("grade_a_checks", 1, 5), ("grade_b_checks", 1, 5)):
+        if type(result[key]) is not int or not low <= result[key] <= high:
+            raise ValueError(f"review_checker.{key} must be an integer in {low}..{high}")
+    for key, low, high in (("min_rating", 1, 5), ("steady_rating_delta", 0, 4),
+                           ("pace_max_fraction", 0, 1)):
+        if type(result[key]) not in (int, float) or not low <= result[key] <= high:
+            raise ValueError(f"review_checker.{key} must be a finite number in {low}..{high}")
+    if result["grade_b_checks"] > result["grade_a_checks"]:
+        raise ValueError("review_checker.grade_b_checks must not exceed grade_a_checks")
+    return result
+
+
 def validated_search_more(value) -> dict:
     if value is None or value is False:
         value = {}
@@ -951,6 +976,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg = AppConfig(raw=raw)
     cfg.tool_pages = validated_tool_pages(raw.get("tool_pages", {}))
     cfg.deal_spotter = validated_deal_spotter(raw.get("deal_spotter", {}))
+    cfg.review_checker = validated_review_checker(raw.get("review_checker", {}))
     from .appeal_score import validate as validate_appeal_score
     cfg.appeal_score = validate_appeal_score(raw.get("appeal_score", {}))
     cfg.compare = validated_compare(raw.get("compare", {}))

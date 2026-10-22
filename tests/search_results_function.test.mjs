@@ -8,9 +8,12 @@ const productsURL = 'data:text/javascript;base64,' + Buffer.from(productsSource)
 const gradeSource = fs.readFileSync(new URL('../functions/api/deal-grade.js', import.meta.url), 'utf8');
 const gradeURL = 'data:text/javascript;base64,' + Buffer.from(gradeSource).toString('base64');
 const {gradeDeal, publishedDealPrice} = await import(gradeURL);
+const reviewSource = fs.readFileSync(new URL('../functions/api/review-grade.js', import.meta.url), 'utf8');
+const reviewURL = 'data:text/javascript;base64,' + Buffer.from(reviewSource).toString('base64');
 const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta.url), 'utf8')
   .replace('./deal-grade.js', gradeURL)
-  .replace('../../dealradar/publish/templates/search-products.js', productsURL);
+  .replace('../../dealradar/publish/templates/search-products.js', productsURL)
+  .replace('./review-grade.js', reviewURL);
 const {onRequest, normalizeQuery, currentItems, settle, topSellerItems} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const {monthlyBoughtLabel} = await import(productsURL);
 const realFetch = globalThis.fetch, realCaches = globalThis.caches, realNow = Date.now;
@@ -937,4 +940,62 @@ test('missing price still gives C and failed inventory cannot award A', async ()
   context.env.ASSETS.fetch = async req => {if(new URL(req.url).pathname==='/search-config.json') return Response.json(config); throw Error('offline');};
   const result = await body(await request('&grade=deal'));
   assert.deepEqual(result.items,[]);assert.deepEqual(result.deal_grade,{grade:'C',label:'Fair price',facts:[]});
+});
+// Task 367: the review route uses these same real SQLite budget fixtures.
+const reviewConfig = {enabled:true, min_reviews:100, min_rating:4.3, steady_rating_delta:.2,
+  pace_min_reviews:50, pace_max_fraction:.25, popular_monthly_sold:100, grade_a_checks:4, grade_b_checks:2};
+function reviewRun(suffix='') {
+  return onRequest({...context, request:new Request('https://wowpriced.test/api/search?asin=B000000000&grade=reviews'+suffix)});
+}
+function reviewUpstream(receipt=2) {
+  globalThis.fetch = async (url, options) => {
+    calls.push([url,options]); assert.equal(url.origin,'https://api.keepa.com');
+    assert.equal(url.pathname,'/product'); assert.equal(url.searchParams.get('rating'),'1');
+    assert.equal(url.searchParams.get('stats'),'30'); assert.equal(url.searchParams.get('history'),'0');
+    const p=product(); p.stats.current[16]=45; p.stats.current[17]=100;
+    p.stats.avg180=Array(18).fill(-1); p.stats.avg180[16]=44;
+    p.stats.atIntervalStart=Array(18).fill(-1); p.stats.atIntervalStart[17]=75;
+    p.monthlySold=200; p.stats.current[4]=2999;
+    return Response.json({products:[p,product(1)],tokensConsumed:receipt});
+  };
+}
+test('review route settles its extra token, caches only safe data, and isolates ordinary ASIN results', async () => {
+  config.review_checker={...reviewConfig}; config.analyze_top_sellers=true; config.analyze_exclude=''; reviewUpstream();
+  const result=await body(await reviewRun()); assert.equal(result.review.grade,'A'); assert.equal(calls.length,1);
+  assert.deepEqual(Object.keys(result.items[0]),['asin','title','image','price_cents','as_of']);
+  assert.equal(result.items.length,1); assert.equal(JSON.parse([...values.values()][0]).tokens,2);
+  assert(!JSON.stringify(result).includes('monthlySold')); assert(!JSON.stringify(result).includes('PRIVATE'));
+  assert.equal(JSON.stringify(result.review).match(/[0-9]/),null);
+  assert.deepEqual(await body(await reviewRun()),result); assert.equal(calls.length,1);
+  assert([...cache.keys()].every(url=>new URL(url).searchParams.get('grade')==='reviews'));
+  config.review_checker.enabled=false;
+  assert.equal((await body(await reviewRun())).reason,'disabled'); assert.equal(calls.length,1);
+});
+test('review policy changes cannot reuse previous grades', async () => {
+  config.review_checker={...reviewConfig}; reviewUpstream(); await reviewRun(); now+=1001;
+  config.review_checker.min_rating=5;
+  assert.equal((await body(await reviewRun())).review.grade,'B'); assert.equal(calls.length,2);
+});
+test('review caps, missing bindings, and invalid route fail before paid dispatch', async () => {
+  reviewUpstream();
+  assert.equal((await body(await reviewRun())).reason,'disabled');
+  config.review_checker={...reviewConfig}; config.tokens_per_day=109;
+  assert.equal((await body(await reviewRun())).reason,'budget_exhausted'); config.tokens_per_day=3000;
+  config.max_per_minute=0; assert.equal((await body(await reviewRun())).reason,'rate_limited'); config.max_per_minute=20;
+  assert.equal((await reviewRun('&grade=reviews')).status,400);
+  assert.equal((await reviewRun('&q=tea')).status,400);
+  delete context.env.SEARCH_LIMITS;
+  assert.equal((await body(await reviewRun())).reason,'budget_unavailable'); assert.equal(calls.length,0);
+});
+test('review untrusted receipts retain the reservation and oversize receipts halt the shared budget', async () => {
+  config.review_checker={...reviewConfig}; reviewUpstream(null); await reviewRun();
+  assert.equal(JSON.parse([...values.values()][0]).tokens,110);
+  cache.clear(); now+=1001; reviewUpstream(111);
+  assert.equal((await body(await reviewRun())).reason,'budget_exhausted');
+  assert.equal(JSON.parse([...values.values()][0]).tokens,Number.MAX_SAFE_INTEGER);
+});
+test('review requests share search cooldown and the same daily ledger', async () => {
+  config.review_checker={...reviewConfig}; await run(); reviewUpstream();
+  assert.equal((await body(await reviewRun())).reason,'rate_limited'); assert.equal(calls.length,1);
+  now+=1001; await reviewRun(); assert.equal(JSON.parse([...values.values()][0]).tokens,22);
 });

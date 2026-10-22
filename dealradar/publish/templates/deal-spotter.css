@@ -16,3 +16,6 @@
 /* Decorative phone overlap stays inside its own stage on narrow screens. */
 .two-phones{overflow:hidden}.social-icons>span{display:inline-flex;align-items:center;justify-content:center;width:32px;height:38px;font-size:23px;font-weight:800}
 @media(max-width:760px){.compact input,.hero-box input{font-size:16px}}
+/* Phones: the grade sits under the photo, full width, before the details. The title takes focus for screen readers only. */
+@media(max-width:560px){.result-grid{grid-template-columns:minmax(0,1fr)}.result-grade{grid-column:1;grid-row:2;border-left:0;padding:0 0 24px;border-bottom:1px solid var(--line)}.result-grade .secondary{max-width:280px}.result-grade .grade-letter{max-width:180px;margin-inline:auto}.result-grade h2{font-size:11px}}
+#result-title:focus{outline:none}

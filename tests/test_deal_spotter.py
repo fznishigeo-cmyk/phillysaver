@@ -9,7 +9,7 @@ import pytest
 from dealradar.config import AppConfig, load_config, validated_deal_spotter
 from dealradar.publish import deal_spotter, site
 from dealradar.publish.seo_audit import Page
-from tests.history_pins import pre_deal_spotter
+from tests.history_pins import pre_deal_spotter, pre_review_checker
 from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
 from tests.test_support import NOW, render
@@ -41,7 +41,8 @@ def test_config_rejects_invalid_thresholds(value):
     ('inline','533ce78cbd16b6a7fa8aeaf3b90cf24fdcfeb1675935808043ce440a425b0f54'),
     ('membership','5ab3af0ff2d595e95f14e36f5aff03a4b001552b9db6d393a1fe1ee63b2f218f')])
 def test_off_missing_back_to_off_bytes_and_idempotence(tmp_path, mode, expected):
-    cfg = pre_deal_spotter(load_config())
+    # Review Checker (367) is pinned OFF too: these are the recorded pre-tool bytes.
+    cfg = pre_review_checker(pre_deal_spotter(load_config()))
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False; cfg.strip_comments = False
     if mode == 'membership':
