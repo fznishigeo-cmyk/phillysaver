@@ -67,7 +67,13 @@ def test_profile_config_loads_and_empty_defaults(tmp_path):
     path.write_text("social:\n  profiles:\n" + "".join(f"    {key}: {url}\n" for key, url in PROFILES.items()))
     assert load_config(path).social_profiles == PROFILES
     assert profiles.site_version("prior", AppConfig()) == "prior"
-    assert profiles.site_version("prior", AppConfig(social_profiles=PROFILES)) != "prior"
+    # The site-wide row is a separate switch, off in the live config (home page phone budget).
+    assert load_config().social_follow_row is False
+    assert profiles.site_version("prior", AppConfig(social_profiles=PROFILES)) == "prior"
+    assert profiles.site_version("prior", AppConfig(social_profiles=PROFILES, social_follow_row=True)) != "prior"
+    path.write_text("social:\n  follow_row: \"yes\"\n")
+    with pytest.raises(ValueError, match="follow_row"):
+        load_config(path)
 
 
 @pytest.mark.parametrize("support,paywall,opened", [(False, False, False), (False, True, False),
@@ -76,6 +82,7 @@ def test_profiles_empty_preserve_every_byte_set_follow_rows_and_schema(db, cfg, 
                                                                     support, paywall, opened):
     cfg.support_enabled, cfg.paywall_enabled, cfg.paywall_open_access = support, paywall, opened
     cfg.traffic_share_enabled = True
+    cfg.social_follow_row = True
     out = tmp_path / "site"
     with monkeypatch.context() as patch:
         patch.setattr(profiles, "publish", lambda *args: None)
@@ -85,6 +92,10 @@ def test_profiles_empty_preserve_every_byte_set_follow_rows_and_schema(db, cfg, 
     cfg.social_profiles = dict.fromkeys(PROFILES, "")
     profiles.publish(out, cfg, "https://wowpriced.com")
     assert tree() == before
+    cfg.social_profiles, cfg.social_follow_row = PROFILES, False
+    profiles.publish(out, cfg, "https://wowpriced.com")
+    assert tree() == before  # profiles alone (tool-page icons) leave every other page's bytes alone
+    cfg.social_follow_row = True
     cfg.social_profiles = PROFILES
     profiles.publish(out, cfg, "https://wowpriced.com")
     after = tree()
@@ -122,7 +133,7 @@ def api_report(dimensions, metrics, rows):
 
 def test_render_site_wires_profiles_and_credit_tracking_on_real_pages(db, cfg, tmp_path):
     cfg.support_enabled = True
-    cfg.social_profiles = PROFILES
+    cfg.social_profiles, cfg.social_follow_row = PROFILES, True
     cfg.tracking = {"ga4_measurement_id": SAMPLE["ga4_measurement_id"]}
     out = tmp_path / "site"
     _render(db, cfg, out)

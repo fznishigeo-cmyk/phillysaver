@@ -1089,6 +1089,10 @@ social:
   # Operator 2026-10-22: the real Facebook and Pinterest pages; Instagram is suspended, no Telegram.
   profiles: {pinterest: "https://www.pinterest.com/wowpriced/", facebook: "https://www.facebook.com/Wowpriced",
              instagram: "", telegram: ""}
+  # The two tool pages show these as icons. The site-wide "Follow wowpriced"
+  # row and the home page's sameAs stay off: the home page has no room in its
+  # phone budget for them (operator asked for the tool pages, 2026-10-22).
+  follow_row: false
   require_earning_link: true
   # Never post a used / open-box / refurbished item anywhere social (often
   # one unit: gone for everyone after the first click). Operator, 2026-10-13.

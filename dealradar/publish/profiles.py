@@ -1,4 +1,4 @@
-"""Optional public follow links; an empty configuration changes no bytes."""
+"""Optional public follow links; an empty configuration (or follow_row off) changes no bytes."""
 
 import hashlib
 import json
@@ -10,13 +10,20 @@ from ..config import social_profiles
 from .seo import _json_ld
 
 _BLOCK = re.compile(r"<!-- wp-profiles -->.*?<!-- /wp-profiles -->\n?", re.S)
-# One inline row, like the footer links: a 44px line gives every link a 44px target and the
-# row follows its footer's alignment. Small enough that the home page keeps its phone CSS budget.
-_CSS = '.social-follow{font-size:13px;line-height:44px;color:var(--muted)}.social-follow a{display:inline-block}'
+_CSS = ('.social-follow{display:flex;flex-wrap:wrap;align-items:center;gap:0 12px;'
+        'font-size:13px;color:var(--muted)}'
+        '.social-follow a{display:inline-flex;align-items:center;min-height:44px}'
+        '@media(min-width:961px){footer .social-follow{justify-content:center}}')
+
+
+def _site_profiles(cfg):
+    # The tool pages show their own icons; the site-wide row and the home
+    # page's sameAs wait for social.follow_row (home page phone budget).
+    return social_profiles(cfg.social_profiles) if cfg.social_follow_row else {}
 
 
 def site_version(version, cfg):
-    profiles = social_profiles(cfg.social_profiles)
+    profiles = _site_profiles(cfg)
     if not profiles:
         return version
     return hashlib.sha256(version.encode() + json.dumps(profiles, sort_keys=True).encode()
@@ -24,8 +31,8 @@ def site_version(version, cfg):
 
 
 def publish(out, cfg, site_url):
-    profiles = social_profiles(cfg.social_profiles)
-    row = '<nav class="social-follow" aria-label="Follow wowpriced"><span>Follow wowpriced:</span> ' + ' · '.join(
+    profiles = _site_profiles(cfg)
+    row = '<nav class="social-follow" aria-label="Follow wowpriced"><span>Follow wowpriced</span>' + ''.join(
         f'<a href="{escape(url, quote=True)}" rel="noopener">{network.title()}</a>'
         for network, url in profiles.items()) + '</nav>'
 

@@ -602,6 +602,7 @@ class AppConfig:
     pinterest: dict[str, Any] = field(default_factory=dict)  # social.pinterest
     meta: dict[str, Any] = field(default_factory=dict)  # social.meta
     social_profiles: dict[str, str] = field(default_factory=dict)
+    social_follow_row: bool = False     # site-wide "Follow wowpriced" row + home sameAs
     social_require_earning_link: bool = True
     social_exclude_conditions: list[str] = field(
         default_factory=lambda: ["used", "open_box", "refurbished"])
@@ -1345,6 +1346,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.pinterest = g("social", "pinterest", default={}) or {}
     cfg.meta = g("social", "meta", default={}) or {}
     cfg.social_profiles = social_profiles(g("social", "profiles", default={}) or {})
+    cfg.social_follow_row = g("social", "follow_row", default=False)
+    if not isinstance(cfg.social_follow_row, bool):
+        raise ValueError("social.follow_row must be true or false")
     cfg.social_require_earning_link = bool(g("social", "require_earning_link", default=True))
     cfg.social_exclude_conditions = [str(c) for c in (g("social", "exclude_conditions",
         default=cfg.social_exclude_conditions) or [])]
