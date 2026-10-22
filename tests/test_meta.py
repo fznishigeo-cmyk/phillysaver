@@ -444,3 +444,38 @@ def test_throttle_and_permission_errors_never_reject_the_deal(db, cfg, network, 
 
     run(db, cfg, [], reject=reject)
     assert db.meta_get("meta_failed") is None and db.meta_get("meta_posted") is None
+
+
+def test_late_run_fills_a_missed_slot_once(db, cfg):
+    """Hourly #323 (2026-10-22) reached meta-post at 14:02Z and the 13Z slot
+    stayed empty. Within slot_grace_hours a slot with no post still posts once."""
+    published(db, cfg, [candidate("first", 1), candidate("second", 2)])
+    live(cfg)
+    for network in ("facebook", "instagram"):
+        cfg.meta[network].update(hours_utc=[(NOW.hour - 1) % 24], slot_grace_hours=1)
+    calls = []
+    run(db, cfg, calls, now=NOW + timedelta(minutes=2))
+    posted = history(db, "meta_posted")
+    assert len(posted["facebook"]) == len(posted["instagram"]) == 1
+    calls.clear()
+    run(db, cfg, calls, now=NOW + timedelta(minutes=40))  # same slot already filled
+    assert not calls
+    assert len(history(db, "meta_posted")["facebook"]) == 1
+
+
+@pytest.mark.parametrize("grace, late_minutes", [(0, 2), (1, 62)])
+def test_missed_slot_stays_empty_outside_the_grace(db, cfg, grace, late_minutes):
+    published(db, cfg)
+    live(cfg)
+    for network in ("facebook", "instagram"):
+        cfg.meta[network].update(hours_utc=[(NOW.hour - 1) % 24], slot_grace_hours=grace)
+    calls = []
+    run(db, cfg, calls, now=NOW + timedelta(minutes=late_minutes))
+    assert not calls
+    assert not any(history(db, "meta_posted").get(n) for n in ("facebook", "instagram"))
+
+
+def test_slot_grace_is_set_for_both_networks():
+    cfg = load_config()
+    assert cfg.meta["facebook"]["slot_grace_hours"] == 1
+    assert cfg.meta["instagram"]["slot_grace_hours"] == 1

@@ -1143,11 +1143,13 @@ social:
       posts_per_run: 1
       daily_max: 4                # per UTC day; Nishi 2026-10-22 "i want you to start posting stuff" (was 1 since 2026-10-15)
       hours_utc: [13, 17, 21, 1]  # live only: 9am, 1pm, 5pm, 9pm New York (EDT)
+      slot_grace_hours: 1         # a late hourly run still fills a slot with no post (once)
     instagram:
       mode: draft                 # auto-posting paused; drafts only
       posts_per_run: 1
       daily_max: 3
       hours_utc: [14, 19, 23]     # live only: 10am 3pm 7pm New York (EDT)
+      slot_grace_hours: 1
       hashtags: "#deals #savings #wowpriced"
 
 digest:

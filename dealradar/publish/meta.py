@@ -10,7 +10,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import httpx
@@ -148,6 +148,21 @@ def _instagram(api, cfg, token, deal, text, mode) -> tuple[str, str]:
     return str(media["id"]), "PUBLISHED"
 
 
+def _slot_open(now: datetime, settings: dict, attempts: dict) -> bool:
+    """Live posts go out in an hours_utc slot, or up to slot_grace_hours after a
+    slot that has no post yet: a queued hourly run can reach this step after
+    its slot hour ended (hourly #323 posted at 14:02Z and missed 13Z)."""
+    hours = settings.get("hours_utc", [])
+    grace = max(0, int(settings.get("slot_grace_hours", 0)))
+    for back in range(grace + 1):
+        start = (now - timedelta(hours=back)).replace(minute=0, second=0, microsecond=0)
+        if start.hour in hours:
+            return back == 0 or not any(
+                (at := util.parse_iso(entry.get("at"))) and at >= start
+                for entry in attempts.values())
+    return False
+
+
 def post(db, cfg, *, transport=None, now: datetime | None = None,
          run_key: str | None = None) -> int:
     if not cfg.meta.get("enabled", False):
@@ -178,7 +193,7 @@ def post(db, cfg, *, transport=None, now: datetime | None = None,
             today = sum(1 for entry in attempts.values()
                         if (at := util.parse_iso(entry.get("at"))) and at.date() == now.date())
             limit = min(max(0, int(settings["posts_per_run"])), max(0, daily_max - today))
-            if mode == "live" and now.hour not in settings.get("hours_utc", []):
+            if mode == "live" and not _slot_open(now, settings, attempts):
                 limit = 0
             count = 0
             excluded = {**posted[network], **failed[network], **reserved}
