@@ -153,8 +153,10 @@ def cards(rows):
 
 def footer(cfg, year, disclosure, amazon_store):
     from .site import linked_disclosure
-    groups = (("wowpriced", (("/about.html", "About"), ("/deal-spotter/#how-it-works", "How to use Deal Spotter"),
-                ("/careers.html", "Careers"))),
+    # Site-wide trust links (tests/test_established_look.py): About, How we verify, Contact,
+    # Privacy and Disclosure (the disclosure line below links the last one).
+    groups = (("wowpriced", (("/about.html", "About"), ("/how-it-works.html", "How we verify"),
+                ("/deal-spotter/#how-it-works", "How to use Deal Spotter"), ("/careers.html", "Careers"))),
               ("Shop smarter", nav(cfg, NAV[:5])),
               ("Here to help", (("/deal-spotter/#faq", "FAQ"), ("/contact.html", "Contact"),
                 ("/subscribe.html", "Terms"), ("/privacy.html", "Privacy"))))
@@ -167,7 +169,7 @@ def footer(cfg, year, disclosure, amazon_store):
                      (("facebook", "f"), ("instagram", "◎"), ("pinterest", "p")) if name in profiles)
     if not social:
         social = ('<span role="img" aria-label="Facebook">f</span><span role="img" aria-label="Instagram">◎</span>'
-                  '<span role="img" aria-label="Pinterest">p</span></div><div><a href="/contact.html">Connect with wowpriced →</a>')
+                  '<span role="img" aria-label="Pinterest">p</span>')
     return ('<footer class="spotter-footer"><div class="wrap"><nav class="footer-columns" aria-label="Footer">'
             + content + '<div><h3>Stay connected</h3><div class="social-icons">' + social + '</div>'
             '<a href="/fakespot-alternative/">A fresh way to check prices</a></div></nav>'
@@ -176,7 +178,7 @@ def footer(cfg, year, disclosure, amazon_store):
             # The Amazon store page exists only with enough live Amazon deals (seo._store_pages).
             + ('<a href="/stores/amazon/">Today’s Amazon deals</a>' if amazon_store else '') + '</nav>'
             '<div class="footer-bottom"><a class="spotter-brand" href="/"><img src="/deal-spotter-mark.svg" '
-            'alt="" width="34" height="34">wowpriced</a><span>Copyright ' + str(year) + ' wowpriced</span></div>'
+            'alt="" width="34" height="34">wowpriced</a><span>© ' + str(year) + ' wowpriced</span></div>'
             '<p class="disclosure">' + linked_disclosure(disclosure) + '</p></div></footer>')
 
 
