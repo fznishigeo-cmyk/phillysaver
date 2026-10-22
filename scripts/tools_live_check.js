@@ -34,8 +34,25 @@ async function pickAsin() {
   throw new Error("no Amazon deal found in deal-spotter-prices.json or deals.json");
 }
 
+// Why deals.json Amazon rows are or are not in the prices file: one count per
+// check deal_spotter.price_index applies. Informational; never fails the run.
+async function amazonBreakdown() {
+  const response = await fetch(SITE + "/deals.json", {headers: {"User-Agent": "wowpriced-tools-check/1.0"}});
+  const deals = response.ok ? ((await response.json()).deals || []) : [];
+  const host = row => { try { return new URL(String(row.url || "")).hostname; } catch { return ""; } };
+  const amazon = deals.filter(row => /^(?:(?:www|smile|m)\.)?amazon\.com$/.test(host(row)));
+  const count = test => amazon.filter(test).length;
+  console.log(`deals.json: ${deals.length} rows, ${count(() => true)} with an amazon.com link ` +
+    `(${deals.filter(row => /amzn|amazon/.test(host(row))).length} with any Amazon host); of those: ` +
+    `not alive ${count(row => row.status !== "alive")}, locked ${count(row => row.locked)}, ` +
+    `price_unconfirmed ${count(row => row.price_unconfirmed)}, price_aged ${count(row => row.price_aged)}, ` +
+    `click_price_unknown ${count(row => row.click_price_unknown)}, ` +
+    `"not yet confirmed" ${count(row => String(row.headline || "").includes("not yet confirmed"))}`);
+}
+
 (async () => {
   fs.mkdirSync(OUT, {recursive: true});
+  await amazonBreakdown().catch(e => console.log(`deals.json breakdown: ${String(e.message || e).slice(0, 120)}`));
   const asin = await pickAsin();
   console.log(`checking ASIN ${asin} on ${SITE}`);
   const browser = await chromium.launch();
