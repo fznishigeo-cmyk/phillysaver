@@ -12,6 +12,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 from functools import lru_cache
@@ -41,6 +42,8 @@ _NAV = {"about", "contact", "privacy", "terms", "subscribe", "unsubscribe",
         "newsletter", "newsletters", "confirm", "preferences", "category",
         "tag", "author", "feed", "rss", "search", "page", "go", "out",
         "click", "track", "redirect", "link", "links", "recommends"}
+# A plain word (optionally .php etc.); anything else may be an ID or token.
+_WORD = re.compile(r"[a-z][a-z-]{0,15}(?:\.[a-z]{2,4})?\Z")
 
 
 @lru_cache(maxsize=1)
@@ -229,6 +232,32 @@ def _text_deals(text: str, source: SourceConfig) -> list[tuple[str, str]]:
     return blocks
 
 
+def _link_shapes(message: dict) -> tuple[list[str], bool]:
+    """Public-log diagnostics: "host/first-word" per link, IDs and tokens as "*";
+    never a query, fragment, full URL, address or body text. Plus: any price?"""
+    html, text = str(message.get("html") or ""), str(message.get("text") or "")
+    if html:
+        root = _Tree(html).root
+        links, visible = [a.attrs.get("href") or "" for a in root.find(tag="a")], root.text()
+    else:
+        links, visible = [m.group().rstrip(".,);]") for m in _URL.finditer(text)], text
+    shapes = []
+    for link in links:
+        try:
+            parts = urlsplit(link.strip())
+            host = (parts.hostname or "").removesuffix(".")
+        except ValueError:
+            continue
+        if parts.scheme not in ("http", "https"):
+            continue
+        domain = registrable_domain(host)
+        labels = host.removeprefix("www.").split(".")[:-domain.count(".") - 1]
+        first = parts.path.strip("/").split("/")[0]
+        shape = ".".join([s if _WORD.match(s) else "*" for s in labels] + [domain]) if domain else "?"
+        shapes.append((shape + ("/" + (first if _WORD.match(first) else "*") if first else ""))[:80])
+    return shapes, bool(_PRICE.search(visible) or _PRICE.search(text))
+
+
 def email_posts(message: dict, source: SourceConfig, now: datetime) -> list[RawPost]:
     blocks = _html_deals(str(message.get("html") or ""), source)
     if not blocks:
@@ -350,7 +379,7 @@ class NewsletterAdapter(SourceAdapter):
                 if not next_cursor or len(messages) >= cfg.newsletter_inbox_max_messages:
                     break
                 cursor = next_cursor
-            unknown, known = [], []
+            unknown, known, parsed = [], [], {}
             for message in messages:
                 self._check(deadline)
                 if not isinstance(message, dict) or not _ID.fullmatch(str(message.get("id") or "")):
@@ -362,6 +391,14 @@ class NewsletterAdapter(SourceAdapter):
                     unknown.append((message["id"], address))
                 else:
                     known.append((message["id"], partner.name))
+                    # messages, with no posts, with a price, link shapes
+                    tally = parsed.setdefault(partner.name, [0, 0, 0, Counter()])
+                    tally[0] += 1
+                    if not posts:
+                        shapes, priced = _link_shapes(message)
+                        tally[1] += 1
+                        tally[2] += priced
+                        tally[3].update(shapes)
                 self._pending[message["id"]] = posts
                 self._posts.extend(posts)
             _record_unknown_senders(db, unknown, now)
@@ -371,6 +408,11 @@ class NewsletterAdapter(SourceAdapter):
                      "%d partner(s) have sent mail: %s", len(messages), len(unknown),
                      len(received), ", ".join(f"{name} ({row['count']}, last {row['last_seen']})"
                                               for name, row in sorted(received.items())) or "none")
+            for name, (total, empty, priced, shapes) in sorted(parsed.items()):
+                if empty:
+                    log.info("partner newsletter %s: %d/%d message(s) gave no posts, %d with a price; "
+                             "link shapes: %s", name, empty, total, priced,
+                             ", ".join(f"{shape} ({n})" for shape, n in shapes.most_common(8)) or "none")
             self._loaded = True
         return self._posts
 

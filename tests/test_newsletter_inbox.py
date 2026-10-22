@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -206,6 +207,35 @@ def test_partner_mail_counts_each_delivery_once_for_the_resubscribe_list(env):
     reader(env, inbox).fetch_posts(inbox_source(), None, db, cfg, inbox.now, None)
     assert partner_mail(db) == {source().name: {"count": 3, "first_seen": "2026-10-13",
                                                 "last_seen": "2026-10-14"}}
+
+
+def test_partner_mail_without_posts_logs_link_shapes_never_urls_or_tokens(env, caplog):
+    """Live 2026-10-22: 19 Slickdeals alerts gave no posts. Actions logs are public."""
+    cfg, db, _ = env
+    slick = source("slickdeals_frontpage", "slickdeals.net", "alerts@slickdeals.net")
+    alert = message(2, **{"from": "Slickdeals <alerts@slickdeals.net>", "subject": PRIVATE, "html": (
+        "<p>Deal alert: Widget $19.99 (was $49.99)</p>"
+        "<a href='https://slickdeals.net/click?lno=123&u=SECRETTOKEN'>Widget</a>"
+        "<a href='https://slickdeals.net/click?lno=456&u=SECRETTOKEN#frag'>See deal</a>"
+        "<a href='https://links.e.slickdeals.net/u/click?upn=SECRETTOKEN'>View</a>"
+        "<a href='https://url9934.slickdeals.net/Xk29aQ7Zp/SECRETTOKEN'>Open</a>"
+        "<a href='mailto:deals@wowpriced.com'>Reply</a><p>" + PRIVATE + "</p>")})
+    text_alert = message(3, **{"from": "alerts@slickdeals.net", "html": "",
+                               "text": "Widget $5\nhttps://slickdeals.net/click?lno=9&u=SECRETTOKEN."})
+    caplog.set_level(logging.INFO, logger="dealradar.fetch.newsletter")
+    inbox = Inbox([message(), alert, text_alert])
+    posts = reader(env, inbox, [source(), slick]).fetch_posts(inbox_source(), None, db, cfg, NOW, None)
+    assert [p.source_name for p in posts] == [source().name]
+    logged = "\n".join(r.getMessage() for r in caplog.records)
+    assert [line for line in logged.splitlines() if "gave no posts" in line] == [
+        "partner newsletter slickdeals_frontpage: 2/2 message(s) gave no posts, 2 with a price; "
+        "link shapes: slickdeals.net/click (3), links.e.slickdeals.net/u (1), *.slickdeals.net/* (1)"]
+    for private in ("SECRETTOKEN", "lno", "123", "9934", "Xk29", "?", "#", "http", "@",
+                    "wowpriced", "Widget", PRIVATE):
+        assert private not in logged
+    caplog.clear()  # a partner email that yields posts adds no diagnostic line
+    reader(env, Inbox([message(4)])).fetch_posts(inbox_source(), None, db, cfg, NOW, None)
+    assert "partner newsletters: 1 message(s)" in caplog.text and "gave no posts" not in caplog.text
 
 
 def test_mapped_senders_leave_the_unknown_report(env, monkeypatch):
