@@ -33,10 +33,11 @@ r2_aws() {
 r2_reason() {
   # One safe word for the log: the S3 error code (letters only), or a fixed
   # category. The raw message (endpoint, bucket, request ids) is never printed.
-  local text code
+  local text code op
   text="$(cat "$1" 2>/dev/null || true)"
   code="$(grep -oE 'An error occurred \([A-Za-z]{1,40}\)' <<<"$text" | head -n1 | sed -E 's/.*\(([A-Za-z]+)\)/\1/')" || true
-  if [[ -n "$code" ]]; then printf '%s' "$code"
+  op="$(grep -oE 'when calling the [A-Za-z]{1,40} operation' <<<"$text" | head -n1 | awk '{print $4}')" || true
+  if [[ -n "$code" ]]; then printf '%s%s' "$code" "${op:+ on $op}"
   elif grep -qi 'could not connect\|connection\|name resolution' <<<"$text"; then printf 'endpoint unreachable'
   elif grep -qi 'invalid endpoint\|not a valid' <<<"$text"; then printf 'invalid endpoint'
   elif grep -qi 'unable to locate credentials' <<<"$text"; then printf 'no credentials'
@@ -64,8 +65,11 @@ r2_copy() {
   fi
   key="state/$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}.enc"
   R2_ERR_FILE="$(mktemp)" || R2_ERR_FILE=/dev/null
+  # latest.enc is uploaded from the local file too: an in-bucket copy of a
+  # multipart-sized object makes the CLI copy tags (GetObjectTagging), which R2
+  # answers NotImplemented (fast #804).
   if ! r2_aws s3 cp --only-show-errors "$file" "s3://$R2_BUCKET/$key" >/dev/null ||
-     ! r2_aws s3 cp --only-show-errors "s3://$R2_BUCKET/$key" "s3://$R2_BUCKET/state/latest.enc" >/dev/null; then
+     ! r2_aws s3 cp --only-show-errors "$file" "s3://$R2_BUCKET/state/latest.enc" >/dev/null; then
     printf '[commit_state] r2 copy: failed: %s (the git copy is unaffected)\n' "$(r2_reason "$R2_ERR_FILE")"
     [[ "$R2_ERR_FILE" == /dev/null ]] || rm -f "$R2_ERR_FILE"
     R2_ERR_FILE=/dev/null

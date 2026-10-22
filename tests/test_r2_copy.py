@@ -63,6 +63,8 @@ def test_copies_to_a_timestamped_key_and_latest_then_prunes_old_copies(tmp_path)
     lines = calls.splitlines()
     cps = [l for l in lines if " s3 cp " in f" {l} "]
     assert len(cps) == 2 and cps[1].endswith("s3://wowpriced-state/state/latest.enc")
+    # Both from the local file: no in-bucket copy (its tag copy is NotImplemented on R2, fast #804).
+    assert all(" s3 cp --only-show-errors /" in l for l in cps) and "s3://wowpriced-state/state/2" not in cps[1]
     assert all("--endpoint-url https://acct123.r2.cloudflarestorage.com" in l for l in cps)
     removed = [l for l in lines if " s3 rm " in f" {l} "]
     assert removed == ["--endpoint-url https://acct123.r2.cloudflarestorage.com s3 rm --only-show-errors "
@@ -79,8 +81,11 @@ def test_failure_never_fails_the_caller_or_leaks_the_secret(tmp_path):
 
 
 @pytest.mark.parametrize("message,word", [
-    ("An error occurred (AccessDenied) when calling the PutObject operation: Access Denied", "AccessDenied"),
-    ("An error occurred (NoSuchBucket) when calling the PutObject operation", "NoSuchBucket"),
+    ("An error occurred (AccessDenied) when calling the PutObject operation: Access Denied", "AccessDenied on PutObject"),
+    ("An error occurred (NoSuchBucket) when calling the PutObject operation", "NoSuchBucket on PutObject"),
+    ("An error occurred (NotImplemented) when calling the GetObjectTagging operation: Not Implemented",
+     "NotImplemented on GetObjectTagging"),
+    ("An error occurred (SlowDown)", "SlowDown"),
     ("Could not connect to the endpoint URL:", "endpoint unreachable"),
     ("Unable to locate credentials", "no credentials")])
 def test_failure_names_only_a_safe_reason(tmp_path, message, word):
