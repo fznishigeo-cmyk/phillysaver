@@ -604,6 +604,7 @@ def pre_keepa_starter(cfg):
     """
     pre_deal_spotter(cfg)
     pre_review_checker(cfg)
+    pre_zero_waste(cfg)
     old = {"tokens_per_day": (8000, 40000), "max_per_minute": (4, 20)}
     cfg.search = {key: old[key][1] if key in old and value == old[key][0] else value
                   for key, value in cfg.search.items()}
@@ -612,6 +613,8 @@ def pre_keepa_starter(cfg):
 
 def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
+    if config.get("keepa", {}).get("recheck_surplus_reserve") == 250:
+        config["keepa"]["recheck_surplus_reserve"] = 650
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
     config["keepa"]["tokens_per_minute"] = 60
@@ -641,3 +644,11 @@ def pre_review_checker(cfg):
 def pre_review_checker_raw(config):
     config.pop("review_checker", None)
     return config
+
+
+def pre_zero_waste(cfg):
+    """Before the next-run reserve was sized for the 20/min plan (operator 2026-10-22)."""
+    if cfg.keepa_recheck_surplus_reserve == 250:
+        cfg.keepa_recheck_surplus_reserve = 650.0
+    return cfg
+

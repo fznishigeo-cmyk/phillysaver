@@ -317,11 +317,11 @@ def test_optional_sampling_persists_shared_token_balance(db, cfg, monkeypatch, f
     from tests.test_buybox_top_picks import transport
     visible(db, [seed(db, cfg, asin=f"B{i:09d}") for i in range(2)])
     cfg.accuracy_extra_samples_per_day = 2
-    calls, _, _ = transport(monkeypatch, db, {}, tokens=cfg.keepa_recheck_surplus_reserve + 4,
-                             failure=failure)
+    floor = max(cfg.keepa_reserve_tokens, cfg.keepa_recheck_surplus_reserve)  # accuracy.extra_samples' reserve
+    calls, _, _ = transport(monkeypatch, db, {}, tokens=floor + 4, failure=failure)
     accuracy.extra_samples(db, cfg, NOW)
     assert len(calls) == 1
-    assert KeepaBudget.load(db).available(NOW) == cfg.keepa_recheck_surplus_reserve
+    assert KeepaBudget.load(db).available(NOW) == floor
     accuracy.extra_samples(db, cfg, NOW, run_key="later")
     assert len(calls) == 1  # another run cannot spend the same four tokens again
 

@@ -764,7 +764,13 @@ keepa:
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
   buybox_interval_min: 120         # paid requests and maximum Buy Box observation age
   recheck_surplus: true           # use predicted overflow before the next scheduled run
-  recheck_surplus_reserve: 650     # 160 discovery + 120 top reads * 4 worst-case tokens, rounded up
+  # Kept for the NEXT run while overflow is spent: its worst case (160 discovery + 120 top
+  # reads * 4 = 640) minus the ~400 tokens refilled before it at 20/min (runs ~20 min
+  # apart). 650 was sized for the 60/min plan and held 800 of 1,200 back (with the
+  # visitor floor): due rechecks waited, overflow /deal pages and the focus finder got 0.
+  # Operator 2026-10-22: "virtually 0 waste ... people visiting the site should still
+  # be able to search" -> visitor_reserve_tokens stays a separate, permanent floor.
+  recheck_surplus_reserve: 250
   recheck_top_live_adaptive: true  # update=0 with surplus, otherwise update=1
   tokens_per_minute: 20           # change only this when the plan changes (Starter 20 since 2026-10-21; was 60 from 2026-10-14)
   volatility:

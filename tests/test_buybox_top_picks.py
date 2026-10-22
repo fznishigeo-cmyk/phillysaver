@@ -72,7 +72,9 @@ def test_shipping_config_and_safe_defaults():
     cfg = load_config()
     assert (cfg.keepa_buybox_top_n, cfg.keepa_buybox_interval_min) == (120, 120)
     assert cfg.keepa_recheck_surplus and cfg.keepa_recheck_top_live_adaptive
-    assert cfg.keepa_recheck_surplus_reserve >= 140 + 120 * 4
+    # The next run's discovery + top reads are covered by what we keep plus the ~20 minutes
+    # of refill before it (operator 2026-10-22: "virtually 0 waste" on the 20/min plan).
+    assert cfg.keepa_recheck_surplus_reserve + 20 * cfg.keepa_tokens_per_minute >= 140 + 120 * 4
     assert AppConfig().keepa_buybox_top_n == 0
     assert not AppConfig().keepa_recheck_surplus
     assert not AppConfig().keepa_recheck_top_live_adaptive
