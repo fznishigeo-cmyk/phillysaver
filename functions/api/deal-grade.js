@@ -12,12 +12,17 @@ export function validDealSettings(cfg) {
 }
 
 export function gradeDeal(input = {}, cfg = {}) {
-  const {price_cents:price, list_price_cents:list, avg90, verified_price_cents:verified} = input;
+  const {price_cents:price, list_price_cents:list, avg90, verified_price_cents:verified,
+    item_price_cents:itemPrice} = input;
   const facts = [];
   let grade = 'C';
   if (cents(price) && validDealSettings(cfg)) {
+    // price is what the shopper pays (item + shipping); the list-price fact uses
+    // Amazon's item price, as Amazon's own "-36%" does.
+    const shown = cents(itemPrice) && itemPrice <= price ? itemPrice : price;
+    const listOff = cents(list) && list > shown ? (list - shown) / list * 100 : null;
     const discount = cents(list) && list > price ? (list - price) / list * 100 : null;
-    if (discount !== null) facts.push(Math.floor(discount) + '% below the list price');
+    if (listOff !== null) facts.push(Math.floor(listOff) + '% below the list price');
     if (cents(verified)) facts.push('Verified deal on wowpriced');
     if ((cents(avg90) && price <= cfg.a_max_avg_ratio * avg90) ||
         (cents(verified) && price <= verified * cfg.verified_max_ratio)) grade = 'A';

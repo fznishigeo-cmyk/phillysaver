@@ -14,7 +14,7 @@ const source = fs.readFileSync(new URL('../functions/api/search.js', import.meta
   .replace('./deal-grade.js', gradeURL)
   .replace('../../dealradar/publish/templates/search-products.js', productsURL)
   .replace('./review-grade.js', reviewURL);
-const {onRequest, normalizeQuery, currentItems, settle, topSellerItems} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const {onRequest, normalizeQuery, currentItems, settle, topSellerItems, shippingTotal} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 const {monthlyBoughtLabel} = await import(productsURL);
 const realFetch = globalThis.fetch, realCaches = globalThis.caches, realNow = Date.now;
 const NOW = Date.parse('2026-10-17T18:00:00Z'), KEY = 'PRIVATE-test-key';
@@ -102,6 +102,30 @@ test('items carry Amazon\'s most specific category name when Keepa has one', () 
   assert.equal(currentItems([p], now)[0].category, undefined);
   p.categoryTree = [{catId:4}];
   assert.equal(currentItems([p], now)[0].category, undefined);
+});
+test('Buy Box price reads as Amazon\'s item price plus shipping only when Keepa\'s parts add up', () => {
+  // B07RFNZYJZ, 2026-10-22: Amazon showed $153.84 + $25.15 shipping; Keepa's Buy Box held $178.99.
+  const p = product(1); p.stats.current[18] = 17899; p.stats.current[4] = 24000;
+  Object.assign(p.stats, {buyBoxPrice:15384, buyBoxShipping:2515});
+  let item = currentItems([p], now)[0];
+  assert.deepEqual([item.price_cents, item.shipping_cents, item.list_price_cents], [15384, 2515, 24000]);
+  assert.deepEqual(shippingTotal(item), {price_cents:17899, item_price_cents:15384});
+  const grade = gradeDeal({...item, ...shippingTotal(item), avg90:20000}, DEAL_SETTINGS);
+  assert.deepEqual([grade.grade, grade.facts], ['B', ['35% below the list price']]);
+  Object.assign(p.stats, {buyBoxPrice:17899, buyBoxShipping:0});
+  item = currentItems([p], now)[0];
+  assert.deepEqual([item.price_cents, 'shipping_cents' in item], [17899, false]);
+  assert.deepEqual(shippingTotal(item), {price_cents:17899, item_price_cents:17899});
+  for (const [price, shipping] of [[15000, 2515], [undefined, 2515], [15384, undefined], [15384.5, 2514.5],
+    [0, 17899], [18000, -101], ['15384', 2515]]) {
+    Object.assign(p.stats, {buyBoxPrice:price, buyBoxShipping:shipping});
+    item = currentItems([p], now)[0];
+    assert.deepEqual([item.price_cents, 'shipping_cents' in item], [17899, false]);
+  }
+  Object.assign(p.stats, {buyBoxPrice:15384, buyBoxShipping:2515}); p.stats.current[18] = -1; p.stats.current[1] = 17899;
+  item = currentItems([p], now)[0];
+  assert.deepEqual([item.price_cents, 'shipping_cents' in item], [17899, false]);  // no Buy Box, no split
+  for (const bad of [undefined, null, {}, {price_cents:'1'}]) assert.deepEqual(shippingTotal(bad), {});
 });
 test('new current fallback skips absent/invalid/stale prices and never falls back to averages', () => {
   const p = product(); p.stats.current[18] = -1;

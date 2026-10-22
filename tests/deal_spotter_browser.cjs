@@ -76,7 +76,7 @@ async function contrastAudit(page) {
             if(hold) await new Promise(resolve=>releases.push(resolve));
             return route.fulfill({contentType:'application/json',body:JSON.stringify({items:[{asin:'B0D8KZHN1Q',
               title:'Wireless over-ear headphones with a comfortable folding design',image:'https://m.media-amazon.com/images/I/fixture.jpg',
-              price_cents:grade==='A'?3999:grade==='B'?4699:4999,list_price_cents:5999,monthlySold:1000,
+              price_cents:grade==='A'?3999:grade==='B'?4699:4999,...(grade==='B'?{shipping_cents:2515}:{}),list_price_cents:5999,monthlySold:1000,
               as_of:new Date(NOW.getTime()-4*60000).toISOString()}],deal_grade:{grade,label:{A:'Great price',B:'Good price',C:'Fair price'}[grade],
               facts:['Current Amazon price checked',...(grade==='A'?['Verified deal on wowpriced']:[])]}})});
           }
@@ -131,6 +131,8 @@ async function contrastAudit(page) {
           } else await Promise.all([page.waitForResponse(r=>r.url().includes('/api/search')),page.locator('#reanalyze').click()]);
           await page.clock.runFor(10100);
           assert.equal(await page.locator('#grade-letter').textContent(),next);
+          // Amazon's item price first; shipping only when it is charged (operator 2026-10-22).
+          assert.equal(await page.locator('#result-price').textContent(),{A:'$39.99',B:'$46.99+ $25.15 shipping',C:'$49.99'}[next]);
           assert(await page.locator('#analyze-modal').isHidden());
           assert.equal(await page.evaluate(()=>document.activeElement.id),'result-title');
           assert.match(page.url(),/\?asin=B0D8KZHN1Q$/);

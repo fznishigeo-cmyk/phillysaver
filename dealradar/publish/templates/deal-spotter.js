@@ -96,6 +96,12 @@ function spotterSimilar(item) {
       : '<span class="no-photo">Product image unavailable</span>';
     $('result-price').className = 'result-price';
     $('result-price').textContent = '$' + (item.price_cents / 100).toFixed(2);
+    if (Number.isSafeInteger(item.shipping_cents) && item.shipping_cents > 0) {
+      var ship = document.createElement('small');
+      ship.className = 'result-shipping';
+      ship.textContent = '+ $' + (item.shipping_cents / 100).toFixed(2) + ' shipping';
+      $('result-price').appendChild(ship);
+    }
     var listFact = Array.isArray(grade.facts) && grade.facts.find(fact => typeof fact === 'string' && /^\d+% below the list price$/.test(fact));
     $('result-list').textContent = Number.isSafeInteger(item.list_price_cents) && item.list_price_cents > item.price_cents ?
       '$' + (item.list_price_cents / 100).toFixed(2) + ' Amazon list price' +

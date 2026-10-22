@@ -418,6 +418,7 @@ class AppConfig:
     search_focus_ring_keyboard_only: bool = False
     hide_timer_ticker_confetti: bool = False
     tagline_full_row: bool = False
+    price_shipping_note: bool = False
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
@@ -1275,6 +1276,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.tagline_full_row = g("tagline_full_row", default=False)
     if type(cfg.tagline_full_row) is not bool:
         raise ValueError("tagline_full_row must be a boolean")
+    cfg.price_shipping_note = g("price_shipping_note", default=False)
+    if type(cfg.price_shipping_note) is not bool:
+        raise ValueError("price_shipping_note must be a boolean")
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")

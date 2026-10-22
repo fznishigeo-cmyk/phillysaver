@@ -54,6 +54,11 @@ def _function(source, name):
     return match[0] + "\n"
 
 
+PRICE_LINE = "  return '<div class=\"price\">$' + (item.price_cents / 100).toFixed(2) + '</div>' +\n"
+SHIPPING_LINE = ("    (Number.isSafeInteger(item.shipping_cents) && item.shipping_cents > 0 ? '<p class=\"price-note\">+ $' +\n"
+                 "      (item.shipping_cents / 100).toFixed(2) + ' shipping</p>' : '') +\n")
+
+
 def script(cfg):
     # Reuse the shipped input checks, sanitizer, matcher, monthly labels,
     # link-word derivation and honest fallback copy without editing their callers.
@@ -78,6 +83,9 @@ def script(cfg):
     elif tool_hero.enabled(cfg):
         result = tool_hero.script(result)
     result = checker_similar_heading.script(buttons_to_tools.tool_script(result, cfg), cfg)
+    if getattr(cfg, "price_shipping_note", False) is True:
+        # Operator 2026-10-22: the price reads like Amazon's item price; shipping, when any, shows under it.
+        result = result.replace(PRICE_LINE, PRICE_LINE + SHIPPING_LINE, 1)
     return amazon_price_cap.cap(checker_fixes_1021.script(result, cfg), cfg)
 
 

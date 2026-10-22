@@ -114,6 +114,14 @@ function stamp(minutes, now) {
   return ms <= now && now - ms <= 86400000 ? new Date(ms).toISOString() : "";
 }
 
+// The grade compares what the shopper pays (item + shipping) with the 90-day
+// average of the same Buy Box series; "% off list" uses Amazon's item price.
+export function shippingTotal(item) {
+  if (!item || !Number.isSafeInteger(item.price_cents)) return {};
+  const shipping = Number.isSafeInteger(item.shipping_cents) && item.shipping_cents > 0 ? item.shipping_cents : 0;
+  return {price_cents:item.price_cents + shipping, item_price_cents:item.price_cents};
+}
+
 export function currentItems(products, now = Date.now(), includeMonthlySold = true) {
   const items = [], seen = new Set();
   for (const p of Array.isArray(products) ? products : []) {
@@ -132,7 +140,16 @@ export function currentItems(products, now = Date.now(), includeMonthlySold = tr
       /^[A-Za-z0-9+_.%-]+\.(?:jpg|jpeg|png|webp)$/i.test(name)) || "";
     const image = filename ? "https://m.media-amazon.com/images/I/" + filename : "";
     const item = {asin:p.asin, title:p.title.trim().slice(0, 500), image, price_cents:price, as_of:asOf};
-    if (Number.isSafeInteger(current[4]) && current[4] > price) item.list_price_cents = current[4];
+    // Keepa's Buy Box price includes shipping (B07RFNZYJZ: $153.84 + $25.15 shown as
+    // $178.99). Show Amazon's item price and the shipping apart when Keepa gives both
+    // and they add up exactly; the grade still uses the total (see shippingTotal).
+    const itemPrice = p.stats.buyBoxPrice, shipping = p.stats.buyBoxShipping;
+    if (buybox && Number.isSafeInteger(itemPrice) && itemPrice > 0 && Number.isSafeInteger(shipping) &&
+        shipping >= 0 && itemPrice + shipping === price) {
+      item.price_cents = itemPrice;
+      if (shipping > 0) item.shipping_cents = shipping;
+    }
+    if (Number.isSafeInteger(current[4]) && current[4] > item.price_cents) item.list_price_cents = current[4];
     if (includeMonthlySold && Number.isSafeInteger(p.monthlySold) && p.monthlySold > 0) item.monthlySold = p.monthlySold;
     // Amazon's own most specific category ("Over-Ear Headphones"): Deal Spotter's
     // "similar deals" searches the kind of product, not its full name.
@@ -249,7 +266,8 @@ export async function onRequest(context) {
           const response = await env.ASSETS.fetch(new Request(new URL('/deal-spotter-prices.json', request.url)));
           if (response.ok) verified = publishedDealPrice(await response.json(), asin);
         } catch (_) { /* Missing inventory cannot confer verified status. */ }
-        publicBody.deal_grade = gradeDeal({...publicBody.items?.[0], avg90:_deal?.avg90,
+        const first = publicBody.items?.[0];
+        publicBody.deal_grade = gradeDeal({...first, ...shippingTotal(first), avg90:_deal?.avg90,
           verified_price_cents:verified}, cfg.deal_spotter);
       }
       return json(publicBody);

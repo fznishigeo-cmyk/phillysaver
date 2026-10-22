@@ -449,6 +449,7 @@ def pre_card_click_1020(cfg):
 # Task 319: historical fixtures keep Amazon used and their original schedules.
 def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("price_shipping_note", None)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
     config["amazon_used"] = {"enabled": True}
@@ -662,5 +663,12 @@ def pre_zero_waste(cfg):
 def pre_hide_timer_ticker(cfg):
     """Before the timer, "Live deals" banner and drop confetti were hidden (operator 2026-10-22)."""
     cfg.hide_timer_ticker_confetti = False
+    pre_price_shipping_note(cfg)
+    return cfg
+
+
+def pre_price_shipping_note(cfg):
+    """Before tool prices showed shipping on its own line (operator 2026-10-22)."""
+    cfg.price_shipping_note = False
     return cfg
 
