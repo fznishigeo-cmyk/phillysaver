@@ -528,6 +528,7 @@ def pre_hide_deal_site_links(cfg):
 
 def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("price_shipping_note", None)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
     config.get("publish", {}).pop("hide_deal_site_links", None)
@@ -544,6 +545,7 @@ def pre_keepa_focus_finder(cfg):
 
 def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("price_shipping_note", None)
     pre_review_checker_raw(config)
     config.pop("keepa_focus_finder", None)
     config.pop("deal_spotter", None)
@@ -618,6 +620,7 @@ def pre_keepa_starter(cfg):
 def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("price_shipping_note", None)
     if config.get("keepa", {}).get("recheck_surplus_reserve") == 250:
         config["keepa"]["recheck_surplus_reserve"] = 650
     config.pop("deal_spotter", None)
