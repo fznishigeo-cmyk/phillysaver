@@ -572,16 +572,39 @@ def pre_checker_fixes_1021(cfg):
 
 def pre_exact_variant_links(cfg):
     """Before Amazon size/colour children opened as themselves (operator 2026-10-21)."""
-    pre_sovrn_denied(cfg)
+    pre_keepa_starter(cfg)
     cfg.affiliate_exact_variant_links = False
     return cfg
 
 
 def pre_sovrn_denied(cfg):
-    """Before Sovrn denied wowpriced.com and its links were switched off (2026-10-21)."""
+    """Before Sovrn denied wowpriced.com and its links were switched off (2026-10-21).
+
+    Only for fixtures recorded from the shipped config; default-built configs never had Sovrn.
+    """
     cfg.affiliate_sovrn_enabled = True
     cfg.affiliate_link_overrides = {"walmart.com/222918738": "https://sovrn.co/168n3ev"}
     return cfg
+
+
+def pre_keepa_starter(cfg):
+    """Before the Keepa plan went from 60 to 20 tokens/min (operator 2026-10-21).
+
+    Only the shipped search caps (published in search-config.json) move back,
+    and only when they hold the new shipped values; scheduler tests that size
+    reads to the 60/min plan set keepa_tokens_per_minute themselves.
+    """
+    old = {"tokens_per_day": (8000, 40000), "max_per_minute": (4, 20)}
+    cfg.search = {key: old[key][1] if key in old and value == old[key][0] else value
+                  for key, value in cfg.search.items()}
+    return cfg
+
+
+def pre_keepa_starter_raw(config):
+    """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
+    config["keepa"]["tokens_per_minute"] = 60
+    config["search"].update(tokens_per_day=40000, max_per_minute=20)
+    return config
 
 
 def pre_timer_center(cfg):

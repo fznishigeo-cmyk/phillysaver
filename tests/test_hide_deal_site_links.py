@@ -15,7 +15,7 @@ from dealradar.publish import indexnow, site, social
 from dealradar.publish.link_facts import routing_policy as link_policy
 from dealradar.publish.link_facts import derive_link_facts
 from dealradar.util import iso
-from tests.history_pins import pre_hide_deal_site_links, pre_amazon_price_cap, pre_tools_new_tab
+from tests.history_pins import pre_amazon_price_cap, pre_hide_deal_site_links, pre_sovrn_denied, pre_tools_new_tab
 from tests.test_e2e_offline import env, _run
 from tests.test_photoless_cutoff import cfg, db, offline  # noqa: F401
 from tests.test_product_entities import insert
@@ -238,7 +238,7 @@ def baseline_rows():
 def test_off_keeps_pre_edit_whole_publication_bytes(tmp_path, monkeypatch, mode, expected):
     monkeypatch.setattr(site, 'util_now', lambda: SUPPORT_NOW)
     # Recorded at e733b00, before this switch and the same day's tool-page switches.
-    cfg = pre_tools_new_tab(load_config())
+    cfg = pre_sovrn_denied(pre_tools_new_tab(load_config()))
     if mode == 'inline':
         cfg.search_analyze['lazy'] = False
     if mode == 'membership':

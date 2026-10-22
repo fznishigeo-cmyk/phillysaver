@@ -82,6 +82,7 @@ def timed_transport(monkeypatch, clock, *, offers_seconds=(4, 5, 6), cost=7, bal
 
 
 def test_fast_lane_fills_offers_across_interleaved_value_groups(db, cfg, monkeypatch):
+    cfg.keepa_tokens_per_minute = 60.0  # the 85 offer reads are sized to the 60/min plan
     cfg.keepa_recheck_top_live = False
     rows, picks, wall = inventory(db, cfg)
     calls, elapsed = timed_transport(monkeypatch, [NOW])

@@ -7,7 +7,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import search_box_glow
-from tests.history_pins import pre_header_polish, pre_same_product_spacing
+from tests.history_pins import pre_header_polish, pre_keepa_starter, pre_same_product_spacing, pre_sovrn_denied
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_more import config as more_config, offline
@@ -26,6 +26,7 @@ def config(mode):
     pre_same_product_spacing(cfg)
     pre_header_polish(cfg)
     if mode.startswith('current'):
+        pre_keepa_starter(pre_sovrn_denied(cfg))  # recorded from the shipped config before both changes
         cfg.search = dict(cfg.search, tokens_per_day=5000)  # recorded before the ad-day raise
     if mode.endswith('inline'):
         cfg.search_analyze['lazy'] = False

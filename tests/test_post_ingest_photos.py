@@ -17,7 +17,7 @@ from dealradar.errors import DeadlineExceeded
 from dealradar.http_client import PoliteFetcher
 from dealradar.keepa_budget import KeepaBudget
 from tests import test_e2e_offline as e2e
-from tests.history_pins import pre_hide_deal_site_links_raw, pre_keepa_focus_finder_raw
+from tests.history_pins import pre_hide_deal_site_links_raw, pre_keepa_focus_finder_raw, pre_keepa_starter_raw
 from tests.test_e2e_offline import env
 from tests.test_photo_identity import source_post
 from tests.test_photos_every_deal import A, B, PIC, seed
@@ -230,6 +230,7 @@ def test_new_post_identity_gets_photo_after_fetch_time_recheck(env, monkeypatch,
     raw = yaml.safe_load(path.read_text())
     raw["images"]["post_ingest_keepa"] = enabled
     raw["publish"]["site_show_from_pct"] = 50
+    pre_keepa_starter_raw(raw)  # the OFF digest was recorded on the 60/min plan
     # The OFF digest was recorded with the tool pages in preview and before task 330.
     raw["tool_pages"] = {"enabled": True, "public": False}
     raw["phone_timer_raise"] = False

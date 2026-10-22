@@ -163,9 +163,10 @@ intake:
 search:
   amazon_results: on          # operator approved 2026-10-17 7:55pm after testing ?preview=search
   cache_hours: 6
-  tokens_per_day: 40000       # separate from pipeline recheck accounting; Nishi 2026-10-18 "raise it" (3,000 ran out at 1:45am; 5,000 again by 12:30pm, ad day)
-                              # Nishi 2026-10-20: plenty for 1000+ searchers a day; the bucket refills 86,400/day and the pipeline needs ~14,400
-  max_per_minute: 20
+  tokens_per_day: 8000        # separate from pipeline recheck accounting; Nishi 2026-10-18 "raise it" (3,000 ran out at 1:45am; 5,000 again by 12:30pm, ad day)
+                              # Keepa Starter (Nishi 2026-10-21): the bucket refills 28,800/day and the pipeline needs ~16,000;
+                              # 8,000 = ~70 fresh searches a day (cached 6 h). Was 40,000 on the 60/min plan.
+  max_per_minute: 4           # each search reserves up to 110 tokens; 4 keeps a burst under the 20/min refill's hour (was 20)
 
 search_analyze:
   enabled: true              # task 291: paste Amazon links; OFF restores previous bytes
@@ -747,7 +748,7 @@ keepa:
   recheck_surplus: true           # use predicted overflow before the next scheduled run
   recheck_surplus_reserve: 650     # 160 discovery + 120 top reads * 4 worst-case tokens, rounded up
   recheck_top_live_adaptive: true  # update=0 with surplus, otherwise update=1
-  tokens_per_minute: 60           # change only this when upgrading the plan (60 since 2026-10-14)
+  tokens_per_minute: 20           # change only this when the plan changes (Starter 20 since 2026-10-21; was 60 from 2026-10-14)
   volatility:
     # Off 2026-10-14 ~19:50Z: live fast lanes ran out of time making many 1-4 ASIN
     # calls (used wall within 1 h fell 97% -> 57%). Back on 2026-10-15 with the
