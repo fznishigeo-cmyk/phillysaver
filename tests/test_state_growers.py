@@ -92,7 +92,7 @@ def test_shipped_values_and_reader_floors():
     options = state_retention.options(cfg)
     assert (options["accuracy_days"], options["click_hours"], options["history_samples"]) == (14, 192, 12)
     assert cfg.deals_days == 14 and cfg.posts_seen_days == 30
-    assert options["audit_days"] == 14
+    assert options["audit_days"] == 9
     cfg.accuracy_samples_days = cfg.deal_click_shown_days = cfg.keepa_recheck_history_samples = 1
     cfg.raw["first_party_clicks"]["lookback_hours"] = 720
     cfg.keepa_recheck_adaptive["history_samples"] = 24

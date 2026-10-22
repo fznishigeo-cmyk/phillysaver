@@ -99,7 +99,7 @@ def table_sizes(conn: sqlite3.Connection) -> dict:
         rows = conn.execute(
             "SELECT COALESCE(m.tbl_name,s.name) AS name, SUM(s.pgsize) AS bytes"
             " FROM dbstat s LEFT JOIN sqlite_schema m ON m.name=s.name"
-            " GROUP BY COALESCE(m.tbl_name,s.name) ORDER BY bytes DESC,name LIMIT 8").fetchall()
+            " GROUP BY COALESCE(m.tbl_name,s.name) ORDER BY bytes DESC,name LIMIT 40").fetchall()
     except sqlite3.OperationalError:
         return sizes  # dbstat is optional; do not invent per-table estimates.
     sizes.update(method="dbstat", tables=[{"name": name, "bytes": size} for name, size in rows])

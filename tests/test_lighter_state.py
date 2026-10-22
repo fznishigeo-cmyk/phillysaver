@@ -16,6 +16,7 @@ NOW = datetime(2026, 10, 13, 0, 30, tzinfo=timezone.utc)
 OLD = NOW - timedelta(days=90)
 RETENTION = {"llm_calls_days": 35, "run_stats_days": 60,
              "http_cache_days": 30, "outgoing_days": 60}
+SHIPPED_RETENTION = {**RETENTION, "llm_calls_days": 10, "run_stats_days": 10}
 
 
 @pytest.fixture
@@ -193,8 +194,8 @@ def test_blocked_vacuum_is_logged_and_never_fails_the_run(db, caplog):
 
 
 def test_retention_defaults_and_config_loading(tmp_path):
-    for cfg in (AppConfig(), load_config()):
-        assert {name: getattr(cfg, name) for name in RETENTION} == RETENTION
+    for cfg, expected in ((AppConfig(), RETENTION), (load_config(), SHIPPED_RETENTION)):
+        assert {name: getattr(cfg, name) for name in RETENTION} == expected
     custom = {name: index + 1 for index, name in enumerate(RETENTION)}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"retention": custom}))

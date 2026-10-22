@@ -155,7 +155,7 @@ def test_missing_knobs_keep_old_payloads_and_scores(db, tmp_path):
     assert db.conn.execute("SELECT COUNT(*) FROM appeal_scores").fetchone()[0] == 1
     shipped = load_config()
     assert (shipped.indexnow_batch_versions_days, shipped.appeal_scores_days) == (7, 7)
-    assert (shipped.state_warn_enc_mb, shipped.state_max_enc_mb) == (70, 90)
+    assert (shipped.state_warn_enc_mb, shipped.state_max_enc_mb) == (70, 95)
 
 
 def test_cli_passes_retention_and_reader_ttl(db, tmp_path, monkeypatch):

@@ -1258,13 +1258,15 @@ growth:
 
 state:
   warn_enc_mb: 70            # Decimal MB (1,000,000 bytes); warning above this size.
-  max_enc_mb: 90             # Fail before any push at or above this size.
+  # Fail before any push at or above this size. GitHub blocks files over 100 MiB
+  # (104.9 MB); 95 since 2026-10-22 (was 90) while shorter retention catches up.
+  max_enc_mb: 95
 
 retention:
   state_retention_337: true  # OFF preserves previous maintenance/writer bytes.
   api_cache_days: 1         # Opaque api: validators only; response bodies are never persisted.
   post_receipt_details_days: 7  # Compact older receipts without live sightings; fresh reads stay in posts_seen.
-  audit_detail_days: 14      # Older details become counted history; run/send guards survive.
+  audit_detail_days: 9       # Older details become counted history; run/send guards survive. Reader floor 9; was 14 until 2026-10-22.
   audit_hot_days: 1          # Older completed source audits use lossless packed hashes until day 14.
   click_raw_days: 30         # Older click buckets become daily counts per public deal key.
   accuracy_detail_days: 14   # Also retain only the latest observations per deal/source below.
@@ -1293,8 +1295,10 @@ retention:
   # Settled/released/uncertain calls and their per-day reservations: enough
   # for 7-day reports and an audit margin; caps need today and tomorrow only.
   # Pending calls and today's/tomorrow's ledger rows always survive.
-  llm_calls_days: 35
-  run_stats_days: 60         # two months of run health; reports use the latest 7 days
+  # 10 since 2026-10-22 (was 35): the longest reader, the hands-off scorecard,
+  # looks back 9 UTC days; state.db.enc had reached 78.5 MB.
+  llm_calls_days: 10
+  run_stats_days: 10         # AI-yield/recheck-yield tables (readers use 7 complete UTC days); run_stats rows stay under 337. Was 60 until 2026-10-22.
   http_cache_days: 30        # keep recent conditional-GET validators; idle URLs can fetch anew
   # Offline bounds/limits: docs/incremental-cache-maintenance.md. Ship OFF.
   incremental_cache:
