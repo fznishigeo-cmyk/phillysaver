@@ -444,7 +444,7 @@ def test_static_checklist_covers_every_permission_entry_and_preserves_ticks(tmp_
     generated = partner_newsletters.checklist(primary + backup)
     assert generated == (ROOT / "docs/partner-newsletters.md").read_text()
     permitted = [s for s in primary + backup if s.crawl_permission and s.method != "email"]
-    assert len(permitted) == 64
+    assert len(permitted) == 67  # + the three Slickdeals feeds (2026-10-22)
     for partner in permitted:
         assert f"(`{partner.name}`)" in generated
         assert f"]({partner.site or partner.url})" in generated

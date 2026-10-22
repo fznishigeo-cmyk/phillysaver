@@ -486,10 +486,12 @@ def _audit(db, cfg, now, *, sources, transport, sleep_fn):
             api_statuses = []
             # The Telegram reader is one login session the fast lane uses every
             # 10 minutes; a second connection at once can get it revoked.
-            skipped = configured.adapter == "telegram"
+            skipped = configured.adapter == "telegram" or bool(configured.min_interval_minutes)
             try:
                 if skipped:
-                    failure = "probe skipped (shared login session)"
+                    # A site owner's rate limit (min_interval_minutes) is spent by the hourly run.
+                    failure = ("probe skipped (owner's rate limit)" if configured.min_interval_minutes
+                               else "probe skipped (shared login session)")
                     raise AdapterDisabled(failure)
                 adapter = get_adapter(source, cfg)
                 # Official authenticated adapters manage their own HTTP client.

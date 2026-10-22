@@ -1910,7 +1910,15 @@ def _source_from_dict(d: dict[str, Any]) -> SourceConfig:
         image_permission=bool(d.get("image_permission", False)),
         newsletter_from=[str(address).strip().lower() for address in
                          (d.get("newsletter_from") or [])],
+        min_interval_minutes=_min_interval(d),
     )
+
+
+def _min_interval(d: dict[str, Any]) -> int:
+    value = d.get("min_interval_minutes", 0)
+    if type(value) is not int or value < 0:
+        raise ValueError(f"source {d.get('name')}: min_interval_minutes must be a whole number >= 0")
+    return value
 
 
 def load_sources(path: str | Path | None = None) -> tuple[list[SourceConfig], list[SourceConfig]]:

@@ -36,7 +36,9 @@ sources:
     url: "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1"
     region: US
     allowed_html: false   # never scrape Slickdeals HTML — official RSS only
-    fast_lane: true
+    fast_lane: false   # hourly only: Slickdeals allows one check an hour (2026-10-22)
+    crawl_permission: "operator reports Slickdeals' permission (2026-10-22): a bot may monitor their deals at most once an hour (24 times a day max) and post similar/same deals with credit by name; RSS feed confirmed; no further access; Amazon deal-alert emails to deals@wowpriced.com at Slickdeals' suggestion. Correspondence on the operator's file. Official RSS only (never HTML or a browser); bypass applies to this host only."
+    min_interval_minutes: 60   # Slickdeals 2026-10-22: at most once an hour
   - name: slickdeals_popular
     display_name: "Slickdeals"
     site: https://slickdeals.net/
@@ -45,6 +47,9 @@ sources:
     region: US
     allowed_html: false
     fast_lane: false
+    enabled: false   # paused 2026-10-22: one check an hour; asked the operator whether one check may read more than one feed
+    crawl_permission: "operator reports Slickdeals' permission (2026-10-22): a bot may monitor their deals at most once an hour (24 times a day max) and post similar/same deals with credit by name; RSS feed confirmed; no further access; Amazon deal-alert emails to deals@wowpriced.com at Slickdeals' suggestion. Correspondence on the operator's file. Official RSS only (never HTML or a browser); bypass applies to this host only."
+    min_interval_minutes: 60   # Slickdeals 2026-10-22: at most once an hour
   - name: slickdeals_amazon
     display_name: "Slickdeals"
     site: https://slickdeals.net/
@@ -53,7 +58,10 @@ sources:
     region: US
     allowed_html: false   # official search RSS endpoint only, never HTML
     fast_lane: false
+    enabled: false   # paused 2026-10-22 (see slickdeals_popular); Amazon deals arrive as Slickdeals deal-alert emails
     notes: "Amazon-filtered official search RSS — catches heavy Amazon promos and Lightning deals."
+    crawl_permission: "operator reports Slickdeals' permission (2026-10-22): a bot may monitor their deals at most once an hour (24 times a day max) and post similar/same deals with credit by name; RSS feed confirmed; no further access; Amazon deal-alert emails to deals@wowpriced.com at Slickdeals' suggestion. Correspondence on the operator's file. Official RSS only (never HTML or a browser); bypass applies to this host only."
+    min_interval_minutes: 60   # Slickdeals 2026-10-22: at most once an hour
   - name: hip2save_amazon
     display_name: "Hip2Save"
     site: https://hip2save.com/

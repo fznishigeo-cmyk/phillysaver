@@ -207,6 +207,24 @@ def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
     return fair([p for p in posts if p.via_email]) + fair([p for p in posts if not p.via_email])
 
 
+_LAST_FETCH = "source_last_fetch:"
+
+
+def _owner_limit_ok(source: SourceConfig, db: DB, now: datetime) -> bool:
+    """A site owner's rate limit (Slickdeals 2026-10-22: at most once an hour)."""
+    if not source.min_interval_minutes:
+        return True
+    last = util.parse_iso(db.meta_get(_LAST_FETCH + source.name))
+    return last is None or now - last >= timedelta(minutes=source.min_interval_minutes)
+
+
+def _mark_owner_limit(sources: list[SourceConfig], db: DB, now: datetime) -> None:
+    # Marked before fetching, so a fetch cut short still counts as a visit.
+    for source in sources:
+        if source.min_interval_minutes:
+            db.meta_set(_LAST_FETCH + source.name, now.isoformat())
+
+
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
                now: datetime, deadline: float, fast_lane: bool,
                feed_confirmed: dict[str, set[str]] | None = None,
@@ -276,7 +294,9 @@ def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,
             log.info("source %s: skipped (%s)", source.name, err)
             return [], {source.name: err}
 
-    eligible = [s for s in sources if s.enabled and (not fast_lane or s.fast_lane)]
+    eligible = [s for s in sources if s.enabled and (not fast_lane or s.fast_lane)
+                and _owner_limit_ok(s, db, now)]
+    _mark_owner_limit(eligible, db, now)
     if cfg.parallel_sources == 1:
         results = []
         for source in eligible:

@@ -10,7 +10,7 @@ Record the matched sender here once known. The pipeline never edits this file.
 Regenerate with `python scripts/partner_newsletters.py`; ticks and sender notes
 are preserved. Paused web feeds are included; feed settings stay unchanged.
 
-64 permission entries:
+67 permission entries:
 
 - [ ] [All Things Target](https://www.allthingstarget.com/) (`all_things_target`) — Matched sender: —
 - [ ] [Bargain Babe](https://www.bargainbabe.com/) (`bargain_babe`) — Matched sender: —
@@ -64,6 +64,9 @@ are preserved. Paused web feeds are included; feed settings stay unchanged.
 - [ ] [Saving Our Way](https://www.savingourway.com/) (`saving_our_way`) — Matched sender: —
 - [ ] [SavingsAngel](https://www.savingsangel.com/) (`savings_angel`) — Matched sender: —
 - [ ] [SideDeal](https://sidedeal.com/) (`sidedeal`) — Matched sender: —
+- [ ] [Slickdeals](https://slickdeals.net/) (`slickdeals_amazon`) — Matched sender: —
+- [ ] [Slickdeals](https://slickdeals.net/) (`slickdeals_frontpage`) — Matched sender: —
+- [ ] [Slickdeals](https://slickdeals.net/) (`slickdeals_popular`) — Matched sender: —
 - [ ] [Southern Savers](https://www.southernsavers.com/) (`southernsavers`) — Matched sender: —
 - [ ] [Southern Savers](https://www.southernsavers.com/) (`southernsavers_amazon`) — Matched sender: —
 - [ ] [Southern Savers](https://www.southernsavers.com/) (`southernsavers_online`) — Matched sender: —

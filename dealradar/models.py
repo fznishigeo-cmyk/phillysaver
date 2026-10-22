@@ -38,6 +38,9 @@ class SourceConfig:
     display_name: str = ""
     site: str = ""
     newsletter_from: list[str] = field(default_factory=list)  # optional partner sender addresses
+    # Owner's rate limit: never fetch this source sooner than this many minutes
+    # after the last fetch (0 = no limit beyond the usual politeness rules).
+    min_interval_minutes: int = 0
 
 
 @dataclass

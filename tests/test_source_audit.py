@@ -551,3 +551,12 @@ def test_audit_workflow_shape():
             assert run["env"][name] == "${{ secrets." + name + " }}"
         assert f"          {name}: {run['env'][name]}" in text
     assert "DEALS_CLAUDE_API_KEY" not in text
+
+
+def test_owner_rate_limited_feeds_are_never_probed(db, cfg, monkeypatch):
+    # Slickdeals allows one check an hour; the hourly run spends it, the audit never does.
+    monkeypatch.setattr(audit, "get_adapter", lambda *a: pytest.fail("adapter built"))
+    sd = SourceConfig("slickdeals_frontpage", "rss", "https://slickdeals.net/rss", min_interval_minutes=60)
+    rows, requests = probe(db, cfg, [sd])
+    assert not requests
+    assert rows[0]["probe_error"] == "probe skipped (owner's rate limit)"
