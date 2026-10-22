@@ -173,6 +173,17 @@ search_analyze:
   lazy: true                 # task 295: load Analyze only when the search is used
 analyze_top_sellers: true    # task 320: our matching deals plus five related Amazon best sellers
 
+review_checker:
+  enabled: true  # operator 2026-10-22, task 367: Review Checker ships ON
+  min_reviews: 100
+  min_rating: 4.3
+  steady_rating_delta: 0.2
+  pace_min_reviews: 50
+  pace_max_fraction: 0.25
+  popular_monthly_sold: 100
+  grade_a_checks: 4
+  grade_b_checks: 2
+
 search_more:
   enabled: true              # task 293: related Amazon pages and one spelling correction
   pages: 3

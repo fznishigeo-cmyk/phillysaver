@@ -264,3 +264,53 @@ in `savings.pack_quantity`; the pack count must be a whole number.
   up paying nothing", which is the deal's real economics — but it is **always
   flagged `rebate_dependent`** because the buyer must float the cash and file
   the rebate, and a missed rebate makes the real pct 0%.
+
+## Review Checker (task 367)
+
+`review_checker.enabled` ships true; missing/false keeps the pre-feature public
+bytes. This grades review **signals**, never product quality, individual review
+text, authenticity, or an adjusted Amazon rating. Only A, B, C exist.
+
+Pure deterministic logic is in `functions/api/review-grade.js`. The existing
+`/api/search?asin=…&grade=reviews` product request uses `stats=30`, `history=0`,
+`rating=1`. Rating data needs the rating option; its possible extra token is
+included in Keepa's `tokensConsumed` receipt, settled through the unchanged
+SEARCH_BUDGET / SEARCH_LIMITS reservation. No second request, key, ledger or
+spending allowance. Missing/invalid receipts retain the full reservation;
+oversized receipts still halt the shared day. All request modes retain the
+shared dispatch lease and cooldown. Cache keys include mode and complete policy;
+only safe current product facts and the grade are cached.
+
+All thresholds are in `config.yaml review_checker:`:
+
+- `plenty_of_reviews`: `stats.current[17] >= min_reviews` (100).
+- `highly_rated`: `stats.current[16] >= min_rating * 10` (4.3). Ratings use
+  integer tenths; valid values are 10 through 50.
+- `steady_rating`: absolute difference between `current[16]` and `avg180[16]`
+  is at most `steady_rating_delta * 10` (0.2). Missing averages omit the check.
+- `natural_pace`: current count is at least `pace_min_reviews` (50), the count
+  at the interval start exists, the count has not decreased, and
+  `current[17] - atIntervalStart[17] <= current[17] * pace_max_fraction` (0.25).
+  With `stats=30`, `atIntervalStart` is the actual recorded count at the start
+  of the past month. **avg30 is a weighted mean, not a count from a month ago**;
+  subtracting it would understate growth. Missing interval-start data omits the
+  check. No private history is persisted or shown.
+- `popular_now`: `monthlySold >= popular_monthly_sold` (100).
+- A: at least `grade_a_checks` (4) passed, including `highly_rated`.
+  B: at least `grade_b_checks` (2) passed. C: otherwise, including absent data.
+  C's label is “Okay — read a few reviews before you buy”.
+
+Counts require nonnegative safe integers; absent, negative sentinel, string,
+boolean, fractional, and nonfinite inputs cannot pass a check. All comparisons
+are inclusive. A rating comparison uses tenths to preserve the 0.2 boundary.
+The review payload has exactly `{grade, label, checks:[{id,title,result,detail}]}`,
+with no numbers. The separate product allowlist is ASIN, title, image and an
+optional current price/time. Neither raw review/rating counts, sales numbers,
+stars, past prices nor list prices reach this route's browser/cache payload.
+Passed checks only are visible. A missing product or upstream/budget error is a
+retry message, never a fabricated C report. Available signals may be older than
+current price data; the page explains this limitation.
+
+Upstream field semantics and rating cost were checked against Keepa's official
+[Product Request](https://keepa.com/api-docs/product.html) and
+[Statistics Object](https://keepa.com/api-docs/statistics-object.html) docs.

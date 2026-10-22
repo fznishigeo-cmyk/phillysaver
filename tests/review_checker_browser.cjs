@@ -1,0 +1,142 @@
+// Offline real Chromium: four viewports, both themes, all shopper states.
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+(async()=>{
+  const {chromium}=require('playwright');
+  const root=path.resolve(process.argv[2]), shots=path.join(path.resolve(process.argv[3]),'screenshots');
+  let browser;
+  try {browser=await chromium.launch({headless:true,executablePath:'/opt/pw-browsers/chromium'});}
+  catch(e){if(!/Operation not permitted|Executable doesn't exist/.test(e.message))throw e;
+    console.log('Chromium unavailable: sandbox launch denied or no installed browser; screenshots not produced.');process.exitCode=77;return;}
+  fs.mkdirSync(shots,{recursive:true});
+  const pure=fs.readFileSync('functions/api/review-grade.js','utf8');
+  const {gradeReviews}=await import('data:text/javascript;base64,'+Buffer.from(pure).toString('base64'));
+  const settings=JSON.parse(fs.readFileSync(path.join(root,'search-config.json'))).review_checker;
+  const errors=[], requests=[], measurements=[];
+  const photo='<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180"><rect width="240" height="180" fill="white"/><path d="M65 110V85a55 55 0 01110 0v25" fill="none" stroke="#2a6ebb" stroke-width="16"/><rect x="50" y="90" width="35" height="60" rx="16" fill="#173f71"/><rect x="155" y="90" width="35" height="60" rx="16" fill="#173f71"/></svg>';
+  function response(grade,asin='B012345678'){
+    const stats={current:Array(18).fill(-1),avg180:Array(18).fill(-1),atIntervalStart:Array(18).fill(-1)};
+    if(grade!=='C'){stats.current[16]=45;stats.current[17]=100;}
+    if(grade==='A'){stats.avg180[16]=44;stats.atIntervalStart[17]=75;}
+    return {items:[{asin,title:'Everyday wireless over-ear headphones with a comfortable fit',image:'https://m.media-amazon.com/images/I/test.jpg',price_cents:2499,as_of:'2026-10-22T01:00:00Z'}],review:gradeReviews({stats},settings)};
+  }
+  try {
+    for(const [width,height] of [[390,844],[768,1024],[1280,800],[1920,1080]])for(const theme of ['light','dark']){
+      const context=await browser.newContext({viewport:{width,height},colorScheme:theme,serviceWorkers:'block'});
+      let grade='A', pending=null, hold=false;
+      await context.route('**/*',async route=>{
+        const url=new URL(route.request().url());requests.push(url.origin+url.pathname);
+        if(url.hostname==='m.media-amazon.com')return route.fulfill({contentType:'image/svg+xml',body:photo});
+        if(url.pathname==='/subscribe')return route.fulfill({json:{ok:true}});
+        if(url.origin!=='https://review.test')return route.fulfill({contentType:'application/javascript',body:''});
+        if(url.pathname==='/api/search'){
+          assert.match(url.searchParams.get('asin'),/^[A-Z0-9]{10}$/);assert.equal(url.searchParams.get('grade'),'reviews');
+          if(hold){pending=route;return;}return route.fulfill({json:response(grade,url.searchParams.get('asin'))});
+        }
+        let file=path.resolve(root,'.'+url.pathname);
+        assert(file.startsWith(root+path.sep));if(fs.existsSync(file)&&fs.statSync(file).isDirectory())file=path.join(file,'index.html');
+        if(!fs.existsSync(file))return route.fulfill({status:404,body:''});
+        return route.fulfill({contentType:{'.html':'text/html','.css':'text/css','.js':'application/javascript','.json':'application/json','.webmanifest':'application/manifest+json'}[path.extname(file)]||'application/octet-stream',body:fs.readFileSync(file)});
+      });
+      await context.addInitScript(()=>{
+        Math.random=()=>0;window.reviewCLS=0;
+        new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.reviewCLS+=entry.value;}).observe({type:'layout-shift',buffered:true});
+      });
+      const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+      await page.clock.install({time:new Date('2026-10-22T02:00:00Z')});
+      await page.clock.pauseAt(new Date('2026-10-22T02:00:01Z'));
+      await page.goto('https://review.test/review-checker/');
+      async function contrast() {
+        const failures=await page.evaluate(()=>{
+          const rgb=s=>s.match(/[\d.]+/g)?.slice(0,3).map(Number);
+          const luminance=c=>c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0);
+          const problems=[];
+          for(const el of document.querySelectorAll('h1,.intro-copy,.eyebrow,.blue-bar,.independence,.coverage td,.coverage th,.deal-card h3,.deal-price,.cookie-bar p,.cookie-bar a,.watch-bar a,.grade-box h2,.grade-box p,.grade-letter,.checks-table p,.checks-table h3,.checks-table summary,.footerfine,#footerlinks a')) {
+            if(!el.checkVisibility())continue;
+            const style=getComputedStyle(el);let bgEl=el,bg;
+            while(bgEl){const c=getComputedStyle(bgEl).backgroundColor;if(c!=='rgba(0, 0, 0, 0)'&&c!=='transparent'){bg=rgb(c);break;}bgEl=bgEl.parentElement;}
+            if(!bg)bg=[255,255,255];const fg=rgb(style.color);if(!fg)continue;
+            const a=luminance(fg),b=luminance(bg),ratio=(Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+            const large=parseFloat(style.fontSize)>=24||(parseFloat(style.fontSize)>=18.66&&Number(style.fontWeight)>=700);
+            if(ratio<(large?3:4.5))problems.push({element:el.tagName,class:el.className,ratio});
+          }
+          return problems;
+        });
+        assert.deepEqual(failures,[],`${width} ${theme}: AA text contrast`);
+      }
+      const snap=async name=>{
+        await contrast();
+        const geometry=await page.evaluate(()=>{
+          const rect=s=>{const e=document.querySelector(s);return e&&e.checkVisibility()?e.getBoundingClientRect():null;};
+          const input=rect('#review-input'),button=rect('#review-form button'),modal=rect('#review-loading');
+          const photo=rect('.report-photo'),grade=rect('.grade-box');
+          return {header:input.right<=button.left+1&&input.left>=0&&button.right<=innerWidth,
+            modal:!modal||(modal.left>=0&&modal.right<=innerWidth&&modal.top>=0&&modal.bottom<=innerHeight),
+            report:!photo||!grade||photo.right<=grade.left||grade.bottom<=photo.top||photo.bottom<=grade.top||grade.right<=photo.left};
+        });
+        assert(Object.values(geometry).every(Boolean),`${width} ${name}: overlapping controls or clipped dialog`);
+        assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${width} ${name}: horizontal scroll`);
+        await page.screenshot({path:path.join(shots,`${width}-${theme}-${name}.png`),fullPage:true,animations:'disabled'});
+      };
+      await snap('start-cookie-sticky');
+      const cookie=await page.locator('.cookie-bar').boundingBox(),watch=await page.locator('.watch-bar').boundingBox();
+      assert(cookie.y+cookie.height<=watch.y+1);assert(watch.y+watch.height<=height+1);
+      await page.keyboard.press('Tab');assert(await page.locator('.skip').evaluate(e=>e===document.activeElement));
+      await page.keyboard.press('Tab');await page.keyboard.press('Tab');
+      const input=page.locator('#review-input');assert(await input.evaluate(e=>e===document.activeElement));
+      assert(await input.evaluate(e=>parseFloat(getComputedStyle(e).outlineWidth)>=2));
+      await input.fill('https://example.test/product');await page.locator('#review-form button').click();
+      assert.equal(await input.getAttribute('aria-invalid'),'true');await snap('input-error');
+      await page.locator('#cookies-ok').click();await page.locator('#watch-close').click();
+      await page.reload();await page.locator('#review-input').waitFor();
+      assert.equal(await page.locator('.cookie-bar').isVisible(),false);assert.equal(await page.locator('.watch-bar').isVisible(),false);
+      for(grade of ['A','B','C']){
+        await input.fill('https://amazon.com/dp/B012345678');await page.locator('#review-form button').click();
+        await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
+        await page.clock.runFor(5000);
+        const percent=Number(await page.locator('#review-progress').getAttribute('aria-valuenow'));
+        assert(percent>=49&&percent<=51);assert.equal(await page.locator('#review-loading').evaluate(e=>e.open),true);
+        await page.keyboard.press('Tab');assert(await page.locator('#loading-close').evaluate(e=>e===document.activeElement));
+        if(grade==='A')await snap('loading-mid-progress');
+        await page.clock.runFor(5100);await page.locator('.grade-box').waitFor();
+        assert.equal(await page.locator('.grade-letter').textContent(),grade);assert.equal(await page.locator('#review-loading').evaluate(e=>e.open),false);
+        assert(await page.locator('#report-title').evaluate(e=>e===document.activeElement));
+        assert.equal(new URL(page.url()).searchParams.get('asin'),'B012345678');
+        const amazon=await page.getByRole('link',{name:'Read the reviews on Amazon'}).getAttribute('href');
+        assert.equal(new URL(amazon).searchParams.get('tag'),'wowpriced-20');
+        const text=await page.locator('#review-report').innerText();assert(!/\bstars?\b|\bFAIL\b|\bWARN\b|100 reviews|4\.5/.test(text));
+        assert(text.includes('Price as of'));await page.locator('.price-note summary').first().click();
+        if(grade!=='C'){await page.locator('.checks-table summary').first().click();assert(await page.locator('.checks-table details').first().evaluate(e=>e.open));}
+        await snap('report-'+grade);
+        measurements.push({width,height,theme,state:grade,cls:await page.evaluate(()=>window.reviewCLS)});
+        assert((await page.evaluate(()=>window.reviewCLS))<.01,`CLS ${width} ${theme}`);
+        await page.getByRole('button',{name:'Check another product'}).click();
+      }
+      // Never finish before data arrives, even after the chosen duration.
+      hold=true;await input.fill('B012345678');await page.locator('#review-form button').click();
+      await page.locator('#review-loading[open]').waitFor();await page.clock.runFor(11000);
+      assert.equal(await page.locator('#review-progress').getAttribute('aria-valuenow'),'99');
+      await page.keyboard.press('Escape');assert.equal(await page.locator('#review-loading').evaluate(e=>e.open),false);
+      if(pending)await pending.fulfill({json:response('A')}).catch(()=>{});
+      await page.clock.runFor(1000);assert.equal(await page.locator('#review-report').isVisible(),false);
+      hold=false;
+      await page.locator('[data-check-asin]').first().click();
+      await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
+      await page.keyboard.press('Escape');
+      assert(await page.locator('[data-check-asin]').first().evaluate(e=>e===document.activeElement));
+      await page.goto('https://review.test/review-checker/?asin=B012345678');
+      await page.locator('#review-loading[open]').waitFor();
+      await page.locator('#loading-product').filter({hasText:'headphones'}).waitFor();
+      await page.clock.runFor(10100);
+      assert.equal(await page.locator('.grade-letter').textContent(),'C');
+      await page.getByRole('button',{name:'Check another product'}).click();
+      await page.emulateMedia({reducedMotion:'reduce'});
+      assert.equal(await page.locator('.tick').first().evaluate(e=>getComputedStyle(e).animationName),'none');
+      await page.locator('#footer-email').fill('reader@example.test');await page.locator('[data-join-footer] button').click();
+      await page.locator('#footer-signup-success').waitFor();
+      await context.close();
+    }
+    assert.deepEqual(errors,[]);assert(!requests.some(u=>/^https:\/\/(?:www\.)?amazon\.com/.test(u)));
+    fs.writeFileSync(path.join(shots,'measurements.json'),JSON.stringify(measurements,null,2));
+    console.log('Chromium: all four sizes, both themes, all states; screenshots: '+shots);
+  }finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

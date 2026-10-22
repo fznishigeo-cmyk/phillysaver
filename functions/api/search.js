@@ -1,5 +1,6 @@
 // Pages Function: current US product facts only. Never log upstream URLs/errors.
 import {matchesSearch, searchWords} from "../../dealradar/publish/templates/search-products.js";
+import {validReviewSettings, reviewResponse} from "./review-grade.js";
 
 const RESERVATION = 110; // each search page (10) + up to 100 product tokens
 const SCHEMA = `CREATE TABLE IF NOT EXISTS search_budget (
@@ -173,7 +174,7 @@ async function jsonBody(response) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function keepa(q, asin, page, key) {
+async function keepa(q, asin, page, key, reviews = false) {
   const controller = new AbortController();
   let timer;
   try {
@@ -181,6 +182,9 @@ async function keepa(q, asin, page, key) {
       (async () => {
         const url = new URL("https://api.keepa.com/" + (asin ? "product" : "search"));
         Object.entries({key, domain:"1", stats:"1", history:"0",
+          // Task 367: rating is needed for review stats; its extra token is in
+          // tokensConsumed, settled against the same 110-token reservation.
+          ...(reviews ? {stats:"30", rating:"1"} : {}),
           ...(asin ? {asin} : {type:"product", term:q, page:String(page)})})
           .forEach(([k, v]) => url.searchParams.set(k, v));
         // Workers reject redirect:"error"; "manual" returns any 3xx unfollowed (not ok → failure).
@@ -214,6 +218,10 @@ export async function onRequest(context) {
   const params = new URL(request.url).searchParams;
   const q = normalizeQuery(params.get("q"));
   const asin = params.get("asin") || "";
+  // Task 367 — review route. Separate from task 366's deal grading block.
+  const reviews = params.get("grade") === "reviews";
+  if (params.has("grade") && (!reviews || !asin || params.getAll("grade").length !== 1))
+    return json({items:[], reason:"invalid_grade"}, 400);
   if (params.has("asin") ? !/^[A-Z0-9]{10}$/.test(asin) || params.getAll("asin").length !== 1 || params.has("q")
       : !q || params.getAll("q").length !== 1) return json({items:[], reason:"invalid_query"}, 400);
   const rawPage = params.get("page"), page = rawPage === null ? 0 : Number(rawPage);
@@ -222,11 +230,13 @@ export async function onRequest(context) {
   try {
     const cfg = await settings(context);
     if (!cfg) return json({items:[], reason:"disabled"});
+    if (reviews && !validReviewSettings(cfg.review_checker)) return json({items:[], reason:"disabled"});
     if (page >= (cfg.search_more?.enabled ? cfg.search_more.pages : 1)) return json({items:[], reason:"invalid_page"}, 400);
     const cache = globalThis.caches && caches.default;
     // Limits are part of the key: switching OFF or changing policy cannot reuse
     // a result under older settings. Keys never include the API secret.
     const cacheKey = new Request(new URL("/api/search?" + (asin ? "asin=" + asin : "q=" + encodeURIComponent(q) + "&page=" + page) +
+      (reviews ? "&grade=reviews" : "") +
       (cfg.analyze_top_sellers === true ? "&v=2" : "") +
       "&policy=" + encodeURIComponent(JSON.stringify(cfg)), request.url));
     const cached = cache && cfg.cache_hours && await cache.match(cacheKey);
@@ -255,7 +265,7 @@ export async function onRequest(context) {
       // A reservation covers its own minute (so its own UTC day) only: one that
       // waited into the next window is spent, never dispatched against it.
       if (Math.floor(Date.now() / 60000) !== Math.floor(started / 60000)) return json({items:[], reason:"rate_limited"});
-      try { data = await keepa(q, asin, page, env.KEEPA_KEY); }
+      try { data = await keepa(q, asin, page, env.KEEPA_KEY, reviews); }
       catch (error) {
         cooldown = error.cooldown || cooldown;
         if (error.message === "timeout") return json({items:[], reason:"timeout"});
@@ -278,11 +288,13 @@ export async function onRequest(context) {
       await env.SEARCH_LIMITS.prepare("UPDATE search_dispatch SET held = 0, ready = ? WHERE id = 1 AND ready = ?")
         .bind(Date.now() + cooldown, lease).run();
     }
-    const body = {items:cfg.analyze_top_sellers === true && !asin
+    let body = {items:cfg.analyze_top_sellers === true && !asin
       ? topSellerItems(data.products, q, cfg.analyze_exclude)
       : currentItems(asin ? data.products.filter(p => p && p.asin === asin) : data.products, Date.now(), cfg.analyze_top_sellers === true)};
+    // Task 367 — only the safe report plus current product facts reach cache/browser.
+    if (reviews) body = reviewResponse(data.products, body.items, asin, cfg.review_checker);
     const ttl = Math.floor(Math.min(cfg.cache_hours * 3600, ...body.items.map(
-      item => (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000)));
+      item => item.as_of ? (Date.parse(item.as_of) + 86400000 - Date.now()) / 1000 : cfg.cache_hours * 3600)));
     if (cache && ttl > 0) {
       try {
         await cache.put(cacheKey, Response.json(body, {headers:{"Cache-Control":"public, max-age=" + ttl}}));

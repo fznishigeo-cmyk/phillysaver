@@ -244,6 +244,34 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Review Checker (Codex task 367, 2026-10-22; implementation ON, not deployed):**
+  Standalone `/review-checker/` and `/reviewmeta-alternative/`, deterministic
+  A/B/C review signals only, no stars/review-count numbers or past prices.
+  The existing search request uses `grade=reviews`, `stats=30`, `rating=1`;
+  the unchanged shared reservation/receipt accounts for the possible extra token.
+  Pure logic lives in `functions/api/review-grade.js`; the integration hooks in
+  `search.js` are marked Task 367 for the sibling task 366 merge. Natural pace
+  uses actual `atIntervalStart[17]`, never the misleading avg30 subtraction.
+  Current product prices and affiliate links retain existing checks/builders.
+  Pages reuse the install button/script and newsletter form/subscribe endpoint.
+  Header input/Menu, CSS illustration, real published deal cards, passed-check
+  report, FAQs/schema, footer discovery and sitemap are included. No home/card
+  changes outside the required footer link. Phone tool navigation uses a Menu.
+  Cookie acknowledgement key: `wp.tools.cookies` (value `1`), intended to be
+  shared with task 366; watch-bar dismissal: session `wp.review.watch`.
+  Social profile config is empty: icons are labelled as awaiting profile links,
+  never linked to invented accounts. `/deal-spotter/` depends on sibling 366,
+  and the current standalone publication audit reports that missing route.
+  OFF pre-edit tree hash `dcccf93f1d7c69045ed7492697dcde499dd5369372d8eb6adc697a9a6751b037`
+  is preserved; missing/OFF/ON/rerun/back-to-OFF tests and historical helpers
+  pin the feature OFF without changing older expected hashes.
+  Validation is in progress; final counts will be recorded before handoff.
+  **Environment blockers:** Chromium launch is denied by the sandbox
+  (`setsockopt: Operation not permitted`), so native screenshots/CLS/visual AA
+  remain unmeasured here. The four-size/two-theme harness writes only tmp_path
+  and reports an explicit skip if Chromium cannot launch. Git branch creation
+  failed because `/home/user/phillysaver/.git` is read-only; committing in this
+  worktree is also unavailable. No push, deployment, paid calls or key access.
 - **Off-site unseen expiry (Codex task 365, 2026-10-21; uncommitted, OFF):**
   Strict `retention.offsite_unseen_days` defaults/ships null; integer 1–3650 opts
   in. Current render selections, retained pages, public aggregate contributors
