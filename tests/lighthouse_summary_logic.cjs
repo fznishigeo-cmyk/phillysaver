@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path");
-const { summarize, main } = require("../scripts/lighthouse_summary.js");
+const { summarize, main, labMetrics } = require("../scripts/lighthouse_summary.js");
 const fixture = name => path.join(__dirname, "fixtures", `lighthouse_${name}.json`);
 const passing = JSON.parse(fs.readFileSync(fixture("pass"), "utf8"));
 const failing = JSON.parse(fs.readFileSync(fixture("fail"), "utf8"));
@@ -76,6 +76,33 @@ assert.match(defaultGate.stdout, /below 85/);
     assert.equal(run([path.join(dir, "deal.json")], "85").status, 1); // real SEO problems still fail
   } finally {
     delete process.env.LH_NOINDEX_OK;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Lab metric values are printed when present (selector only, never page text).
+{
+  const os = require("node:os");
+  assert.equal(labMetrics(passing), "");
+  const report = structuredClone(passing);
+  Object.assign(report.audits, {
+    "first-contentful-paint": { numericValue: 1234.4 }, "largest-contentful-paint": { numericValue: 3456.6 },
+    "total-blocking-time": { numericValue: 210 }, "speed-index": { numericValue: NaN },
+    "cumulative-layout-shift": { numericValue: 0.0123 },
+    "largest-contentful-paint-element": { details: { items: [{ items: [{ node: {
+      selector: "div.card > img.photo", snippet: "<img alt=\"Private detail\">" } }] }] } },
+  });
+  assert.equal(labMetrics(report),
+    "FCP 1234 ms | LCP 3457 ms | TBT 210 ms | CLS 0.012 | LCP element div.card > img.photo");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lh-metrics-"));
+  try {
+    fs.writeFileSync(path.join(dir, "home.json"), JSON.stringify(report));
+    const out = run([path.join(dir, "home.json")], "85");
+    assert.equal(out.status, 0);
+    assert.match(out.stdout, /\n  metrics: FCP 1234 ms \| LCP 3457 ms/);
+    assert.ok(!out.stdout.includes("Private detail"));
+    assert.ok(!run([fixture("pass")], "85").stdout.includes("metrics:"));
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }

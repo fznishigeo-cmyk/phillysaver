@@ -1,4 +1,5 @@
-// Scores and audit titles only; report details stay in the short-lived artifact.
+// Scores, audit titles and the lab metric values only; report details stay in
+// the short-lived artifact.
 const fs = require("node:fs");
 const path = require("node:path");
 const CATEGORIES = ["performance", "accessibility", "best-practices", "seo"];
@@ -24,6 +25,25 @@ function vitals(report, budget) {
     const actual = measured ? audit.numericValue : null;
     return { name, actual, limit, units, ok: measured && actual <= limit };
   });
+}
+
+// Lab metric values (and the LCP element's selector, never its text), so a score
+// swing can be told apart from noise after the 3-day artifact is gone.
+const METRICS = [["FCP", "first-contentful-paint", "ms"], ["LCP", "largest-contentful-paint", "ms"],
+  ["TBT", "total-blocking-time", "ms"], ["SI", "speed-index", "ms"], ["CLS", "cumulative-layout-shift", ""]];
+
+function labMetrics(report) {
+  const audits = (report && report.audits) || {}, parts = [];
+  for (const [name, id, units] of METRICS) {
+    const value = audits[id] && audits[id].numericValue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    parts.push(units ? `${name} ${Math.round(value)} ${units}` : `${name} ${value.toFixed(3)}`);
+  }
+  const items = (((audits["largest-contentful-paint-element"] || {}).details || {}).items || []);
+  const node = items.flatMap(item => (item && item.items) || [item]).map(item => item && item.node)
+    .find(n => n && typeof n.selector === "string");
+  if (node) parts.push(`LCP element ${node.selector.replace(/[\r\n]/g, " ").slice(0, 120)}`);
+  return parts.join(" | ");
 }
 
 // A page that is noindex on purpose (single-deal pages) is gated on SEO without
@@ -99,6 +119,8 @@ function main(files) {
       const result = summarize(report, minimum, budget, noindexOk.has(label));
       lines.push(`${label}: ${CATEGORIES.map((name) => `${name} ${result.scores[name]}`).join(" | ")}`);
       for (const title of result.worst) lines.push(`  ${title}`);
+      const measured = labMetrics(report);
+      if (measured) lines.push(`  metrics: ${measured}`);
       if (budget.enabled) lines.push(...metricLines(result.vitals));
       if (result.seoGate !== report.categories.seo.score) {
         lines.push(`  noindex by design: SEO gate ${Math.round(result.seoGate * 100)} without "blocked from indexing"`);
@@ -118,5 +140,5 @@ function main(files) {
   return failed ? 1 : 0;
 }
 
-module.exports = { summarize, main, seoWithout };
+module.exports = { summarize, main, seoWithout, labMetrics };
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
