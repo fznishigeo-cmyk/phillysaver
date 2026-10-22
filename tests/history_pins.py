@@ -572,7 +572,7 @@ def pre_checker_fixes_1021(cfg):
 
 def pre_exact_variant_links(cfg):
     """Before Amazon size/colour children opened as themselves (operator 2026-10-21)."""
-    pre_keepa_starter(cfg)
+    pre_keepa_starter(pre_sovrn_denied(cfg))
     cfg.affiliate_exact_variant_links = False
     return cfg
 
@@ -580,10 +580,12 @@ def pre_exact_variant_links(cfg):
 def pre_sovrn_denied(cfg):
     """Before Sovrn denied wowpriced.com and its links were switched off (2026-10-21).
 
-    Only for fixtures recorded from the shipped config; default-built configs never had Sovrn.
+    Only configs read from the shipped config.yaml (which now says sovrn_enabled:
+    false) move back; default-built configs never had Sovrn.
     """
-    cfg.affiliate_sovrn_enabled = True
-    cfg.affiliate_link_overrides = {"walmart.com/222918738": "https://sovrn.co/168n3ev"}
+    if cfg.raw.get("affiliate", {}).get("sovrn_enabled") is False:
+        cfg.affiliate_sovrn_enabled = True
+        cfg.affiliate_link_overrides = {"walmart.com/222918738": "https://sovrn.co/168n3ev"}
     return cfg
 
 
