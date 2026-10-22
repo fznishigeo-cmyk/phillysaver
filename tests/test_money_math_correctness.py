@@ -456,6 +456,7 @@ def test_lost_social_response_is_not_replayed_after_reopening(audit_db, audit_cf
     audit_cfg.meta['enabled'] = True
     for network in ('facebook', 'instagram'):
         audit_cfg.meta[network].update(mode='live', hours_utc=[AUDIT_NOW.hour])
+    audit_cfg.meta['instagram']['daily_max'] = 3  # the poster itself, not the 2026-10-22 suspension pause
     audit_cfg.meta['instagram' if surface == 'facebook' else 'facebook']['daily_max'] = 0
     seed_auth(audit_db)
     published(audit_db, audit_cfg, [candidate('same', 1)])
@@ -816,7 +817,7 @@ def test_accepted_instagram_publish_with_lost_response_is_never_replayed(audit_d
     monkeypatch.setattr(meta.time, 'sleep', lambda _: None)
     audit_cfg.meta['enabled'] = True
     audit_cfg.meta['facebook']['daily_max'] = 0
-    audit_cfg.meta['instagram'].update(mode='live', hours_utc=[AUDIT_NOW.hour])
+    audit_cfg.meta['instagram'].update(mode='live', hours_utc=[AUDIT_NOW.hour], daily_max=3)
     published(audit_db, audit_cfg, [candidate('same', 1)])
     deliveries = []
     def handle(req):

@@ -1149,7 +1149,9 @@ social:
     instagram:
       mode: draft                 # auto-posting paused; drafts only
       posts_per_run: 1
-      daily_max: 3
+      # 0 = no Instagram calls at all: @wowpriced is suspended, appeal sent by Nishi
+      # 2026-10-22 ~14:45Z. Back to 3 once Nishi says the account is restored.
+      daily_max: 0
       hours_utc: [14, 19, 23]     # live only: 10am 3pm 7pm New York (EDT)
       slot_grace_hours: 1
       hashtags: "#deals #savings #wowpriced"

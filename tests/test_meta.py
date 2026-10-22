@@ -27,6 +27,7 @@ def cfg(tmp_path, monkeypatch):
     config = load_config()
     config.keepa_click_price_rule = "off"  # delivery fixtures recorded before task 275
     config.meta["facebook"].update(daily_max=4, hours_utc=[13, 17, 21, 1])  # predates task 121b
+    config.meta["instagram"].update(daily_max=3)  # predates the 2026-10-22 suspension pause
     # Fixture deals live only in deals.json; the stock-evidence rule
     # (sightings in the DB) is covered in tests/test_social_stock.py.
     config.social_require_stock_evidence = False
@@ -479,3 +480,8 @@ def test_slot_grace_is_set_for_both_networks():
     cfg = load_config()
     assert cfg.meta["facebook"]["slot_grace_hours"] == 1
     assert cfg.meta["instagram"]["slot_grace_hours"] == 1
+
+
+def test_instagram_paused_while_the_account_is_suspended():
+    """2026-10-22: @wowpriced suspended, appeal pending: no Instagram calls at all."""
+    assert load_config().meta["instagram"]["daily_max"] == 0
