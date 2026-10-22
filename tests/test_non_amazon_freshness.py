@@ -256,6 +256,20 @@ def test_slickdeals_rss_only_even_if_html_misconfigured(db, cfg, allowed):
     assert posts[0].text == post.text
 
 
+def test_owner_limited_feed_is_never_reread_between_scheduled_checks(db, cfg):
+    # Slickdeals 2026-10-22: at most one check an hour. A reread may use what
+    # this run already fetched, never a fetch of its own.
+    deal, post, _ = seed(db, cfg, source="slickdeals", url="https://slickdeals.net/f/123")
+    src = SourceConfig("slickdeals", "rss", "https://slickdeals.net/newsearch.php?mode=frontpage&searcharea=deals&searchin=first&rss=1",
+                       site="https://slickdeals.net", min_interval_minutes=60)
+    fetcher, calls = client(db, cfg, lambda r: pytest.fail("a limited feed is never fetched here"))
+    posts, counts = reread(db, cfg, fetcher, [src], [])
+    assert posts == [] and not calls
+    posts, counts = reread(db, cfg, fetcher, [src], [replace(post, fetched_at=NOW)], run_key="next",
+                           now=NOW + timedelta(hours=cfg.non_amazon_source_recheck_h + 1))
+    assert posts and posts[0].price_recheck and not calls
+
+
 def test_feed_only_absent_item_does_not_fetch_html_or_refresh(db, cfg):
     deal, _, _ = seed(db, cfg)
     feed = '<rss version="2.0"><channel><item><title>Elsewhere</title><link>https://partner.test/elsewhere</link></item></channel></rss>'

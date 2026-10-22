@@ -116,7 +116,8 @@ def _load_effective_sources(db: DB, cfg: AppConfig, fetcher, now: datetime,
                     s, crawl_permission=cur.crawl_permission,
                     image_permission=cur.image_permission,
                     allowed_html=cur.allowed_html, fast_lane=cur.fast_lane,
-                    site=cur.site, newsletter_from=cur.newsletter_from))
+                    site=cur.site, newsletter_from=cur.newsletter_from,
+                    min_interval_minutes=cur.min_interval_minutes))
         # Sources added to sources.yaml since the last validation join the run
         # set immediately (a dead guess just fails politely and is culled at
         # the next daily revalidation) — "add a source" works on the next run.
@@ -210,11 +211,19 @@ def _interleave_by_source(posts: list[RawPost]) -> list[RawPost]:
 _LAST_FETCH = "source_last_fetch:"
 
 
+def _owner_keys(source: SourceConfig) -> tuple[str, str]:
+    # The allowance is per site: one Slickdeals check an hour may read all
+    # three of its feeds (operator 2026-10-22), never one feed after another.
+    from .source_policy import host_of
+    return _LAST_FETCH + source.name, _LAST_FETCH + "host:" + host_of(source.url)
+
+
 def _owner_limit_ok(source: SourceConfig, db: DB, now: datetime) -> bool:
     """A site owner's rate limit (Slickdeals 2026-10-22: at most once an hour)."""
     if not source.min_interval_minutes:
         return True
-    last = util.parse_iso(db.meta_get(_LAST_FETCH + source.name))
+    last = max((t for t in (util.parse_iso(db.meta_get(k)) for k in _owner_keys(source)) if t),
+               default=None)
     return last is None or now - last >= timedelta(minutes=source.min_interval_minutes)
 
 
@@ -222,7 +231,8 @@ def _mark_owner_limit(sources: list[SourceConfig], db: DB, now: datetime) -> Non
     # Marked before fetching, so a fetch cut short still counts as a visit.
     for source in sources:
         if source.min_interval_minutes:
-            db.meta_set(_LAST_FETCH + source.name, now.isoformat())
+            for key in _owner_keys(source):
+                db.meta_set(key, now.isoformat())
 
 
 def _fetch_all(sources: list[SourceConfig], fetcher, db: DB, cfg: AppConfig,

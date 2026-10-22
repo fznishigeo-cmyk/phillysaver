@@ -251,7 +251,11 @@ def source_rechecks(db, cfg, sources, posts, fetcher, now, run_key, deadline=Non
             source = sources.get(name)
             if source is None or db.is_tripped(name, now) or not url:
                 continue
-            html_ok = (_post_allowed(source, url)
+            # A site owner's rate limit (Slickdeals: once an hour) leaves every
+            # visit to the scheduled check: no page or feed reread here, only
+            # what this run already fetched.
+            limited = bool(source.min_interval_minutes)
+            html_ok = (_post_allowed(source, url) and not limited
                        and host_of(url) != host_of(deal.get("canonical_url") or ""))
             if not html_ok and (source.method != "rss" or store_from_url(source.url)):
                 continue
@@ -272,7 +276,7 @@ def source_rechecks(db, cfg, sources, posts, fetcher, now, run_key, deadline=Non
                     return rereads, dict(counts, posts=len(rereads))
             else:
                 # RSS-only includes Slickdeals even if allowed_html is accidentally enabled.
-                if pair not in available and name not in fetched_feeds:
+                if pair not in available and name not in fetched_feeds and not limited:
                     fetched_feeds.add(name)
                     reader = RssAdapter()
                     reader.follow_redirects = False

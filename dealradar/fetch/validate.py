@@ -179,7 +179,13 @@ def validate_sources(
     standby: list[SourceConfig] = []  # configured API sources awaiting secrets
 
     for source in primary:
-        if _out_of_time():
+        if source.min_interval_minutes:
+            # A site owner's rate limit (Slickdeals: once an hour): the
+            # scheduled check is the only visit, so validation never probes it.
+            status, detail, active_cfg = (
+                "skipped_owner_limit", "not probed (owner's rate limit)", None)
+            standby.append(source)
+        elif _out_of_time():
             status, detail, active_cfg = (
                 "skipped_deadline", "run budget exhausted before validation", None)
             standby.append(source)  # keep it runnable; never cull on our budget

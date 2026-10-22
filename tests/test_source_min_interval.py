@@ -56,6 +56,7 @@ def test_a_limited_source_is_fetched_at_most_once_per_interval(tmp_path):
         assert db.meta_get("source_last_fetch:blog") is None
         # A day of runs every 10 minutes reaches the feed at most 24 times.
         db.meta_set("source_last_fetch:sd", "")
+        db.meta_set("source_last_fetch:host:slickdeals.net", "")
         visits = 0
         for step in range(6 * 24):
             now = NOW + timedelta(minutes=10 * step)
@@ -63,5 +64,65 @@ def test_a_limited_source_is_fetched_at_most_once_per_interval(tmp_path):
                 visits += 1
                 pipeline._mark_owner_limit([limited], db, now)
         assert visits == 24
+    finally:
+        db.close()
+
+
+FEEDS = [SourceConfig(name, "rss", f"https://slickdeals.net/newsearch.php?mode={mode}&rss=1",
+                      min_interval_minutes=60)
+         for name, mode in (("slickdeals_frontpage", "frontpage"), ("slickdeals_popular", "popdeals"),
+                            ("slickdeals_amazon", "amazon"))]
+
+
+def test_one_hourly_check_reads_all_three_feeds_then_none_for_an_hour(tmp_path):
+    # Operator 2026-10-22: one check an hour may read all three feeds; the
+    # allowance is the site's, so no feed is read again inside that hour.
+    db = DB(tmp_path / "state.db")
+    try:
+        assert all(pipeline._owner_limit_ok(s, db, NOW) for s in FEEDS)
+        pipeline._mark_owner_limit(FEEDS, db, NOW)
+        for minutes in (10, 30, 59):
+            assert not any(pipeline._owner_limit_ok(s, db, NOW + timedelta(minutes=minutes)) for s in FEEDS)
+        assert all(pipeline._owner_limit_ok(s, db, NOW + timedelta(minutes=60)) for s in FEEDS)
+        # One feed's visit uses the site's hour: the other feeds wait too.
+        pipeline._mark_owner_limit([FEEDS[0]], db, NOW + timedelta(minutes=60))
+        assert not pipeline._owner_limit_ok(FEEDS[2], db, NOW + timedelta(minutes=70))
+        # A visit recorded under the feed's own name (before the site-wide key) still counts.
+        db.meta_set("source_last_fetch:host:slickdeals.net", "")
+        db.meta_set("source_last_fetch:slickdeals_popular", (NOW + timedelta(minutes=60)).isoformat())
+        assert not pipeline._owner_limit_ok(FEEDS[1], db, NOW + timedelta(minutes=90))
+    finally:
+        db.close()
+
+
+def test_the_stored_run_set_takes_the_configured_interval(tmp_path, monkeypatch):
+    # Live 2026-10-22: the stored (validated) run set predates the field, so it
+    # read 0 and the hourly limit never applied on that path.
+    import dataclasses
+    from dealradar.config import load_config
+    from dealradar.fetch.validate import save_effective_sources
+    db = DB(tmp_path / "state.db")
+    try:
+        save_effective_sources(db, [dataclasses.replace(FEEDS[0], min_interval_minutes=0)], NOW)
+        monkeypatch.setattr(pipeline, "load_sources", lambda: ([FEEDS[0]], []))
+        effective = pipeline._load_effective_sources(db, load_config(), None, NOW)
+        assert [s.min_interval_minutes for s in effective if s.name == FEEDS[0].name] == [60]
+    finally:
+        db.close()
+
+
+def test_daily_validation_never_probes_a_limited_feed(tmp_path):
+    from dealradar.config import load_config
+    from dealradar.fetch.validate import validate_sources
+
+    class NoRequests:
+        def __getattr__(self, name):
+            raise AssertionError("a limited feed must not be fetched by validation")
+
+    db = DB(tmp_path / "state.db")
+    try:
+        result = validate_sources(FEEDS, [], NoRequests(), db, load_config(), NOW)
+        assert {r["status"] for r in result["rows"]} == {"skipped_owner_limit"}
+        assert [s.name for s in result["effective"]] == [s.name for s in FEEDS]
     finally:
         db.close()
