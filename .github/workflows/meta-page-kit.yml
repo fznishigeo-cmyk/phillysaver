@@ -91,6 +91,8 @@ jobs:
                      "🔎 Free Deal Checker: paste a product link and see if today's price is really a deal → "
                      "https://wowpriced.com/amazon-deal-checker/\n"
                      "🏷️ Discount Finder → https://wowpriced.com/amazon-discount-finder/\n"
+                     "🅰️ Deal Spotter: an A, B or C grade for the price → https://wowpriced.com/deal-spotter/\n"
+                     "⭐ Review Checker: a quick look at the review signals → https://wowpriced.com/review-checker/\n"
                      "Free, no sign-up. Follow for deals every day.")
           CHECKER = ("Is it really a good deal? 🤔 Paste any product link into our free Deal Checker. No sign-up. "
                      "👉 https://wowpriced.com/amazon-deal-checker/")
@@ -98,7 +100,8 @@ jobs:
           DESCRIPTION = ("Wowpriced finds real price drops from trusted deal sites and stores, around the clock. Every price "
                          "is checked against its source before it goes live, Amazon prices are re-checked right before they "
                          "show, and expired deals come down fast. Free tools: the Deal Checker (paste a product link to see "
-                         "if today's price is really a deal) and the Discount Finder. Free, no sign-up. We may earn a "
+                         "if today's price is really a deal), the Discount Finder, Deal Spotter (an A, B or C grade for "
+                         "the price) and Review Checker (the review signals at a glance). Free, no sign-up. We may earn a "
                          "commission when you buy through our links, at no extra cost to you.")
           failed = []
           if action == "profile":
