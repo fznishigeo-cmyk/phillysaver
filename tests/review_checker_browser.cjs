@@ -41,6 +41,9 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         Math.random=()=>0;window.reviewCLS=0;
         // Amazon clicks are recorded, never followed (the run stays offline).
         window.amazonClicks=[];document.addEventListener('click',e=>{const a=e.target.closest&&e.target.closest('a[href^="https://www.amazon.com/"]');if(a){window.amazonClicks.push({href:a.href,target:a.target,rel:a.rel});e.preventDefault();}},true);
+        // The page's own wpTrack is wrapped: each tool event is recorded, then sent as usual.
+        let wpTrack;window.tracked=[];Object.defineProperty(window,'wpTrack',{configurable:true,set(fn){wpTrack=fn;},
+          get(){return wpTrack&&((name,params)=>{if(['deal_click','tool_grade'].includes(name))window.tracked.push([name,params]);return wpTrack(name,params);});}});
         new PerformanceObserver(list=>{for(const entry of list.getEntries())if(!entry.hadRecentInput)window.reviewCLS+=entry.value;}).observe({type:'layout-shift',buffered:true});
       });
       const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -131,12 +134,16 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
         assert.equal(await page.evaluate(()=>window.amazonClicks.length),0);assert.equal(new URL(page.url()).searchParams.get('asin'),'B012345678');
         assert.equal(await page.locator('.report-photo').getAttribute('aria-label'),'See Everyday wireless over-ear headphones with a comfortable fit on Amazon');
         assert.equal(await page.locator('#review-report .grade-letter').getAttribute('aria-label'),`Grade ${grade} — see it on Amazon`);
-        for(const selector of ['.report-photo img','.grade-box h2','.grade-box p','#report-title a']){
+        // GA4 hears each shown grade once, through the shipped dispatch (tool_grade_event: true).
+        assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['tool_grade',{method:'review_'+grade.toLowerCase()}]]);
+        assert.equal(await page.evaluate(()=>window.dataLayer.filter(a=>a[0]==='event'&&a[1]==='tool_grade').map(a=>a[2].method).pop()),'review_'+grade.toLowerCase());
+        for(const selector of ['.report-photo img','.grade-box h2','.grade-box p','#report-title a','.report-actions .button']){
           // The first line box: a title that wraps has gaps inside its bounding box.
           const spot=page.locator(selector).first();await spot.scrollIntoViewIfNeeded();
           const box=await spot.evaluate(e=>{const r=e.getClientRects()[0];return {x:r.x+r.width/2,y:r.y+r.height/2};});
           await page.mouse.click(box.x,box.y);
           assert.deepEqual(await page.evaluate(()=>window.amazonClicks.pop()),{href:amazon,target:'_blank',rel:'sponsored noopener'},selector);
+          assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['deal_click',{store:'Amazon'}]],selector);
         }
         if(grade!=='C'){await page.locator('.checks-table summary').first().click();assert(await page.locator('.checks-table details').first().evaluate(e=>e.open));}
         await snap('report-'+grade);
@@ -175,6 +182,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       assert.match(await page.locator('#input-message').textContent(),/Paste an Amazon\.com product link, or type a product name/);
       // A typed name spends no lookup: one tagged Amazon highly rated search in a new tab (operator 2026-10-22).
       const searches=requests.filter(u=>u.endsWith('/api/search')).length;
+      assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['tool_grade',{method:'review_c'}]]);  // the shared link's report
       await heroInput.fill('wireless  headphones');await page.locator('#hero-form button').click();
       const named=page.locator('#name-results .name-button');
       assert.equal(await named.getAttribute('href'),'https://www.amazon.com/s?k=wireless%20headphones&s=review-rank&tag=wowpriced-20');
@@ -182,6 +190,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
       assert.equal((await named.innerText()).trim(),'See highly rated wireless headphones on Amazon →');
       assert(await named.evaluate(e=>e===document.activeElement));assert.equal(await heroInput.getAttribute('aria-invalid'),null);
       assert.equal(await page.locator('#name-results .name-hint').textContent(),'For an A, B or C grade, paste the product’s Amazon link.');
+      // A typed name is not a grade; its Amazon button is one deal_click and still opens.
+      assert.deepEqual(await page.evaluate(()=>window.tracked),[]);await named.click();
+      assert.deepEqual(await page.evaluate(()=>window.tracked.splice(0)),[['deal_click',{store:'Amazon'}]]);
+      assert.equal((await page.evaluate(()=>window.amazonClicks.pop())).href,await named.getAttribute('href'));
       assert.equal(await page.locator('#input-message').textContent(),'');
       assert(!/★|☆|out of 5|\b\d[\d,]*\s+(?:ratings|reviews)\b/i.test(await page.locator('body').innerText()));
       await snap('name');

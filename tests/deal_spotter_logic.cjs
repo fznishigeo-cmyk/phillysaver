@@ -65,11 +65,13 @@ function ui() {
   doc.querySelectorAll=selector=>({'[data-analyze]':[hero],'[data-analyze] input':[ids.q],'.how-step':steps,'[data-slide]':slides}[selector]||[]);
   const demo=element(), how=element();
   doc.querySelector=selector=>({'.illustration':illustration,'.demo-frame':demo,'.how-steps':how}[selector]);
-  doc.addEventListener=()=>{};
+  const clicks=[], tracked=[];doc.addEventListener=(name,fn)=>{if(name==='click') clicks.push(fn);};
   const fixed=Date.parse('2026-10-22T01:00:00Z');
   class FakeDate extends Date {constructor(...args){super(...(args.length?args:[fixed+now]));}static now(){return fixed+now;}}
   const location={origin:'https://wowpriced.test',search:''};
   const ctx={document:doc,URL,URLSearchParams,AbortController,Date:FakeDate,Intl,console,location,
+    // A stub wpTrack records each call (plain copies, so deepEqual compares values only).
+    wpTrack:(name,params)=>{tracked.push(JSON.parse(JSON.stringify([name,params])));},
     Math:Object.assign(Object.create(Math),{random:()=>0}),performance:{now:()=>now},navigator:{clipboard:{writeText:async value=>{ctx.copied=value;}}},
     localStorage:{getItem:key=>storage.get(key),setItem:(k,v)=>storage.set(k,v)},
     history:{replaceState:(state,title,url)=>{location.search=url.slice(url.indexOf('?'));}},
@@ -84,7 +86,11 @@ function ui() {
     })};
   ctx.window=ctx;vm.createContext(ctx);vm.runInContext(source,ctx);
   const flush=async()=>{for(let i=0;i<20;i++) await Promise.resolve();};
-  return {ids,requests,ctx,progress,storage,flush,
+  return {ids,requests,ctx,progress,storage,flush,tracked,
+    // One click on `link` inside `area`, as the delegated listener sees it; true if navigation was held.
+    click(link,area){const event={target:{closest:selector=>selector.split(', ').includes(area+' a[href]')?
+      {href:link.href,hostname:new URL(link.href,location.origin).hostname}:null},defaultPrevented:false,
+      preventDefault(){this.defaultPrevented=true;}};clicks.forEach(fn=>fn(event));return event.defaultPrevented;},
     submit(value){ids.q.value=value;hero.handlers.submit({preventDefault(){},submitter:button});},
     async advance(ms){const target=now+ms;while(true){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>target) break;
       now=next[1].at; if(next[1].repeat) next[1].at+=next[1].repeat;else timers.delete(next[0]); next[1].fn();await flush();}now=target;await flush();},
@@ -99,6 +105,9 @@ function ui() {
   assert.equal(named.href,'https://www.amazon.com/s?k=wireless%20headphones&s=review-rank&tag=example-20');
   assert.equal(named.target,'_blank');assert.equal(named.rel,'sponsored noopener');assert.equal(h.ctx.document.activeElement,named);
   assert.equal(named.children[0],'See highly rated wireless headphones on Amazon');assert.match(hint.textContent,/paste the product’s Amazon link/);
+  // A typed name is not a grade; its Amazon button is one deal_click and still opens.
+  assert.deepEqual(h.tracked,[]);assert.equal(h.click(named,'#start'),false);
+  assert.deepEqual(h.tracked.splice(0),[['deal_click',{store:'Amazon'}]]);
   h.submit('vibrator');assert.equal(h.requests.length,0);assert(h.ids['name-results'].hidden);
   assert.equal(h.ids['input-error'].textContent,'For an A, B or C grade, paste the product’s Amazon link.');
   h.submit('B0D8KZHN1Q');assert(h.ids['analyze-modal'].open);assert.equal(h.requests.length,1);
@@ -109,18 +118,38 @@ function ui() {
   assert.equal(h.ctx.document.activeElement.id,'result-title');assert.equal(h.ctx.location.search,'?asin=B0D8KZHN1Q');
   assert(h.ids['result-time'].textContent.startsWith('Price as of '));assert(h.ids['result-facts'].innerHTML.includes('bought'));
   assert.equal(h.ids['result-list'].textContent,'$30.00 Amazon list price · 33% off list price');
+  // One tool_grade per graded result; photo, grade, main and similar buttons are one deal_click each.
+  assert.deepEqual(h.tracked.splice(0),[['tool_grade',{method:'deal_a'}]]);
+  const buy=h.ids['result-buy'].href;assert.equal(buy,'https://www.amazon.com/dp/B0D8KZHN1Q?tag=example-20');
+  for(const id of ['result-photo','grade-letter','result-buy','result-similar']){
+    const href=h.ids[id].href;assert.equal(h.click(h.ids[id],'#spotter-result'),false,id);assert.equal(h.ids[id].href,href,id);
+    assert.deepEqual(h.tracked.splice(0),[['deal_click',{store:'Amazon'}]],id);
+  }
+  assert.equal(h.ids['result-photo'].href,buy);assert.equal(h.ids['grade-letter'].href,buy);
+  // Our own pages and links outside the tool area are not Amazon clicks.
+  h.click({href:'/review-checker/?asin=B0D8KZHN1Q'},'#spotter-result');h.click(h.ids['result-buy'],'#how-it-works');
+  assert.deepEqual(h.tracked,[]);
   await h.ids.share.click();assert.equal(h.ctx.copied,'https://wowpriced.test/deal-spotter/?asin=B0D8KZHN1Q');
   h.ids.reanalyze.click();assert.equal(h.requests.length,2);
   h.requests[1].respond(h.data('B'));await h.flush();await h.advance(10000);assert.equal(h.ids['grade-letter'].textContent,'B');
+  assert.deepEqual(h.tracked.splice(0),[['tool_grade',{method:'deal_b'}]]);
   h.ids.reanalyze.click();h.ids['analyze-modal'].handlers.cancel({preventDefault(){}});
   h.requests.at(-1).respond(h.data('C'));await h.flush();await h.advance(26000);assert.equal(h.ids['grade-letter'].textContent,'B');
+  assert.deepEqual(h.tracked,[]);  // a cancelled check shows no grade
   h.ids['cookie-ok'].click();assert(h.ids['cookie-bar'].hidden);assert.equal(h.storage.get('wp.spotter.cookies'),'1');
   // The server waits up to 10 s for Keepa's live refresh: no retry before 14 s.
   const slow=ui();slow.submit('B0D8KZHN1Q');await slow.advance(13900);assert.equal(slow.requests.length,1);await slow.advance(2100);
   assert(slow.ids['analyze-modal'].open);assert.equal(slow.progress.getAttribute('aria-valuenow'),'99');
   assert.equal(slow.requests.length,2);slow.requests[1].respond(slow.data('C'));await slow.flush();
   assert.equal(slow.ids['grade-letter'].textContent,'C');assert(!slow.ids['analyze-modal'].open);
+  assert.deepEqual(slow.tracked,[['tool_grade',{method:'deal_c'}]]);
   const failure=ui();failure.submit('B0D8KZHN1Q');failure.requests[0].respond({items:[],reason:'budget_exhausted'});await failure.flush();await failure.advance(10000);
   assert.match(failure.ids['input-error'].textContent,/limit/);assert(failure.ids['spotter-result'].hidden);
-  console.log('Complete UI: clock, late data, cancel, grades, reanalysis, limits, share, cookie passed');
+  assert.deepEqual(failure.tracked,[]);
+  // A failing or missing tag never stops a result or a click.
+  const quiet=ui();quiet.ctx.wpTrack=()=>{throw new Error('tag');};quiet.submit('B0D8KZHN1Q');quiet.requests[0].respond(quiet.data());
+  await quiet.flush();await quiet.advance(10000);assert.equal(quiet.ids['grade-letter'].textContent,'A');
+  assert.equal(quiet.click(quiet.ids['result-buy'],'#spotter-result'),false);
+  delete quiet.ctx.wpTrack;assert.equal(quiet.click(quiet.ids['result-buy'],'#spotter-result'),false);
+  console.log('Complete UI: clock, late data, cancel, grades, reanalysis, limits, share, cookie, tool_grade/deal_click passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

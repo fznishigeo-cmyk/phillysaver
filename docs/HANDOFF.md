@@ -244,6 +244,16 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tool-page events (2026-10-22, branch `tool-events`, not pushed):** on
+  /deal-spotter/ and /review-checker/ every click on an amazon.com link in
+  the tool area (photo, title, grade, buttons, typed-name button) sends the
+  site's `deal_click` {store: Amazon}, the event the operator will import as
+  the Google Ads conversion. Each graded link result sends GA4-only
+  `tool_grade` (deal_a..c, review_a..c; never for typed names), behind
+  `tool_grade_event` (config.yaml true, default false; +35 gzip bytes on the
+  home page, 1,063 of headroom left). Recorded hashes: `pre_tool_grade_event`.
+  The pages' "Today's top deals" cards are outside the tool area and send
+  nothing. Left: review and merge.
 - **Deal Spotter (Codex task 366, 2026-10-22; enabled, not deployed):**
   `deal_spotter.enabled` ships true. New `/deal-spotter/` and
   `/fakespot-alternative/` pages, sitemap entries, footer discovery and tool

@@ -451,6 +451,7 @@ def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
+    pre_tool_grade_event_raw(config)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
     config["amazon_used"] = {"enabled": True}
@@ -531,6 +532,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
+    pre_tool_grade_event_raw(config)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
     config.get("publish", {}).pop("hide_deal_site_links", None)
@@ -549,6 +551,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
+    pre_tool_grade_event_raw(config)
     pre_review_checker_raw(config)
     config.pop("keepa_focus_finder", None)
     config.pop("deal_spotter", None)
@@ -625,6 +628,7 @@ def pre_keepa_starter_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
+    pre_tool_grade_event_raw(config)
     if config.get("keepa", {}).get("recheck_surplus_reserve") == 250:
         config["keepa"]["recheck_surplus_reserve"] = 650
     config.pop("deal_spotter", None)
@@ -684,6 +688,7 @@ def pre_price_shipping_note(cfg):
 def pre_social_profiles(cfg):
     """Before the real Facebook and Pinterest profiles were configured (operator 2026-10-22)."""
     cfg.social_profiles = {}
+    pre_tool_grade_event(cfg)
     return cfg
 
 
@@ -691,3 +696,13 @@ def pre_social_profiles_raw(config):
     config.get("social", {}).pop("profiles", None)
     return config
 
+
+def pre_tool_grade_event(cfg):
+    """Before every page's wpTrack knew the tools' tool_grade event (2026-10-22)."""
+    cfg.tool_grade_event = False
+    return cfg
+
+
+def pre_tool_grade_event_raw(config):
+    config.pop("tool_grade_event", None)
+    return config

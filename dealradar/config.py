@@ -419,6 +419,7 @@ class AppConfig:
     hide_timer_ticker_confetti: bool = False
     tagline_full_row: bool = False
     price_shipping_note: bool = False
+    tool_grade_event: bool = False     # GA4 tool_grade (A/B/C per tool) on every page's wpTrack
     timer_pill_ring: bool = False
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
@@ -1280,6 +1281,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.price_shipping_note = g("price_shipping_note", default=False)
     if type(cfg.price_shipping_note) is not bool:
         raise ValueError("price_shipping_note must be a boolean")
+    cfg.tool_grade_event = g("tool_grade_event", default=False)
+    if type(cfg.tool_grade_event) is not bool:
+        raise ValueError("tool_grade_event must be a boolean")
     cfg.timer_pill_ring = g("timer_pill_ring", default=False)
     if type(cfg.timer_pill_ring) is not bool:
         raise ValueError("timer_pill_ring must be a boolean")

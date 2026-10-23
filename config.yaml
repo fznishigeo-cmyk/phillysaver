@@ -247,6 +247,7 @@ search_focus_ring_keyboard_only: true  # operator 2026-10-21 ~00:45Z: "when i cl
 hide_timer_ticker_confetti: true  # operator 2026-10-22 ~04:40Z: "remove from both the mobile site and the website the timer, the banner, and the confetti ... Completely remove the timer, the live deals banner at the top, and the confetti drop"
 tagline_full_row: true  # operator 2026-10-22 ~14:12Z "TAGLINE OKAY" (A31): with the timer gone the phone tagline uses the whole row ("1,000+ VERIFIED DEALS", no longer cut off)
 price_shipping_note: true  # operator 2026-10-22 "yes" (A34): prices read like Amazon's item price ($153.84); "+ $25.15 shipping" shows under it only when shipping is not free; grades still use the total
+tool_grade_event: true  # 2026-10-22: GA4-only "tool_grade" (deal_a..c, review_a..c) each time a tool shows a link's grade; registered in every page's tracking script
 fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 
 site:

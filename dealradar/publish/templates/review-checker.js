@@ -15,6 +15,14 @@ function reviewProgress(elapsed, duration, ready) {
   var hero = document.getElementById('hero-form'), heroInput = document.getElementById('hero-input');
   var terms = document.getElementById('review-terms'), names = document.getElementById('name-results');
   var active = null, opener = null;
+  // Analytics never holds a click or a report. Every Amazon link in the tool area is one deal_click.
+  function track(name, params) {
+    try {if (typeof window.wpTrack === 'function') window.wpTrack(name, params);} catch (_) {/* tags only */}
+  }
+  document.addEventListener('click', function (event) {
+    var a = event.target.closest && event.target.closest('#review-report a[href], #name-results a[href]');
+    if (a && /(^|\.)amazon\.com$/.test(a.hostname)) track('deal_click', {store:'Amazon'});
+  });
   function element(tag, text, className) {
     var el = document.createElement(tag);
     if (text !== undefined) el.textContent = text;
@@ -96,6 +104,7 @@ function reviewProgress(elapsed, duration, ready) {
     start.hidden = true; report.hidden = false;
     history.replaceState(null, '', location.pathname + '?asin=' + asin);
     title.focus();
+    track('tool_grade', {method:'review_' + review.grade.toLowerCase()});
   }
   function submit(value, knownTitle, field) {
     var parsed = reviewInput(value);
