@@ -72,6 +72,8 @@ def protect_promoted(db, cfg, parser, now, save, *, deadline=None):
     """
     from .dedupe import _DEAL_FIELDS
 
+    if cfg.critic_tiering["haiku_only"] and not fallback_reason(db, cfg):
+        return 0  # Haiku's verdict is final; nothing waits on Sonnet
     escalated, capped = 0, False
     while True:
         stored = db.all_deals(status="alive")
@@ -175,6 +177,16 @@ def run(db, cfg, parser, now, pending, high, save, *, fallback="", deadline=None
             log.warning("tiered critic: Haiku budget exhausted; remaining deals stay unjudged")
             break
         for deal, verdict in zip(batch, verdicts):
+            if options["haiku_only"] and confident(verdict, options["min_confidence"]):
+                # Operator 2026-10-22 ("do both on haiku"): a confident Haiku verdict
+                # is final, front page and rejections included. Only an unsure or
+                # invalid one still goes to Sonnet; Sonnet also samples approvals
+                # below, and a failed sample still trips the Sonnet-for-all fallback.
+                save(deal, dict(verdict, model=options["model"]))
+                if verdict["plausible"]:
+                    approved.append((deal, verdict))
+                    stats["haiku_approved"] += 1
+                continue
             if (not confident(verdict, options["min_confidence"])
                     or not verdict["plausible"] or deal["dedupe_key"] in high):
                 escalated.append(deal)

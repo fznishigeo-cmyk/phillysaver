@@ -2193,8 +2193,9 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
     def needs_stronger(deal, verdict):
         return (tiered and isinstance(verdict, dict)
                 and verdict.get("model") == cfg.critic_tiering["model"]
-                and (fallback or deal["dedupe_key"] in high or not verdict.get("plausible")
-                     or not critic_tiering.confident(verdict, cfg.critic_tiering["min_confidence"])))
+                and (fallback or not critic_tiering.confident(verdict, cfg.critic_tiering["min_confidence"])
+                     or (not cfg.critic_tiering["haiku_only"]
+                         and (deal["dedupe_key"] in high or not verdict.get("plausible")))))
 
     def asin(deal):
         store = str(deal.get("store") or "").lower()
