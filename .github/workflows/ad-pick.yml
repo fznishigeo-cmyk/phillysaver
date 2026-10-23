@@ -1,0 +1,48 @@
+name: ad pick (read-only, manual)
+
+# Lists live Amazon deals that suit a one-deal Facebook ad: a plain price
+# (no coupon, code or steps), with a photo, at least MIN_PCT off and under
+# MAX_PRICE, best public score first, with each deal page's path. Reads the
+# public deals.json only; writes nothing but the log.
+on:
+  workflow_dispatch:
+    inputs:
+      max_price:
+        description: "Highest price in dollars"
+        required: false
+        default: "30"
+      min_pct:
+        description: "Smallest discount in percent"
+        required: false
+        default: "40"
+
+permissions:
+  contents: read
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List candidates
+        env:
+          MAX_PRICE: ${{ inputs.max_price }}
+          MIN_PCT: ${{ inputs.min_pct }}
+        run: |
+          curl -sS --fail --max-time 30 -A "dealradar ad pick (read-only)" -o deals.json https://wowpriced.com/deals.json
+          python3 - <<'EOF'
+          import json, os
+          max_price, min_pct = float(os.environ["MAX_PRICE"] or 30), float(os.environ["MIN_PCT"] or 40)
+          deals = json.load(open("deals.json"))["deals"]
+          fits = [d for d in deals
+                  if d.get("store") == "Amazon" and d.get("status", "alive") == "alive" and d.get("earns")
+                  and d.get("image_url") and d.get("deal_path") and not d.get("needs_steps")
+                  and not d.get("codes") and not (d.get("checkout") or {}).get("summary")
+                  and d.get("final_price") is not None and d["final_price"] < max_price
+                  and (d.get("pct_at_checkout") or 0) >= min_pct]
+          fits.sort(key=lambda d: -(d.get("ps") or 0))
+          print(f"{len(fits)} of {len(deals)} live deals fit (Amazon, plain price, photo, >= {min_pct:g}% off, under ${max_price:g})")
+          for d in fits[:30]:
+              print(f"{d.get('ps') or 0:>6} {d['pct_at_checkout']:>3.0f}% ${d['final_price']:<7.2f} "
+                    f"{(d.get('category') or '')[:14]:<14} {(d.get('item') or '')[:60]:<60} https://wowpriced.com{d['deal_path']}")
+          EOF
