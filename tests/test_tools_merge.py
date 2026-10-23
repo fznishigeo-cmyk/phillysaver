@@ -157,6 +157,21 @@ def test_spotter_report_rows_single_verdict_and_tagged_deals(tmp_path, monkeypat
     assert json.loads((out / "search-config.json").read_text())["tools_merge"] is True
 
 
+def test_sidebar_and_strip_keep_how_to_link_for_needs_steps():
+    # Codex review 2026-10-23 #5: a coupon/code/Subscribe & Save price carries the same
+    # "How to get this price" link to its deal page as the spotter's own cards.
+    deals = [dict(key=str(i), status="alive", final_price=20.0 + i, regular_price=50, regular_price_basis="List price",
+                  item=f"Published item {i}", image_url="https://m.media-amazon.com/images/I/photo.jpg",
+                  url=f"https://www.amazon.com/dp/B0{i:08d}?tag=example-20", deal_path=f"/deal/fixture-{i}/")
+             for i in range(5)]
+    deals[0]["needs_steps"] = True
+    link = '<a class="deal-steps" href="/deal/fixture-0/">How to get this price</a>'
+    for html in (tools_merge.sidebar(deals), tools_merge.recommends(deals)):
+        assert html.count("How to get this price") == 1 and link in html
+        first = html[:html.index("Published item 1")]
+        assert first.index("$20.00") < first.index(link) < first.index("Get deal")
+
+
 def test_typed_words_box_never_calls_the_api(tmp_path, monkeypatch):
     out, _ = build(tmp_path, monkeypatch, True)
     for name in ("deal-spotter.js", "review-checker.js"):

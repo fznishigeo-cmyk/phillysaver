@@ -215,11 +215,16 @@ def _photo(d, size):
             + str(size) + '" loading="lazy" decoding="async" referrerpolicy="no-referrer">')
 
 
+def _steps(d):
+    # As the spotter's own cards: a coupon/code/Subscribe & Save price links to its how-to page.
+    return f'<a class="deal-steps" href="{escape(d["deal_path"])}">How to get this price</a>' if d.get("needs_steps") else ''
+
+
 def sidebar(rows):
     """Today's top deals in the site's pick order: photo, name, price, Get deal (our tagged link)."""
     cards = ''.join('<article class="side-deal">' + _photo(d, 72) + '<div><h3>' + escape(d["item"]) + '</h3>'
-                    f'<p><strong>${d["final_price"]:.2f}</strong> <span>Verified deal</span></p>'
-                    '<a ' + _deal_link(d) + '>Get deal <span aria-hidden="true">↗</span></a></div></article>'
+                    f'<p><strong>${d["final_price"]:.2f}</strong> <span>Verified deal</span></p>' + _steps(d)
+                    + '<a ' + _deal_link(d) + '>Get deal <span aria-hidden="true">↗</span></a></div></article>'
                     for d, _ in picks(rows, 5))
     return cards or '<p class="side-empty">See today’s verified deals on <a href="/">wowpriced</a>.</p>'
 
@@ -228,7 +233,7 @@ def recommends(rows):
     """Fakespot's "Recommends" strip in the analyzer box: today's deals, chip "Today's deal"."""
     cards = ''.join('<article class="rec-card"><span class="rec-chip">TODAY’S DEAL</span>' + _photo(d, 64)
                     + '<div><h3>' + escape(d["item"]) + f'</h3><p><strong>${d["final_price"]:.2f}</strong></p>'
-                    '<a ' + _deal_link(d) + '>Get deal <span aria-hidden="true">↗</span></a></div></article>'
+                    + _steps(d) + '<a ' + _deal_link(d) + '>Get deal <span aria-hidden="true">↗</span></a></div></article>'
                     for d, _ in picks(rows, 3))
     return ('<div class="recommends" aria-labelledby="recommends-title"><h2 id="recommends-title">'
             '<img src="/deal-spotter-mark.svg" alt="" width="20" height="20"> wowpriced recommends</h2>'
