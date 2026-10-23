@@ -76,10 +76,10 @@ R2_SAVE = {**STATE_KEY, **{name: "${{ secrets.%s }}" % name for name in
 def assert_state_steps_get_the_key(steps: list[dict], r2: bool = False) -> None:
     """Restore and commit both see STATE_DB_KEY (decrypt / encrypt state.db);
     the pipeline step does not need it. Lanes with R2 copy mode also pass the
-    R2 secrets to every save (never to restore)."""
+    R2 secrets to every save and to the restore (R2 primary pointer)."""
     for script in ("restore_state.sh", "commit_state.sh"):
         for step in (s for s in steps if script in s.get("run", "")):
-            assert step["env"] == (R2_SAVE if r2 and script == "commit_state.sh" else STATE_KEY)
+            assert step["env"] == (R2_SAVE if r2 else STATE_KEY)
 
 
 def assert_cloudflare_is_the_only_host(doc: dict) -> None:

@@ -18,6 +18,9 @@ from pathlib import Path
 import yaml
 
 MB = 1_000_000
+# Exit code for commit_state.sh: at/above state.max_enc_mb with state.r2_primary
+# on, push only the R2 pointer (state.r2.json) instead of refusing.
+R2_POINTER = 3
 # Deal breakdown only; the table sizes above it are never cut short by it.
 INSPECTION_BUDGET_S = 3.0
 STATUSES = ("alive", "dead", "other")
@@ -88,6 +91,8 @@ def validate_limits(settings) -> tuple[float | None, float | None]:
     warn, maximum = limits
     if warn is not None and maximum is not None and warn >= maximum:
         raise ValueError("state.warn_enc_mb must be below state.max_enc_mb")
+    if type(settings.get("r2_primary", False)) is not bool:
+        raise ValueError("state.r2_primary must be a boolean")
     return warn, maximum
 
 
@@ -132,8 +137,12 @@ def snapshot_sizes(db: Path, packed: Path, encrypted: Path) -> dict:
     return sizes
 
 
-def check_size(enc_bytes: int, warn: float | None, maximum: float | None) -> int:
+def check_size(enc_bytes: int, warn: float | None, maximum: float | None, r2_primary: bool = False) -> int:
     if maximum is not None and enc_bytes >= maximum * MB:
+        if r2_primary:
+            print(f"[commit_state] enc_bytes={enc_bytes} at/above state.max_enc_mb={maximum};"
+                  " r2 primary: the data branch gets only the R2 pointer")
+            return R2_POINTER
         print(f"[commit_state] ERROR enc_bytes={enc_bytes} at/above state.max_enc_mb={maximum}; refusing push")
         return 1
     if warn is not None and enc_bytes > warn * MB:
@@ -155,12 +164,13 @@ def main() -> int:
         if not isinstance(raw, dict):
             raise ValueError("config must be a mapping")
         warn, maximum = validate_limits(raw.get("state", {}))
+        r2_primary = raw.get("state", {}).get("r2_primary", False)
         sizes = snapshot_sizes(args.db, args.packed, args.encrypted)
     except (OSError, ValueError, yaml.YAMLError):
         print("[commit_state] ERROR invalid size configuration or unreadable snapshot; refusing push")
         return 1
     print("[commit_state] size " + json.dumps(sizes, separators=(",", ":"), sort_keys=True))
-    return check_size(sizes["enc_bytes"], warn, maximum)
+    return check_size(sizes["enc_bytes"], warn, maximum, r2_primary)
 
 
 if __name__ == "__main__":

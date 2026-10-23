@@ -13,6 +13,9 @@
 #   * push races (concurrent runs)            -> up to 4 retries, backoff 2 4 8 16 s
 #   * after a successful push                 -> best-effort copy to Cloudflare R2
 #     (scripts/r2_copy.sh, config state.r2_copy; never fails this script)
+#   * config state.r2_primary: true           -> upload to R2 FIRST, refuse on any
+#     R2 failure; at/above state.max_enc_mb push only the pointer state.r2.json
+#     (restore_state.sh follows it) instead of refusing the push
 #
 # Runs against the repository that contains the current working directory, so it
 # works the same from GitHub Actions (`bash scripts/commit_state.sh` at the repo
@@ -55,8 +58,25 @@ trap 'cleanup; rm -rf "$SNAPSHOT"' EXIT
 # Measure exactly the bytes we would push, including on unchanged runs. Keep
 # this snapshot for raced-push retries; report once, before any remote access.
 state_encrypt "$REPO_DIR/state.db" "$SNAPSHOT/state.db.enc" "$SNAPSHOT/state.db.gz"
+size_rc=0
 python3 "$SCRIPT_DIR/../dealradar/state_size.py" "$REPO_DIR/state.db" \
-  "$SNAPSHOT/state.db.gz" "$SNAPSHOT/state.db.enc" "$REPO_DIR/config.yaml"
+  "$SNAPSHOT/state.db.gz" "$SNAPSHOT/state.db.enc" "$REPO_DIR/config.yaml" || size_rc=$?
+# 3 = at/above state.max_enc_mb with state.r2_primary on: push the pointer only.
+POINTER=0
+if [[ "$size_rc" -eq 3 ]]; then
+  POINTER=1
+elif [[ "$size_rc" -ne 0 ]]; then
+  exit "$size_rc"
+fi
+# R2 primary: the snapshot must land in R2 before git is touched.
+R2_KEEP="$(r2_primary_keep "$REPO_DIR/config.yaml")"
+if [[ "$R2_KEEP" == invalid || ( "$POINTER" -eq 1 && "$R2_KEEP" == 0 ) ]]; then
+  log "r2 primary: unreadable state.r2_primary/state.r2_keep; refusing push"
+  exit 1
+fi
+if [[ "$R2_KEEP" != 0 ]]; then
+  r2_save "$SNAPSHOT/state.db.enc" "$SNAPSHOT/state.r2.json" || exit 1
+fi
 
 # Clear any stale worktree left behind by an earlier interrupted run.
 cleanup
@@ -113,14 +133,30 @@ same_state() {
 }
 
 stage_state() {
-  if ! { [[ -f "$WORKTREE/state.db.enc" ]] && same_state; }; then
-    cp "$SNAPSHOT/state.db.enc" "$WORKTREE/state.db.enc"
+  if [[ "$POINTER" -eq 1 ]]; then
+    # Only the pointer: an older state.db.enc may stay beside it, and
+    # restore_state.sh prefers the pointer (every enc save below deletes it).
+    cp "$SNAPSHOT/state.r2.json" "$WORKTREE/state.r2.json"
+    git -C "$WORKTREE" add state.r2.json
+  else
+    if ! { [[ -f "$WORKTREE/state.db.enc" ]] && same_state; }; then
+      cp "$SNAPSHOT/state.db.enc" "$WORKTREE/state.db.enc"
+    fi
+    git -C "$WORKTREE" add state.db.enc
+    git -C "$WORKTREE" rm --quiet --ignore-unmatch state.r2.json
   fi
-  git -C "$WORKTREE" add state.db.enc
   git -C "$WORKTREE" rm --quiet --ignore-unmatch state.db
   if report_is_fresh; then
     cp "$REPO_DIR/sources_report.md" "$WORKTREE/sources_report.md"
     git -C "$WORKTREE" add sources_report.md
+  fi
+}
+
+log_saved() {
+  if [[ "$POINTER" -eq 1 ]]; then
+    log "state.db $(wc -c < "$REPO_DIR/state.db") -> R2 $(wc -c < "$SNAPSHOT/state.db.enc") + state.r2.json"
+  else
+    log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTREE/state.db.enc")"
   fi
 }
 
@@ -134,7 +170,7 @@ fi
 STAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
   commit --quiet -m "state: $STAMP [skip ci]"
-log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTREE/state.db.enc")"
+log_saved
 
 # Push to the data branch only — never main. Retry up to 4 times on failure
 # (a concurrent run may have pushed first) with exponential backoff. A rebase
@@ -168,7 +204,7 @@ for delay in 2 4 8 16 0; do
     STAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     git -C "$WORKTREE" -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" \
       commit --quiet -m "state: $STAMP [skip ci]"
-    log "state.db $(wc -c < "$REPO_DIR/state.db") -> state.db.enc $(wc -c < "$WORKTREE/state.db.enc")"
+    log_saved
   fi
 done
 
@@ -177,5 +213,10 @@ if [[ "$pushed" -ne 1 ]]; then
   exit 1
 fi
 log "state committed to origin/$BRANCH"
+if [[ "$R2_KEEP" != 0 ]]; then
+  # R2 primary: the copy went up before the push; prune only after it landed.
+  r2_prune "$R2_KEEP"
+  exit 0
+fi
 # Copy mode: the same encrypted bytes also go to Cloudflare R2 (best effort).
 r2_copy "$WORKTREE/state.db.enc" "$REPO_DIR/config.yaml"
