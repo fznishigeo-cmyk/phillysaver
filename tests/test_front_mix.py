@@ -75,6 +75,25 @@ def test_adult_titles_never_join_or_lift(item):
     assert front_mix.lead([dict(row, pick=1)], cfg.front_page)[0].get("mx") is None
 
 
+def test_serializing_a_deal_again_never_retokenizes_its_title(monkeypatch):
+    """Live 2026-10-23: render +29% once bucket() joined every serialization (the
+    week's hub stats and ended pages serialize thousands of deals again, each asking
+    ~25 word lists). A title is tokenized once; the answers stay the same."""
+    from dealradar import appeal
+    from tests.test_publish_site import make_deal
+    title = "Women's Lace Lingerie Set Babydoll Chemise Nightgowns 2-Pack (test 0423)"
+    real, seen = appeal._tokens, Counter()
+    monkeypatch.setattr(appeal, "_tokens", lambda text: seen.update([text]) or real(text))
+    cfg = load_config()
+    cfg.keepa_click_price_rule = "off"
+    deal = make_deal(item=title, category="fashion", conditions=[], codes=[], price_rechecked_at=NOW.isoformat())
+    rows = [site._serialize_deal(deal, NOW, cfg=cfg) for _ in range(3)]
+    assert rows[0] == rows[2] and rows[0]["mx"] == "sexy_for_her" and rows[0]["allure"] is True
+    assert seen[title] <= 1
+    assert appeal.matches(title, ["nightgown"]) and appeal.matches(title, ["lace lingerie set"])
+    assert not appeal.matches(title, ["lingerie lace"]) and not appeal.matches(None, ["lace"])
+
+
 def mix_options(**changes):
     mix = copy.deepcopy(SHIPPED.raw["publish"]["front_page"]["mix"])
     mix.update(changes)
