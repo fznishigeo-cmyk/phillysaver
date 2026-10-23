@@ -38,6 +38,7 @@ from .price_history import chart_html as price_history_chart, STYLE as PRICE_HIS
 from . import amazon_history, checker
 from .. import amazon_reference
 from . import amazon_as_of, event_pages, inventory, manifest_refresh, product_pages, seo_audit, traffic
+from . import add_to_cart
 from .indexnow import INDEXNOW_FILE, INDEXNOW_ENDPOINT, KEY_RE as _KEY_RE, due_list_path, indexnow_due
 
 logger = logging.getLogger("dealradar.publish.seo")
@@ -788,7 +789,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                noindex_follow: bool = False,
                discovery: str = "", sharing: str = "", share_head: str = "",
                also_at: str = "", lowest_seen: str = "", app_amazon: bool = False,
-               static_photos: bool = False, credit_links: bool = True) -> str:
+               static_photos: bool = False, credit_links: bool = True, cart: str = "") -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -898,7 +899,7 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     url = _http(d.get("url"))
     if not dead and url:
         content += (f'<a class="getdeal" href="{escape(url)}" target="_blank" rel="sponsored noopener"{_outbound_attrs(d)}>Get deal</a>'
-                    f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
+                    + cart + f'<p class="disclosure">{linked_disclosure(disclosure)}</p>')
     if not dead and not d.get("price_unconfirmed"):
         content += lowest_seen + also_at
     content += product_pages.history_link(d.get("product_path"))
@@ -936,7 +937,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     return _landing_page(template, title, item, '; '.join(facts) + '.', path, site_url,
                          '<div class="deal-detail" data-deal-detail' + (' data-app-amazon' if app_amazon else '') + '>' + content + '</div>', dead=dead,
                          indexable=indexable, noindex_follow=noindex_follow,
-                         extra_head=ld + (PRICE_HISTORY_STYLE if chart else "") + share_head,
+                         extra_head=ld + (PRICE_HISTORY_STYLE if chart else "") + share_head
+                         + (add_to_cart.STYLE if cart and not dead else ""),
                          breadcrumbs=[(label, hub_href(slug)), (item, path)])
 
 
@@ -1261,7 +1263,8 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                           also_at=also_at.get(d["dedupe_key"], ""),
                           lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))
                           if cfg.product_entities_lowest_seen_enabled and not hide_history else "",
-                          static_photos=cfg.static_photos, credit_links=cfg.credit_links)
+                          static_photos=cfg.static_photos, credit_links=cfg.credit_links,
+                          cart=add_to_cart.deal_button(d, cfg))
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")

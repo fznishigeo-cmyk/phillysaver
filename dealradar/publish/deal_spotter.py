@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from ..config import social_profiles
 from ..savings import tool_meter
 from ..util import parse_iso
-from . import amazon_as_of, seo, tool_pages, tracking
+from . import add_to_cart, amazon_as_of, seo, tool_pages, tracking
 
 TEMPLATES = Path(__file__).with_name("templates")
 SLUGS = ("deal-spotter", "fakespot-alternative")
@@ -84,8 +84,9 @@ def script(cfg):
     # toolSimilar receives an Amazon input, so its title path is the checker path.
     glue = ('var toolActive = null; function searchText() { return document.getElementById("q").value.trim(); }\n'
             'function discountsLink() { return null; }\n')
-    return '\n'.join([settings, EXCLUDE, *functions, glue, (TEMPLATES / "tool-name-panel.js").read_text(),
-                      (TEMPLATES / "deal-spotter.js").read_text()])
+    result = '\n'.join([settings, EXCLUDE, *functions, glue, (TEMPLATES / "tool-name-panel.js").read_text(),
+                        (TEMPLATES / "deal-spotter.js").read_text()])
+    return add_to_cart.spotter_script(result, cfg)
 
 
 def live_rows(doc, now, single_source_ok=False):
@@ -294,6 +295,8 @@ def publish(out, cfg, now, site_url, disclosure):
             STORES=stores_row(rows), DEAL_COUNT=f'{len(rows):,}', STORE_COUNT=str(len({d["store"].casefold() for d in rows if d.get("store")})),
             TOP_DEALS=cards(rows), DISCLAIMER=amazon_as_of.DISCLAIMER,
             INSTALL_HELP=(TEMPLATES / 'pwa-install-help.html').read_text() if cfg.pwa_enabled else '')
+        if slug == 'deal-spotter':
+            html = add_to_cart.spotter_page(html, cfg)
         seo._write_page(out, '/' + slug + '/', tracking.inject(html, tracking.head_snippet(cfg)))
     discovery(out, cfg)
     return ['/' + slug + '/' for slug in SLUGS]

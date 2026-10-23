@@ -396,6 +396,7 @@ class AppConfig:
     discounts_from_link: bool = False
     tool_pages: dict = field(default_factory=lambda: validated_tool_pages({}))
     deal_spotter: dict = field(default_factory=lambda: validated_deal_spotter({}))
+    add_to_cart: dict = field(default_factory=lambda: validated_add_to_cart({}))
     tool_pages_hero: bool = False
     tool_pages_1020: bool = False
     tool_pages_1020_phone_links: str = "chips"
@@ -951,6 +952,16 @@ def validated_deal_spotter(value) -> dict:
     return settings
 
 
+def validated_add_to_cart(value) -> dict:
+    """Operator 2026-10-22: "Add to Amazon cart" beside the Amazon button; OFF = previous bytes."""
+    if not isinstance(value, dict) or set(value) - {"enabled"}:
+        raise ValueError("add_to_cart must contain enabled only")
+    settings = {"enabled": False, **value}
+    if type(settings["enabled"]) is not bool:
+        raise ValueError("add_to_cart.enabled must be a boolean")
+    return settings
+
+
 def validated_tool_pages(value) -> dict:
     if not isinstance(value, dict) or set(value) - {"enabled", "public"}:
         raise ValueError("tool_pages must contain enabled and public only")
@@ -982,6 +993,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg = AppConfig(raw=raw)
     cfg.tool_pages = validated_tool_pages(raw.get("tool_pages", {}))
     cfg.deal_spotter = validated_deal_spotter(raw.get("deal_spotter", {}))
+    cfg.add_to_cart = validated_add_to_cart(raw.get("add_to_cart", {}))
     cfg.review_checker = validated_review_checker(raw.get("review_checker", {}))
     from .appeal_score import validate as validate_appeal_score
     cfg.appeal_score = validate_appeal_score(raw.get("appeal_score", {}))

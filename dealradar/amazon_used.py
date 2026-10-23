@@ -4,11 +4,18 @@ import re
 
 
 def excluded(deal, cfg):
-    from .verify import is_amazon_deal, is_used_deal
+    from .verify import is_amazon_deal
 
     if (cfg.amazon_used_enabled or str(deal.get("store") or "").strip().casefold().startswith("woot")
             or not is_amazon_deal(deal)):
         return False
+    return used_offer(deal)
+
+
+def used_offer(deal):
+    """Used, open-box, refurbished, Warehouse, Resale or Renewed, by condition or by name."""
+    from .verify import is_used_deal
+
     # Older imports can name Resale in the store/title without a condition.
     words = " ".join(str(deal.get(k) or "") for k in ("store", "item"))
     return (is_used_deal(deal) or bool(re.search(r"\b(?:warehouse|resale)\b", str(deal.get("store") or ""), re.I))

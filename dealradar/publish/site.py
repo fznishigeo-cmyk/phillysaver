@@ -1495,6 +1495,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     tool_buttons_outside.publish(out, cfg)
     search_focus_ring.publish(out, cfg)
     hide_timer_ticker.publish(out, cfg)
+    from . import add_to_cart
+    add_to_cart.publish(out, cfg)
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
                                        pick_order(teaser + spotlight_only, cfg.front_page)))
     from . import deal_spotter

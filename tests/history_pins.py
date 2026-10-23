@@ -450,6 +450,7 @@ def pre_card_click_1020(cfg):
 def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
@@ -530,6 +531,7 @@ def pre_hide_deal_site_links(cfg):
 def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     config.pop("deal_spotter", None)
     pre_review_checker_raw(config)
@@ -548,6 +550,7 @@ def pre_keepa_focus_finder(cfg):
 def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     pre_review_checker_raw(config)
     config.pop("keepa_focus_finder", None)
@@ -624,6 +627,7 @@ def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     if config.get("keepa", {}).get("recheck_surplus_reserve") == 250:
         config["keepa"]["recheck_surplus_reserve"] = 650
@@ -684,6 +688,13 @@ def pre_price_shipping_note(cfg):
 def pre_social_profiles(cfg):
     """Before the real Facebook and Pinterest profiles were configured (operator 2026-10-22)."""
     cfg.social_profiles = {}
+    pre_add_to_cart(cfg)
+    return cfg
+
+
+def pre_add_to_cart(cfg):
+    """Before the "Add to Amazon cart" button (operator 2026-10-22)."""
+    cfg.add_to_cart = {"enabled": False}
     return cfg
 
 
