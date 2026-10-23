@@ -850,3 +850,9 @@ def pre_haiku_only(cfg):
 def pre_haiku_only_raw(config):
     config["parse"]["critic_tiering"]["haiku_only"] = False
     return config
+
+
+def pre_trusted_sources(cfg):
+    """Before one Slickdeals sighting made a deal "trusted" (operator 2026-10-23)."""
+    cfg.trusted_sources = []
+    return cfg

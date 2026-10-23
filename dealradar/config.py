@@ -517,6 +517,7 @@ class AppConfig:
 
     # -- verify / dedupe --
     corroborate_window_h: float = 24.0
+    trusted_sources: list[str] = field(default_factory=list)  # source names; empty = off
     history_min_observations: int = 5
     fuzzy_threshold: float = 0.90
 
@@ -1572,6 +1573,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.age_penalty_per_hour = float(g("ranking", "age_penalty_per_hour", default=cfg.age_penalty_per_hour))
 
     cfg.corroborate_window_h = float(g("verify", "corroborate_window_h", default=cfg.corroborate_window_h))
+    trusted = g("verify", "trusted_sources", default=[]) or []
+    if not isinstance(trusted, list) or not all(isinstance(s, str) and s.strip() for s in trusted):
+        raise ValueError("verify.trusted_sources must be a list of source names")
+    cfg.trusted_sources = [s.strip() for s in trusted]
     cfg.history_min_observations = int(g("verify", "history_min_observations", default=cfg.history_min_observations))
     cfg.fuzzy_threshold = float(g("dedupe", "fuzzy_threshold", default=cfg.fuzzy_threshold))
 

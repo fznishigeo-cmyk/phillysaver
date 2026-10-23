@@ -754,6 +754,11 @@ ranking:
 
 verify:
   corroborate_window_h: 24
+  # Operator 2026-10-23 ~19:30Z: "slickdeals is super legit we dont need two sources for
+  # them to confirm that the deal is good". A sighting from one of these source names
+  # inside corroborate_window_h makes the deal "trusted": it ranks as corroborated and
+  # reads "Posted on <display name>." (never "multiple sources"). Empty = previous bytes.
+  trusted_sources: [slickdeals_frontpage, slickdeals_popular, slickdeals_amazon, slickdeals_blog]
   history_min_observations: 5  # need this many price points before history-checked can fire
   keepa_enabled: false         # legacy key, superseded by feature_flags.keepa
 

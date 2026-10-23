@@ -300,6 +300,17 @@ def link_mix(deals: list[dict[str, Any]], amazon_tag: str = "", *,
             "amazon_untagged_flag": bool(amazon_tag and counts["amazon_untagged"])}
 
 
+def trusted_line(deal: dict[str, Any], cfg=None) -> str:
+    """The "Posted on <source>." line of a trusted deal (operator 2026-10-23): its
+    latest cfg.trusted_sources sighting, by display name; "" when it has none."""
+    trusted = getattr(cfg, "trusted_sources", None) or ()
+    seen = [s for s in deal.get("sightings") or [] if s.get("source_name") in trusted]
+    if not seen:
+        return ""
+    latest = max(seen, key=lambda s: s.get("seen_at") or "")
+    return f"Posted on {credits.source_display_name(latest['source_name'])}."
+
+
 def _headline(deal: dict[str, Any], cfg=None) -> str:
     """One plain-English sentence or two per deal, for humans skimming the page."""
     item = deal.get("item") or "This item"
@@ -343,6 +354,8 @@ def _headline(deal: dict[str, Any], cfg=None) -> str:
     elif tier == "history-checked":
         if not amazon_history.hidden(cfg, deal):
             parts.append("Well below the usual price in our own price history.")
+    elif tier == "trusted" and (posted := trusted_line(deal, cfg)):
+        parts.append(posted)
     else:
         parts.append("Reported by one source — not yet confirmed.")
     expires = parse_iso(deal.get("expires_at") or "")

@@ -28,17 +28,18 @@ from . import amazon_history
 
 logger = logging.getLogger("dealradar.publish.telegram")
 
-_TIER_RANKS = {"unverified": 0, "history-checked": 1, "corroborated": 2}
+_TIER_RANKS = {"unverified": 0, "history-checked": 1, "corroborated": 2, "trusted": 2}
 
 
 def tier_rank(tier: str) -> int:
-    """unverified=0 < history-checked=1 < corroborated=2 (unknown -> 0)."""
+    """unverified=0 < history-checked=1 < corroborated=trusted=2 (unknown -> 0)."""
     return _TIER_RANKS.get(tier, 0)
 
 
 #: How a deal was corroborated, in the reader's words (same labels as the
 #: site's badges). Every alerted deal already passed the verbatim-price
-#: check and the critic, so a single-source deal simply carries no label.
+#: check and the critic, so a single-source deal simply carries no label
+#: (a trusted one too: its "via <source>" credit already names it).
 _TIER_WORDS = {"corroborated": "2+ sources", "history-checked": "price history"}
 
 

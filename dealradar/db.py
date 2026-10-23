@@ -807,7 +807,9 @@ class DB:
     def distinct_sources_within(self, deal_id: int, since: datetime,
                                 final_price: float | None = None,
                                 now: datetime | None = None, *,
-                                tolerance_pct: float = 10.0) -> int:
+                                tolerance_pct: float = 10.0,
+                                sources: list[str] | None = None) -> int:
+        """``sources`` (source names) counts only those sources' sightings."""
         if final_price is None:
             row = self.conn.execute("SELECT final_price FROM deals WHERE id=?", (deal_id,)).fetchone()
             final_price = row[0] if row else None
@@ -820,6 +822,8 @@ class DB:
         latest = {}
         sites = _publisher_sites()
         for row in rows:
+            if sources is not None and row["source_name"] not in sources:
+                continue
             publisher = sites.get(row["source_name"]) or (
                 urlsplit(row["source_url"]).hostname or "").lower().removeprefix("www.")
             if publisher:

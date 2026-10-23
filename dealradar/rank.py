@@ -6,7 +6,7 @@ and abs_savings >= cfg.min_abs_savings). Everything else stays in the DB but
 is never published.
 
 Score = pct_at_checkout
-      + tier boost (corroborated > history-checked > unverified)
+      + tier boost (corroborated = trusted > history-checked > unverified)
       + capped absolute-savings bonus
       - per-condition penalty
       - age penalty per hour since first sighting.
@@ -158,7 +158,9 @@ def photoless_expired(deal: dict[str, Any], cfg, now: datetime) -> bool:
 def score(deal: dict[str, Any], cfg, now: datetime) -> float:
     """Ranking score for one deal row dict (higher is better)."""
     pct = float(deal.get("pct_at_checkout") or 0.0)
-    boost = float(cfg.tier_boost.get(deal.get("verify_tier", "unverified"), 0))
+    tier = deal.get("verify_tier", "unverified")
+    # A trusted source's deal ranks as corroborated (operator 2026-10-23).
+    boost = float(cfg.tier_boost.get("corroborated" if tier == "trusted" else tier, 0))
     abs_bonus = min(float(deal.get("abs_savings") or 0.0), 100.0) \
         * cfg.abs_savings_weight
     cond_penalty = len(deal.get("conditions") or []) * cfg.condition_penalty
@@ -330,7 +332,7 @@ def pick_score(deal: dict[str, Any], cfg, now: datetime, *,
     quality = (options["pct_weight"] * float(deal.get("pct_at_checkout") or 0)
                + options["dollars_weight"] * math.log10(1 + float(deal.get("abs_savings") or 0)))
     tier = deal.get("verify_tier", "unverified")
-    if tier == "corroborated":
+    if tier in ("corroborated", "trusted"):  # trusted ranks as corroborated
         quality += options["corroborated_bonus"]
     elif tier == "history-checked":
         quality += options["history_bonus"]
