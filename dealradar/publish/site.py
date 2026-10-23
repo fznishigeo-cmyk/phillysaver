@@ -12,6 +12,7 @@ import hashlib
 import logging
 import re
 import shutil
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -757,6 +758,14 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                 last_run: dict[str, Any] | None = None, ai_parser=None) -> dict[str, Any]:
     """Write deals.json and the HTML pages to out_dir; return the counts,
     the members' full payload and the operator's source health."""
+    lap, timings = [time.perf_counter()], {}
+
+    def timed(section):
+        """The time since the last mark goes to section (the "render timings" log line)."""
+        mark = time.perf_counter()
+        timings[section] = timings.get(section, 0.0) + mark - lap[0]
+        lap[0] = mark
+
     # Preflight the one required home slot before ranking, state writes or
     # touching the previous publish/IndexNow manifest. Reuse this exact load.
     home_template = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
@@ -871,6 +880,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     if cfg.hide_deal_site_links is True:
         logger.info("hidden_deal_site_links: %d; by credit: %s", len(hidden_links), hidden_by_credit)
     deals = visible
+    timed("rank")
     serialized = [_serialize_deal(d, now, amazon_tag, overrides, links=facts_for(d), **link_options) for d in deals
                   if d.get("status") != "dead" or d.get("death") in {"confirmed", "api_ended"}]
     earns = {d["dedupe_key"]: d["earns"] for d in serialized}
@@ -918,6 +928,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                  for d in daily_spotlight([d for d in spotlight_rows
                      if d.get("pct_at_checkout") is None or d["dedupe_key"] in unlocked], cfg, now)]
     spotlight_only = [d for d in spotlight if d["dedupe_key"] not in unlocked]
+    timed("serialize")
     candidates = [(d, scores[d["dedupe_key"]]) for d in teaser
                   if not d.get("locked") and scores[d["dedupe_key"]] is not None]
     confirmed_candidates = [(d, value) for d, value in candidates
@@ -1028,6 +1039,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # Select once, before JSON is written: remembered URLs only for pages
     # this publish emits. Free rows share their objects with member rows;
     # locked stubs and member-only deals never gain a public path.
+    timed("picks")
     deal_pages = seo._deal_pages(db, cfg, now, out, teaser, deals)
     paths = deal_pages[0]
     product_public = [d for d in teaser + spotlight + deal_pages[1] if not d.get("locked")]
@@ -1052,6 +1064,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     for d in deal_pages[1]:
         if d["dedupe_key"] in product_paths:
             d["product_path"] = product_paths[d["dedupe_key"]]
+    timed("deal_pages")
     link = support_link(getattr(cfg, "support_payment_link", ""))
     monthly = support_link(getattr(cfg, "support_monthly_link", "")) if link else ""
     if not open_access:  # open: the rotation pauses, to resume when it closes
@@ -1409,11 +1422,13 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     # The server-rendered wall, category hubs, 404.html, _headers, the
     # sitemap and the IndexNow due-list, all from this publish's teaser.
     offsite_keys = set() if cfg.offsite_unseen_days is not None else None
+    timed("home")
     seo_paths, seo_wall = seo.publish(db, cfg, now, out, teaser, site_url, public, meta, deals,
                                      spotlight=spotlight, deal_pages=deal_pages,
                                      products=products,
                                      run_key=(last_run or {}).get("run_key"),
                                      offsite_protected_keys=offsite_keys, best_extra=best_extra)
+    timed("seo")
     checker_summary = {}
     if cfg.checker["enabled"]:
         checker_summary = checker.publish(out, cfg, now, checker.build(
@@ -1448,6 +1463,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
         logger.warning("compare pages unavailable (%s)", type(exc).__name__)
         if (out / "compare").is_dir():
             shutil.rmtree(out / "compare")
+    timed("checker_compare")
 
     if support and (link or cfg.support_panel_delay_s):
         # Generated pages share the same footer join success as root pages.
@@ -1511,6 +1527,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     tools_merge.publish(out, cfg)
     from . import add_to_cart
     add_to_cart.publish(out, cfg)
+    timed("page_passes")
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],
                                        pick_order(teaser + spotlight_only, cfg.front_page)))
     from . import deal_spotter
@@ -1518,13 +1535,16 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     from . import review_checker
     seo_paths.extend(review_checker.publish(out, cfg, now, site_url, meta["disclosure"]))
     join_dialog.publish(out, cfg)
+    timed("tools")
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)
+    timed("sitemap")
     audit_result = seo_audit.audit(out, cfg, site_url, pages=seo_pages)
     indexnow.seal_publish(db, cfg, now, out, (last_run or {}).get("run_key"),
                          excluded={site_url + path for path, page in seo_pages.items() if page.unconfirmed}
                          | indexnow.product_exclusions(db, site_url, seo_pages)
                          | seo.event_pages.indexnow_exclusions(db, site_url, seo_pages)
                          | tool_pages.indexnow_exclusions(cfg, site_url))
+    timed("audit")
 
     if clicks.enabled(cfg):
         try:
@@ -1578,7 +1598,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
             # Unreadable surface facts cannot establish absence. The tail
             # retains every non-dead row until a complete proof is available.
             offsite["offsite_protected_keys"] = None
-    return {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
+    result = {"published": len(serialized) + len(spotlight_only), "out_dir": str(out),
             **offsite,
             "unpublished_photoless": unpublished_photoless,
             "hidden_deal_site_links": len(hidden_links),
@@ -1611,3 +1631,9 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
                                  competitor_tracker_hosts=cfg.affiliate_competitor_tracker_hosts,
                                  ebay_campid=cfg.affiliate_ebay_campaign_id),
             "full_payload": full_doc, "health": health_doc, "seo_audit": audit_result}
+    timed("tail")
+    # Slowest first, so the next live runs show where render time goes.
+    logger.info("render timings: %s (total %.1fs)", ", ".join(
+        f"{name} {seconds:.1f}s" for name, seconds in sorted(timings.items(), key=lambda kv: -kv[1])),
+        sum(timings.values()))
+    return result

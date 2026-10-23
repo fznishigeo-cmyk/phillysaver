@@ -105,10 +105,28 @@ def _phrase(word):
     return tuple(_singular(w) for w in _tokens(word))
 
 
+# A render asks dozens of word lists about each title, often for the same deal again
+# (live 2026-10-23: render +29% once front_mix.bucket joined every serialization), so a
+# title is tokenized once and its n-grams are looked up in each list's phrase sets.
+@lru_cache(maxsize=4096)
+def _title(text):
+    return tuple(_singular(w) for w in _tokens(text))
+
+
+@lru_cache(maxsize=256)
+def _phrases(words):
+    """{token count: phrases} for one word list; empty phrases never match."""
+    out = {}
+    for phrase in map(_phrase, words):
+        if phrase:
+            out.setdefault(len(phrase), set()).add(phrase)
+    return {n: frozenset(found) for n, found in out.items()}
+
+
 def matches(title, words):
-    tokens = tuple(_singular(w) for w in _tokens(title))
-    return any(phrase and any(tokens[i:i + len(phrase)] == phrase for i in range(len(tokens)))
-               for phrase in map(_phrase, words))
+    tokens = _title(str(title or ""))
+    return any(tokens[i:i + n] in found for n, found in _phrases(tuple(words)).items()
+               for i in range(len(tokens) - n + 1))
 
 
 def active(options):
