@@ -2,7 +2,7 @@
 // the homepage buttons, then the spotter and both keyword pages with typed words. No browser or network.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
-const {checkToolAmazonUrl} = require('../scripts/site_check_logic.cjs');
+const {checkToolAmazonUrl, toolsDeploy} = require('../scripts/site_check_logic.cjs');
 const SITE = 'https://wowpriced.test/';
 const source = fs.readFileSync(path.join(__dirname, '../scripts/site_check.js'), 'utf8');
 const code = source.slice(source.indexOf('async function checkMergedTools('), source.indexOf('async function walk('));
@@ -32,6 +32,35 @@ function fakePage(fault = '') {
   await assert.rejects(run(fakePage('href'), 'example-20'), /review-checker home href changed/);
   await assert.rejects(run(fakePage('filter'), 'example-20'), /missing discounts filter/);
   await assert.rejects(run(fakePage(), 'other-20'), /wrong or duplicate tag/);
-  assert.match(source, /const merged = \/\^tools_merge:\[ \\t\]\*true\\b\/m\.test\(config\);/);
+
+  // Step 15 follows the deployed site's search-config.json, not this checkout's config.yaml
+  // (Codex review 2026-10-23 #7: a run 16 min before the deploy went red); a mismatch is a note.
+  const MERGED = 'tools_merge: true  # comment\n', OLD = 'tools_merge: false\n';
+  for (const [config, deployed, merged, note] of [
+    [MERGED, '{"amazon_results":"on","tools_merge":true}', true, ''],
+    [OLD, '{"amazon_results":"on"}', false, ''],
+    [MERGED, '{"amazon_results":"on"}', false, /config\.yaml tools_merge true, deployed site false.*deploy/],
+    [OLD, '{"tools_merge":true}', true, /config\.yaml tools_merge false, deployed site true/],
+    [MERGED, '', true, /search-config\.json unreadable/], [OLD, 'null', false, /unreadable/],
+    [MERGED, '<html>', true, /unreadable/]]) {
+    const result = toolsDeploy(config, deployed);
+    assert.equal(result.merged, merged, config + deployed);
+    if (note) assert.match(result.note, note); else assert.equal(result.note, '');
+  }
+  for (const [deployed, merged, notes] of [['{"tools_merge":true}', true, []],
+    ['{"amazon_results":"on"}', false, ['config.yaml tools_merge true, deployed site false: deploy pending; Tools checked as deployed']],
+    [null, true, ['deployed search-config.json unreadable; Tools checked against config.yaml (tools_merge true)']]]) {
+    const reads = [], tools = [];
+    const [step, deployNotes] = vm.runInNewContext(code + '\n[checkDeployedTools, deployNotes]', {SITE, SITE_URL:new URL(SITE), URL, Date, check,
+      checkToolAmazonUrl, toolsDeploy, amazonTag:() => 'example-20', path, __dirname:'/repo/scripts',
+      fs:{readFileSync:file => { assert.equal(file, '/repo/config.yaml'); return MERGED; }},
+      checkTools:async (page, tag) => { tools.push(tag); return 'tool pages ok'; },
+      readSite:async file => { reads.push(file); return deployed === null ? {ok:false, text:async () => 'Not found'} : {ok:true, text:async () => deployed}; }});
+    const [first, second] = [await step(fakePage()), await step(fakePage())];
+    assert.deepEqual(reads, ['search-config.json'], 'one paced read per run, shared by both devices');
+    assert.equal(first, second);
+    assert.deepEqual([...deployNotes], notes, 'a mismatch is its own note, once');
+    if (merged) assert.match(first, /no lookup/); else assert.deepEqual([first, tools], ['tool pages ok', ['example-20', 'example-20']]);
+  }
   console.log('merged tools monitor: ok');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -181,6 +181,21 @@ function toolLinks(config) {
     ...(blockOn(config, "review_checker") ? [["/review-checker/", "Review Checker"]] : [])];
 }
 
+// Step 15 (Tools) checks the tools the deployed site has: its /search-config.json carries
+// tools_merge: true once a merged build is live. A config.yaml that differs is a deploy still
+// on its way (2026-10-23 07:25Z: checked 16 min before the deploy): a note, never a failure.
+function toolsDeploy(config, deployed) {
+  const local = /^tools_merge:[ \t]*true\b/m.test(config);
+  let data = null;
+  try { data = JSON.parse(deployed); } catch (e) { /* unreadable */ }
+  if (!data || typeof data !== "object") {
+    return {merged: local, note: `deployed search-config.json unreadable; Tools checked against config.yaml (tools_merge ${local})`};
+  }
+  const merged = data.tools_merge === true;
+  return {merged, note: merged === local ? "" :
+    `config.yaml tools_merge ${local}, deployed site ${merged}: deploy pending; Tools checked as deployed`};
+}
+
 // Runs inside Chromium: take identity and ordering together, before the walk
 // changes filters. textContent/getAttribute already decode HTML entities.
 function frontPageSnapshot() {
@@ -250,4 +265,4 @@ function frontPageFlags(cards, rules) {
 
 module.exports = {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
                   photoRules, checkPhotos, dealSourceHosts, frontRules, frontPageSnapshot, identifyFrontCards,
-                  frontPageFlagLine, frontPageFlags, eventLinks, toolLinks};
+                  frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy};
