@@ -133,6 +133,16 @@ const {scanScreens, relookPending, markNewPhotoless, photoState, firstScreenLink
     assert.deepEqual(Object.fromEntries(pacedScan.photos.map(card => [card.key, card.photo])),
       {slow: 'loaded', held: 'pending', queued: 'pending'});
     assert(Date.now() - pacedStarted < 12000, 'one shared 8 s wait, not one per card or screen');
+    // Live 2026-10-23: desktop photo waits ran captures into the 120 s watchdog.
+    // Past the photo deadline a scan only glances at paced photos, yet still
+    // captures every screen (screenshots keep the watchdog's deadline).
+    const lateStarted = Date.now();
+    const late = await scanScreens(paced, '.card', Date.now() + 30000, Date.now() - 1);
+    assert(Date.now() - lateStarted < 3000, 'no photo wait once the photo deadline has passed');
+    assert.deepEqual(Object.fromEntries(late.photos.map(card => [card.key, card.photo])),
+      {slow: 'loaded', held: 'pending', queued: 'pending'}, 'still queued stays pending, never broken');
+    assert.deepEqual(late.optical.boxes, pacedScan.optical.boxes, 'the same layout is captured');
+    assert.equal(late.optical.bands.length, 3, 'each of the three screens is still screenshotted');
     // Live 2026-10-21: the desktop home scan saw "0 loaded; 37 still downloading";
     // after the first-24 pass the queued photos have arrived and a short look sees them.
     releaseQueued();

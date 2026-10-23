@@ -99,7 +99,8 @@ async function markNewPhotoless(page, selector, photos, allowed) {
   }
 }
 
-async function scanScreens(page, selector, deadline) {
+// Screenshots keep `deadline`; looks at paced photos stop at `photoDeadline`.
+async function scanScreens(page, selector, deadline, photoDeadline = deadline) {
   const cards = new Map(), where = new Map(), boxes = new Map(), bands = [];
   let overflow = 0;
   for (let screen = 0; screen < 3; screen++) {
@@ -119,7 +120,7 @@ async function scanScreens(page, selector, deadline) {
       if (['loaded', 'pending'].includes(cards.get(card.key)?.photo)) continue;
       // A short first look: pending photos share one bounded wait after the scan
       // (live 2026-10-21: 1.5 s per paced card ran desktop past its 120 s).
-      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(250, deadline - Date.now())));
+      const photo = await photoState(page.locator(selector).nth(card.index), Math.max(1, Math.min(250, photoDeadline - Date.now())));
       cards.set(card.key, {key: card.key, photo});
     }
     const geometry = await page.evaluate(selector => {
@@ -144,7 +145,7 @@ async function scanScreens(page, selector, deadline) {
   // still downloading one more look, 8 s in all. Any still queued behind our
   // own 1 request/second pacing stay "pending" (reported, not a site fault);
   // a photo that failed to load is "broken".
-  await relookPending(page, selector, cards.values(), Math.min(deadline, Date.now() + 8000));
+  await relookPending(page, selector, cards.values(), Math.min(photoDeadline, Date.now() + 8000));
   // Name the photo host of each broken card, so a flag says where to look.
   for (const card of cards.values()) {
     if (card.photo !== 'broken') continue;

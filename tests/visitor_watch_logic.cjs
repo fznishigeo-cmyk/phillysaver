@@ -11,8 +11,8 @@ const {pixels, glare, blankBands} = require('../scripts/browser_pixels.cjs');
 const {headLinks, internalLinks, photoState, departmentProbe, inventorySearchProbe, allUsedProbe, firstScreenLinks,
   dealPageProbe, visibleText, collectText, boundedScreenshot} =
   require('../scripts/visitor_watch_health.cjs');
-const {readConfig, offlineRoute, pacer, guardedRoute, searchProbe, firstScreenGlare, watchContextErrors, MODES, UA} =
-  require('../scripts/visitor_watch.js');
+const {readConfig, offlineRoute, pacer, guardedRoute, searchProbe, firstScreenGlare, watchContextErrors, checkLinks,
+  MODES, UA} = require('../scripts/visitor_watch.js');
 
 const rules = {rotationEnabled: true, amazonTag: 'wowpriced-20', utilityGroups: {
   plumbing: {phrases: ['valve', 'pipe fitting', 'o-ring'], exclude: ['shower head', 'faucet']},
@@ -952,6 +952,36 @@ test('internal HEADs are unique, at most 20 across views, same-origin only and d
   assert(check('links', scene({links: failed})).flag);
   for (const status of [0, 199, 400, 404, 500]) assert(check('links', scene({links: [{path: '/p', status}]})).flag);
   assert(check('links', scene({links: undefined})).flag);
+});
+
+test('internal links are HEAD-checked once per run after the views, not inside the first view to show them', async () => {
+  // Live 2026-10-23: desktop-light paid 13 paced HEADs inside its 120 s watchdog.
+  const heads = [], paced = [], contexts = [];
+  const browser = {newContext: async options => {
+    assert.equal(options.userAgent, UA);
+    const context = {closed: false, close: async () => {context.closed = true;}, request: {head: async (url, options) => {
+      heads.push(url); assert.equal(options.maxRedirects, 0); assert(options.timeout > 0 && options.timeout <= 3000);
+      return {status: () => url.endsWith('/gone/') ? 404 : 200, dispose: async () => {}};
+    }}};
+    contexts.push(context); return context;
+  }};
+  const scenes = [{name: 'phone-light'}, {name: 'desktop-light'}, {name: 'desktop-dark'}, {name: 'phone-dark'}];
+  const firstLinks = new Map([['phone-light', ['/about.html', '/deals/beauty-personal-care/']],
+    ['desktop-light', ['/about.html', '/deals/beauty-personal-care/', '/gone/', '/contact.html']],
+    ['desktop-dark', ['/contact.html', '/about.html']]]);  // phone-dark: its capture failed
+  await checkLinks(browser, {site: 'https://wowpriced.com/'}, async host => {paced.push(host); return true;},
+    scenes, firstLinks);
+  assert.deepEqual(heads, ['/about.html', '/deals/beauty-personal-care/', '/gone/', '/contact.html']
+    .map(path => 'https://wowpriced.com' + path), 'one HEAD per unique link across views');
+  assert.deepEqual(paced, Array(4).fill('wowpriced.com'), 'every HEAD is paced');
+  assert(contexts.length === 1 && contexts[0].closed);
+  assert.deepEqual(scenes.map(view => view.links?.map(link => link.status)), [[200, 200], [200, 200, 404, 200], [200, 200], undefined]);
+  assert.deepEqual(scenes.map(view => check('links', scene({links: view.links})).flag), [false, true, false, true],
+    'a broken link and a view without links still flag');
+  // A HEAD the pacer refuses is a failed link, never a pass.
+  const refused = [{name: 'phone-light'}];
+  await checkLinks(browser, {site: 'https://wowpriced.com/'}, async () => false, refused, new Map([['phone-light', ['/about.html']]]));
+  assert.deepEqual(refused[0].links, [{path: '/about.html', status: 0, error: 'HEAD failed'}]);
 });
 
 test('compact health and first summary line count unique flagged checks, not views or repeat status', () => {

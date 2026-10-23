@@ -198,20 +198,51 @@ async function publishedImageHosts(browser, options, pace) {
   } catch {return [];}
 }
 
-async function capture(browser, mode, options, rules, pace, linkCache) {
+// Each view's first-screen internal links get one paced HEAD per run, after all
+// views. Inside a view's 120 s watchdog, the first view to show a link paid for
+// it: desktop-light, 13 more header/footer links than the phones at 1 request/
+// second, ran past 120 s (live 2026-10-23 #222-#239); desktop-dark reused them.
+async function checkLinks(browser, options, pace, scenes, firstLinks) {
+  const origin = new URL(options.site).origin, cache = new Map(), deadline = Date.now() + 60000;
+  let context;
+  try {
+    for (const scene of scenes) {
+      if (!firstLinks.has(scene.name)) continue;
+      scene.links = await headLinks(firstLinks.get(scene.name), origin, cache, async url => {
+        if (options.offlineSite) return offlineRoute(options.offlineSite, origin,
+          {url: () => url, method: () => 'HEAD', resourceType: () => 'document'}).status || 200;
+        if (Date.now() >= deadline) throw new Error('link checks exceeded 60 seconds');
+        if (!await pace(new URL(url).hostname)) throw new Error('paced request refused');
+        context ||= await browser.newContext({userAgent: UA});
+        const response = await context.request.head(url, {maxRedirects: 0, timeout: Math.max(1, Math.min(3000, deadline - Date.now()))});
+        try {return response.status();} finally {await response.dispose();}
+      });
+    }
+  } finally {await context?.close().catch(() => {});}
+}
+
+async function capture(browser, mode, options, rules, pace, firstLinks) {
   const context = await browser.newContext({viewport: {width: mode.width, height: mode.height},
     isMobile: mode.mobile, hasTouch: mode.mobile, colorScheme: mode.scheme, deviceScaleFactor: 1,
     userAgent: UA, serviceWorkers: 'block'});
   const scene = {name: mode.name, scheme: mode.scheme, viewport: {width: mode.width, height: mode.height},
-    rotationEnabled: rules.rotationEnabled, cards: [], errors: []};
+    rotationEnabled: rules.rotationEnabled, cards: [], errors: [], phases: {}};
   const ignored = new Set();
   const origin = new URL(options.site).origin;
   // Live 2026-10-17: category/deal pages with hundreds of cards needed > 10 s on
   // scheduled runners; budgets sized so a healthy page never flags.
-  const deadline = Date.now() + 120000;
-  let ownRequests = 0, closing = false, doc;
+  const start = Date.now(), deadline = start + 120000;
+  // Looks at photos still queued behind our own pacing are optional ("pending" is
+  // report only), so they end 30 s before the watchdog and the checks after them
+  // still finish (live 2026-10-23: desktop photo waits pushed its deal page and
+  // search past 120 s). A page that truly hangs still meets the watchdog.
+  const photoDeadline = deadline - 30000;
+  let ownRequests = 0, closing = false, doc, phase = 'home';
+  // Seconds into the capture at which each phase began; a timeout names its phase.
+  const enter = name => {phase = name; scene.phases[name] = Math.round((Date.now() - start) / 100) / 10;};
+  enter('home');
   const timer = setTimeout(() => {
-    scene.errors.push('health capture exceeded 120 seconds'); closing = true;
+    scene.errors.push(`health capture exceeded 120 seconds (${phase})`); closing = true;
     context.close().catch(() => {});
   }, 120000);
   try {
@@ -273,14 +304,15 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
         try {scene.glare = await firstScreenGlare(page, deadline);}
         catch (error) {scene.errors.push(error.message.split('\n')[0]);}
       }
-      const hrefs = await firstScreenLinks(page);
+      firstLinks.set(mode.name, await firstScreenLinks(page));
       const dealHref = await page.locator(CARDS).first().locator('.title a').getAttribute('href');
       scene.text = {invalid: [], history: (await visibleText(page.locator(CARDS))).history, used: []};
       scene.photosDeep = {};
       scene.working = {};
       scene.pageOptical = [];
+      enter('home photos');
       try {
-        const scan = await scanScreens(page, CARDS, deadline);
+        const scan = await scanScreens(page, CARDS, deadline, photoDeadline);
         scene.photosDeep.home = scan.photos; scene.optical = scan.optical;
       } catch (error) {scene.optical = {error: error.message.split('\n')[0]};}
       // Lazy photos count only once scrolled into view and actually decoded.
@@ -311,7 +343,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
         if (remaining <= 0) {scene.errors.push('photo capture exceeded 120 seconds'); break;}
         const card = page.locator(CARDS).nth(i);
         await card.scrollIntoViewIfNeeded({timeout: Math.min(3000, remaining)});
-        const photo = await firstPhoto(card, Math.min(3000, remaining));
+        const photo = await firstPhoto(card, Math.max(1, Math.min(3000, photoDeadline - Date.now())));
         if (photo.key !== scene.cards[i].key) {scene.errors.push('card order changed during capture'); break;}
         record(scene.cards[i], photo);
         await collectText(card, scene.text);
@@ -319,7 +351,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
       // Photos still queued behind our own 1 request/second pacing (live #159:
       // 4 desktop Amazon photos "still loading") get one shared 8 s look; any
       // still downloading after it are reported, not flagged.
-      const until = Math.min(deadline, Date.now() + 8000);
+      const until = Math.min(photoDeadline, Date.now() + 8000);
       for (const [i, row] of scene.cards.entries()) {
         if (row.hasPhoto || !/ still loading$/.test(row.photoIssue || '') || until - Date.now() <= 0) continue;
         const card = page.locator(CARDS).nth(i);
@@ -332,7 +364,8 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
       // The home scan ran while our own pacing still queued most desktop photos
       // (live 2026-10-21: "0 loaded; 37 still downloading"); the pass above gave
       // them time to arrive. One more short look each, 5 s in all.
-      await relookPending(page, CARDS, scene.photosDeep.home || [], Math.min(deadline, Date.now() + 5000), 250);
+      await relookPending(page, CARDS, scene.photosDeep.home || [], Math.min(photoDeadline, Date.now() + 5000), 250);
+      enter('probes');
       if (rules.excludeUsedOnAll) scene.text.used = await allUsedProbe(page, doc);
       // Each probe has its own failure result; one broken control must not hide
       // the other health checks. No Get deal link is ever clicked.
@@ -341,16 +374,9 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
       try {scene.working.inventorySearch = await inventorySearchProbe(page, doc);}
       catch (error) {scene.working.error = error.message.split('\n')[0];}
       await page.evaluate(() => window.scrollTo(0, 0));
-      scene.links = await headLinks(hrefs, origin, linkCache, async url => {
-        if (options.offlineSite) return offlineRoute(options.offlineSite, origin,
-          {url: () => url, method: () => 'HEAD', resourceType: () => 'document'}).status || 200;
-        if (++ownRequests > 60) throw new Error('same-origin request limit (60)');
-        if (!await pace(new URL(url).hostname, () => !closing)) throw new Error('capture closed');
-        const response = await context.request.head(url, {maxRedirects: 0, timeout: Math.max(1, Math.min(3000, deadline - Date.now()))});
-        try {return response.status();} finally {await response.dispose();}
-      });
       for (const [name, href, enabled] of [['category', '/deals/beauty-personal-care/', rules.categoryPhotos],
         ['deal', dealHref, rules.dealPhotos]]) {
+        enter(name);
         const sample = await context.newPage();
         sample.setDefaultTimeout(5000);
         try {
@@ -362,7 +388,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
           if (name === 'deal') {
             scene.working.deal = await dealPageProbe(sample, response?.status(), scene.cards[0], rules);
           }
-          const scan = await scanScreens(sample, '.card', deadline);
+          const scan = await scanScreens(sample, '.card', deadline, photoDeadline);
           scene.pageOptical.push({page: name, ...scan.optical, emptyAllowed: true});
           if (name === 'category') {
             scene.photosDeep.category = scan.photos;
@@ -372,7 +398,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
             const detail = sample.locator('[data-deal-detail]');
             const image = detail.locator('img:not(.grid img)').first();
             if (await image.count()) await image.scrollIntoViewIfNeeded();
-            scene.photosDeep.deal = [{photo: await photoState(detail, Math.max(1, Math.min(5000, deadline - Date.now())),
+            scene.photosDeep.deal = [{photo: await photoState(detail, Math.max(1, Math.min(5000, photoDeadline - Date.now())),
               'img:not(.grid img)')}];
           }
           if (response?.status() !== 200) throw new Error(name + ' page did not return 200');
@@ -381,6 +407,7 @@ async function capture(browser, mode, options, rules, pace, linkCache) {
           if (name === 'deal' || enabled) scene.errors.push(name + ': ' + error.message.split('\n')[0]);
         } finally {await sample.close().catch(() => {});}
       }
+      enter('search');
       try {scene.search = await searchProbe(page, ignored);}
       catch (error) {scene.search = {error: error.message.split('\n')[0]};}
     } catch (error) {scene.errors.push(error.message.split('\n')[0]);}
@@ -418,13 +445,14 @@ async function runWatch(options = {}) {
     takenAt: snapshot.takenAt, errors: [setupError]}));
   if (browser) {
     try {
-      const pace = pacer(), linkCache = new Map();
+      const pace = pacer(), firstLinks = new Map();
       rules.imageHosts = [...new Set([...rules.imageHosts, ...await publishedImageHosts(browser, options, pace)])];
       for (const mode of MODES) {
-        try {snapshot.scenes.push(await capture(browser, mode, options, rules, pace, linkCache));}
+        try {snapshot.scenes.push(await capture(browser, mode, options, rules, pace, firstLinks));}
         catch (error) {snapshot.scenes.push({name: mode.name, scheme: mode.scheme, takenAt: snapshot.takenAt,
           errors: [error.message.split('\n')[0]]});}
       }
+      await checkLinks(browser, options, pace, snapshot.scenes, firstLinks);
     } finally {await browser.close().catch(error => {
       snapshot.scenes.forEach(scene => scene.errors.push('browser close: ' + error.message.split('\n')[0]));
     });}
@@ -450,5 +478,5 @@ if (require.main === module) {
   runWatch(options).then(result => {process.exitCode = result.exitCode;})
     .catch(error => {console.error(error.message); process.exitCode = 1;});
 }
-module.exports = {runWatch, readConfig, pacer, offlineRoute, guardedRoute, searchProbe, firstScreenGlare,
+module.exports = {runWatch, readConfig, pacer, offlineRoute, guardedRoute, searchProbe, firstScreenGlare, checkLinks,
   watchContextErrors, publishedImageHosts, MODES, UA};
