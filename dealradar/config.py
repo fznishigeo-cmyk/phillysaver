@@ -663,6 +663,7 @@ class AppConfig:
     keepa_buybox_top_n: int = 0
     keepa_buybox_interval_min: float = 60.0
     keepa_recheck_surplus: bool = False
+    keepa_hourly_surplus_buybox: bool = False
     keepa_recheck_surplus_reserve: float = 650.0
     keepa_recheck_top_live_adaptive: bool = False
     keepa_reprice_min_pct: float = 1.0
@@ -1846,6 +1847,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "keepa", "recheck_top_live", default=cfg.keepa_recheck_top_live))
     for name in ("recheck_surplus", "recheck_top_live_adaptive"):
         setattr(cfg, "keepa_" + name, bool(g("keepa", name, default=False)))
+    cfg.keepa_hourly_surplus_buybox = g("keepa", "hourly_surplus_buybox", default=False)
+    if type(cfg.keepa_hourly_surplus_buybox) is not bool:
+        raise ValueError("keepa.hourly_surplus_buybox must be a boolean")
     cfg.keepa_recheck_adaptive = g("keepa", "recheck_adaptive", default={}) or {}
     cfg.keepa_tokens_per_minute = max(1.0, float(g(
         "keepa", "tokens_per_minute", default=cfg.keepa_tokens_per_minute)))

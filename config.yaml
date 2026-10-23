@@ -870,6 +870,7 @@ keepa:
   buybox_top_n: 120               # first N published wall positions; plain new Amazon only
   buybox_interval_min: 120         # paid requests and maximum Buy Box observation age
   recheck_surplus: true           # use predicted overflow before the next scheduled run
+  hourly_surplus_buybox: true     # hourly overflow funds top Buy Box checks within idle_lookahead_runs
   # Kept for the NEXT run while overflow is spent: its worst case (160 discovery + 120 top
   # reads * 4 = 640) minus the ~400 tokens refilled before it at 20/min (runs ~20 min
   # apart). 650 was sized for the 60/min plan and held 800 of 1,200 back (with the

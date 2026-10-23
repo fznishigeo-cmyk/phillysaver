@@ -11,9 +11,9 @@ import pytest
 import yaml
 
 from dealradar import critic_tiering, pipeline, rank
-from dealradar.config import load_config
+from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
-from dealradar.models import RawPost
+from dealradar.models import RawPost, SourceConfig
 from dealradar.parse import extractor
 from dealradar.parse.claude_client import critique_deals
 from dealradar.parse.schema import CriticVerdicts
@@ -22,6 +22,58 @@ from tests.history_pins import pre_haiku_only_raw
 from tests.http_helpers import HostClock
 from tests.test_critic_tiering import HAIKU, SONNET, add, tier_parser
 from tests.test_e2e_offline import env
+
+
+def test_hourly_surplus_buybox_config_defaults_and_toggle(tmp_path):
+    assert AppConfig().keepa_hourly_surplus_buybox is False
+    assert load_config().keepa_hourly_surplus_buybox is True
+    path = tmp_path / "config.yaml"
+    path.write_text("{}")
+    assert load_config(path).keepa_hourly_surplus_buybox is False
+    for enabled in (False, True):
+        path.write_text(yaml.safe_dump({"keepa": {"hourly_surplus_buybox": enabled}}))
+        assert load_config(path).keepa_hourly_surplus_buybox is enabled
+
+
+@pytest.mark.parametrize("value", [0, 1, "true", "false", None, [], {}])
+def test_hourly_surplus_buybox_config_rejects_non_boolean(tmp_path, value):
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump({"keepa": {"hourly_surplus_buybox": value}}))
+    with pytest.raises(ValueError, match="keepa.hourly_surplus_buybox"):
+        load_config(path)
+
+
+@pytest.mark.parametrize("fast_lane", [False, True])
+def test_fetch_time_price_recheck_keeps_lane_and_deadline(tmp_path, monkeypatch, fast_lane):
+    clock = HostClock()
+    monkeypatch.setattr(pipeline.time, "monotonic", clock)
+    adapter = SimpleNamespace(rate_limited=False)
+    monkeypatch.setattr("dealradar.fetch.registry.get_adapter", lambda *a, **kw: adapter)
+    discover = object()
+    seen = []
+
+    def run_source(source, adapter, fetcher, db, cfg, now, *, run_deadline):
+        adapter.recheck(discover, min(run_deadline, 57))
+        return [], True, ""
+
+    def recheck(db, cfg, now, **kwargs):
+        seen.append(kwargs)
+        return {"checked": 1}
+
+    monkeypatch.setattr("dealradar.fetch.base.run_source", run_source)
+    monkeypatch.setattr(pipeline, "_recheck_prices", recheck)
+    source = SourceConfig("keepa", "api", "https://api.keepa.com/deal", adapter="keepa", fast_lane=True)
+    fetcher, stats = SimpleNamespace(), {}
+    db = DB(tmp_path / "state.db")
+    try:
+        assert pipeline._fetch_all([source], fetcher, db, AppConfig(), offline.NOW,
+                                   500, fast_lane, price_recheck=stats) == ([], {})
+    finally:
+        db.close()
+    assert stats == {"checked": 1}
+    assert seen == [{"image_backfill": fast_lane, "fetcher": fetcher,
+                     "fast_lane": fast_lane, "deadline": 57,
+                     "overflow_discovery": discover, "rate_limited": False}]
 
 
 @pytest.mark.parametrize("structured", [False, True])
@@ -144,6 +196,7 @@ def test_pipeline_parse_stop_is_fast_lane_only(env, monkeypatch, fast_lane, fetc
     monkeypatch.setattr(pipeline, "_fetch_all", fetch)
     seen = {}
     real_parse, real_critic = pipeline._parse_new_posts, pipeline._run_critic
+    real_recheck = pipeline._recheck_prices
 
     def parse(*args, **kwargs):
         seen["parse"] = args[5]
@@ -153,8 +206,13 @@ def test_pipeline_parse_stop_is_fast_lane_only(env, monkeypatch, fast_lane, fetc
         seen["critic"] = kwargs["deadline"]
         return real_critic(*args, **kwargs)
 
+    def recheck(*args, **kwargs):
+        seen["recheck"] = (kwargs["fast_lane"], kwargs["image_backfill"], kwargs["deadline"])
+        return real_recheck(*args, **kwargs)
+
     monkeypatch.setattr(pipeline, "_parse_new_posts", parse)
     monkeypatch.setattr(pipeline, "_run_critic", critic)
+    monkeypatch.setattr(pipeline, "_recheck_prices", recheck)
     pipeline.run(db_path=env["db"], config_path=env["cfg"], fast_lane=fast_lane,
                  now=offline.NOW, sources_override=[], skip_validation=True,
                  transport=httpx.MockTransport(offline._handler),
@@ -163,7 +221,8 @@ def test_pipeline_parse_stop_is_fast_lane_only(env, monkeypatch, fast_lane, fetc
     # The hourly critic stops at fetch.paid_work_stop_s (it had no deadline).
     assert seen == {"parse": min(fetch_elapsed + cfg.fast_lane_parse_budget_s, cfg.run_budget_s - 90)
                    if fast_lane else cfg.run_budget_s - 90,
-                    "critic": cfg.run_budget_s - 45 if fast_lane else cfg.paid_work_stop_s}
+                    "critic": cfg.run_budget_s - 45 if fast_lane else cfg.paid_work_stop_s,
+                    "recheck": (fast_lane, fast_lane, cfg.run_budget_s - 45)}
 
 
 def test_no_paid_call_starts_after_the_paid_stop(tmp_path):

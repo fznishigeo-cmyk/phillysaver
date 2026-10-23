@@ -244,6 +244,22 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Hourly Keepa overflow (branch `keepa-leak`, 2026-10-23; uncommitted):**
+  Hourly #352 admitted only 10 Buy Box candidates despite a 350-token surplus:
+  ordinary cadence excluded other top deals before the surplus queue. New
+  strict `keepa.hourly_surplus_buybox` defaults false and ships true, admitting
+  early top reads within the existing idle lookahead only on hourly runs.
+  Their separate surplus label enforces overflow/premium costs in planning
+  and transport; ordinary published/Buy Box work keeps priority and funding.
+  Fast behavior, visitor 150 + next-run 250 reserves, 20/min plan, deadlines,
+  paid-work stop, evidence rules and money caps remain. Mocked full-bucket
+  checks spend 400 forecast tokens on top Buy Box then rest; rollback, reserve,
+  time, retry and same-run checks pass. Related-file selection: **331 passed
+  in 672.27s**, including offline rerun idempotency; final ordering-guard
+  follow-up: **17 hourly checks passed in 27.17s**. Diff check passes. Commands
+  and source-line diagnosis are in root `KEEPA_LEAK_REPORT.md` (remove before
+  commit). Remaining: review, deploy and measure live overflow/candidates.
+  No commit, push, live API call or full suite.
 - **Phone home LCP / taps (branch `phone-lcp`, 2026-10-23; `keep_first_cards` ON,
   committed, not pushed):** the drop module's first render replaced the server's
   whole card wall (`content.innerHTML`) with the same cards, and its open How box
