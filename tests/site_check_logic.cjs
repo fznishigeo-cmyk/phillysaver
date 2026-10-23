@@ -291,7 +291,7 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
       return {cards: 48, top: 0, clock: "10:00", tagline: "100 live deals", frontCards: [card]};
     },
   };
-  const context = {page, doc: stale, ...logic, URL, SITE, SITE_URL: new URL(SITE),
+  const context = {page, doc: stale, ...logic, URL, SITE, SITE_URL: new URL(SITE), siteRequests: 0,
     STEP_TIMEOUT_MS: 10000, checkFooter: () => [], eventLinks: () => [],
     fs: {readFileSync: () => ""}, path: {join: () => ""}, __dirname: "",
     check: (ok, reason) => assert(ok, reason)};
@@ -300,6 +300,129 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(shown.frontCards[0].category, "home");
   assert.equal(shown.frontCards[0].unidentified, false);
   assert.equal(listeners.has("response"), false);
+  // A retried Home identifies its cards from its own load, not the failed try's publish.
+  const load = page.goto;
+  let failed = false;
+  page.goto = async () => {
+    if (failed) return load();
+    failed = true;
+    listeners.get("response")({url: () => SITE + "deals.json?t=122", request: () => ({method: () => "GET"}),
+      ok: () => true, json: async () => stale});
+    throw new Error("page.goto: Timeout 60000ms exceeded.");
+  };
+  Object.assign(context, {retriesLeft: 3, RETRY_WAIT_MS: 60000, lastAbort: "", setTimeout: resolve => resolve()});
+  const [again, results] = await vm.runInNewContext(source.slice(start, end) +
+    '\nreturn [shown, results];\n}\nwalk(page, doc, "desktop");', context);
+  assert.equal(again.frontCards[0].category, "home");
+  assert.equal(again.frontCards[0].unidentified, false);
+  assert.equal(results[0].note, "retried after 60 s: passed (first try: page.goto: Timeout 60000ms exceeded.)");
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Operator 2026-10-23 ("check again a minute later before calling it a problem"): network
+// errors, timeouts and HTTP 5xx/429 are transient; content failures and our own request limit are not.
+{
+  const {transientFailure} = require("../scripts/site_check_logic.cjs");
+  for (const reason of ["about: fetch failed",  // #341, phone step 8
+      "page.goto: net::ERR_CONNECTION_RESET at https://wowpriced.com/", "page.goto: Timeout 60000ms exceeded.",
+      "page.waitForFunction: Timeout 10000ms exceeded.", "locator.waitFor: Timeout 40000ms exceeded.",
+      "robots.txt: The operation was aborted due to timeout", "about: terminated", "HTTP 503", "Join HTTP 502",
+      "deal-spotter HTTP 429", "sitemap.xml: fetch failed; fewer than 3 category hubs in sitemap",
+      "page.goto: net::ERR_FAILED at https://wowpriced.com/ (guard: Route is already handled!)"]) {
+    assert.equal(transientFailure(reason), true, reason);
+  }
+  for (const reason of ["HTTP 404", "HTTP 5030", "about: missing title", "footer link line changed", "page error",
+      "amazon-deal-checker: tool Amazon URL has wrong or duplicate tag", "1 bad Amazon links; example /dp/B012345678",
+      "source wall or filter still present", "publish missing, future, or >=45 minutes old", "about: site request limit (120)",
+      "page.goto: net::ERR_FAILED at https://wowpriced.com/deal/x/ (guard: site request limit (120))"]) {
+    assert.equal(transientFailure(reason), false, reason);
+  }
+}
+
+// The real step(): a transient failure runs the same action once more after the wait, at most
+// RETRIES_PER_RUN times per run (both devices). step() itself touches no page (this fake has no
+// goto or click): a retry re-runs only the step's own action, which never opens an Amazon link.
+(async () => {
+  const fs = require("node:fs"), vm = require("node:vm");
+  const source = fs.readFileSync(require("node:path").join(__dirname, "../scripts/site_check.js"), "utf8");
+  const [, wait, cap] = source.match(/\nconst RETRY_WAIT_MS = (\d+), RETRIES_PER_RUN = (\d+);\n/).map(Number);
+  assert.deepEqual([wait, cap], [60000, 3]);
+  const head = source.slice(source.indexOf("async function walk("), source.indexOf('  await step(1, "Home"'));
+  const listeners = new Map(), waits = [];
+  const context = {...require("../scripts/site_check_logic.cjs"), RETRY_WAIT_MS: wait,
+    setTimeout: (resolve, ms) => { waits.push(ms); resolve(); }};
+  const walk = vm.runInNewContext(head + "\nfor (const [n, name, action] of steps) await step(n, name, action);\n" +
+    "return JSON.stringify({results, errors});\n}\nwalk", context);
+  const page = {on: (event, fn) => listeners.set(event, fn)};
+  const run = async (steps, {retriesLeft = cap, lastAbort = ""} = {}) => {
+    waits.length = 0;
+    Object.assign(context, {steps, retriesLeft, lastAbort, siteRequests: 50});
+    return JSON.parse(await walk(page, {}, "desktop"));
+  };
+  const tries = (...outcomes) => {
+    const action = async () => {
+      const outcome = outcomes[action.calls++];
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    };
+    action.calls = 0;
+    return action;
+  };
+
+  // A transient failure, then a pass: green, with a note that keeps the flake visible.
+  const home = tries(Error("page.goto: net::ERR_CONNECTION_RESET at https://wowpriced.com/\nCall log: ..."), undefined);
+  const tools = tries(Error("deal-spotter HTTP 503"), "tool pages ok");
+  let out = await run([[1, "Home", home], [15, "Tools", tools]]);
+  assert.deepEqual(out.results, [
+    {n: 1, name: "Home", ok: true,
+     note: "retried after 60 s: passed (first try: page.goto: net::ERR_CONNECTION_RESET at https://wowpriced.com/)"},
+    {n: 15, name: "Tools", ok: true, note: "tool pages ok; retried after 60 s: passed (first try: deal-spotter HTTP 503)"}]);
+  assert.deepEqual([home.calls, tools.calls, waits, context.retriesLeft], [2, 2, [60000, 60000], 1]);
+
+  // A transient failure twice: red, after one retry.
+  const about = tries(Error("about: fetch failed"), Error("about: fetch failed"));
+  const deal = tries(Error("page.goto: Timeout 60000ms exceeded."), Error("missing Get deal link"));
+  out = await run([[8, "Public pages / hubs", about], [13, "deal page / screenshot", deal]]);
+  assert.deepEqual(out.results, [
+    {n: 8, name: "Public pages / hubs", ok: false, reason: "about: fetch failed (failed again 60 s later)"},
+    {n: 13, name: "deal page / screenshot", ok: false,
+     reason: "missing Get deal link (failed again 60 s later; first try: page.goto: Timeout 60000ms exceeded.)"}]);
+  assert.deepEqual([about.calls, deal.calls, waits], [2, 2, [60000, 60000]]);
+
+  // Content failures, and our own request limit, fail at once: no wait, no retry.
+  const footer = tries(Error("footer link line changed"));
+  const tag = tries(Error("amazon-deal-checker: tool Amazon URL has wrong or duplicate tag"));
+  out = await run([[1, "Home", footer], [15, "Tools", tag]]);
+  assert.deepEqual(out.results.map(r => [r.ok, r.reason]),
+    [[false, "footer link line changed"], [false, "amazon-deal-checker: tool Amazon URL has wrong or duplicate tag"]]);
+  assert.deepEqual([footer.calls, tag.calls, waits, context.retriesLeft], [1, 1, [], cap]);
+  const limited = tries(Error("page.goto: net::ERR_FAILED at https://wowpriced.com/best-deals-today/"), undefined);
+  out = await run([[14, "best-today page / screenshot", limited]], {lastAbort: "site request limit (120)"});
+  assert.deepEqual(out.results.map(r => [r.ok, r.reason]), [[false,
+    "page.goto: net::ERR_FAILED at https://wowpriced.com/best-deals-today/ (guard: site request limit (120))"]]);
+  assert.deepEqual([limited.calls, waits], [1, []]);
+
+  // The cap holds across both devices: the fourth transient failure of the run fails at once.
+  const flaky = () => tries(Error("HTTP 503"), undefined);
+  const desktop = [flaky(), flaky()], phone = [flaky(), flaky()];
+  out = await run(desktop.map((action, i) => [i + 1, "desktop", action]));
+  assert(out.results.every(r => r.ok) && context.retriesLeft === cap - 2);
+  out = await run(phone.map((action, i) => [i + 1, "phone", action]), {retriesLeft: context.retriesLeft});
+  assert.deepEqual(out.results.map(r => [r.ok, r.note || r.reason]),
+    [[true, "retried after 60 s: passed (first try: HTTP 503)"], [false, "HTTP 503"]]);
+  assert.deepEqual([...desktop, ...phone].map(a => a.calls), [2, 2, 2, 1]);
+  assert.equal(context.retriesLeft, 0);
+
+  // The failed try's requests and page errors do not count; the retry's do.
+  const reload = async () => {
+    context.siteRequests += 12;
+    listeners.get("pageerror")(`TypeError: Failed to fetch (try ${++reload.calls})`);
+    if (reload.calls === 1) throw Error("page.waitForFunction: Timeout 10000ms exceeded.");
+  };
+  reload.calls = 0;
+  out = await run([[1, "Home", reload]]);
+  assert.equal(out.results[0].ok, true);
+  assert.deepEqual(out.errors, ["TypeError: Failed to fetch (try 2)"]);
+  assert.equal(context.siteRequests, 62);
 })().catch(error => { console.error(error); process.exitCode = 1; });
 
 // Get deal source hosts fail at any of the first 48 positions, using the
