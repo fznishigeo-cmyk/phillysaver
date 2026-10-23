@@ -419,6 +419,8 @@ class AppConfig:
     search_focus_ring_keyboard_only: bool = False
     hide_timer_ticker_confetti: bool = False
     sticky_buy_bar: bool = False
+    tools_merge: bool = False          # Deal Checker + Discount Finder fold into the two Fakespot/ReviewMeta tools
+    soft_buttons: bool = False         # the two search buttons a little less bright
     tagline_full_row: bool = False
     price_shipping_note: bool = False
     tool_grade_event: bool = False     # GA4 tool_grade (A/B/C per tool) on every page's wpTrack
@@ -1293,6 +1295,12 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.sticky_buy_bar = g("sticky_buy_bar", default=False)
     if type(cfg.sticky_buy_bar) is not bool:
         raise ValueError("sticky_buy_bar must be a boolean")
+    cfg.tools_merge = g("tools_merge", default=False)
+    if type(cfg.tools_merge) is not bool:
+        raise ValueError("tools_merge must be a boolean")
+    cfg.soft_buttons = g("soft_buttons", default=False)
+    if type(cfg.soft_buttons) is not bool:
+        raise ValueError("soft_buttons must be a boolean")
     cfg.tagline_full_row = g("tagline_full_row", default=False)
     if type(cfg.tagline_full_row) is not bool:
         raise ValueError("tagline_full_row must be a boolean")

@@ -244,6 +244,43 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Tools merge (C36/A42, branch `tools-merge`, 2026-10-23; ON):** operator
+  "CONFIRMED GO AHEAD, please use those reference videos", "push it through
+  when its done", then ~01:55Z keep the old addresses for organic search.
+  `tools_merge: true` (strict bool, default false; `publish/tools_merge.py`).
+  Fake Deal Spotter takes Fakespot's home (order how-it-works, stores, dark
+  band, "Love" band with "See today's best deals" -> /best-deals-today/, grey
+  "trusted guide" band with tabs Price grade / 90-day price history / Price
+  details / Find discounts and HTML illustrations, footer columns wowpriced /
+  Tools / Support / Social) and report (blue analyzer + "wowpriced recommends"
+  strip; header photo/title/"Checked on Amazon N min ago"/category with the
+  big A/B/C box, "What does this mean?" and Get this deal on Amazon; rows
+  Price details, Overview, On wowpriced, Top sellers like this, Review
+  signals; "Today's top deals" sidebar; "Was this analysis helpful?" ->
+  GA4-only `tool_feedback`). No Price history row: Amazon history is `hide`
+  and the lookup is history=0. /amazon-deal-checker/ and
+  /amazon-discount-finder/ are keyword landing pages (own title, description,
+  H1, intro, FAQ, self-canonical, in the sitemap) whose tool is the spotter;
+  no 301s. Typed words never call /api/search: one box with the Discount
+  Finder's Amazon discounts link, the highly rated link and matching deals
+  from /deals.json. Review Checker drops the old tools from its menus and
+  shows one "Price check" row: search.js computes the grade from the review
+  lookup's own stats when search-config.json has `tools_merge` (no extra
+  token); the spotter grade gains `usual_pct` (% vs the 90-day average).
+  Needs both tools on (else inert). Homepage: the blue button is
+  "Fake Deal Spotter →" (/deal-spotter/?q=), the purple one "Review Checker →"
+  (/review-checker/?q=); events unchanged per slot plus `tool`. The live
+  site check takes the merged path when config.yaml says so. Pins:
+  `pre_tools_merge` (+ raw pops). Ads final URL stays /amazon-deal-checker/.
+- **Softer search buttons (2026-10-23; ON):** `soft_buttons: true`
+  (`publish/soft_buttons.py`): same hues ~15% less saturated, 6% darker,
+  glows 40% weaker: the --pill-colors/--pill-glow values are rewritten in
+  place in header-polish.css / page-polish.css (no added bytes; the phone CSS
+  budget is nearly full); white text >= 5.4:1. Pin `pre_soft_buttons`.
+- **Shipping note (C16, 2026-10-23; not behind a switch):** a Buy Box price
+  with no item/shipping split carries `price_includes_shipping` and the
+  spotter shows "incl. shipping" under it; scripts/tools_live_check.js prints
+  `shipping=`.
 - **Tool-page events (2026-10-22, branch `tool-events`, not pushed):** on
   /deal-spotter/ and /review-checker/ every click on an amazon.com link in
   the tool area (photo, title, grade, buttons, typed-name button) sends the

@@ -76,6 +76,7 @@ def test_off_missing_back_preserve_pre_edit_bytes(tmp_path, mode):
 def test_on_copy_no_meter_faq_and_published_clouds(tmp_path, hero):
     cfg = load_config()
     cfg.tool_faq_wording = False  # task 339 copy; the 2026-10-20 wording has its own test
+    cfg.tools_merge = False  # the old tool pages; tools_merge has its own test
     cfg.tool_pages_hero = hero
     out, doc, *_ = render(tmp_path, cfg, rows())
     css, js = ((out / ('tool-pages.' + ext)).read_text() for ext in ('css', 'js'))
@@ -194,6 +195,7 @@ def test_phone_gzip_reserve(tmp_path, variant):
 def test_emitted_timing_and_browser_syntax(tmp_path):
     cfg = load_config()
     cfg.affiliate_amazon_tag = 'example-20'
+    cfg.tools_merge = False  # the old tool pages; tools_merge has its own test
     out, *_ = render(tmp_path, cfg, rows())
     for args in (['node', '--check', str(out / 'tool-pages.js')],
                  ['node', 'tests/tool_pages_1020_logic.cjs', str(out / 'tool-pages.js')],

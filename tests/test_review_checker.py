@@ -12,7 +12,7 @@ from tests.test_support import NOW, render
 from tests.test_publish_site import make_deal
 from tests.test_pwa import tree_hash
 from tests.test_home_comment_strip import files
-from tests.history_pins import pre_deal_spotter
+from tests.history_pins import pre_deal_spotter, pre_tools_merge
 
 
 def deals():
@@ -50,6 +50,7 @@ def test_shipped_off_matches_pre_edit_hash(tmp_path, monkeypatch):
 def test_off_missing_on_rerun_back_to_off_bytes(tmp_path,monkeypatch,support,open_access):
     monkeypatch.setattr(site,'util_now',lambda:NOW)
     cfg=load_config();cfg.support_enabled=support;cfg.paywall_open_access=open_access
+    cfg.tools_merge=False  # task 367's own on/off bytes; the merge needs both tools (test_tools_merge)
     cfg.review_checker={}
     out,*_=render(tmp_path,cfg,deals());before=files(out)
     cfg.review_checker=validated_review_checker({})
@@ -66,7 +67,7 @@ def test_off_missing_on_rerun_back_to_off_bytes(tmp_path,monkeypatch,support,ope
 
 def test_published_facts_links_and_schema(tmp_path,monkeypatch):
     monkeypatch.setattr(site,'util_now',lambda:NOW)
-    cfg=load_config();out,doc,*_=render(tmp_path,cfg,deals())
+    cfg=pre_tools_merge(load_config());out,doc,*_=render(tmp_path,cfg,deals())  # merged: test_tools_merge
     html=(out/'review-checker/index.html').read_text()
     # Each card checks from its title link and its View Report bar (operator 2026-10-22: ReviewMeta layout).
     assert html.count('data-check-asin=')==12 and html.count('class="view-report"')==6
@@ -103,7 +104,7 @@ def test_pure_logic_and_emitted_js(tmp_path):
 
 def test_browser_all_sizes_and_states(tmp_path,monkeypatch):
     monkeypatch.setattr(site,'util_now',lambda:NOW)
-    out,*_=render(tmp_path,load_config(),deals())
+    out,*_=render(tmp_path,pre_tools_merge(load_config()),deals())  # merged report: tools_merge_browser.cjs
     result=subprocess.run(['node','tests/review_checker_browser.cjs',str(out),str(tmp_path)],capture_output=True,text=True,timeout=180)
     if result.returncode==77:pytest.skip(result.stdout.strip())
     assert result.returncode==0,result.stdout+result.stderr

@@ -245,6 +245,8 @@ def test_1600_deal_publish_file_count(db, tmp_path):
     # Deal Spotter: two pages, four assets and the slim prices file; Review Checker: two pages, js + css.
     tools += (len(deal_spotter.SLUGS) + len(deal_spotter.ASSETS) + 1) if deal_spotter.enabled(cfg) else 0
     tools += (len(review_checker.PATHS) + 2) if review_checker.enabled(cfg) else 0
+    from dealradar.publish import tools_merge
+    tools -= 2 if tools_merge.enabled(cfg) and cfg.tool_pages['enabled'] else 0  # same two pages, no tool-pages.js/.css
     assert sum(p.is_file() for p in (tmp_path / "site").rglob('*')) == 1641 + 5 * 26 + clicks + products + events + search + shared + tools
 
 

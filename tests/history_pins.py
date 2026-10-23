@@ -450,6 +450,8 @@ def pre_card_click_1020(cfg):
 def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
+    config.pop("tools_merge", None)
+    config.pop("soft_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -533,6 +535,8 @@ def pre_hide_deal_site_links(cfg):
 def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
+    config.pop("tools_merge", None)
+    config.pop("soft_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -554,6 +558,8 @@ def pre_keepa_focus_finder(cfg):
 def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
+    config.pop("tools_merge", None)
+    config.pop("soft_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -633,6 +639,8 @@ def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
+    config.pop("tools_merge", None)
+    config.pop("soft_buttons", None)
     config.pop("price_shipping_note", None)
     config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
@@ -700,6 +708,20 @@ def pre_social_profiles(cfg):
     pre_sticky_buy_bar(cfg)
     pre_add_to_cart(cfg)
     pre_front_mix(cfg)
+    pre_tools_merge(cfg)
+    pre_soft_buttons(cfg)
+    return cfg
+
+
+def pre_tools_merge(cfg):
+    """Before Deal Checker and Discount Finder folded into the two tools (operator 2026-10-23)."""
+    cfg.tools_merge = False
+    return cfg
+
+
+def pre_soft_buttons(cfg):
+    """Before the two search buttons were made a little softer (operator 2026-10-23)."""
+    cfg.soft_buttons = False
     return cfg
 
 

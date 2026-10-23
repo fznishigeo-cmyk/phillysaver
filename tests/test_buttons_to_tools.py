@@ -75,6 +75,7 @@ def test_native_links_emitted_logic_and_tool_handoff(tmp_path, lazy, more):
     cfg.tools_new_tab = False  # same-tab links; the new tab has its own test
     cfg.checker_similar_heading = False  # 344 lead button; the heading button has its own test
     cfg.tool_buttons_outside = False  # buttons inside the bar; the outside layout has its own test
+    cfg.tools_merge = False  # the old tool pages; tools_merge has its own test
     cfg.search_analyze['lazy'] = lazy
     cfg.search_more['enabled'] = more
     cfg.affiliate_amazon_tag = 'example-20'

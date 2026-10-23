@@ -52,7 +52,7 @@ from . import tool_pages_1020
 from . import join_dialog
 from . import search_polish_1019
 from . import search_buttons_1019, search_discounts_button, card_click_1020, buttons_to_tools, amazon_price_cap, tools_new_tab, tool_buttons_outside, search_focus_ring, hide_timer_ticker
-from . import phone_tagline_count, timer_center, sticky_buy_bar
+from . import phone_tagline_count, timer_center, sticky_buy_bar, soft_buttons, tools_merge
 from . import timer_pill_ring
 from . import phone_timer_raise
 from . import search_circle
@@ -1205,6 +1205,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = hide_timer_ticker.site_version(site_version, cfg)
     site_version = sticky_buy_bar.site_version(site_version, cfg)
     site_version = front_mix.site_version(site_version, cfg)
+    site_version = soft_buttons.site_version(site_version, cfg)
+    site_version = tools_merge.site_version(site_version, cfg)
     if cfg.brand_pages:
         site_version = hashlib.sha256((site_version + "brand-pages").encode()).hexdigest()[:12]
     if cfg.open_box_scarcity or (cfg.front_page.get("appeal", {}).get("want") or {}).get("enabled"):
@@ -1501,6 +1503,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     search_focus_ring.publish(out, cfg)
     hide_timer_ticker.publish(out, cfg)
     sticky_buy_bar.publish(out, cfg)
+    soft_buttons.publish(out, cfg)
+    tools_merge.publish(out, cfg)
     from . import add_to_cart
     add_to_cart.publish(out, cfg)
     seo_paths.extend(tool_pages.publish(out, cfg, now, site_url, meta["disclosure"],

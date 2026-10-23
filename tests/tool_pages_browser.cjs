@@ -17,6 +17,7 @@ from tests.test_publish_site import make_deal
 now=datetime.now(timezone.utc)
 site.util_now=lambda:now
 cfg=load_config()
+cfg.tools_merge=False  # the old tool pages; tools_merge_browser.cjs covers the merged ones
 cfg.amazon_price_cap=False  # exact exit URLs; the $50 cap has its own test
 cfg.tools_new_tab=False  # same-tab navigation below; the new tab has its own test
 cfg.checker_similar_heading=False  # 344 lead button below; the heading button has its own test

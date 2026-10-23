@@ -116,6 +116,12 @@ function spotterAge(asOf) {
       ship.className = 'result-shipping';
       ship.textContent = '+ $' + (item.shipping_cents / 100).toFixed(2) + ' shipping';
       $('result-price').appendChild(ship);
+    } else if (item.price_includes_shipping === true) {
+      // Amazon's Buy Box price with shipping, when no item/shipping split came with it (C16).
+      var included = document.createElement('small');
+      included.className = 'result-shipping';
+      included.textContent = 'incl. shipping';
+      $('result-price').appendChild(included);
     }
     var listFact = Array.isArray(grade.facts) && grade.facts.find(fact => typeof fact === 'string' && /^\d+% below the list price$/.test(fact));
     $('result-list').textContent = Number.isSafeInteger(item.list_price_cents) && item.list_price_cents > item.price_cents ?

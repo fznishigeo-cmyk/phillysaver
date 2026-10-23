@@ -162,6 +162,43 @@ async function checkTools(page, tag) {
   } finally { await page.unroute("**/*", ownSiteOnly); }
 }
 
+// tools_merge (operator 2026-10-23): the homepage buttons open Fake Deal Spotter (blue) and
+// Review Checker (purple) with the typed words; the Deal Checker and Discount Finder
+// addresses are keyword landing pages for the spotter. Typed words open the discounts
+// box there without a lookup, so the run spends no Keepa tokens.
+async function checkMergedTools(page, tag) {
+  const started = Date.now(), words = "cupping set", query = "?q=" + encodeURIComponent(words);
+  const ownSiteOnly = route => new URL(route.request().url()).origin === SITE_URL.origin
+    ? route.fallback() : route.abort();
+  await page.route("**/*", ownSiteOnly);
+  try {
+    if (page.url() !== SITE) await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
+    try {
+      await page.locator("#q").fill(words);
+      await page.waitForFunction(query => document.querySelector("#search-discounts")?.getAttribute("href") ===
+        "/deal-spotter/" + query, query);
+      for (const [link, slug] of [[page.locator("#search-discounts:visible"), "deal-spotter"],
+                                  [page.locator("#analyze-search:visible"), "review-checker"]]) {
+        check(await link.getAttribute("href") === `/${slug}/${query}`, `${slug} home href changed`);
+        const target = await link.getAttribute("target"), rel = await link.getAttribute("rel") || "";
+        check(target === null || (target === "_blank" && /\bnoopener\b/.test(rel)), `${slug} home link target ${target}`);
+      }
+    } finally { await page.locator("#q").fill(""); }
+    for (const slug of ["deal-spotter", "amazon-deal-checker", "amazon-discount-finder"]) {
+      const response = await page.goto(SITE + slug + "/" + query, { waitUntil: "load", timeout: 60000 });
+      check(response && response.status() === 200, `${slug} HTTP ${response && response.status()}`);
+      check(await page.locator("#q").inputValue() === words, `${slug} did not fill query`);
+      const discounts = page.locator("#name-results .words-discounts");
+      await discounts.waitFor({ state: "visible", timeout: 20000 });
+      const result = checkToolAmazonUrl(await discounts.getAttribute("href"), tag, true);
+      check(result.ok, `${slug}: ${result.reason}`);
+      const rated = checkToolAmazonUrl(await page.locator("#name-results .name-button").getAttribute("href"), tag);
+      check(rated.ok, `${slug}: ${rated.reason}`);
+    }
+    return `home links; spotter and landing pages' typed-words boxes and Amazon URLs (unopened, no lookup); ${((Date.now() - started) / 1000).toFixed(1)}s`;
+  } finally { await page.unroute("**/*", ownSiteOnly); }
+}
+
 async function walk(page, doc, device) {
   const results = [], errors = [];
   const homePublishes = [];
@@ -426,7 +463,8 @@ async function walk(page, doc, device) {
   // Run step 15 while home is still loaded, before the other page visits.
   await step(15, "Tools", async () => {
     const config = fs.readFileSync(path.join(__dirname, "../config.yaml"), "utf8");
-    return checkTools(page, amazonTag(config));
+    const merged = /^tools_merge:[ \t]*true\b/m.test(config);
+    return (merged ? checkMergedTools : checkTools)(page, amazonTag(config));
   });
   // Browser visits replace step 8's old HTML fetches: one navigation each,
   // with the same content checks and request/analytics guard as home.

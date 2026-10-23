@@ -436,6 +436,10 @@ def head_snippet(cfg) -> str:
     if getattr(cfg, "tool_grade_event", False) is True:
         dispatch = dispatch.replace("  var EVENTS = {", "  var EVENTS = {\n"
                                     '    tool_grade: { ga4Only: true, methods: ["deal_a", "deal_b", "deal_c", "review_a", "review_b", "review_c"] },')
+    from . import tools_merge
+    if tools_merge.enabled(cfg):
+        # GA4-only "Was this analysis helpful?" answers; the homepage buttons name their tool.
+        dispatch = tools_merge.tracking(dispatch)
     if cfg.search_amazon and cfg.affiliate_amazon_tag:
         dispatch = dispatch.replace("    var ev = EVENTS[name];", """\
     if (name === "search_amazon") {
