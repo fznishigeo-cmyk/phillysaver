@@ -449,6 +449,7 @@ def pre_card_click_1020(cfg):
 # Task 319: historical fixtures keep Amazon used and their original schedules.
 def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
@@ -530,6 +531,7 @@ def pre_hide_deal_site_links(cfg):
 
 def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
@@ -549,6 +551,7 @@ def pre_keepa_focus_finder(cfg):
 
 def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
@@ -626,6 +629,7 @@ def pre_keepa_starter(cfg):
 def pre_keepa_starter_raw(config):
     """The same pins on a raw config.yaml mapping (for tests that write YAML)."""
     config.pop("hide_timer_ticker_confetti", None)
+    config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
@@ -689,6 +693,13 @@ def pre_social_profiles(cfg):
     """Before the real Facebook and Pinterest profiles were configured (operator 2026-10-22)."""
     cfg.social_profiles = {}
     pre_tool_grade_event(cfg)
+    pre_sticky_buy_bar(cfg)
+    return cfg
+
+
+def pre_sticky_buy_bar(cfg):
+    """Before the phone deal pages' sticky Get deal bar (operator 2026-10-22)."""
+    cfg.sticky_buy_bar = False
     return cfg
 
 

@@ -417,6 +417,7 @@ class AppConfig:
     timer_center: bool = False
     search_focus_ring_keyboard_only: bool = False
     hide_timer_ticker_confetti: bool = False
+    sticky_buy_bar: bool = False
     tagline_full_row: bool = False
     price_shipping_note: bool = False
     tool_grade_event: bool = False     # GA4 tool_grade (A/B/C per tool) on every page's wpTrack
@@ -1277,6 +1278,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.hide_timer_ticker_confetti = g("hide_timer_ticker_confetti", default=False)
     if type(cfg.hide_timer_ticker_confetti) is not bool:
         raise ValueError("hide_timer_ticker_confetti must be a boolean")
+    cfg.sticky_buy_bar = g("sticky_buy_bar", default=False)
+    if type(cfg.sticky_buy_bar) is not bool:
+        raise ValueError("sticky_buy_bar must be a boolean")
     cfg.tagline_full_row = g("tagline_full_row", default=False)
     if type(cfg.tagline_full_row) is not bool:
         raise ValueError("tagline_full_row must be a boolean")

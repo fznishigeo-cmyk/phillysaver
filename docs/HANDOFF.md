@@ -254,6 +254,19 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   home page, 1,063 of headroom left). Recorded hashes: `pre_tool_grade_event`.
   The pages' "Today's top deals" cards are outside the tool area and send
   nothing. Left: review and merge.
+- **Sticky Get deal bar (branch `sticky-buy`, 2026-10-22; ON, not pushed):**
+  operator: "yes great idea implement it", then "a bit more transparent ...
+  less obtrusive". `sticky_buy_bar: true` (strict bool, default false).
+  Phones only (<= 640px): each `/deal/<slug>/` page pins a 56px frosted-glass
+  bar (price + the main Get deal link with the same href/target/rel/data-*,
+  so `deal_click` and click-signal count it; no new event) once the main
+  button scrolls out of view above (IntersectionObserver), with a .2s fade,
+  safe-area padding and matching body padding so the footer stays readable.
+  Laptops unchanged; nothing opens without a tap. `publish/sticky_buy_bar.py`;
+  history fixtures pin it off via `pre_sticky_buy_bar` and raw pops.
+  Preview: wowpriced-reports `ops/shots/2026-10-22/sticky-button-preview-v2.png`.
+  Remaining: review, merge, deploy.
+
 - **Deal Spotter (Codex task 366, 2026-10-22; enabled, not deployed):**
   `deal_spotter.enabled` ships true. New `/deal-spotter/` and
   `/fakespot-alternative/` pages, sitemap entries, footer discovery and tool
