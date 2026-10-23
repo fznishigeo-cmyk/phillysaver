@@ -278,11 +278,33 @@ def test_mix_adds_no_markup_and_bounded_card_cost(tmp_path, monkeypatch):
     assert on_mean - off_mean <= 1000
 
 
-def test_browser_drops_match_the_server(tmp_path):
+def checkout_heavy():
+    """Live 2026-10-23: nearly every card in the drop was checkout-priced and
+    the women's items were clothing."""
+    rows = inventory(AMPLE)
+    for d in rows:
+        d.update(pick_checkout=True, cl=d["cl"] or d.get("mx") == "sexy_for_her")
+    return rows
+
+
+def test_checkout_heavy_drop_keeps_the_clothing_cap():
+    """Live first screens 2026-10-23 07:50Z: clothing 1, 1, 3, 3 per six. No card
+    fitted every rule and the drop took the next card blindly; now checkout
+    spacing gives way first (then category runs), so clothing and allure hold
+    (before the fix, drops 5 and 6 here had 3 clothing cards in cards 7-12)."""
+    for page in fresh_pages(checkout_heavy(), range(8)):
+        assert [sum(d["cl"] for d in page[i:i + 6]) <= 2 for i in range(0, 24, 6)] == [True] * 4
+        assert not any(d["allure"] for d in page[:2])
+        assert all(sum(d["allure"] for d in page[i:i + 4]) <= 1 for i in range(len(page)))
+        assert Counter(front_mix.label(d, TARGET) for d in page[:30]) == TARGET
+
+
+@pytest.mark.parametrize("heavy", [False, True])
+def test_browser_drops_match_the_server(tmp_path, heavy):
     cfg = load_config()
     cfg.tracking = {}
     out, *_ = render(tmp_path, cfg)
-    rows = inventory(dict(AMPLE, sexy_for_her=25, electronics=12))
+    rows = checkout_heavy() if heavy else inventory(dict(AMPLE, sexy_for_her=25, electronics=12))
     pool = drop_fresh.rotation(rows, cfg.front_page)
     data = tmp_path / "mix.json"
     data.write_text(json.dumps(dict(rows=rows, pool=[d["key"] for d in pool], pages=[

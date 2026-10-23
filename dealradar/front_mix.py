@@ -125,14 +125,17 @@ def _slice(pool, mark, size, found):
 
 def _base_page(pool, mark, options, policy, found):
     """drop_fresh._base_page over the mix slice; a bucket is never ahead of its
-    share, and every spacing rule still wins over the mix (it gives way first)."""
+    share, and every spacing rule still wins over the mix (it gives way first).
+    When no card fits every rule (live 2026-10-23: a drop of checkout-priced
+    cards), checkout spacing gives way, then category runs; clothing and
+    allure spacing hold instead of taking the next card blindly."""
     from .publish.drop_fresh import cheap
     if not pool:
         return []
     pending = _slice(pool, mark, options.get("fresh_page_size", 60), found)
     out = []
     target = min(19, sum(cheap(d) for d in pending), len(pending))
-    def fits(d):
+    def fits(d, level=0):
         pos = len(out)
         if d.get("allure") and policy["allure"] and (pos < policy["first"] or
                 any(r.get("allure") for r in out[max(0, pos - policy["allure"] + 1):])):
@@ -140,11 +143,15 @@ def _base_page(pool, mark, options, policy, found):
         if d.get("cl") and policy["clothing"] and pos < policy["slots"] and sum(
                 bool(r.get("cl")) for r in out[pos // policy["mix"] * policy["mix"]:]) >= policy["clothing"]:
             return False
-        if d.get("pick_checkout") and sum(bool(r.get("pick_checkout")) for r in
+        if level < 1 and d.get("pick_checkout") and sum(bool(r.get("pick_checkout")) for r in
                 out[max(0, pos - policy["promo"] + 1):]) >= policy["cap"]:
             return False
         run = options.get("max_same_category_run", 2)
-        return not (pos >= run and all(r.get("category") == d.get("category") for r in out[-run:]))
+        return level > 1 or not (pos >= run and all(r.get("category") == d.get("category") for r in out[-run:]))
+    def loose(d):
+        return fits(d, 1)
+    def looser(d):
+        return fits(d, 2)
     categories = Counter(d.get("category") for d in pending)
     total = len(pending)
     taken, weight = Counter(), sum(found.values())
@@ -173,7 +180,8 @@ def _base_page(pool, mark, options, policy, found):
             -int(bool(pending[i].get("allure"))) - int(bool(pending[i].get("pick_checkout"))),
             -int(len(out) < 24 and cheap(pending[i])), i))
         at = None
-        for tests in ((fits, mixed, room), (fits, mixed), (fits, room), (fits,)):
+        for tests in ((fits, mixed, room), (fits, mixed), (fits, room), (fits,),
+                      (loose, room), (loose,), (looser, room), (looser,)):
             if at is None:
                 at = next((i for i in choices if all(test(pending[i]) for test in tests)), None)
         d = pending.pop(at or 0)
@@ -242,6 +250,21 @@ SWAPS = (
     var pending = Array.from({length:Math.min(size,pool.length)}, (_,i) => pool[(start+i)%pool.length]), out = [];
 """, """    var pending = freshSlice(pool, mark), out = [];
 """),
+    ("""    function fits(d) {
+      var pos = out.length, run = options.max_same_category_run || 2;
+      if (d.allure && p.allure && (pos < p.first || out.slice(Math.max(0,pos-p.allure+1)).some(r => r.allure))) return false;
+      if (d.cl && p.clothing && pos < p.slots && out.slice(Math.floor(pos/p.mix)*p.mix).filter(r => r.cl).length >= p.clothing) return false;
+      if (d.pick_checkout && out.slice(Math.max(0,pos-p.promo+1)).filter(r => r.pick_checkout).length >= p.cap) return false;
+      return !(pos >= run && out.slice(-run).every(r => r.category === d.category));
+    }
+""", """    function fits(d, level) {
+      var pos = out.length, run = options.max_same_category_run || 2;
+      if (d.allure && p.allure && (pos < p.first || out.slice(Math.max(0,pos-p.allure+1)).some(r => r.allure))) return false;
+      if (d.cl && p.clothing && pos < p.slots && out.slice(Math.floor(pos/p.mix)*p.mix).filter(r => r.cl).length >= p.clothing) return false;
+      if (!level && d.pick_checkout && out.slice(Math.max(0,pos-p.promo+1)).filter(r => r.pick_checkout).length >= p.cap) return false;
+      return level > 1 || !(pos >= run && out.slice(-run).every(r => r.category === d.category));
+    }
+"""),
     ("""      categories.set(d.category,(categories.get(d.category)||0)+1);
     });
 """, """      categories.set(d.category,(categories.get(d.category)||0)+1);
@@ -269,12 +292,12 @@ SWAPS = (
       var d = pending.splice(at,1)[0]; out.push(d);
       categories.set(d.category,categories.get(d.category)-1);
     }
-""", """    function choose(need, due) {
+""", """    function choose(need, due, level) {
       var at = -1, fallback = -1, best = -1, backup = -1;
       for (var i = 0; i < pending.length; i++) {
         var d = pending[i], cheap = freshCheap(d);
         var priority = 8*(need && cheap)+2*(!!d.allure + !!d.pick_checkout)+(out.length<24 && cheap);
-        if (priority <= best || !fits(d) || due && !mixed(d)) continue;
+        if (priority <= best || !fits(d, level) || due && !mixed(d)) continue;
         if (priority > backup) { fallback = i; backup = priority; }
         if (room(d)) { at = i; best = priority; }
       }
@@ -282,8 +305,9 @@ SWAPS = (
     }
     while (pending.length) {
       var need = out.length < 24 && 24-out.length <= target-out.slice(0,24).filter(freshCheap).length;
-      var at = due() ? choose(need, true) : -1;
-      if (at < 0) at = choose(need, false);
+      var at = due() ? choose(need, true, 0) : -1;
+      // No card fits every rule: checkout spacing gives way, then category runs.
+      for (var level = 0; at < 0 && level < 3; level++) at = choose(need, false, level);
       var d = pending.splice(Math.max(at,0),1)[0]; out.push(d);
       categories.set(d.category,categories.get(d.category)-1);
       taken[freshLabel(d)]++; left[freshLabel(d)]--;
