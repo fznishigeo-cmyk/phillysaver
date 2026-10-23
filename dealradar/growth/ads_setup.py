@@ -3,8 +3,9 @@
 The operator enables it in Google Ads. Nothing here enables a campaign,
 changes an existing one, or raises a budget; the guard keeps watching it.
 The only addition to an existing campaign is a missing ads.setup.ad_groups
-entry, created PAUSED inside the same campaign and budget. The only change
-(update_ads) swaps each ad group's ad headlines/descriptions for the config copy.
+entry, created PAUSED inside the same campaign and budget. The only changes:
+(update_ads) swaps each ad group's ad headlines/descriptions for the config copy;
+(add_keywords) adds the config keywords an existing ad group lacks.
 Settings live in config.yaml ads.setup. See docs/ads-guard.md.
 """
 from __future__ import annotations
@@ -317,13 +318,79 @@ def update(cfg, now, client, *, validate_only=False) -> int:
     return 0
 
 
-def run(cfg, *, now=None, http_client=None, validate_only=False, update_ads=False) -> int:
+def add_missing_keywords(cfg, now, client, *, validate_only=False) -> int:
+    """Add each config keyword an existing ad group lacks (operator A50 2026-10-23: "add
+    phrases"; still $0.40 max/click, $5/day). Only ENABLED PHRASE keywords with no bid of
+    their own (the campaign's Maximize clicks ceiling applies): no campaign, budget, bidding,
+    ad group status, ad or negative is written. Google validates first; a keyword already
+    there (any case) gets no write, so a re-run is a no-op."""
+    try:
+        p = plan(cfg, now)
+    except ValueError as exc:
+        log.error("ads_setup: %s; nothing added", exc)
+        return 1
+    wanted = {p["name"] + " ad group": p["keywords"], **{g["name"]: g["keywords"] for g in p["ad_groups"]}}
+    where = (f"WHERE campaign.name = '{p['name']}' AND campaign.status != 'REMOVED' "
+             "AND ad_group.status != 'REMOVED'")
+    try:
+        api = google_ads.GuardAPI(client, cfg)
+        found = api.search("SELECT campaign.resource_name, campaign.status FROM campaign WHERE campaign.name = "
+                           f"'{p['name']}' AND campaign.status != 'REMOVED'")
+        if not found:
+            log.error("ads_setup: campaign not found; nothing added (run setup first)")
+            return 1
+        groups = {r["adGroup"].get("name"): r["adGroup"] for r in api.search(
+            "SELECT ad_group.resource_name, ad_group.name, ad_group.status FROM ad_group " + where)}
+        have = {}
+        for r in api.search(
+                "SELECT ad_group.name, ad_group_criterion.keyword.text FROM ad_group_criterion " + where
+                + " AND ad_group_criterion.status != 'REMOVED' AND ad_group_criterion.negative = FALSE"
+                " AND ad_group_criterion.type = 'KEYWORD'"):
+            keyword = r.get("adGroupCriterion", {}).get("keyword") or {}
+            have.setdefault(r["adGroup"].get("name"), set()).add(str(keyword.get("text", "")).lower())
+        ops, added = [], {}
+        for name, keywords in wanted.items():
+            if name not in groups:
+                log.warning("ads_setup: no ad group %s in the campaign; skipped", name)
+                continue
+            seen, new = have.get(name, set()), []
+            for t in keywords:
+                if t.lower() not in seen:
+                    seen.add(t.lower())
+                    new.append(t)
+            added[name] = len(new)
+            ops += [{"adGroupCriterionOperation": {"create": {
+                "adGroup": groups[name]["resourceName"], "status": "ENABLED",
+                "keyword": {"text": t, "matchType": "PHRASE"}}}} for t in new]
+        if ops:
+            url = MUTATE.format(api.version, api.customer)
+            _mutate(client, url, api.headers, {"mutateOperations": ops, "validateOnly": True}, "validate")
+            if not validate_only:
+                _mutate(client, url, api.headers, {"mutateOperations": ops}, "create")
+    except Exception as exc:
+        log.error("ads_setup: failed, nothing added: %s", ads_guard._error(exc))
+        return 1
+    for name, n in added.items():
+        log.info("ads_setup: keywords for %s (%s): %d %s", name, groups[name].get("status"), n,
+                 "validated (not added)" if validate_only else "added")
+    if not ops:
+        log.info("ads_setup: all %d keywords already present; nothing added",
+                 sum(len(wanted[name]) for name in added))
+    else:
+        log.info("ads_setup: %s %d PHRASE keyword(s) with no bid; campaign (%s), budget, bidding and "
+                 "statuses unchanged", "validated (not added)" if validate_only else "added", len(ops),
+                 found[0]["campaign"].get("status"))
+    _quality(api, p["name"])
+    return 0
+
+
+def run(cfg, *, now=None, http_client=None, validate_only=False, update_ads=False, add_keywords=False) -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     client = http_client or httpx.Client(timeout=30, follow_redirects=False)
+    mode = update if update_ads else add_missing_keywords if add_keywords else setup
     try:
-        return (update if update_ads else setup)(cfg, now or now_utc(), ads_guard.PacedClient(client, cfg),
-                                                  validate_only=validate_only)
+        return mode(cfg, now or now_utc(), ads_guard.PacedClient(client, cfg), validate_only=validate_only)
     finally:
         if http_client is None:
             client.close()

@@ -1,6 +1,7 @@
 # One-time: create the ads.setup Search campaign PAUSED. No state, no email.
 # The operator enables it in Google Ads; the hourly guard keeps watching it.
 # update_ads: only swap each ad group's ad headlines/descriptions for the config copy.
+# add_keywords: only add config keywords missing from each ad group (phrase, no bid).
 name: ads setup
 
 on:
@@ -12,6 +13,10 @@ on:
         default: true
       update_ads:
         description: "Replace each ad group's ad headlines/descriptions with config.yaml (nothing else)"
+        type: boolean
+        default: false
+      add_keywords:
+        description: "Add config.yaml keywords missing from each ad group, phrase match, no bid (nothing else)"
         type: boolean
         default: false
 
@@ -35,15 +40,17 @@ jobs:
       - name: Install dealradar
         run: pip install -e .
 
-      - name: Create the campaign (paused) or update its ad text
+      - name: Create the campaign (paused), update its ad text or add keywords
         env:
           GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
           GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
           GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
           VALIDATE_ONLY: ${{ inputs.validate_only }}
           UPDATE_ADS: ${{ inputs.update_ads }}
+          ADD_KEYWORDS: ${{ inputs.add_keywords }}
         run: |
           flags=""
           if [ "$VALIDATE_ONLY" != "false" ]; then flags="--validate-only"; fi
           if [ "$UPDATE_ADS" = "true" ]; then flags="$flags --update-ads"; fi
+          if [ "$ADD_KEYWORDS" = "true" ]; then flags="$flags --add-keywords"; fi
           python -m dealradar ads-setup $flags

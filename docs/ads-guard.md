@@ -99,6 +99,13 @@ finds the group's one responsive search ad and updates it in place (AdService,
 request; `validate_only` stops there. It never writes a status, URL, keyword,
 bid, budget or campaign, and an ad already showing the copy gets no write.
 
+Keywords (operator A50 2026-10-23, "add phrases": still $0.40 max/click, $5/day):
+the `add_keywords` input (`--add-keywords`) adds each configured keyword an
+existing ad group lacks (case-insensitive), PHRASE match and ENABLED, with no bid
+of its own, after Google validates; `validate_only` stops there. It never writes
+a campaign, budget, bidding, ad group status, ad or negative, and skips a missing
+ad group; a re-run with every keyword present writes nothing.
+
 ## Every guard run
 
 `python -m dealradar ads-guard` uses the existing OAuth secrets
