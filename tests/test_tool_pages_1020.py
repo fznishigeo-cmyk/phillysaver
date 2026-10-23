@@ -10,7 +10,7 @@ from dealradar.config import AppConfig, load_config
 from dealradar.publish import tool_hero, tool_pages, tool_pages_1020 as feature
 from dealradar.publish.seo_audit import Page
 from scripts.publication_budget import analyze
-from tests.history_pins import pre_tool_pages_1020
+from tests.history_pins import pre_front_mix, pre_tool_pages_1020
 from tests.phone_budget_fixture import publish_fixture, visible_offer_count
 from tests.test_home_comment_strip import files
 from tests.test_pwa import tree_hash
@@ -178,7 +178,9 @@ def test_home_links_public_scope_variants_and_idempotence(tmp_path, variant):
 
 @pytest.mark.parametrize('variant', ['chips', 'line'])
 def test_phone_gzip_reserve(tmp_path, variant):
-    cfg = load_config()
+    # The reserve measures markup growth on a fixed card slice; the mix's card
+    # selection is covered by test_front_mix's worst-drop test.
+    cfg = pre_front_mix(load_config())
     cfg.phone_budget['enabled'] = True
     cfg.tool_pages_1020_home_links = True
     cfg.tool_pages_1020_phone_links = variant
