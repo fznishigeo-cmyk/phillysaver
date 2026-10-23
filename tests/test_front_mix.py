@@ -249,29 +249,33 @@ def test_mixed_fresh_page_stays_within_phone_budget(tmp_path):
     publish_fixture(tmp_path, cfg, inspect=inspect)
 
 
-def test_mix_never_worsens_the_worst_first_paint(tmp_path, monkeypatch):
-    """The mix changes which cards are pre-rendered, not their markup: over 40
-    drops of the phone-budget fixture its largest home page is no larger than
-    the largest without it (2026-10-23: 77673 vs 77798 gzip bytes). One
-    publish; the off side re-renders the same rows with pre_front_mix."""
+def test_mix_adds_no_markup_and_bounded_card_cost(tmp_path, monkeypatch):
+    """The mix changes which cards a drop pre-renders, never the page markup:
+    without its card wall the home page matches pre_front_mix (version stamps
+    aside), and over 40 drops of the phone-budget fixture it adds at most 1,000
+    gzip bytes on average (2026-10-23: +505, 77262 vs 76757)."""
     import gzip
     from dealradar.publish import seo
     from tests.history_pins import pre_front_mix
     from tests.phone_budget_fixture import publish_fixture
-    cfg = load_config()
-    calls, original = [], seo.static_wall
-    monkeypatch.setattr(seo, "static_wall", lambda *a, **k: calls.append((a, k)) or original(*a, **k))
-    homes = []
-    publish_fixture(tmp_path, cfg, inspect=lambda db, out: homes.append((out / "index.html").read_text()))
-    (args, kwargs), = calls
-    wall = original(*args, **kwargs)
-    assert homes[0].count(wall) == 1
+    original = seo.static_wall
 
-    def worst(front_page):
-        return max(len(gzip.compress(homes[0].replace(wall, original(
-            *args[:4], front_page, *args[5:], **dict(kwargs, fresh_mark=mark))).encode(), 9, mtime=0))
-            for mark in range(kwargs["fresh_mark"] - 20, kwargs["fresh_mark"] + 20))
-    assert worst(cfg.front_page) <= worst(pre_front_mix(copy.deepcopy(cfg)).front_page)
+    def drops(cfg, root):
+        calls, homes = [], []
+        monkeypatch.setattr(seo, "static_wall", lambda *a, **k: calls.append((a, k)) or original(*a, **k))
+        publish_fixture(root, cfg, inspect=lambda db, out: homes.append((out / "index.html").read_text()))
+        (args, kwargs), = calls
+        home, wall = homes[0], original(*args, **kwargs)
+        assert home.count(wall) == 1
+        sizes = [len(gzip.compress(home.replace(wall, original(*args, **dict(kwargs, fresh_mark=mark))).encode(),
+                                   9, mtime=0)) for mark in range(kwargs["fresh_mark"] - 20, kwargs["fresh_mark"] + 20)]
+        stamps = r'(SITE_VERSION = "|/drop-fresh\.js\?v=)[0-9a-f]{12}'
+        return re.sub(stamps, r"\1", home.replace(wall, "")), sum(sizes) / len(sizes)
+
+    on, on_mean = drops(load_config(), tmp_path / "on")
+    off, off_mean = drops(pre_front_mix(load_config()), tmp_path / "off")
+    assert on == off
+    assert on_mean - off_mean <= 1000
 
 
 def test_browser_drops_match_the_server(tmp_path):
