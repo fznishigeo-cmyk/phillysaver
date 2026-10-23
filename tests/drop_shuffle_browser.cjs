@@ -166,7 +166,7 @@ assert titles == [d['item'] for d in expected], 'static paint must use publicati
         assert.deepEqual(await order(),current,'exact reload in the current mark');
         assert.equal(await page.locator('.just-dropped').count(),0,'reload does not replay a moment');
         await page.locator('#fresh-all').click();
-        assert((await page.locator('#cattabs .cattab').nth(1).getAttribute('class')).includes('active'));
+        assert((await page.locator('#cattabs .cattab[data-i="1"]').getAttribute('class')).includes('active'));
         checkSpacing(await order());
         await page.goBack();
         await page.waitForTimeout(800);

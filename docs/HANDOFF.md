@@ -244,6 +244,20 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **"Best today" home pill (A48, branch `best-tab`, 2026-10-23; ON, committed,
+  not pushed):** operator ~20:00Z: "yes add that button" (/best-deals-today/
+  had no homepage link). `best_today_tab: true` (strict bool, default false;
+  `publish/best_today_tab.py`): a `.cattab` link right after Trending in the
+  home row, no `data-i`, so renderTabs redraws it in place and binds filters
+  only to `.cattab[data-i]`. No GA4 event (no generic nav-link event exists).
+  Off: no byte (`pre_best_today_tab`). Real Chromium: phones keep one sideways
+  row (52px), 1280 wraps to two lines either way; desktop windows ~920-1030px
+  wide get a third line (+51px, static from first paint). Phone budget: home
+  HTML gzip +61 bytes (fixture headroom 1,012 → 951: under the ceiling, below
+  the tests' 1,000 reserve, which was already nearly used up); the two reserve
+  tests pin it off and `test_phone_budget_cost_is_bounded` caps it (HTML <= 64,
+  inline JS <= 40). Operator call: accept, or win bytes back elsewhere. Tests
+  `tests/test_best_today_tab.py` (runs `tests/best_today_tab_browser.cjs`).
 - **Phone home LCP / taps (branch `phone-lcp`, 2026-10-23; `keep_first_cards` ON,
   committed, not pushed):** the drop module's first render replaced the server's
   whole card wall (`content.innerHTML`) with the same cards, and its open How box

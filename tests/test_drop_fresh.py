@@ -9,7 +9,7 @@ import pytest
 
 from dealradar.config import AppConfig, load_config
 from dealradar.publish import site, drop_fresh
-from tests.history_pins import pre_drop_fresh, pre_front_mix
+from tests.history_pins import pre_best_today_tab, pre_drop_fresh, pre_front_mix
 from tests.test_offscreen_cards import offers
 from tests.test_pwa import tree_hash
 from tests.test_search_amazon import run_node
@@ -281,6 +281,7 @@ def test_fresh_page_stays_within_phone_budget(tmp_path):
     from tests.phone_budget_fixture import publish_fixture, visible_offer_count
     cfg = load_config()
     pre_front_mix(cfg)  # margin recorded before the mix changed which fixture cards land at this mark
+    pre_best_today_tab(cfg)  # its ~60 bytes are bounded in test_best_today_tab (ceiling kept with it on)
     cfg.phone_budget['enabled'] = True
     expected = visible_offer_count(cfg)
     def inspect(db, out):

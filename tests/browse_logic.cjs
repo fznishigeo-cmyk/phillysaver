@@ -43,7 +43,7 @@ function harness({rows=mixed, spotlight=[], search='', stored=null, navigation='
       get selectedIndex() {return this.options.findIndex(o=>o.value===this.value);},
       set selectedIndex(i) {this.value=this.options[i]?.value || '';},
       querySelectorAll(selector) {
-        if (selector!=='.cattab') return [];
+        if (selector!=='.cattab' && selector!=='.cattab[data-i]') return [];
         return [...this.innerHTML.matchAll(/data-i="(\d+)"/g)].map(m=>({getAttribute:()=>m[1],
           addEventListener(type,fn) {listen('category'+m[1]+':'+type,fn);}}));
       },

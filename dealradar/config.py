@@ -429,6 +429,7 @@ class AppConfig:
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
     keep_first_cards: bool = False     # the module's first render patches the server's cards in place
+    best_today_tab: bool = False       # a "Best today" link pill after Trending in the home tab row
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1339,6 +1340,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.keep_first_cards = g("keep_first_cards", default=False)
     if type(cfg.keep_first_cards) is not bool:
         raise ValueError("keep_first_cards must be a boolean")
+    cfg.best_today_tab = g("best_today_tab", default=False)
+    if type(cfg.best_today_tab) is not bool:
+        raise ValueError("best_today_tab must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

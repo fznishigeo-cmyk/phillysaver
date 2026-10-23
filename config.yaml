@@ -270,6 +270,7 @@ soft_buttons: true  # operator 2026-10-23: "can you make the buttons a bit softe
 sticky_buy_bar: true  # operator 2026-10-22: "yes great idea implement it" + "a bit more transparent ... less obtrusive" -> phone deal pages pin price + Get deal (frosted glass) to the bottom once the button scrolls away; laptops unchanged
 fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 keep_first_cards: true  # quality loop 2026-10-23: phone LCP / taps -> the home wall's first render keeps the server's cards (patches them in place, same look); an older publication keeps its drop until the next mark; the wall's How boxes are drawn open from the start, as hydration draws them
+best_today_tab: true  # operator 2026-10-23 ~20:00Z: "yes add that button" (A48) -> a "Best today" pill right after Trending in the homepage category row, same look as its neighbours, a real link to /best-deals-today/ (the top 30 had no homepage link), never a filter tab
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site
