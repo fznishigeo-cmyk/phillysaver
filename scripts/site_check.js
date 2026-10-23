@@ -5,7 +5,8 @@ const {routeRobotSearch} = require('./robot_search.cjs');
 // browser does (no referrer), opens the home page, and prints which deals
 // have no photo or a broken one, grouped by store, source and host. It also
 // walks the visitor controls on desktop and phone; failed steps or photos below
-// the config.yaml site_check floors exit 1. Read-only;
+// the config.yaml site_check floors exit 1 (a step that failed on the network or a
+// timeout first runs once more a minute later). Read-only;
 // analytics and ad tags are blocked so the check is not counted as a visit.
 // Everything printed is already public on the site.
 const { chromium } = require("playwright");
@@ -13,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const { amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
         photoRules, checkPhotos, frontRules, frontPageSnapshot, identifyFrontCards,
-        frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy } = require("./site_check_logic.cjs");
+        frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy, transientFailure } = require("./site_check_logic.cjs");
 
 const SITE = (process.env.SITE || "https://wowpriced.com/").replace(/\/?$/, "/");
 const UA = "wowpriced-site-check/1.0 (+https://wowpriced.com; hello@wowpriced.com)";
@@ -31,6 +32,10 @@ const line = (d) => `  ${d.store || "?"} | ${String(d.item || "").slice(0, 60)} 
 
 const CARDS = "#content .card[data-key]";
 const STEP_TIMEOUT_MS = 10000;
+// A step that failed transiently (transientFailure) runs once more after the wait, at most
+// three times per run: a clean run takes about 4 of the job's 15 minutes.
+const RETRY_WAIT_MS = 60000, RETRIES_PER_RUN = 3;
+let retriesLeft = RETRIES_PER_RUN;
 const SITE_URL = new URL(SITE);
 // Our own site, still paced at 1 request/s. 40 ran out on 2026-10-13 as the
 // walk grew (more hubs), and the last page failed as a bare ERR_FAILED; 60
@@ -225,19 +230,32 @@ async function walk(page, doc, device) {
   page.on("response", capturePublish);
   let shown = { cards: 0, top: 0, clock: "", tagline: "" }, html = "", dealPage = "";
   page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
-  async function step(n, name, action) {
+  async function step(n, name, action, firstTry = "") {
+    const spent = siteRequests, seen = errors.length;
     try {
-      const note = await action();
+      const note = [await action(), firstTry && `retried after ${RETRY_WAIT_MS / 1000} s: passed (first try: ${firstTry})`]
+        .filter(Boolean).join("; ");
       results.push({ n, name, ok: true, ...(note ? { note } : {}) });
     } catch (e) {
       // Playwright errors include call logs; keep the summary to one short line.
       // A request our own guard aborted surfaces as a bare ERR_FAILED: name why.
       const why = lastAbort ? ` (guard: ${lastAbort})` : "";
-      const reason = (String(e.message || e).split("\n")[0].slice(0, 140) + why).slice(0, 200);
-      results.push({ n, name, ok: false, reason });
+      const message = String(e.message || e).split("\n")[0];
+      const reason = (message.slice(0, 140) + why).slice(0, 200);
+      // The same step once more, a minute later. The failed try's requests and page
+      // errors do not count against the run: the retry is the check.
+      if (!firstTry && retriesLeft > 0 && transientFailure(message + why)) {
+        retriesLeft--;
+        await new Promise((resolve) => setTimeout(resolve, RETRY_WAIT_MS));
+        siteRequests = spent; errors.length = seen;
+        return step(n, name, action, reason);
+      }
+      results.push({ n, name, ok: false, reason: firstTry ? `${reason} (failed again ${RETRY_WAIT_MS / 1000} s later` +
+        (firstTry === reason ? ")" : `; first try: ${firstTry})`) : reason });
     }
   }
   await step(1, "Home", async () => {
+    homePublishes.length = 0;  // a retried Home identifies cards from its own load only
     const response = await page.goto(SITE, { waitUntil: "load", timeout: 60000 });
     check(response && response.status() === 200, `HTTP ${response && response.status()}`);
     html = await response.text();

@@ -199,6 +199,16 @@ function toolsDeploy(config, deployed) {
     `config.yaml tools_merge ${local}, deployed site ${merged}: deploy pending; Tools checked as deployed`};
 }
 
+// Operator 2026-10-23: "when a check fails, check again a minute later before calling it a
+// problem" (#341 went red on one phone fetch, "about: fetch failed"). A step that failed on the
+// network, a timeout or HTTP 5xx/429 runs once more; content failures fail at once, and so does
+// our own request limit. Step 8 lists several pages: one transient problem is enough (a failed
+// sitemap read also leaves too few hubs), and a content problem among them fails again.
+const TRANSIENT = /net::ERR_|Timeout \d+ms exceeded|fetch failed|aborted due to timeout|\bterminated\b|\bHTTP (?:5\d\d|429)\b/;
+function transientFailure(reason) {
+  return TRANSIENT.test(reason) && !/request limit/.test(reason);
+}
+
 // Runs inside Chromium: take identity and ordering together, before the walk
 // changes filters. textContent/getAttribute already decode HTML entities.
 function frontPageSnapshot() {
@@ -268,4 +278,4 @@ function frontPageFlags(cards, rules) {
 
 module.exports = {amazonTag, checkAmazonTag, checkToolAmazonUrl, checkToolProductUrl, checkSovrnLinks, overrideLinks, overrideNote,
                   photoRules, checkPhotos, dealSourceHosts, frontRules, frontPageSnapshot, identifyFrontCards,
-                  frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy};
+                  frontPageFlagLine, frontPageFlags, eventLinks, toolLinks, toolsDeploy, transientFailure};
