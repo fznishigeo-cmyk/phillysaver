@@ -216,7 +216,7 @@ def test_shipped_cadences_and_discovery_forecast(db, cfg):
     row = seed(db, cfg)
     history = History(db, cfg, NOW)
     plan = Plan(history, [row], {row["dedupe_key"]: 0}, {}, 10, cadence_minutes=10)
-    assert plan.discovery_rate() == (16, "configured_feed_ceiling")  # (12+6*2+8)*5/10
+    assert plan.discovery_rate() == (14, "configured_feed_ceiling")  # (12+4*2+8)*5/10
     cfg.keepa_volatility["enabled"] = False
     schedule = Schedule(history, {row["dedupe_key"]: 0}, {})
     assert schedule.max_age(row, "top") == 2

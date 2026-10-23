@@ -361,7 +361,7 @@ def test_focus_skips_short_tokens_or_empty_config(tmp_path, monkeypatch, tokens,
 
 def test_focus_config_empty_and_named_defaults(tmp_path):
     assert load_config().keepa_focus_categories == ["Beauty & Personal Care", "Health & Household",
-        "Clothing, Shoes & Jewelry", "Baby Products", "Toys & Games", "Home & Kitchen"]
+        "Clothing, Shoes & Jewelry", "Home & Kitchen"]
     path = tmp_path / "config.yaml"
     path.write_text("keepa:\n  focus_categories: []\n")
     assert load_config(path).keepa_focus_categories == []

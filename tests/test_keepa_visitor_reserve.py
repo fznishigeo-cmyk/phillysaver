@@ -186,7 +186,8 @@ def test_optional_discovery_gates_preserve_extra_floor(db, lane, cost, keep):
     assert budget.visitor_deferred_calls == 1
 
 
-@pytest.mark.parametrize("reserve,tokens,expected", [(0, 454, 12), (150, 454, 0), (150, 455, 1)])
+# 8 = four shipped focus roots x two pages (operator 2026-10-23 dropped Baby/Toys; was 12).
+@pytest.mark.parametrize("reserve,tokens,expected", [(0, 454, 8), (150, 454, 0), (150, 455, 1)])
 def test_task_319_focus_pages_keep_rotation_and_add_visitor_floor(db, reserve, tokens, expected):
     config = load_config()
     config.keepa_visitor_reserve_tokens = reserve
