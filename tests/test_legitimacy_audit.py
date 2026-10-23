@@ -10,6 +10,7 @@ from dealradar.db import DB
 from dealradar.growth.report import _legitimacy_audit
 from dealradar.parse.claude_client import ClaudeParser, estimate_critic_cost
 from dealradar.util import iso
+from tests.history_pins import pre_haiku_only
 from tests.test_quality_trio import NOW, _FakeClient, _CriticMessages, _cfg
 
 
@@ -258,7 +259,7 @@ def test_shadow_restore_does_not_keep_audit_owned_rejection(db):
 
 
 def test_tiered_shadow_keeps_audit_outcomes_and_prices_both_models(db):
-    cfg = _cfg(critic_shadow_model="")
+    cfg = pre_haiku_only(_cfg(critic_shadow_model=""))
     cfg.critic_tiering.update(enabled=True, shadow_batches_per_day=0)
     amazon(db)
     add(db, "bad", flags=["unit_mismatch"])

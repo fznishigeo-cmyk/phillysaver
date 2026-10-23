@@ -18,6 +18,7 @@ from dealradar.parse import extractor
 from dealradar.parse.claude_client import critique_deals
 from dealradar.parse.schema import CriticVerdicts
 from tests import test_e2e_offline as offline
+from tests.history_pins import pre_haiku_only_raw
 from tests.http_helpers import HostClock
 from tests.test_critic_tiering import HAIKU, SONNET, add, tier_parser
 from tests.test_e2e_offline import env
@@ -182,6 +183,7 @@ def test_fast_lane_tiered_replay_stops_parse_and_critic_and_is_idempotent(env, m
     config["fetch"]["run_budget_s"] = 480
     config["parse"]["concurrency"] = 1  # deterministic sum of stub latencies
     config["parse"]["critic_tiering"]["enabled"] = True
+    pre_haiku_only_raw(config)  # times the Haiku-then-Sonnet escalation path
     config["parse"]["critic_batch_size"] = 1
     config["parse"]["structured_output"] = False
     cfg_path.write_text(yaml.safe_dump(config))

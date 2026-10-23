@@ -14,7 +14,7 @@ from dealradar.models import RawPost
 from dealradar.parse.schema import CriticVerdicts
 from tests.http_helpers import HostClock
 from tests import test_e2e_offline as offline
-from tests.history_pins import pre_hide_deal_site_links_raw
+from tests.history_pins import pre_haiku_only_raw, pre_hide_deal_site_links_raw
 
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
@@ -123,8 +123,15 @@ def public(env):
     return json.loads((env["site"] / "deals.json").read_text())["deals"]
 
 
+def pre_haiku_only_env(env):
+    """Sonnet re-judges wall deals and Haiku kills only with haiku_only off."""
+    path = Path(env["cfg"])
+    path.write_text(yaml.safe_dump(pre_haiku_only_raw(yaml.safe_load(path.read_text()))))
+    return env
+
+
 def test_shipped_config_publishes_ordinary_haiku_approvals(shipped_env):
-    result, messages = run(shipped_env)
+    result, messages = run(pre_haiku_only_env(shipped_env))
     assert result["parse"]["deals_dropped_evidence"] == 0
     assert result["published"] == len(public(shipped_env)) == 362
     assert result["critic"]["tiering"]["haiku_approved"] > 0
@@ -146,7 +153,7 @@ def test_shipped_config_publishes_ordinary_haiku_approvals(shipped_env):
 
 
 def test_shipped_config_sonnet_can_reverse_a_haiku_kill(shipped_env):
-    result, messages = run(shipped_env, rescue_kill=True)
+    result, messages = run(pre_haiku_only_env(shipped_env), rescue_kill=True)
     assert messages.kill_pending_at_sonnet
     db = DB(shipped_env["db"])
     knife = next(d for d in db.all_deals() if d["item"] == "Chef Pro Knife Set")
@@ -160,10 +167,30 @@ def test_shipped_config_sonnet_can_reverse_a_haiku_kill(shipped_env):
 
 def test_shipped_tiering_spends_less_than_off_and_rerun_is_idempotent(shipped_env, tmp_path):
     first, messages = run(shipped_env)
-    assert messages.kill_pending_at_sonnet  # a confirmed rejection also needs Sonnet
+    # Shipped haiku_only (operator 2026-10-22, "do both on haiku"): every recorded verdict
+    # is confident (0.9 >= min_confidence 0.8), so Haiku's kill is final; Sonnet never sees it.
+    assert not messages.kill_pending_at_sonnet
     published = public(shipped_env)
     assert "Chef Pro Knife Set" not in {d["item"] for d in published}
+    tiering = first["critic"]["tiering"]
+    # 363 candidates (360 widgets, knife, air fryer, headphones) less the knife kill.
+    assert tiering["escalated"] == 0 and tiering["haiku_approved"] == len(published) == 362
+    # Haiku judges them in ceil(363 / 8) = 46 batches; then Sonnet only samples
+    # approvals, shadow_batches_per_day (2) batches of critic_batch_size (8).
+    critic_models = [c["model"] for c in messages.calls if c.get("output_format") is CriticVerdicts]
+    assert critic_models == [HAIKU] * 46 + [SONNET] * 2
+    assert tiering["sample_judged"] == 16 and tiering["sample_disagreed"] == 0
+    assert not tiering["fallback"]
     db = DB(shipped_env["db"])
+    knife = next(d for d in db.all_deals() if d["item"] == "Chef Pro Knife Set")
+    assert knife["critic"]["model"] == HAIKU and knife["critic"]["plausible"] is False
+    assert "suspect_msrp" in knife["flags"] and "critic_tier_pending" not in knife["flags"]
+    sampled = {d["dedupe_key"] for d in db.all_deals()
+               if (d.get("critic") or {}).get("model") == SONNET}
+    assert len(sampled) == 16 and all(db.get_deal(k)["critic"]["plausible"] for k in sampled)
+    # The protected wall keeps Haiku's verdicts; only sampled deals carry Sonnet's.
+    protected = set(json.loads(db.meta_get("published_wall")))
+    assert {db.get_deal(k)["critic"]["model"] for k in protected - sampled} == {HAIKU}
     tables = ("deals", "sightings", "price_history", "alerts_sent", "posts_seen", "llm_calls",
               "critic_tier_samples", "critic_tier_batches", "source_audit_posts", "ai_yield_events",
               "products", "product_keys", "product_offers")

@@ -16,7 +16,7 @@ from dealradar.savings import compute_savings
 from tests.test_amazon_as_of import NOW, sample_deals
 from tests.test_claude_client import FakeParseResponse, FakeUsage
 from tests.test_extractor import make_post
-from tests.history_pins import pre_history_removal, pre_task_279
+from tests.history_pins import pre_haiku_only, pre_history_removal, pre_task_279
 
 
 def capture(out, monkeypatch, setting="omitted", *, retention=False):
@@ -47,6 +47,7 @@ def capture(out, monkeypatch, setting="omitted", *, retention=False):
     cfg.support_panel_delay_s = 0  # recorded before task 272
     cfg.support_cost_phrase = "hundreds of dollars"  # recorded before task 272
     cfg.amazon_history = "hide"  # recorded before amz378_998
+    pre_haiku_only(cfg)  # recorded before haiku_only
     if setting != "omitted":
         cfg.bounded_prefilter["enabled"] = setting
     cfg.parse_structured_output = True

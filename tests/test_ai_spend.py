@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from dealradar import pipeline
-from tests.history_pins import pre_task_319
+from tests.history_pins import pre_haiku_only, pre_task_319
 from dealradar.config import load_config
 from dealradar.db import DB
 from dealradar.errors import SpendCapReached
@@ -185,7 +185,7 @@ def test_tiered_batches_fit_more_ordinary_verdicts_in_the_same_cap(tmp_path):
 @pytest.mark.parametrize("wall", [0, 1])
 def test_tiered_reuse_keeps_ordinary_haiku_but_escalates_a_wall_deal(tmp_path, wall):
     db = DB(tmp_path / "state.db")
-    cfg = load_config()
+    cfg = pre_haiku_only(load_config())
     insert(db, deal("origin", status="dead", critic=dict(plausible=True, confidence=.9,
         reason="OK", model=cfg.critic_tiering["model"])))
     insert(db, deal())

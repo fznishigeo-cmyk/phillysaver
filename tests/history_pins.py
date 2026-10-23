@@ -728,3 +728,14 @@ def pre_tool_grade_event(cfg):
 def pre_tool_grade_event_raw(config):
     config.pop("tool_grade_event", None)
     return config
+
+
+def pre_haiku_only(cfg):
+    """Before a confident Haiku price check was final (operator 2026-10-22, "do both on haiku")."""
+    cfg.critic_tiering["haiku_only"] = False
+    return cfg
+
+
+def pre_haiku_only_raw(config):
+    config["parse"]["critic_tiering"]["haiku_only"] = False
+    return config
