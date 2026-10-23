@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 from dealradar import buybox, click_price, dedupe, rank, savings, util, verify
-from tests.history_pins import pre_drop_fresh
+from tests.history_pins import pre_drop_fresh, pre_front_mix
 from tests.history_pins import pre_task_319
 from dealradar.config import AppConfig, load_config
 from dealradar.db import DB
@@ -612,7 +612,7 @@ def test_shipped_click_price_stays_within_phone_byte_budgets(db, tmp_path, monke
     from tests.phone_budget_fixture import visible_offer_count
     from tests.phone_budget_fixture import NOW as PHONE_NOW, fixture_offers
 
-    cfg = load_config()
+    cfg = pre_front_mix(load_config())  # The mix's card selection is guarded in test_front_mix (no added markup, bounded card cost).
     cfg.keepa_click_price_rule = mode
     cfg.phone_budget = dict(cfg.phone_budget, enabled=True)
     cfg.hide_deal_site_links = False  # as publish_fixture: the larger page with partner-post offers
