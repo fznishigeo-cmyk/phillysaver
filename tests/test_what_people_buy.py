@@ -753,8 +753,9 @@ def test_gadgets_and_halloween_get_the_subtle_lift():
     assert "gadgets" in appeal.groups({"item": "Anker 10,000mAh Wireless Charger Stand"}, options)
     assert "gadgets" in appeal.groups({"item": "Phomemo D30 Bluetooth Label Maker"}, options)
     assert "gadgets" not in appeal.groups({"item": "Stainless Steel Mixing Bowls"}, options)
-    assert SHIPPED.front_page["appeal"]["category_factors"]["electronics"] == \
-        SHIPPED.front_page["appeal"]["category_factors"]["beauty"]
+    # Operator 2026-10-23: electronics back to 1.0; the gadgets lift and the mix's 3 in 30 stay.
+    assert SHIPPED.front_page["appeal"]["category_factors"]["electronics"] == 1.0
+    assert SHIPPED.front_page["appeal"]["want"]["group_factors"]["gadgets"] == 1.3
     halloween = next(w for w in options["season"] if w["name"] == "halloween")
     assert (halloween["from"], halloween["to"]) == ("10-17", "10-31")
     assert appeal.matches("3-Pk Zesua Halloween Outdoor LED Ghost Decor", halloween["words"])

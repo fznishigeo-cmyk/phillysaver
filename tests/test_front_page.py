@@ -13,13 +13,14 @@ from dealradar.config import load_config
 from dealradar.publish import seo
 from dealradar.publish.site import render_site
 from dealradar.rank import front_page_mix, pick_order, pick_score, top_picks
+from tests.history_pins import pre_front_mix
 from tests.test_publish_site import NOW, make_deal
 from tests.test_seo import ROOT, cfg, db
 
 
 @pytest.fixture
 def options():
-    options = load_config(ROOT / "config.yaml").front_page
+    options = pre_front_mix(load_config(ROOT / "config.yaml")).front_page  # recorded before the front mix
     options.pop("fresh_page_size", None)  # predates task 303
     options.pop("demote_words", None)  # recorded before task 267b
     options["appeal"]["want"]["enabled"] = False  # recorded before task 273
@@ -27,7 +28,6 @@ def options():
     options["top_picks"]["max_same_brand"] = 3  # recorded before the first-screen mix
     options["top_picks"].pop("brand_from_title", None)
     options["top_picks"].pop("max_clothing_per_window", None)
-    options.pop("mix", None)  # recorded before the front mix
     return options
 
 

@@ -365,9 +365,11 @@ publish:
       allure_every: 4
       enabled: true
       niche_factor: 0.25        # clearly model-specific accessories/parts stay on the wall
-      category_factors: {home: 1.15, kitchen: 1.15, beauty: 1.15, fashion: 1.15,
+      # Operator 2026-10-23 ~00:05Z ("women buy beauty products, home and kitchen ... items that will
+      # make them feel good ... not very pricey stuff"): all four were 1.15, so nothing stood out.
+      category_factors: {home: 1.3, kitchen: 1.3, beauty: 1.35, fashion: 1.15,
                          toys_games: 1.05, kids_baby: 1.05, health: 1.05, grocery: 1.05,
-                         electronics: 1.15,   # operator 2026-10-17: gadgets entice ("where are the tech gadgets"); was 1.05
+                         electronics: 1.0,    # was 1.15; the front mix keeps 3 in 30 and the gadgets lift (1.3) stays
                          auto: 0.85}
       want:
         enabled: true
@@ -382,18 +384,25 @@ publish:
         groups:
           # Operator 2026-10-17: team sweatshirts/jackets filled the first screens;
           # bras and panties are allure ("to catch women's attention").
-          basics: [underwear, boxer, briefs, socks, leggings, pajamas, slippers,
-                   sneakers, shoes, hat, beanie]
-          carry: [owala, stanley, hydro flask, yeti, tumbler, water bottle]
+          basics: [underwear, boxer, briefs, socks, leggings, sneakers, shoes, hat, beanie]
+          carry: [owala, stanley, hydro flask, yeti, water bottle]
           small wins: [light bulbs, led bulbs, usb c cable, charging cable,
                        charger, power bank, watch, earbuds, batteries]
           beauty: [perfume, makeup, lipstick, mascara, skincare, serum,
                    moisturizer, sunscreen, shampoo, conditioner, hair dryer,
-                   straightener, curling iron, nail, lip gloss]
-          wear & carry: [sunglasses, purse, handbag, tote, backpack, jewelry,
-                         earrings, necklace, bracelet, dress, pajama set]
-          home: [towels, sheets, pillow, blanket, throw, candle, storage bins,
-                 organizer, vacuum, air purifier, humidifier, string lights]
+                   straightener, curling iron, nail]
+          wear & carry: [sunglasses, purse, handbag, tote, backpack,
+                         earrings, necklace, bracelet, dress]
+          home: [towels, sheets, pillow, blanket, throw, storage bins,
+                 organizer, vacuum, air purifier, humidifier]
+          # Operator 2026-10-23 ~00:05Z: "items that will make them feel good". Candle, slippers,
+          # pajamas, tumbler, jewelry, lip gloss and string lights moved here from the groups
+          # above; perfume stays in allure (1.35 > 1.25).
+          feel good: [candle, throw blanket, fuzzy socks, slippers, robe, pajamas, satin pillowcase,
+                      silk pillowcase, claw clip, hair clips, scrunchie, scrunchies, bath bombs,
+                      face mask, sheet mask, under eye patches, body lotion, body butter, body mist,
+                      lip gloss, lip oil, nail kit, heatless curls, hair mask, essential oil diffuser,
+                      string lights, mug, tumbler, jewelry]
           kitchen: [air fryer, knife set, cookware, pan, coffee, k cup, blender,
                     food storage, lunch box]
           kids: [diapers, wipes, toys, lego, crayons, kids shoes, school backpack,
@@ -430,6 +439,7 @@ publish:
         group_factors:          # operator 2026-10-17: "bras panties, sexy items ... to catch women's attention"
           allure: 1.35          # spacing still applies (first at card 3, then 1 in 4); adult items never lift
           gadgets: 1.3          # operator 2026-10-17: "tech gadgets should be available" (live first 24 had 2)
+          feel good: 1.25       # operator 2026-10-23; adult titles never lift
       season:                  # operator 2026-10-17: push holiday items ~2 weeks before each holiday
         - name: halloween
           from: "10-17"
@@ -519,9 +529,9 @@ publish:
       max_share: 0.25           # at most 6 boosted picks per 24-card window
     everyday_price:          # operator 2026-10-17: lean toward everyday prices, softly
       enabled: true          # operator 2026-10-17 ~02:00Z: "$200 items at the top, nobody will buy that"
-      full_until: 40         # final_price <= this: factor 1.0 (operator 2026-10-17 ~03:00Z: impulse buys, mostly under $50)
-      floor_from: 100        # final_price >= this: floor_factor
-      floor_factor: 0.55     # linear between full_until and floor_from
+      full_until: 30         # final_price <= this: factor 1.0 (operator 2026-10-23 ~00:05Z: "not very pricey stuff"; was 40)
+      floor_from: 75         # final_price >= this: floor_factor (was 100)
+      floor_factor: 0.45     # linear between full_until and floor_from (was 0.55)
     top_picks:                # the All tab's first cards (operator, 2026-10-12)
       count: 120
       pct_weight: 1.0
