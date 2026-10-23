@@ -291,7 +291,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
     checkout = d.get("checkout") or {}
     if client_how:
         from .keep_first_cards import how_html
-        how = how_html(d, fresh_config)
+        from .phone_first_screen import steps_html
+        how = how_html(d, fresh_config) + steps_html(d, page, fresh_config)
     elif not dead and (checkout.get("summary") or d.get("needs_steps")):
         steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
         codes = "".join(f'<code class="code">{e(c)}</code>' for c in d.get("codes") or [])

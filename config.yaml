@@ -273,6 +273,7 @@ deal_spotter_word_links: true  # operator 2026-10-23 ~20:50Z (A52): Fake Deal Sp
 sticky_buy_bar: true  # operator 2026-10-22: "yes great idea implement it" + "a bit more transparent ... less obtrusive" -> phone deal pages pin price + Get deal (frosted glass) to the bottom once the button scrolls away; laptops unchanged
 fresh_more_plain: true  # operator 2026-10-20 ~02:25Z: "say see all 1,000 plus deals. Just keep it at 1,000 plus. And remove that full rotation six drops about 90 minutes. Stop advertising that."
 keep_first_cards: true  # quality loop 2026-10-23: phone LCP / taps -> the home wall's first render keeps the server's cards (patches them in place, same look); an older publication keeps its drop until the next mark; the wall's How boxes are drawn open from the start, as hydration draws them
+phone_first_screen: false  # operator (Nishi) 2026-10-23 ~21:50Z: "The fix: the first 3 deals and their buttons fit on the first screen, with fewer words per card." (computers ~36 of 100 home visitors tap a deal, phones ~2) -> phones (<=640px): a tighter header (one row of tool buttons), one deal per row with the photo on the left, no repeated headline sentence, a "How to get this price" link for step deals; laptops unchanged. OFF until the operator approves the screenshots
 
 site:
   credit_links: false         # plain source attribution; true/missing restores the previous site

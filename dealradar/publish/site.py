@@ -65,6 +65,7 @@ from . import search_more
 from . import drop_fresh
 from . import fresh_more_plain
 from . import keep_first_cards
+from . import phone_first_screen
 from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -1200,6 +1201,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = same_product_spacing.site_version(site_version, cfg)
     site_version = drop_fresh.site_version(site_version, cfg)
     site_version = keep_first_cards.site_version(site_version, cfg)
+    site_version = phone_first_screen.site_version(site_version, cfg)
     site_version = fresh_more_plain.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
     site_version = all_discounts.site_version(site_version, cfg)
@@ -1528,6 +1530,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     hide_timer_ticker.publish(out, cfg)
     sticky_buy_bar.publish(out, cfg)
     soft_buttons.publish(out, cfg)
+    phone_first_screen.publish(out, cfg)
     tools_merge.publish(out, cfg)
     from . import add_to_cart
     add_to_cart.publish(out, cfg)

@@ -432,6 +432,7 @@ class AppConfig:
     phone_timer_raise: bool = False
     fresh_more_plain: bool = False
     keep_first_cards: bool = False     # the module's first render patches the server's cards in place
+    phone_first_screen: bool = False   # phones: the first deals and their buttons on the first screen
     search_circle: bool = False
     search_analyze: dict = field(default_factory=lambda: validated_search_analyze(None))
     analyze_top_sellers: bool = False
@@ -1349,6 +1350,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.keep_first_cards = g("keep_first_cards", default=False)
     if type(cfg.keep_first_cards) is not bool:
         raise ValueError("keep_first_cards must be a boolean")
+    cfg.phone_first_screen = g("phone_first_screen", default=False)
+    if type(cfg.phone_first_screen) is not bool:
+        raise ValueError("phone_first_screen must be a boolean")
     cfg.search_circle = g("search_circle", default=False)
     if type(cfg.search_circle) is not bool:
         raise ValueError("search_circle must be a boolean")

@@ -244,6 +244,26 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Phone first screen (branch `phone-first` from relR `635c755`, 2026-10-23; OFF, not
+  pushed, waits for the operator's approval phrase):** Nishi ~21:50Z: "The fix: the first 3
+  deals and their buttons fit on the first screen, with fewer words per card." (laptops ~36
+  of 100 home visitors tap a deal, phones ~2). `phone_first_screen: false` (strict bool,
+  default false, needs keep_first_cards; `publish/phone_first_screen.py`). Phones only
+  (<=640px), home only: tighter header (48px search, the two tool buttons side by side at
+  44px, no empty status line, 24px tagline row, tighter tabs/Amazon strip/filters); one deal
+  per row, photo left; the headline sentence (a repeat of title, price and store) hidden
+  where the tier badge shows; a step deal whose How box holds only steps/codes shows the tool
+  pages' "How to get this price" link to its deal page instead (boxes with rebate/price
+  varies/shipping text stay). Price, store, credit, "Price not confirmed", the Amazon
+  checkout-price line and every disclosure stay; laptops pixel-identical. The hidden ticker's
+  CSS leaves the home page while it is hidden (the phone CSS budget had 23 gzip bytes left):
+  test_drop_fresh's fixture OFF -> ON home HTML gzip 76,348 -> 76,203, CSS 14,890 -> 14,496
+  (limit 14,913). Real Chromium, cards with Get deal fully on the first screen OFF -> ON:
+  390x844 0 -> 3, 375x667 0 -> 2, 430x932 0 -> 3 (realistic 24-offer scratch fixture;
+  budget fixture 430x932 2 -> 4); CLS 0, first cards kept. Pin `pre_phone_first_screen`
+  (in pre_social_profiles, + raw pops); test_keep_first_cards builds with it off. Tests:
+  `tests/test_phone_first_screen.py` (+ `phone_first_screen_browser.cjs`). To ship: flip
+  config.yaml and that file's shipped assertion; the related test files pass with it on.
 - **Phone home LCP / taps (branch `phone-lcp`, 2026-10-23; `keep_first_cards` ON,
   committed, not pushed):** the drop module's first render replaced the server's
   whole card wall (`content.innerHTML`) with the same cards, and its open How box
