@@ -12,7 +12,8 @@
 #   * origin/data missing                     -> creates it as an orphan branch
 #   * push races (concurrent runs)            -> up to 4 retries, backoff 2 4 8 16 s
 #   * after a successful push                 -> best-effort copy to Cloudflare R2
-#     (scripts/r2_copy.sh, config state.r2_copy; never fails this script)
+#     (scripts/r2_copy.sh, config state.r2_copy; never fails this script;
+#     skipped in pre-send checkpoints, like every R2 prune)
 #   * config state.r2_primary: true           -> upload to R2 FIRST, refuse on any
 #     R2 failure; at/above state.max_enc_mb push only the pointer state.r2.json
 #     (restore_state.sh follows it) instead of refusing the push

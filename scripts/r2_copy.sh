@@ -11,6 +11,13 @@
 # R2 primary (state.r2_primary, phase 2): r2_save uploads BEFORE the git push
 # and fails its caller when it cannot; restore_state.sh then follows the
 # pointer file state.r2.json to that exact object. Same logging rules.
+#
+# The optional work (the copy and every prune) skips pre-send checkpoints
+# (DEALRADAR_STATE_CHECKPOINT=1, set by dealradar/persistence.py): a stalled
+# copy could outlive the checkpoint's own timeout after a good push, and a
+# killed checkpoint stops every send of the run. The run's final save copies
+# and prunes, all within one allowance.
+R2_OPTIONAL_BUDGET_S="${R2_OPTIONAL_BUDGET_S:-180}"
 
 r2_settings() {
   # Prints "<1|0> <keep>"; anything unreadable or invalid means off.
@@ -42,11 +49,21 @@ PY
 }
 
 r2_aws() {
+  # 180 s per call, or what is left of R2_DEADLINE (epoch seconds) when set.
+  local limit=180
+  if [[ -n "${R2_DEADLINE:-}" ]]; then
+    limit=$(( R2_DEADLINE - $(date +%s) ))
+    if (( limit > 180 )); then limit=180; fi
+    if (( limit <= 0 )); then
+      echo "timed out: R2 allowance spent" >>"${R2_ERR_FILE:-/dev/null}"
+      return 1
+    fi
+  fi
   # Newer AWS CLIs add checksums R2 may reject; only send them when required.
   AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID" AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY" \
     AWS_DEFAULT_REGION=auto AWS_EC2_METADATA_DISABLED=true \
     AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
-    timeout 180 aws --endpoint-url "$R2_ENDPOINT" "$@" 2>>"${R2_ERR_FILE:-/dev/null}"
+    timeout "$limit" aws --endpoint-url "$R2_ENDPOINT" "$@" 2>>"${R2_ERR_FILE:-/dev/null}"
 }
 
 r2_reason() {
@@ -91,6 +108,9 @@ r2_put() {
 
 r2_prune() {
   # Keep the newest <keep> timestamped copies; latest.enc is never pruned.
+  # Optional: skipped in a pre-send checkpoint, bounded by one allowance.
+  [[ "${DEALRADAR_STATE_CHECKPOINT:-}" == 1 ]] && return 0
+  local R2_DEADLINE="${R2_DEADLINE:-$(( $(date +%s) + R2_OPTIONAL_BUDGET_S ))}"
   local listing old key
   listing="$(r2_aws s3 ls "s3://$R2_BUCKET/state/")" || return 0
   old="$(awk '{print $NF}' <<<"$listing" | grep -E '^[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+-[0-9]+\.enc$' | sort | head -n "-$1")" || true
@@ -107,6 +127,10 @@ r2_copy() {
     printf '[commit_state] r2 copy: off\n'
     return 0
   fi
+  if [[ "${DEALRADAR_STATE_CHECKPOINT:-}" == 1 ]]; then
+    printf '[commit_state] r2 copy: skipped (pre-send checkpoint; the final save copies)\n'
+    return 0
+  fi
   if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" || -z "${R2_ENDPOINT:-}" || -z "${R2_BUCKET:-}" ]]; then
     printf '[commit_state] r2 copy: skipped (R2 secrets not set)\n'
     return 0
@@ -115,6 +139,8 @@ r2_copy() {
     printf '[commit_state] r2 copy: skipped (aws cli missing)\n'
     return 0
   fi
+  # One allowance for both uploads and the prune (each call alone had 180 s).
+  local R2_DEADLINE=$(( $(date +%s) + R2_OPTIONAL_BUDGET_S ))
   key="$(r2_key)"
   if ! reason="$(r2_put "$file" "$key")"; then
     printf '[commit_state] r2 copy: failed: %s (the git copy is unaffected)\n' "$reason"

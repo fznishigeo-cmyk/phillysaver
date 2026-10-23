@@ -7,6 +7,8 @@ import pytest
 import yaml
 
 from dealradar.config import load_config
+from tests.test_r2_primary import r2repo  # noqa: F401  (fixture)
+from tests.test_workflows import repo  # noqa: F401  (fixture)
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "r2_copy.sh"
@@ -25,7 +27,7 @@ exit 0
 """
 
 
-def run(tmp_path, *, config=None, secrets=True, fail=False, listing="", aws=True):
+def run(tmp_path, *, config=None, secrets=True, fail=False, listing="", aws=True, extra=None, call=None):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     if aws:
@@ -43,7 +45,9 @@ def run(tmp_path, *, config=None, secrets=True, fail=False, listing="", aws=True
         env.update(SECRETS)
     if fail:
         env["FAKE_FAIL"] = fail if isinstance(fail, str) else "boom"
-    result = subprocess.run(["bash", "-c", f'set -euo pipefail; . "{SCRIPT}"; r2_copy "{state}" "{cfg}"; echo rc=$?'],
+    env.update(extra or {})
+    call = call or f'r2_copy "{state}" "{cfg}"'
+    result = subprocess.run(["bash", "-c", f'set -euo pipefail; . "{SCRIPT}"; {call}; echo rc=$?'],
                             env=env, capture_output=True, text=True, timeout=60)
     calls = (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
     return result, calls
@@ -128,3 +132,89 @@ def test_restore_drill_is_manual_read_only_and_checks_integrity():
     for banned in ("git push", "s3 rm", "s3 cp --only-show-errors \"$work", "commit_state", "wrangler"):
         assert banned not in step["run"]
     assert "PRAGMA integrity_check" in step["run"] and "state/latest.enc" in step["run"]
+
+
+OLD_COPIES = "\n".join(f"2026-10-22 01:00:00 100 {name}" for name in (
+    "20261020T010000Z-1-1.enc", "20261021T010000Z-2-1.enc", "20261022T010000Z-3-1.enc", "latest.enc"))
+FAKE_TIMEOUT = """#!/usr/bin/env bash
+# Records the limit r2_aws gives each call, then runs the call.
+printf '%s\\n' "$1" >> "$FAKE_LIMITS"
+shift
+exec "$@"
+"""
+
+
+def test_pre_send_checkpoint_leaves_the_copy_and_every_prune_to_the_final_save(tmp_path):
+    # Live risk: after a good push, a stalled copy (180 s per call) outlived the
+    # checkpoint's 150 s timeout; the killed checkpoint then stopped every send.
+    checkpoint = {"DEALRADAR_STATE_CHECKPOINT": "1"}
+    result, calls = run(tmp_path, listing=OLD_COPIES, extra=checkpoint)
+    assert result.returncode == 0 and "rc=0" in result.stdout and calls == ""
+    assert "r2 copy: skipped (pre-send checkpoint; the final save copies)" in result.stdout
+    result, calls = run(tmp_path, listing=OLD_COPIES, extra=checkpoint, call="r2_prune 2")
+    assert result.returncode == 0 and "rc=0" in result.stdout and calls == ""
+    result, calls = run(tmp_path, listing=OLD_COPIES)  # the final save still copies and prunes
+    assert "r2 copy: ok" in result.stdout and " s3 rm " in calls
+
+
+def test_copy_and_prune_share_one_allowance(tmp_path):
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "timeout").write_text(FAKE_TIMEOUT)
+    (tmp_path / "bin" / "timeout").chmod(0o755)
+    limits = tmp_path / "limits.txt"
+    extra = {"FAKE_LIMITS": str(limits), "R2_OPTIONAL_BUDGET_S": "50"}
+    result, calls = run(tmp_path, listing=OLD_COPIES, extra=extra)
+    assert "r2 copy: ok" in result.stdout
+    # cp, cp, ls, rm: every call gets what is left of one 50 s allowance, not 180 s.
+    assert len(calls.splitlines()) == 8
+    assert all(0 < int(limit) <= 50 for limit in limits.read_text().split())
+    # A standalone prune (R2 primary, after its push) gets its own allowance.
+    limits.unlink()
+    result, _ = run(tmp_path, listing=OLD_COPIES, extra=extra, call="r2_prune 2")
+    assert result.returncode == 0 and all(0 < int(limit) <= 50 for limit in limits.read_text().split())
+    # A spent allowance makes no call at all and never fails the caller.
+    other = tmp_path / "spent"
+    other.mkdir()
+    result, calls = run(other, listing=OLD_COPIES, extra={"R2_OPTIONAL_BUDGET_S": "0"})
+    assert result.returncode == 0 and "rc=0" in result.stdout and calls == ""
+    assert "r2 copy: failed: timeout (the git copy is unaffected)" in result.stdout
+
+
+@pytest.mark.parametrize("primary,ops", [(False, []), (True, ["cp", "cp"])])
+def test_commit_state_checkpoint_pushes_git_and_keeps_the_required_r2_upload(r2repo, monkeypatch, primary, ops):
+    from tests.test_r2_primary import aws_calls, configure, run as save, tree, write_state
+
+    configure(r2repo, primary=primary, r2_copy=True)
+    write_state(r2repo, "v1")
+    monkeypatch.setenv("DEALRADAR_STATE_CHECKPOINT", "1")
+    res = save(r2repo)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "state committed to origin/data" in res.stdout and tree(r2repo) == {"state.db.enc"}
+    # R2 primary still uploads first (required); the copy and the prune wait.
+    assert [call.split()[3] for call in aws_calls(r2repo)] == ops
+
+
+def test_checkpoint_runs_commit_state_as_a_pre_send_checkpoint(tmp_path, monkeypatch):
+    from dealradar import persistence
+    from dealradar.db import DB
+
+    db = DB(tmp_path / "state.db")
+    monkeypatch.setenv("DEALRADAR_DURABLE_STATE", "1")
+    monkeypatch.setenv("STATE_DB_KEY", "synthetic-checkpoint-key")
+    monkeypatch.delenv("DEALRADAR_STATE_CHECKPOINT", raising=False)
+    monkeypatch.setattr(persistence, "ROOT", tmp_path)
+    envs = []
+
+    class Save:
+        def __init__(self, command, **kwargs):
+            envs.append(kwargs.get("env") or dict(os.environ))
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(persistence.subprocess, "Popen", Save)
+    persistence.checkpoint_state(db)
+    db.close()
+    assert envs[0]["DEALRADAR_STATE_CHECKPOINT"] == "1"
+    assert envs[0]["STATE_DB_KEY"] == "synthetic-checkpoint-key"
+    assert "DEALRADAR_STATE_CHECKPOINT" not in os.environ  # the workflow's final save copies
