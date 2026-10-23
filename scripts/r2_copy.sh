@@ -16,7 +16,9 @@
 # (DEALRADAR_STATE_CHECKPOINT=1, set by dealradar/persistence.py): a stalled
 # copy could outlive the checkpoint's own timeout after a good push, and a
 # killed checkpoint stops every send of the run. The run's final save copies
-# and prunes, all within one allowance.
+# and prunes, all within one allowance. The required r2_save still runs in a
+# checkpoint, bounded by the R2_DEADLINE persistence.py passes: a slow upload
+# refuses that save before git is touched, and the final save retries.
 R2_OPTIONAL_BUDGET_S="${R2_OPTIONAL_BUDGET_S:-180}"
 
 r2_settings() {

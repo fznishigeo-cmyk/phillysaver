@@ -1,6 +1,7 @@
 """Cloudflare R2 copy mode (scripts/r2_copy.sh): best effort, silent about secrets."""
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -202,6 +203,7 @@ def test_checkpoint_runs_commit_state_as_a_pre_send_checkpoint(tmp_path, monkeyp
     monkeypatch.setenv("DEALRADAR_DURABLE_STATE", "1")
     monkeypatch.setenv("STATE_DB_KEY", "synthetic-checkpoint-key")
     monkeypatch.delenv("DEALRADAR_STATE_CHECKPOINT", raising=False)
+    monkeypatch.delenv("R2_DEADLINE", raising=False)
     monkeypatch.setattr(persistence, "ROOT", tmp_path)
     envs = []
 
@@ -218,3 +220,8 @@ def test_checkpoint_runs_commit_state_as_a_pre_send_checkpoint(tmp_path, monkeyp
     assert envs[0]["DEALRADAR_STATE_CHECKPOINT"] == "1"
     assert envs[0]["STATE_DB_KEY"] == "synthetic-checkpoint-key"
     assert "DEALRADAR_STATE_CHECKPOINT" not in os.environ  # the workflow's final save copies
+    # R2 primary's uploads end CHECKPOINT_R2_S after the start; the push keeps
+    # the rest of CHECKPOINT_TIMEOUT_S. The final save sets no deadline.
+    assert -2 < int(envs[0]["R2_DEADLINE"]) - time.time() - persistence.CHECKPOINT_R2_S <= 0
+    assert persistence.CHECKPOINT_TIMEOUT_S - persistence.CHECKPOINT_R2_S >= 90
+    assert "R2_DEADLINE" not in os.environ
