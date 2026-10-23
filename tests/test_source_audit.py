@@ -532,7 +532,8 @@ def test_audit_workflow_shape():
     steps = doc["jobs"]["audit"]["steps"]
     assert not any("commit_state" in s.get("run", "") or "git push" in s.get("run", "") for s in steps)
     restore = next(s for s in steps if "restore_state.sh" in s.get("run", ""))
-    assert restore["env"] == {"STATE_DB_KEY": "${{ secrets.STATE_DB_KEY }}"}
+    assert restore["env"] == {name: "${{ secrets.%s }}" % name for name in (
+        "STATE_DB_KEY", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET")}
     assert not restore.get("continue-on-error", False)
     run = next(s for s in steps if s.get("run") == "python -m dealradar source-audit")
     expected = {"REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USER_AGENT",

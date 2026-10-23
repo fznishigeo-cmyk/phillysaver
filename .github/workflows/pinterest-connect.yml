@@ -47,6 +47,11 @@ jobs:
       - name: Restore state from data branch
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          # Read only when the data branch holds an R2 pointer (state.r2_primary).
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: bash scripts/restore_state.sh
 
       - name: Connect Pinterest
@@ -59,4 +64,8 @@ jobs:
       - name: Commit state to data branch
         env:
           STATE_DB_KEY: ${{ secrets.STATE_DB_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: bash scripts/commit_state.sh
