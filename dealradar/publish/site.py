@@ -1538,6 +1538,8 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     seo_paths.extend(deal_spotter.publish(out, cfg, now, site_url, meta["disclosure"]))
     from . import review_checker
     seo_paths.extend(review_checker.publish(out, cfg, now, site_url, meta["disclosure"]))
+    from . import word_links
+    word_links.publish(out, cfg)
     join_dialog.publish(out, cfg)
     timed("tools")
     seo_pages = seo.publish_sitemap(db, cfg, now, out, site_url, seo_paths, seo_wall)

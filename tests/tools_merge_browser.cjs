@@ -17,6 +17,7 @@ from dealradar.publish import site
 cfg = load_config()
 cfg.keepa_click_price_rule = cfg.keepa_buybox_rule = "off"
 assert cfg.tools_merge is True and cfg.soft_buttons is True
+assert cfg.review_checker_word_links is True and cfg.deal_spotter_word_links is True
 with patch.object(site, "util_now", lambda: NOW): render(Path(sys.argv[1]), cfg, rows())
 `;
 const NOW = new Date('2026-10-12T00:10:00Z'), ASIN = 'B0MERGE001';
@@ -146,9 +147,9 @@ async function contrastAudit(page, scope) {
         assert.equal(await page.locator('#modal-step').textContent(), 'Searching our verified deals..');
         await page.clock.runFor(10100); assert(await page.locator('#analyze-modal').isHidden());
         const discounts = page.locator('#name-results .words-discounts');
-        assert.match(await discounts.getAttribute('href'), /^https:\/\/www\.amazon\.com\/s\?k=running%20shoes&rh=p_n_deal_type%3A210906366011(?:%2Cp_36%3A-\d+)?&tag=wowpriced-20$/);
+        assert.equal(await discounts.getAttribute('href'), 'https://www.amazon.com/s?k=running%20shoes&rh=p_n_deal_type%3A23566064011&tag=wowpriced-20');
         assert.equal((await discounts.innerText()).trim(), 'See running shoes discounts on Amazon →');
-        assert.equal(await page.locator('#name-results .name-button').getAttribute('href'), 'https://www.amazon.com/s?k=running%20shoes&s=review-rank&tag=wowpriced-20');
+        assert.equal(await page.locator('#name-results .name-button').getAttribute('href'), 'https://www.amazon.com/s?k=running%20shoes&rh=p_n_deal_type%3A210906366011&s=exact-aware-popularity-rank&tag=wowpriced-20');
         assert(await discounts.evaluate(el => el === document.activeElement));
         await page.locator('#name-results .words-deal').first().waitFor();
         assert.match(await page.locator('#name-results .words-deal').first().innerText(), /running shoes/i);
@@ -158,7 +159,7 @@ async function contrastAudit(page, scope) {
         // Enter instead of the button, then time for any debounce, retry or late handler: still no lookup.
         await page.locator('#q').fill('air fryer'); await page.locator('#q').press('Enter');
         assert(await page.locator('#analyze-modal').isVisible()); await page.clock.runFor(10100);
-        assert.match(await discounts.getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
+        assert.match(await discounts.getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A23566064011&tag=/);
         await page.clock.runFor(3000);
         assert.deepEqual(calls, [], 'typed words must not call /api/search, even later');
 
@@ -220,7 +221,7 @@ async function contrastAudit(page, scope) {
         assert.equal(await page.locator('#start h1').textContent(), 'Amazon Discount Finder');
         assert.equal(await page.locator('#q').inputValue(), 'air fryer');
         assert(await page.locator('#analyze-modal').isVisible()); await page.clock.runFor(10000);
-        assert.match(await page.locator('#name-results .words-discounts').getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
+        assert.match(await page.locator('#name-results .words-discounts').getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A23566064011&tag=/);
         assert.equal(calls.length, 0); await noScroll(); await shot('finder');
         await Promise.all([page.waitForResponse(r => r.url().includes('/api/search')), page.goto('https://wowpriced.test/amazon-deal-checker/?asin=' + ASIN)]);
         await page.clock.runFor(10100);
@@ -248,6 +249,20 @@ async function contrastAudit(page, scope) {
         assert.equal(await page.locator('.price-check').count(), 0);
         assert.equal(await page.locator('.price-check-link a').textContent(), 'Check this price →');
         state.priceCheck = true;
+
+        // The words box's two links per tool (word_links, operator 2026-10-23 A51/A52): same texts,
+        // order and new tab; Best Sellers / Featured with the deal filter; no $50 cap (p_36).
+        for (const [slug, blue, yellow] of [
+          ['review-checker', 'rh=p_n_deal_type%3A210906366011', 'rh=p_n_deal_type%3A23566065011&s=exact-aware-popularity-rank'],
+          ['deal-spotter', 'rh=p_n_deal_type%3A23566064011', 'rh=p_n_deal_type%3A210906366011&s=exact-aware-popularity-rank']]) {
+          calls.length = 0;
+          await page.goto(`https://wowpriced.test/${slug}/?q=vacuum`); await page.clock.runFor(25100);  // past any analyzer wait
+          assert.deepEqual(await page.locator('#name-results .words-buttons a').evaluateAll(links => links.map(a =>
+            [a.className, a.innerText.trim(), a.getAttribute('href'), a.target, a.rel])), [
+            ['words-discounts', 'See vacuum discounts on Amazon →', `https://www.amazon.com/s?k=vacuum&${blue}&tag=wowpriced-20`, '_blank', 'sponsored noopener'],
+            ['name-button', 'See highly rated vacuum on Amazon →', `https://www.amazon.com/s?k=vacuum&${yellow}&tag=wowpriced-20`, '_blank', 'sponsored noopener']], slug);
+          assert.equal(calls.length, 0); await noScroll();
+        }
 
         assert.deepEqual(errors, []);
         await context.close();

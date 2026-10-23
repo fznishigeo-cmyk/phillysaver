@@ -31,6 +31,9 @@ function checkAmazonTag(doc, tag) {
   return {ok: true, badLinks: 0};
 }
 
+// The Discount Finder's coupons filter, or Today's Deals: Fake Deal Spotter's typed-words box
+// (operator 2026-10-23, A52: deal_spotter_word_links).
+const FINDER_FILTERS = ["p_n_deal_type:210906366011", "p_n_deal_type:23566064011"];
 function checkToolAmazonUrl(href, tag, finder = false) {
   let url;
   try { url = new URL(href); } catch { return {ok: false, reason: "invalid tool Amazon URL"}; }
@@ -40,7 +43,7 @@ function checkToolAmazonUrl(href, tag, finder = false) {
   const tags = url.searchParams.getAll("tag");
   if (!tag || tags.length !== 1 || tags[0] !== tag) return {ok: false, reason: "tool Amazon URL has wrong or duplicate tag"};
   if (finder && !url.searchParams.getAll("rh").some(value =>
-    value.split(",").includes("p_n_deal_type:210906366011"))) {
+    value.split(",").some(filter => FINDER_FILTERS.includes(filter)))) {
     return {ok: false, reason: "finder Amazon URL missing discounts filter"};
   }
   return {ok: true};

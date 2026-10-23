@@ -174,7 +174,8 @@ def test_sidebar_and_strip_keep_how_to_link_for_needs_steps():
 
 def test_typed_words_box_never_calls_the_api(tmp_path, monkeypatch):
     out, _ = build(tmp_path, monkeypatch, True)
-    for name in ("deal-spotter.js", "review-checker.js"):
+    # Today's Deals on the spotter, coupons on Review Checker (word_links, operator 2026-10-23 A51/A52).
+    for name, deal_filter in (("deal-spotter.js", "23566064011"), ("review-checker.js", "210906366011")):
         result = subprocess.run(["node", "--check", str(out / name)], capture_output=True, text=True, timeout=60)
         assert result.returncode == 0, result.stderr
         script = (out / name).read_text()
@@ -184,7 +185,7 @@ def test_typed_words_box_never_calls_the_api(tmp_path, monkeypatch):
         inventory = re.search(r"^function toolInventory\(\) \{\n.*?^\}", script, re.S | re.M)[0]
         assert "fetch('/deals.json'" in inventory and "/api/" not in inventory
         assert "'See ' + discount.words + ' discounts on Amazon'" in script
-        assert "p_n_deal_type%3A210906366011" in re.search(r"^function toolDiscount\(.*?^\}", script, re.S | re.M)[0]
+        assert "p_n_deal_type%3A" + deal_filter in re.search(r"^function toolDiscount\(.*?^\}", script, re.S | re.M)[0]
 
 
 def test_landing_pages_unique_indexable_and_spotter_tool(tmp_path, monkeypatch):

@@ -46,6 +46,9 @@ assert.throws(() => amazonTag("other:\n  amazon_tag: wrong\n"), /missing/);
   assert.equal(checkToolAmazonUrl(checker, tag, true).ok, false);
   assert.equal(checkToolAmazonUrl(finder.replace(/&rh=[^&]+/, ""), tag, true).ok, false);
   assert.equal(checkToolAmazonUrl(finder.replace("210906366011", "2109063660110"), tag, true).ok, false);
+  // Fake Deal Spotter's typed-words box links Today's Deals (A52); All Discounts is not a finder filter.
+  assert.deepEqual(checkToolAmazonUrl(finder.replace("210906366011", "23566064011"), tag, true), {ok: true});
+  assert.equal(checkToolAmazonUrl(finder.replace("210906366011", "23566065011"), tag, true).ok, false);
   const product = `https://www.amazon.com/dp/B0CUPPING1?tag=${tag}`;
   assert.deepEqual(checkToolProductUrl(product, tag), {ok: true});
   for (const href of [product.replace("https:", "http:"), product.replace("www.amazon.com", "amazon.com.evil"),

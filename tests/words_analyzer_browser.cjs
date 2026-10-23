@@ -25,8 +25,11 @@ for name, on in (("on", True), ("off", False)):
     with patch.object(site, "util_now", lambda: NOW): render(Path(sys.argv[1]) / name, cfg, rows())
 `;
 const NOW = new Date('2026-10-12T00:10:00Z'), ASIN = 'B0MERGE001';
-const DISCOUNTS = /^https:\/\/www\.amazon\.com\/s\?k=vacuum&rh=p_n_deal_type%3A210906366011(?:%2Cp_36%3A-\d+)?&tag=wowpriced-20$/;
-const RATED = 'https://www.amazon.com/s?k=vacuum&s=review-rank&tag=wowpriced-20';
+// Each tool's two links (word_links, operator 2026-10-23 A51/A52): [blue, yellow], no $50 cap.
+const LINKS = {review:['https://www.amazon.com/s?k=vacuum&rh=p_n_deal_type%3A210906366011&tag=wowpriced-20',
+  'https://www.amazon.com/s?k=vacuum&rh=p_n_deal_type%3A23566065011&s=exact-aware-popularity-rank&tag=wowpriced-20'],
+  spotter:['https://www.amazon.com/s?k=vacuum&rh=p_n_deal_type%3A23566064011&tag=wowpriced-20',
+  'https://www.amazon.com/s?k=vacuum&rh=p_n_deal_type%3A210906366011&s=exact-aware-popularity-rank&tag=wowpriced-20']};
 const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on Amazon..', 'Finding top-rated picks..'];
 (async () => {
   let browser;
@@ -76,8 +79,9 @@ const SPOTTER_STEPS = ['Searching our verified deals..', 'Finding discounts on A
       async function wordsBox(rated) {
         assert.equal((await page.locator('#name-results .words-title').innerText()).trim(), 'Shopping for vacuum?');
         const discounts = page.locator('#name-results .words-discounts');
-        assert.match(await discounts.getAttribute('href'), DISCOUNTS);
-        assert.equal(await page.locator('#name-results .name-button').getAttribute('href'), RATED);
+        const [blue, yellow] = LINKS[new URL(page.url()).pathname.startsWith('/review-checker/') ? 'review' : 'spotter'];
+        assert.equal(await discounts.getAttribute('href'), blue);
+        assert.equal(await page.locator('#name-results .name-button').getAttribute('href'), yellow);
         assert.equal((await page.locator('#name-results .name-button').innerText()).trim(), rated);
         assert.equal(await focused(), 'words-discounts');
         await page.locator('#name-results .words-deal').first().waitFor();

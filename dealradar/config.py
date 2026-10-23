@@ -423,6 +423,8 @@ class AppConfig:
     tools_merge: bool = False          # Deal Checker + Discount Finder fold into the two Fakespot/ReviewMeta tools
     tool_words_analyzer: bool = False  # typed words wait through the link's analyzer box (tools_merge)
     soft_buttons: bool = False         # the two search buttons a little less bright
+    review_checker_word_links: bool = False  # Review Checker words box: Best Sellers + All Discounts / Featured + coupons
+    deal_spotter_word_links: bool = False    # Fake Deal Spotter words box: Featured + Today's Deals / Best Sellers + coupons
     tagline_full_row: bool = False
     price_shipping_note: bool = False
     tool_grade_event: bool = False     # GA4 tool_grade (A/B/C per tool) on every page's wpTrack
@@ -1310,6 +1312,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.soft_buttons = g("soft_buttons", default=False)
     if type(cfg.soft_buttons) is not bool:
         raise ValueError("soft_buttons must be a boolean")
+    for name in ("review_checker_word_links", "deal_spotter_word_links"):
+        setattr(cfg, name, g(name, default=False))
+        if type(getattr(cfg, name)) is not bool:
+            raise ValueError(f"{name} must be a boolean")
     cfg.tagline_full_row = g("tagline_full_row", default=False)
     if type(cfg.tagline_full_row) is not bool:
         raise ValueError("tagline_full_row must be a boolean")
