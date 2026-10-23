@@ -55,7 +55,8 @@ async function contrastAudit(page, scope) {
     for (const [width, height] of [[390, 844], [1280, 800]]) {
       for (const colorScheme of ['light', 'dark']) {
         const context = await browser.newContext({viewport:{width, height}, colorScheme});
-        const errors = [], calls = [], state = {grade:'B', included:false, priceCheck:true};
+        const errors = [], calls = [], homeCalls = [], state = {grade:'B', included:false, priceCheck:true};
+        let page;
         await context.addInitScript(() => {
           Math.random = () => 0;
           try { localStorage.setItem('wp.spotter.cookies', '1'); localStorage.setItem('wp.tools.cookies', '1'); } catch (_) {}
@@ -72,7 +73,7 @@ async function contrastAudit(page, scope) {
           if (url.hostname === 'm.media-amazon.com') return route.fulfill({contentType:'image/svg+xml', body:'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#eef4ff"/></svg>'});
           if (url.origin !== 'https://wowpriced.test') return route.fulfill({status:204, body:''});
           if (url.pathname === '/api/search') {
-            calls.push(url.search);
+            (route.request().frame().page() === page ? calls : homeCalls).push(url.search);
             const asin = url.searchParams.get('asin'), kind = url.searchParams.get('grade');
             const item = {asin, title:'Wireless over-ear headphones with a folding design', image:'https://m.media-amazon.com/images/I/fixture.jpg',
               price_cents:4699, list_price_cents:5999, monthlySold:1000, category:'Over-Ear Headphones',
@@ -89,7 +90,7 @@ async function contrastAudit(page, scope) {
           if (!fs.existsSync(file)) return route.fulfill({status:404, body:''});
           return route.fulfill({contentType:{'.html':'text/html', '.js':'application/javascript', '.css':'text/css', '.json':'application/json', '.svg':'image/svg+xml'}[path.extname(file)] || 'application/octet-stream', body:fs.readFileSync(file)});
         });
-        const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
+        page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
         await page.clock.install({time:NOW});
         const shot = name => page.screenshot({path:path.join(scratch, `${width}-${colorScheme}-${name}.png`), animations:'disabled'});
         const noScroll = async () => { const s = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); assert(s[0] <= s[1], 'horizontal scroll ' + s); };
@@ -114,7 +115,14 @@ async function contrastAudit(page, scope) {
         assert(/rgb\(28, 98, 219\)/.test(await spot.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft blue');
         assert(/rgb\(138, 50, 218\)/.test(await rev.evaluate(el => getComputedStyle(el).backgroundImage)), 'soft purple');
         await noScroll(); await shot('home');
-        calls.length = 0;  // the homepage's own search may look up typed words; the tools never do
+        // The tools get their own tab. The homepage's own search may still look up the typed words
+        // after this point (search-more.js's page-0 lookup landed after a plain calls.length = 0 in
+        // 6 runs of 10, 2026-10-23); that lookup is the homepage's, never the tools'.
+        const home = page; page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
+        calls.length = 0;
+        await home.evaluate(() => fetch('/api/search?q=running%20shoes&page=0').then(r => r.json()));
+        assert(homeCalls.includes('?q=running%20shoes&page=0')); assert.deepEqual(calls, []);
+        await home.close();
 
         // Spotter home: the guide tabs, the Love button and the footer columns.
         await page.goto('https://wowpriced.test/deal-spotter/'); await page.clock.runFor(500);
@@ -142,6 +150,11 @@ async function contrastAudit(page, scope) {
         assert.deepEqual(calls, [], 'typed words must not call /api/search');
         await discounts.click(); assert.deepEqual(await tracked(), [['deal_click', {store:'Amazon'}]]);
         await contrastAudit(page, '#name-results'); await noScroll(); await shot('words');
+        // Enter instead of the button, then time for any debounce, retry or late handler: still no lookup.
+        await page.locator('#q').fill('air fryer'); await page.locator('#q').press('Enter');
+        assert.match(await discounts.getAttribute('href'), /k=air%20fryer&rh=p_n_deal_type%3A210906366011/);
+        await page.clock.runFor(3000);
+        assert.deepEqual(calls, [], 'typed words must not call /api/search, even later');
 
         // A link: the blue analyzer with today's deals, then the report.
         await page.locator('#q').fill(ASIN);
