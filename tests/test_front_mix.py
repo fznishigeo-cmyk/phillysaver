@@ -3,6 +3,7 @@ wear for their partners, 7 beauty, 4 essentials, 4 kitchen and dining, 3
 electronics and 5 of the rest (Trending drops and Best deals today). Adult
 titles never join a bucket; every existing spacing rule wins over the mix."""
 import copy
+import hashlib
 import json
 import re
 from collections import Counter
@@ -114,6 +115,8 @@ def mix_options(**changes):
     (dict(buckets={"rest": {"share": 25}, "beauty": {"share": 5.0, "categories": ["beauty"]}}), "share must be"),
     (dict(buckets={"rest": {"share": 25}, "beauty": {"share": 5, "words": ["lip*"]}}), "literal words"),
     (dict(buckets={"rest": {"share": 25}, "beauty": {"share": 5, "categories": "beauty"}}), "category names"),
+    (dict(checkout_spacing_exempt="beauty"), "checkout_spacing_exempt must be a list of bucket names"),
+    (dict(checkout_spacing_exempt=["makeup"]), "checkout_spacing_exempt must be a list of bucket names"),
 ])
 def test_strict_config(tmp_path, change, message):
     front_page = {"appeal": SHIPPED.raw["publish"]["front_page"]["appeal"], "mix": mix_options(**change)}
@@ -165,18 +168,27 @@ def inventory(supply):
     return rows
 
 
-def fresh_pages(rows, marks):
-    options = SHIPPED.front_page
+def fresh_pages(rows, marks, options=SHIPPED.front_page):
     pool = drop_fresh.rotation(rows, options)
     return [front_mix.page(pool, mark, options, drop_fresh.rules(options)) for mark in marks]
 
 
+def front_page_with(exempt):
+    """The shipped front page with checkout_spacing_exempt set (None: absent)."""
+    options = copy.deepcopy(SHIPPED.front_page)
+    options["mix"].pop("checkout_spacing_exempt", None)
+    if exempt is not None:
+        options["mix"]["checkout_spacing_exempt"] = exempt
+    return options
+
+
 def spacing_holds(page):
+    free = front_mix.exempt(SHIPPED.front_page)  # operator A44: beauty's checkout cards skip the spacing
     assert len({d["key"] for d in page}) == len(page)
     assert not any(d["allure"] for d in page[:2])
     for i in range(len(page)):
         assert sum(d["allure"] for d in page[i:i + 4]) <= 1
-        assert sum(d["pick_checkout"] for d in page[i:i + 5]) <= 1
+        assert sum(d["pick_checkout"] and front_mix.label(d, TARGET) not in free for d in page[i:i + 5]) <= 1
         assert i + 3 > len(page) or len({d["category"] for d in page[i:i + 3]}) > 1
     for i in range(0, 24, 6):
         assert sum(d["cl"] for d in page[i:i + 6]) <= 2
@@ -286,7 +298,8 @@ def test_published_labels_rules_and_best_deals_today(tmp_path):
     labels = {d["item"]: d.get("mx") for d in doc["deals"]}
     assert labels["Women's Lace Bralette 0"] == "sexy_for_her" and labels["Throw Blanket 5"] is None
     assert "mix" not in doc["meta"]["front_page"]
-    assert 'freshRules.buckets = {"sexy_for_her":7,"beauty":7,' in (out / "drop-fresh.js").read_text()
+    script = (out / "drop-fresh.js").read_text()
+    assert 'freshRules.buckets = {"sexy_for_her":7,"beauty":7,' in script and 'freshRules.exempt = ["beauty"];' in script
     best = (out / "best-deals-today" / "index.html").read_text()
     order = [labels[re.sub(r"<[^>]+>", "", t).replace("&#x27;", "'")]
              for t in re.findall(r'<h3 class="title">(.*?)</h3>', best)]
@@ -345,24 +358,69 @@ def checkout_heavy():
     return rows
 
 
-def test_checkout_heavy_drop_keeps_the_clothing_cap():
+@pytest.mark.parametrize("exempt", [[], ["beauty"]])
+def test_checkout_heavy_drop_keeps_the_clothing_cap(exempt):
     """Live first screens 2026-10-23 07:50Z: clothing 1, 1, 3, 3 per six. No card
     fitted every rule and the drop took the next card blindly; now checkout
     spacing gives way first (then category runs), so clothing and allure hold
-    (before the fix, drops 5 and 6 here had 3 clothing cards in cards 7-12)."""
-    for page in fresh_pages(checkout_heavy(), range(8)):
+    (before the fix, drops 5 and 6 here had 3 clothing cards in cards 7-12).
+    Beauty's exemption (operator A44) leaves those fallback slots alone."""
+    for page in fresh_pages(checkout_heavy(), range(8), front_page_with(exempt)):
         assert [sum(d["cl"] for d in page[i:i + 6]) <= 2 for i in range(0, 24, 6)] == [True] * 4
         assert not any(d["allure"] for d in page[:2])
         assert all(sum(d["allure"] for d in page[i:i + 4]) <= 1 for i in range(len(page)))
         assert Counter(front_mix.label(d, TARGET) for d in page[:30]) == TARGET
 
 
-@pytest.mark.parametrize("heavy", [False, True])
-def test_browser_drops_match_the_server(tmp_path, heavy):
+def beauty_checkout():
+    """Operator 2026-10-23: the beauty cards are mostly coupon / price-at-checkout
+    cards (nine in ten); one in four of the other buckets' cards are."""
+    rows = inventory(AMPLE)
+    for d in rows:
+        i = int(d["key"].rsplit("-", 1)[1])
+        if d.get("mx") == "beauty":
+            d["pick_checkout"] = i % 10 != 0
+        elif d.get("mx") != "sexy_for_her":
+            d["pick_checkout"] = i % 4 == 1
+    return rows
+
+
+def test_shipped_checkout_spacing_exemption():
+    assert front_mix.exempt(SHIPPED.front_page) == ["beauty"]
+    assert front_mix.exempt({}) == [] and front_mix.exempt(front_page_with(None)) == []
+
+
+def test_beauty_checkout_cards_reach_their_share():
+    """Operator 2026-10-23 ~18:50Z (A44 = B, "let beauty coupon deals through so
+    you get about 7"): while beauty is behind its share, its checkout-priced
+    cards skip the one-in-five checkout spacing (they never count toward it), so
+    the beauty bucket reaches its 7 per 30. Every other bucket's checkout cards
+    keep one in five, and clothing, allure and category runs hold. Empty or
+    absent is today's drop."""
+    rows = beauty_checkout()
+    before = fresh_pages(rows, range(8), front_page_with([]))
+    assert [Counter(front_mix.label(d, TARGET) for d in page[:30])["beauty"] for page in before] == [6, 6, 6, 6, 7, 7, 6, 7]
+    # The drop as published at af1674b, before the exemption.
+    keys = ",".join(d["key"] for page in before for d in page)
+    assert hashlib.sha256(keys.encode()).hexdigest()[:16] == "9f1a822bccedce5a"
+    assert fresh_pages(rows, range(8), front_page_with(None)) == before
+    for page in fresh_pages(rows, range(8)):
+        assert len(page) == 90 and Counter(front_mix.label(d, TARGET) for d in page[:30]) == TARGET
+        spacing_holds(page)  # one in five for every checkout card outside beauty, all 90 cards
+        assert any(sum(d["pick_checkout"] for d in page[i:i + 5]) > 1 for i in range(26))
+
+
+@pytest.mark.parametrize("supply,exempt", [("mixed", ["beauty"]), ("checkout_heavy", ["beauty"]),
+                                           ("beauty_checkout", ["beauty"]), ("beauty_checkout", [])])
+def test_browser_drops_match_the_server(tmp_path, supply, exempt):
     cfg = load_config()
     cfg.tracking = {}
+    cfg.front_page["mix"]["checkout_spacing_exempt"] = exempt
     out, *_ = render(tmp_path, cfg)
-    rows = checkout_heavy() if heavy else inventory(dict(AMPLE, sexy_for_her=25, electronics=12))
+    script = (out / "drop-fresh.js").read_text()
+    assert ("freshSpaced" in script) == bool(exempt) and ("freshRules.exempt" in script) == bool(exempt)
+    rows = dict(mixed=lambda: inventory(dict(AMPLE, sexy_for_her=25, electronics=12)),
+                checkout_heavy=checkout_heavy, beauty_checkout=beauty_checkout)[supply]()
     pool = drop_fresh.rotation(rows, cfg.front_page)
     data = tmp_path / "mix.json"
     data.write_text(json.dumps(dict(rows=rows, pool=[d["key"] for d in pool], pages=[
