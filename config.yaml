@@ -227,6 +227,12 @@ deal_spotter:
   b_min_list_pct: 20
   verified_max_ratio: 1.02
   single_source_ok: true  # operator 2026-10-22 ~14:35Z (A30): "it doesnt have to verify from 2 sources.. 1 source is fine.. if its a legitimate source" ("Keepa or Slickdeals etc, are super legimate"); our own Amazon price checks still apply
+# Operator 2026-10-22: an "Add to Amazon cart" link beside the Amazon button on Amazon deal
+# pages and the Fake Deal Spotter result (Amazon's Add to Cart form, our affiliate.amazon_tag;
+# new-condition items with an ASIN only). OFF until the operator approves the preview;
+# false/missing = previous bytes.
+add_to_cart:
+  enabled: false
 tool_pages_hero: true  # operator 2026-10-19 ~21:00Z: "Mockups LOOK AMAZING.. GO AHEAD"
 tool_pages_1020: true  # operator 2026-10-20 ~02:15Z: "it looks cheap ... people are not stupid"; "it should say AI ... it is AI"
 tool_pages_1020_phone_links: "chips"  # "chips" keeps the category row's existing height; "line" adds 28px below the header

@@ -451,6 +451,7 @@ def pre_task_319_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
     config.pop("deal_spotter", None)
@@ -533,6 +534,7 @@ def pre_hide_deal_site_links_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
     config.pop("deal_spotter", None)
@@ -553,6 +555,7 @@ def pre_keepa_focus_finder_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
     pre_review_checker_raw(config)
@@ -631,6 +634,7 @@ def pre_keepa_starter_raw(config):
     config.pop("hide_timer_ticker_confetti", None)
     config.pop("sticky_buy_bar", None)
     config.pop("price_shipping_note", None)
+    config.pop("add_to_cart", None)
     pre_social_profiles_raw(config)
     pre_tool_grade_event_raw(config)
     if config.get("keepa", {}).get("recheck_surplus_reserve") == 250:
@@ -694,12 +698,19 @@ def pre_social_profiles(cfg):
     cfg.social_profiles = {}
     pre_tool_grade_event(cfg)
     pre_sticky_buy_bar(cfg)
+    pre_add_to_cart(cfg)
     return cfg
 
 
 def pre_sticky_buy_bar(cfg):
     """Before the phone deal pages' sticky Get deal bar (operator 2026-10-22)."""
     cfg.sticky_buy_bar = False
+    return cfg
+
+
+def pre_add_to_cart(cfg):
+    """Before the "Add to Amazon cart" button (operator 2026-10-22)."""
+    cfg.add_to_cart = {"enabled": False}
     return cfg
 
 

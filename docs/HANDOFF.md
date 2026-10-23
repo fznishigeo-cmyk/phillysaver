@@ -267,6 +267,24 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   Preview: wowpriced-reports `ops/shots/2026-10-22/sticky-button-preview-v2.png`.
   Remaining: review, merge, deploy.
 
+- **Add to Amazon cart (2026-10-22; built, ships OFF, branch `add-to-cart`):** the
+  operator approved the button; `add_to_cart: {enabled: false}` (strict bool) until
+  the operator approves the preview (`ops/shots/2026-10-22/add-to-cart-*.png` in the
+  reports repo). `publish/add_to_cart.py` links Amazon's Add to Cart form,
+  `https://www.amazon.com/gp/aws/cart/add.html?ASIN.1=<ASIN>&Quantity.1=1&AssociateTag=<affiliate.amazon_tag>`,
+  target `_blank`, rel `sponsored nofollow noopener`: a plain link the shopper clicks
+  (no form, script submit or prefetch). Deal pages: an outline button right after
+  Get deal, only when Get deal is our tagged amazon.com product link and the offer is
+  new (`amazon_used.used_offer`); it uses that link's ASIN, so a th=1&psc=1 child adds
+  its exact size. Fake Deal Spotter: a secondary button under "Get this deal on
+  Amazon" on a graded link, never a typed name. Deal pages' `deal_click` carries
+  `button: "add_to_cart"` for it; the Spotter fires nothing, as for its main button.
+  OFF/missing is byte-identical to 96bbb2d. Amazon's rules were read 2026-10-22 only
+  through search excerpts (amazon.com hosts are blocked from the session): open the
+  pages before switching on. Commission: items added during the 24-hour session
+  count if ordered within 89 days (policies) / before the cart expires, "usually
+  after 90 days" (help). To ship: set `enabled: true` (history pins keep fixtures
+  OFF), run the suite, push.
 - **Deal Spotter (Codex task 366, 2026-10-22; enabled, not deployed):**
   `deal_spotter.enabled` ships true. New `/deal-spotter/` and
   `/fakespot-alternative/` pages, sitemap entries, footer discovery and tool
