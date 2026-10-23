@@ -1254,14 +1254,14 @@ ads:
         keywords: ["review checker", "reviewmeta", "review meta", "reviewmeta alternative",
                    "product review checker", "review grader", "check product reviews"]
         headlines: ["Free Review Checker", "Review Checker by wowpriced", "Product Review Checker",
-                    "Check Product Reviews Fast", "Free Review Grader Tool", "A, B or C Review Grade",
+                    "Check Review Signals Fast", "Free Review Grader Tool", "A, B or C Review Grade",
                     "Review Signals at a Glance", "Paste a Link, Get a Grade", "Is the Rating Holding Steady?",
                     "Check Reviews Before You Buy", "Plain Answers, Clear Grade", "Free. No Sign-Up Needed",
                     "No Extension Needed", "Works on Any Device", "Shop With More Confidence"]
         descriptions:
           - "Paste a product link and see its review signals with a simple A, B or C grade. Free."
           - "See rating steadiness, review pace and popularity in seconds. No extension needed."
-          - "Check product reviews before you buy: a clear grade with the checks the product passed."
+          - "Check the review signals before you buy: a clear grade and the checks it passed."
           - "Free on your phone or computer, with no sign-up. Shop with a little more confidence."
 
 growth:
