@@ -704,15 +704,26 @@ keepa_focus_finder:
   # for girlfrineds to buy for their boyfriends to look sexy in or wives to wear".
   # Only Keepa tokens that would otherwise expire unused; false = previous behavior.
   enabled: true
-  idle_share: 0.7 # shared surplus forecast, AFTER due checks and all reserves
+  # Operator 2026-10-23: "MAXIMIZE OUR TOKENS AND LIMITED WASTAGE". Measured 2026-10-22
+  # (73 runs): ~5,900 tokens/day (~6,400/day at today's reserves; ~22% of the 20/min
+  # plan) expired at the 1,200 cap;
+  # the finder hit its 10-deal cap in 49 of 51 runs (2,299 qualifying rows dropped
+  # as "cap") while spending ~25 of a median ~237 predicted idle tokens per run.
+  # Was 0.7 / 10. Still overflow-only: due checks, reserves and AI caps unchanged.
+  idle_share: 0.9 # shared surplus forecast, AFTER due checks and all reserves
   max_pages_per_run: 80  # 400 /deal tokens, plus one-time category resolution
-  max_new_deals_per_run: 10 # existing evidence/critic and run/day AI caps still apply
+  max_new_deals_per_run: 30 # existing evidence/critic and run/day AI caps still apply
   max_price: 50
   max_rank: 30000
   min_rating: 40  # tenths of stars; internal filter only
   min_reviews: 50 # internal filter only; never saved in a post/public artifact
   # Names, not guessed IDs. Search the leaf then verify its parent path once.
   # Paths can omit intermediate nodes; names must occur in this order.
+  # Each group gets an equal share of page turns. Operator 2026-10-23 (women 25-65;
+  # homepage per 30 cards ~7 sexy-for-her, 7 beauty, 4 kitchen & dining, 4
+  # essentials, 3 electronics): sexy split into sexy + sleepwear (same paths, two
+  # turns), beauty out of women into its own group, new kitchen group. Measured
+  # 2026-10-22 published by group: gadgets 50, sexy 38, kids_baby 26, women 7, everyday 3.
   groups:
     women:
       - Clothing, Shoes & Jewelry > Women > Clothing
@@ -720,25 +731,35 @@ keepa_focus_finder:
       - Clothing, Shoes & Jewelry > Women > Tops, Tees & Blouses
       - Clothing, Shoes & Jewelry > Women > Handbags & Wallets
       - Clothing, Shoes & Jewelry > Women > Jewelry
-      - Beauty & Personal Care > Makeup
-      - Beauty & Personal Care > Skin Care
-      - Beauty & Personal Care > Fragrance
     sexy:
       - Clothing, Shoes & Jewelry > Women > Lingerie
       - Clothing, Shoes & Jewelry > Women > Bras
       - Clothing, Shoes & Jewelry > Women > Panties
       - Clothing, Shoes & Jewelry > Women > Bodysuits
+      - Clothing, Shoes & Jewelry > Women > Baby Dolls & Chemises
+      - Clothing, Shoes & Jewelry > Men > Boxer Briefs
+      - Clothing, Shoes & Jewelry > Men > Trunks
+      - Beauty & Personal Care > Men > Cologne
+    sleepwear:
       - Clothing, Shoes & Jewelry > Women > Sleep & Lounge
       - Clothing, Shoes & Jewelry > Women > Pajama Sets
       - Clothing, Shoes & Jewelry > Women > Nightgowns & Sleepshirts
-      - Clothing, Shoes & Jewelry > Women > Baby Dolls & Chemises
       - Clothing, Shoes & Jewelry > Women > Robes
       - Clothing, Shoes & Jewelry > Women > Swimsuits & Cover Ups
-      - Clothing, Shoes & Jewelry > Men > Boxer Briefs
       - Clothing, Shoes & Jewelry > Men > Sleep & Lounge
       - Clothing, Shoes & Jewelry > Men > Robes
-      - Clothing, Shoes & Jewelry > Men > Trunks
-      - Beauty & Personal Care > Men > Cologne
+    beauty:
+      - Beauty & Personal Care > Makeup
+      - Beauty & Personal Care > Skin Care
+      - Beauty & Personal Care > Fragrance
+      - Beauty & Personal Care > Hair Care
+      - Beauty & Personal Care > Foot, Hand & Nail Care
+    kitchen:
+      - Home & Kitchen > Kitchen & Dining > Kitchen Utensils & Gadgets
+      - Home & Kitchen > Kitchen & Dining > Storage & Organization
+      - Home & Kitchen > Kitchen & Dining > Small Appliances
+      - Home & Kitchen > Kitchen & Dining > Cookware
+      - Home & Kitchen > Kitchen & Dining > Dining & Entertaining
     kids_baby:
       - Toys & Games
       - Clothing, Shoes & Jewelry > Girls > Clothing
@@ -795,7 +816,8 @@ keepa:
     # at two hours; exhausted budgets still defer reads and hide expired prices.
     stretch_limits: {SLOW: 1, NORMAL: 1.3333333333333333}
     # Before receipts exist, reserve the configured ordinary + overflow
-    # /deal page ceiling (currently 160 tokens/run), not an assumed yield.
+    # /deal page ceiling (currently 140 tokens/run since 2026-10-23: 12 + 4*2
+    # focus + 8 overflow pages; was 160 with six focus roots), not an assumed yield.
     discovery_history_runs: 12    # use saved actual feed receipts when available
     batching:
       offers_seconds: 6          # cold-start latency, including polite pacing
@@ -890,7 +912,11 @@ keepa:
   # going unused. Live reads make "price checked" truly recent for the most
   # seen prices, within the same 20/min plan (budget gates unchanged).
   recheck_top_live: true
-  focus_categories: ["Beauty & Personal Care", "Health & Household", "Clothing, Shoes & Jewelry", "Baby Products", "Toys & Games", "Home & Kitchen"]  # empty = off
+  # Operator 2026-10-23 (women 25-65: beauty, essentials, sexy-for-her, home & kitchen):
+  # dropped "Baby Products" and "Toys & Games". This lane's 20-new-post cap filled
+  # in 58 of 58 pulls on 2026-10-22, so the freed page turns go to these four roots;
+  # kids items still arrive through the focus finder's kids_baby group.
+  focus_categories: ["Beauty & Personal Care", "Health & Household", "Clothing, Shoes & Jewelry", "Home & Kitchen"]  # empty = off
   # Reassign part of the old 10 new + 30 used intake cap to 20 new deals.
   # Existing parse/critic evidence and daily money caps still apply.
   amazon_max_new_posts_per_pull: 20
@@ -1464,7 +1490,9 @@ images:
   asin_backfill_per_run: 60   # offline identity repairs, plus existing Amazon link pass; once per deal
   short_links_per_run: 10     # additional amzn.to/a.co chains, HEAD only
   keepa_search_per_run: 10
-  # Per search: 10 + ceil(50 / 100) finder + up to 50 product reads = 61 tokens,
-  # so 120/day is up to ~7,300 tokens; unchanged (photo fix: see HANDOFF).
-  keepa_search_per_day: 120   # UTC; shares Keepa budget, after price rechecks
+  # Per search: 10 + ceil(50 / 100) finder + up to 50 product reads = 61 tokens.
+  # Operator 2026-10-23 ("limited wastage"): on 2026-10-22 all 120 searches paid the
+  # 11-token finder fee and none matched a photo (1,313 tokens, 0 photos). Was 120;
+  # a small daily sample keeps photo_search measurable (~130 tokens/day).
+  keepa_search_per_day: 12    # UTC; shares Keepa budget, after price rechecks
   keepa_match_min: 0.85       # strict photo-only title matches

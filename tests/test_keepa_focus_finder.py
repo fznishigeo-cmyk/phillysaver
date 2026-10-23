@@ -160,7 +160,9 @@ def test_default_off_and_history_chain(tmp_path):
     assert "keepa_focus_finder" not in pre_keepa_focus_finder_raw({"keepa_focus_finder": {"enabled": True}})
 
 
-@pytest.mark.parametrize("tokens,cap,expected", [(3000, 80, 0), (3100, 80, 13), (3490, 80, 67), (3490, 3, 3), (3490, 0, 0)])
+# Shipped idle_share 0.9 (2026-10-23, was 0.7): floor(95 * .9 / 5) = 17 pages;
+# floor(485 * .9 / 5) = 87, held to the 80-page cap.
+@pytest.mark.parametrize("tokens,cap,expected", [(3000, 80, 0), (3100, 80, 17), (3490, 80, 80), (3490, 3, 3), (3490, 0, 0)])
 def test_pages_scale_with_shared_prediction_and_cap(db, cfg, monkeypatch, tokens, cap, expected):
     cfg.keepa_focus_finder["max_pages_per_run"] = cap
     fake = Keepa(tokens=tokens)

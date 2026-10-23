@@ -52,7 +52,8 @@ def test_config(tmp_path):
     assert not AppConfig().photoless_last
     assert load_config().photoless_last
     cfg = pre_history_removal(load_config())
-    assert (cfg.images_keepa_search_per_run, cfg.images_keepa_search_per_day, cfg.images_keepa_match_min) == (10, 120, .85)
+    # 12/day since 2026-10-23 (2026-10-22: 120 searches, 0 matches, 1,313 tokens).
+    assert (cfg.images_keepa_search_per_run, cfg.images_keepa_search_per_day, cfg.images_keepa_match_min) == (10, 12, .85)
     assert cfg.images_keepa_search_per_day * (_finder_cost(50) + 50) <= 7400  # 61 tokens/search, after rechecks
     path = tmp_path/'config.yaml'
     path.write_text('{}')
