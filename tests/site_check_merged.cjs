@@ -7,7 +7,7 @@ const SITE = 'https://wowpriced.test/';
 const source = fs.readFileSync(path.join(__dirname, '../scripts/site_check.js'), 'utf8');
 const code = source.slice(source.indexOf('async function checkMergedTools('), source.indexOf('async function walk('));
 const check = (ok, reason) => { if (!ok) throw Error(reason); };
-const DISCOUNTS = 'https://www.amazon.com/s?k=cupping%20set&rh=p_n_deal_type%3A210906366011%2Cp_36%3A-5000&tag=example-20';
+const DISCOUNTS = 'https://www.amazon.com/s?k=cupping%20set&rh=p_n_deal_type%3A23566064011&tag=example-20';  // A52
 const RATED = 'https://www.amazon.com/s?k=cupping%20set&s=review-rank&tag=example-20';
 function fakePage(fault = '') {
   let url = SITE;
