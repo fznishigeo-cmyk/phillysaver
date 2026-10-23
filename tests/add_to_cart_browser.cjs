@@ -150,8 +150,8 @@ async function box(page, selector) {
             const before = await page.evaluate(() => (window.dataLayer || []).length);
             await cart.click();
             assert.deepEqual(await page.evaluate(() => window.amazonClicks.pop()), {href:cartURL(VARIANT),target:'_blank',rel:REL});
-            // The Spotter's Amazon button fires no analytics: neither does this one.
-            assert.equal(await page.evaluate(() => (window.dataLayer || []).length), before);
+            // Tool-page events: every Amazon link in the Spotter's tool area, this one too, sends one deal_click.
+            assert.equal(await page.evaluate(() => (window.dataLayer || []).length), before + 1);
           }
           assert((await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)) <= 0, label + ' horizontal scroll');
           assert.deepEqual(errors, [], label); await context.close();
