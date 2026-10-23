@@ -62,6 +62,7 @@ from . import search_analyze_lazy
 from . import search_more
 from . import drop_fresh
 from . import fresh_more_plain
+from . import keep_first_cards
 from . import drop_shuffle
 
 logger = logging.getLogger("dealradar.publish.site")
@@ -1183,6 +1184,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     site_version = page_polish.site_version(site_version, cfg)
     site_version = same_product_spacing.site_version(site_version, cfg)
     site_version = drop_fresh.site_version(site_version, cfg)
+    site_version = keep_first_cards.site_version(site_version, cfg)
     site_version = fresh_more_plain.site_version(site_version, cfg)
     site_version = header_polish.site_version(site_version, cfg)
     site_version = all_discounts.site_version(site_version, cfg)
@@ -1484,6 +1486,7 @@ def render_site(db, cfg, now: datetime, *, out_dir: str | Path | None = None,
     drop_fresh.publish(out, cfg)
     fresh_more_plain.publish(out, cfg)
     front_mix.publish(out, cfg)
+    keep_first_cards.publish(out, cfg)
     header_polish.publish(out, cfg)
     card_tidy.publish(out, cfg)
     all_discounts.publish(out, cfg)

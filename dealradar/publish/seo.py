@@ -185,10 +185,12 @@ def _outbound_attrs(d: dict[str, Any]) -> str:
 
 def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
               now: datetime | None = None, *, photo: bool = False,
-              static_photos: bool = False, credit_links: bool = True, fresh_config=None) -> str:
+              static_photos: bool = False, credit_links: bool = True, fresh_config=None,
+              client_how: bool = False) -> str:
     """One free or dead wall card; never a locked stub. static_photos draws
     HTTPS photos, with photo reserving eager loading. With the switch off,
-    photo retains the home page's original first-four image markup."""
+    photo retains the home page's original first-four image markup. client_how
+    draws the How box as the page script does (keep_first_cards)."""
     e = lambda v: escape(str(v if v is not None else ""))
     dead = d.get("status") == "dead"
     spotlight = d.get("spotlight") or {}
@@ -287,7 +289,10 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
         for c in d.get("credits") or [])
     how = ""
     checkout = d.get("checkout") or {}
-    if not dead and (checkout.get("summary") or d.get("needs_steps")):
+    if client_how:
+        from .keep_first_cards import how_html
+        how = how_html(d, fresh_config)
+    elif not dead and (checkout.get("summary") or d.get("needs_steps")):
         steps = " &rarr; ".join(e(x) for x in d.get("how") or [])
         codes = "".join(f'<code class="code">{e(c)}</code>' for c in d.get("codes") or [])
         how = (f'<details class="how" data-requirements><summary><b>How to get this price:</b> '
@@ -312,7 +317,8 @@ def card_html(d: dict[str, Any], deal_paths: dict[str, str] | None = None,
 
 def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = None,
                now: datetime | None = None, *, static_photos: bool = False,
-               eager_photos: int = 4, credit_links: bool = True, fresh_config=None) -> str:
+               eager_photos: int = 4, credit_links: bool = True, fresh_config=None,
+               client_how: bool = False) -> str:
     """A static grid: reserve eager loading for the page's first four photos."""
     if not credit_links:
         rows = place_gone(rows, every=10)
@@ -320,7 +326,8 @@ def cards_html(rows: list[dict[str, Any]], deal_paths: dict[str, str] | None = N
     eager = {id(d) for d in eligible[:eager_photos]}
     return "".join(card_html(d, deal_paths, now, static_photos=static_photos,
                              photo=static_photos and id(d) in eager,
-                             credit_links=credit_links, fresh_config=fresh_config) for d in rows)
+                             credit_links=credit_links, fresh_config=fresh_config,
+                             client_how=client_how) for d in rows)
 
 
 def _locked_line(stubs: list[dict[str, Any]], where: str) -> str:
@@ -441,15 +448,18 @@ def static_wall(teaser: list[dict[str, Any]], open_access: bool = False,
         html += '<div class="grid spotlight-grid">' + cards_html(
             spotlight, deal_paths, now, static_photos=static_photos, credit_links=credit_links) + '</div>'
     if free:
+        from . import keep_first_cards
+        client_how = fresh_config is not None and keep_first_cards.enabled(fresh_config)
         # The first four photos match the page script's eager, high-priority ones.
         if static_photos:
             eager = max(0, 4 - sum(str(d.get("image_url") or "").startswith("https://") for d in spotlight))
             cards = cards_html(free, deal_paths, now, static_photos=True, eager_photos=eager,
-                               credit_links=credit_links, fresh_config=fresh_config)
+                               credit_links=credit_links, fresh_config=fresh_config, client_how=client_how)
         else:
             photos = {id(d) for d in [d for d in free if d.get("image_url")][:4]}
             cards = "".join(card_html(d, deal_paths, now, photo=id(d) in photos,
-                                      credit_links=credit_links, fresh_config=fresh_config) for d in free)
+                                      credit_links=credit_links, fresh_config=fresh_config,
+                                      client_how=client_how) for d in free)
         html += '<div class="grid">' + cards + "</div>"
     if more:
         n = ("1,000+" if more >= 1000 else f"{more // 100 * 100:,}+"  # never the exact count

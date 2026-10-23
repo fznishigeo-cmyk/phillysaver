@@ -244,6 +244,21 @@ on their own. A new session reads CLAUDE.md, AGENTS.md and this file, then:
   production account (sandbox tokens do not work in production).
 
 ## In flight
+- **Phone home LCP / taps (branch `phone-lcp`, 2026-10-23; `keep_first_cards` ON,
+  committed, not pushed):** the drop module's first render replaced the server's
+  whole card wall (`content.innerHTML`) with the same cards, and its open How box
+  became the LCP; an older publication swapped in a different drop. Now a
+  fresh-view render of the cards already on screen patches them in place (same
+  final markup), a stale mark keeps the painted drop until the next mark, and the
+  home wall's static cards draw the module's How box. Real Chromium 390x844 / 4x
+  CPU, 1,400-offer fixture: LCP 1308 → 368 ms (= first paint), 90/90 → 0 server
+  cards lost, first 8 kept 0 → 8; stale case 1112 → 252 ms, no drop swap. Off:
+  1,411 files byte-identical (`pre_keep_first_cards`). Numbers and reasoning:
+  `docs/research/phone-lcp-2026-10-23.md`; tests `tests/test_keep_first_cards.py`
+  (runs `tests/phone_lcp_browser.cjs`). Next: Lighthouse mobile and the phone
+  Get-deal rate after deploy. `test_drop_fresh.py::test_emitted_fresh_logic`'s
+  50 ms timing check also fails at `9459a61` under `-n 4` on a 4-core box; it
+  passes serially.
 - **Tools merge (C36/A42, branch `tools-merge`, 2026-10-23; ON):** operator
   "CONFIRMED GO AHEAD, please use those reference videos", "push it through
   when its done", then ~01:55Z keep the old addresses for organic search.
