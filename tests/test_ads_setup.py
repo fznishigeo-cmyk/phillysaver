@@ -35,8 +35,9 @@ def secrets(monkeypatch):
 
 
 class API:
-    def __init__(self, existing=(), reject=False, groups=(), ads=()):
+    def __init__(self, existing=(), reject=False, groups=(), ads=(), keywords=None):
         self.existing, self.reject, self.groups, self.ads = list(existing), reject, list(groups), list(ads)
+        self.keywords = keywords or {}  # {ad group name: keyword texts already there}
         self.requests, self.mutates = [], []
 
     def __call__(self, request):
@@ -78,9 +79,17 @@ class API:
             rows = [{"adGroup": {"name": "deal spotter"}, "adGroupCriterion": {"qualityInfo": {"qualityScore": 7},
                                                                               "approvalStatus": "APPROVED"}},
                     {"adGroup": {"name": "deal spotter"}, "adGroupCriterion": {"approvalStatus": "UNDER_REVIEW"}}]
+        elif "FROM ad_group_criterion" in query:
+            assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
+            assert "ad_group_criterion.negative = FALSE" in query and "ad_group_criterion.status != 'REMOVED'" in query
+            rows = [{"adGroup": {"name": n}, "adGroupCriterion": {"keyword": {"text": t}}}
+                    for n, texts in self.keywords.items() for t in texts]
         elif "FROM ad_group" in query:
             assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query and "!= 'REMOVED'" in query
-            rows = [{"adGroup": {"name": n}} for n in self.groups]
+            # Statuses as setup created them: the main group ENABLED, the tool groups PAUSED.
+            rows = [{"adGroup": {"name": n, "resourceName": f"customers/{CID}/adGroups/{i}",
+                                 "status": "ENABLED" if n.endswith(" ad group") else "PAUSED"}}
+                    for i, n in enumerate(self.groups)]
         else:
             assert f"campaign.name = '{SHIPPED['campaign_name']}'" in query
             rows = [{"campaign": {"status": s, "resourceName": f"customers/{CID}/campaigns/777"}}
@@ -94,6 +103,10 @@ class API:
     def update(self, cfg=None, **kw):
         with httpx.Client(transport=httpx.MockTransport(self)) as client:
             return ads_setup.update(cfg or config(), NOW, client, **kw)
+
+    def add(self, cfg=None, **kw):
+        with httpx.Client(transport=httpx.MockTransport(self)) as client:
+            return ads_setup.add_missing_keywords(cfg or config(), NOW, client, **kw)
 
 
 def creates(body):
@@ -124,7 +137,7 @@ def test_creates_one_paused_campaign_after_google_validates_it(caplog):
     assert len(negatives) == 15 and {n["matchType"] for n in negatives} == {"BROAD"}
     assert {"text": "amazon", "matchType": "BROAD"} in negatives
     keywords = [c["keyword"] for k, c in ops if k == "adGroupCriterionOperation"]
-    assert len(keywords) == 24 and {k["matchType"] for k in keywords} == {"PHRASE"}
+    assert len(keywords) == 44 and {k["matchType"] for k in keywords} == {"PHRASE"}
     assert not any("amazon" in k["text"] for k in keywords)
     groups = [c for k, c in ops if k == "adGroupOperation"]
     assert [(g["name"], g["status"]) for g in groups] == [
@@ -241,19 +254,28 @@ def test_shipped_plan_and_workflow_and_cli(monkeypatch):
     assert doc["permissions"] == {"contents": "read"}
     step = doc["jobs"]["setup"]["steps"][-1]
     assert doc[True]["workflow_dispatch"]["inputs"]["update_ads"]["default"] is False
+    assert doc[True]["workflow_dispatch"]["inputs"]["add_keywords"]["default"] is False
     assert set(step["env"]) == {"GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET",
-                                "GOOGLE_ADS_REFRESH_TOKEN", "VALIDATE_ONLY", "UPDATE_ADS"}
-    # Anything but an explicit "false" stays a dry run; only an explicit "true" updates ads.
-    for validate, update, flags in (("true", "false", " --validate-only"), ("false", "false", ""), ("", "", " --validate-only"),
-                                    ("true", "true", " --validate-only --update-ads"), ("false", "true", " --update-ads")):
+                                "GOOGLE_ADS_REFRESH_TOKEN", "VALIDATE_ONLY", "UPDATE_ADS", "ADD_KEYWORDS"}
+    # Anything but an explicit "false" stays a dry run; only an explicit "true" updates ads or adds keywords.
+    for validate, update, add, flags in (
+            ("true", "false", "false", " --validate-only"), ("false", "false", "false", ""), ("", "", "", " --validate-only"),
+            ("true", "true", "false", " --validate-only --update-ads"), ("false", "true", "false", " --update-ads"),
+            ("true", "false", "true", " --validate-only --add-keywords"), ("false", "false", "true", " --add-keywords")):
         out = subprocess.run(["bash", "-ec", 'python() { echo "$*"; }\n' + step["run"]], capture_output=True, text=True,
-                             check=True, env={"PATH": os.environ["PATH"], "VALIDATE_ONLY": validate, "UPDATE_ADS": update})
+                             check=True, env={"PATH": os.environ["PATH"], "VALIDATE_ONLY": validate,
+                                              "UPDATE_ADS": update, "ADD_KEYWORDS": add})
         assert out.stdout == f"-m dealradar ads-setup{flags}\n"
     called = []
     monkeypatch.setattr(ads_setup, "run", lambda cfg, **kw: called.append(kw) or 0)
     assert cli.main(["ads-setup", "--validate-only"]) == 0
     assert cli.main(["ads-setup", "--update-ads"]) == 0
-    assert called == [{"validate_only": True, "update_ads": False}, {"validate_only": False, "update_ads": True}]
+    assert cli.main(["ads-setup", "--validate-only", "--add-keywords"]) == 0
+    assert called == [{"validate_only": True, "update_ads": False, "add_keywords": False},
+                      {"validate_only": False, "update_ads": True, "add_keywords": False},
+                      {"validate_only": True, "update_ads": False, "add_keywords": True}]
+    with pytest.raises(SystemExit):  # one mode per run
+        cli.main(["ads-setup", "--update-ads", "--add-keywords"])
 
 
 def test_ad_quality_report_never_fails_the_check(caplog):
@@ -381,9 +403,90 @@ def test_update_ads_rejection_or_unplannable_copy_changes_nothing(caplog):
 
 def test_run_routes_update_ads_to_the_update_path(monkeypatch):
     calls = []
-    for name in ("setup", "update"):
+    for name in ("setup", "update", "add_missing_keywords"):
         monkeypatch.setattr(ads_setup, name, lambda cfg, now, client, name=name, **kw: calls.append((name, kw)) or 0)
     with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500))) as client:
         assert ads_setup.run(config(), http_client=client, update_ads=True, validate_only=True) == 0
         assert ads_setup.run(config(), http_client=client) == 0
-    assert calls == [("update", {"validate_only": True}), ("setup", {"validate_only": False})]
+        assert ads_setup.run(config(), http_client=client, add_keywords=True, validate_only=True) == 0
+    assert calls == [("update", {"validate_only": True}), ("setup", {"validate_only": False}),
+                     ("add_missing_keywords", {"validate_only": True})]
+
+
+# Operator A50 2026-10-23 ("add phrases": cheaper search words, still $0.40 max/click,
+# $5/day): the phrases appended to each group's keywords after the live ones.
+LIVE = dict(zip(NAMES, (10, 7, 7)))  # keywords each group had before A50
+
+
+def adds(body):
+    """{ad group resource: [keyword texts]}; fails on any other operation or field."""
+    out = {}
+    for item in body["mutateOperations"]:
+        assert set(item) == {"adGroupCriterionOperation"}
+        op = item["adGroupCriterionOperation"]
+        assert set(op) == {"create"} and set(op["create"]) == {"adGroup", "status", "keyword"}  # no bid
+        assert op["create"]["status"] == "ENABLED" and set(op["create"]["keyword"]) == {"text", "matchType"}
+        assert op["create"]["keyword"]["matchType"] == "PHRASE"
+        out.setdefault(op["create"]["adGroup"], []).append(op["create"]["keyword"]["text"])
+    return out
+
+
+@pytest.mark.parametrize("validate_only", [True, False])
+def test_add_keywords_adds_only_the_missing_phrases_after_google_validates(validate_only, caplog):
+    live = {n: COPY[n]["keywords"][:k] for n, k in LIVE.items()}
+    live[NAMES[0]] = [t.upper() for t in live[NAMES[0]]]  # Google may show other case
+    live[NAMES[2]] = [*live[NAMES[2]], "Review Analyzer"]  # one added by hand already
+    api = API(existing=["ENABLED"], groups=NAMES, keywords=live)
+    with caplog.at_level(logging.INFO):
+        assert api.add(validate_only=validate_only) == 0
+    assert [m.get("validateOnly") for m in api.mutates] == ([True] if validate_only else [True, None])
+    if not validate_only:
+        check, real = api.mutates
+        assert {k: v for k, v in check.items() if k != "validateOnly"} == real
+    added = [t for n in NAMES for t in COPY[n]["keywords"][LIVE[n]:]]
+    assert len(added) == len({t.lower() for t in added}) == 20  # no phrase in two groups
+    assert adds(api.mutates[0]) == {
+        f"customers/{CID}/adGroups/0": COPY[NAMES[0]]["keywords"][10:],
+        f"customers/{CID}/adGroups/1": COPY[NAMES[1]]["keywords"][7:],
+        f"customers/{CID}/adGroups/2": [t for t in COPY[NAMES[2]]["keywords"][7:] if t != "review analyzer"]}
+    # No campaign, budget, bidding, ad group status, ad or negative is written.
+    sent = json.dumps(api.mutates)
+    for field in ("campaign", "Budget", "targetSpend", "cpc", "Bid", "PAUSED", "adGroupOperation", "adGroupAd",
+                  "negative", "BROAD", "EXACT"):
+        assert field not in sent
+    verb = "validated (not added)" if validate_only else "added"
+    assert f"keywords for {NAMES[0]} (ENABLED): 11 {verb}" in caplog.text
+    assert f"keywords for deal spotter (PAUSED): 5 {verb}" in caplog.text
+    assert f"keywords for review checker (PAUSED): 3 {verb}" in caplog.text
+    assert f"{verb} 19 PHRASE keyword(s) with no bid" in caplog.text
+    assert "keywords in deal spotter: no score yet x1" in caplog.text  # Google's grades after
+    ours = " ".join(r.getMessage() for r in caplog.records if r.name == ads_setup.log.name)
+    for secret in (CID, "/adGroups/", "FAKE_", "Bearer"):
+        assert secret not in ours
+
+
+def test_add_keywords_rerun_with_every_keyword_present_writes_nothing(caplog):
+    api = API(existing=["PAUSED"], groups=NAMES, keywords={n: COPY[n]["keywords"] for n in NAMES})
+    with caplog.at_level(logging.INFO):
+        assert api.add() == 0
+    assert api.mutates == [] and "all 44 keywords already present; nothing added" in caplog.text
+
+
+def test_add_keywords_skips_a_missing_ad_group(caplog):
+    api = API(existing=["ENABLED"], groups=NAMES[:2], keywords={n: COPY[n]["keywords"][:k] for n, k in LIVE.items()})
+    with caplog.at_level(logging.INFO):
+        assert api.add() == 0
+    assert "no ad group review checker in the campaign; skipped" in caplog.text
+    assert [len(texts) for texts in adds(api.mutates[1]).values()] == [11, 5]
+
+
+def test_add_keywords_without_the_campaign_or_after_a_rejection_adds_nothing(caplog):
+    api = API(groups=NAMES)
+    assert api.add() == 1
+    assert api.mutates == [] and "campaign not found; nothing added" in caplog.text
+    api = API(existing=["ENABLED"], groups=NAMES, reject=True)
+    assert api.add() == 1
+    assert [m.get("validateOnly") for m in api.mutates] == [True] and "failed, nothing added" in caplog.text
+    api = API(existing=["ENABLED"], groups=NAMES)
+    assert api.add(config(keywords=["amazon deal checker"])) == 1  # plan() rules apply
+    assert api.requests == []

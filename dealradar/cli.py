@@ -178,7 +178,8 @@ def cmd_ads_setup(args: argparse.Namespace) -> int:
     from .config import load_config
     from .growth.ads_setup import run
 
-    return run(load_config(args.config), validate_only=args.validate_only, update_ads=args.update_ads)
+    return run(load_config(args.config), validate_only=args.validate_only, update_ads=args.update_ads,
+               add_keywords=args.add_keywords)
 
 
 def cmd_source_audit(args: argparse.Namespace) -> int:
@@ -340,8 +341,11 @@ def main(argv: list[str] | None = None) -> int:
     common(sp)
     sp.add_argument("--validate-only", action="store_true",
                     help="ask Google to check the campaign without creating it")
-    sp.add_argument("--update-ads", action="store_true",
-                    help="only replace each ad group's ad headlines/descriptions with the config copy")
+    mode = sp.add_mutually_exclusive_group()
+    mode.add_argument("--update-ads", action="store_true",
+                      help="only replace each ad group's ad headlines/descriptions with the config copy")
+    mode.add_argument("--add-keywords", action="store_true",
+                      help="only add config keywords missing from each ad group (phrase match, no bid)")
     sp.set_defaults(fn=cmd_ads_setup)
 
     for command, help_text in (

@@ -1295,6 +1295,8 @@ ads:
   # at most half the authorized cap (Google may spend 2x a daily budget).
   # update_ads (--update-ads) only swaps each ad group's responsive search ad
   # headlines/descriptions for the copy below; nothing else changes.
+  # add_keywords (--add-keywords) only adds the keywords below that an existing
+  # ad group lacks (phrase match, no bid); nothing else changes.
   setup:
     # 2026-10-22 (operator): Search ad for the two free tools. The earlier "generic
     # deals" campaign (2026-10-15) stays paused as it is. No keyword may contain
@@ -1305,9 +1307,14 @@ ads:
     final_url: "https://wowpriced.com/amazon-deal-checker/"
     # Numeric campaign id so the guard can credit ad visitors (names cannot).
     final_url_suffix: "utm_source=google&utm_medium=cpc&utm_id={campaignid}&utm_campaign={campaignid}"
+    # Operator A50 2026-10-23 ("add phrases": cheaper search words, still $0.40
+    # max/click, $5/day): longer phrases in all three groups, added by --add-keywords.
     keywords: ["deal checker", "is this a good deal", "is it a good deal", "price checker",
                "price history checker", "price drop checker", "discount finder", "real discounts",
-               "best discounts today", "price tracker"]     # phrase match
+               "best discounts today", "price tracker", "is this a real sale", "is this sale real",
+               "fake sale checker", "how to tell if a sale is real", "how to tell if a deal is good",
+               "check if a deal is good", "is this a good price", "is this price good", "good deal checker",
+               "online price checker", "deal analyzer"]     # phrase match
     # Broad negatives: store names (most programs ban bidding on them) and junk intent.
     negative_keywords: [amazon, walmart, target, best buy, ebay, woot, costco, kohls, macys,
                         wayfair, coupon code, promo code, jobs, login, near me]
@@ -1334,7 +1341,9 @@ ads:
       - name: "deal spotter"
         final_url: "https://wowpriced.com/deal-spotter/"
         keywords: ["fakespot", "fake spot", "fakespot alternative", "deal grader",
-                   "fake discount checker", "is this discount real", "deal spotter"]
+                   "fake discount checker", "is this discount real", "deal spotter",
+                   "sites like fakespot", "fakespot replacement", "what replaced fakespot",
+                   "fakespot shut down", "fakespot not working"]
         headlines: ["Deal Spotter by wowpriced", "Try the Free Deal Spotter", "Free Deal Grader: A, B or C",
                     "Spot Great Deals Fast", "Is It a Great Price?", "Is This Discount Worth It?",
                     "Great, Good or Fair Price?", "Paste a Link, Get a Grade", "Check a Price in Seconds",
@@ -1348,7 +1357,9 @@ ads:
       - name: "review checker"
         final_url: "https://wowpriced.com/review-checker/"
         keywords: ["review checker", "reviewmeta", "review meta", "reviewmeta alternative",
-                   "product review checker", "review grader", "check product reviews"]
+                   "product review checker", "review grader", "check product reviews",
+                   "sites like reviewmeta", "reviewmeta not working", "review analyzer",
+                   "product review analyzer"]
         headlines: ["Free Review Checker", "Review Checker by wowpriced", "Product Review Checker",
                     "Check Review Signals Fast", "Free Review Grader Tool", "A, B or C Review Grade",
                     "Review Signals at a Glance", "Paste a Link, Get a Grade", "Is the Rating Holding Steady?",
