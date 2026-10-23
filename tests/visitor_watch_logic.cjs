@@ -754,22 +754,55 @@ test('every context page reports JavaScript, console and same-origin network fai
 });
 
 test('inventory search rejects ignored input and unrelated results, and clears its query on every outcome', async () => {
-  let query = '', ignoreInput = false, titles = ['Cotton socks', 'Wool socks'];
+  let query = '', ignoreInput = false, polls = 0, wall = ['Socks'], titles = ['Cotton socks', 'Wool socks'], total = 2;
   const page = {waitForTimeout: async () => {}, locator: selector => {
-    if (selector === '#q') return {fill: async text => {query = text;}, inputValue: async () => query};
-    if (selector === '#searchcount') return {innerText: async () => ignoreInput ? '' : `2 deals match "${query}"`};
-    return {count: async () => 2, allTextContents: async () => titles};
+    if (selector === 'script') return {evaluateAll: async () => []};
+    if (selector === '#q') return {fill: async text => {query = text; polls = 0;}, inputValue: async () => query};
+    // A slow render: the count names the query only on the fourth look.
+    if (selector === '#searchcount') return {innerText: async () =>
+      ignoreInput || !query || ++polls < 4 ? '' : `${total} deals match "${query}"`};
+    if (selector.endsWith(':not(.locked):not(.gone) .title')) return {evaluateAll: async () => wall};
+    return {allTextContents: async () => titles};
   }};
   assert.deepEqual(await inventorySearchProbe(page, {deals: [{item: 'Socks'}]}),
     {query: 'socks', matches: 2}); assert.equal(query, '');
   ignoreInput = true;
-  await assert.rejects(inventorySearchProbe(page, {deals: [{item: 'Socks'}]}), /query was not applied/);
+  await assert.rejects(inventorySearchProbe(page, {deals: [{item: 'Socks'}]}), /query was not applied \("socks"\)/);
   assert.equal(query, '');
-  ignoreInput = false; titles = ['Cotton towels', 'Kitchen kettle'];
+  ignoreInput = false; total = 1;
   assert.deepEqual(await inventorySearchProbe(page, {deals: [{item: 'Socks'}]}),
-    {query: 'socks', matches: 0}); assert.equal(query, '');
-  const s = scene(); s.working.inventorySearch.matches = 0;
+    {query: 'socks', matches: 0}, 'more cards than the count names: the wall from before the search');
+  total = 2; titles = ['Cotton towels', 'Kitchen kettle'];
+  const missing = await inventorySearchProbe(page, {deals: [{item: 'Socks'}]});
+  assert.deepEqual(missing, {query: 'socks', matches: 0}); assert.equal(query, '');
+  const s = scene(); s.working.inventorySearch = missing;
   assert(check('working', s).flag);
+  assert.match(check('working', s).detail, /^inventory search "socks" has no matching results$/);
+  assert.match(check('working', scene({working: {...scene().working, inventorySearch: undefined}})).detail,
+    /^inventory search has no matching results$/);
+});
+
+test('inventory search types a specific word read on the wall, never a stop word or a department-wide prefix', async () => {
+  // Live 2026-10-23 #246/#247: the first deals.json item's first word. "the" starts
+  // "thermal", "&" reads "and" in every "Home & Kitchen" label, "car" starts
+  // "care" (Beauty & Personal Care): the site showed 60 deals whose titles lack it.
+  const groups = [['Trending', null, ''], ['Home & Kitchen', ['home', 'kitchen'], 'home-kitchen'],
+    ['Beauty & Personal Care', ['beauty'], 'beauty-personal-care']];
+  const doc = {deals: [{item: 'The Ordinary Serum', category: 'beauty'}, {item: "M&M's Peanut Candy", category: 'grocery'},
+    {item: 'Car Phone Mount', category: 'auto'}, {item: 'Thermal mug', category: 'kitchen'},
+    {item: 'Face cream', category: 'beauty'}, {item: 'Peanut butter', category: 'grocery'}]};
+  for (const [wall, word] of [[['The Ordinary Serum'], 'ordinary'], [["M&M's Peanut Candy"], 'candy'],
+    [['Car Phone Mount', 'Thermal mug'], 'phone']]) {
+    let query = '';
+    const page = {waitForTimeout: async () => {}, locator: selector => {
+      if (selector === 'script') return {evaluateAll: async fn => fn([{textContent: 'var CATGROUPS = ' + JSON.stringify(groups) + ';'}])};
+      if (selector === '#q') return {fill: async text => {query = text;}, inputValue: async () => query};
+      if (selector === '#searchcount') return {innerText: async () => query ? `1 deal matches "${query}"` : ''};
+      if (selector.endsWith(':not(.locked):not(.gone) .title')) return {evaluateAll: async () => wall};
+      return {allTextContents: async () => wall.slice(0, 1)};
+    }};
+    assert.deepEqual(await inventorySearchProbe(page, doc), {query: word, matches: 1}, wall[0]);
+  }
 });
 
 test('healthy inventory without socks stays clean across consecutive runs; missing results still flag', async () => {
@@ -778,8 +811,10 @@ test('healthy inventory without socks stays clean across consecutive runs; missi
     let query = '', titles = [item];
     const doc = {deals: [{item: 'Socks', status: 'dead'}, {item: 'Socks', locked: true}, {item}]};
     const page = {waitForTimeout: async () => {}, locator: selector => {
+      if (selector === 'script') return {evaluateAll: async () => []};
       if (selector === '#q') return {fill: async text => {query = text;}, inputValue: async () => query};
       if (selector === '#searchcount') return {innerText: async () => `1 deal matches "${query}"`};
+      if (selector.endsWith(':not(.locked):not(.gone) .title')) return {evaluateAll: async () => [item, 'Socks']};
       return {allTextContents: async () => titles};
     }};
     const search = await inventorySearchProbe(page, doc);
@@ -1100,7 +1135,8 @@ test('browser working probes select populated departments, resolve every categor
     if (selector === '#q') return {fill: async text => {query = text;}, inputValue: async () => query};
     if (selector === '#moremore') return {count: async () => 0};
     if (selector === '#searchcount') return {innerText: async () => `2 deals match "${query}"`};
-    if (selector.endsWith(' .title')) return {allTextContents: async () => ['Cotton socks', 'Wool socks']};
+    if (selector.endsWith(' .title')) return {evaluateAll: async () => ['Socks'],
+      allTextContents: async () => ['Cotton socks', 'Wool socks']};
     if (selector.includes('cattab')) return {click: async () => {tab = Number(selector.match(/data-i="(\d+)"/)[1]);},
       evaluate: async fn => fn({classList: {contains: () => tab === 4}})};
     return {count: async () => query === 'socks' ? 2 : 0,

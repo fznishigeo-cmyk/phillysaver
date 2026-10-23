@@ -144,13 +144,14 @@ def watch_build(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx.Client, 'send', no_network)
     monkeypatch.setattr(site, 'util_now', lambda: NOW)
 
-    def build(*, working_search=True, item='Cotton socks', category=None):
+    def build(*, working_search=True, item='Cotton socks', category=None, rows=None):
         cfg = AppConfig(support_enabled=True, dark_polish=True, affiliate_amazon_tag='wowpriced-20',
                         search_amazon=working_search)
-        rows = [make_deal(dedupe_key=f'task270-{i}', item=f'{item} set {i}',
-                          brand=f'Brand {i}', category=category or ('beauty' if i % 2 else 'kitchen'), codes=[], conditions=[],
-                          image_url=f'https://images.example.invalid/photo-{i}.png') for i in range(32)]
-        rows[-1].update(status='dead', death='confirmed', died_at=iso(NOW - timedelta(minutes=5)))
+        if rows is None:
+            rows = [make_deal(dedupe_key=f'task270-{i}', item=f'{item} set {i}',
+                              brand=f'Brand {i}', category=category or ('beauty' if i % 2 else 'kitchen'), codes=[], conditions=[],
+                              image_url=f'https://images.example.invalid/photo-{i}.png') for i in range(32)]
+            rows[-1].update(status='dead', death='confirmed', died_at=iso(NOW - timedelta(minutes=5)))
         out, doc, *_ = render(tmp_path, cfg, rows)
         return out, doc
 
@@ -439,3 +440,103 @@ def test_chromium_local_static_build(tmp_path, watch_build, scenario):
         else:
             assert len(repeated) == 4
             assert all(name.endswith(':search' if not working_search else ':text') for name in repeated)
+
+
+# The real homepage, route-fulfilled; each extra mode breaks its search one way.
+SEARCH_HARNESS = r'''
+const {offlineRoute} = require('./scripts/visitor_watch.js');
+const {inventorySearchProbe} = require('./scripts/visitor_watch_health.cjs');
+const [site, broad, ...modes] = process.argv.slice(1);
+const BREAK = {
+  blank: `new MutationObserver(() => {if (q.value) content.querySelectorAll('.card').forEach(card => card.remove());})
+    .observe(content, {childList: true, subtree: true});`,
+  stale: `q.addEventListener('input', event => {event.stopImmediatePropagation();
+    document.getElementById('searchcount').textContent = q.value ? '1 deal matches "' + q.value + '"' : '';}, true);`,
+  ignored: `q.addEventListener('input', event => event.stopImmediatePropagation(), true);`};
+(async () => {
+  let browser;
+  try {
+    const {chromium} = require(require.resolve('playwright', {paths: ['/opt/node-tools', process.cwd()]}));
+    browser = await chromium.launch({headless: true, executablePath: '/opt/pw-browsers/chromium',
+      args: ['--no-sandbox', '--disable-dev-shm-usage']});
+  } catch (error) {
+    console.log('Chromium unavailable (exit 77): ' + error.message.split('\n')[0]);
+    process.exitCode = 77; return;
+  }
+  const origin = 'https://wowpriced.test', out = {};
+  try {
+    const context = await browser.newContext({viewport: {width: 390, height: 844}, serviceWorkers: 'block'});
+    await context.route('**/*', route => new URL(route.request().url()).origin === origin ||
+      route.request().resourceType() === 'image' ? route.fulfill(offlineRoute(site, origin, route.request())) : route.abort());
+    for (const mode of modes) {
+      const page = await context.newPage();
+      page.setDefaultTimeout(8000);
+      if (BREAK[mode]) await page.addInitScript(`addEventListener('DOMContentLoaded', () => {
+        const q = document.getElementById('q'), content = document.getElementById('content'); ${BREAK[mode]}});`);
+      const loaded = page.waitForResponse(response => new URL(response.url()).pathname === '/deals.json')
+        .then(response => response.json());
+      await page.goto(origin + '/');
+      const doc = await loaded;
+      await page.waitForFunction(() => document.querySelectorAll('#content .card[data-key]').length >= 24);
+      try {out[mode] = await inventorySearchProbe(page, doc);} catch (error) {out[mode] = {error: error.message};}
+      if (broad) {
+        // The word the old probe typed: how many deals the site says match, and
+        // how many of the cards it renders carry that word in their title.
+        await page.locator('#q').fill(broad);
+        await page.waitForFunction(broad => document.getElementById('searchcount').textContent.includes(`"${broad}"`), broad);
+        const titles = await page.locator('#content .card[data-key] .title').allTextContents();
+        out.broad = {total: Number((await page.locator('#searchcount').innerText()).match(/^\d+/)?.[0]),
+          cards: titles.length, titled: titles.filter(title =>
+            new RegExp(`\\b${broad}\\b`).test(title.toLowerCase().replace(/&/g, ' and '))).length};
+      }
+      await page.close();
+    }
+  } finally {await browser.close();}
+  console.log(JSON.stringify(out));
+})().catch(error => {console.error(error); process.exitCode = 1;});
+'''
+
+
+def search_harness(site_dir, broad, *modes):
+    result = node(['-e', SEARCH_HARNESS, site_dir, broad, *modes])
+    if result.returncode == 77:
+        pytest.skip(result.stdout.strip())
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+# Live 2026-10-23 (#246, #247): the probe typed the first word of the first live
+# deals.json item. The site matches a typed word as the start of any word of a
+# deal's title, brand, store, category, department label or condition and renders
+# 60, so these words filled the page with deals whose titles lack them.
+@pytest.mark.parametrize('lead,broad,flood,category', [
+    ('The Ordinary Niacinamide Serum', 'the', 'Thermal mug style', 'kitchen'),  # stop word; "thermal"
+    ("M&M's Peanut Chocolate Candy", 'and', 'Bath towel style', 'home'),  # "&" read "and"; "Home & Kitchen"
+    ('Car Phone Mount Holder', 'car', 'Face serum style', 'beauty'),  # "Beauty & Personal Care"
+    ('Shoe Rack Organizer', 'shoe', 'Wrap dress style', 'fashion'),  # "Clothing, Shoes & Jewelry"
+])
+def test_chromium_inventory_search_survives_a_broad_first_word(watch_build, lead, broad, flood, category):
+    # First in deals.json, yet older and smaller than the flood, so the site's
+    # search order puts it past the 60 cards it renders.
+    rows = [make_deal(dedupe_key='vw-search-lead', item=lead, brand='Lead', category='other', codes=[], conditions=[],
+                      final_price=22.0, pct_at_checkout=56.0, abs_savings=28.0,
+                      first_seen_at='2026-10-08T12:00:00+00:00',  # a day before make_deal's
+                      image_url='https://images.example.invalid/photo-lead.png')]
+    rows += [make_deal(dedupe_key=f'vw-search-{i}', item=f'{flood} {i}', brand=f'Brand {i}', category=category,
+                       codes=[], conditions=[], image_url=f'https://images.example.invalid/photo-{i}.png')
+             for i in range(64)]
+    out, doc = watch_build(rows=rows)
+    assert doc['deals'][0]['item'] == lead, 'the old probe searched this item first'
+    seen = search_harness(out, broad, 'healthy')
+    assert seen['broad']['total'] > seen['broad']['cards'] == 60, seen
+    assert seen['broad']['titled'] == 0, 'reproduces the live flag: the search works, the page lacks the word'
+    assert seen['healthy']['query'] != broad and seen['healthy']['matches'] > 0, seen
+
+
+def test_chromium_inventory_search_still_flags_results_that_never_render(watch_build):
+    out, _ = watch_build()
+    seen = search_harness(out, '', 'healthy', 'blank', 'stale', 'ignored')
+    assert seen['healthy'] == {'query': 'cotton', 'matches': 31}
+    # Results removed after the count, or a count over the unchanged wall: no match.
+    assert seen['blank'] == seen['stale'] == {'query': 'cotton', 'matches': 0}
+    assert seen['ignored'] == {'error': 'inventory search query was not applied ("cotton")'}

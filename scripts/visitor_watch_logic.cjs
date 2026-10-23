@@ -217,8 +217,9 @@ function checksForScene(scene, previous, rules) {
     (department ? ` (shows ${department.after?.length ?? 0} of ${expected.size}` +
       (department.missing?.length ? `; missing e.g. ${department.missing.join(', ')}` : '') +
       (department.extra?.length ? `; extra e.g. ${department.extra.join(', ')}` : '') + ')' : ''));
-  if (!working?.inventorySearch?.query || !(working?.inventorySearch?.matches > 0))
-    workProblems.push('inventory search has no matching results');
+  const inventory = working?.inventorySearch;
+  if (!inventory?.query || !(inventory.matches > 0))
+    workProblems.push(`inventory search${inventory?.query ? ` "${inventory.query}"` : ''} has no matching results`);
   if (working?.deal?.status !== 200 || !working.deal.price || !working.deal.getDeal) workProblems.push('deal page needs HTTP 200, price and Get deal');
   if (working?.deal?.linkProblem) workProblems.push('deal page: ' + working.deal.linkProblem);
   for (const card of cards) {

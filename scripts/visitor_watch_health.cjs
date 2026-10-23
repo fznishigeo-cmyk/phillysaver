@@ -194,16 +194,20 @@ async function firstScreenLinks(page) {
   }).map(link => link.href));
 }
 
-async function departmentProbe(page, doc, rules = {}) {
-  const before = await page.locator('#content .card[data-key]').evaluateAll(cards => cards.map(card => card.dataset.key));
-  // Read the actual published taxonomy rather than maintaining a second list.
-  const groups = await page.locator('script').evaluateAll(scripts => {
+// Read the actual published taxonomy rather than maintaining a second list.
+async function catGroups(page) {
+  return page.locator('script').evaluateAll(scripts => {
     for (const script of scripts) {
       const match = script.textContent.match(/\bvar CATGROUPS = (\[[^\n]+\]);/);
       if (match) return JSON.parse(match[1]);
     }
     return [];
   });
+}
+
+async function departmentProbe(page, doc, rules = {}) {
+  const before = await page.locator('#content .card[data-key]').evaluateAll(cards => cards.map(card => card.dataset.key));
+  const groups = await catGroups(page);
   const rows = new Map((doc.deals || []).map(row => [row.key || row.dedupe_key, row]));
   // publish.front_page.used_tab_only: used/open-box rows show only in the Used tab.
   const used = row => (row.conditions || []).some(condition => ['used', 'open_box'].includes(condition));
@@ -250,25 +254,61 @@ async function departmentProbe(page, doc, rules = {}) {
   }
 }
 
+// The site's own related-deal stop words (search-analyze.js); "and" is also how
+// the site reads "&", which every "Home & Kitchen"-style department label adds.
+const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'from', 'pack', 'new', 'set']);
+
 async function inventorySearchProbe(page, doc) {
-  // Pick a searchable word from a live published item, never assume a product
-  // type is in stock. Keep digit-bearing model/pack tokens whole, as the site does.
+  // Never assume a product type is in stock. Keep digit-bearing model/pack
+  // tokens whole, as the site's normalizeSearch does.
   const tokens = text => (String(text || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[\u2010-\u2015]/g, '-').replace(/&/g, ' and ')
     .match(/[a-z0-9]+(?:[./-][a-z0-9]+)*\+?/g) || [])
     .flatMap(word => /[0-9]/.test(word) ? [word] : word.split(/[./+-]/)).filter(Boolean);
-  const words = (doc.deals || []).filter(row => row.status !== 'dead' && !row.locked).flatMap(row => tokens(row.item));
-  const query = words.find(word => /^[a-z]{3,}$/.test(word)) || words[0];
+  const live = (doc.deals || []).filter(row => row.status !== 'dead' && !row.locked);
+  if (!live.some(row => tokens(row.item).length)) throw new Error('inventory search word unavailable');
+  // Search like a visitor: a word read on a card of the wall. The site matches a
+  // typed word as the start of any word of a deal's title, brand, store, category,
+  // department label or condition, and shows the first 60. A broad word ("the" ->
+  // thermal, "car" -> Personal Care, "shoe" -> Clothing, Shoes & Jewelry) fills
+  // those 60 with deals whose titles lack it (live 2026-10-23 #246/#247: the first
+  // deals.json item's first word), so search the seen word the fewest deals match.
+  const groups = await catGroups(page);
+  const searchable = live.map(row => tokens([row.item, row.brand, row.store, row.category,
+    ...groups.filter(group => Array.isArray(group[1]) && group[1].includes(row.category || 'other')).map(group => group[0]),
+    ...(row.conditions || [])].join(' ')));
+  const seen = await page.locator('#content .card[data-key]:not(.locked):not(.gone) .title').evaluateAll(titles =>
+    titles.filter(title => title.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})).map(title => title.textContent));
+  const query = [...new Set(seen.flatMap(tokens))].map(word => ({word,
+    plain: /^[a-z]{3,}$/.test(word) && !STOP_WORDS.has(word),
+    reach: searchable.filter(words => words.some(part => part.startsWith(word))).length}))
+    .filter(word => word.reach).sort((a, b) => b.plain - a.plain || a.reach - b.reach)[0]?.word;
   if (!query) throw new Error('inventory search word unavailable');
+  // Wait for the site's count, not a fixed time: it names the query once the
+  // 150 ms debounce has rendered the results (cards and count render together).
+  const count = () => page.locator('#searchcount').innerText();
+  const settled = async done => {
+    for (let waited = 0; waited < 5000; waited += 100) {
+      if (await done()) return true;
+      await page.waitForTimeout(100);
+    }
+    return false;
+  };
   try {
-    await page.locator('#q').fill(query); await page.waitForTimeout(700);
-    const input = await page.locator('#q').inputValue();
-    const applied = await page.locator('#searchcount').innerText();
-    if (input !== query || applied.match(/\bmatch(?:es)? "([^"]+)"/)?.[1] !== query)
-      throw new Error('inventory search query was not applied');
-    const titles = await page.locator('#content .card[data-key] .title').allTextContents();
-    return {query, matches: titles.filter(title => tokens(title).includes(query)).length};
-  } finally {await page.locator('#q').fill(''); await page.waitForTimeout(700);}
+    await page.locator('#q').fill(query);
+    let applied = '';
+    if (!await settled(async () => await page.locator('#q').inputValue() === query &&
+        (applied = await count()).match(/\bmatch(?:es)? "([^"]+)"/)?.[1] === query))
+      throw new Error(`inventory search query was not applied ("${query}")`);
+    // More live cards than the count names is not this search's result (a wall
+    // left from before it), so a word seen there cannot pass by itself.
+    const total = /^No deals/.test(applied) ? 0 : Number(applied.replace(/,/g, '').match(/^\d+/)?.[0]);
+    const titles = await page.locator('#content .card[data-key]:not(.gone) .title').allTextContents();
+    return {query, matches: titles.length <= total ? titles.filter(title => tokens(title).includes(query)).length : 0};
+  } finally {
+    await page.locator('#q').fill('');
+    await settled(async () => !await count());
+  }
 }
 
 async function allUsedProbe(page, doc) {
