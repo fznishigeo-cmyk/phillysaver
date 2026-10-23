@@ -274,6 +274,7 @@ class AppConfig:
     request_timeout_s: float = 20.0
     per_source_budget_s: float = 90.0
     run_budget_s: float = 480.0
+    paid_work_stop_s: float = 840.0  # no new LLM call after this much pipeline time
     min_host_interval_s: float = 1.0
     max_retries: int = 3
     circuit_breaker_failures: int = 3
@@ -1025,6 +1026,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     cfg.request_timeout_s = float(g("fetch", "request_timeout_s", default=cfg.request_timeout_s))
     cfg.per_source_budget_s = float(g("fetch", "per_source_budget_s", default=cfg.per_source_budget_s))
     cfg.run_budget_s = float(g("fetch", "run_budget_s", default=cfg.run_budget_s))
+    cfg.paid_work_stop_s = float(g("fetch", "paid_work_stop_s", default=cfg.paid_work_stop_s))
+    if not 0 < cfg.paid_work_stop_s < float("inf"):
+        raise ValueError("fetch.paid_work_stop_s must be positive and finite")
     cfg.min_host_interval_s = float(g("fetch", "min_host_interval_s", default=cfg.min_host_interval_s))
     cfg.max_retries = int(g("fetch", "max_retries", default=cfg.max_retries))
     cfg.circuit_breaker_failures = int(g("fetch", "circuit_breaker_failures", default=cfg.circuit_breaker_failures))

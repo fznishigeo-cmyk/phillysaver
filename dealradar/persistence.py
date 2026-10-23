@@ -58,9 +58,12 @@ def checkpoint_state(db) -> None:
     if not get_secret("STATE_DB_KEY") or Path(db.path).resolve() != ROOT / "state.db":
         raise OSError("encrypted state checkpoint is unavailable")
     started = time.monotonic()
+    # The optional R2 copy/prune waits for the workflow's final save: a
+    # stalled copy could outlive CHECKPOINT_TIMEOUT_S after a good push.
     proc = subprocess.Popen(["bash", str(ROOT / "scripts/commit_state.sh")], cwd=ROOT,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            start_new_session=True)
+                            start_new_session=True,
+                            env={**os.environ, "DEALRADAR_STATE_CHECKPOINT": "1"})
     try:
         code = proc.wait(timeout=CHECKPOINT_TIMEOUT_S)
     except subprocess.TimeoutExpired:

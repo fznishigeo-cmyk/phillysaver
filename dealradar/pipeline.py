@@ -2270,6 +2270,10 @@ def _run_critic(db: DB, cfg: AppConfig, parser, now: datetime, *,
             else:
                 log.warning("deal critic flagged %s as suspect MSRP: %s",
                             deal["dedupe_key"], verdict.get("reason", ""))
+        elif legitimacy.settled_critic(verdict) and not (deal.get("audit") or {}).get("applied_reject"):
+            # A settled approval (e.g. Sonnet after a Haiku rejection) replaces
+            # the critic's own rejection; an enforced audit rejection stays.
+            payload["flags"] = [f for f in payload.get("flags") or [] if f != "suspect_msrp"]
         db.update_deal(deal["dedupe_key"], payload=payload)
         deal["critic"] = verdict  # available for reuse by later batches
         if tiered:
@@ -2467,6 +2471,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
     now = now or util.now_utc()
     started = time.monotonic()
     deadline = started + cfg.run_budget_s
+    paid_stop = started + cfg.paid_work_stop_s  # no LLM call starts later, any lane
     run_key = os.environ.get("DEALRADAR_RUN_KEY") or _run_key(now, fast_lane)
     kind = "fast" if fast_lane else "hourly"
 
@@ -2657,6 +2662,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
 
             if isinstance(parser, ClaudeParser):
                 parser.bind_ledger(db, run_key)
+                parser.paid_stop = paid_stop
         # The critic keeps its share of this run's allowance: extraction may
         # use the rest, and whatever it leaves also goes to the critic.
         run_cap = parser.run_cap_usd if parser is not None else 0.0
@@ -2782,7 +2788,7 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
             parser.run_cap_usd = run_cap
         summary["audit"] = {}
         summary["critic"] = _run_critic(db, cfg, parser, now, audit_stats=summary["audit"],
-            deadline=deadline - _RESERVE_FOR_TAIL_S / 2 if fast_lane else None)
+            deadline=min(deadline - _RESERVE_FOR_TAIL_S / 2, paid_stop) if fast_lane else paid_stop)
 
         summary["photo_asins"] = photo_recovery.backfill_asins(
             db, rank.site_deals(db, cfg, now, include_unconfirmed=recover_unconfirmed), fetcher, cfg,
@@ -2909,6 +2915,16 @@ def run(*, fast_lane: bool = False, db_path: str = "state.db",
         summary["recategorized_other"] = recategorize_other(
             db, parser, deadline - _RESERVE_FOR_TAIL_S / 2,
             per_run=cfg.recategorize_other_per_run)
+        if time.monotonic() >= paid_stop:
+            # Near the job's time limit: save this run's spend ledger before
+            # render and deploy, in case the job is cancelled before its
+            # end-of-run state save (no paid call starts after this point).
+            from .persistence import checkpoint_state
+            try:
+                db.conn.commit()
+                checkpoint_state(db)
+            except Exception as e:
+                log.warning("late-run state checkpoint failed (%s); the end-of-run save remains", e)
 
         # Total LLM spend this run: extraction + second opinions + critic
         # (+ the newsletter pick, added after it below).

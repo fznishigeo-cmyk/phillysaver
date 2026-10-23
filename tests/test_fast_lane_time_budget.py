@@ -160,9 +160,63 @@ def test_pipeline_parse_stop_is_fast_lane_only(env, monkeypatch, fast_lane, fetc
                  transport=httpx.MockTransport(offline._handler),
                  claude_client=offline._FakeClaudeClient(), dry_run_telegram=True)
     cfg = load_config(env["cfg"])
+    # The hourly critic stops at fetch.paid_work_stop_s (it had no deadline).
     assert seen == {"parse": min(fetch_elapsed + cfg.fast_lane_parse_budget_s, cfg.run_budget_s - 90)
                    if fast_lane else cfg.run_budget_s - 90,
-                    "critic": cfg.run_budget_s - 45 if fast_lane else None}
+                    "critic": cfg.run_budget_s - 45 if fast_lane else cfg.paid_work_stop_s}
+
+
+def test_no_paid_call_starts_after_the_paid_stop(tmp_path):
+    import time
+
+    from dealradar.errors import SpendCapReached
+    from tests.test_ai_spend import deal, parser_for
+
+    parser, messages = parser_for()
+    db = DB(tmp_path / "state.db")
+    parser.bind_ledger(db, "late")
+    parser.paid_stop = time.monotonic() - 1
+    with pytest.raises(SpendCapReached, match="paid_work_stop_s"):
+        critique_deals(parser, [deal()])
+    assert messages.calls == []
+    assert db.conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] == 0
+    parser.paid_stop = time.monotonic() + 60
+    assert critique_deals(parser, [deal()])[0]["plausible"]
+    assert len(messages.calls) == 1
+    db.close()
+
+
+@pytest.mark.parametrize("fetch_elapsed", [0, 900])
+def test_a_run_past_the_paid_stop_saves_its_ledger_before_render(env, monkeypatch, fetch_elapsed):
+    """A cancelled job skips the end-of-run state save; the next run would
+    restore an older spend ledger. A run that reaches the paid stop saves
+    first, then renders (the live hourly took 15-18 of its 30 minutes)."""
+    from dealradar import persistence
+    from dealradar.publish import site
+
+    clock = HostClock()
+    monkeypatch.setattr(pipeline.time, "monotonic", clock)
+
+    def fetch(*args, **kwargs):
+        clock.sleep(fetch_elapsed)
+        return [], {}
+
+    events = []
+    real_render = site.render_site
+
+    def render(*args, **kwargs):
+        events.append("render")
+        return real_render(*args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "_fetch_all", fetch)
+    monkeypatch.setattr(persistence, "checkpoint_state", lambda db: events.append("checkpoint"))
+    monkeypatch.setattr(site, "render_site", render)
+    pipeline.run(db_path=env["db"], config_path=env["cfg"], now=offline.NOW,
+                 sources_override=[], skip_validation=True,
+                 transport=httpx.MockTransport(offline._handler),
+                 claude_client=offline._FakeClaudeClient(), dry_run_telegram=True)
+    late = fetch_elapsed >= load_config(env["cfg"]).paid_work_stop_s
+    assert events[:events.index("render")] == (["checkpoint"] if late else [])
 
 
 def test_fast_lane_tiered_replay_stops_parse_and_critic_and_is_idempotent(env, monkeypatch, caplog):

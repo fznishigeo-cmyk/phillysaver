@@ -284,9 +284,11 @@ def test_fast_shape() -> None:
     assert doc["name"] == "dealradar fast lane"
     on = workflow_on(doc)
     assert on["schedule"] == [{"cron": "*/10 * * * *"}]
-    # Same concurrency group as hourly so the two never overlap.
-    assert doc["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
+    # The run job holds hourly's group so the two never overlap; the run first
+    # waits in its own group (see test_no_scheduled_run_can_replace_a_waiting_hourly_run).
+    assert doc["concurrency"] == {"group": "dealradar-fast", "cancel-in-progress": False}
     job = single_job(doc)
+    assert job["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}
     assert job["timeout-minutes"] == 20
     checkout = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout@"))
     assert checkout["with"]["fetch-depth"] == 1
@@ -304,6 +306,23 @@ def test_fast_shape() -> None:
     run_step = next(s for s in job["steps"]
                     if s.get("run", "").strip() == "python -m dealradar run --fast-lane")
     assert set(run_step["env"]) == set(SECRET_NAMES + ["STATE_DB_KEY", *R2_NAMES])
+
+
+def test_no_scheduled_run_can_replace_a_waiting_hourly_run() -> None:
+    """GitHub keeps one pending run per concurrency group and a newer one
+    replaces it, cancel-in-progress false or not (squash run 9, 2026-10-20).
+    Only the hourly itself queues in the shared `dealradar` group on a
+    schedule; every other state writer on a schedule enters it at job level,
+    after queueing in a group of its own, so it never overlaps the hourly."""
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        doc = load_workflow(path)
+        if path == HOURLY or "schedule" not in workflow_on(doc):
+            continue
+        group = (doc.get("concurrency") or {}).get("group")
+        assert group != "dealradar", path.name
+        for job in doc.get("jobs", {}).values():
+            if any("commit_state.sh" in step.get("run", "") for step in job.get("steps", [])):
+                assert job["concurrency"] == {"group": "dealradar", "cancel-in-progress": False}, path.name
 
 
 @pytest.mark.parametrize("path", [HOURLY, FAST])
