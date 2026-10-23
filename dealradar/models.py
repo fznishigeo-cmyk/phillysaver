@@ -234,7 +234,7 @@ class Deal:
     currency: str = "USD"
     category: str = "other"               # electronics|home|kitchen|kids_baby|...
     expires_at: str = ""
-    verify_tier: str = "unverified"       # corroborated | history-checked | unverified
+    verify_tier: str = "unverified"       # corroborated | trusted | history-checked | unverified
     status: str = "alive"                 # alive | dead
     # Deal-critic verdict {plausible, confidence, reason} or None (not judged).
     # Implausible => 'suspect_msrp' in flags => never published (configurable).

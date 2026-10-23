@@ -3,6 +3,9 @@
 Tiers (best to worst):
 - 'corroborated'   — seen from >= 2 distinct sources within the corroboration
                      window (cfg.corroborate_window_h).
+- 'trusted'        — seen within that window from a source the operator
+                     trusts on its own (cfg.trusted_sources); ranks as
+                     corroborated but never claims a second source.
 - 'history-checked'— our OWN price_history for this dedupe_key (grown from
                      every parsed deal since day one) has at least
                      cfg.history_min_observations points and the current final
@@ -65,6 +68,9 @@ def assign_tier(db, deal: dict[str, Any], cfg, now: datetime,
     since = now - timedelta(hours=cfg.corroborate_window_h)
     if db.distinct_sources_within(deal["id"], since, deal.get("final_price"), now) >= 2:
         return "corroborated"
+    if cfg.trusted_sources and db.distinct_sources_within(
+            deal["id"], since, deal.get("final_price"), now, sources=cfg.trusted_sources):
+        return "trusted"
 
     final = deal.get("final_price")
     count, median = db.price_stats(deal["dedupe_key"])

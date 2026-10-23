@@ -800,7 +800,8 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
                noindex_follow: bool = False,
                discovery: str = "", sharing: str = "", share_head: str = "",
                also_at: str = "", lowest_seen: str = "", app_amazon: bool = False,
-               static_photos: bool = False, credit_links: bool = True, cart: str = "") -> str:
+               static_photos: bool = False, credit_links: bool = True, cart: str = "",
+               trusted: str = "") -> str:
     from .site import linked_disclosure
 
     dead = d.get("status") == "dead"
@@ -868,10 +869,11 @@ def _deal_page(template: str, d: dict[str, Any], path: str, site_url: str,
     badge = d.get("badge") or "unverified"
     explanation = {"history-checked": "The price was checked against price history.",
                    "verified": "The price was verified.",
-                   "corroborated": "Two or more independent sources confirmed this price."}
+                   "corroborated": "Two or more independent sources confirmed this price.",
+                   "trusted": escape(trusted)}  # site.trusted_line; "" falls back below
     verification_attrs = ' data-app-amazon-history' if app_amazon and badge == "history-checked" else ""
     content += (f'<p{verification_attrs}>{_TIER_LABEL.get(badge, "single source")}: '
-                f'{explanation.get(badge, "One source reported this price; it is not yet independently confirmed.")}</p>')
+                f'{explanation.get(badge) or "One source reported this price; it is not yet independently confirmed."}</p>')
     checkout = d.get("checkout") or {}
     checkout_text = (f'<p>{escape(checkout.get("now", ""))} '
                      f'{escape(checkout.get("shipping", ""))}</p>') if checkout else ""
@@ -1131,7 +1133,7 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
     publish_sitemap reads the final tracked pages for dates and the audit.
     """
     from .paywall import is_open
-    from .site import copy_variant, site_footer
+    from .site import copy_variant, site_footer, trusted_line
 
     spotlight = spotlight or []
     products = products or {}
@@ -1275,7 +1277,9 @@ def publish(db, cfg, now: datetime, out: Path, teaser: list[dict[str, Any]],
                           lowest_seen=product_offers.lowest_html(lowest.get(d["dedupe_key"]))
                           if cfg.product_entities_lowest_seen_enabled and not hide_history else "",
                           static_photos=cfg.static_photos, credit_links=cfg.credit_links,
-                          cart=add_to_cart.deal_button(d, cfg))
+                          cart=add_to_cart.deal_button(d, cfg),
+                          trusted=trusted_line(original_facts.get(d["dedupe_key"], d), cfg)
+                          if d.get("badge") == "trusted" else "")
         folder = out / path.strip("/")
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "index.html").write_text(html, encoding="utf-8")
