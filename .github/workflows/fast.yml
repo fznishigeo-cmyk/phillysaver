@@ -2,8 +2,13 @@
 # cron drift), fetching only the fast_lane sources. The Keepa adapter
 # throttles ITSELF to ~15-minute pulls so the lane never outruns the Keepa
 # token allowance.
-# Shares the `dealradar` concurrency group with hourly.yml (cancel-in-progress
-# false) so the two never overlap — they queue behind each other instead.
+# The run job holds the `dealradar` concurrency group shared with hourly.yml
+# (cancel-in-progress false), so the two never overlap — they queue instead.
+# Fast runs first wait in their own `dealradar-fast` group: GitHub keeps one
+# pending run per group and a newer one replaces it, so a fast run queued in
+# the shared group would replace a waiting hourly run (its intake, Ads guard
+# and social posts), as one replaced squash run 9 on 2026-10-20. This way at
+# most one fast run waits on the shared lock, and only while no fast run holds it.
 # Deploys the site like hourly.yml does: a fast-lane find (Keepa price drops)
 # must reach the page within minutes, not wait for the top of the hour.
 name: dealradar fast lane
@@ -14,7 +19,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: dealradar
+  group: dealradar-fast
   cancel-in-progress: false
 
 permissions:
@@ -24,6 +29,9 @@ jobs:
   run:
     name: fast-lane run
     runs-on: ubuntu-latest
+    concurrency:
+      group: dealradar
+      cancel-in-progress: false
     env:
       DEALRADAR_DURABLE_STATE: "1"
       DEALRADAR_RUN_KEY: "${{ github.workflow }}:${{ github.run_id }}"
